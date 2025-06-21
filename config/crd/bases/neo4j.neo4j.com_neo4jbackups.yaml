@@ -1,0 +1,381 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+  name: neo4jbackups.neo4j.neo4j.com
+spec:
+  group: neo4j.neo4j.com
+  names:
+    kind: Neo4jBackup
+    listKind: Neo4jBackupList
+    plural: neo4jbackups
+    singular: neo4jbackup
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.target.kind
+      name: Target
+      type: string
+    - jsonPath: .spec.schedule
+      name: Schedule
+      type: string
+    - jsonPath: .status.lastRunTime
+      name: LastRun
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Neo4jBackup is the Schema for the neo4jbackups API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Neo4jBackupSpec defines the desired state of Neo4jBackup
+            properties:
+              cloud:
+                description: Cloud configuration for cloud storage
+                properties:
+                  identity:
+                    description: CloudIdentity defines cloud identity configuration
+                    properties:
+                      autoCreate:
+                        description: AutoCreateSpec defines auto-creation of service
+                          accounts
+                        properties:
+                          annotations:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          enabled:
+                            default: true
+                            type: boolean
+                        type: object
+                      provider:
+                        enum:
+                        - aws
+                        - gcp
+                        - azure
+                        type: string
+                      serviceAccount:
+                        type: string
+                    required:
+                    - provider
+                    type: object
+                  provider:
+                    enum:
+                    - aws
+                    - gcp
+                    - azure
+                    type: string
+                type: object
+              options:
+                description: Backup options
+                properties:
+                  additionalArgs:
+                    description: Additional neo4j-admin backup arguments
+                    items:
+                      type: string
+                    type: array
+                  compress:
+                    description: Compress the backup
+                    type: boolean
+                  encryption:
+                    description: Encryption configuration
+                    properties:
+                      algorithm:
+                        default: AES256
+                        description: Encryption algorithm
+                        enum:
+                        - AES256
+                        - ChaCha20
+                        type: string
+                      enabled:
+                        description: Enable encryption
+                        type: boolean
+                      keySecret:
+                        description: Secret containing encryption key
+                        type: string
+                    type: object
+                  verify:
+                    description: Verify backup integrity after creation
+                    type: boolean
+                type: object
+              retention:
+                description: Retention policy for backup cleanup
+                properties:
+                  deletePolicy:
+                    default: Delete
+                    description: Delete policy for expired backups
+                    enum:
+                    - Delete
+                    - Archive
+                    type: string
+                  maxAge:
+                    description: Maximum age of backups to keep
+                    type: string
+                  maxCount:
+                    description: Maximum number of backups to keep
+                    format: int32
+                    type: integer
+                type: object
+              schedule:
+                description: Schedule for automated backups (cron format)
+                type: string
+              storage:
+                description: Storage defines where to store the backup
+                properties:
+                  bucket:
+                    type: string
+                  cloud:
+                    description: Cloud provider configuration
+                    properties:
+                      identity:
+                        description: CloudIdentity defines cloud identity configuration
+                        properties:
+                          autoCreate:
+                            description: AutoCreateSpec defines auto-creation of service
+                              accounts
+                            properties:
+                              annotations:
+                                additionalProperties:
+                                  type: string
+                                type: object
+                              enabled:
+                                default: true
+                                type: boolean
+                            type: object
+                          provider:
+                            enum:
+                            - aws
+                            - gcp
+                            - azure
+                            type: string
+                          serviceAccount:
+                            type: string
+                        required:
+                        - provider
+                        type: object
+                      provider:
+                        enum:
+                        - aws
+                        - gcp
+                        - azure
+                        type: string
+                    type: object
+                  path:
+                    type: string
+                  pvc:
+                    description: PVC configuration
+                    properties:
+                      name:
+                        description: Name of the PVC to use (for referencing existing
+                          PVCs)
+                        type: string
+                      size:
+                        type: string
+                      storageClassName:
+                        type: string
+                    type: object
+                  type:
+                    enum:
+                    - s3
+                    - gcs
+                    - azure
+                    - pvc
+                    type: string
+                required:
+                - type
+                type: object
+              suspend:
+                description: Suspend the backup schedule
+                type: boolean
+              target:
+                description: Target defines what to backup
+                properties:
+                  kind:
+                    enum:
+                    - Cluster
+                    - Database
+                    type: string
+                  name:
+                    description: Name of the target resource
+                    type: string
+                  namespace:
+                    description: Namespace of the target resource (defaults to backup
+                      namespace)
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
+            required:
+            - storage
+            - target
+            type: object
+          status:
+            description: Neo4jBackupStatus defines the observed state of Neo4jBackup
+            properties:
+              conditions:
+                description: Conditions represent the current state of the backup
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              history:
+                description: History of recent backup runs
+                items:
+                  description: BackupRun represents a single backup execution
+                  properties:
+                    completionTime:
+                      description: Completion time of the backup run
+                      format: date-time
+                      type: string
+                    error:
+                      description: Error message if the backup failed
+                      type: string
+                    startTime:
+                      description: Start time of the backup run
+                      format: date-time
+                      type: string
+                    stats:
+                      description: Statistics for this backup run
+                      properties:
+                        duration:
+                          description: Duration of the backup
+                          type: string
+                        fileCount:
+                          description: Number of files in the backup
+                          format: int32
+                          type: integer
+                        size:
+                          description: Size of the backup
+                          type: string
+                        throughput:
+                          description: Throughput of the backup
+                          type: string
+                      type: object
+                    status:
+                      description: Status of the backup run
+                      type: string
+                  required:
+                  - startTime
+                  - status
+                  type: object
+                type: array
+              lastRunTime:
+                description: LastRunTime shows when the last backup was started
+                format: date-time
+                type: string
+              lastSuccessTime:
+                description: LastSuccessTime shows when the last successful backup
+                  completed
+                format: date-time
+                type: string
+              message:
+                description: Message provides additional information about the current
+                  state
+                type: string
+              nextRunTime:
+                description: NextRunTime shows when the next backup is scheduled
+                format: date-time
+                type: string
+              phase:
+                description: Phase represents the current phase of the backup
+                type: string
+              stats:
+                description: Backup statistics
+                properties:
+                  duration:
+                    description: Duration of the backup
+                    type: string
+                  fileCount:
+                    description: Number of files in the backup
+                    format: int32
+                    type: integer
+                  size:
+                    description: Size of the backup
+                    type: string
+                  throughput:
+                    description: Throughput of the backup
+                    type: string
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
