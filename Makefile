@@ -116,6 +116,7 @@ test: test-unit ## Run tests (alias for test-unit).
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-e2e:
+	$(eval IMG ?= neo4j-operator:ci)
 	go test ./test/e2e/ -v -ginkgo.v
 
 .PHONY: lint

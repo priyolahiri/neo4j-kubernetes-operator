@@ -9,7 +9,7 @@ on:
     types: [published]
 
 env:
-  GO_VERSION: '1.21'
+  GO_VERSION: '1.24'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
@@ -23,7 +23,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.24'
       - name: Run tests
         run: make test
 
@@ -53,8 +53,8 @@ jobs:
 
       - name: Load Docker image
         run: |
-          make docker-build IMG=neo4j-operator:test
-          kind load docker-image neo4j-operator:test --name neo4j-operator-test
+          make docker-build IMG=neo4j-operator:ci
+          kind load docker-image neo4j-operator:ci --name neo4j-operator-test
 
       - name: Run integration tests
         run: make test-integration
@@ -63,6 +63,11 @@ jobs:
       - name: Run e2e tests
         run: make test-e2e
         timeout-minutes: 10
+      - name: Cleanup resources
+        if: always()
+        run: |
+          make undeploy
+          make uninstall
 
   build:
     name: Build
@@ -74,7 +79,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.24'
       - name: Build
         run: make build
       - name: Build container image
@@ -138,7 +143,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.24'
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
         with:

@@ -54,13 +54,23 @@ var _ = Describe("controller", Ordered, func() {
 		_, _ = utils.Run(cmd)
 	})
 
+	AfterEach(func() {
+		By("removing the controller-manager")
+		cmd := exec.Command("make", "undeploy")
+		_, _ = utils.Run(cmd)
+
+		By("removing the CRDs")
+		cmd = exec.Command("make", "uninstall")
+		_, _ = utils.Run(cmd)
+	})
+
 	Context("Operator", func() {
 		It("should run successfully", func() {
 			var controllerPodName string
 			var err error
 
 			// projectimage stores the name of the image used in the example
-			var projectimage = "example.com/neo4j-operator:v0.0.1"
+			var projectimage = "neo4j-operator:ci"
 
 			By("building the manager(Operator) image")
 			cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectimage))
@@ -68,7 +78,7 @@ var _ = Describe("controller", Ordered, func() {
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
 			By("loading the the manager(Operator) image on Kind")
-			err = utils.LoadImageToKindClusterWithName(projectimage)
+			err = utils.LoadImageToKindClusterWithName(projectimage, "neo4j-operator-dev")
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
 			By("installing CRDs")
