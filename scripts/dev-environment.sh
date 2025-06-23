@@ -48,6 +48,34 @@ load_config() {
     if [[ -f "${DEV_CONFIG_FILE}" ]]; then
         source "${DEV_CONFIG_FILE}"
     fi
+
+    # Ensure all variables have default values even if config file is missing or incomplete
+    DEV_MODE=${DEV_MODE:-development}
+    DEBUG_ENABLED=${DEBUG_ENABLED:-false}
+    HOT_RELOAD_ENABLED=${HOT_RELOAD_ENABLED:-false}
+    PROFILING_ENABLED=${PROFILING_ENABLED:-false}
+
+    # Cluster Settings
+    CLUSTER_NAME=${CLUSTER_NAME:-neo4j-operator-dev}
+    CLUSTER_NAMESPACE=${CLUSTER_NAMESPACE:-default}
+    CLUSTER_CONTEXT=${CLUSTER_CONTEXT:-kind-neo4j-operator-dev}
+
+    # Port Settings
+    METRICS_PORT=${METRICS_PORT:-8080}
+    HEALTH_PORT=${HEALTH_PORT:-8081}
+    WEBHOOK_PORT=${WEBHOOK_PORT:-9443}
+    PPROF_PORT=${PPROF_PORT:-6060}
+
+    # Feature Flags
+    WEBHOOKS_ENABLED=${WEBHOOKS_ENABLED:-false}
+    TLS_ENABLED=${TLS_ENABLED:-true}
+    RBAC_ENABLED=${RBAC_ENABLED:-true}
+    OBSERVABILITY_ENABLED=${OBSERVABILITY_ENABLED:-true}
+
+    # Tool Settings
+    EDITOR=${EDITOR:-code}
+    BROWSER=${BROWSER:-open}
+    TERMINAL=${TERMINAL:-}
 }
 
 # Save configuration
@@ -308,7 +336,7 @@ start_dev_env() {
     load_config
 
     # Ensure cluster is running
-    if ! kubectl cluster-info --context="${CLUSTER_CONTEXT}" >/dev/null 2>&1; then
+    if ! kubectl cluster-info --context="${CLUSTER_CONTEXT:-kind-neo4j-operator-dev}" >/dev/null 2>&1; then
         log_error "Cluster not accessible. Run '$0 init' first."
         exit 1
     fi
