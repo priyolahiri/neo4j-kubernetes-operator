@@ -9,9 +9,18 @@ rules:
   document-start: disable
   truthy:
     allowed-values: ['true', 'false', 'on', 'off']
+  brackets:
+    max-spaces-inside: 1
+    max-spaces-inside-empty: 0
+  indentation:
+    spaces: 2
+    indent-sequences: true
+    check-multi-line-strings: false
 
 ignore: |
   /config/
   /hack/
+  /.github/workflows/
+  /dev-data/
   *.yaml.tmpl
   *.yml.tmpl
