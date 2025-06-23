@@ -9,7 +9,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
+# PURPLE='\033[0;35m'  # Reserved for future use
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
@@ -144,7 +144,8 @@ run_unit_tests() {
 
         # Generate coverage report
         go tool cover -html="${COVERAGE_DIR}/unit-coverage.out" -o "${COVERAGE_DIR}/unit-coverage.html"
-        local coverage=$(go tool cover -func="${COVERAGE_DIR}/unit-coverage.out" | grep total | awk '{print $3}')
+        local coverage
+        coverage=$(go tool cover -func="${COVERAGE_DIR}/unit-coverage.out" | grep total | awk '{print $3}')
         log_info "Unit test coverage: ${coverage}"
 
         return 0
@@ -161,7 +162,8 @@ run_integration_tests() {
     cd "${PROJECT_ROOT}"
 
     # Setup envtest
-    export KUBEBUILDER_ASSETS=$(setup-envtest use --use-env -p path)
+    export KUBEBUILDER_ASSETS
+    KUBEBUILDER_ASSETS=$(setup-envtest use --use-env -p path)
 
     local test_flags=(
         "-race"
@@ -178,7 +180,8 @@ run_integration_tests() {
 
         # Generate coverage report
         go tool cover -html="${COVERAGE_DIR}/integration-coverage.out" -o "${COVERAGE_DIR}/integration-coverage.html"
-        local coverage=$(go tool cover -func="${COVERAGE_DIR}/integration-coverage.out" | grep total | awk '{print $3}')
+        local coverage
+        coverage=$(go tool cover -func="${COVERAGE_DIR}/integration-coverage.out" | grep total | awk '{print $3}')
         log_info "Integration test coverage: ${coverage}"
 
         return 0
@@ -454,7 +457,8 @@ EOF
 
     # Add coverage information
     if [[ -f "${COVERAGE_DIR}/unit-coverage.out" ]]; then
-        local coverage=$(go tool cover -func="${COVERAGE_DIR}/unit-coverage.out" | grep total | awk '{print $3}')
+        local coverage
+        coverage=$(go tool cover -func="${COVERAGE_DIR}/unit-coverage.out" | grep total | awk '{print $3}')
         cat >> "$report_file" << EOF
     <div class="section success">
         <h2>Test Coverage</h2>
@@ -478,7 +482,7 @@ EOF
 clean_test_artifacts() {
     log_header "Cleaning Test Artifacts"
 
-    rm -rf "${TEST_RESULTS_DIR}"/* "${COVERAGE_DIR}"/*
+    rm -rf "${TEST_RESULTS_DIR:?}"/* "${COVERAGE_DIR:?}"/*
 
     # Clean test cluster
     if kind get clusters | grep -q "test-cluster"; then
@@ -505,12 +509,12 @@ show_test_summary() {
     # List generated files
     if [[ -d "${TEST_RESULTS_DIR}" ]]; then
         echo -e "${BLUE}Generated Test Files:${NC}"
-        ls -la "${TEST_RESULTS_DIR}/" | grep -v "^d" | awk '{print "  " $9 " (" $5 " bytes)"}'
+        find "${TEST_RESULTS_DIR}" -maxdepth 1 -type f -exec ls -la {} + | awk '{print "  " $9 " (" $5 " bytes)"}'
     fi
 
     if [[ -d "${COVERAGE_DIR}" ]]; then
         echo -e "\n${BLUE}Generated Coverage Files:${NC}"
-        ls -la "${COVERAGE_DIR}/" | grep -v "^d" | awk '{print "  " $9 " (" $5 " bytes)"}'
+        find "${COVERAGE_DIR}" -maxdepth 1 -type f -exec ls -la {} + | awk '{print "  " $9 " (" $5 " bytes)"}'
     fi
 
     # Show coverage summary

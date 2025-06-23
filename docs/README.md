@@ -46,14 +46,6 @@ Start here if you're new to the Neo4j Enterprise Operator:
 | [Query Monitoring](query-monitoring-guide.md) | Performance monitoring and optimization | Performance tuning |
 | [Plugin Management](plugin-management-guide.md) | Dynamic plugin installation | Feature extensions |
 
-## 👨‍💻 Development & Contributing
-
-| Guide | Description | Audience |
-|-------|-------------|----------|
-| [Developer Guide](development/developer-guide.md) | Complete development environment setup | Contributors |
-| [Architecture Guide](development/architecture.md) | System design and components | Developers |
-| [Testing Guide](development/testing-guide.md) | Testing strategies and tools | Contributors |
-
 ## 🎯 Quick Navigation by Use Case
 
 ### 🏢 **Production Enterprise Deployment**
@@ -66,6 +58,7 @@ Start here if you're new to the Neo4j Enterprise Operator:
 4. **[Cert Manager & External Secrets](cert-manager-external-secrets-guide.md)** - Security setup
 5. **[Backup & Restore Guide](backup-restore-guide.md)** - Data protection
 6. **[Query Monitoring](query-monitoring-guide.md)** - Monitoring setup
+7. **[Auto-scaling Guide](auto-scaling-guide.md)** - Dynamic scaling
 
 ### 🌍 **Global Multi-Region Deployment**
 
@@ -75,15 +68,6 @@ Start here if you're new to the Neo4j Enterprise Operator:
 2. **[Disaster Recovery Guide](disaster-recovery-guide.md)** - DR strategy
 3. **[Performance Guide](performance-guide.md)** - Global optimization
 4. **[Auto-scaling Guide](auto-scaling-guide.md)** - Dynamic scaling
-
-### 🚀 **Development & Testing**
-
-**For developers and contributors:**
-
-1. **[Developer Guide](development/developer-guide.md)** - Environment setup
-2. **[Architecture Guide](development/architecture.md)** - System understanding
-3. **[Testing Guide](development/testing-guide.md)** - Testing procedures
-4. **[API Reference](api-reference.md)** - API integration
 
 ### 📊 **Operations & Monitoring**
 
@@ -118,12 +102,12 @@ Start here if you're new to the Neo4j Enterprise Operator:
 5. [Performance Guide](performance-guide.md) - Optimize performance
 6. [Cert Manager & External Secrets](cert-manager-external-secrets-guide.md) - Security
 7. [Query Monitoring](query-monitoring-guide.md) - Monitoring
+8. [Auto-scaling Guide](auto-scaling-guide.md) - Dynamic scaling
 
 #### 🔴 **Advanced (Enterprise Scale)**
 
-8. [Multi-Cluster Deployment](multi-cluster-deployment-guide.md) - Global deployments
-9. [Disaster Recovery Guide](disaster-recovery-guide.md) - Business continuity
-10. [Auto-scaling Guide](auto-scaling-guide.md) - Dynamic scaling
+9. [Multi-Cluster Deployment](multi-cluster-deployment-guide.md) - Global deployments
+10. [Disaster Recovery Guide](disaster-recovery-guide.md) - Business continuity
 11. [OpenShift Certification](openshift-certification.md) - Enterprise platforms
 
 ## 🆘 Getting Help
@@ -142,9 +126,9 @@ Start here if you're new to the Neo4j Enterprise Operator:
 
 ### Contributing
 
-- **Documentation**: See [Developer Guide](development/developer-guide.md)
-- **Code**: Review [Architecture Guide](development/architecture.md)
-- **Testing**: Follow [Testing Guide](development/testing-guide.md)
+- **Documentation**: Submit pull requests for improvements
+- **Bug Reports**: Use GitHub Issues with detailed information
+- **Feature Requests**: Discuss in GitHub Discussions
 
 ## 📚 External Resources
 
@@ -162,6 +146,6 @@ Start here if you're new to the Neo4j Enterprise Operator:
 | Deploy your first cluster | [Quickstart Guide](quickstart.md) |
 | Set up production deployment | [Production Enterprise Deployment](#-production-enterprise-deployment) path |
 | Deploy globally | [Global Multi-Region Deployment](#-global-multi-region-deployment) path |
-| Contribute to the project | [Development & Testing](#-development--testing) path |
 | Optimize performance | [Performance Guide](performance-guide.md) |
 | Implement disaster recovery | [Disaster Recovery Guide](disaster-recovery-guide.md) |
+| Configure auto-scaling | [Auto-scaling Guide](auto-scaling-guide.md) |

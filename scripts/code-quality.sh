@@ -9,13 +9,15 @@ readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[0;34m'
-readonly PURPLE='\033[0;35m'
+# readonly PURPLE='\033[0;35m'  # Reserved for future use
 readonly CYAN='\033[0;36m'
 readonly NC='\033[0m' # No Color
 
 # Configuration
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+readonly SCRIPT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly REPORTS_DIR="${PROJECT_ROOT}/reports"
 readonly COVERAGE_DIR="${PROJECT_ROOT}/coverage"
 
@@ -361,7 +363,7 @@ analyze_coverage() {
 
     # Generate detailed coverage reports
     for pkg in $(go list ./...); do
-        pkg_name=$(echo "$pkg" | sed 's|.*/||')
+        pkg_name=${pkg##*/}
         go test -race -coverprofile="${COVERAGE_DIR}/coverage-${pkg_name}.out" -covermode=atomic "$pkg" || true
         if [[ -f "${COVERAGE_DIR}/coverage-${pkg_name}.out" ]]; then
             go tool cover -html="${COVERAGE_DIR}/coverage-${pkg_name}.out" -o "${COVERAGE_DIR}/coverage-${pkg_name}.html"
@@ -369,7 +371,8 @@ analyze_coverage() {
     done
 
     # Coverage statistics
-    local coverage_pct=$(go tool cover -func="${COVERAGE_DIR}/coverage.out" | grep total | awk '{print $3}')
+    local coverage_pct
+    coverage_pct=$(go tool cover -func="${COVERAGE_DIR}/coverage.out" | grep total | awk '{print $3}')
     echo "Total Coverage: ${coverage_pct}" > "${COVERAGE_DIR}/coverage-stats.txt"
 
     log_info "Coverage: ${coverage_pct}"
@@ -414,19 +417,17 @@ generate_metrics() {
 
     # Lines of code
     log_info "Calculating lines of code..."
-    find . -name "*.go" -not -path "./vendor/*" -not -path "./bin/*" | xargs wc -l | tail -1 > "${REPORTS_DIR}/loc.txt"
+    find . -name "*.go" -not -path "./vendor/*" -not -path "./bin/*" -print0 | xargs -0 wc -l | tail -1 > "${REPORTS_DIR}/loc.txt"
 
-    # Function count
-    grep -r "^func " --include="*.go" --exclude-dir=vendor --exclude-dir=bin . | wc -l >> "${REPORTS_DIR}/metrics.txt"
-
-    # Struct count
-    grep -r "^type .* struct" --include="*.go" --exclude-dir=vendor --exclude-dir=bin . | wc -l >> "${REPORTS_DIR}/metrics.txt"
-
-    # Interface count
-    grep -r "^type .* interface" --include="*.go" --exclude-dir=vendor --exclude-dir=bin . | wc -l >> "${REPORTS_DIR}/metrics.txt"
+    # Function count, struct count, and interface count
+    {
+        echo "Functions: $(grep -r "^func " --include="*.go" --exclude-dir=vendor --exclude-dir=bin . | wc -l)"
+        echo "Structs: $(grep -r "^type .* struct" --include="*.go" --exclude-dir=vendor --exclude-dir=bin . | wc -l)"
+        echo "Interfaces: $(grep -r "^type .* interface" --include="*.go" --exclude-dir=vendor --exclude-dir=bin . | wc -l)"
+    } >> "${REPORTS_DIR}/metrics.txt"
 
     # Test coverage by directory
-    for dir in $(find . -type d -name "*" -not -path "./vendor/*" -not -path "./bin/*" -not -path "./.git/*"); do
+    find . -type d -name "*" -not -path "./vendor/*" -not -path "./bin/*" -not -path "./.git/*" -print0 | while IFS= read -r -d '' dir; do
         if ls "$dir"/*.go >/dev/null 2>&1; then
             pkg_coverage=$(go test -coverprofile=/tmp/coverage.out "$dir" 2>/dev/null | grep "coverage:" | awk '{print $2}' || echo "0%")
             echo "$dir: $pkg_coverage" >> "${REPORTS_DIR}/coverage-by-dir.txt"

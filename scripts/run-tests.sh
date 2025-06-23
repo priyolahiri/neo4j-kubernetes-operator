@@ -93,17 +93,21 @@ run_unit_tests() {
     fi
 
     if [ ${#args[@]} -eq 0 ]; then
-        go test -timeout="$TEST_TIMEOUT" ./internal/... ./api/...
+        if go test -timeout="$TEST_TIMEOUT" ./internal/... ./api/...; then
+            print_success "Unit tests passed."
+            return 0
+        else
+            print_error "Unit tests failed."
+            return 1
+        fi
     else
-        go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./internal/... ./api/...
-    fi
-
-    if [ $? -eq 0 ]; then
-        print_success "Unit tests passed."
-        return 0
-    else
-        print_error "Unit tests failed."
-        return 1
+        if go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./internal/... ./api/...; then
+            print_success "Unit tests passed."
+            return 0
+        else
+            print_error "Unit tests failed."
+            return 1
+        fi
     fi
 }
 
@@ -116,17 +120,21 @@ run_integration_tests() {
     fi
 
     if [ ${#args[@]} -eq 0 ]; then
-        go test -timeout="$TEST_TIMEOUT" ./test/integration/...
+        if go test -timeout="$TEST_TIMEOUT" ./test/integration/...; then
+            print_success "Integration tests passed."
+            return 0
+        else
+            print_error "Integration tests failed."
+            return 1
+        fi
     else
-        go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./test/integration/...
-    fi
-
-    if [ $? -eq 0 ]; then
-        print_success "Integration tests passed."
-        return 0
-    else
-        print_error "Integration tests failed."
-        return 1
+        if go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./test/integration/...; then
+            print_success "Integration tests passed."
+            return 0
+        else
+            print_error "Integration tests failed."
+            return 1
+        fi
     fi
 }
 
@@ -148,17 +156,21 @@ run_e2e_tests() {
     fi
 
     if [ ${#args[@]} -eq 0 ]; then
-        go test -timeout="$TEST_TIMEOUT" ./test/e2e/...
+        if go test -timeout="$TEST_TIMEOUT" ./test/e2e/...; then
+            print_success "E2E tests passed."
+            return 0
+        else
+            print_error "E2E tests failed."
+            return 1
+        fi
     else
-        go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./test/e2e/...
-    fi
-
-    if [ $? -eq 0 ]; then
-        print_success "E2E tests passed."
-        return 0
-    else
-        print_error "E2E tests failed."
-        return 1
+        if go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./test/e2e/...; then
+            print_success "E2E tests passed."
+            return 0
+        else
+            print_error "E2E tests failed."
+            return 1
+        fi
     fi
 }
 
@@ -178,17 +190,21 @@ run_enterprise_tests() {
 
     # Run enterprise-specific tests
     if [ ${#args[@]} -eq 0 ]; then
-        go test -timeout="$TEST_TIMEOUT" ./test/integration/enterprise_features_test.go
+        if go test -timeout="$TEST_TIMEOUT" ./test/integration/enterprise_features_test.go; then
+            print_success "Enterprise feature tests passed."
+            return 0
+        else
+            print_error "Enterprise feature tests failed."
+            return 1
+        fi
     else
-        go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./test/integration/enterprise_features_test.go
-    fi
-
-    if [ $? -eq 0 ]; then
-        print_success "Enterprise feature tests passed."
-        return 0
-    else
-        print_error "Enterprise feature tests failed."
-        return 1
+        if go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./test/integration/enterprise_features_test.go; then
+            print_success "Enterprise feature tests passed."
+            return 0
+        else
+            print_error "Enterprise feature tests failed."
+            return 1
+        fi
     fi
 }
 

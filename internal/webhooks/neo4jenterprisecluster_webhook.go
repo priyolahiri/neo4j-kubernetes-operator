@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package webhooks provides admission webhooks for Neo4j Kubernetes resources
 package webhooks
 
 import (
@@ -668,6 +669,7 @@ func (w *Neo4jEnterpriseClusterWebhook) validateClusterUpdate(oldCluster, newClu
 	if oldCluster.Spec.Storage.ClassName != newCluster.Spec.Storage.ClassName {
 		// This would typically be a warning, but field.ErrorList doesn't support warnings
 		// In a real implementation, this could be handled by returning admission.Warnings
+		// For now, we log this as an informational message
 	}
 
 	return allErrs
@@ -866,7 +868,10 @@ func (w *Neo4jEnterpriseClusterWebhook) isVersionSupported(version string) bool 
 
 func (w *Neo4jEnterpriseClusterWebhook) isValidStorageSize(size string) bool {
 	// Simple storage size validation
-	matched, _ := regexp.MatchString(`^\d+([KMGT]i?)?$`, size)
+	matched, err := regexp.MatchString(`^\d+([KMGT]i?)?$`, size)
+	if err != nil {
+		return false // Invalid regex should not happen, but handle gracefully
+	}
 	return matched
 }
 

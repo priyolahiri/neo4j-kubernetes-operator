@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package neo4j provides a client for interacting with Neo4j databases
 package neo4j
 
 import (
@@ -140,6 +141,7 @@ func NewClientForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, k8sCl
 		if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" {
 			// Use bolt+s:// for encrypted connections
 			// Driver will use system CA by default
+			// TLS configuration is handled by the URI scheme
 		}
 
 		// Add custom resolver for better connection management
@@ -745,7 +747,10 @@ func (c *Client) WaitForRoleTransition(ctx context.Context, expectedRole string,
 	for {
 		select {
 		case <-ctx.Done():
-			currentRole, _ := c.GetMemberRole(ctx)
+			currentRole, err := c.GetMemberRole(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get member role: %w", err)
+			}
 			return fmt.Errorf("timeout waiting for role transition to %s (current: %s)", expectedRole, currentRole)
 		case <-ticker.C:
 			currentRole, err := c.GetMemberRole(ctx)
@@ -1345,7 +1350,7 @@ func (c *Client) CreateBackup(ctx context.Context, databaseName, backupName, bac
 }
 
 // RestoreBackup restores a backup to the specified database
-func (c *Client) RestoreBackup(ctx context.Context, databaseName, backupPath string, options RestoreOptions) error {
+func (c *Client) RestoreBackup(ctx context.Context, databaseName, backupPath string, _ RestoreOptions) error {
 	// Validate restore parameters
 	if backupPath == "" {
 		return fmt.Errorf("backup path cannot be empty")

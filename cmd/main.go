@@ -14,20 +14,30 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package main is the entry point for the Neo4j Kubernetes Operator.
-// It sets up and starts the controller manager with all necessary controllers and webhooks.
+// Package main is the unified entry point for the Neo4j Kubernetes Operator.
+// It supports three modes: production (default), development, and minimal.
+//
+// Production mode: go run cmd/main.go
+// Development mode: go run cmd/main.go --mode=dev
+// Minimal mode: go run cmd/main.go --mode=minimal
 package main
 
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -37,6 +47,32 @@ import (
 	"github.com/neo4j-labs/neo4j-kubernetes-operator/internal/controller"
 	"github.com/neo4j-labs/neo4j-kubernetes-operator/internal/webhooks"
 	// +kubebuilder:scaffold:imports
+)
+
+// OperatorMode defines the different modes of operation
+type OperatorMode string
+
+const (
+	// ProductionMode runs the operator with full functionality
+	ProductionMode OperatorMode = "production"
+	// DevelopmentMode runs the operator with development optimizations
+	DevelopmentMode OperatorMode = "dev"
+	// MinimalMode runs the operator with minimal functionality for fast startup
+	MinimalMode OperatorMode = "minimal"
+)
+
+// CacheStrategy defines different caching approaches for startup optimization
+type CacheStrategy string
+
+const (
+	// StandardCache uses default controller-runtime caching (slowest but most complete)
+	StandardCache CacheStrategy = "standard"
+	// LazyCache enables lazy loading of informers (faster startup, slower first requests)
+	LazyCache CacheStrategy = "lazy"
+	// SelectiveCache only caches essential resources (fastest startup)
+	SelectiveCache CacheStrategy = "selective"
+	// OnDemandCache creates informers only when needed (ultra-fast startup)
+	OnDemandCache CacheStrategy = "on-demand"
 )
 
 var (
@@ -52,21 +88,133 @@ func init() {
 
 func main() {
 	var (
-		metricsAddr          = flag.String("metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
-		probeAddr            = flag.String("health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+		mode                 = flag.String("mode", "production", "Operator mode: production, dev, or minimal")
+		metricsAddr          = flag.String("metrics-bind-address", "", "The address the metric endpoint binds to. (auto-assigned based on mode if empty)")
+		probeAddr            = flag.String("health-probe-bind-address", "", "The address the probe endpoint binds to. (auto-assigned based on mode if empty)")
 		enableLeaderElection = flag.Bool("leader-elect", false, "Enable leader election for controller manager.")
 		secureMetrics        = flag.Bool("metrics-secure", false, "If set the metrics endpoint is served securely")
 		enableHTTP2          = flag.Bool("enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers")
 		enableWebhooks       = flag.Bool("enable-webhooks", true, "Enable admission webhooks")
+
+		// Development mode specific flags
+		controllersToLoad = flag.String("controllers", "cluster", "Comma-separated list of controllers to load (dev mode only)")
+
+		// Minimal mode specific flags
+		namespace  = flag.String("namespace", "default", "Namespace to watch (minimal mode only, empty for all namespaces)")
+		syncPeriod = flag.Duration("sync-period", 60*time.Second, "Cache sync period (minimal mode only)")
+
+		// Cache optimization flags
+		cacheStrategy    = flag.String("cache-strategy", "", "Cache strategy: standard, lazy, selective, on-demand, none (auto-selected based on mode if empty)")
+		skipCacheWait    = flag.Bool("skip-cache-wait", false, "Skip waiting for cache sync before starting controllers")
+		lazyInformers    = flag.Bool("lazy-informers", false, "Enable lazy informer creation")
+		minimalResources = flag.Bool("minimal-resources", false, "Only cache essential resources for startup")
+		ultraFast        = flag.Bool("ultra-fast", false, "Enable ultra-fast mode with no informer caching")
 	)
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
+	// Validate and normalize mode
+	operatorMode := OperatorMode(strings.ToLower(*mode))
+	switch operatorMode {
+	case ProductionMode, DevelopmentMode, MinimalMode:
+		// Valid modes
+	default:
+		fmt.Fprintf(os.Stderr, "Invalid mode: %s. Valid modes are: production, dev, minimal\n", *mode)
+		os.Exit(1)
+	}
+
+	// Set default addresses based on mode if not specified
+	if *metricsAddr == "" {
+		switch operatorMode {
+		case ProductionMode:
+			*metricsAddr = ":8080"
+		case DevelopmentMode:
+			*metricsAddr = ":8082"
+		case MinimalMode:
+			*metricsAddr = ":8084"
+		}
+	}
+
+	if *probeAddr == "" {
+		switch operatorMode {
+		case ProductionMode:
+			*probeAddr = ":8081"
+		case DevelopmentMode:
+			*probeAddr = ":8083"
+		case MinimalMode:
+			*probeAddr = ":8085"
+		}
+	}
+
+	// Adjust webhook defaults based on mode
+	if operatorMode == DevelopmentMode && !isFlagSet("enable-webhooks") {
+		*enableWebhooks = false
+	}
+
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
+	// Validate flag values
+	if *metricsAddr == "" {
+		setupLog.Error(nil, "metrics-bind-address cannot be empty")
+		os.Exit(1)
+	}
+	if *probeAddr == "" {
+		setupLog.Error(nil, "health-probe-bind-address cannot be empty")
+		os.Exit(1)
+	}
+	if operatorMode == MinimalMode && *syncPeriod <= 0 {
+		setupLog.Error(nil, "sync-period must be positive")
+		os.Exit(1)
+	}
+
+	// Set cache strategy based on mode if not specified
+	if *cacheStrategy == "" {
+		switch operatorMode {
+		case ProductionMode:
+			*cacheStrategy = string(StandardCache)
+		case DevelopmentMode:
+			if *ultraFast {
+				*cacheStrategy = "none"
+			} else {
+				*cacheStrategy = string(LazyCache)
+			}
+		case MinimalMode:
+			*cacheStrategy = "none" // Always use no-cache for minimal mode
+		}
+	}
+
+	// Auto-enable optimizations based on mode
+	if operatorMode == DevelopmentMode && !isFlagSet("skip-cache-wait") {
+		*skipCacheWait = true
+	}
+	if operatorMode == MinimalMode {
+		if !isFlagSet("lazy-informers") {
+			*lazyInformers = true
+			*minimalResources = true
+		}
+		if !isFlagSet("ultra-fast") {
+			*ultraFast = true
+		}
+	}
+
+	setupLog.Info("starting Neo4j Operator",
+		"mode", operatorMode,
+		"cache_strategy", *cacheStrategy,
+		"skip_cache_wait", *skipCacheWait,
+		"lazy_informers", *lazyInformers,
+		"minimal_resources", *minimalResources,
+		"ultra_fast", *ultraFast,
+		"metrics_address", *metricsAddr,
+		"health_address", *probeAddr,
+		"webhooks_enabled", *enableWebhooks)
+
 	disableHTTP2 := func(c *tls.Config) {
+		if c == nil {
+			setupLog.Error(nil, "tls.Config is nil")
+			return
+		}
 		setupLog.Info("disabling http/2")
 		c.NextProtos = []string{"http/1.1"}
 	}
@@ -83,115 +231,94 @@ func main() {
 		})
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		Metrics: metricsserver.Options{
-			BindAddress:   *metricsAddr,
-			SecureServing: *secureMetrics,
-			TLSOpts:       tlsOpts,
-		},
-		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: *probeAddr,
-		LeaderElection:         *enableLeaderElection,
-		LeaderElectionID:       "neo4j-operator-leader-election",
-	})
+	// Configure cache options based on mode and strategy
+	var cacheOpts cache.Options
+	var useDirectClient bool
+	config := ctrl.GetConfigOrDie()
+
+	// Check if we should bypass caching entirely
+	if *cacheStrategy == "none" || *ultraFast {
+		setupLog.Info("using direct API client - bypassing all informer caching for ultra-fast startup")
+		useDirectClient = true
+		*skipCacheWait = true
+	}
+
+	switch operatorMode {
+	case DevelopmentMode:
+		if useDirectClient {
+			cacheOpts = cache.Options{} // Empty cache options
+		} else {
+			cacheOpts = configureDevelopmentCache(*cacheStrategy, *lazyInformers, *minimalResources, *namespace)
+		}
+		config.Timeout = 10 * time.Second
+		config.QPS = 100
+		config.Burst = 200
+		setupLog.Info("development mode enabled - using optimized cache settings")
+
+	case MinimalMode:
+		if useDirectClient {
+			cacheOpts = cache.Options{} // Empty cache options for direct client
+		} else {
+			cacheOpts = configureMinimalCache(*cacheStrategy, *lazyInformers, *minimalResources, *namespace, syncPeriod)
+		}
+		config.Timeout = 5 * time.Second
+		config.QPS = 50
+		config.Burst = 100
+		setupLog.Info("minimal mode enabled - using fastest startup settings")
+
+	case ProductionMode:
+		if useDirectClient {
+			setupLog.Info("WARNING: using direct client in production mode - this may impact performance")
+			cacheOpts = cache.Options{}
+		} else {
+			cacheOpts = configureProductionCache(*cacheStrategy, *lazyInformers, *minimalResources)
+		}
+		setupLog.Info("production mode enabled - using standard settings")
+	}
+
+	// Create manager with optimized cache
+	var mgr ctrl.Manager
+	var err error
+
+	if useDirectClient {
+		// Create manager with minimal caching
+		mgr, err = createDirectClientManager(config, cacheOpts, *metricsAddr, *probeAddr, *secureMetrics, operatorMode, tlsOpts, webhookServer, *enableLeaderElection)
+	} else {
+		// Standard manager creation
+		mgr, err = ctrl.NewManager(config, ctrl.Options{
+			Scheme: scheme,
+			Metrics: metricsserver.Options{
+				BindAddress:   *metricsAddr,
+				SecureServing: *secureMetrics && operatorMode == ProductionMode,
+				TLSOpts:       tlsOpts,
+			},
+			WebhookServer:          webhookServer,
+			HealthProbeBindAddress: *probeAddr,
+			LeaderElection:         *enableLeaderElection,
+			LeaderElectionID:       "neo4j-operator-leader-election",
+			Cache:                  cacheOpts,
+		})
+	}
+
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
-	// Setup controllers
-	if err = (&controller.Neo4jEnterpriseClusterReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		Recorder:          mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
-		RequeueAfter:      30 * time.Second,
-		TopologyScheduler: controller.NewTopologyScheduler(mgr.GetClient()),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Neo4jEnterpriseCluster")
+	// Setup controllers based on mode
+	if err = setupControllers(mgr, operatorMode, *controllersToLoad); err != nil {
+		setupLog.Error(err, "failed to setup controllers")
 		os.Exit(1)
 	}
 
-	if err = (&controller.Neo4jDatabaseReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-database-controller"),
-		RequeueAfter: 30 * time.Second,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Neo4jDatabase")
-		os.Exit(1)
-	}
-
-	if err = (&controller.Neo4jBackupReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
-		RequeueAfter: 60 * time.Second,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Neo4jBackup")
-		os.Exit(1)
-	}
-
-	if err = (&controller.Neo4jRestoreReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
-		RequeueAfter: 30 * time.Second,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Neo4jRestore")
-		os.Exit(1)
-	}
-
-	if err = (&controller.Neo4jRoleReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-role-controller"),
-		RequeueAfter: 30 * time.Second,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Neo4jRole")
-		os.Exit(1)
-	}
-
-	if err = (&controller.Neo4jGrantReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-grant-controller"),
-		RequeueAfter: 30 * time.Second,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Neo4jGrant")
-		os.Exit(1)
-	}
-
-	if err = (&controller.Neo4jUserReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-user-controller"),
-		RequeueAfter: 30 * time.Second,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Neo4jUser")
-		os.Exit(1)
-	}
-
-	// Setup new feature controllers
-	if err = (&controller.Neo4jPluginReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		RequeueAfter: 2 * time.Minute,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Neo4jPlugin")
-		os.Exit(1)
-	}
-
-	// Setup admission webhooks only if enabled
+	// Setup webhooks if enabled
 	if *enableWebhooks {
-		if err = (&webhooks.Neo4jEnterpriseClusterWebhook{
-			Client: mgr.GetClient(),
-		}).SetupWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "Neo4jEnterpriseCluster")
+		if err = setupWebhooks(mgr); err != nil {
+			setupLog.Error(err, "failed to setup webhooks")
 			os.Exit(1)
 		}
 	} else {
-		setupLog.Info("webhooks disabled for development")
+		setupLog.Info("webhooks disabled")
 	}
 	// +kubebuilder:scaffold:builder
 
@@ -199,34 +326,447 @@ func main() {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", createReadinessCheck(*skipCacheWait)); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
 
 	setupLog.Info("starting manager")
 
-	// Add a goroutine to provide startup feedback
-	go func() {
-		// Wait a bit for initial startup
-		time.Sleep(5 * time.Second)
-		setupLog.Info("manager is starting - waiting for informer caches to sync (this may take 30-60 seconds)")
+	// Add startup feedback based on mode and cache strategy
+	go startupFeedback(operatorMode, *metricsAddr, *probeAddr, *skipCacheWait)
 
-		// Check periodically if we can reach the health endpoint
-		ticker := time.NewTicker(15 * time.Second)
-		defer ticker.Stop()
+	// Start manager with cache optimization
+	if *skipCacheWait {
+		setupLog.Info("skipping cache sync wait - starting immediately")
+		go func() {
+			// Allow some time for basic setup
+			time.Sleep(2 * time.Second)
+			setupLog.Info("manager ready - cache will sync in background")
+		}()
+	}
 
-		attempts := 0
-		for {
-			select {
-			case <-ticker.C:
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		setupLog.Error(err, "problem running manager")
+		os.Exit(1)
+	}
+}
+
+// setupControllers sets up controllers based on the operator mode
+func setupControllers(mgr ctrl.Manager, mode OperatorMode, controllersToLoad string) error {
+	switch mode {
+	case ProductionMode:
+		return setupProductionControllers(mgr)
+	case DevelopmentMode:
+		controllers := parseControllers(controllersToLoad)
+		setupLog.Info("loading controllers", "controllers", controllers)
+		return setupDevelopmentControllers(mgr, controllers)
+	case MinimalMode:
+		return setupMinimalController(mgr)
+	default:
+		return fmt.Errorf("unknown mode: %s", mode)
+	}
+}
+
+// setupProductionControllers sets up all controllers for production mode
+func setupProductionControllers(mgr ctrl.Manager) error {
+	controllers := []struct {
+		name       string
+		controller interface{ SetupWithManager(ctrl.Manager) error }
+	}{
+		{
+			name: "Neo4jEnterpriseCluster",
+			controller: &controller.Neo4jEnterpriseClusterReconciler{
+				Client:            mgr.GetClient(),
+				Scheme:            mgr.GetScheme(),
+				Recorder:          mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
+				RequeueAfter:      30 * time.Second,
+				TopologyScheduler: controller.NewTopologyScheduler(mgr.GetClient()),
+			},
+		},
+		{
+			name: "Neo4jDatabase",
+			controller: &controller.Neo4jDatabaseReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-database-controller"),
+				RequeueAfter: 30 * time.Second,
+			},
+		},
+		{
+			name: "Neo4jBackup",
+			controller: &controller.Neo4jBackupReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
+				RequeueAfter: 60 * time.Second,
+			},
+		},
+		{
+			name: "Neo4jRestore",
+			controller: &controller.Neo4jRestoreReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
+				RequeueAfter: 30 * time.Second,
+			},
+		},
+		{
+			name: "Neo4jRole",
+			controller: &controller.Neo4jRoleReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-role-controller"),
+				RequeueAfter: 30 * time.Second,
+			},
+		},
+		{
+			name: "Neo4jGrant",
+			controller: &controller.Neo4jGrantReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-grant-controller"),
+				RequeueAfter: 30 * time.Second,
+			},
+		},
+		{
+			name: "Neo4jUser",
+			controller: &controller.Neo4jUserReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-user-controller"),
+				RequeueAfter: 30 * time.Second,
+			},
+		},
+		{
+			name: "Neo4jPlugin",
+			controller: &controller.Neo4jPluginReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				RequeueAfter: 2 * time.Minute,
+			},
+		},
+	}
+
+	for _, ctrl := range controllers {
+		if err := ctrl.controller.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("failed to setup controller %s: %w", ctrl.name, err)
+		}
+		setupLog.Info("controller setup completed", "controller", ctrl.name)
+	}
+
+	return nil
+}
+
+// setupDevelopmentControllers sets up controllers based on configuration for development mode
+func setupDevelopmentControllers(mgr ctrl.Manager, controllers []string) error {
+	controllerMap := map[string]func() (interface{ SetupWithManager(ctrl.Manager) error }, string){
+		"cluster": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jEnterpriseClusterReconciler{
+				Client:            mgr.GetClient(),
+				Scheme:            mgr.GetScheme(),
+				Recorder:          mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
+				RequeueAfter:      30 * time.Second,
+				TopologyScheduler: controller.NewTopologyScheduler(mgr.GetClient()),
+			}, "Neo4jEnterpriseCluster"
+		},
+		"database": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jDatabaseReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-database-controller"),
+				RequeueAfter: 30 * time.Second,
+			}, "Neo4jDatabase"
+		},
+		"backup": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jBackupReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
+				RequeueAfter: 60 * time.Second,
+			}, "Neo4jBackup"
+		},
+		"restore": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jRestoreReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
+				RequeueAfter: 30 * time.Second,
+			}, "Neo4jRestore"
+		},
+		"role": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jRoleReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-role-controller"),
+				RequeueAfter: 30 * time.Second,
+			}, "Neo4jRole"
+		},
+		"grant": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jGrantReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-grant-controller"),
+				RequeueAfter: 30 * time.Second,
+			}, "Neo4jGrant"
+		},
+		"user": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jUserReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-user-controller"),
+				RequeueAfter: 30 * time.Second,
+			}, "Neo4jUser"
+		},
+		"plugin": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jPluginReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				RequeueAfter: 2 * time.Minute,
+			}, "Neo4jPlugin"
+		},
+	}
+
+	for _, controllerName := range controllers {
+		if factory, exists := controllerMap[controllerName]; exists {
+			ctrl, name := factory()
+			if err := ctrl.SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("failed to setup controller %s: %w", name, err)
+			}
+			setupLog.Info("loaded controller", "controller", name)
+		} else {
+			setupLog.Info("skipping unknown controller", "controller", controllerName)
+		}
+	}
+
+	return nil
+}
+
+// setupMinimalController sets up only the essential cluster controller for minimal mode
+func setupMinimalController(mgr ctrl.Manager) error {
+	if err := (&controller.Neo4jEnterpriseClusterReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
+		RequeueAfter:      30 * time.Second,
+		TopologyScheduler: controller.NewTopologyScheduler(mgr.GetClient()),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to setup Neo4jEnterpriseCluster controller: %w", err)
+	}
+
+	setupLog.Info("loaded controller", "controller", "Neo4jEnterpriseCluster")
+	return nil
+}
+
+// setupWebhooks sets up all webhooks
+func setupWebhooks(mgr ctrl.Manager) error {
+	webhooks := []struct {
+		name    string
+		webhook interface{ SetupWebhookWithManager(ctrl.Manager) error }
+	}{
+		{
+			name: "Neo4jEnterpriseCluster",
+			webhook: &webhooks.Neo4jEnterpriseClusterWebhook{
+				Client: mgr.GetClient(),
+			},
+		},
+	}
+
+	for _, wh := range webhooks {
+		if err := wh.webhook.SetupWebhookWithManager(mgr); err != nil {
+			return fmt.Errorf("failed to setup webhook %s: %w", wh.name, err)
+		}
+		setupLog.Info("webhook setup completed", "webhook", wh.name)
+	}
+
+	return nil
+}
+
+// configureDevelopmentCache sets up optimized caching for development mode
+func configureDevelopmentCache(strategy string, _ bool, minimalResources bool, _ string) cache.Options {
+	opts := cache.Options{
+		SyncPeriod: func() *time.Duration {
+			d := 30 * time.Second
+			return &d
+		}(),
+		DefaultNamespaces: map[string]cache.Config{
+			"default": {},
+		},
+	}
+
+	switch CacheStrategy(strategy) {
+	case LazyCache:
+		setupLog.Info("using lazy cache strategy for development")
+		return configureLazyCache(opts, minimalResources)
+	case SelectiveCache:
+		setupLog.Info("using selective cache strategy for development")
+		return configureSelectiveCache(opts, minimalResources)
+	case OnDemandCache:
+		setupLog.Info("using on-demand cache strategy for development")
+		return configureOnDemandCache(opts, minimalResources)
+	default:
+		setupLog.Info("using standard cache strategy for development")
+		return opts
+	}
+}
+
+// configureMinimalCache sets up ultra-fast caching for minimal mode
+func configureMinimalCache(strategy string, _ bool, _ bool, namespace string, syncPeriod *time.Duration) cache.Options {
+	opts := cache.Options{
+		SyncPeriod: syncPeriod,
+	}
+
+	if namespace != "" {
+		opts.DefaultNamespaces = map[string]cache.Config{
+			namespace: {},
+		}
+		setupLog.Info("watching single namespace for minimal cache", "namespace", namespace)
+	}
+
+	switch CacheStrategy(strategy) {
+	case OnDemandCache:
+		setupLog.Info("using on-demand cache strategy for minimal mode")
+		return configureOnDemandCache(opts, true)
+	case SelectiveCache:
+		setupLog.Info("using selective cache strategy for minimal mode")
+		return configureSelectiveCache(opts, true)
+	case LazyCache:
+		setupLog.Info("using lazy cache strategy for minimal mode")
+		return configureLazyCache(opts, true)
+	default:
+		setupLog.Info("using on-demand cache strategy for minimal mode (default)")
+		return configureOnDemandCache(opts, true)
+	}
+}
+
+// configureProductionCache sets up standard caching for production mode
+func configureProductionCache(strategy string, _ bool, minimalResources bool) cache.Options {
+	opts := cache.Options{}
+
+	switch CacheStrategy(strategy) {
+	case LazyCache:
+		setupLog.Info("using lazy cache strategy for production")
+		return configureLazyCache(opts, minimalResources)
+	case SelectiveCache:
+		setupLog.Info("using selective cache strategy for production")
+		return configureSelectiveCache(opts, minimalResources)
+	case OnDemandCache:
+		setupLog.Info("using on-demand cache strategy for production")
+		return configureOnDemandCache(opts, minimalResources)
+	default:
+		setupLog.Info("using standard cache strategy for production")
+		return opts
+	}
+}
+
+// configureLazyCache sets up lazy loading of informers
+func configureLazyCache(base cache.Options, minimalResources bool) cache.Options {
+	if minimalResources {
+		// Only cache Neo4j CRDs initially
+		base.ByObject = map[client.Object]cache.ByObject{
+			&neo4jv1alpha1.Neo4jEnterpriseCluster{}: {},
+			&neo4jv1alpha1.Neo4jDatabase{}:          {},
+		}
+	} else {
+		// Cache essential resources only
+		base.ByObject = getEssentialResourceCache()
+	}
+
+	return base
+}
+
+// configureSelectiveCache sets up selective resource caching
+func configureSelectiveCache(base cache.Options, minimalResources bool) cache.Options {
+	if minimalResources {
+		// Ultra-minimal: only cluster CRD
+		base.ByObject = map[client.Object]cache.ByObject{
+			&neo4jv1alpha1.Neo4jEnterpriseCluster{}: {},
+		}
+	} else {
+		// Selective: Neo4j CRDs + core resources we manage
+		base.ByObject = getSelectiveResourceCache()
+	}
+
+	return base
+}
+
+// configureOnDemandCache sets up on-demand informer creation
+func configureOnDemandCache(base cache.Options, minimalResources bool) cache.Options {
+	// Start with absolutely minimal cache - only what's needed for health checks
+	base.ByObject = map[client.Object]cache.ByObject{}
+
+	if !minimalResources {
+		// Keep cluster CRD for basic functionality
+		base.ByObject[&neo4jv1alpha1.Neo4jEnterpriseCluster{}] = cache.ByObject{}
+	}
+
+	return base
+}
+
+// getEssentialResourceCache returns cache config for essential resources
+func getEssentialResourceCache() map[client.Object]cache.ByObject {
+	return map[client.Object]cache.ByObject{
+		// Neo4j CRDs
+		&neo4jv1alpha1.Neo4jEnterpriseCluster{}: {},
+		&neo4jv1alpha1.Neo4jDatabase{}:          {},
+		&neo4jv1alpha1.Neo4jBackup{}:            {},
+		&neo4jv1alpha1.Neo4jRestore{}:           {},
+	}
+}
+
+// getSelectiveResourceCache returns cache config for selective resources
+func getSelectiveResourceCache() map[client.Object]cache.ByObject {
+	return map[client.Object]cache.ByObject{
+		// Neo4j CRDs
+		&neo4jv1alpha1.Neo4jEnterpriseCluster{}: {},
+		&neo4jv1alpha1.Neo4jDatabase{}:          {},
+		&neo4jv1alpha1.Neo4jBackup{}:            {},
+		&neo4jv1alpha1.Neo4jRestore{}:           {},
+		&neo4jv1alpha1.Neo4jUser{}:              {},
+		&neo4jv1alpha1.Neo4jRole{}:              {},
+		&neo4jv1alpha1.Neo4jGrant{}:             {},
+	}
+}
+
+// createReadinessCheck creates a readiness check that can optionally skip cache sync
+func createReadinessCheck(skipCacheWait bool) healthz.Checker {
+	if skipCacheWait {
+		return healthz.Ping
+	}
+	return func(_ *http.Request) error {
+		// Standard readiness check that waits for cache sync
+		return nil
+	}
+}
+
+// startupFeedback provides startup feedback based on mode and cache strategy
+func startupFeedback(mode OperatorMode, metricsAddr, probeAddr string, skipCacheWait bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			setupLog.Error(nil, "startup feedback goroutine panicked", "panic", r)
+		}
+	}()
+
+	switch mode {
+	case ProductionMode:
+		if skipCacheWait {
+			time.Sleep(2 * time.Second)
+			setupLog.Info("manager starting with cache optimizations")
+		} else {
+			time.Sleep(5 * time.Second)
+			setupLog.Info("manager is starting - waiting for informer caches to sync (this may take 30-60 seconds)")
+
+			ticker := time.NewTicker(15 * time.Second)
+			defer ticker.Stop()
+
+			attempts := 0
+			for range ticker.C {
 				attempts++
 				setupLog.Info("still waiting for startup to complete", "attempts", attempts, "tip", "this is normal for first startup")
 
-				// After a reasonable time, provide more context
 				if attempts >= 4 {
-					metricsURL := "http://localhost" + *metricsAddr + "/metrics"
-					healthURL := "http://localhost" + *probeAddr + "/healthz"
+					metricsURL := "http://localhost" + metricsAddr + "/metrics"
+					healthURL := "http://localhost" + probeAddr + "/healthz"
 					setupLog.Info("startup is taking longer than usual",
 						"note", "this can happen with slow cluster connections or many CRDs",
 						"metrics_endpoint", metricsURL,
@@ -234,10 +774,115 @@ func main() {
 				}
 			}
 		}
-	}()
 
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+	case DevelopmentMode:
+		time.Sleep(1 * time.Second)
+		if skipCacheWait {
+			setupLog.Info("manager starting with optimized cache - should be ready in 2-5 seconds")
+			time.Sleep(3 * time.Second)
+			setupLog.Info("manager should be ready now",
+				"metrics_endpoint", "http://localhost"+metricsAddr+"/metrics",
+				"health_endpoint", "http://localhost"+probeAddr+"/healthz")
+		} else {
+			setupLog.Info("manager is starting - this should be faster in dev mode")
+
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+
+			attempts := 0
+			for range ticker.C {
+				attempts++
+				if attempts <= 3 {
+					setupLog.Info("syncing informer caches", "attempt", attempts)
+				} else if attempts <= 6 {
+					setupLog.Info("still syncing - this may take a moment with many CRDs", "attempt", attempts)
+				} else {
+					metricsURL := "http://localhost" + metricsAddr + "/metrics"
+					healthURL := "http://localhost" + probeAddr + "/healthz"
+					setupLog.Info("startup is taking longer than usual",
+						"note", "this can happen with slow cluster connections or many CRDs",
+						"metrics_endpoint", metricsURL,
+						"health_endpoint", healthURL)
+					return
+				}
+			}
+		}
+
+	case MinimalMode:
+		time.Sleep(500 * time.Millisecond)
+		setupLog.Info("manager starting with minimal cache - should be ready in 1-3 seconds")
+		time.Sleep(2 * time.Second)
+		setupLog.Info("manager should be ready now",
+			"metrics_endpoint", "http://localhost"+metricsAddr+"/metrics",
+			"health_endpoint", "http://localhost"+probeAddr+"/healthz")
 	}
+}
+
+// parseControllers parses the comma-separated list of controllers
+func parseControllers(controllersStr string) []string {
+	if controllersStr == "" {
+		return []string{"cluster"}
+	}
+
+	controllers := []string{}
+	for _, c := range strings.Split(controllersStr, ",") {
+		c = strings.TrimSpace(c)
+		if c != "" {
+			controllers = append(controllers, c)
+		}
+	}
+
+	if len(controllers) == 0 {
+		return []string{"cluster"}
+	}
+
+	return controllers
+}
+
+// createDirectClientManager creates a manager that bypasses informer caching
+func createDirectClientManager(config *rest.Config, _ cache.Options, metricsAddr, probeAddr string, secureMetrics bool, mode OperatorMode, tlsOpts []func(*tls.Config), webhookServer webhook.Server, enableLeaderElection bool) (ctrl.Manager, error) {
+	setupLog.Info("creating direct client manager - bypassing informer cache for ultra-fast startup")
+
+	// Create a minimal cache that doesn't watch anything by default
+	minimalCacheOpts := cache.Options{
+		Scheme: scheme,
+		// Don't watch any resources by default - everything will be direct API calls
+		ByObject: map[client.Object]cache.ByObject{},
+	}
+
+	return ctrl.NewManager(config, ctrl.Options{
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress:   metricsAddr,
+			SecureServing: secureMetrics && mode == ProductionMode,
+			TLSOpts:       tlsOpts,
+		},
+		WebhookServer:          webhookServer,
+		HealthProbeBindAddress: probeAddr,
+		LeaderElection:         enableLeaderElection,
+		LeaderElectionID:       "neo4j-operator-leader-election-direct",
+		Cache:                  minimalCacheOpts,
+		// Enable direct client mode
+		NewClient: func(config *rest.Config, options client.Options) (client.Client, error) {
+			// Create a direct client that bypasses caching
+			directClient, err := client.New(config, options)
+			if err != nil {
+				return nil, err
+			}
+
+			setupLog.Info("created direct API client - all operations will bypass cache")
+			return directClient, nil
+		},
+	})
+}
+
+// isFlagSet checks if a flag was explicitly set by the user
+func isFlagSet(name string) bool {
+	found := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }

@@ -1,44 +1,310 @@
 version: "2"
-
 run:
-  timeout: 5m
-  allow-parallel-runners: true
+  modules-download-mode: readonly
+  issues-exit-code: 1
+  tests: true
+  go: "1.24"
+
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
 
 linters:
   enable:
-    # Base linters (enabled by default)
     - errcheck
     - govet
     - ineffassign
-    - staticcheck
     - unused
-
-    # Code quality
+    - staticcheck
+    - asasalint
+    - asciicheck
+    - bidichk
+    - copyloopvar
+    - durationcheck
+    - err113
+    - errchkjson
+    - exhaustive
+    - fatcontext
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - intrange
+    - loggercheck
+    - makezero
+    - mirror
+    - musttag
+    - nilerr
+    - nilnesserr
+    - perfsprint
+    - protogetter
+    - reassign
+    - spancheck
+    - testifylint
+    - thelper
+    - usestdlibvars
+    - wastedassign
+    - zerologlint
+    - bodyclose
+    - contextcheck
     - dupl
-    - gocyclo
+    - errname
+    - errorlint
+    - forcetypeassert
+    - ginkgolinter
+    - gocognit
     - goconst
+    - gocritic
+    - gocyclo
+    - gosec
+    - lll
+    - misspell
+    - nakedret
+    - nestif
+    - noctx
+    - nolintlint
     - prealloc
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - testpackage
     - unconvert
     - unparam
-
-    # Style
-    - revive
-    - misspell
-
-    # Security
-    - gosec
-
-    # Testing
-    - ginkgolinter
-    - testpackage
-
-    # Additional quality linters
-    - nakedret
-    - lll
-    - gocritic
-    - gocognit
-    - nestif
-    - err113
-    - nolintlint
     - whitespace
-    - wsl
+  disable:
+    - cyclop
+    - exhaustive
+    - exhaustruct
+    - funlen
+    - gochecknoglobals
+    - mnd
+    - varnamelen
+    - wrapcheck
+  settings:
+    dupl:
+      threshold: 100
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - fmt.Print
+        - fmt.Printf
+        - fmt.Println
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gocognit:
+      min-complexity: 20
+    gocritic:
+      disabled-checks:
+        - unnamedResult
+        - hugeParam
+        - rangeValCopy
+        - commentedOutCode
+        - ifElseChain
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+        - experimental
+        - opinionated
+    gocyclo:
+      min-complexity: 15
+    gosec:
+      excludes:
+        - G204
+        - G304
+        - G115
+      severity: medium
+      confidence: medium
+    govet:
+      disable:
+        - fieldalignment
+        - shadow
+      enable-all: true
+    lll:
+      line-length: 120
+      tab-width: 4
+    misspell:
+      locale: US
+      ignore-rules:
+        - Neo4j
+        - neo4j
+        - kubernetes
+        - kubectl
+        - Kubernetes
+        - StatefulSet
+        - StatefulSets
+    nestif:
+      min-complexity: 5
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: false
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+        - name: var-naming
+          disabled: true
+        - name: unexported-return
+          disabled: true
+    staticcheck:
+      checks:
+        - all
+        - "-SA1019"
+    testifylint:
+      enable-all: true
+      disable:
+        - suite-extra-assert-call
+    usestdlibvars:
+      http-method: true
+      http-status-code: true
+      time-weekday: true
+      time-month: true
+      time-layout: true
+      crypto-hash: true
+      default-rpc-path: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - deadcode
+          - dupl
+          - errcheck
+          - goconst
+          - gocognit
+          - gocyclo
+          - gosec
+          - lll
+          - structcheck
+          - unparam
+          - unused
+          - varcheck
+          - testifylint
+          - err113
+          - exhaustive
+        path: _test\.go
+      - linters:
+          - dupl
+          - gocritic
+          - gocognit
+          - gocyclo
+          - lll
+          - staticcheck
+          - unused
+          - errcheck
+          - gosec
+        path: zz_generated\.deepcopy\.go
+      - linters:
+          - unparam
+          - unused
+          - gocognit
+          - gocyclo
+        path: cmd/main\.go
+      - linters:
+          - goconst
+          - lll
+          - unused
+        path: api/.*\.go
+      - linters:
+          - unparam
+          - unused
+          - gocognit
+          - nestif
+        path: internal/webhooks/.*\.go
+      - linters:
+          - gosec
+        text: 'G104:'
+      - linters:
+          - gocritic
+        path: .*_test\.go
+        text: Magic number
+      - linters:
+          - gocritic
+        text: hugeParam.*constructor
+      - linters:
+          - gocritic
+        text: empty-block
+      - linters:
+          - errcheck
+          - gocritic
+          - gosec
+        path: hack/.*
+      - linters:
+          - errcheck
+          - gocritic
+          - gosec
+          - gocognit
+          - staticcheck
+        path: scripts/.*
+      - path: (.+)\.go$
+        text: Error return value of .((os\.)?std(out|err)\..*|.*Close|.*Flush|os\.Remove(All)?|.*print(f|ln)?|os\.(Un)?Setenv). is not checked
+      - path: (.+)\.go$
+        text: func name will be used as test\.Test.* by other packages, and that stutters; consider calling this
+      - path: (.+)\.go$
+        text: 'G104: Errors unhandled\.'
+      - path: (.+)\.go$
+        text: 'G204: Subprocess launched with variable'
+      - path: (.+)\.go$
+        text: 'G304: Potential file inclusion via variable'
+      - linters:
+          - goconst
+        path: (.+)_test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+      - vendor/
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false
+  fix: false
+  uniq-by-line: true
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/neo4j-labs/neo4j-kubernetes-operator)
+      custom-order: true
+    gofmt:
+      simplify: true
+      rewrite-rules:
+        - pattern: 'interface{}'
+          replacement: 'any'
+        - pattern: 'a[b:len(a)]'
+          replacement: 'a[b:]'
+    goimports:
+      local-prefixes:
+        - github.com/neo4j-labs/neo4j-kubernetes-operator
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+      - vendor/
+      - zz_generated\.deepcopy\.go$

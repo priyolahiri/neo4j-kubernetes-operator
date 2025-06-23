@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package resources provides utilities for building Kubernetes resources for Neo4j clusters
 package resources
 
 import (
@@ -34,7 +35,6 @@ import (
 )
 
 const (
-	// Neo4j ports
 	// BoltPort is the default port for Neo4j Bolt protocol
 	BoltPort = 7687
 	// HTTPPort is the default port for Neo4j HTTP API
@@ -50,7 +50,6 @@ const (
 	// BackupPort is the default port for Neo4j backup operations
 	BackupPort = 6362
 
-	// Container names
 	// Neo4jContainer is the name of the main Neo4j container
 	Neo4jContainer = "neo4j"
 	// SidecarContainer is the name of the sidecar container
@@ -58,7 +57,6 @@ const (
 	// InitContainer is the name of the init container
 	InitContainer = "init"
 
-	// Volume names
 	// DataVolume is the name of the data volume
 	DataVolume = "data"
 	// LogsVolume is the name of the logs volume
@@ -68,7 +66,6 @@ const (
 	// CertsVolume is the name of the certificates volume
 	CertsVolume = "certs"
 
-	// Default resource limits
 	// DefaultCPULimit is the default CPU limit for Neo4j containers
 	DefaultCPULimit = "1000m"
 	// DefaultMemoryLimit is the default memory limit for Neo4j containers
@@ -78,13 +75,22 @@ const (
 	// DefaultMemoryRequest is the default memory request for Neo4j containers
 	DefaultMemoryRequest = "1Gi"
 
-	// Admin secret names
 	// DefaultAdminSecret is the default name for admin credentials secret
 	DefaultAdminSecret = "neo4j-admin-secret"
 )
 
 // BuildPrimaryStatefulSetForEnterprise creates a StatefulSet for Neo4j primary nodes
 func BuildPrimaryStatefulSetForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *appsv1.StatefulSet {
+	return buildStatefulSetForEnterprise(cluster, "primary", cluster.Spec.Topology.Primaries)
+}
+
+// BuildSecondaryStatefulSetForEnterprise creates a StatefulSet for Neo4j secondary nodes
+func BuildSecondaryStatefulSetForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *appsv1.StatefulSet {
+	return buildStatefulSetForEnterprise(cluster, "secondary", cluster.Spec.Topology.Secondaries)
+}
+
+// buildStatefulSetForEnterprise is a helper function to create StatefulSets for both primary and secondary nodes
+func buildStatefulSetForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, role string, replicas int32) *appsv1.StatefulSet {
 	adminSecret := DefaultAdminSecret
 
 	// Configure rolling update strategy
@@ -92,6 +98,7 @@ func BuildPrimaryStatefulSetForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterprise
 		Type: appsv1.RollingUpdateStatefulSetStrategyType,
 		RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
 			// Start with maxUnavailable = 0 to prevent concurrent updates
+			// Secondaries can be updated more aggressively, but we use the same strategy for simplicity
 			Partition: nil, // Will be set during rolling upgrade orchestration
 		},
 	}
@@ -105,76 +112,27 @@ func BuildPrimaryStatefulSetForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterprise
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-primary", cluster.Name),
+			Name:      fmt.Sprintf("%s-%s", cluster.Name, role),
 			Namespace: cluster.Namespace,
-			Labels:    getLabelsForEnterprise(cluster, "primary"),
+			Labels:    getLabelsForEnterprise(cluster, role),
 		},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas:       &cluster.Spec.Topology.Primaries,
+			Replicas:       &replicas,
 			ServiceName:    fmt.Sprintf("%s-headless", cluster.Name),
 			UpdateStrategy: updateStrategy,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: getLabelsForEnterprise(cluster, "primary"),
+				MatchLabels: getLabelsForEnterprise(cluster, role),
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: getLabelsForEnterprise(cluster, "primary"),
+					Labels: getLabelsForEnterprise(cluster, role),
 					Annotations: map[string]string{
 						"prometheus.io/scrape": "true",
 						"prometheus.io/port":   "2004",
 						"prometheus.io/path":   "/metrics",
 					},
 				},
-				Spec: buildPodSpecForEnterprise(cluster, "primary", adminSecret),
-			},
-			VolumeClaimTemplates: buildVolumeClaimTemplatesForEnterprise(cluster),
-		},
-	}
-}
-
-// BuildSecondaryStatefulSetForEnterprise creates a StatefulSet for Neo4j secondary nodes
-func BuildSecondaryStatefulSetForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *appsv1.StatefulSet {
-	adminSecret := DefaultAdminSecret
-
-	// Configure rolling update strategy for secondaries
-	updateStrategy := appsv1.StatefulSetUpdateStrategy{
-		Type: appsv1.RollingUpdateStatefulSetStrategyType,
-		RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
-			// Secondaries can be updated more aggressively
-			Partition: nil,
-		},
-	}
-
-	// Configure upgrade strategy based on cluster spec
-	if cluster.Spec.UpgradeStrategy != nil {
-		if cluster.Spec.UpgradeStrategy.Strategy == "Recreate" {
-			updateStrategy.Type = appsv1.OnDeleteStatefulSetStrategyType
-		}
-	}
-
-	return &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-secondary", cluster.Name),
-			Namespace: cluster.Namespace,
-			Labels:    getLabelsForEnterprise(cluster, "secondary"),
-		},
-		Spec: appsv1.StatefulSetSpec{
-			Replicas:       &cluster.Spec.Topology.Secondaries,
-			ServiceName:    fmt.Sprintf("%s-headless", cluster.Name),
-			UpdateStrategy: updateStrategy,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: getLabelsForEnterprise(cluster, "secondary"),
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: getLabelsForEnterprise(cluster, "secondary"),
-					Annotations: map[string]string{
-						"prometheus.io/scrape": "true",
-						"prometheus.io/port":   "2004",
-						"prometheus.io/path":   "/metrics",
-					},
-				},
-				Spec: buildPodSpecForEnterprise(cluster, "secondary", adminSecret),
+				Spec: buildPodSpecForEnterprise(cluster, role, adminSecret),
 			},
 			VolumeClaimTemplates: buildVolumeClaimTemplatesForEnterprise(cluster),
 		},
@@ -406,77 +364,24 @@ func BuildCertificateForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
 	}
 }
 
-// BuildExternalSecretForTLS creates an ExternalSecret for TLS certificates (placeholder for when ESO is available)
+// BuildExternalSecretForTLS creates an ExternalSecret for TLS certificates
 func BuildExternalSecretForTLS(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) map[string]interface{} {
 	if cluster.Spec.TLS == nil || cluster.Spec.TLS.ExternalSecrets == nil || !cluster.Spec.TLS.ExternalSecrets.Enabled {
 		return nil
 	}
-
-	esConfig := cluster.Spec.TLS.ExternalSecrets
-
-	// Build data array
-	var data []map[string]interface{}
-	for _, item := range esConfig.Data {
-		secretData := map[string]interface{}{
-			"secretKey": item.SecretKey,
-		}
-
-		if item.RemoteRef != nil {
-			remoteRef := map[string]interface{}{
-				"key": item.RemoteRef.Key,
-			}
-
-			if item.RemoteRef.Property != "" {
-				remoteRef["property"] = item.RemoteRef.Property
-			}
-
-			if item.RemoteRef.Version != "" {
-				remoteRef["version"] = item.RemoteRef.Version
-			}
-
-			secretData["remoteRef"] = remoteRef
-		}
-
-		data = append(data, secretData)
-	}
-
-	// Set default refresh interval if not specified
-	refreshInterval := esConfig.RefreshInterval
-	if refreshInterval == "" {
-		refreshInterval = "1h"
-	}
-
-	return map[string]interface{}{
-		"apiVersion": "external-secrets.io/v1beta1",
-		"kind":       "ExternalSecret",
-		"metadata": map[string]interface{}{
-			"name":      fmt.Sprintf("%s-tls-external-secret", cluster.Name),
-			"namespace": cluster.Namespace,
-			"labels":    getLabelsForEnterprise(cluster, "external-secret"),
-		},
-		"spec": map[string]interface{}{
-			"secretStoreRef": map[string]interface{}{
-				"name": esConfig.SecretStoreRef.Name,
-				"kind": esConfig.SecretStoreRef.Kind,
-			},
-			"target": map[string]interface{}{
-				"name":           fmt.Sprintf("%s-tls-secret", cluster.Name),
-				"creationPolicy": "Owner",
-			},
-			"refreshInterval": refreshInterval,
-			"data":            data,
-		},
-	}
+	return buildExternalSecret(cluster, cluster.Spec.TLS.ExternalSecrets, "tls")
 }
 
-// BuildExternalSecretForAuth creates an ExternalSecret for authentication secrets (placeholder for when ESO is available)
+// BuildExternalSecretForAuth creates an ExternalSecret for authentication secrets
 func BuildExternalSecretForAuth(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) map[string]interface{} {
 	if cluster.Spec.Auth == nil || cluster.Spec.Auth.ExternalSecrets == nil || !cluster.Spec.Auth.ExternalSecrets.Enabled {
 		return nil
 	}
+	return buildExternalSecret(cluster, cluster.Spec.Auth.ExternalSecrets, "auth")
+}
 
-	esConfig := cluster.Spec.Auth.ExternalSecrets
-
+// buildExternalSecret is a helper function to create ExternalSecrets for both TLS and Auth
+func buildExternalSecret(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, esConfig *neo4jv1alpha1.ExternalSecretsConfig, secretType string) map[string]interface{} {
 	// Build data array
 	var data []map[string]interface{}
 	for _, item := range esConfig.Data {
@@ -513,7 +418,7 @@ func BuildExternalSecretForAuth(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) m
 		"apiVersion": "external-secrets.io/v1beta1",
 		"kind":       "ExternalSecret",
 		"metadata": map[string]interface{}{
-			"name":      fmt.Sprintf("%s-auth-external-secret", cluster.Name),
+			"name":      fmt.Sprintf("%s-%s-external-secret", cluster.Name, secretType),
 			"namespace": cluster.Namespace,
 			"labels":    getLabelsForEnterprise(cluster, "external-secret"),
 		},
@@ -523,7 +428,7 @@ func BuildExternalSecretForAuth(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) m
 				"kind": esConfig.SecretStoreRef.Kind,
 			},
 			"target": map[string]interface{}{
-				"name":           fmt.Sprintf("%s-auth-secret", cluster.Name),
+				"name":           fmt.Sprintf("%s-%s-secret", cluster.Name, secretType),
 				"creationPolicy": "Owner",
 			},
 			"refreshInterval": refreshInterval,

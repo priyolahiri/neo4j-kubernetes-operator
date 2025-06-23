@@ -46,6 +46,7 @@ log_header() {
 # Load configuration
 load_config() {
     if [[ -f "${DEV_CONFIG_FILE}" ]]; then
+        # shellcheck source=/dev/null
         source "${DEV_CONFIG_FILE}"
     fi
 
@@ -362,27 +363,28 @@ start_dev_env() {
 
 # Start normal development mode
 start_normal_mode() {
-    log_info "Starting in normal development mode..."
+    log_info "Starting in optimized development mode..."
 
     cd "${PROJECT_ROOT}"
 
     # Create logs directory if it doesn't exist
     mkdir -p logs
 
-    local log_file="logs/operator-$(date +%Y%m%d-%H%M%S).log"
+    local log_file
+    log_file="logs/operator-$(date +%Y%m%d-%H%M%S).log"
 
-    log_info "Operator will start shortly..."
+    log_info "🚀 Starting with fast development optimizations..."
     log_info "📊 Metrics will be available at: http://localhost:${METRICS_PORT}/metrics"
     log_info "🏥 Health probe will be available at: http://localhost:${HEALTH_PORT}/healthz"
     log_info "📝 Logs are being written to: ${log_file}"
     echo
-    log_warning "⏳ Initial startup may take 30-60 seconds while informer caches sync"
-    log_info "💡 This is normal behavior - the operator is connecting to Kubernetes and loading CRDs"
+    log_info "⚡ Using optimized startup - should be much faster!"
+    log_info "💡 Loading only essential controllers for faster startup"
     echo
 
     # Start a background process to monitor startup
     (
-        sleep 10
+        sleep 5
         while true; do
             if curl -s "http://localhost:${HEALTH_PORT}/healthz" >/dev/null 2>&1; then
                 echo
@@ -391,16 +393,19 @@ start_normal_mode() {
                 log_info "📈 Monitor metrics at: http://localhost:${METRICS_PORT}/metrics"
                 break
             fi
-            sleep 5
+            sleep 3
         done
     ) &
 
-    # Build and run the operator
-    go run cmd/main.go \
+    # Build and run the optimized development version
+    		go run cmd/main.go \
+			--mode=dev \
         --zap-devel=true \
         --zap-log-level=info \
         --leader-elect=false \
         --enable-webhooks=false \
+        --dev-mode=true \
+        --controllers=cluster \
         --metrics-bind-address=":${METRICS_PORT}" \
         --health-probe-bind-address=":${HEALTH_PORT}" \
         2>&1 | tee "${log_file}"
@@ -508,7 +513,8 @@ view_logs() {
         kubectl logs -f deployment/neo4j-operator-controller-manager -n neo4j-operator-system
     else
         # Show local logs
-        local log_file=$(ls -t logs/operator-*.log 2>/dev/null | head -1)
+        local log_file
+        log_file=$(find logs -name "operator-*.log" -type f -exec ls -t {} + 2>/dev/null | head -1)
         if [[ -n "$log_file" ]]; then
             tail -f "$log_file"
         else
@@ -558,7 +564,7 @@ debug_session() {
     echo "4. Open monitoring dashboards"
     echo "5. Inspect CRDs and resources"
 
-    read -p "Choose option (1-5): " choice
+    read -r -p "Choose option (1-5): " choice
 
     case $choice in
         1)
@@ -584,7 +590,8 @@ debug_session() {
 
 # Debug running pod
 debug_running_pod() {
-    local pod=$(kubectl get pods -l app.kubernetes.io/name=neo4j-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    local pod
+    pod=$(kubectl get pods -l app.kubernetes.io/name=neo4j-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 
     if [[ -n "$pod" ]]; then
         log_info "Debugging pod: $pod"
@@ -680,7 +687,8 @@ clean_dev_env() {
     # Stop port forwards
     for pid_file in tmp/pf-*.pid; do
         if [[ -f "$pid_file" ]]; then
-            local pid=$(cat "$pid_file")
+            local pid
+            pid=$(cat "$pid_file")
             kill "$pid" 2>/dev/null || true
             rm "$pid_file"
         fi
@@ -694,7 +702,8 @@ clean_dev_env() {
     local ports=("${METRICS_PORT:-8082}" "${HEALTH_PORT:-8083}" "${WEBHOOK_PORT:-9443}" "${PPROF_PORT:-6060}")
 
     for port in "${ports[@]}"; do
-        local pids=$(lsof -ti :$port 2>/dev/null || true)
+        local pids
+        pids=$(lsof -ti :"$port" 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
             log_warning "Force killing processes on port $port: $pids"
             echo "$pids" | xargs kill -9 2>/dev/null || true
@@ -742,12 +751,12 @@ configure_dev_env() {
     echo "6. Reset to defaults"
     echo "7. Save and exit"
 
-    read -p "Choose option (1-7): " choice
+    read -r -p "Choose option (1-7): " choice
 
     case $choice in
         1)
             echo "Development modes: development, debug, hot-reload, tilt"
-            read -p "Enter mode: " DEV_MODE
+            read -r -p "Enter mode: " DEV_MODE
             ;;
         2)
             DEBUG_ENABLED=$([[ "${DEBUG_ENABLED:-false}" == "true" ]] && echo "false" || echo "true")
@@ -762,9 +771,9 @@ configure_dev_env() {
             log_info "Webhooks: ${WEBHOOKS_ENABLED}"
             ;;
         5)
-            read -p "Cluster name [${CLUSTER_NAME}]: " new_cluster_name
+            read -r -p "Cluster name [${CLUSTER_NAME}]: " new_cluster_name
             CLUSTER_NAME="${new_cluster_name:-$CLUSTER_NAME}"
-            read -p "Namespace [${CLUSTER_NAMESPACE}]: " new_namespace
+            read -r -p "Namespace [${CLUSTER_NAMESPACE}]: " new_namespace
             CLUSTER_NAMESPACE="${new_namespace:-$CLUSTER_NAMESPACE}"
             ;;
         6)
@@ -803,7 +812,8 @@ stop_dev_env() {
     # Stop port forwards
     for pid_file in tmp/pf-*.pid; do
         if [[ -f "$pid_file" ]]; then
-            local pid=$(cat "$pid_file")
+            local pid
+            pid=$(cat "$pid_file")
             kill "$pid" 2>/dev/null || true
             rm "$pid_file"
         fi
@@ -817,7 +827,8 @@ stop_dev_env() {
     local ports=("${METRICS_PORT:-8082}" "${HEALTH_PORT:-8083}" "${WEBHOOK_PORT:-9443}")
 
     for port in "${ports[@]}"; do
-        local pids=$(lsof -ti :$port 2>/dev/null || true)
+        local pids
+        pids=$(lsof -ti :"$port" 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
             log_warning "Force killing processes on port $port: $pids"
             echo "$pids" | xargs kill -9 2>/dev/null || true
@@ -865,7 +876,7 @@ main() {
             configure_dev_env
             ;;
         "clean")
-            clean_dev_env
+            clean_dev_env "$@"
             ;;
         "tools")
             install_dev_tools

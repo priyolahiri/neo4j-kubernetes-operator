@@ -136,8 +136,8 @@ get_pod_distribution() {
     # Initialize arrays
     declare -A zone_distribution
     declare -A node_distribution
-    declare -A pod_roles
-    declare -A pod_status
+    # declare -A pod_roles    # Reserved for future detailed analysis
+    # declare -A pod_status   # Reserved for future detailed analysis
 
     RUNNING_PODS=0
     TOTAL_PODS=0
@@ -162,8 +162,8 @@ get_pod_distribution() {
             role="unknown"
         fi
 
-        pod_roles["${pod_name}"]="${role}"
-        pod_status["${pod_name}"]="${status}"
+        # pod_roles["${pod_name}"]="${role}"  # Stored for potential future use
+        # pod_status["${pod_name}"]="${status}"  # Stored for potential future use
 
         TOTAL_PODS=$((TOTAL_PODS + 1))
         if [[ "${status}" == "Running" ]]; then
@@ -189,7 +189,7 @@ get_pod_distribution() {
 
     # Store zone counts for analysis
     ZONE_COUNT=${#zone_distribution[@]}
-    ZONES=($(printf '%s\n' "${!zone_distribution[@]}" | sort))
+    mapfile -t ZONES < <(printf '%s\n' "${!zone_distribution[@]}" | sort)
 
     log_debug "Found ${TOTAL_PODS} pods (${RUNNING_PODS} running) across ${ZONE_COUNT} zones"
 }

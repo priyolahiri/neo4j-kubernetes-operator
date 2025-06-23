@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package metrics provides Prometheus metrics for the Neo4j Kubernetes Operator
 package metrics
 
 import (
@@ -31,7 +32,13 @@ const (
 	// Metric subsystem
 	subsystem = "neo4j_operator"
 
-	// Common labels
+	// MetricResultSuccess represents a successful operation
+	MetricResultSuccess = "success"
+	// MetricResultFailure represents a failed operation
+	MetricResultFailure = "failure"
+	// MetricValueTrue represents a true boolean value as string
+	MetricValueTrue = "true"
+
 	// LabelClusterName is the label key for cluster name
 	LabelClusterName = "cluster_name"
 	// LabelNamespace is the label key for namespace
@@ -244,13 +251,15 @@ func (m *ReconcileMetrics) RecordReconcile(ctx context.Context, operation string
 }
 
 // StartReconcileSpan starts a new tracing span for reconciliation
+// The caller is responsible for calling span.End()
 func (m *ReconcileMetrics) StartReconcileSpan(ctx context.Context, operation string) (context.Context, trace.Span) {
-	return tracer.Start(ctx, "reconcile."+operation,
+	ctx, span := tracer.Start(ctx, "reconcile."+operation,
 		trace.WithAttributes(
 			attribute.String("cluster.name", m.clusterName),
 			attribute.String("namespace", m.namespace),
 			attribute.String("operation", operation),
 		))
+	return ctx, span
 }
 
 // ClusterMetrics provides methods for recording cluster-related metrics
@@ -323,13 +332,15 @@ func (m *UpgradeMetrics) RecordUpgradePhase(phase string, duration time.Duration
 }
 
 // StartUpgradeSpan starts a new tracing span for upgrade operations
+// The caller is responsible for calling span.End()
 func (m *UpgradeMetrics) StartUpgradeSpan(ctx context.Context, phase string) (context.Context, trace.Span) {
-	return tracer.Start(ctx, "upgrade."+phase,
+	ctx, span := tracer.Start(ctx, "upgrade."+phase,
 		trace.WithAttributes(
 			attribute.String("cluster.name", m.clusterName),
 			attribute.String("namespace", m.namespace),
 			attribute.String("phase", phase),
 		))
+	return ctx, span
 }
 
 // BackupMetrics provides methods for recording backup-related metrics
@@ -375,11 +386,12 @@ func (m *BackupMetrics) RecordBackup(ctx context.Context, success bool, duration
 
 // StartBackupSpan starts a new tracing span for backup operations
 func (m *BackupMetrics) StartBackupSpan(ctx context.Context) (context.Context, trace.Span) {
-	return tracer.Start(ctx, "backup",
+	ctx, span := tracer.Start(ctx, "backup",
 		trace.WithAttributes(
 			attribute.String("cluster.name", m.clusterName),
 			attribute.String("namespace", m.namespace),
 		))
+	return ctx, span
 }
 
 // CypherMetrics provides methods for recording Cypher execution metrics
@@ -421,12 +433,13 @@ func (m *CypherMetrics) RecordCypherExecution(ctx context.Context, operation str
 
 // StartCypherSpan starts a new tracing span for Cypher execution
 func (m *CypherMetrics) StartCypherSpan(ctx context.Context, operation string) (context.Context, trace.Span) {
-	return tracer.Start(ctx, "cypher."+operation,
+	ctx, span := tracer.Start(ctx, "cypher."+operation,
 		trace.WithAttributes(
 			attribute.String("cluster.name", m.clusterName),
 			attribute.String("namespace", m.namespace),
 			attribute.String("operation", operation),
 		))
+	return ctx, span
 }
 
 // SecurityMetrics provides methods for recording security operation metrics
@@ -466,12 +479,13 @@ func (m *SecurityMetrics) RecordSecurityOperation(ctx context.Context, operation
 
 // StartSecuritySpan starts a new tracing span for security operations
 func (m *SecurityMetrics) StartSecuritySpan(ctx context.Context, operation string) (context.Context, trace.Span) {
-	return tracer.Start(ctx, "security."+operation,
+	ctx, span := tracer.Start(ctx, "security."+operation,
 		trace.WithAttributes(
 			attribute.String("cluster.name", m.clusterName),
 			attribute.String("namespace", m.namespace),
 			attribute.String("operation", operation),
 		))
+	return ctx, span
 }
 
 // Enhanced metrics for new features
@@ -567,7 +581,7 @@ func NewDisasterRecoveryMetrics(clusterName, namespace string) *DisasterRecovery
 }
 
 // RecordFailover records a failover event
-func (m *DisasterRecoveryMetrics) RecordFailover(ctx context.Context, success bool) {
+func (m *DisasterRecoveryMetrics) RecordFailover(_ context.Context, success bool) {
 	result := "failure"
 	if success {
 		result = "success"
@@ -590,7 +604,7 @@ func NewManualScalingMetrics(clusterName, namespace string) *ManualScalingMetric
 }
 
 // RecordPrimaryScaling records a primary node scaling event
-func (m *ManualScalingMetrics) RecordPrimaryScaling(ctx context.Context, currentReplicas, desiredReplicas int32) {
+func (m *ManualScalingMetrics) RecordPrimaryScaling(_ context.Context, currentReplicas, desiredReplicas int32) {
 	primaryCount.WithLabelValues(m.clusterName, m.namespace).Set(float64(desiredReplicas))
 
 	if desiredReplicas > currentReplicas {
@@ -601,7 +615,7 @@ func (m *ManualScalingMetrics) RecordPrimaryScaling(ctx context.Context, current
 }
 
 // RecordSecondaryScaling records a secondary node scaling event
-func (m *ManualScalingMetrics) RecordSecondaryScaling(ctx context.Context, currentReplicas, desiredReplicas int32) {
+func (m *ManualScalingMetrics) RecordSecondaryScaling(_ context.Context, currentReplicas, desiredReplicas int32) {
 	secondaryCount.WithLabelValues(m.clusterName, m.namespace).Set(float64(desiredReplicas))
 
 	if desiredReplicas > currentReplicas {

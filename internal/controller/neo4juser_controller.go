@@ -130,7 +130,11 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			"Failed to connect to Neo4j cluster")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 	}
-	defer neo4jClient.Close()
+	defer func() {
+		if err := neo4jClient.Close(); err != nil {
+			logger.Error(err, "failed to close Neo4j client")
+		}
+	}()
 
 	// Ensure user exists with correct properties
 	if err := r.ensureUser(ctx, neo4jClient, user, password); err != nil {
@@ -192,7 +196,11 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1a
 		controllerutil.RemoveFinalizer(user, UserFinalizer)
 		return ctrl.Result{}, r.Update(ctx, user)
 	}
-	defer neo4jClient.Close()
+	defer func() {
+		if err := neo4jClient.Close(); err != nil {
+			logger.Error(err, "failed to close Neo4j client during deletion")
+		}
+	}()
 
 	// Drop user
 	if err := neo4jClient.DropUser(ctx, user.Spec.Username); err != nil {
@@ -339,7 +347,9 @@ func (r *Neo4jUserReconciler) updateUserStatus(ctx context.Context, user *neo4jv
 	}
 
 	user.Status.ObservedGeneration = user.Generation
-	r.Status().Update(ctx, user)
+	if err := r.Status().Update(ctx, user); err != nil {
+		log.FromContext(ctx).Error(err, "failed to update user status")
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.

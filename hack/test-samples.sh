@@ -157,9 +157,11 @@ wait_for_resource() {
 
     log_info "Waiting for ${resource_type}/${resource_name} to be ${condition}..."
 
-    local start_time=$(date +%s)
+    local start_time
+    start_time=$(date +%s)
     while true; do
-        local current_time=$(date +%s)
+        local current_time
+        current_time=$(date +%s)
         local elapsed=$((current_time - start_time))
 
         if [[ $elapsed -gt $TIMEOUT ]]; then
@@ -271,7 +273,7 @@ test_connectivity() {
 
     # Get service name and port
     local service_name="${cluster_name}-client"
-    local port="7687"
+    # local port="7687"  # Unused variable, commented out
 
     # Port forward to test connectivity
     kubectl port-forward "service/${service_name}" 7687:7687 -n "${NAMESPACE}" &

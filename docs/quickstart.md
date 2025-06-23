@@ -906,7 +906,7 @@ kubectl run test-pod --rm -it --image=busybox -- /bin/sh
 ### For Advanced Users
 
 1. **Custom Resource Definitions**: Explore the full API reference in `docs/api-reference.md`
-2. **Operator development**: Check out the [Developer Guide](development/developer-guide.md) for contributing
+2. **Contributing**: Submit bug reports and feature requests through GitHub Issues
 3. **Multi-cluster setups**: Implement cross-region deployments
 4. **CI/CD integration**: Automate deployments with GitOps tools
 
@@ -937,3 +937,57 @@ Before going to production, ensure you have:
 ---
 
 **Need help?** Don't hesitate to reach out to the community or check our troubleshooting guides. We're here to help you succeed with Neo4j on Kubernetes!
+
+## 🔧 Optional: Neo4j CLI Tools
+
+The operator includes a `kubectl-neo4j` plugin for enhanced command-line operations:
+
+```bash
+# Install the kubectl plugin (optional)
+cd cmd/kubectl-neo4j
+make install
+
+# Use the plugin for cluster operations
+kubectl neo4j cluster status my-first-cluster
+kubectl neo4j backup create my-first-cluster
+kubectl neo4j user create --cluster my-first-cluster --username newuser
+```
+
+**Note**: The kubectl plugin provides convenience commands but is not required for basic operations.
+
+## 📊 Monitoring Your Cluster
+
+### Basic Health Checks
+
+```bash
+# Check cluster health
+kubectl get neo4jenterprisecluster my-first-cluster -o yaml
+
+# View cluster events
+kubectl get events --field-selector involvedObject.name=my-first-cluster
+
+# Check pod status
+kubectl get pods -l app.kubernetes.io/instance=my-first-cluster
+
+# View logs
+kubectl logs -l app.kubernetes.io/instance=my-first-cluster -f
+```
+
+### Accessing Neo4j Browser
+
+Once your cluster is ready:
+
+```bash
+# Port forward to access Neo4j Browser
+kubectl port-forward service/my-first-cluster-client 7474:7474 7687:7687
+
+# Open Neo4j Browser
+open http://localhost:7474
+```
+
+**Login Credentials:**
+- **Username**: `neo4j`
+- **Password**: Use the password from your secret:
+  ```bash
+  kubectl get secret neo4j-auth -o jsonpath='{.data.password}' | base64 --decode
+  ```

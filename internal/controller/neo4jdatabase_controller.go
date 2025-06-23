@@ -243,7 +243,7 @@ func (r *Neo4jDatabaseReconciler) importInitialData(ctx context.Context, client 
 	return nil
 }
 
-func (r *Neo4jDatabaseReconciler) createNeo4jClient(_ context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
+func (r *Neo4jDatabaseReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
 	// Use the enterprise client method
 	return neo4j.NewClientForEnterprise(cluster, r.Client, "neo4j-admin-secret")
 }

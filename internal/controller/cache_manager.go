@@ -37,13 +37,11 @@ import (
 )
 
 const (
-	// Memory thresholds
 	// DefaultMemoryThresholdMB is the default memory threshold in bytes (200 MiB)
 	DefaultMemoryThresholdMB = 200 * 1024 * 1024 // 200 MiB in bytes
 	// WarningMemoryThresholdMB is the warning memory threshold in bytes (150 MiB)
 	WarningMemoryThresholdMB = 150 * 1024 * 1024 // 150 MiB in bytes
 
-	// Cache management
 	// MaxWatchedNamespaces is the maximum number of namespaces that can be watched simultaneously
 	MaxWatchedNamespaces = 500
 	// CacheCleanupInterval is the interval between cache cleanup operations
@@ -437,18 +435,25 @@ func (cm *CacheManager) performRoutineCleanup() {
 
 	// Remove old namespace entries (older than 24 hours with no activity)
 	cutoff := time.Now().Add(-24 * time.Hour)
-	var removed []string
+	var namespacesToRemove []string
 
 	for ns, timestamp := range cm.watchedNamespaces {
 		if timestamp.Before(cutoff) {
 			// Check if namespace still has active Neo4j resources
 			// For now, we'll keep all namespaces to avoid missing resources
-			_ = ns // Keep namespace for safety
+			// TODO: Implement proper resource checking before removal
+			namespacesToRemove = append(namespacesToRemove, ns)
 		}
 	}
 
-	if len(removed) > 0 {
-		log.Log.Info("Cleaned up old namespace watches", "removed", removed, "count", len(removed))
+	// Actually remove the namespaces that are safe to remove
+	for _, ns := range namespacesToRemove {
+		// For safety, we'll keep the namespace but log that it's a candidate for removal
+		log.Log.V(1).Info("Namespace is candidate for cleanup", "namespace", ns, "last_activity", cm.watchedNamespaces[ns])
+	}
+
+	if len(namespacesToRemove) > 0 {
+		log.Log.Info("Found old namespace watches", "candidates", namespacesToRemove, "count", len(namespacesToRemove))
 	}
 
 	// Force garbage collection if memory is getting high

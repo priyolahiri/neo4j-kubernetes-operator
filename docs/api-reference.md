@@ -198,7 +198,7 @@ status:
 
 ## Neo4jDatabase
 
-Manages individual databases within Neo4j clusters.
+Manages individual databases within a Neo4j Enterprise cluster.
 
 ### API Version
 
@@ -212,33 +212,30 @@ Manages individual databases within Neo4j clusters.
 apiVersion: neo4j.neo4j.com/v1alpha1
 kind: Neo4jDatabase
 metadata:
-  name: database-name
+  name: my-database
   namespace: neo4j-system
 spec:
   # Target cluster
-  clusterRef:
-    name: "neo4j-cluster"           # Neo4jEnterpriseCluster name
-    namespace: "neo4j-system"       # Optional, defaults to current namespace
+  clusterRef: my-neo4j-cluster
 
-  # Database configuration
-  name: "analytics"                 # Database name in Neo4j
-  type: "standard"                  # Database type
+  # Database name
+  databaseName: "production"
 
-  # Initial data
+  # Initial data configuration
   initialData:
     cypherScript: |
-      CREATE (n:Person {name: 'Alice'});
-      CREATE (m:Person {name: 'Bob'});
-      CREATE (n)-[:KNOWS]->(m);
+      CREATE (n:User {name: 'admin'})
+      RETURN n
 
   # Access control
-  defaultAccess: "read"             # Default access level
+  access:
+    users: ["admin", "app-user"]
+    roles: ["reader", "writer"]
 
-  # Configuration options
-  options:
-    txLogRetention: "7 days"
-    dbms.memory.heap.initial_size: "512m"
-    dbms.memory.heap.max_size: "1g"
+  # Database-specific configuration
+  config:
+    "dbms.memory.heap.initial_size": "1G"
+    "dbms.memory.heap.max_size": "2G"
 ```
 
 ### Status
@@ -250,17 +247,14 @@ status:
   - type: "Ready"
     status: "True"
     reason: "DatabaseReady"
-    message: "Database is ready for use"
+    message: "Database is ready for connections"
 
-  # Database information
-  name: "analytics"
-  status: "online"
-  role: "primary"
-
-  # Access information
-  address: "neo4j://cluster.neo4j-system.svc.cluster.local:7687/analytics"
-
-  observedGeneration: 1
+  databaseInfo:
+    name: "production"
+    status: "online"
+    role: "primary"
+    size: "1.2GB"
+    lastBackup: "2024-01-15T10:30:00Z"
 ```
 
 ## Neo4jBackup
@@ -403,181 +397,507 @@ status:
   observedGeneration: 1
 ```
 
+## Neo4jPlugin
+
+Manages Neo4j plugins including APOC, GDS, and custom plugins.
+
+### API Version
+
+- **Group**: `neo4j.neo4j.com`
+- **Version**: `v1alpha1`
+- **Kind**: `Neo4jPlugin`
+
+### Specification
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jPlugin
+metadata:
+  name: apoc-plugin
+  namespace: neo4j-system
+spec:
+  # Target cluster
+  clusterRef: my-neo4j-cluster
+
+  # Plugin details
+  name: "apoc"
+  version: "5.26.0"
+  enabled: true
+
+  # Plugin source
+  source:
+    type: "official"  # official, community, custom, url
+    url: "https://custom-repo.com/plugin.jar"  # for custom type
+    checksum: "sha256:abc123..."
+    authSecret: "plugin-auth"
+
+  # Plugin configuration
+  config:
+    "apoc.export.file.enabled": "true"
+    "apoc.import.file.enabled": "true"
+
+  # Dependencies
+  dependencies:
+  - name: "graph-data-science"
+    versionConstraint: ">=2.6.0"
+    optional: false
+
+  # License configuration
+  license:
+    keySecret: "gds-license"
+    serverURL: "https://license.neo4j.com"
+
+  # Security settings
+  security:
+    allowedProcedures:
+    - "apoc.create.*"
+    - "apoc.load.*"
+    deniedProcedures:
+    - "apoc.load.jdbc"
+    sandbox: true
+    securityPolicy: "restricted"
+
+  # Resource requirements
+  resources:
+    memoryLimit: "2Gi"
+    cpuLimit: "1000m"
+    threadPoolSize: 10
+```
+
+### Status
+
+```yaml
+status:
+  phase: "Installed|Installing|Failed|Disabled"
+  conditions:
+  - type: "Installed"
+    status: "True"
+    reason: "PluginInstalled"
+    message: "Plugin installed successfully"
+
+  installedVersion: "5.26.0"
+  installationTime: "2024-01-15T10:30:00Z"
+
+  health:
+    status: "healthy"
+    lastHealthCheck: "2024-01-15T11:00:00Z"
+    errors: []
+    performance:
+      memoryUsage: "512Mi"
+      cpuUsage: "0.1"
+      executionCount: 1250
+      avgExecutionTime: "15ms"
+
+  usage:
+    proceduresCalled:
+      "apoc.create.node": 500
+      "apoc.load.json": 750
+    lastUsed: "2024-01-15T10:55:00Z"
+    usageFrequency: "high"
+```
+
+## Neo4jUser
+
+Manages Neo4j database users and their authentication.
+
+### API Version
+
+- **Group**: `neo4j.neo4j.com`
+- **Version**: `v1alpha1`
+- **Kind**: `Neo4jUser`
+
+### Specification
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jUser
+metadata:
+  name: app-user
+  namespace: neo4j-system
+spec:
+  # Target cluster
+  clusterRef: my-neo4j-cluster
+
+  # User details
+  username: "app-user"
+
+  # Password configuration
+  passwordSecret: "app-user-password"
+
+  # User roles
+  roles: ["reader", "writer"]
+
+  # Home database
+  homeDatabase: "production"
+
+  # Force password change on first login
+  requirePasswordChange: false
+
+  # Account status
+  suspended: false
+```
+
+### Status
+
+```yaml
+status:
+  phase: "Ready|Creating|Failed"
+  conditions:
+  - type: "Ready"
+    status: "True"
+    reason: "UserReady"
+    message: "User created and configured"
+
+  userInfo:
+    username: "app-user"
+    roles: ["reader", "writer"]
+    homeDatabase: "production"
+    lastLogin: "2024-01-15T10:30:00Z"
+    suspended: false
+```
+
+## Neo4jRole
+
+Manages Neo4j database roles and permissions.
+
+### API Version
+
+- **Group**: `neo4j.neo4j.com`
+- **Version**: `v1alpha1`
+- **Kind**: `Neo4jRole`
+
+### Specification
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jRole
+metadata:
+  name: analytics-role
+  namespace: neo4j-system
+spec:
+  # Target cluster
+  clusterRef: my-neo4j-cluster
+
+  # Role name
+  roleName: "analytics-role"
+
+  # Permissions
+  permissions:
+  - database: "production"
+    privileges: ["READ", "MATCH"]
+    resources: ["nodes:User", "relationships:FOLLOWS"]
+
+  - database: "analytics"
+    privileges: ["READ", "WRITE", "CREATE", "DELETE"]
+    resources: ["*"]
+
+  # Inherit from other roles
+  inheritsFrom: ["reader"]
+```
+
+### Status
+
+```yaml
+status:
+  phase: "Ready|Creating|Failed"
+  conditions:
+  - type: "Ready"
+    status: "True"
+    reason: "RoleReady"
+    message: "Role created with permissions"
+
+  roleInfo:
+    roleName: "analytics-role"
+    permissions:
+    - database: "production"
+      privileges: ["READ", "MATCH"]
+    - database: "analytics"
+      privileges: ["READ", "WRITE", "CREATE", "DELETE"]
+    inheritsFrom: ["reader"]
+```
+
+## Neo4jGrant
+
+Manages privilege grants between users, roles, and databases.
+
+### API Version
+
+- **Group**: `neo4j.neo4j.com`
+- **Version**: `v1alpha1`
+- **Kind**: `Neo4jGrant`
+
+### Specification
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jGrant
+metadata:
+  name: user-analytics-grant
+  namespace: neo4j-system
+spec:
+  # Target cluster
+  clusterRef: my-neo4j-cluster
+
+  # Grant type
+  grantType: "role"  # role, privilege
+
+  # Source (who gets the grant)
+  source:
+    type: "user"  # user, role
+    name: "app-user"
+
+  # Target (what is being granted)
+  target:
+    type: "role"  # role, privilege, database
+    name: "analytics-role"
+    database: "production"  # for database-specific grants
+
+  # Grant details (for privilege grants)
+  privileges: ["READ", "WRITE"]
+  resources: ["nodes:*", "relationships:*"]
+
+  # Conditional grants
+  conditions:
+    timeRestriction:
+      startTime: "09:00"
+      endTime: "17:00"
+      timezone: "UTC"
+    ipRestriction:
+      allowedCIDRs: ["10.0.0.0/8", "192.168.1.0/24"]
+```
+
+### Status
+
+```yaml
+status:
+  phase: "Active|Creating|Failed|Revoked"
+  conditions:
+  - type: "Active"
+    status: "True"
+    reason: "GrantActive"
+    message: "Grant is active and enforced"
+
+  grantInfo:
+    grantType: "role"
+    source: "user:app-user"
+    target: "role:analytics-role"
+    database: "production"
+    createdAt: "2024-01-15T10:30:00Z"
+    lastUsed: "2024-01-15T11:00:00Z"
+```
+
 ## Status Conditions
 
-All resources implement standard Kubernetes condition types:
+All Neo4j operator resources implement standard Kubernetes status conditions:
 
 ### Common Condition Types
 
-| Type | Description |
-|------|-------------|
-| `Ready` | Resource is ready for use |
-| `Progressing` | Operation is in progress |
-| `Degraded` | Resource is running but with reduced functionality |
-| `Available` | Resource is available for requests |
+| Type | Description | Possible Status | Reason Examples |
+|------|-------------|-----------------|-----------------|
+| `Ready` | Resource is ready for use | `True`, `False`, `Unknown` | `ClusterReady`, `DatabaseReady`, `PluginInstalled` |
+| `Progressing` | Resource is being processed | `True`, `False` | `Creating`, `Updating`, `Installing` |
+| `Degraded` | Resource is partially functional | `True`, `False` | `PartialFailure`, `ReducedCapacity` |
+| `Available` | Resource is available for connections | `True`, `False` | `ServiceAvailable`, `EndpointsReady` |
 
-### Condition Status Values
-
-| Status | Description |
-|--------|-------------|
-| `True` | Condition is satisfied |
-| `False` | Condition is not satisfied |
-| `Unknown` | Condition status cannot be determined |
-
-### Example Condition
+### Condition Structure
 
 ```yaml
 conditions:
 - type: "Ready"
-  status: "True"
-  lastTransitionTime: "2024-01-15T10:00:00Z"
-  reason: "ClusterReady"
-  message: "All cluster nodes are healthy and ready"
+  status: "True"              # True, False, Unknown
+  lastTransitionTime: "2024-01-15T10:30:00Z"
+  reason: "ClusterReady"      # CamelCase reason code
+  message: "All cluster nodes are ready and accepting connections"
 ```
+
+### Phase Values
+
+Each resource type has specific phase values:
+
+#### Neo4jEnterpriseCluster
+- `Pending` - Cluster creation in progress
+- `Ready` - Cluster is fully operational
+- `Upgrading` - Rolling upgrade in progress
+- `Scaling` - Auto-scaling operation in progress
+- `Failed` - Cluster creation or operation failed
+- `Terminating` - Cluster deletion in progress
+
+#### Neo4jDatabase
+- `Creating` - Database creation in progress
+- `Ready` - Database is ready for use
+- `Failed` - Database creation failed
+- `Terminating` - Database deletion in progress
+
+#### Neo4jPlugin
+- `Installing` - Plugin installation in progress
+- `Installed` - Plugin is installed and ready
+- `Failed` - Plugin installation failed
+- `Disabled` - Plugin is disabled
+- `Updating` - Plugin update in progress
+
+#### Neo4jBackup/Neo4jRestore
+- `Pending` - Operation queued
+- `Running` - Operation in progress
+- `Completed` - Operation completed successfully
+- `Failed` - Operation failed
+- `Cancelled` - Operation was cancelled
 
 ## Examples
 
-### Basic Cluster
+### Complete Production Cluster
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
-kind: Neo4jEnterpriseCluster
-metadata:
-  name: basic-cluster
-  namespace: default
-spec:
-  image:
-    repository: "neo4j"
-    tag: "5.26-enterprise"
-  coreServers: 3
-  readReplicas: 1
-  storage:
-    dataVolumeSize: "10Gi"
-    storageClassName: "standard"
-  security:
-    authEnabled: true
-    adminPasswordSecretName: "neo4j-admin"
-```
-
-### Production Cluster with Backups
-
-```yaml
+# Complete production setup with all resources
+---
 apiVersion: neo4j.neo4j.com/v1alpha1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: production-cluster
-  namespace: neo4j-production
+  namespace: neo4j
 spec:
+  edition: enterprise
   image:
-    repository: "neo4j"
+    repo: neo4j
     tag: "5.26-enterprise"
-  coreServers: 5
-  readReplicas: 3
 
-  resources:
-    requests:
-      memory: "4Gi"
-      cpu: "2"
-    limits:
-      memory: "8Gi"
-      cpu: "4"
+  topology:
+    primaries: 3
+    secondaries: 2
+    enforceDistribution: true
+    availabilityZones: ["us-east-1a", "us-east-1b", "us-east-1c"]
 
   storage:
-    dataVolumeSize: "100Gi"
-    logsVolumeSize: "10Gi"
-    storageClassName: "fast-ssd"
+    className: "gp3"
+    size: "500Gi"
 
-  security:
-    authEnabled: true
-    tlsEnabled: true
-    certificateSecretName: "neo4j-tls"
-    adminPasswordSecretName: "neo4j-admin"
+  auth:
+    provider: native
+    secretRef: neo4j-auth
 
-  backup:
+  tls:
+    mode: cert-manager
+    issuerRef:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+
+  autoScaling:
     enabled: true
-    schedule: "0 2 * * *"
-    retentionPolicy: "30d"
-    storageBackend:
-      type: "s3"
-      secretName: "backup-credentials"
-      config:
-        bucket: "neo4j-prod-backups"
-        region: "us-west-2"
+    primaries:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 7
+      metrics:
+      - type: cpu
+        target: "70"
+      - type: memory
+        target: "80"
+    secondaries:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 10
+      metrics:
+      - type: connection_count
+        target: "100"
 
-  monitoring:
-    enabled: true
-    prometheusEnabled: true
-```
-
-### Database with Initial Data
-
-```yaml
+---
 apiVersion: neo4j.neo4j.com/v1alpha1
 kind: Neo4jDatabase
 metadata:
-  name: analytics-db
-  namespace: neo4j-production
+  name: production-db
+  namespace: neo4j
 spec:
-  clusterRef:
-    name: "production-cluster"
-  name: "analytics"
-  type: "standard"
-
+  clusterRef: production-cluster
+  databaseName: "production"
   initialData:
     cypherScript: |
-      // Create indexes
-      CREATE INDEX person_name IF NOT EXISTS FOR (p:Person) ON (p.name);
-      CREATE INDEX company_name IF NOT EXISTS FOR (c:Company) ON (c.name);
+      CREATE CONSTRAINT user_email IF NOT EXISTS FOR (u:User) REQUIRE u.email IS UNIQUE;
+      CREATE INDEX user_name IF NOT EXISTS FOR (u:User) ON (u.name);
 
-      // Create initial data
-      CREATE (alice:Person {name: 'Alice', role: 'Data Scientist'});
-      CREATE (bob:Person {name: 'Bob', role: 'Engineer'});
-      CREATE (neo4j:Company {name: 'Neo4j', industry: 'Graph Technology'});
+---
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jPlugin
+metadata:
+  name: apoc
+  namespace: neo4j
+spec:
+  clusterRef: production-cluster
+  name: apoc
+  version: "5.26.0"
+  source:
+    type: official
+  config:
+    "apoc.export.file.enabled": "true"
+    "apoc.import.file.enabled": "true"
 
-      // Create relationships
-      CREATE (alice)-[:WORKS_FOR]->(neo4j);
-      CREATE (bob)-[:WORKS_FOR]->(neo4j);
-      CREATE (alice)-[:COLLABORATES_WITH]->(bob);
+---
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jUser
+metadata:
+  name: app-user
+  namespace: neo4j
+spec:
+  clusterRef: production-cluster
+  username: "app-user"
+  passwordSecret: "app-user-password"
+  roles: ["reader", "writer"]
+  homeDatabase: "production"
 
-  options:
-    txLogRetention: "7 days"
-    dbms.memory.heap.initial_size: "1g"
-    dbms.memory.heap.max_size: "2g"
-```
-
-### Automated Backup Configuration
-
-```yaml
+---
 apiVersion: neo4j.neo4j.com/v1alpha1
 kind: Neo4jBackup
 metadata:
-  name: daily-full-backup
-  namespace: neo4j-production
+  name: daily-backup
+  namespace: neo4j
 spec:
-  database:
-    clusterRef:
-      name: "production-cluster"
-    # Omit name for full cluster backup
-
-  schedule: "0 2 * * *"  # Daily at 2 AM
-  type: "full"
-
+  target:
+    kind: Cluster
+    name: production-cluster
   storage:
-    type: "s3"
-    secretName: "backup-credentials"
-    config:
-      bucket: "neo4j-prod-backups"
-      path: "/daily-full"
-      region: "us-west-2"
-
+    type: s3
+    bucket: neo4j-backups
+    path: /daily
+  schedule: "0 2 * * *"
   retention:
-    keepLast: 7
-    keepDaily: 30
-    keepWeekly: 12
-    keepMonthly: 6
+    maxAge: "30d"
+    maxCount: 30
+```
 
-  options:
-    compression: true
-    encryption: true
-    consistencyCheck: true
+### Multi-Cluster Global Deployment
+
+```yaml
+# Primary cluster in US-East
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: global-primary
+  namespace: neo4j
+spec:
+  multiCluster:
+    enabled: true
+    topology:
+      clusters:
+      - name: "us-east-primary"
+        region: "us-east-1"
+        endpoint: "global-primary.neo4j.svc.cluster.local:7687"
+        nodeAllocation:
+          primaries: 3
+          secondaries: 2
+      - name: "eu-west-secondary"
+        region: "eu-west-1"
+        endpoint: "global-secondary.neo4j.svc.cluster.local:7687"
+        nodeAllocation:
+          primaries: 1
+          secondaries: 2
+      strategy: "active-passive"
+      primaryCluster: "us-east-primary"
+
+    networking:
+      type: "cilium"
+      cilium:
+        clusterMesh:
+          enabled: true
+          clusterId: 1
+        encryption:
+          enabled: true
+          type: "wireguard"
 ```

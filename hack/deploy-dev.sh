@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 CLUSTER_NAME="neo4j-operator-dev"
 NAMESPACE="neo4j-operator-system"
 CERT_MANAGER_VERSION="v1.13.0"
-PROMETHEUS_VERSION="v0.68.0"
+# PROMETHEUS_VERSION="v0.68.0"  # Reserved for future Prometheus setup
 
 print_status() {
     echo -e "${BLUE}[INFO]${NC} $1"

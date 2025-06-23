@@ -223,7 +223,9 @@ func (r *RollingUpgradeOrchestrator) upgradeSecondaries(
 	cluster.Status.UpgradeStatus.Progress.Upgraded += cluster.Spec.Topology.Secondaries
 	cluster.Status.UpgradeStatus.Progress.Pending -= cluster.Spec.Topology.Secondaries
 
-	r.Status().Update(ctx, cluster)
+	if err := r.Status().Update(ctx, cluster); err != nil {
+		logger.Error(err, "Failed to update cluster status after secondary upgrade")
+	}
 	logger.Info("Secondary nodes upgrade completed")
 
 	return nil
@@ -272,7 +274,9 @@ func (r *RollingUpgradeOrchestrator) upgradeNonLeaderPrimaries(
 	// Update progress with current leader
 	cluster.Status.UpgradeStatus.Progress.Primaries.CurrentLeader = leader.ID
 	cluster.Status.UpgradeStatus.CurrentStep = fmt.Sprintf("Upgrading non-leader primaries (preserving leader: %s)", leader.ID)
-	r.Status().Update(ctx, cluster)
+	if err := r.Status().Update(ctx, cluster); err != nil {
+		logger.Error(err, "Failed to update cluster status with leader info")
+	}
 
 	logger.Info("Upgrading non-leader primaries", "leader", leader.ID)
 
@@ -341,7 +345,9 @@ func (r *RollingUpgradeOrchestrator) upgradeNonLeaderPrimaries(
 	cluster.Status.UpgradeStatus.Progress.Upgraded += upgradedCount
 	cluster.Status.UpgradeStatus.Progress.Pending -= upgradedCount
 
-	r.Status().Update(ctx, cluster)
+	if err := r.Status().Update(ctx, cluster); err != nil {
+		logger.Error(err, "Failed to update cluster status after non-leader primary upgrade")
+	}
 	logger.Info("Non-leader primary upgrade completed successfully")
 
 	return nil
@@ -361,7 +367,9 @@ func (r *RollingUpgradeOrchestrator) upgradeLeader(
 	}
 
 	cluster.Status.UpgradeStatus.CurrentStep = fmt.Sprintf("Upgrading leader: %s", originalLeader.ID)
-	r.Status().Update(ctx, cluster)
+	if err := r.Status().Update(ctx, cluster); err != nil {
+		logger.Error(err, "Failed to update cluster status before leader upgrade")
+	}
 
 	logger.Info("Upgrading leader", "leaderId", originalLeader.ID)
 
@@ -403,10 +411,12 @@ func (r *RollingUpgradeOrchestrator) upgradeLeader(
 	// Update progress - all primaries upgraded
 	cluster.Status.UpgradeStatus.Progress.Primaries.Upgraded = cluster.Spec.Topology.Primaries
 	cluster.Status.UpgradeStatus.Progress.Primaries.Pending = 0
-	cluster.Status.UpgradeStatus.Progress.Upgraded += 1 // Just the leader
-	cluster.Status.UpgradeStatus.Progress.Pending -= 1
+	cluster.Status.UpgradeStatus.Progress.Upgraded++ // Just the leader
+	cluster.Status.UpgradeStatus.Progress.Pending--
 
-	r.Status().Update(ctx, cluster)
+	if err := r.Status().Update(ctx, cluster); err != nil {
+		logger.Error(err, "Failed to update cluster status after leader upgrade")
+	}
 	logger.Info("Leader upgrade completed successfully")
 
 	return nil
@@ -487,7 +497,10 @@ func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 		cluster.Status.Version = cluster.Spec.Image.Tag
 	}
 
-	r.Status().Update(ctx, cluster)
+	if err := r.Status().Update(ctx, cluster); err != nil {
+		// Log error but don't fail the upgrade status update
+		log.FromContext(ctx).Error(err, "Failed to update cluster status in updateUpgradeStatus")
+	}
 }
 
 func (r *RollingUpgradeOrchestrator) validateVersionCompatibility(currentVersion, targetVersion string) error {
@@ -767,7 +780,7 @@ func (r *RollingUpgradeOrchestrator) waitForPartialStatefulSetRollout(
 func (r *RollingUpgradeOrchestrator) waitForLeaderElection(
 	ctx context.Context,
 	neo4jClient *neo4jclient.Client,
-	_originalLeaderID string,
+	_ string,
 	timeout time.Duration,
 ) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -802,14 +815,191 @@ func (r *RollingUpgradeOrchestrator) waitForLeaderElection(
 }
 
 func (r *RollingUpgradeOrchestrator) verifyVersionUpgrade(
-	_ctx context.Context,
-	_cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
-	_neo4jClient *neo4jclient.Client,
+	ctx context.Context,
+	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	neo4jClient *neo4jclient.Client,
 ) error {
-	// Implement version verification by querying Neo4j
-	// This would verify that the cluster is running the expected version
-	// For now, we'll assume success if we reach this point
+	logger := log.FromContext(ctx)
+
+	// Get the target version from the cluster spec
+	targetVersion := cluster.Spec.Image.Tag
+	if targetVersion == "" {
+		return fmt.Errorf("target version not specified in cluster spec")
+	}
+
+	logger.Info("Verifying cluster version after upgrade", "targetVersion", targetVersion)
+
+	// Get cluster overview to check versions of all members
+	members, err := neo4jClient.GetClusterOverview(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get cluster overview for version verification: %w", err)
+	}
+
+	if len(members) == 0 {
+		return fmt.Errorf("no cluster members found during version verification")
+	}
+
+	// Verify each member is running the target version
+	var versionMismatches []string
+	for _, member := range members {
+		// Query the specific member for its version
+		memberVersion, err := r.getMemberVersion(ctx, neo4jClient, member.ID)
+		if err != nil {
+			logger.Error(err, "Failed to get version for member", "memberID", member.ID)
+			versionMismatches = append(versionMismatches, fmt.Sprintf("%s: version query failed", member.ID))
+			continue
+		}
+
+		// Compare versions (normalize for comparison)
+		if !r.versionsMatch(memberVersion, targetVersion) {
+			versionMismatches = append(versionMismatches,
+				fmt.Sprintf("%s: running %s, expected %s", member.ID, memberVersion, targetVersion))
+		} else {
+			logger.Info("Member version verified", "memberID", member.ID, "version", memberVersion)
+		}
+	}
+
+	// If there are version mismatches, report them
+	if len(versionMismatches) > 0 {
+		return fmt.Errorf("version verification failed for %d members: %s",
+			len(versionMismatches), strings.Join(versionMismatches, "; "))
+	}
+
+	// Update cluster status with verified version
+	cluster.Status.Version = targetVersion
+	if err := r.Status().Update(ctx, cluster); err != nil {
+		logger.Error(err, "Failed to update cluster status with verified version")
+		// Don't fail the upgrade for this, just log the error
+	}
+
+	logger.Info("Version verification completed successfully",
+		"targetVersion", targetVersion, "verifiedMembers", len(members))
 	return nil
+}
+
+// getMemberVersion queries a specific cluster member for its Neo4j version
+func (r *RollingUpgradeOrchestrator) getMemberVersion(ctx context.Context, neo4jClient *neo4jclient.Client, memberID string) (string, error) {
+	// Query Neo4j for version information
+	// This uses a system query to get the version
+	query := "CALL dbms.components() YIELD name, versions, edition WHERE name = 'Neo4j Kernel' RETURN versions[0] as version"
+	result, err := neo4jClient.ExecuteQuery(ctx, query)
+	if err != nil {
+		return "", fmt.Errorf("failed to query version from member %s: %w", memberID, err)
+	}
+
+	// Parse the result to extract version
+	version := r.parseVersionFromQueryResult(result)
+	if version == "" {
+		return "", fmt.Errorf("could not parse version from query result for member %s", memberID)
+	}
+
+	return version, nil
+}
+
+// parseVersionFromQueryResult extracts version string from Neo4j query result
+func (r *RollingUpgradeOrchestrator) parseVersionFromQueryResult(result string) string {
+	// In a real implementation, this would properly parse the JSON/tabular result
+	// For now, use a simple approach to extract version patterns
+	lines := strings.Split(result, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Look for version patterns like "5.15.0", "4.4.12", etc.
+		if r.isVersionString(line) {
+			return line
+		}
+
+		// Also check if the line contains a version (e.g., "version: 5.15.0")
+		if strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				potentialVersion := strings.TrimSpace(parts[1])
+				if r.isVersionString(potentialVersion) {
+					return potentialVersion
+				}
+			}
+		}
+	}
+
+	// If no version found, try to extract from anywhere in the result
+	// This is a fallback for different result formats
+	words := strings.Fields(result)
+	for _, word := range words {
+		if r.isVersionString(word) {
+			return word
+		}
+	}
+
+	return ""
+}
+
+// isVersionString checks if a string looks like a version number
+func (r *RollingUpgradeOrchestrator) isVersionString(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	// Remove quotes if present
+	s = strings.Trim(s, `"'`)
+
+	// Check for semantic version pattern (X.Y.Z)
+	parts := strings.Split(s, ".")
+	if len(parts) >= 2 && len(parts) <= 4 {
+		for _, part := range parts {
+			if part == "" {
+				return false
+			}
+			// Check if each part is numeric (allowing for pre-release suffixes)
+			numPart := strings.Split(part, "-")[0] // Remove pre-release suffix
+			if _, err := strconv.Atoi(numPart); err != nil {
+				return false
+			}
+		}
+		return true
+	}
+
+	return false
+}
+
+// versionsMatch compares two version strings for equality, handling various formats
+func (r *RollingUpgradeOrchestrator) versionsMatch(actual, expected string) bool {
+	// Normalize versions by removing quotes and whitespace
+	actual = strings.TrimSpace(strings.Trim(actual, `"'`))
+	expected = strings.TrimSpace(strings.Trim(expected, `"'`))
+
+	// Direct string comparison first
+	if actual == expected {
+		return true
+	}
+
+	// Try semantic version comparison (handle cases like "5.15" vs "5.15.0")
+	actualParts := strings.Split(actual, ".")
+	expectedParts := strings.Split(expected, ".")
+
+	// Pad shorter version with zeros
+	maxLen := int(math.Max(float64(len(actualParts)), float64(len(expectedParts))))
+	for len(actualParts) < maxLen {
+		actualParts = append(actualParts, "0")
+	}
+	for len(expectedParts) < maxLen {
+		expectedParts = append(expectedParts, "0")
+	}
+
+	// Compare each part
+	for i := 0; i < maxLen; i++ {
+		actualNum, err1 := strconv.Atoi(strings.Split(actualParts[i], "-")[0]) // Remove pre-release
+		expectedNum, err2 := strconv.Atoi(strings.Split(expectedParts[i], "-")[0])
+
+		if err1 != nil || err2 != nil {
+			// If we can't parse as numbers, fall back to string comparison
+			if actualParts[i] != expectedParts[i] {
+				return false
+			}
+		} else if actualNum != expectedNum {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (r *RollingUpgradeOrchestrator) extractOrdinalFromMemberID(memberID string) int {

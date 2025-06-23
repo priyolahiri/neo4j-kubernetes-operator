@@ -14,6 +14,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+const (
+	// TopologyZoneKey is the standard Kubernetes topology zone key
+	TopologyZoneKey = "topology.kubernetes.io/zone"
+)
+
 // TopologyScheduler handles topology-aware placement of Neo4j cluster pods
 type TopologyScheduler struct {
 	client.Client
@@ -121,7 +126,7 @@ func (ts *TopologyScheduler) buildTopologySpreadConstraints(cluster *neo4jv1alph
 	constraints := []corev1.TopologySpreadConstraint{}
 
 	// Default topology key is zone if not specified
-	topologyKey := "topology.kubernetes.io/zone"
+	topologyKey := TopologyZoneKey
 	if config.TopologyKey != "" {
 		topologyKey = config.TopologyKey
 	}
@@ -185,7 +190,7 @@ func (ts *TopologyScheduler) buildPodAntiAffinity(cluster *neo4jv1alpha1.Neo4jEn
 	config := cluster.Spec.Topology.Placement.AntiAffinity
 
 	// Default topology key is zone
-	topologyKey := "topology.kubernetes.io/zone"
+	topologyKey := TopologyZoneKey
 	if config.TopologyKey != "" {
 		topologyKey = config.TopologyKey
 	}
@@ -402,15 +407,15 @@ func isDistributionBalanced(counts []int32, maxSkew int32) bool {
 		return true
 	}
 
-	var min, max = counts[0], counts[0]
+	var minVal, maxVal = counts[0], counts[0]
 	for _, count := range counts[1:] {
-		if count < min {
-			min = count
+		if count < minVal {
+			minVal = count
 		}
-		if count > max {
-			max = count
+		if count > maxVal {
+			maxVal = count
 		}
 	}
 
-	return max-min <= maxSkew
+	return maxVal-minVal <= maxSkew
 }

@@ -653,7 +653,11 @@ func (r *Neo4jRestoreReconciler) waitForClusterReady(ctx context.Context, cluste
 					logger.Info("Failed to create Neo4j client, retrying...")
 					continue
 				}
-				defer neo4jClient.Close()
+				defer func() {
+					if err := neo4jClient.Close(); err != nil {
+						logger.Error(err, "failed to close Neo4j client")
+					}
+				}()
 
 				if err := neo4jClient.VerifyConnectivity(ctx); err != nil {
 					logger.Info("Neo4j not ready yet, retrying...")
@@ -679,7 +683,11 @@ func (r *Neo4jRestoreReconciler) runRestoreHooks(ctx context.Context, restore *n
 		if err != nil {
 			return fmt.Errorf("failed to create Neo4j client for hooks: %w", err)
 		}
-		defer neo4jClient.Close()
+		defer func() {
+			if err := neo4jClient.Close(); err != nil {
+				logger.Error(err, "failed to close Neo4j client")
+			}
+		}()
 
 		for _, statement := range hooks.CypherStatements {
 			if err := neo4jClient.ExecuteCypher(ctx, restore.Spec.DatabaseName, statement); err != nil {

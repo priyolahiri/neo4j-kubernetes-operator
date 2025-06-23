@@ -163,10 +163,10 @@ run_normal() {
 
     go run cmd/main.go \
         --zap-devel=true \
-        --zap-log-level=${LOG_LEVEL} \
+        --zap-log-level="${LOG_LEVEL}" \
         --leader-elect=false \
-        --metrics-bind-address=:${METRICS_PORT} \
-        --health-probe-bind-address=:${HEALTH_PORT}
+        --metrics-bind-address=:"${METRICS_PORT}" \
+        --health-probe-bind-address=:"${HEALTH_PORT}"
 }
 
 # Main function

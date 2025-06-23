@@ -476,7 +476,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 }
 
 // createNeo4jClient creates a Neo4j client for cluster operations
-func (r *Neo4jEnterpriseClusterReconciler) createNeo4jClient(_ context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*neo4jclient.Client, error) {
+func (r *Neo4jEnterpriseClusterReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*neo4jclient.Client, error) {
 	// Get admin credentials
 	adminSecretName := DefaultAdminSecretName
 	if cluster.Spec.Auth != nil && cluster.Spec.Auth.AdminSecret != "" {

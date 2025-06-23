@@ -16,8 +16,6 @@ The Neo4j Enterprise Operator for Kubernetes provides a complete solution for de
 
 **Ready for production?** → [📋 Complete Documentation](docs/README.md)
 
-**Want to contribute?** → [👨‍💻 Developer Guide](docs/development/developer-guide.md)
-
 ### 5-Minute Demo
 
 ```bash
@@ -40,7 +38,8 @@ spec:
     repo: neo4j
     tag: "5.26-enterprise"
   topology:
-    primaries: 1
+    primaries: 3
+    secondaries: 1
   storage:
     className: "standard"
     size: "10Gi"
@@ -60,29 +59,36 @@ kubectl port-forward service/my-neo4j-cluster-client 7474:7474 7687:7687
 
 - **High Availability**: Multi-replica clusters with automatic failover
 - **Topology-Aware Placement**: Distribute instances across availability zones
-- **Auto-scaling**: Dynamic scaling based on CPU, memory, and custom metrics
-- **Multi-cluster Deployments**: Cross-region and multi-cloud support
+- **Intelligent Auto-scaling**: Dynamic scaling based on CPU, memory, connections, and query performance
+- **Multi-cluster Deployments**: Cross-region and multi-cloud support with service mesh integration
 
 ### 🔒 **Security & Compliance**
 
-- **Enterprise Authentication**: LDAP, Active Directory, and SSO integration
-- **TLS Encryption**: End-to-end encryption for all communications
+- **Enterprise Authentication**: LDAP, Active Directory, JWT, and Kerberos integration
+- **TLS Encryption**: End-to-end encryption with cert-manager and external secrets integration
 - **RBAC Integration**: Kubernetes-native role-based access control
 - **OpenShift Certified**: Red Hat certified for enterprise platforms
 
 ### 📊 **Data Protection & Recovery**
 
-- **Automated Backups**: Scheduled backups to cloud storage (S3, GCS, Azure)
-- **Point-in-Time Recovery**: Restore to specific timestamps
-- **Disaster Recovery**: Cross-region replication and automated failover
-- **Multi-Database Support**: Isolated databases within clusters
+- **Automated Backups**: Scheduled backups to cloud storage (S3, GCS, Azure Blob)
+- **Point-in-Time Recovery**: Restore to specific timestamps with comprehensive validation
+- **Disaster Recovery**: Cross-region replication and automated failover coordination
+- **Multi-Database Support**: Isolated databases within clusters with granular permissions
 
 ### 🔧 **Operations & Monitoring**
 
-- **Prometheus Integration**: Comprehensive metrics and alerting
-- **Query Monitoring**: Performance tracking and optimization
-- **Plugin Management**: Dynamic plugin installation and management
-- **Rolling Updates**: Zero-downtime upgrades and configuration changes
+- **Prometheus Integration**: Comprehensive metrics collection and alerting
+- **Query Performance Monitoring**: Real-time query analysis, slow query detection, and optimization recommendations
+- **Plugin Management**: Dynamic plugin installation with version management
+- **Rolling Updates**: Zero-downtime upgrades with comprehensive health checks
+
+### ⚡ **Performance & Scaling**
+
+- **Auto-scaling Engine**: Multi-metric scaling with CPU, memory, connection count, query latency, and custom metrics
+- **Zone-Aware Scaling**: Intelligent distribution across availability zones
+- **Quorum Protection**: Maintains cluster integrity during scaling operations
+- **Custom Scaling Algorithms**: Webhook-based and machine learning-powered scaling decisions
 
 ## 📋 Documentation
 
@@ -90,8 +96,8 @@ kubectl port-forward service/my-neo4j-cluster-client 7474:7474 7687:7687
 |-------|-------------|----------|
 | [📖 Quickstart](docs/quickstart.md) | Get started in 5 minutes | New users |
 | [📋 Complete Documentation](docs/README.md) | All guides and references | All users |
-| [🏗️ Architecture](docs/development/architecture.md) | System design and components | Developers |
-| [👨‍💻 Developer Guide](docs/development/developer-guide.md) | Contributing and development | Contributors |
+| [🔧 Auto-scaling Guide](docs/auto-scaling-guide.md) | Intelligent scaling configuration | Production users |
+| [🌍 Multi-cluster Guide](docs/multi-cluster-deployment-guide.md) | Global deployments | Enterprise users |
 
 ### 🎯 **Quick Navigation**
 
@@ -99,7 +105,8 @@ kubectl port-forward service/my-neo4j-cluster-client 7474:7474 7687:7687
 - **Production deployment?** → [Multi-cluster Guide](docs/multi-cluster-deployment-guide.md)
 - **Need high availability?** → [Topology-Aware Placement](docs/topology-aware-placement.md)
 - **Planning disaster recovery?** → [Disaster Recovery Guide](docs/disaster-recovery-guide.md)
-- **Performance optimization?** → [Performance Guide](docs/performance-optimizations.md)
+- **Performance optimization?** → [Performance Guide](docs/performance-guide.md)
+- **Auto-scaling setup?** → [Auto-scaling Guide](docs/auto-scaling-guide.md)
 
 ## 🏢 Enterprise & OpenShift
 
@@ -131,11 +138,12 @@ kubectl port-forward service/my-neo4j-cluster-client 7474:7474 7687:7687
 
 ### Contributing
 
-We welcome contributions! See our [Developer Guide](docs/development/developer-guide.md) for:
+We welcome contributions! This project follows standard open-source contribution practices:
 
-- Development environment setup
-- Testing and code quality standards
-- Contribution guidelines and workflows
+- **Bug Reports**: Use GitHub Issues with detailed reproduction steps
+- **Feature Requests**: Discuss in GitHub Discussions before implementation
+- **Code Contributions**: Fork, create feature branch, and submit pull request
+- **Documentation**: Help improve user guides and API documentation
 
 ## 📄 License
 

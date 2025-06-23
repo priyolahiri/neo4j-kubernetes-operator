@@ -126,6 +126,29 @@ lint: golangci-lint ## Run golangci-lint linter
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
 
+.PHONY: lint-staticcheck
+lint-staticcheck: staticcheck ## Run staticcheck static analysis
+	$(STATICCHECK) ./...
+
+.PHONY: lint-comprehensive
+lint-comprehensive: golangci-lint staticcheck ## Run comprehensive static analysis (golangci-lint + staticcheck)
+	@echo "🔍 Running comprehensive static analysis..."
+	@echo "📋 Running golangci-lint..."
+	$(GOLANGCI_LINT) run
+	@echo "🔬 Running staticcheck..."
+	$(STATICCHECK) ./...
+	@echo "✅ Static analysis completed successfully!"
+
+.PHONY: lint-all
+lint-all: lint-comprehensive ## Alias for comprehensive static analysis
+
+.PHONY: lint-fix-all
+lint-fix-all: golangci-lint staticcheck ## Run all linters with auto-fixing where possible
+	@echo "🔧 Running linters with auto-fixing..."
+	$(GOLANGCI_LINT) run --fix
+	@echo "📝 Note: staticcheck issues need manual fixing"
+	$(STATICCHECK) ./...
+
 format: golangci-lint ## Format Go code using golangci-lint formatters
 	$(GOLANGCI_LINT) fmt
 
@@ -527,12 +550,14 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+STATICCHECK = $(LOCALBIN)/staticcheck
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.4.3
 CONTROLLER_TOOLS_VERSION ?= v0.16.1
 ENVTEST_VERSION ?= release-0.19
 GOLANGCI_LINT_VERSION ?= v2.1.6
+STATICCHECK_VERSION ?= 2025.1.1
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -552,7 +577,12 @@ $(ENVTEST): $(LOCALBIN)
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
-	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: staticcheck
+staticcheck: $(STATICCHECK) ## Download staticcheck locally if necessary.
+$(STATICCHECK): $(LOCALBIN)
+	$(call go-install-tool,$(STATICCHECK),honnef.co/go/tools/cmd/staticcheck,$(STATICCHECK_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
@@ -655,6 +685,31 @@ dev-dashboard: ## Show development environment dashboard.
 .PHONY: dev-start
 dev-start: ## Start development environment.
 	@scripts/dev-environment.sh start
+
+.PHONY: dev-start-fast
+dev-start-fast: ## Start development environment with fast optimizations.
+	@echo "🚀 Starting optimized development environment..."
+	@go run cmd/main.go \
+		--mode=dev \
+		--zap-devel=true \
+		--zap-log-level=info \
+		--leader-elect=false \
+		--enable-webhooks=false \
+		--controllers=cluster
+
+.PHONY: dev-start-minimal
+dev-start-minimal: ## Start development environment with minimal configuration for fastest startup.
+	@echo "⚡ Starting MINIMAL development environment for fastest startup..."
+	@go run cmd/main.go \
+		--mode=minimal \
+		--zap-devel=true \
+		--zap-log-level=info \
+		--namespace=default \
+		--sync-period=30s
+
+.PHONY: dev-startup-help
+dev-startup-help: ## Show all available development startup options and their performance characteristics.
+	@scripts/startup-help.sh
 
 .PHONY: dev-stop
 dev-stop: ## Stop development environment.

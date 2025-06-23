@@ -48,6 +48,8 @@ type Neo4jGrantReconciler struct {
 const (
 	// GrantFinalizer is the finalizer for Neo4j grant resources
 	GrantFinalizer = "neo4j.com/grant-finalizer"
+	// StatusReady represents the ready condition type
+	StatusReady = "Ready"
 )
 
 // +kubebuilder:rbac:groups=neo4j.com,resources=neo4jgrants,verbs=get;list;watch;create;update;patch;delete
@@ -276,7 +278,7 @@ func (r *Neo4jGrantReconciler) createNeo4jClient(_ context.Context, cluster *neo
 
 func (r *Neo4jGrantReconciler) isClusterReady(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) bool {
 	for _, condition := range cluster.Status.Conditions {
-		if condition.Type == "Ready" && condition.Status == metav1.ConditionTrue {
+		if condition.Type == StatusReady && condition.Status == metav1.ConditionTrue {
 			return true
 		}
 	}
@@ -287,7 +289,7 @@ func (r *Neo4jGrantReconciler) updateGrantStatus(ctx context.Context, grant *neo
 	status metav1.ConditionStatus, reason, message string) {
 
 	condition := metav1.Condition{
-		Type:               "Ready",
+		Type:               StatusReady,
 		Status:             status,
 		Reason:             reason,
 		Message:            message,
