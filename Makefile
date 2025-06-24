@@ -189,6 +189,8 @@ install-hooks: ## Install pre-commit hooks.
 .PHONY: dev-cluster
 dev-cluster: ## Create a Kind cluster for development.
 	@echo "Creating development cluster..."
+	@echo "Setting up Kind cluster prerequisites..."
+	@./scripts/setup-kind-dirs.sh
 	@if ! kind get clusters | grep -q "neo4j-operator-dev"; then \
 		kind create cluster --config hack/kind-config.yaml; \
 		echo "Waiting for cluster to be ready..."; \
@@ -305,6 +307,8 @@ test-topology: ## Test topology-aware placement features.
 .PHONY: dev-cluster-multizone
 dev-cluster-multizone: ## Create a multi-zone Kind cluster for topology testing.
 	@echo "Creating multi-zone development cluster..."
+	@echo "Setting up Kind cluster prerequisites..."
+	@./scripts/setup-kind-dirs.sh
 	@if ! kind get clusters | grep -q "neo4j-operator-multizone"; then \
 		cat > /tmp/kind-multizone-config.yaml <<EOF; \
 kind: Cluster; \

@@ -29,7 +29,7 @@ nodes:
   # Add extra memory for control plane
   extraMounts:
   - hostPath: /tmp/kind-control-plane
-    containerPath: /tmp
+    containerPath: /tmp/kind-data
 - role: worker
   kubeadmConfigPatches:
   - |
@@ -40,7 +40,7 @@ nodes:
         max-pods: "110"
   extraMounts:
   - hostPath: /tmp/kind-worker-1
-    containerPath: /tmp
+    containerPath: /tmp/kind-data
 - role: worker
   kubeadmConfigPatches:
   - |
@@ -51,7 +51,7 @@ nodes:
         max-pods: "110"
   extraMounts:
   - hostPath: /tmp/kind-worker-2
-    containerPath: /tmp
+    containerPath: /tmp/kind-data
 networking:
   apiServerAddress: "127.0.0.1"
   apiServerPort: 6443
