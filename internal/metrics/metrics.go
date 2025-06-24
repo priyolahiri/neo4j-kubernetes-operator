@@ -228,9 +228,9 @@ func NewReconcileMetrics(clusterName, namespace string) *ReconcileMetrics {
 
 // RecordReconcile records a reconciliation operation with tracing
 func (m *ReconcileMetrics) RecordReconcile(ctx context.Context, operation string, duration time.Duration, success bool) {
-	result := "success"
+	result := MetricResultSuccess
 	if !success {
-		result = "failure"
+		result = MetricResultFailure
 	}
 
 	// Record Prometheus metrics
@@ -308,9 +308,9 @@ func NewUpgradeMetrics(clusterName, namespace string) *UpgradeMetrics {
 
 // RecordUpgrade records an upgrade operation
 func (m *UpgradeMetrics) RecordUpgrade(ctx context.Context, success bool, totalDuration time.Duration) {
-	result := "success"
+	result := MetricResultSuccess
 	if !success {
-		result = "failure"
+		result = MetricResultFailure
 	}
 
 	upgradeTotal.WithLabelValues(m.clusterName, m.namespace, result).Inc()
@@ -361,9 +361,9 @@ func NewBackupMetrics(clusterName, namespace string) *BackupMetrics {
 
 // RecordBackup records a backup operation
 func (m *BackupMetrics) RecordBackup(ctx context.Context, success bool, duration time.Duration, sizeBytes int64) {
-	result := "success"
+	result := MetricResultSuccess
 	if !success {
-		result = "failure"
+		result = MetricResultFailure
 	}
 
 	backupTotal.WithLabelValues(m.clusterName, m.namespace, result).Inc()
@@ -413,9 +413,9 @@ func NewCypherMetrics(clusterName, namespace string) *CypherMetrics {
 
 // RecordCypherExecution records a Cypher statement execution
 func (m *CypherMetrics) RecordCypherExecution(ctx context.Context, operation string, duration time.Duration, success bool) {
-	result := "success"
+	result := MetricResultSuccess
 	if !success {
-		result = "failure"
+		result = MetricResultFailure
 	}
 
 	cypherTotal.WithLabelValues(m.clusterName, m.namespace, operation, result).Inc()

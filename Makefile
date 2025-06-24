@@ -142,6 +142,15 @@ lint-comprehensive: golangci-lint staticcheck ## Run comprehensive static analys
 	$(STATICCHECK) ./...
 	@echo "✅ Static analysis completed successfully!"
 
+.PHONY: lint-lenient
+lint-lenient: golangci-lint staticcheck ## Run lenient static analysis with higher thresholds
+	@echo "🔍 Running lenient static analysis..."
+	@echo "📋 Running golangci-lint with lenient settings..."
+	$(GOLANGCI_LINT) run --config .golangci.yml
+	@echo "🔬 Running staticcheck..."
+	$(STATICCHECK) ./...
+	@echo "✅ Lenient static analysis completed successfully!"
+
 .PHONY: lint-all
 lint-all: lint-comprehensive ## Alias for comprehensive static analysis
 

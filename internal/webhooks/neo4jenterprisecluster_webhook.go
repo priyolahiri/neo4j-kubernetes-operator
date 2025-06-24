@@ -34,6 +34,11 @@ import (
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
 )
 
+const (
+	// TLS modes
+	CertManagerMode = "cert-manager"
+)
+
 // Neo4jEnterpriseClusterWebhook implements admission webhook for Neo4jEnterpriseCluster
 type Neo4jEnterpriseClusterWebhook struct {
 	Client client.Client
@@ -66,16 +71,16 @@ func (w *Neo4jEnterpriseClusterWebhook) Default(ctx context.Context, obj runtime
 	// Default TLS configuration
 	if cluster.Spec.TLS == nil {
 		cluster.Spec.TLS = &neo4jv1alpha1.TLSSpec{
-			Mode: "cert-manager",
+			Mode: CertManagerMode,
 		}
 		log.Info("Defaulted TLS mode to cert-manager")
 	} else if cluster.Spec.TLS.Mode == "" {
-		cluster.Spec.TLS.Mode = "cert-manager"
+		cluster.Spec.TLS.Mode = CertManagerMode
 		log.Info("Defaulted TLS mode to cert-manager")
 	}
 
 	// Default TLS issuer reference
-	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" && cluster.Spec.TLS.IssuerRef == nil {
+	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == CertManagerMode && cluster.Spec.TLS.IssuerRef == nil {
 		cluster.Spec.TLS.IssuerRef = &neo4jv1alpha1.IssuerRef{
 			Kind: "ClusterIssuer",
 		}
@@ -357,7 +362,7 @@ func (w *Neo4jEnterpriseClusterWebhook) validateTLS(cluster *neo4jv1alpha1.Neo4j
 	}
 
 	// Validate cert-manager specific fields
-	if cluster.Spec.TLS.Mode == "cert-manager" {
+	if cluster.Spec.TLS.Mode == CertManagerMode {
 		if cluster.Spec.TLS.IssuerRef != nil {
 			if cluster.Spec.TLS.IssuerRef.Name == "" {
 				allErrs = append(allErrs, field.Required(

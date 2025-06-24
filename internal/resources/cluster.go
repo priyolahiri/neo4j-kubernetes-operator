@@ -77,6 +77,9 @@ const (
 
 	// DefaultAdminSecret is the default name for admin credentials secret
 	DefaultAdminSecret = "neo4j-admin-secret"
+
+	// TLS modes
+	CertManagerMode = "cert-manager"
 )
 
 // BuildPrimaryStatefulSetForEnterprise creates a StatefulSet for Neo4j primary nodes
@@ -209,7 +212,7 @@ func BuildClientServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseClust
 	}
 
 	// Add HTTPS port if TLS is enabled
-	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" {
+	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == CertManagerMode {
 		ports = append(ports, corev1.ServicePort{
 			Name:       "https",
 			Port:       HTTPSPort,
@@ -258,7 +261,7 @@ func BuildConfigMapForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) 
 
 // BuildCertificateForEnterprise creates an enhanced Certificate for TLS
 func BuildCertificateForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *certv1.Certificate {
-	if cluster.Spec.TLS == nil || cluster.Spec.TLS.Mode != "cert-manager" {
+	if cluster.Spec.TLS == nil || cluster.Spec.TLS.Mode != CertManagerMode {
 		return nil
 	}
 
@@ -611,7 +614,7 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, ro
 	}
 
 	// Add TLS volume mount
-	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" {
+	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == CertManagerMode {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      CertsVolume,
 			MountPath: "/ssl",
@@ -739,7 +742,7 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, ro
 	}
 
 	// Add TLS volume
-	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" {
+	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == CertManagerMode {
 		volumes = append(volumes, corev1.Volume{
 			Name: CertsVolume,
 			VolumeSource: corev1.VolumeSource{
@@ -907,7 +910,7 @@ server.logs.user.rotationSize=20M
 `
 
 	// Add TLS configuration if enabled
-	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" {
+	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == CertManagerMode {
 		config += `
 # TLS Configuration
 server.https.enabled=true

@@ -73,6 +73,9 @@ const (
 	CircuitOpen
 	// CircuitHalfOpen indicates the circuit is half-open (testing recovery)
 	CircuitHalfOpen
+
+	// Boolean string values
+	TrueString = "true"
 )
 
 // ConnectionPoolMetrics tracks connection pool performance
@@ -418,8 +421,8 @@ func (c *Client) GetDatabases(ctx context.Context) ([]DatabaseInfo, error) {
 			databases = append(databases, DatabaseInfo{
 				Name:            fmt.Sprintf("%v", name),
 				Status:          fmt.Sprintf("%v", status),
-				Default:         fmt.Sprintf("%v", isDefault) == "true",
-				Home:            fmt.Sprintf("%v", isHome) == "true",
+				Default:         fmt.Sprintf("%v", isDefault) == TrueString,
+				Home:            fmt.Sprintf("%v", isHome) == TrueString,
 				Role:            fmt.Sprintf("%v", role),
 				RequestedStatus: fmt.Sprintf("%v", requestedStatus),
 			})

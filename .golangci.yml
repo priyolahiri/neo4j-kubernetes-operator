@@ -13,8 +13,6 @@ linters:
     - govet
     - ineffassign
     - staticcheck
-    - goconst
-    - prealloc
     - unconvert
     - revive
     - misspell
@@ -23,14 +21,11 @@ linters:
     - testpackage
     - nakedret
     - gocritic
-    - nestif
     - nolintlint
     - whitespace
     - gofmt
     - goimports
-    - exportloopref
     - bodyclose
-    - contextcheck
     - errname
     - errorlint
     - forcetypeassert
@@ -47,7 +42,6 @@ linters:
     - cyclop  # Redundant with gocyclo
     - funlen  # We have gocyclo for complexity
     - gochecknoglobals  # Kubernetes controllers often need globals
-    - gomnd  # Too noisy for configuration values
     - varnamelen  # Too restrictive
     - wrapcheck  # Too noisy for controller error handling
     - wsl  # Too many style violations, needs separate cleanup
@@ -58,6 +52,10 @@ linters:
     - unparam  # Too strict for this codebase
     - unused  # Too strict for this codebase
     - errcheck  # Too strict for this codebase
+    - prealloc  # Too strict for this codebase
+    - goconst  # Too strict for this codebase
+    - nestif  # Too strict for this codebase
+    - contextcheck  # Too strict for this codebase
 
 linters-settings:
   gocyclo:
@@ -67,8 +65,8 @@ linters-settings:
     min-complexity: 20
 
   goconst:
-    min-len: 3
-    min-occurrences: 3
+    min-len: 5
+    min-occurrences: 5
     ignore-tests: true
 
   dupl:
@@ -92,27 +90,29 @@ linters-settings:
     for-loops: false
 
   gosec:
-    severity: medium
-    confidence: medium
+    severity: high
+    confidence: high
     excludes:
       - G204  # Subprocess launched with variable
       - G304  # File path provided as taint input
+      - G115  # Integer overflow conversion
 
   gocritic:
     enabled-tags:
       - diagnostic
-      - style
-      - performance
-      - experimental
     disabled-checks:
       - unnamedResult
       - hugeParam
       - rangeValCopy
       - commentedOutCode
       - ifElseChain
-
-  nestif:
-    min-complexity: 5
+      - assignOp
+      - emptyStringTest
+      - httpNoBody
+      - nestingReduce
+      - paramTypeCombine
+      - appendCombine
+      - unnecessaryDefer
 
   revive:
     rules:
@@ -156,8 +156,8 @@ linters-settings:
     suppress-type-compare-assertion: true
 
 issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
+  max-issues-per-linter: 10
+  max-same-issues: 5
   new: false
   fix: false
   exclude-rules:

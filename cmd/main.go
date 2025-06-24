@@ -73,6 +73,8 @@ const (
 	SelectiveCache CacheStrategy = "selective"
 	// OnDemandCache creates informers only when needed (ultra-fast startup)
 	OnDemandCache CacheStrategy = "on-demand"
+	// NoCache represents no caching
+	NoCache CacheStrategy = "none"
 )
 
 var (
@@ -176,12 +178,12 @@ func main() {
 			*cacheStrategy = string(StandardCache)
 		case DevelopmentMode:
 			if *ultraFast {
-				*cacheStrategy = "none"
+				*cacheStrategy = string(NoCache)
 			} else {
 				*cacheStrategy = string(LazyCache)
 			}
 		case MinimalMode:
-			*cacheStrategy = "none" // Always use no-cache for minimal mode
+			*cacheStrategy = string(NoCache) // Always use no-cache for minimal mode
 		}
 	}
 
@@ -237,7 +239,7 @@ func main() {
 	config := ctrl.GetConfigOrDie()
 
 	// Check if we should bypass caching entirely
-	if *cacheStrategy == "none" || *ultraFast {
+	if *cacheStrategy == string(NoCache) || *ultraFast {
 		setupLog.Info("using direct API client - bypassing all informer caching for ultra-fast startup")
 		useDirectClient = true
 		*skipCacheWait = true
