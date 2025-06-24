@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -54,7 +54,7 @@ func DefaultCleanupOptions() CleanupOptions {
 
 // AggressiveCleanup performs comprehensive cleanup of test resources
 func AggressiveCleanup(ctx context.Context, k8sClient client.Client, options CleanupOptions) {
-	By("Performing aggressive cleanup of test environment")
+	ginkgo.By("Performing aggressive cleanup of test environment")
 
 	// Set default timeout if not specified
 	if options.Timeout == 0 {
@@ -82,13 +82,13 @@ func AggressiveCleanup(ctx context.Context, k8sClient client.Client, options Cle
 
 // cleanupNeo4jResources removes all Neo4j custom resources
 func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options CleanupOptions) {
-	By("Cleaning up Neo4j custom resources")
+	ginkgo.By("Cleaning up Neo4j custom resources")
 
 	// Delete all Neo4jEnterpriseClusters
 	clusters := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
 	if err := k8sClient.List(ctx, clusters); err == nil {
 		for _, cluster := range clusters.Items {
-			By(fmt.Sprintf("Deleting Neo4jEnterpriseCluster: %s/%s", cluster.Namespace, cluster.Name))
+			ginkgo.By(fmt.Sprintf("Deleting Neo4jEnterpriseCluster: %s/%s", cluster.Namespace, cluster.Name))
 			if err := deleteWithPropagation(ctx, k8sClient, &cluster, options.ForceDelete); err != nil {
 				fmt.Printf("Warning: Failed to delete cluster %s/%s: %v\n", cluster.Namespace, cluster.Name, err)
 			}
@@ -99,7 +99,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	backups := &neo4jv1alpha1.Neo4jBackupList{}
 	if err := k8sClient.List(ctx, backups); err == nil {
 		for _, backup := range backups.Items {
-			By(fmt.Sprintf("Deleting Neo4jBackup: %s/%s", backup.Namespace, backup.Name))
+			ginkgo.By(fmt.Sprintf("Deleting Neo4jBackup: %s/%s", backup.Namespace, backup.Name))
 			if err := deleteWithPropagation(ctx, k8sClient, &backup, options.ForceDelete); err != nil {
 				fmt.Printf("Warning: Failed to delete backup %s/%s: %v\n", backup.Namespace, backup.Name, err)
 			}
@@ -110,7 +110,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	restores := &neo4jv1alpha1.Neo4jRestoreList{}
 	if err := k8sClient.List(ctx, restores); err == nil {
 		for _, restore := range restores.Items {
-			By(fmt.Sprintf("Deleting Neo4jRestore: %s/%s", restore.Namespace, restore.Name))
+			ginkgo.By(fmt.Sprintf("Deleting Neo4jRestore: %s/%s", restore.Namespace, restore.Name))
 			if err := deleteWithPropagation(ctx, k8sClient, &restore, options.ForceDelete); err != nil {
 				fmt.Printf("Warning: Failed to delete restore %s/%s: %v\n", restore.Namespace, restore.Name, err)
 			}
@@ -121,7 +121,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	users := &neo4jv1alpha1.Neo4jUserList{}
 	if err := k8sClient.List(ctx, users); err == nil {
 		for _, user := range users.Items {
-			By(fmt.Sprintf("Deleting Neo4jUser: %s/%s", user.Namespace, user.Name))
+			ginkgo.By(fmt.Sprintf("Deleting Neo4jUser: %s/%s", user.Namespace, user.Name))
 			if err := deleteWithPropagation(ctx, k8sClient, &user, options.ForceDelete); err != nil {
 				fmt.Printf("Warning: Failed to delete user %s/%s: %v\n", user.Namespace, user.Name, err)
 			}
@@ -132,7 +132,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	roles := &neo4jv1alpha1.Neo4jRoleList{}
 	if err := k8sClient.List(ctx, roles); err == nil {
 		for _, role := range roles.Items {
-			By(fmt.Sprintf("Deleting Neo4jRole: %s/%s", role.Namespace, role.Name))
+			ginkgo.By(fmt.Sprintf("Deleting Neo4jRole: %s/%s", role.Namespace, role.Name))
 			if err := deleteWithPropagation(ctx, k8sClient, &role, options.ForceDelete); err != nil {
 				fmt.Printf("Warning: Failed to delete role %s/%s: %v\n", role.Namespace, role.Name, err)
 			}
@@ -143,7 +143,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	grants := &neo4jv1alpha1.Neo4jGrantList{}
 	if err := k8sClient.List(ctx, grants); err == nil {
 		for _, grant := range grants.Items {
-			By(fmt.Sprintf("Deleting Neo4jGrant: %s/%s", grant.Namespace, grant.Name))
+			ginkgo.By(fmt.Sprintf("Deleting Neo4jGrant: %s/%s", grant.Namespace, grant.Name))
 			if err := deleteWithPropagation(ctx, k8sClient, &grant, options.ForceDelete); err != nil {
 				fmt.Printf("Warning: Failed to delete grant %s/%s: %v\n", grant.Namespace, grant.Name, err)
 			}
@@ -154,7 +154,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	databases := &neo4jv1alpha1.Neo4jDatabaseList{}
 	if err := k8sClient.List(ctx, databases); err == nil {
 		for _, db := range databases.Items {
-			By(fmt.Sprintf("Deleting Neo4jDatabase: %s/%s", db.Namespace, db.Name))
+			ginkgo.By(fmt.Sprintf("Deleting Neo4jDatabase: %s/%s", db.Namespace, db.Name))
 			if err := deleteWithPropagation(ctx, k8sClient, &db, options.ForceDelete); err != nil {
 				fmt.Printf("Warning: Failed to delete database %s/%s: %v\n", db.Namespace, db.Name, err)
 			}
@@ -165,7 +165,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	plugins := &neo4jv1alpha1.Neo4jPluginList{}
 	if err := k8sClient.List(ctx, plugins); err == nil {
 		for _, plugin := range plugins.Items {
-			By(fmt.Sprintf("Deleting Neo4jPlugin: %s/%s", plugin.Namespace, plugin.Name))
+			ginkgo.By(fmt.Sprintf("Deleting Neo4jPlugin: %s/%s", plugin.Namespace, plugin.Name))
 			if err := deleteWithPropagation(ctx, k8sClient, &plugin, options.ForceDelete); err != nil {
 				fmt.Printf("Warning: Failed to delete plugin %s/%s: %v\n", plugin.Namespace, plugin.Name, err)
 			}
@@ -175,7 +175,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 
 // cleanupOrphanedResources removes orphaned Kubernetes resources
 func cleanupOrphanedResources(ctx context.Context, k8sClient client.Client, options CleanupOptions) {
-	By("Cleaning up orphaned Kubernetes resources")
+	ginkgo.By("Cleaning up orphaned Kubernetes resources")
 
 	// Delete orphaned StatefulSets
 	if options.DeleteTestResources {
@@ -184,7 +184,7 @@ func cleanupOrphanedResources(ctx context.Context, k8sClient client.Client, opti
 			"app.kubernetes.io/part-of": "neo4j-operator",
 		})); err == nil {
 			for _, sts := range statefulSets.Items {
-				By(fmt.Sprintf("Deleting orphaned StatefulSet: %s/%s", sts.Namespace, sts.Name))
+				ginkgo.By(fmt.Sprintf("Deleting orphaned StatefulSet: %s/%s", sts.Namespace, sts.Name))
 				if err := deleteWithPropagation(ctx, k8sClient, &sts, options.ForceDelete); err != nil {
 					fmt.Printf("Warning: Failed to delete StatefulSet %s/%s: %v\n", sts.Namespace, sts.Name, err)
 				}
@@ -199,7 +199,7 @@ func cleanupOrphanedResources(ctx context.Context, k8sClient client.Client, opti
 			"app.kubernetes.io/part-of": "neo4j-operator",
 		})); err == nil {
 			for _, job := range jobs.Items {
-				By(fmt.Sprintf("Deleting orphaned Job: %s/%s", job.Namespace, job.Name))
+				ginkgo.By(fmt.Sprintf("Deleting orphaned Job: %s/%s", job.Namespace, job.Name))
 				if err := deleteWithPropagation(ctx, k8sClient, &job, options.ForceDelete); err != nil {
 					fmt.Printf("Warning: Failed to delete Job %s/%s: %v\n", job.Namespace, job.Name, err)
 				}
@@ -214,7 +214,7 @@ func cleanupOrphanedResources(ctx context.Context, k8sClient client.Client, opti
 			"app.kubernetes.io/part-of": "neo4j-operator",
 		})); err == nil {
 			for _, pod := range pods.Items {
-				By(fmt.Sprintf("Deleting orphaned Pod: %s/%s", pod.Namespace, pod.Name))
+				ginkgo.By(fmt.Sprintf("Deleting orphaned Pod: %s/%s", pod.Namespace, pod.Name))
 				if err := deleteWithPropagation(ctx, k8sClient, &pod, options.ForceDelete); err != nil {
 					fmt.Printf("Warning: Failed to delete Pod %s/%s: %v\n", pod.Namespace, pod.Name, err)
 				}
@@ -229,7 +229,7 @@ func cleanupOrphanedResources(ctx context.Context, k8sClient client.Client, opti
 			"app.kubernetes.io/part-of": "neo4j-operator",
 		})); err == nil {
 			for _, pvc := range pvcs.Items {
-				By(fmt.Sprintf("Deleting orphaned PVC: %s/%s", pvc.Namespace, pvc.Name))
+				ginkgo.By(fmt.Sprintf("Deleting orphaned PVC: %s/%s", pvc.Namespace, pvc.Name))
 				if err := deleteWithPropagation(ctx, k8sClient, &pvc, options.ForceDelete); err != nil {
 					fmt.Printf("Warning: Failed to delete PVC %s/%s: %v\n", pvc.Namespace, pvc.Name, err)
 				}
@@ -244,7 +244,7 @@ func cleanupOrphanedResources(ctx context.Context, k8sClient client.Client, opti
 			"app.kubernetes.io/part-of": "neo4j-operator",
 		})); err == nil {
 			for _, sa := range sas.Items {
-				By(fmt.Sprintf("Deleting orphaned ServiceAccount: %s/%s", sa.Namespace, sa.Name))
+				ginkgo.By(fmt.Sprintf("Deleting orphaned ServiceAccount: %s/%s", sa.Namespace, sa.Name))
 				if err := deleteWithPropagation(ctx, k8sClient, &sa, options.ForceDelete); err != nil {
 					fmt.Printf("Warning: Failed to delete ServiceAccount %s/%s: %v\n", sa.Namespace, sa.Name, err)
 				}
@@ -255,14 +255,14 @@ func cleanupOrphanedResources(ctx context.Context, k8sClient client.Client, opti
 
 // cleanupTestNamespaces removes test namespaces
 func cleanupTestNamespaces(ctx context.Context, k8sClient client.Client, options CleanupOptions) {
-	By("Cleaning up test namespaces")
+	ginkgo.By("Cleaning up test namespaces")
 
 	namespaces := &corev1.NamespaceList{}
 	if err := k8sClient.List(ctx, namespaces); err == nil {
 		for _, ns := range namespaces.Items {
 			// Delete test namespaces (those starting with test-)
 			if isTestNamespace(ns.Name) {
-				By(fmt.Sprintf("Deleting test namespace: %s", ns.Name))
+				ginkgo.By(fmt.Sprintf("Deleting test namespace: %s", ns.Name))
 				if err := deleteWithPropagation(ctx, k8sClient, &ns, options.ForceDelete); err != nil {
 					fmt.Printf("Warning: Failed to delete namespace %s: %v\n", ns.Name, err)
 				}
@@ -273,10 +273,10 @@ func cleanupTestNamespaces(ctx context.Context, k8sClient client.Client, options
 
 // verifyCleanup ensures cleanup was successful
 func verifyCleanup(ctx context.Context, k8sClient client.Client, options CleanupOptions) {
-	By("Verifying cleanup completion")
+	ginkgo.By("Verifying cleanup completion")
 
 	// Wait for resources to be fully deleted
-	Eventually(func() bool {
+	gomega.Eventually(func() bool {
 		// Check for remaining Neo4j resources
 		clusters := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
 		if err := k8sClient.List(ctx, clusters); err == nil && len(clusters.Items) > 0 {
@@ -301,12 +301,12 @@ func verifyCleanup(ctx context.Context, k8sClient client.Client, options Cleanup
 		}
 
 		return true
-	}, options.Timeout, cleanupInterval).Should(BeTrue(), "Cleanup verification failed")
+	}, options.Timeout, cleanupInterval).Should(gomega.BeTrue(), "Cleanup verification failed")
 }
 
 // SanityCheck performs environment sanity checks before tests
 func SanityCheck(ctx context.Context, k8sClient client.Client) {
-	By("Performing environment sanity checks")
+	ginkgo.By("Performing environment sanity checks")
 
 	// Check if CRDs are installed
 	checkCRDs(ctx, k8sClient)
@@ -323,7 +323,7 @@ func SanityCheck(ctx context.Context, k8sClient client.Client) {
 
 // checkCRDs verifies that required CRDs are installed
 func checkCRDs(ctx context.Context, k8sClient client.Client) {
-	By("Checking required CRDs are installed")
+	ginkgo.By("Checking required CRDs are installed")
 
 	requiredCRDs := []string{
 		"neo4jenterpriseclusters.neo4j.neo4j.com",
@@ -337,7 +337,7 @@ func checkCRDs(ctx context.Context, k8sClient client.Client) {
 	}
 
 	for _, crdName := range requiredCRDs {
-		Eventually(func() error {
+		gomega.Eventually(func() error {
 			// Try to list the CR to verify CRD exists
 			switch crdName {
 			case "neo4jenterpriseclusters.neo4j.neo4j.com":
@@ -366,27 +366,27 @@ func checkCRDs(ctx context.Context, k8sClient client.Client) {
 				return k8sClient.List(ctx, plugins)
 			}
 			return nil
-		}, time.Minute*2, time.Second*5).Should(Succeed(), "CRD %s not available", crdName)
+		}, time.Minute*2, time.Second*5).Should(gomega.Succeed(), "CRD %s not available", crdName)
 	}
 }
 
 // checkClusterConnectivity verifies cluster connectivity
 func checkClusterConnectivity(ctx context.Context, k8sClient client.Client) {
-	By("Checking cluster connectivity")
+	ginkgo.By("Checking cluster connectivity")
 
 	// Try to list nodes to verify connectivity
-	Eventually(func() error {
+	gomega.Eventually(func() error {
 		nodes := &corev1.NodeList{}
 		return k8sClient.List(ctx, nodes)
-	}, time.Minute*2, time.Second*5).Should(Succeed(), "Failed to connect to cluster")
+	}, time.Minute*2, time.Second*5).Should(gomega.Succeed(), "Failed to connect to cluster")
 }
 
 // checkResourceAvailability checks for required resources
 func checkResourceAvailability(ctx context.Context, k8sClient client.Client) {
-	By("Checking resource availability")
+	ginkgo.By("Checking resource availability")
 
 	// Check for available nodes
-	Eventually(func() int {
+	gomega.Eventually(func() int {
 		nodes := &corev1.NodeList{}
 		if err := k8sClient.List(ctx, nodes); err != nil {
 			return 0
@@ -401,21 +401,21 @@ func checkResourceAvailability(ctx context.Context, k8sClient client.Client) {
 			}
 		}
 		return readyNodes
-	}, time.Minute*2, time.Second*5).Should(BeNumerically(">=", 1), "No ready nodes available")
+	}, time.Minute*2, time.Second*5).Should(gomega.BeNumerically(">=", 1), "No ready nodes available")
 
 	// Check for storage classes
-	Eventually(func() int {
+	gomega.Eventually(func() int {
 		scs := &storagev1.StorageClassList{}
 		if err := k8sClient.List(ctx, scs); err != nil {
 			return 0
 		}
 		return len(scs.Items)
-	}, time.Minute*2, time.Second*5).Should(BeNumerically(">=", 1), "No storage classes available")
+	}, time.Minute*2, time.Second*5).Should(gomega.BeNumerically(">=", 1), "No storage classes available")
 }
 
 // checkConflictingResources checks for resources that might conflict
 func checkConflictingResources(ctx context.Context, k8sClient client.Client) {
-	By("Checking for conflicting resources")
+	ginkgo.By("Checking for conflicting resources")
 
 	// Check for existing Neo4j resources that might conflict
 	clusters := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
@@ -457,7 +457,7 @@ func isTestNamespace(name string) bool {
 
 // SetupTestEnvironment performs complete test environment setup
 func SetupTestEnvironment(ctx context.Context, k8sClient client.Client) {
-	By("Setting up test environment")
+	ginkgo.By("Setting up test environment")
 
 	// Perform sanity checks
 	SanityCheck(ctx, k8sClient)
@@ -465,5 +465,5 @@ func SetupTestEnvironment(ctx context.Context, k8sClient client.Client) {
 	// Perform aggressive cleanup
 	AggressiveCleanup(ctx, k8sClient, DefaultCleanupOptions())
 
-	By("Test environment setup complete")
+	ginkgo.By("Test environment setup complete")
 }

@@ -1,4 +1,4 @@
-package resources
+package resources_test
 
 import (
 	"testing"
@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
+	"github.com/neo4j-labs/neo4j-kubernetes-operator/internal/resources"
 )
 
 func TestBuildPodSpecForEnterprise_WithPlugins(t *testing.T) {
@@ -53,7 +54,7 @@ func TestBuildPodSpecForEnterprise_WithPlugins(t *testing.T) {
 		},
 	}
 
-	podSpec := buildPodSpecForEnterprise(cluster, "primary", "neo4j-admin-secret")
+	podSpec := resources.BuildPodSpecForEnterprise(cluster, "primary", "neo4j-admin-secret")
 
 	// Test that plugins volume is added
 	var pluginsVolume *corev1.Volume
@@ -114,7 +115,7 @@ func TestBuildPodSpecForEnterprise_WithQueryMonitoring(t *testing.T) {
 		},
 	}
 
-	podSpec := buildPodSpecForEnterprise(cluster, "primary", "neo4j-admin-secret")
+	podSpec := resources.BuildPodSpecForEnterprise(cluster, "primary", "neo4j-admin-secret")
 
 	// Test that Prometheus exporter sidecar is added
 	require.Len(t, podSpec.Containers, 2, "should have 2 containers (main + exporter)")
@@ -152,7 +153,7 @@ func TestBuildPodSpecForEnterprise_WithoutFeatures(t *testing.T) {
 		},
 	}
 
-	podSpec := buildPodSpecForEnterprise(cluster, "primary", "neo4j-admin-secret")
+	podSpec := resources.BuildPodSpecForEnterprise(cluster, "primary", "neo4j-admin-secret")
 
 	// Test that no init containers are added when no plugins
 	assert.Len(t, podSpec.InitContainers, 0, "should have no init containers when no plugins")
@@ -191,7 +192,7 @@ func TestBuildStatefulSetForEnterprise_WithFeatures(t *testing.T) {
 		},
 	}
 
-	sts := BuildPrimaryStatefulSetForEnterprise(cluster)
+	sts := resources.BuildPrimaryStatefulSetForEnterprise(cluster)
 
 	// Test StatefulSet metadata
 	assert.Equal(t, cluster.Name+"-primary", sts.Name)

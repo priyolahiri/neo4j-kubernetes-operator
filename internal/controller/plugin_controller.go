@@ -186,7 +186,6 @@ func (r *Neo4jPluginReconciler) installPlugin(ctx context.Context, plugin *neo4j
 }
 
 func (r *Neo4jPluginReconciler) downloadPlugin(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin) error {
-
 	if plugin.Spec.Source == nil {
 		// Use default source (official Neo4j plugin repository)
 		return r.downloadFromOfficialRepository(ctx, plugin)

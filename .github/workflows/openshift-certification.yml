@@ -163,7 +163,7 @@ jobs:
         cat scorecard-results.json
 
     - name: Upload scorecard results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: scorecard-results
         path: scorecard-results.json
@@ -203,7 +203,7 @@ jobs:
         cat preflight-operator-results.json
 
     - name: Upload preflight results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: preflight-results
         path: |
@@ -240,7 +240,7 @@ jobs:
         output: 'trivy-results.json'
 
     - name: Upload security scan results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-scan-results
         path: trivy-results.json
@@ -316,7 +316,7 @@ jobs:
         fi
 
     - name: Upload test results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: test-results
@@ -416,7 +416,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
 
     - name: Generate certification report
       run: |
@@ -478,7 +478,7 @@ jobs:
         EOF
 
     - name: Upload certification report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: certification-report
         path: certification-report.md

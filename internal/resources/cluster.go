@@ -132,7 +132,7 @@ func buildStatefulSetForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
 						"prometheus.io/path":   "/metrics",
 					},
 				},
-				Spec: buildPodSpecForEnterprise(cluster, role, adminSecret),
+				Spec: BuildPodSpecForEnterprise(cluster, role, adminSecret),
 			},
 			VolumeClaimTemplates: buildVolumeClaimTemplatesForEnterprise(cluster),
 		},
@@ -545,7 +545,7 @@ func getLabelsForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, role 
 	return labels
 }
 
-func buildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, role, adminSecret string) corev1.PodSpec {
+func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, role, adminSecret string) corev1.PodSpec {
 	// Environment variables
 	env := []corev1.EnvVar{
 		{
@@ -720,7 +720,7 @@ func buildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, ro
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: fmt.Sprintf("%s-config", cluster.Name),
 					},
-					DefaultMode: func() *int32 { mode := int32(0755); return &mode }(),
+					DefaultMode: func() *int32 { mode := int32(0o755); return &mode }(),
 				},
 			},
 		},

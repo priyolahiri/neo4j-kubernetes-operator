@@ -292,7 +292,11 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResource(ctx context.Co
 
 	// Try to get the existing resource
 	key := client.ObjectKeyFromObject(obj)
-	existing := obj.DeepCopyObject().(client.Object)
+	existingObj := obj.DeepCopyObject()
+	existing, ok := existingObj.(client.Object)
+	if !ok {
+		return fmt.Errorf("failed to convert object to client.Object")
+	}
 
 	err := r.Get(ctx, key, existing)
 	if err != nil {
