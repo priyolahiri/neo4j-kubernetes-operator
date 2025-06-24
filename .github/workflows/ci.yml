@@ -75,10 +75,35 @@ jobs:
           cluster_name: neo4j-operator-test
           config: hack/kind-config.yaml
 
+      - name: Configure kubectl context
+        run: |
+          # Ensure kubectl is configured with the correct context
+          kubectl config use-context kind-neo4j-operator-test
+
+          # Verify cluster connectivity
+          echo "Testing cluster connectivity..."
+          kubectl cluster-info
+
+          # Check if cluster is ready
+          echo "Waiting for cluster to be ready..."
+          kubectl wait --for=condition=ready nodes --all --timeout=300s
+
+          # Verify core components are running
+          echo "Checking core cluster components..."
+          kubectl get nodes -o wide
+          kubectl get pods -n kube-system
+
       - name: Install cert-manager
         run: |
+          # Install cert-manager
           kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+
+          # Wait for cert-manager to be ready
+          echo "Waiting for cert-manager to be ready..."
           kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s
+
+          # Verify cert-manager installation
+          kubectl get pods -n cert-manager
 
       - name: Load Docker image
         run: |
@@ -92,9 +117,12 @@ jobs:
       - name: Run e2e tests
         run: make test-e2e
         timeout-minutes: 10
+
       - name: Cleanup resources
         if: always()
         run: |
+          # Ensure kubectl is configured before cleanup
+          kubectl config use-context kind-neo4j-operator-test || true
           make undeploy
           make uninstall
 

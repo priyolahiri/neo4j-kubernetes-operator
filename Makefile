@@ -197,6 +197,59 @@ dev-cluster-delete: ## Delete the Kind development cluster.
 	@echo "Deleting development cluster..."
 	@kind delete cluster --name neo4j-operator-dev || true
 
+.PHONY: validate-cluster
+validate-cluster: ## Validate cluster connectivity and health.
+	@echo "Validating cluster connectivity..."
+	@./scripts/validate-cluster.sh --verbose
+
+.PHONY: validate-cluster-kind
+validate-cluster-kind: ## Validate Kind cluster connectivity and health.
+	@echo "Validating Kind cluster connectivity..."
+	@./scripts/validate-cluster.sh --type kind --name neo4j-operator-test --verbose
+
+.PHONY: validate-cluster-openshift
+validate-cluster-openshift: ## Validate OpenShift cluster connectivity and health.
+	@echo "Validating OpenShift cluster connectivity..."
+	@if [ -z "$(OPENSHIFT_SERVER)" ] || [ -z "$(OPENSHIFT_TOKEN)" ]; then \
+		echo "Error: OPENSHIFT_SERVER and OPENSHIFT_TOKEN environment variables are required"; \
+		exit 1; \
+	fi
+	@./scripts/validate-cluster.sh --type openshift --server "$(OPENSHIFT_SERVER)" --token "$(OPENSHIFT_TOKEN)" --verbose
+
+.PHONY: validate-cluster-remote
+validate-cluster-remote: ## Validate remote cluster connectivity and health.
+	@echo "Validating remote cluster connectivity..."
+	@./scripts/validate-cluster.sh --type remote --verbose
+
+.PHONY: cluster-info
+cluster-info: ## Display cluster information and status.
+	@echo "=== Cluster Information ==="
+	@kubectl cluster-info
+	@echo ""
+	@echo "=== Node Status ==="
+	@kubectl get nodes -o wide
+	@echo ""
+	@echo "=== System Pods ==="
+	@kubectl get pods -n kube-system
+	@echo ""
+	@echo "=== API Server Health ==="
+	@kubectl get --raw /healthz
+
+.PHONY: cluster-health
+cluster-health: ## Check cluster health and component status.
+	@echo "=== Cluster Health Check ==="
+	@echo "Checking API server connectivity..."
+	@kubectl get --raw /healthz || (echo "❌ API server not accessible" && exit 1)
+	@echo "✅ API server is accessible"
+	@echo ""
+	@echo "Checking node readiness..."
+	@kubectl wait --for=condition=ready nodes --all --timeout=60s || (echo "❌ Not all nodes are ready" && exit 1)
+	@echo "✅ All nodes are ready"
+	@echo ""
+	@echo "Checking core components..."
+	@kubectl get pods -n kube-system --no-headers | grep -E "(kube-apiserver|kube-controller-manager|kube-scheduler|etcd)" || echo "⚠️  Some core components may not be visible"
+	@echo "✅ Cluster health check completed"
+
 .PHONY: dev-run
 dev-run: ## Run the operator locally for development.
 	@hack/dev-run.sh
@@ -730,10 +783,6 @@ dev-logs: ## View development logs.
 .PHONY: dev-debug
 dev-debug: ## Start interactive debug session.
 	@scripts/dev-environment.sh debug
-
-.PHONY: dev-config
-dev-config: ## Configure development settings.
-	@scripts/dev-environment.sh config
 
 .PHONY: dev-clean
 dev-clean: ## Clean development environment (processes, files, ports).

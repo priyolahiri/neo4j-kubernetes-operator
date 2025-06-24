@@ -27,6 +27,16 @@ jobs:
           # Check if we're in a Kubernetes environment
           if command -v kubectl &> /dev/null; then
             echo "Kubernetes environment detected, running cleanup..."
+
+            # Test cluster connectivity if available
+            if kubectl cluster-info &> /dev/null; then
+              echo "Cluster is accessible, running connectivity checks..."
+              kubectl cluster-info
+              kubectl get nodes --no-headers | wc -l
+            else
+              echo "No accessible cluster found, skipping cluster operations"
+            fi
+
             # Run cleanup script if available
             if [ -f "scripts/test-cleanup.sh" ]; then
               chmod +x scripts/test-cleanup.sh

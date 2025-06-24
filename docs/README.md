@@ -118,6 +118,11 @@ Start here if you're new to the Neo4j Enterprise Operator:
 - **Outdated content?** Submit a pull request
 - **Unclear instructions?** Join our community discussions
 
+### Development & CI/CD
+
+- **[GitHub Workflows Documentation](github-workflows/)** - CI/CD pipeline documentation and troubleshooting
+- **Workflow Issues**: Check the [workflow troubleshooting guide](github-workflows/README.md#troubleshooting)
+
 ### Technical Support
 
 - **Community Support**: GitHub Discussions
