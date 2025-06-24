@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package eks
+package eks_test
 
 import (
 	"fmt"
@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
+	"github.com/neo4j-labs/neo4j-kubernetes-operator/test/cloud/testutil"
 )
 
 var _ = Describe("EKS Neo4j Cluster Tests", func() {
@@ -48,16 +49,16 @@ var _ = Describe("EKS Neo4j Cluster Tests", func() {
 		It("Should deploy cluster with EKS-optimized configurations", func() {
 			By("Creating cluster with EKS settings")
 			cluster = createEKSCluster(clusterName)
-			Expect(k8sClient.Create(ctx, cluster)).Should(Succeed())
+			Expect(testutil.K8sClient.Create(testutil.Ctx, cluster)).Should(Succeed())
 
 			By("Waiting for StatefulSets to be created")
 			primarySts := &appsv1.StatefulSet{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{
+				return testutil.K8sClient.Get(testutil.Ctx, types.NamespacedName{
 					Name:      clusterName + "-primary",
-					Namespace: testNamespace,
+					Namespace: testutil.TestNamespace,
 				}, primarySts)
-			}, timeout, interval).Should(Succeed())
+			}, testutil.Timeout, testutil.Interval).Should(Succeed())
 
 			By("Verifying EKS-specific configurations")
 			// Check storage class
@@ -70,9 +71,9 @@ var _ = Describe("EKS Neo4j Cluster Tests", func() {
 
 			By("Verifying cluster readiness")
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := testutil.K8sClient.Get(testutil.Ctx, types.NamespacedName{
 					Name:      clusterName,
-					Namespace: testNamespace,
+					Namespace: testutil.TestNamespace,
 				}, cluster)
 				if err != nil {
 					return false
@@ -84,7 +85,7 @@ var _ = Describe("EKS Neo4j Cluster Tests", func() {
 					}
 				}
 				return false
-			}, timeout, interval).Should(BeTrue())
+			}, testutil.Timeout, testutil.Interval).Should(BeTrue())
 
 			verifyEKSSpecificFeatures(clusterName)
 		})
@@ -92,7 +93,7 @@ var _ = Describe("EKS Neo4j Cluster Tests", func() {
 		It("Should handle EKS networking correctly", func() {
 			By("Creating cluster")
 			cluster = createEKSCluster(clusterName)
-			Expect(k8sClient.Create(ctx, cluster)).Should(Succeed())
+			Expect(testutil.K8sClient.Create(testutil.Ctx, cluster)).Should(Succeed())
 
 			By("Verifying Service configurations")
 			clientSvc := &corev1.Service{}

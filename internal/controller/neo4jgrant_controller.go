@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -287,30 +288,34 @@ func (r *Neo4jGrantReconciler) isClusterReady(cluster *neo4jv1alpha1.Neo4jEnterp
 
 func (r *Neo4jGrantReconciler) updateGrantStatus(ctx context.Context, grant *neo4jv1alpha1.Neo4jGrant,
 	status metav1.ConditionStatus, reason, message string) {
-
-	condition := metav1.Condition{
-		Type:               StatusReady,
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
-
-	// Update or add condition
-	updated := false
-	for i, existingCondition := range grant.Status.Conditions {
-		if existingCondition.Type == condition.Type {
-			grant.Status.Conditions[i] = condition
-			updated = true
-			break
+	update := func() error {
+		latest := &neo4jv1alpha1.Neo4jGrant{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(grant), latest); err != nil {
+			return err
 		}
+		condition := metav1.Condition{
+			Type:               StatusReady,
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
+			LastTransitionTime: metav1.Now(),
+		}
+		updated := false
+		for i, existingCondition := range latest.Status.Conditions {
+			if existingCondition.Type == condition.Type {
+				latest.Status.Conditions[i] = condition
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			latest.Status.Conditions = append(latest.Status.Conditions, condition)
+		}
+		latest.Status.ObservedGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
 	}
-	if !updated {
-		grant.Status.Conditions = append(grant.Status.Conditions, condition)
-	}
-
-	grant.Status.ObservedGeneration = grant.Generation
-	if err := r.Status().Update(ctx, grant); err != nil {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
+	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update grant status")
 	}
 }

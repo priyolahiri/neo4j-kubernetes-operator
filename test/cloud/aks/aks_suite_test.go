@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package aks
+package aks_test
 
 import (
 	"context"
@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
+	"github.com/neo4j-labs/neo4j-kubernetes-operator/test/cloud/testutil"
+	"github.com/neo4j-labs/neo4j-kubernetes-operator/test/utils"
 )
 
 var (
@@ -55,6 +57,7 @@ func TestAKS(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	testutil.SetupTestEnv()
 	ctx, cancel = context.WithCancel(context.Background())
 
 	By("Setting up AKS test environment")
@@ -80,6 +83,9 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{})
 	Expect(err).NotTo(HaveOccurred())
 
+	// Perform aggressive cleanup and sanity checks
+	utils.SetupTestEnvironment(ctx, k8sClient)
+
 	// Create test namespace
 	testNamespace = fmt.Sprintf("aks-test-%d", time.Now().Unix())
 	ns := &corev1.Namespace{
@@ -99,7 +105,10 @@ var _ = AfterSuite(func() {
 				Name: testNamespace,
 			},
 		}
-		k8sClient.Delete(ctx, ns)
+		if err := k8sClient.Delete(ctx, ns); err != nil {
+			// Log the error but don't fail the test cleanup
+			fmt.Printf("Warning: Failed to delete test namespace %s: %v\n", testNamespace, err)
+		}
 	}
 
 	cancel()

@@ -8,8 +8,8 @@ repos:
       - id: check-yaml
         args: ['--allow-multiple-documents']
         exclude: ^(config/manager/|\.github/workflows/).*\.ya?ml$
-#      - id: check-added-large-files
-#        args: ['--maxkb=1000']  # Limit to 1MB
+      # - id: check-added-large-files
+      #   args: ['--maxkb=1000']  # Limit to 1MB
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: debug-statements
@@ -27,7 +27,15 @@ repos:
       - id: go-imports
         name: go imports
         entry: bash
-        args: [-c, 'GOPATH=$(go env GOPATH); if [ -f "$GOPATH/bin/goimports" ]; then "$GOPATH/bin/goimports" -w .; else go install golang.org/x/tools/cmd/goimports@latest && "$GOPATH/bin/goimports" -w .; fi']
+        args:
+          - -c
+          - |
+            GOPATH=$(go env GOPATH)
+            if [ -f "$GOPATH/bin/goimports" ]; then
+              "$GOPATH/bin/goimports" -w .
+            else
+              go install golang.org/x/tools/cmd/goimports@latest && "$GOPATH/bin/goimports" -w .
+            fi
         language: system
         files: \.go$
         pass_filenames: false

@@ -111,13 +111,15 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: test-unit ## Run tests (alias for test-unit).
+test: test-setup ## Run tests with clean environment
+	go test -v -race -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
-test-e2e:
-	$(eval IMG ?= neo4j-operator:ci)
-	go test ./test/e2e/ -v -ginkgo.v
+test-e2e: test-setup ## Run e2e tests with clean environment
+	go test -v -race -coverprofile=coverage-e2e.out ./test/e2e/...
+	go tool cover -html=coverage-e2e.out -o coverage-e2e.html
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -284,8 +286,9 @@ test-unit: manifests generate fmt vet envtest ## Run unit tests.
 test-comprehensive: test-unit test-integration test-webhooks ## Run comprehensive test suite.
 
 .PHONY: test-integration
-test-integration: manifests generate fmt vet envtest ## Run integration tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./test/integration/... -v -timeout=30m
+test-integration: test-setup ## Run integration tests with clean environment
+	go test -v -race -coverprofile=coverage-integration.out ./test/integration/...
+	go tool cover -html=coverage-integration.out -o coverage-integration.html
 
 .PHONY: test-webhooks
 test-webhooks: manifests generate fmt vet envtest ## Run webhook tests.
@@ -557,7 +560,7 @@ STATICCHECK = $(LOCALBIN)/staticcheck
 KUSTOMIZE_VERSION ?= v5.4.3
 CONTROLLER_TOOLS_VERSION ?= v0.16.1
 ENVTEST_VERSION ?= release-0.19
-GOLANGCI_LINT_VERSION ?= v2.1.6
+GOLANGCI_LINT_VERSION ?= v1.64.8
 STATICCHECK_VERSION ?= 2025.1.1
 
 .PHONY: kustomize
@@ -911,7 +914,7 @@ tools-install: ## Install all development tools.
 	@go install golang.org/x/tools/cmd/goimports@latest
 	@go install github.com/go-delve/delve/cmd/dlv@latest
 	@go install github.com/air-verse/air@latest
-	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
 	@go install github.com/onsi/ginkgo/v2/ginkgo@latest
 	@go install honnef.co/go/tools/cmd/staticcheck@latest
 	@go install github.com/vektra/mockery/v2@latest
@@ -924,7 +927,7 @@ tools-update: ## Update all development tools.
 	@go install golang.org/x/tools/cmd/goimports@latest
 	@go install github.com/go-delve/delve/cmd/dlv@latest
 	@go install github.com/air-verse/air@latest
-	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
 	@go install github.com/onsi/ginkgo/v2/ginkgo@latest
 	@go install honnef.co/go/tools/cmd/staticcheck@latest
 	@go install github.com/vektra/mockery/v2@latest
@@ -1153,3 +1156,82 @@ help-dev: ## Show comprehensive development help.
 	@echo "  5. make quality-quick  # Check code quality"
 	@echo ""
 	@echo "Run 'make help' for all available targets."
+
+.PHONY: test-cleanup
+test-cleanup: ## Perform aggressive test environment cleanup
+	@echo "🧹 Performing aggressive test environment cleanup..."
+	@if [ -f "scripts/test-cleanup.sh" ]; then \
+		chmod +x scripts/test-cleanup.sh; \
+		./scripts/test-cleanup.sh cleanup; \
+	else \
+		echo "Warning: cleanup script not found"; \
+	fi
+
+.PHONY: test-check
+test-check: ## Perform test environment sanity checks
+	@echo "🔍 Performing test environment sanity checks..."
+	@if [ -f "scripts/test-cleanup.sh" ]; then \
+		chmod +x scripts/test-cleanup.sh; \
+		./scripts/test-cleanup.sh check; \
+	else \
+		echo "Warning: cleanup script not found"; \
+	fi
+
+.PHONY: test-setup
+test-setup: test-cleanup ## Set up clean test environment (cleanup + checks)
+	@echo "✅ Test environment setup completed"
+
+.PHONY: test-runner
+test-runner: ## Run comprehensive tests with cleanup using the test runner script
+	@echo "🚀 Running comprehensive test suite with cleanup..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh; \
+	else \
+		echo "Error: test runner script not found"; \
+		exit 1; \
+	fi
+
+.PHONY: test-runner-unit
+test-runner-unit: ## Run unit tests with cleanup using the test runner script
+	@echo "🧪 Running unit tests with cleanup..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh --test-type unit; \
+	else \
+		echo "Error: test runner script not found"; \
+		exit 1; \
+	fi
+
+.PHONY: test-runner-integration
+test-runner-integration: ## Run integration tests with cleanup using the test runner script
+	@echo "🔗 Running integration tests with cleanup..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh --test-type integration; \
+	else \
+		echo "Error: test runner script not found"; \
+		exit 1; \
+	fi
+
+.PHONY: test-runner-e2e
+test-runner-e2e: ## Run e2e tests with cleanup using the test runner script
+	@echo "🌐 Running e2e tests with cleanup..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh --test-type e2e; \
+	else \
+		echo "Error: test runner script not found"; \
+		exit 1; \
+	fi
+
+.PHONY: test-runner-parallel
+test-runner-parallel: ## Run all tests in parallel with cleanup using the test runner script
+	@echo "⚡ Running all tests in parallel with cleanup..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh --test-type all --parallel; \
+	else \
+		echo "Error: test runner script not found"; \
+		exit 1; \
+	fi

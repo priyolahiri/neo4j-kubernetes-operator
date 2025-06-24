@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -212,7 +213,7 @@ func (r *Neo4jPluginReconciler) downloadFromOfficialRepository(ctx context.Conte
 	// Create download job to fetch plugin from official repository
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-download", plugin.Name),
+			Name:      plugin.Name + "-download",
 			Namespace: plugin.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":      "neo4j-plugin",
@@ -274,7 +275,7 @@ func (r *Neo4jPluginReconciler) downloadFromCommunityRepository(ctx context.Cont
 	// Create download job for community plugin
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-download", plugin.Name),
+			Name:      plugin.Name + "-download",
 			Namespace: plugin.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":      "neo4j-plugin",
@@ -339,7 +340,7 @@ func (r *Neo4jPluginReconciler) downloadFromCustomRepository(ctx context.Context
 	// Create download job with custom repository credentials
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-download", plugin.Name),
+			Name:      plugin.Name + "-download",
 			Namespace: plugin.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":      "neo4j-plugin",
@@ -402,7 +403,7 @@ func (r *Neo4jPluginReconciler) downloadFromURL(ctx context.Context, plugin *neo
 	// Create download job
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-download", plugin.Name),
+			Name:      plugin.Name + "-download",
 			Namespace: plugin.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":      "neo4j-plugin",
@@ -906,34 +907,39 @@ func (r *Neo4jPluginReconciler) cleanupDependencies(ctx context.Context, plugin 
 }
 
 func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin, phase, message string) {
-	plugin.Status.Phase = phase
-	plugin.Status.Message = message
-	plugin.Status.ObservedGeneration = plugin.Generation
-
-	// Add or update condition
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             metav1.ConditionTrue,
-		LastTransitionTime: metav1.Now(),
-		Reason:             phase,
-		Message:            message,
-	}
-
-	if phase == "Failed" || phase == "Installing" {
-		condition.Status = metav1.ConditionFalse
-	}
-
-	// Update or append condition
-	for i, cond := range plugin.Status.Conditions {
-		if cond.Type == condition.Type {
-			plugin.Status.Conditions[i] = condition
-			goto updateStatus
+	update := func() error {
+		latest := &neo4jv1alpha1.Neo4jPlugin{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(plugin), latest); err != nil {
+			return err
 		}
+		latest.Status.Phase = phase
+		latest.Status.Message = message
+		latest.Status.ObservedGeneration = latest.Generation
+		condition := metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: metav1.Now(),
+			Reason:             phase,
+			Message:            message,
+		}
+		if phase == "Failed" || phase == "Installing" {
+			condition.Status = metav1.ConditionFalse
+		}
+		found := false
+		for i, cond := range latest.Status.Conditions {
+			if cond.Type == condition.Type {
+				latest.Status.Conditions[i] = condition
+				found = true
+				break
+			}
+		}
+		if !found {
+			latest.Status.Conditions = append(latest.Status.Conditions, condition)
+		}
+		return r.Status().Update(ctx, latest)
 	}
-	plugin.Status.Conditions = append(plugin.Status.Conditions, condition)
-
-updateStatus:
-	if err := r.Status().Update(ctx, plugin); err != nil {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
+	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update plugin status")
 	}
 }

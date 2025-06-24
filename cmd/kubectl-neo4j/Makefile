@@ -116,7 +116,7 @@ docker-run: docker-build ## Run the plugin in Docker
 
 deps: ## Install development dependencies
 	@echo "Installing development dependencies..."
-	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
 
 version: ## Show version information
 	@echo "Plugin: $(PLUGIN_NAME)"

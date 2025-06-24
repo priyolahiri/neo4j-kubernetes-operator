@@ -665,12 +665,8 @@ func (w *Neo4jEnterpriseClusterWebhook) validateClusterUpdate(oldCluster, newClu
 		allErrs = append(allErrs, w.validateUpgradeStrategy(newCluster)...)
 	}
 
-	// Warn about storage class changes
-	if oldCluster.Spec.Storage.ClassName != newCluster.Spec.Storage.ClassName {
-		// This would typically be a warning, but field.ErrorList doesn't support warnings
-		// In a real implementation, this could be handled by returning admission.Warnings
-		// For now, we log this as an informational message
-	}
+	// Note: Storage class changes are allowed but may require manual intervention
+	// The cluster will continue to use the existing storage until manually migrated
 
 	return allErrs
 }

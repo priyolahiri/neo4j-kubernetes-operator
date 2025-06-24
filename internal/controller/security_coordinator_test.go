@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package controller_test
 
 import (
 	"context"
@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
+	controller "github.com/neo4j-labs/neo4j-kubernetes-operator/internal/controller"
 )
 
 func TestSecurityCoordinator(t *testing.T) {
@@ -43,7 +44,7 @@ var _ = Describe("Security Coordinator", func() {
 	var (
 		ctx         context.Context
 		cancel      context.CancelFunc
-		coordinator *SecurityCoordinator
+		coordinator *controller.SecurityCoordinator
 		fakeClient  client.Client
 		scheme      *runtime.Scheme
 		wg          sync.WaitGroup
@@ -56,7 +57,7 @@ var _ = Describe("Security Coordinator", func() {
 		_ = neo4jv1alpha1.AddToScheme(scheme)
 
 		fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-		coordinator = NewSecurityCoordinator(fakeClient)
+		coordinator = controller.NewSecurityCoordinator(fakeClient)
 	})
 
 	AfterEach(func() {
@@ -129,7 +130,10 @@ var _ = Describe("Security Coordinator", func() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				coordinator.Start(ctx)
+				if err := coordinator.Start(ctx); err != nil {
+					// Log the error but don't fail the test
+					fmt.Printf("Warning: Coordinator start error: %v\n", err)
+				}
 			}()
 
 			By("Verifying coordinator is running")
@@ -150,7 +154,10 @@ var _ = Describe("Security Coordinator", func() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				coordinator.Start(ctx)
+				if err := coordinator.Start(ctx); err != nil {
+					// Log the error but don't fail the test
+					fmt.Printf("Warning: Coordinator start error: %v\n", err)
+				}
 			}()
 
 			By("Verifying cluster isolation")
@@ -171,7 +178,10 @@ var _ = Describe("Security Coordinator", func() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				coordinator.Start(ctx)
+				if err := coordinator.Start(ctx); err != nil {
+					// Log the error but don't fail the test
+					fmt.Printf("Warning: Coordinator start error: %v\n", err)
+				}
 			}()
 
 			By("Verifying processing works")
@@ -189,10 +199,13 @@ var _ = Describe("Security Coordinator", func() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				coordinator.Start(ctx)
+				if err := coordinator.Start(ctx); err != nil {
+					// Log the error but don't fail the test
+					fmt.Printf("Warning: Coordinator start error: %v\n", err)
+				}
 			}()
 
-			By("Cancelling context")
+			By("Canceling context")
 			cancel()
 
 			By("Verifying coordinator stops gracefully")
@@ -213,7 +226,10 @@ var _ = Describe("Security Coordinator", func() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				coordinator.Start(ctx)
+				if err := coordinator.Start(ctx); err != nil {
+					// Log the error but don't fail the test
+					fmt.Printf("Warning: Coordinator start error: %v\n", err)
+				}
 			}()
 
 			By("Verifying requests are processed")
@@ -229,7 +245,10 @@ var _ = Describe("Security Coordinator", func() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				coordinator.Start(ctx)
+				if err := coordinator.Start(ctx); err != nil {
+					// Log the error but don't fail the test
+					fmt.Printf("Warning: Coordinator start error: %v\n", err)
+				}
 			}()
 
 			By("Verifying coordinator handles errors gracefully")
@@ -252,7 +271,10 @@ var _ = Describe("Security Coordinator", func() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				coordinator.Start(ctx)
+				if err := coordinator.Start(ctx); err != nil {
+					// Log the error but don't fail the test
+					fmt.Printf("Warning: Coordinator start error: %v\n", err)
+				}
 			}()
 
 			By("Verifying integration works")

@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -156,8 +157,8 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 	}
 
 	// Update status
-	r.updateBackupStatus(ctx, backup, "Scheduled", fmt.Sprintf("Backup scheduled with CronJob %s", cronJob.Name))
-	r.Recorder.Event(backup, "Normal", "BackupScheduled", fmt.Sprintf("Backup scheduled with CronJob %s", cronJob.Name))
+	r.updateBackupStatus(ctx, backup, "Scheduled", "Backup scheduled with CronJob "+cronJob.Name)
+	r.Recorder.Event(backup, "Normal", "BackupScheduled", "Backup scheduled with CronJob "+cronJob.Name)
 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
@@ -166,7 +167,7 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 	logger := log.FromContext(ctx)
 
 	// Check if backup job already exists
-	jobName := fmt.Sprintf("%s-backup", backup.Name)
+	jobName := backup.Name + "-backup"
 	existingJob := &batchv1.Job{}
 	err := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: backup.Namespace}, existingJob)
 
@@ -221,7 +222,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 }
 
 func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
-	jobName := fmt.Sprintf("%s-backup", backup.Name)
+	jobName := backup.Name + "-backup"
 
 	// Build backup command
 	backupCmd := r.buildBackupCommand(backup)
@@ -285,7 +286,7 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 }
 
 func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*batchv1.CronJob, error) {
-	cronJobName := fmt.Sprintf("%s-backup-cron", backup.Name)
+	cronJobName := backup.Name + "-backup-cron"
 
 	// Check if CronJob already exists
 	existingCronJob := &batchv1.CronJob{}
@@ -374,11 +375,11 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(backup *neo4jv1alpha1.Neo4jBa
 
 	switch backup.Spec.Target.Kind {
 	case "Cluster":
-		cmd = fmt.Sprintf("neo4j-admin backup --database=system --to=/backup/%s", backupName)
+		cmd = "neo4j-admin backup --database=system --to=/backup/" + backupName
 	case "Database":
 		cmd = fmt.Sprintf("neo4j-admin backup --database=%s --to=/backup/%s", backup.Spec.Target.Name, backupName)
 	default:
-		cmd = fmt.Sprintf("neo4j-admin backup --database=system --to=/backup/%s", backupName)
+		cmd = "neo4j-admin backup --database=system --to=/backup/" + backupName
 	}
 
 	// Add compression if specified
@@ -566,45 +567,45 @@ func (r *Neo4jBackupReconciler) cleanupBackupArtifacts(ctx context.Context, back
 }
 
 func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, phase, message string) {
-	backup.Status.Phase = phase
-	backup.Status.Message = message
-
-	// Update condition
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             metav1.ConditionTrue,
-		Reason:             phase,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
-
-	if phase == "Failed" || phase == "Suspended" {
-		condition.Status = metav1.ConditionFalse
-	}
-
-	// Update or add condition
-	updated := false
-	for i, existingCondition := range backup.Status.Conditions {
-		if existingCondition.Type == condition.Type {
-			backup.Status.Conditions[i] = condition
-			updated = true
-			break
+	update := func() error {
+		latest := &neo4jv1alpha1.Neo4jBackup{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(backup), latest); err != nil {
+			return err
 		}
+		latest.Status.Phase = phase
+		latest.Status.Message = message
+		condition := metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionTrue,
+			Reason:             phase,
+			Message:            message,
+			LastTransitionTime: metav1.Now(),
+		}
+		if phase == "Failed" || phase == "Suspended" {
+			condition.Status = metav1.ConditionFalse
+		}
+		updated := false
+		for i, existingCondition := range latest.Status.Conditions {
+			if existingCondition.Type == condition.Type {
+				latest.Status.Conditions[i] = condition
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			latest.Status.Conditions = append(latest.Status.Conditions, condition)
+		}
+		now := metav1.Now()
+		switch phase {
+		case "Running":
+			latest.Status.LastRunTime = &now
+		case "Completed":
+			latest.Status.LastSuccessTime = &now
+		}
+		return r.Status().Update(ctx, latest)
 	}
-	if !updated {
-		backup.Status.Conditions = append(backup.Status.Conditions, condition)
-	}
-
-	// Update timestamps
-	now := metav1.Now()
-	switch phase {
-	case "Running":
-		backup.Status.LastRunTime = &now
-	case "Completed":
-		backup.Status.LastSuccessTime = &now
-	}
-
-	if err := r.Status().Update(ctx, backup); err != nil {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
+	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update backup status")
 	}
 }

@@ -40,6 +40,35 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Environment cleanup and sanity checks
+        run: |
+          echo "Performing aggressive environment cleanup and sanity checks..."
+
+          # Check if we're in a Kubernetes environment
+          if command -v kubectl &> /dev/null; then
+            echo "Kubernetes environment detected, running aggressive cleanup..."
+            # Run cleanup script if available
+            if [ -f "scripts/test-cleanup.sh" ]; then
+              chmod +x scripts/test-cleanup.sh
+              export FORCE_CLEANUP=true
+              export DELETE_NAMESPACES=true
+              export VERBOSE=true
+              ./scripts/test-cleanup.sh cleanup
+            fi
+          else
+            echo "No Kubernetes environment detected, skipping cleanup"
+          fi
+
+          # Clean up any local test artifacts
+          rm -rf test-results/ coverage/ logs/ tmp/
+
+          echo "Environment preparation completed"
+
+      - name: Install dependencies
+        run: |
+          make install-tools
+          make manifests
+
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1.10.0
         with:

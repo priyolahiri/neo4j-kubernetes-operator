@@ -94,6 +94,11 @@ func (mcc *MultiClusterController) ReconcileMultiCluster(ctx context.Context, cl
 		return fmt.Errorf("failed to setup coordination: %w", err)
 	}
 
+	// Set up cross-cluster replication
+	if err := mcc.setupCrossClusterReplication(ctx, cluster); err != nil {
+		return fmt.Errorf("failed to setup cross-cluster replication: %w", err)
+	}
+
 	logger.Info("Multi-cluster reconciliation completed")
 	return nil
 }
@@ -130,7 +135,7 @@ func (mcc *MultiClusterController) createClusterClient(ctx context.Context, clus
 	}
 
 	// Look for cluster credentials in secrets
-	secretName := fmt.Sprintf("%s-cluster-credentials", clusterConfig.Name)
+	secretName := clusterConfig.Name + "-cluster-credentials"
 	secret := &corev1.Secret{}
 	secretKey := types.NamespacedName{
 		Name:      secretName,
@@ -268,7 +273,7 @@ func (mcc *MultiClusterController) setupSubmarinerNetworking(ctx context.Context
 			"apiVersion": "submariner.io/v1alpha1",
 			"kind":       "Broker",
 			"metadata": map[string]interface{}{
-				"name":      fmt.Sprintf("%s-broker", cluster.Name),
+				"name":      cluster.Name + "-broker",
 				"namespace": cluster.Namespace,
 			},
 			"spec": map[string]interface{}{
@@ -288,7 +293,7 @@ func (mcc *MultiClusterController) setupSubmarinerNetworking(ctx context.Context
 				"apiVersion": "submariner.io/v1alpha1",
 				"kind":       "ClusterJoin",
 				"metadata": map[string]interface{}{
-					"name":      fmt.Sprintf("%s-join", clusterConfig.Name),
+					"name":      clusterConfig.Name + "-join",
 					"namespace": cluster.Namespace,
 				},
 				"spec": map[string]interface{}{
@@ -482,12 +487,12 @@ func (mcc *MultiClusterController) getPrimaryClusterEndpoint(cluster *neo4jv1alp
 				return clusterConfig.Endpoint
 			}
 			// Construct default endpoint based on cluster name and region
-			return fmt.Sprintf("%s-primary.%s.svc.cluster.local:7687", cluster.Name, clusterConfig.Region)
+			return clusterConfig.Name + "-primary.default.svc.cluster.local:7687"
 		}
 	}
 
 	// Fallback to default primary endpoint
-	return fmt.Sprintf("%s-primary.default.svc.cluster.local:7687", cluster.Name)
+	return cluster.Name + "-primary.default.svc.cluster.local:7687"
 }
 
 func (mcc *MultiClusterController) setupCrossClusterReplication(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
@@ -499,7 +504,7 @@ func (mcc *MultiClusterController) setupCrossClusterReplication(ctx context.Cont
 	// Create ConfigMap for replication configuration
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-replication-config", cluster.Name),
+			Name:      cluster.Name + "-replication-config",
 			Namespace: cluster.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":      "neo4j",
@@ -535,7 +540,7 @@ func (mcc *MultiClusterController) setupCrossClusterReplication(ctx context.Cont
 	// Verify ConfigMap was created
 	createdConfigMap := &corev1.ConfigMap{}
 	if err := mcc.client.Get(ctx, types.NamespacedName{
-		Name:      fmt.Sprintf("%s-replication-config", cluster.Name),
+		Name:      cluster.Name + "-replication-config",
 		Namespace: cluster.Namespace,
 	}, createdConfigMap); err != nil {
 		return fmt.Errorf("failed to verify replication ConfigMap creation: %w", err)
@@ -835,7 +840,7 @@ func (cm *CoordinationManager) SetupLeaderElection(ctx context.Context, cluster 
 	// Create leader election ConfigMap
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-leader-election", cluster.Name),
+			Name:      cluster.Name + "-leader-election",
 			Namespace: leaderElection.Namespace,
 		},
 		Data: map[string]string{
@@ -864,7 +869,7 @@ func (cm *CoordinationManager) SetupStateSynchronization(ctx context.Context, cl
 	// Create state synchronization CronJob
 	cronJob := &batchv1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-state-sync", cluster.Name),
+			Name:      cluster.Name + "-state-sync",
 			Namespace: cluster.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":      "neo4j",
@@ -931,7 +936,7 @@ func (cm *CoordinationManager) SetupFailoverCoordination(ctx context.Context, cl
 	// Create failover coordination deployment
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-failover-coordinator", cluster.Name),
+			Name:      cluster.Name + "-failover-coordinator",
 			Namespace: cluster.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/name":      "neo4j",

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package integration
+package integration_test
 
 import (
 	"fmt"
@@ -66,6 +66,7 @@ var _ = Describe("Cluster Lifecycle Integration Tests", func() {
 					Namespace: namespace.Name,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "5.26-enterprise",
@@ -192,6 +193,7 @@ var _ = Describe("Cluster Lifecycle Integration Tests", func() {
 					Namespace: namespace.Name,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "5.26-enterprise",
@@ -213,6 +215,7 @@ var _ = Describe("Cluster Lifecycle Integration Tests", func() {
 					Namespace: namespace.Name,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "5.26-enterprise",

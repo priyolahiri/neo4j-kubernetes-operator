@@ -1,10 +1,11 @@
-package controller
+package controller_test
 
 import (
 	"context"
 	"testing"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
+	"github.com/neo4j-labs/neo4j-kubernetes-operator/internal/controller"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,7 +22,7 @@ func TestTopologyScheduler_CalculateTopologyPlacement(t *testing.T) {
 		name    string
 		cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
 		nodes   []corev1.Node
-		want    *TopologyPlacement
+		want    *controller.TopologyPlacement
 		wantErr bool
 	}{
 		{
@@ -56,7 +57,7 @@ func TestTopologyScheduler_CalculateTopologyPlacement(t *testing.T) {
 					},
 				},
 			},
-			want: &TopologyPlacement{
+			want: &controller.TopologyPlacement{
 				UseTopologySpread:   false,
 				UseAntiAffinity:     false,
 				AvailabilityZones:   []string{}, // Will be auto-discovered but empty in test
@@ -117,7 +118,7 @@ func TestTopologyScheduler_CalculateTopologyPlacement(t *testing.T) {
 					},
 				},
 			},
-			want: &TopologyPlacement{
+			want: &controller.TopologyPlacement{
 				UseTopologySpread:   true,
 				UseAntiAffinity:     true,
 				AvailabilityZones:   []string{"zone-a", "zone-b", "zone-c"},
@@ -173,7 +174,7 @@ func TestTopologyScheduler_CalculateTopologyPlacement(t *testing.T) {
 			}
 			client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
 
-			ts := NewTopologyScheduler(client)
+			ts := controller.NewTopologyScheduler(client)
 			got, err := ts.CalculateTopologyPlacement(context.Background(), tt.cluster)
 
 			if (err != nil) != tt.wantErr {
@@ -226,7 +227,7 @@ func TestTopologyScheduler_ApplyTopologyConstraints(t *testing.T) {
 		},
 	}
 
-	placement := &TopologyPlacement{
+	placement := &controller.TopologyPlacement{
 		UseTopologySpread:   true,
 		UseAntiAffinity:     false,
 		AvailabilityZones:   []string{"zone-a", "zone-b", "zone-c"},
@@ -246,7 +247,7 @@ func TestTopologyScheduler_ApplyTopologyConstraints(t *testing.T) {
 	}
 
 	client := fake.NewClientBuilder().WithScheme(scheme).Build()
-	ts := NewTopologyScheduler(client)
+	ts := controller.NewTopologyScheduler(client)
 
 	err := ts.ApplyTopologyConstraints(context.Background(), sts, cluster, placement)
 	if err != nil {
@@ -272,7 +273,7 @@ func TestTopologyScheduler_ApplyTopologyConstraints(t *testing.T) {
 func TestTopologyDistribution_IsBalanced(t *testing.T) {
 	tests := []struct {
 		name               string
-		distribution       *TopologyDistribution
+		distribution       *controller.TopologyDistribution
 		desiredPrimaries   int32
 		desiredSecondaries int32
 		maxSkew            int32
@@ -280,8 +281,8 @@ func TestTopologyDistribution_IsBalanced(t *testing.T) {
 	}{
 		{
 			name: "balanced distribution",
-			distribution: &TopologyDistribution{
-				ZoneDistribution: map[string]*ZoneDistribution{
+			distribution: &controller.TopologyDistribution{
+				ZoneDistribution: map[string]*controller.ZoneDistribution{
 					"zone-a": {Primaries: 1, Secondaries: 1},
 					"zone-b": {Primaries: 1, Secondaries: 1},
 					"zone-c": {Primaries: 1, Secondaries: 1},
@@ -294,8 +295,8 @@ func TestTopologyDistribution_IsBalanced(t *testing.T) {
 		},
 		{
 			name: "unbalanced distribution",
-			distribution: &TopologyDistribution{
-				ZoneDistribution: map[string]*ZoneDistribution{
+			distribution: &controller.TopologyDistribution{
+				ZoneDistribution: map[string]*controller.ZoneDistribution{
 					"zone-a": {Primaries: 3, Secondaries: 0},
 					"zone-b": {Primaries: 0, Secondaries: 2},
 					"zone-c": {Primaries: 0, Secondaries: 1},
@@ -308,8 +309,8 @@ func TestTopologyDistribution_IsBalanced(t *testing.T) {
 		},
 		{
 			name: "acceptable skew",
-			distribution: &TopologyDistribution{
-				ZoneDistribution: map[string]*ZoneDistribution{
+			distribution: &controller.TopologyDistribution{
+				ZoneDistribution: map[string]*controller.ZoneDistribution{
 					"zone-a": {Primaries: 2, Secondaries: 1},
 					"zone-b": {Primaries: 1, Secondaries: 1},
 					"zone-c": {Primaries: 0, Secondaries: 1},

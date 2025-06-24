@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package controller_test
 
 import (
 	"context"
@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
+	controller "github.com/neo4j-labs/neo4j-kubernetes-operator/internal/controller"
 )
 
 var _ = Describe("Neo4jDatabase Controller", func() {
@@ -67,7 +68,7 @@ var _ = Describe("Neo4jDatabase Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &Neo4jDatabaseReconciler{
+			controllerReconciler := &controller.Neo4jDatabaseReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}

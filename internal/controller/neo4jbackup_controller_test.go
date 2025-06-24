@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package controller_test
 
 import (
 	"context"
@@ -27,9 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
 )
@@ -44,14 +42,12 @@ var _ = Describe("Neo4jBackup Controller", func() {
 		ctx           context.Context
 		backup        *neo4jv1alpha1.Neo4jBackup
 		cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
-		reconciler    *Neo4jBackupReconciler
 		backupName    string
 		clusterName   string
 		namespaceName string
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
 		backupName = fmt.Sprintf("test-backup-%d", time.Now().UnixNano())
 		clusterName = fmt.Sprintf("test-cluster-%d", time.Now().UnixNano())
 		namespaceName = "default"
@@ -63,6 +59,7 @@ var _ = Describe("Neo4jBackup Controller", func() {
 				Namespace: namespaceName,
 			},
 			Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Edition: "enterprise",
 				Image: neo4jv1alpha1.ImageSpec{
 					Repo: "neo4j",
 					Tag:  "5.26-enterprise",
@@ -78,13 +75,6 @@ var _ = Describe("Neo4jBackup Controller", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, cluster)).Should(Succeed())
-
-		// Create reconciler
-		reconciler = &Neo4jBackupReconciler{
-			Client:   k8sClient,
-			Scheme:   k8sClient.Scheme(),
-			Recorder: record.NewFakeRecorder(100),
-		}
 
 		// Create basic backup spec
 		backup = &neo4jv1alpha1.Neo4jBackup{
@@ -111,10 +101,16 @@ var _ = Describe("Neo4jBackup Controller", func() {
 	AfterEach(func() {
 		// Clean up resources
 		if backup != nil {
-			k8sClient.Delete(ctx, backup, client.PropagationPolicy(metav1.DeletePropagationForeground))
+			if err := k8sClient.Delete(ctx, backup, client.PropagationPolicy(metav1.DeletePropagationForeground)); err != nil {
+				// Log the error but don't fail the test cleanup
+				fmt.Printf("Warning: Failed to delete backup during cleanup: %v\n", err)
+			}
 		}
 		if cluster != nil {
-			k8sClient.Delete(ctx, cluster, client.PropagationPolicy(metav1.DeletePropagationForeground))
+			if err := k8sClient.Delete(ctx, cluster, client.PropagationPolicy(metav1.DeletePropagationForeground)); err != nil {
+				// Log the error but don't fail the test cleanup
+				fmt.Printf("Warning: Failed to delete cluster during cleanup: %v\n", err)
+			}
 		}
 	})
 
@@ -123,21 +119,11 @@ var _ = Describe("Neo4jBackup Controller", func() {
 			By("Creating the backup resource")
 			Expect(k8sClient.Create(ctx, backup)).Should(Succeed())
 
-			By("Reconciling the backup")
-			result, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      backupName,
-					Namespace: namespaceName,
-				},
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(BeZero())
-
-			By("Checking that backup Job is created")
+			By("Waiting for backup Job to be created by the controller")
 			job := &batchv1.Job{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{
-					Name:      backupName,
+					Name:      backupName + "-backup",
 					Namespace: namespaceName,
 				}, job)
 			}, timeout, interval).Should(Succeed())
@@ -152,16 +138,7 @@ var _ = Describe("Neo4jBackup Controller", func() {
 			backup.Spec.Schedule = "0 2 * * *" // Daily at 2 AM
 			Expect(k8sClient.Create(ctx, backup)).Should(Succeed())
 
-			By("Reconciling the backup")
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      backupName,
-					Namespace: namespaceName,
-				},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking that CronJob is created")
+			By("Waiting for CronJob to be created by the controller")
 			cronJob := &batchv1.CronJob{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{
@@ -192,20 +169,11 @@ var _ = Describe("Neo4jBackup Controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, backup)).Should(Succeed())
 
-			By("Reconciling the backup")
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      backupName,
-					Namespace: namespaceName,
-				},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking that Job has S3 configuration")
+			By("Waiting for Job to be created with S3 configuration")
 			job := &batchv1.Job{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{
-					Name:      backupName,
+					Name:      backupName + "-backup",
 					Namespace: namespaceName,
 				}, job)
 			}, timeout, interval).Should(Succeed())
@@ -235,20 +203,11 @@ var _ = Describe("Neo4jBackup Controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, backup)).Should(Succeed())
 
-			By("Reconciling the backup")
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      backupName,
-					Namespace: namespaceName,
-				},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking that Job has GCS configuration")
+			By("Waiting for Job to be created with GCS configuration")
 			job := &batchv1.Job{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{
-					Name:      backupName,
+					Name:      backupName + "-backup",
 					Namespace: namespaceName,
 				}, job)
 			}, timeout, interval).Should(Succeed())
@@ -278,54 +237,39 @@ var _ = Describe("Neo4jBackup Controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, backup)).Should(Succeed())
 
-			By("Reconciling the backup")
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      backupName,
-					Namespace: namespaceName,
-				},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking that Job has Azure configuration")
+			By("Waiting for Job to be created with Azure configuration")
 			job := &batchv1.Job{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{
-					Name:      backupName,
+					Name:      backupName + "-backup",
 					Namespace: namespaceName,
 				}, job)
 			}, timeout, interval).Should(Succeed())
 
 			container := job.Spec.Template.Spec.Containers[0]
 			Expect(container.Env).To(ContainElement(corev1.EnvVar{
-				Name:  "BACKUP_CONTAINER",
+				Name:  "BACKUP_BUCKET",
 				Value: "test-azure-container",
 			}))
 		})
 	})
 
 	Context("When handling backup status", func() {
-		BeforeEach(func() {
-			Expect(k8sClient.Create(ctx, backup)).Should(Succeed())
-		})
-
 		It("Should update status conditions correctly", func() {
-			By("Reconciling and checking initial status")
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
+			By("Creating the backup resource")
+			Expect(k8sClient.Create(ctx, backup)).Should(Succeed())
+
+			By("Waiting for status conditions to be set by the controller")
+			Eventually(func() bool {
+				updatedBackup := &neo4jv1alpha1.Neo4jBackup{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      backupName,
 					Namespace: namespaceName,
-				},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking status conditions are set")
-			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: backupName, Namespace: namespaceName}, backup)
+				}, updatedBackup)
 				if err != nil {
 					return false
 				}
-				return len(backup.Status.Conditions) > 0
+				return len(updatedBackup.Status.Conditions) > 0
 			}, timeout, interval).Should(BeTrue())
 		})
 	})
@@ -334,34 +278,22 @@ var _ = Describe("Neo4jBackup Controller", func() {
 		It("Should apply retention policies", func() {
 			By("Configuring retention policy")
 			backup.Spec.Retention = &neo4jv1alpha1.RetentionPolicy{
-				MaxAge:   "7d",
-				MaxCount: 10,
+				MaxAge:   "30d",
+				MaxCount: 5,
 			}
 			Expect(k8sClient.Create(ctx, backup)).Should(Succeed())
 
-			By("Reconciling the backup")
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      backupName,
-					Namespace: namespaceName,
-				},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking that Job has retention configuration")
+			By("Waiting for Job to be created with retention configuration")
 			job := &batchv1.Job{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{
-					Name:      backupName,
+					Name:      backupName + "-backup",
 					Namespace: namespaceName,
 				}, job)
 			}, timeout, interval).Should(Succeed())
 
 			container := job.Spec.Template.Spec.Containers[0]
-			Expect(container.Env).To(ContainElement(corev1.EnvVar{
-				Name:  "RETENTION_MAX_AGE",
-				Value: "7d",
-			}))
+			Expect(container.Args).To(ContainElement(ContainSubstring("--max-age=30d")))
 		})
 	})
 
@@ -370,33 +302,21 @@ var _ = Describe("Neo4jBackup Controller", func() {
 			By("Configuring database-specific backup")
 			backup.Spec.Target = neo4jv1alpha1.BackupTarget{
 				Kind: "Database",
-				Name: "test-database",
+				Name: "testdb",
 			}
 			Expect(k8sClient.Create(ctx, backup)).Should(Succeed())
 
-			By("Reconciling the backup")
-			_, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      backupName,
-					Namespace: namespaceName,
-				},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking that Job has database specification")
+			By("Waiting for Job to be created with database specification")
 			job := &batchv1.Job{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{
-					Name:      backupName,
+					Name:      backupName + "-backup",
 					Namespace: namespaceName,
 				}, job)
 			}, timeout, interval).Should(Succeed())
 
 			container := job.Spec.Template.Spec.Containers[0]
-			Expect(container.Env).To(ContainElement(corev1.EnvVar{
-				Name:  "BACKUP_DATABASE",
-				Value: "test-database",
-			}))
+			Expect(container.Args).To(ContainElement(ContainSubstring("--database=testdb")))
 		})
 	})
 })

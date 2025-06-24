@@ -18,7 +18,28 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.24'
+
+      - name: Environment cleanup and sanity checks
+        run: |
+          echo "Performing environment cleanup and sanity checks..."
+
+          # Check if we're in a Kubernetes environment
+          if command -v kubectl &> /dev/null; then
+            echo "Kubernetes environment detected, running cleanup..."
+            # Run cleanup script if available
+            if [ -f "scripts/test-cleanup.sh" ]; then
+              chmod +x scripts/test-cleanup.sh
+              ./scripts/test-cleanup.sh check
+            fi
+          else
+            echo "No Kubernetes environment detected, skipping cleanup"
+          fi
+
+          # Clean up any local test artifacts
+          rm -rf test-results/ coverage/ logs/ tmp/
+
+          echo "Environment preparation completed"
 
       - name: Run comprehensive static analysis
         run: |

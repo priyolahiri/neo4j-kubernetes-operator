@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -257,32 +258,35 @@ func (r *Neo4jDatabaseReconciler) isClusterReady(cluster *neo4jv1alpha1.Neo4jEnt
 	return false
 }
 
-func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, database *neo4jv1alpha1.Neo4jDatabase,
-	status metav1.ConditionStatus, reason, message string) {
-
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
-
-	// Update or add condition
-	updated := false
-	for i, existingCondition := range database.Status.Conditions {
-		if existingCondition.Type == condition.Type {
-			database.Status.Conditions[i] = condition
-			updated = true
-			break
+func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, database *neo4jv1alpha1.Neo4jDatabase, status metav1.ConditionStatus, reason, message string) {
+	update := func() error {
+		latest := &neo4jv1alpha1.Neo4jDatabase{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(database), latest); err != nil {
+			return err
 		}
+		condition := metav1.Condition{
+			Type:               "Ready",
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
+			LastTransitionTime: metav1.Now(),
+		}
+		updated := false
+		for i, existingCondition := range latest.Status.Conditions {
+			if existingCondition.Type == condition.Type {
+				latest.Status.Conditions[i] = condition
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			latest.Status.Conditions = append(latest.Status.Conditions, condition)
+		}
+		latest.Status.ObservedGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
 	}
-	if !updated {
-		database.Status.Conditions = append(database.Status.Conditions, condition)
-	}
-
-	database.Status.ObservedGeneration = database.Generation
-	if err := r.Status().Update(ctx, database); err != nil {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
+	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update database status")
 	}
 }

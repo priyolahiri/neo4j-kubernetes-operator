@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -300,37 +301,41 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResource(ctx context.Co
 }
 
 func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, phase, message string) {
-	cluster.Status.Phase = phase
-	cluster.Status.Message = message
-
-	// Update the condition
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             metav1.ConditionTrue,
-		LastTransitionTime: metav1.Now(),
-		Reason:             phase,
-		Message:            message,
-	}
-
-	if phase == "Failed" {
-		condition.Status = metav1.ConditionFalse
-	}
-
-	// Update or append condition
-	found := false
-	for i, cond := range cluster.Status.Conditions {
-		if cond.Type == condition.Type {
-			cluster.Status.Conditions[i] = condition
-			found = true
-			break
+	update := func() error {
+		// Get latest version
+		latest := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
+			return err
 		}
-	}
-	if !found {
-		cluster.Status.Conditions = append(cluster.Status.Conditions, condition)
-	}
+		latest.Status.Phase = phase
+		latest.Status.Message = message
 
-	// Update status
-	if err := r.Status().Update(ctx, cluster); err != nil {
+		// Update the condition
+		condition := metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: metav1.Now(),
+			Reason:             phase,
+			Message:            message,
+		}
+		if phase == "Failed" {
+			condition.Status = metav1.ConditionFalse
+		}
+		found := false
+		for i, cond := range latest.Status.Conditions {
+			if cond.Type == condition.Type {
+				latest.Status.Conditions[i] = condition
+				found = true
+				break
+			}
+		}
+		if !found {
+			latest.Status.Conditions = append(latest.Status.Conditions, condition)
+		}
+		return r.Status().Update(ctx, latest)
+	}
+	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
+	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update cluster status")
 	}
 }
@@ -405,7 +410,7 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 	// Check if primary StatefulSet exists and has different image
 	primarySts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Name:      fmt.Sprintf("%s-primary", cluster.Name),
+		Name:      cluster.Name + "-primary",
 		Namespace: cluster.Namespace,
 	}, primarySts); err != nil {
 		return false // StatefulSet doesn't exist yet

@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -213,7 +214,7 @@ func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, resto
 	logger := log.FromContext(ctx)
 
 	// Get restore job
-	jobName := fmt.Sprintf("%s-restore", restore.Name)
+	jobName := restore.Name + "-restore"
 	job := &batchv1.Job{}
 	err := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: restore.Namespace}, job)
 
@@ -339,7 +340,7 @@ func (r *Neo4jRestoreReconciler) checkDatabaseExists(ctx context.Context, restor
 }
 
 func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
-	jobName := fmt.Sprintf("%s-restore", restore.Name)
+	jobName := restore.Name + "-restore"
 
 	// Build restore command
 	restoreCmd, err := r.buildRestoreCommand(ctx, restore)
@@ -730,7 +731,7 @@ func (r *Neo4jRestoreReconciler) runHookJob(ctx context.Context, restore *neo4jv
 			Labels: map[string]string{
 				"app.kubernetes.io/name":      "neo4j-restore",
 				"app.kubernetes.io/instance":  restore.Name,
-				"app.kubernetes.io/component": fmt.Sprintf("%s-hook", phase),
+				"app.kubernetes.io/component": phase + "-hook",
 			},
 		},
 		Spec: batchv1.JobSpec{
@@ -865,10 +866,17 @@ func (r *Neo4jRestoreReconciler) cleanupRestoreJobs(ctx context.Context, restore
 }
 
 func (r *Neo4jRestoreReconciler) updateRestoreStatus(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, phase, message string) {
-	restore.Status.Phase = phase
-	restore.Status.Message = message
-
-	if err := r.Status().Update(ctx, restore); err != nil {
+	update := func() error {
+		latest := &neo4jv1alpha1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		latest.Status.Phase = phase
+		latest.Status.Message = message
+		return r.Status().Update(ctx, latest)
+	}
+	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
+	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update restore status")
 	}
 }

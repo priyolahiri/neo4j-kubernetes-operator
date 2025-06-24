@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Comprehensive Test Runner Script
+# This script performs aggressive cleanup, sanity checks, and runs tests
+
 set -euo pipefail
 
 # Colors for output
@@ -9,355 +12,278 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-OPERATOR_NAMESPACE="neo4j-operator-system"
-TEST_TIMEOUT="30m"
-
-print_status() {
+# Logging functions
+log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
 
-print_success() {
+log_success() {
     echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
-print_warning() {
+log_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
-print_error() {
+log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-show_help() {
-    cat << EOF
-Usage: $0 [OPTIONS] [TEST_TYPE]
-
-Run tests for the Neo4j Kubernetes operator.
-
-TEST_TYPE:
-    unit            Run unit tests
-    integration     Run integration tests
-    e2e            Run end-to-end tests
-    enterprise     Run enterprise feature tests
-    all            Run all tests
-
-OPTIONS:
-    -v, --verbose      Verbose output
-    -k, --keep-going   Continue testing after failures
-    -t, --timeout SEC  Test timeout (default: $TEST_TIMEOUT)
-    -n, --namespace NS Kubernetes namespace for tests
-    --no-setup         Skip test environment setup
-    --cleanup          Clean up test resources after completion
-    -h, --help         Show this help message
-
-Examples:
-    $0 unit                    # Run unit tests
-    $0 integration --verbose   # Run integration tests with verbose output
-    $0 all --cleanup           # Run all tests and cleanup afterwards
-
-EOF
-}
-
-setup_test_environment() {
-    print_status "Setting up test environment..."
-
-    # Ensure the cluster is available
-    if ! kubectl cluster-info &> /dev/null; then
-        print_error "Kubernetes cluster is not available. Please ensure kubectl is configured."
-        return 1
-    fi
-
-    # Create test namespace if it doesn't exist
-    if ! kubectl get namespace "$OPERATOR_NAMESPACE" &> /dev/null; then
-        print_status "Creating operator namespace..."
-        kubectl create namespace "$OPERATOR_NAMESPACE"
-    fi
-
-    # Check if CRDs exist and install if needed
-    echo "🔍 Checking CRDs..."
-    if ! kubectl get crd neo4jenterpriseclusters.neo4j.neo4j.com &> /dev/null; then
-        echo "Installing CRDs..."
-        make install
-    fi
-
-    print_success "Test environment ready."
-}
-
-run_unit_tests() {
-    print_status "Running unit tests..."
-
-    local args=()
-    if [[ "$VERBOSE" == "true" ]]; then
-        args+=("-v")
-    fi
-
-    if [ ${#args[@]} -eq 0 ]; then
-        if go test -timeout="$TEST_TIMEOUT" ./internal/... ./api/...; then
-            print_success "Unit tests passed."
-            return 0
-        else
-            print_error "Unit tests failed."
-            return 1
-        fi
-    else
-        if go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./internal/... ./api/...; then
-            print_success "Unit tests passed."
-            return 0
-        else
-            print_error "Unit tests failed."
-            return 1
-        fi
-    fi
-}
-
-run_integration_tests() {
-    print_status "Running integration tests..."
-
-    local args=()
-    if [[ "$VERBOSE" == "true" ]]; then
-        args+=("-ginkgo.v")
-    fi
-
-    if [ ${#args[@]} -eq 0 ]; then
-        if go test -timeout="$TEST_TIMEOUT" ./test/integration/...; then
-            print_success "Integration tests passed."
-            return 0
-        else
-            print_error "Integration tests failed."
-            return 1
-        fi
-    else
-        if go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./test/integration/...; then
-            print_success "Integration tests passed."
-            return 0
-        else
-            print_error "Integration tests failed."
-            return 1
-        fi
-    fi
-}
-
-run_e2e_tests() {
-    print_status "Running end-to-end tests..."
-
-    # Ensure operator is deployed
-    if ! kubectl get deployment neo4j-operator-controller-manager -n "$OPERATOR_NAMESPACE" &> /dev/null; then
-        print_status "Deploying operator for e2e tests..."
-        make deploy IMG=neo4j-operator:dev
-
-        # Wait for operator to be ready
-        kubectl wait --for=condition=available deployment/neo4j-operator-controller-manager -n "$OPERATOR_NAMESPACE" --timeout=300s
-    fi
-
-    local args=()
-    if [[ "$VERBOSE" == "true" ]]; then
-        args+=("-ginkgo.v")
-    fi
-
-    if [ ${#args[@]} -eq 0 ]; then
-        if go test -timeout="$TEST_TIMEOUT" ./test/e2e/...; then
-            print_success "E2E tests passed."
-            return 0
-        else
-            print_error "E2E tests failed."
-            return 1
-        fi
-    else
-        if go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./test/e2e/...; then
-            print_success "E2E tests passed."
-            return 0
-        else
-            print_error "E2E tests failed."
-            return 1
-        fi
-    fi
-}
-
-run_enterprise_tests() {
-    print_status "Running enterprise feature tests..."
-
-    # Check if we have enterprise features enabled
-    if ! kubectl get crd neo4jdisasterrecoveries.neo4j.neo4j.com &> /dev/null; then
-        print_warning "Enterprise CRDs not found. Installing..."
-        make install
-    fi
-
-    local args=()
-    if [[ "$VERBOSE" == "true" ]]; then
-        args+=("-ginkgo.v")
-    fi
-
-    # Run enterprise-specific tests
-    if [ ${#args[@]} -eq 0 ]; then
-        if go test -timeout="$TEST_TIMEOUT" ./test/integration/enterprise_features_test.go; then
-            print_success "Enterprise feature tests passed."
-            return 0
-        else
-            print_error "Enterprise feature tests failed."
-            return 1
-        fi
-    else
-        if go test "${args[@]}" -timeout="$TEST_TIMEOUT" ./test/integration/enterprise_features_test.go; then
-            print_success "Enterprise feature tests passed."
-            return 0
-        else
-            print_error "Enterprise feature tests failed."
-            return 1
-        fi
-    fi
-}
-
-cleanup_test_resources() {
-    print_status "Cleaning up test resources..."
-
-    # Delete test namespaces
-    kubectl delete namespace --selector=test-type=neo4j-operator --wait=false || true
-
-    # Clean up test resources
-    echo "🧹 Cleaning up test resources..."
-    kubectl delete neo4jenterprisecluster --all --all-namespaces --wait=false || true
-    kubectl delete neo4jdatabase --all --all-namespaces --wait=false || true
-    kubectl delete neo4jbackup --all --all-namespaces --wait=false || true
-    kubectl delete neo4jrestore --all --all-namespaces --wait=false || true
-    kubectl delete neo4juser --all --all-namespaces --wait=false || true
-    kubectl delete neo4jrole --all --all-namespaces --wait=false || true
-    kubectl delete neo4jgrant --all --all-namespaces --wait=false || true
-    kubectl delete neo4jplugin --all --all-namespaces --wait=false || true
-
-    print_success "Test cleanup completed."
-}
-
-# Default values
-VERBOSE="false"
-KEEP_GOING="false"
-TEST_TIMEOUT="30m"
-NAMESPACE=""
-SETUP_ENV="true"
-CLEANUP="false"
-TEST_TYPE=""
+# Configuration
+CLEANUP_TIMEOUT=${CLEANUP_TIMEOUT:-300}
+FORCE_CLEANUP=${FORCE_CLEANUP:-true}
+DELETE_NAMESPACES=${DELETE_NAMESPACES:-true}
+VERBOSE=${VERBOSE:-false}
+TEST_TYPE=${TEST_TYPE:-all}
+PARALLEL=${PARALLEL:-false}
+COVERAGE=${COVERAGE:-true}
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -v|--verbose)
-            VERBOSE="true"
-            shift
-            ;;
-        -k|--keep-going)
-            KEEP_GOING="true"
-            shift
-            ;;
-        -t|--timeout)
-            TEST_TIMEOUT="$2"
+        --test-type)
+            TEST_TYPE="$2"
             shift 2
             ;;
-        -n|--namespace)
-            NAMESPACE="$2"
-            shift 2
-            ;;
-        --no-setup)
-            SETUP_ENV="false"
+        --no-cleanup)
+            SKIP_CLEANUP=true
             shift
             ;;
-        --cleanup)
-            CLEANUP="true"
+        --no-coverage)
+            COVERAGE=false
             shift
             ;;
-        -h|--help)
-            show_help
+        --parallel)
+            PARALLEL=true
+            shift
+            ;;
+        --verbose)
+            VERBOSE=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --test-type TYPE    Test type: all, unit, integration, e2e, cloud (default: all)"
+            echo "  --no-cleanup        Skip environment cleanup"
+            echo "  --no-coverage       Skip coverage generation"
+            echo "  --parallel          Run tests in parallel"
+            echo "  --verbose           Verbose output"
+            echo "  --help, -h          Show this help message"
+            echo ""
+            echo "Environment variables:"
+            echo "  CLEANUP_TIMEOUT     - Cleanup timeout in seconds (default: 300)"
+            echo "  FORCE_CLEANUP       - Force deletion (default: true)"
+            echo "  DELETE_NAMESPACES   - Delete test namespaces (default: true)"
+            echo "  VERBOSE             - Verbose output (default: false)"
             exit 0
             ;;
-        unit|integration|e2e|enterprise|all)
-            TEST_TYPE="$1"
-            shift
-            ;;
         *)
-            print_error "Unknown option: $1"
-            show_help
+            log_error "Unknown option: $1"
+            echo "Use '$0 --help' for usage information"
             exit 1
             ;;
     esac
 done
 
-# Use provided namespace or default
-if [[ -n "$NAMESPACE" ]]; then
-    OPERATOR_NAMESPACE="$NAMESPACE"
-fi
+# Check prerequisites
+check_prerequisites() {
+    log_info "Checking prerequisites..."
 
-# Validate test type
-case "$TEST_TYPE" in
-    "")
-        print_error "Test type is required."
-        show_help
+    # Check if Go is installed
+    if ! command -v go &> /dev/null; then
+        log_error "Go is not installed or not in PATH"
         exit 1
-        ;;
-    unit|integration|e2e|enterprise|all)
-        ;;
-    *)
-        print_error "Invalid test type: $TEST_TYPE"
-        show_help
+    fi
+
+    # Check Go version
+    local go_version=$(go version | awk '{print $3}' | sed 's/go//')
+    log_info "Go version: $go_version"
+
+    # Check if make is available
+    if ! command -v make &> /dev/null; then
+        log_error "make is not installed or not in PATH"
         exit 1
-        ;;
-esac
-
-# Main execution
-main() {
-    print_status "Starting Neo4j Operator test suite..."
-    print_status "Test type: $TEST_TYPE"
-    print_status "Timeout: $TEST_TIMEOUT"
-    print_status "Namespace: $OPERATOR_NAMESPACE"
-
-    if [[ "$SETUP_ENV" == "true" ]]; then
-        setup_test_environment
     fi
 
-    local failed_tests=()
-    local exit_code=0
-
-    case "$TEST_TYPE" in
-        unit)
-            run_unit_tests || { failed_tests+=("unit"); exit_code=1; }
-            ;;
-        integration)
-            run_integration_tests || { failed_tests+=("integration"); exit_code=1; }
-            ;;
-        e2e)
-            run_e2e_tests || { failed_tests+=("e2e"); exit_code=1; }
-            ;;
-        enterprise)
-            run_enterprise_tests || { failed_tests+=("enterprise"); exit_code=1; }
-            ;;
-        all)
-            run_unit_tests || { failed_tests+=("unit"); exit_code=1; }
-            if [[ "$KEEP_GOING" == "true" ]] || [[ $exit_code -eq 0 ]]; then
-                run_integration_tests || { failed_tests+=("integration"); exit_code=1; }
-            fi
-            if [[ "$KEEP_GOING" == "true" ]] || [[ $exit_code -eq 0 ]]; then
-                run_enterprise_tests || { failed_tests+=("enterprise"); exit_code=1; }
-            fi
-            if [[ "$KEEP_GOING" == "true" ]] || [[ $exit_code -eq 0 ]]; then
-                run_e2e_tests || { failed_tests+=("e2e"); exit_code=1; }
-            fi
-            ;;
-    esac
-
-    if [[ "$CLEANUP" == "true" ]]; then
-        cleanup_test_resources
+    # Check if we're in the right directory
+    if [ ! -f "go.mod" ] || [ ! -f "Makefile" ]; then
+        log_error "Not in a Go project directory (missing go.mod or Makefile)"
+        exit 1
     fi
 
-    # Report results
-    echo ""
-    if [[ $exit_code -eq 0 ]]; then
-        print_success "All tests passed! ✅"
-    else
-        print_error "Some tests failed! ❌"
-        if [[ ${#failed_tests[@]} -gt 0 ]]; then
-            print_error "Failed test suites: ${failed_tests[*]}"
-        fi
-    fi
-
-    exit $exit_code
+    log_success "Prerequisites check passed"
 }
 
+# Perform environment cleanup
+perform_cleanup() {
+    if [ "${SKIP_CLEANUP:-false}" = "true" ]; then
+        log_warning "Skipping environment cleanup (--no-cleanup specified)"
+        return
+    fi
+
+    log_info "Performing aggressive environment cleanup..."
+
+    # Check if we're in a Kubernetes environment
+    if command -v kubectl &> /dev/null; then
+        log_info "Kubernetes environment detected, running cleanup..."
+        if [ -f "scripts/test-cleanup.sh" ]; then
+            chmod +x scripts/test-cleanup.sh
+            export FORCE_CLEANUP="$FORCE_CLEANUP"
+            export DELETE_NAMESPACES="$DELETE_NAMESPACES"
+            export VERBOSE="$VERBOSE"
+            export CLEANUP_TIMEOUT="$CLEANUP_TIMEOUT"
+            ./scripts/test-cleanup.sh cleanup
+        else
+            log_warning "Cleanup script not found, using make target"
+            make test-cleanup || log_warning "Cleanup failed, continuing anyway"
+        fi
+    else
+        log_info "No Kubernetes environment detected, skipping cleanup"
+    fi
+
+    # Clean up local artifacts
+    log_info "Cleaning up local test artifacts..."
+    rm -rf test-results/ coverage/ logs/ tmp/ bin/
+
+    log_success "Environment cleanup completed"
+}
+
+# Run specific test type
+run_test_type() {
+    local test_type="$1"
+
+    case "$test_type" in
+        "unit")
+            log_info "Running unit tests..."
+            if [ "$COVERAGE" = "true" ]; then
+                make test
+            else
+                go test -v -race ./...
+            fi
+            ;;
+        "integration")
+            log_info "Running integration tests..."
+            if [ "$COVERAGE" = "true" ]; then
+                make test-integration
+            else
+                go test -v -race ./test/integration/...
+            fi
+            ;;
+        "e2e")
+            log_info "Running e2e tests..."
+            if [ "$COVERAGE" = "true" ]; then
+                make test-e2e
+            else
+                go test -v -race ./test/e2e/...
+            fi
+            ;;
+        "cloud")
+            log_info "Running cloud tests..."
+            # Run cloud tests if available
+            if [ -d "test/cloud" ]; then
+                for cloud_dir in test/cloud/*/; do
+                    if [ -d "$cloud_dir" ]; then
+                        cloud_name=$(basename "$cloud_dir")
+                        log_info "Running $cloud_name cloud tests..."
+                        go test -v -race "$cloud_dir"...
+                    fi
+                done
+            else
+                log_warning "Cloud test directory not found"
+            fi
+            ;;
+        "all")
+            log_info "Running all tests..."
+            if [ "$PARALLEL" = "true" ]; then
+                log_info "Running tests in parallel..."
+                # Run different test types in parallel
+                make test &
+                make test-integration &
+                make test-e2e &
+                wait
+            else
+                make test
+                make test-integration
+                make test-e2e
+            fi
+            ;;
+        *)
+            log_error "Unknown test type: $test_type"
+            exit 1
+            ;;
+    esac
+}
+
+# Generate coverage report
+generate_coverage_report() {
+    if [ "$COVERAGE" != "true" ]; then
+        log_info "Skipping coverage report generation"
+        return
+    fi
+
+    log_info "Generating coverage report..."
+
+    # Check if coverage files exist
+    local coverage_files=()
+    for file in coverage*.out; do
+        if [ -f "$file" ]; then
+            coverage_files+=("$file")
+        fi
+    done
+
+    if [ ${#coverage_files[@]} -eq 0 ]; then
+        log_warning "No coverage files found"
+        return
+    fi
+
+    # Generate HTML coverage report
+    for file in "${coverage_files[@]}"; do
+        local html_file="${file%.out}.html"
+        log_info "Generating HTML coverage for $file..."
+        go tool cover -html="$file" -o="$html_file"
+        log_success "Coverage report generated: $html_file"
+    done
+
+    # Generate combined coverage report
+    if [ ${#coverage_files[@]} -gt 1 ]; then
+        log_info "Generating combined coverage report..."
+        # This would require additional tools like gocovmerge
+        log_warning "Combined coverage report not implemented yet"
+    fi
+}
+
+# Main function
+main() {
+    log_info "Starting comprehensive test run..."
+    log_info "Configuration:"
+    log_info "  TEST_TYPE: $TEST_TYPE"
+    log_info "  COVERAGE: $COVERAGE"
+    log_info "  PARALLEL: $PARALLEL"
+    log_info "  VERBOSE: $VERBOSE"
+    log_info "  SKIP_CLEANUP: ${SKIP_CLEANUP:-false}"
+
+    # Check prerequisites
+    check_prerequisites
+
+    # Perform cleanup
+    perform_cleanup
+
+    # Install dependencies
+    log_info "Installing dependencies..."
+    make install-tools
+    make manifests
+
+    # Run tests
+    log_info "Running tests..."
+    run_test_type "$TEST_TYPE"
+
+    # Generate coverage report
+    generate_coverage_report
+
+    log_success "Test run completed successfully!"
+}
+
+# Run main function
 main "$@"

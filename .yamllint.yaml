@@ -24,3 +24,6 @@ ignore: |
   /dev-data/
   *.yaml.tmpl
   *.yml.tmpl
+  .golangci.yml
+  .golangci*.yml
+  bundle/

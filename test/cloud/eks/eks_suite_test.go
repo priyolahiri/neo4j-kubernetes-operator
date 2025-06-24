@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package eks
+package eks_test
 
 import (
 	"context"
@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
+	"github.com/neo4j-labs/neo4j-kubernetes-operator/test/cloud/testutil"
 )
 
 var (
@@ -56,6 +57,7 @@ func TestEKS(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	testutil.SetupTestEnv()
 	ctx, cancel = context.WithCancel(context.Background())
 
 	By("Setting up EKS test environment")

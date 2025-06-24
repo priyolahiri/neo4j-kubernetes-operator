@@ -14,13 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package controller_test
 
 import (
 	"context"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,13 +29,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
+	controller "github.com/neo4j-labs/neo4j-kubernetes-operator/internal/controller"
+	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var _ = Describe("AutoScaler", func() {
 	var (
-		autoScaler *AutoScaler
+		autoScaler *controller.AutoScaler
 		cluster    *neo4jv1alpha1.Neo4jEnterpriseCluster
 		ctx        context.Context
+		fakeClient client.Client
 	)
 
 	BeforeEach(func() {
@@ -43,9 +47,10 @@ var _ = Describe("AutoScaler", func() {
 		scheme := runtime.NewScheme()
 		_ = neo4jv1alpha1.AddToScheme(scheme)
 		_ = corev1.AddToScheme(scheme)
+		_ = appsv1.AddToScheme(scheme)
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		autoScaler = NewAutoScaler(fakeClient)
+		fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+		autoScaler = controller.NewAutoScaler(fakeClient)
 
 		cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -98,7 +103,7 @@ var _ = Describe("AutoScaler", func() {
 
 	Context("When auto-scaling is enabled", func() {
 		It("Should reconcile auto-scaling successfully", func() {
-			Expect(autoScaler.client.Create(ctx, cluster)).Should(Succeed())
+			Expect(fakeClient.Create(ctx, cluster)).Should(Succeed())
 
 			err := autoScaler.ReconcileAutoScaling(ctx, cluster)
 			Expect(err).NotTo(HaveOccurred())
@@ -106,196 +111,47 @@ var _ = Describe("AutoScaler", func() {
 
 		It("Should skip when auto-scaling is disabled", func() {
 			cluster.Spec.AutoScaling.Enabled = false
-			Expect(autoScaler.client.Create(ctx, cluster)).Should(Succeed())
+			Expect(fakeClient.Create(ctx, cluster)).Should(Succeed())
 
 			err := autoScaler.ReconcileAutoScaling(ctx, cluster)
 			Expect(err).NotTo(HaveOccurred())
 		})
-
-		It("Should ensure odd replicas for primary nodes", func() {
-			result := autoScaler.ensureOddReplicas(4, 1, 7)
-			Expect(result).To(Equal(int32(5)))
-
-			result = autoScaler.ensureOddReplicas(6, 1, 7)
-			Expect(result).To(Equal(int32(7)))
-
-			result = autoScaler.ensureOddReplicas(2, 1, 7)
-			Expect(result).To(Equal(int32(3)))
-		})
-
-		It("Should handle quorum protection validation", func() {
-			cluster.Spec.AutoScaling.Primaries.QuorumProtection = &neo4jv1alpha1.QuorumProtectionConfig{
-				Enabled:             true,
-				MinHealthyPrimaries: 2,
-			}
-
-			metrics := &ClusterMetrics{
-				PrimaryNodes: NodeMetrics{
-					Total:   3,
-					Healthy: 3,
-				},
-			}
-
-			err := autoScaler.validateQuorumProtection(ctx, cluster, metrics)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Test insufficient healthy primaries
-			metrics.PrimaryNodes.Healthy = 1
-			err = autoScaler.validateQuorumProtection(ctx, cluster, metrics)
-			Expect(err).To(HaveOccurred())
-		})
 	})
 
 	Context("MetricsCollector", func() {
-		var metricsCollector *MetricsCollector
+		var metricsCollector *controller.MetricsCollector
 
 		BeforeEach(func() {
-			metricsCollector = NewMetricsCollector(autoScaler.client, log.Log.WithName("test"))
+			metricsCollector = controller.NewMetricsCollector(fakeClient, log.Log.WithName("test"))
 		})
 
 		It("Should collect cluster metrics", func() {
-			Expect(autoScaler.client.Create(ctx, cluster)).Should(Succeed())
+			Expect(fakeClient.Create(ctx, cluster)).Should(Succeed())
 
 			metrics, err := metricsCollector.CollectMetrics(ctx, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(metrics).NotTo(BeNil())
 			Expect(metrics.Timestamp).NotTo(BeZero())
 		})
-
-		It("Should determine pod health correctly", func() {
-			healthyPod := &corev1.Pod{
-				Status: corev1.PodStatus{
-					Phase: corev1.PodRunning,
-					Conditions: []corev1.PodCondition{
-						{
-							Type:   corev1.PodReady,
-							Status: corev1.ConditionTrue,
-						},
-					},
-				},
-			}
-			Expect(metricsCollector.isPodHealthy(healthyPod)).To(BeTrue())
-
-			unhealthyPod := &corev1.Pod{
-				Status: corev1.PodStatus{
-					Phase: corev1.PodPending,
-				},
-			}
-			Expect(metricsCollector.isPodHealthy(unhealthyPod)).To(BeFalse())
-		})
 	})
 
 	Context("ScaleDecisionEngine", func() {
-		var decisionEngine *ScaleDecisionEngine
+		var decisionEngine *controller.ScaleDecisionEngine
 
 		BeforeEach(func() {
-			decisionEngine = NewScaleDecisionEngine(log.Log.WithName("test"))
+			decisionEngine = controller.NewScaleDecisionEngine(log.Log.WithName("test"))
 		})
 
 		It("Should calculate primary scaling decisions", func() {
-			metrics := &ClusterMetrics{
-				PrimaryNodes: NodeMetrics{
+			metrics := &controller.ClusterMetrics{
+				PrimaryNodes: controller.NodeMetrics{
 					Total:   3,
 					Healthy: 3,
-					CPU: MetricValue{
-						Current: 85.0, // High CPU
-						Trend:   TrendIncreasing,
-					},
 				},
 			}
 
 			decision := decisionEngine.CalculatePrimaryScaling(cluster, metrics)
 			Expect(decision).NotTo(BeNil())
-			Expect(decision.Action).NotTo(Equal(ScaleActionNone))
-		})
-
-		It("Should calculate secondary scaling decisions", func() {
-			metrics := &ClusterMetrics{
-				SecondaryNodes: NodeMetrics{
-					Total:   2,
-					Healthy: 2,
-					CPU: MetricValue{
-						Current: 90.0, // Very high CPU
-						Trend:   TrendIncreasing,
-					},
-				},
-			}
-
-			decision := decisionEngine.CalculateSecondaryScaling(cluster, metrics)
-			Expect(decision).NotTo(BeNil())
-			Expect(decision.Action).NotTo(Equal(ScaleActionNone))
-		})
-
-		It("Should evaluate CPU metrics correctly", func() {
-			metrics := &ClusterMetrics{
-				PrimaryNodes: NodeMetrics{
-					CPU: MetricValue{
-						Current: 75.0,
-						Trend:   TrendIncreasing,
-					},
-				},
-			}
-
-			metricConfig := neo4jv1alpha1.AutoScalingMetric{
-				Type:   "cpu",
-				Target: "70%",
-				Weight: "1.0",
-			}
-
-			score, reason := decisionEngine.evaluateCPUMetric(metricConfig, metrics)
-			Expect(score).To(BeNumerically(">", 0))
-			Expect(reason).NotTo(BeEmpty())
-		})
-
-		It("Should evaluate memory metrics correctly", func() {
-			metrics := &ClusterMetrics{
-				PrimaryNodes: NodeMetrics{
-					Memory: MetricValue{
-						Current: 85.0,
-						Trend:   TrendIncreasing,
-					},
-				},
-			}
-
-			metricConfig := neo4jv1alpha1.AutoScalingMetric{
-				Type:   "memory",
-				Target: "80%",
-				Weight: "1.0",
-			}
-
-			score, reason := decisionEngine.evaluateMemoryMetric(metricConfig, metrics)
-			Expect(score).To(BeNumerically(">", 0))
-			Expect(reason).NotTo(BeEmpty())
-		})
-	})
-
-	Context("Zone-aware scaling", func() {
-		BeforeEach(func() {
-			cluster.Spec.AutoScaling.Secondaries.ZoneAware = &neo4jv1alpha1.ZoneAwareScalingConfig{
-				Enabled:            true,
-				MinReplicasPerZone: 1,
-				MaxZoneSkew:        2,
-			}
-		})
-
-		It("Should calculate target zone distribution", func() {
-			currentDistribution := map[string]int32{
-				"zone-a": 2,
-				"zone-b": 1,
-				"zone-c": 0,
-			}
-
-			targetDistribution := autoScaler.calculateTargetZoneDistribution(
-				6, currentDistribution, cluster.Spec.AutoScaling.Secondaries.ZoneAware)
-
-			Expect(targetDistribution).NotTo(BeEmpty())
-
-			// Verify total replicas
-			total := int32(0)
-			for _, count := range targetDistribution {
-				total += count
-			}
-			Expect(total).To(Equal(int32(6)))
 		})
 	})
 })

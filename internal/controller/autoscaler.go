@@ -1247,11 +1247,19 @@ func (sde *ScaleDecisionEngine) evaluateMetric(metricConfig neo4jv1alpha1.AutoSc
 
 // evaluateCPUMetric evaluates CPU utilization metric
 func (sde *ScaleDecisionEngine) evaluateCPUMetric(metricConfig neo4jv1alpha1.AutoScalingMetric, metrics *ClusterMetrics) (float64, string) {
-	target, err := strconv.ParseFloat(metricConfig.Target, 64)
+	// Handle percentage values by removing % and converting to decimal
+	targetStr := strings.TrimSuffix(metricConfig.Target, "%")
+	target, err := strconv.ParseFloat(targetStr, 64)
 	if err != nil {
 		sde.logger.Error(err, "Failed to parse CPU target value", "target", metricConfig.Target)
 		return 0.5, fmt.Sprintf("Invalid CPU target: %v", err)
 	}
+
+	// Convert percentage to decimal if the original target contained %
+	if strings.Contains(metricConfig.Target, "%") {
+		target = target / 100.0
+	}
+
 	current := metrics.PrimaryNodes.CPU.Current
 
 	if current > target {
@@ -1267,11 +1275,19 @@ func (sde *ScaleDecisionEngine) evaluateCPUMetric(metricConfig neo4jv1alpha1.Aut
 
 // evaluateMemoryMetric evaluates memory utilization metric
 func (sde *ScaleDecisionEngine) evaluateMemoryMetric(metricConfig neo4jv1alpha1.AutoScalingMetric, metrics *ClusterMetrics) (float64, string) {
-	target, err := strconv.ParseFloat(metricConfig.Target, 64)
+	// Handle percentage values by removing % and converting to decimal
+	targetStr := strings.TrimSuffix(metricConfig.Target, "%")
+	target, err := strconv.ParseFloat(targetStr, 64)
 	if err != nil {
 		sde.logger.Error(err, "Failed to parse memory target value", "target", metricConfig.Target)
 		return 0.5, fmt.Sprintf("Invalid memory target: %v", err)
 	}
+
+	// Convert percentage to decimal if the original target contained %
+	if strings.Contains(metricConfig.Target, "%") {
+		target = target / 100.0
+	}
+
 	current := metrics.PrimaryNodes.Memory.Current
 
 	if current > target {
@@ -1389,7 +1405,7 @@ func (sde *ScaleDecisionEngine) queryPrometheus(ctx context.Context, promURL, qu
 	}
 
 	// Construct the query URL
-	queryURL := fmt.Sprintf("%s/api/v1/query", strings.TrimSuffix(promURL, "/"))
+	queryURL := strings.TrimSuffix(promURL, "/") + "/api/v1/query"
 
 	// Create HTTP client with timeout
 	client := &http.Client{
@@ -1405,7 +1421,7 @@ func (sde *ScaleDecisionEngine) queryPrometheus(ctx context.Context, promURL, qu
 	// Add query parameters
 	q := req.URL.Query()
 	q.Add("query", query)
-	q.Add("time", fmt.Sprintf("%d", time.Now().Unix()))
+	q.Add("time", strconv.FormatInt(time.Now().Unix(), 10))
 	req.URL.RawQuery = q.Encode()
 
 	// Add headers

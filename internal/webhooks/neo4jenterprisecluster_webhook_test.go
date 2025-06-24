@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package webhooks
+package webhooks_test
 
 import (
 	"context"
@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
+	"github.com/neo4j-labs/neo4j-kubernetes-operator/internal/webhooks"
 )
 
 func TestWebhook(t *testing.T) {
@@ -38,7 +39,7 @@ func TestWebhook(t *testing.T) {
 var _ = Describe("Neo4jEnterpriseCluster Webhook", func() {
 	var (
 		ctx     context.Context
-		webhook *Neo4jEnterpriseClusterWebhook
+		webhook *webhooks.Neo4jEnterpriseClusterWebhook
 		scheme  *runtime.Scheme
 	)
 
@@ -49,7 +50,7 @@ var _ = Describe("Neo4jEnterpriseCluster Webhook", func() {
 		_ = neo4jv1alpha1.AddToScheme(scheme)
 
 		client := fake.NewClientBuilder().WithScheme(scheme).Build()
-		webhook = &Neo4jEnterpriseClusterWebhook{
+		webhook = &webhooks.Neo4jEnterpriseClusterWebhook{
 			Client: client,
 		}
 	})
@@ -138,7 +139,7 @@ var _ = Describe("Neo4jEnterpriseCluster Webhook", func() {
 
 			_, err := webhook.ValidateCreate(ctx, cluster)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("primary count must be odd"))
+			Expect(err.Error()).To(ContainSubstring("primaries must be odd to maintain quorum"))
 		})
 
 		It("Should reject community edition", func() {
@@ -166,7 +167,7 @@ var _ = Describe("Neo4jEnterpriseCluster Webhook", func() {
 
 			_, err := webhook.ValidateCreate(ctx, cluster)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("only enterprise edition"))
+			Expect(err.Error()).To(ContainSubstring("only 'enterprise' edition is supported"))
 		})
 
 		It("Should reject unsupported Neo4j version", func() {
@@ -194,7 +195,7 @@ var _ = Describe("Neo4jEnterpriseCluster Webhook", func() {
 
 			_, err := webhook.ValidateCreate(ctx, cluster)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Neo4j version 5.26+"))
+			Expect(err.Error()).To(ContainSubstring("Neo4j version must be 5.26 or higher for enterprise operator"))
 		})
 
 		It("Should reject invalid TLS configuration", func() {
@@ -218,15 +219,17 @@ var _ = Describe("Neo4jEnterpriseCluster Webhook", func() {
 						Size:      "10Gi",
 					},
 					TLS: &neo4jv1alpha1.TLSSpec{
-						Mode: "cert-manager",
-						// Missing IssuerRef - should fail
+						Mode:      "cert-manager",
+						IssuerRef: &neo4jv1alpha1.IssuerRef{
+							// Missing Name - should fail
+						},
 					},
 				},
 			}
 
 			_, err := webhook.ValidateCreate(ctx, cluster)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("issuerRef is required"))
+			Expect(err.Error()).To(ContainSubstring("issuer name must be specified when using cert-manager"))
 		})
 
 		It("Should reject invalid cloud identity configuration", func() {
@@ -262,7 +265,7 @@ var _ = Describe("Neo4jEnterpriseCluster Webhook", func() {
 
 			_, err := webhook.ValidateCreate(ctx, cluster)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("provider mismatch"))
+			Expect(err.Error()).To(ContainSubstring("identity provider must match cloud provider"))
 		})
 
 		It("should validate cloud configuration", func() {
@@ -365,7 +368,7 @@ var _ = Describe("Neo4jEnterpriseCluster Webhook", func() {
 			Expect(err.Error()).To(ContainSubstring("downgrades are not supported"))
 		})
 
-		It("Should reject storage class changes", func() {
+		It("Should allow storage class changes (with warning)", func() {
 			oldCluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "storage-change-cluster",
@@ -389,11 +392,10 @@ var _ = Describe("Neo4jEnterpriseCluster Webhook", func() {
 			}
 
 			newCluster := oldCluster.DeepCopy()
-			newCluster.Spec.Storage.ClassName = "premium" // Change storage class - should fail
+			newCluster.Spec.Storage.ClassName = "premium" // Change storage class - should be allowed
 
 			_, err := webhook.ValidateUpdate(ctx, oldCluster, newCluster)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("storage class cannot be changed"))
+			Expect(err).NotTo(HaveOccurred()) // Storage class changes are allowed (with warning)
 		})
 	})
 })

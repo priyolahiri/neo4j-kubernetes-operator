@@ -183,7 +183,7 @@ func (r *RollingUpgradeOrchestrator) upgradeSecondaries(
 	// Get secondary StatefulSet
 	secondarySts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Name:      fmt.Sprintf("%s-secondary", cluster.Name),
+		Name:      cluster.Name + "-secondary",
 		Namespace: cluster.Namespace,
 	}, secondarySts); err != nil {
 		return fmt.Errorf("failed to get secondary StatefulSet: %w", err)
@@ -283,10 +283,10 @@ func (r *RollingUpgradeOrchestrator) upgradeNonLeaderPrimaries(
 	// Get primary StatefulSet
 	primarySts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Name:      fmt.Sprintf("%s-primary", cluster.Name),
+		Name:      cluster.Name + "-primary",
 		Namespace: cluster.Namespace,
 	}, primarySts); err != nil {
-		return err
+		return fmt.Errorf("failed to get primary StatefulSet: %w", err)
 	}
 
 	// Update image
@@ -366,7 +366,7 @@ func (r *RollingUpgradeOrchestrator) upgradeLeader(
 		return fmt.Errorf("failed to get current leader: %w", err)
 	}
 
-	cluster.Status.UpgradeStatus.CurrentStep = fmt.Sprintf("Upgrading leader: %s", originalLeader.ID)
+	cluster.Status.UpgradeStatus.CurrentStep = "Upgrading leader: " + originalLeader.ID
 	if err := r.Status().Update(ctx, cluster); err != nil {
 		logger.Error(err, "Failed to update cluster status before leader upgrade")
 	}
@@ -376,10 +376,10 @@ func (r *RollingUpgradeOrchestrator) upgradeLeader(
 	// Get primary StatefulSet
 	primarySts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Name:      fmt.Sprintf("%s-primary", cluster.Name),
+		Name:      cluster.Name + "-primary",
 		Namespace: cluster.Namespace,
 	}, primarySts); err != nil {
-		return err
+		return fmt.Errorf("failed to get primary StatefulSet: %w", err)
 	}
 
 	// Remove partition to allow leader upgrade
@@ -673,7 +673,7 @@ func (r *RollingUpgradeOrchestrator) validateStatefulSetsReady(
 	// Check primary StatefulSet
 	primarySts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Name:      fmt.Sprintf("%s-primary", cluster.Name),
+		Name:      cluster.Name + "-primary",
 		Namespace: cluster.Namespace,
 	}, primarySts); err != nil {
 		return fmt.Errorf("failed to get primary StatefulSet: %w", err)
@@ -688,7 +688,7 @@ func (r *RollingUpgradeOrchestrator) validateStatefulSetsReady(
 	if cluster.Spec.Topology.Secondaries > 0 {
 		secondarySts := &appsv1.StatefulSet{}
 		if err := r.Get(ctx, types.NamespacedName{
-			Name:      fmt.Sprintf("%s-secondary", cluster.Name),
+			Name:      cluster.Name + "-secondary",
 			Namespace: cluster.Namespace,
 		}, secondarySts); err != nil {
 			return fmt.Errorf("failed to get secondary StatefulSet: %w", err)
@@ -846,7 +846,7 @@ func (r *RollingUpgradeOrchestrator) verifyVersionUpgrade(
 		memberVersion, err := r.getMemberVersion(ctx, neo4jClient, member.ID)
 		if err != nil {
 			logger.Error(err, "Failed to get version for member", "memberID", member.ID)
-			versionMismatches = append(versionMismatches, fmt.Sprintf("%s: version query failed", member.ID))
+			versionMismatches = append(versionMismatches, member.ID+": version query failed")
 			continue
 		}
 

@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -324,30 +325,34 @@ func (r *Neo4jUserReconciler) isClusterReady(cluster *neo4jv1alpha1.Neo4jEnterpr
 
 func (r *Neo4jUserReconciler) updateUserStatus(ctx context.Context, user *neo4jv1alpha1.Neo4jUser,
 	status metav1.ConditionStatus, reason, message string) {
-
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
-
-	// Update or add condition
-	updated := false
-	for i, existingCondition := range user.Status.Conditions {
-		if existingCondition.Type == condition.Type {
-			user.Status.Conditions[i] = condition
-			updated = true
-			break
+	update := func() error {
+		latest := &neo4jv1alpha1.Neo4jUser{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(user), latest); err != nil {
+			return err
 		}
+		condition := metav1.Condition{
+			Type:               "Ready",
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
+			LastTransitionTime: metav1.Now(),
+		}
+		updated := false
+		for i, existingCondition := range latest.Status.Conditions {
+			if existingCondition.Type == condition.Type {
+				latest.Status.Conditions[i] = condition
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			latest.Status.Conditions = append(latest.Status.Conditions, condition)
+		}
+		latest.Status.ObservedGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
 	}
-	if !updated {
-		user.Status.Conditions = append(user.Status.Conditions, condition)
-	}
-
-	user.Status.ObservedGeneration = user.Generation
-	if err := r.Status().Update(ctx, user); err != nil {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
+	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to update user status")
 	}
 }

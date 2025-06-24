@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package controller_test
 
 import (
 	"context"
@@ -23,12 +23,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
 )
@@ -42,7 +42,6 @@ var _ = Describe("Neo4jEnterpriseCluster Controller", func() {
 	var (
 		ctx           context.Context
 		cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
-		reconciler    *Neo4jEnterpriseClusterReconciler
 		clusterName   string
 		namespaceName string
 	)
@@ -52,13 +51,6 @@ var _ = Describe("Neo4jEnterpriseCluster Controller", func() {
 		clusterName = fmt.Sprintf("test-cluster-%d", time.Now().UnixNano())
 		namespaceName = "default"
 
-		// Create reconciler
-		reconciler = &Neo4jEnterpriseClusterReconciler{
-			Client:   k8sClient,
-			Scheme:   k8sClient.Scheme(),
-			Recorder: record.NewFakeRecorder(100),
-		}
-
 		// Create basic cluster spec
 		cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -66,6 +58,7 @@ var _ = Describe("Neo4jEnterpriseCluster Controller", func() {
 				Namespace: namespaceName,
 			},
 			Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Edition: "enterprise",
 				Image: neo4jv1alpha1.ImageSpec{
 					Repo: "neo4j",
 					Tag:  "5.26-enterprise",
@@ -85,7 +78,10 @@ var _ = Describe("Neo4jEnterpriseCluster Controller", func() {
 	AfterEach(func() {
 		if cluster != nil {
 			// Clean up the cluster and related resources
-			k8sClient.Delete(ctx, cluster, client.PropagationPolicy(metav1.DeletePropagationForeground))
+			if err := k8sClient.Delete(ctx, cluster, client.PropagationPolicy(metav1.DeletePropagationForeground)); err != nil {
+				// Log the error but don't fail the test cleanup
+				fmt.Printf("Warning: Failed to delete cluster during cleanup: %v\n", err)
+			}
 
 			// Wait for cluster to be deleted
 			Eventually(func() bool {
@@ -100,15 +96,26 @@ var _ = Describe("Neo4jEnterpriseCluster Controller", func() {
 			By("Creating the cluster resource")
 			Expect(k8sClient.Create(ctx, cluster)).Should(Succeed())
 
-			By("Reconciling the cluster")
-			result, err := reconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      clusterName,
+			By("Waiting for StatefulSets to be created by the controller")
+			Eventually(func() bool {
+				primarySts := &appsv1.StatefulSet{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      clusterName + "-primary",
 					Namespace: namespaceName,
-				},
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(BeZero())
+				}, primarySts)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			By("Verifying that Services are created")
+			Eventually(func() bool {
+				// Check for headless service
+				headlessService := &corev1.Service{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      clusterName + "-headless",
+					Namespace: namespaceName,
+				}, headlessService)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
 		})
 	})
 })

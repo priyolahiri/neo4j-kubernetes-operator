@@ -247,6 +247,7 @@ func (m *ReconcileMetrics) RecordReconcile(ctx context.Context, operation string
 			attribute.String("result", result),
 			attribute.Float64("duration.seconds", duration.Seconds()),
 		)
+		span.End()
 	}
 }
 
@@ -323,6 +324,7 @@ func (m *UpgradeMetrics) RecordUpgrade(ctx context.Context, success bool, totalD
 			attribute.String("result", result),
 			attribute.Float64("total.duration.seconds", totalDuration.Seconds()),
 		)
+		span.End()
 	}
 }
 
@@ -381,6 +383,7 @@ func (m *BackupMetrics) RecordBackup(ctx context.Context, success bool, duration
 			attribute.Float64("duration.seconds", duration.Seconds()),
 			attribute.Int64("size.bytes", sizeBytes),
 		)
+		span.End()
 	}
 }
 
@@ -428,6 +431,7 @@ func (m *CypherMetrics) RecordCypherExecution(ctx context.Context, operation str
 			attribute.String("result", result),
 			attribute.Float64("duration.seconds", duration.Seconds()),
 		)
+		span.End()
 	}
 }
 
@@ -474,6 +478,7 @@ func (m *SecurityMetrics) RecordSecurityOperation(ctx context.Context, operation
 			attribute.String("operation", operation),
 			attribute.String("result", result),
 		)
+		span.End()
 	}
 }
 

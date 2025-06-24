@@ -138,11 +138,8 @@ func NewClientForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, k8sCl
 		c.FetchSize = 1000 // Optimized fetch size for memory efficiency
 
 		// Configure TLS if enabled
-		if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" {
-			// Use bolt+s:// for encrypted connections
-			// Driver will use system CA by default
-			// TLS configuration is handled by the URI scheme
-		}
+		// Note: TLS configuration is handled by the URI scheme (bolt+s://)
+		// No additional configuration needed as cert-manager handles certificates
 
 		// Add custom resolver for better connection management
 		c.AddressResolver = func(address config.ServerAddress) []config.ServerAddress {
@@ -292,7 +289,9 @@ func (c *Client) Close() error {
 	defer c.mutex.Unlock()
 
 	if c.driver != nil {
-		return c.driver.Close(context.Background())
+		err := c.driver.Close(context.Background())
+		c.driver = nil // Set to nil after closing for proper cleanup
+		return err
 	}
 	return nil
 }
