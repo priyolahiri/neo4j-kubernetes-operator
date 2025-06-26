@@ -157,6 +157,7 @@ test-integration: test-setup ## Run integration tests (requires cluster).
 		echo "Using optimized test settings for faster execution..."; \
 		TEST_TIMEOUT=5m go test -v -race -coverprofile=coverage-integration.out \
 			-timeout=5m \
+			-failfast \
 			./test/integration/...; \
 		go tool cover -html=coverage-integration.out -o coverage-integration.html; \
 	else \

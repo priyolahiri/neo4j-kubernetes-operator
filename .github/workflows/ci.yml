@@ -64,6 +64,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     timeout-minutes: 30
+    env:
+      CLUSTER_HEALTHY: false
+      OPERATOR_READY: false
+      CLUSTER_CREATED: false
+      CLUSTER_CONFIG: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -274,8 +279,206 @@ jobs:
 
           echo "✅ Operator deployment completed"
 
+      - name: Debug Operator Readiness
+        run: |
+          echo "🔍 Debugging Operator Readiness Issues"
+          echo "======================================"
+
+          # Check if we're in a CI environment
+          if [[ -n "${CI:-}" ]]; then
+              echo "✅ Running in CI environment"
+          else
+              echo "⚠️  Not running in CI environment"
+          fi
+
+          # Check cluster status
+          echo ""
+          echo "📊 Cluster Status:"
+          echo "------------------"
+          kubectl get nodes -o wide
+          echo ""
+
+          # Check if operator namespace exists
+          echo "📁 Operator Namespace:"
+          echo "----------------------"
+          if kubectl get namespace neo4j-operator-system >/dev/null 2>&1; then
+              echo "✅ Namespace 'neo4j-operator-system' exists"
+          else
+              echo "❌ Namespace 'neo4j-operator-system' does not exist"
+              echo "💡 This suggests the operator deployment failed"
+              exit 1
+          fi
+
+          # Check operator deployment
+          echo ""
+          echo "🚀 Operator Deployment:"
+          echo "----------------------"
+          kubectl get deployment -n neo4j-operator-system -o wide
+          echo ""
+
+          # Check operator pods
+          echo ""
+          echo "📦 Operator Pods:"
+          echo "----------------"
+          kubectl get pods -n neo4j-operator-system -o wide
+          echo ""
+
+          # Check pod events
+          echo ""
+          echo "📋 Pod Events (last 20):"
+          echo "------------------------"
+          kubectl get events -n neo4j-operator-system --sort-by='.lastTimestamp' | tail -20
+          echo ""
+
+          # Check pod logs for the most recent operator pod
+          echo ""
+          echo "📝 Operator Pod Logs (last 50 lines):"
+          echo "-------------------------------------"
+          OPERATOR_POD=$(kubectl get pods -n neo4j-operator-system -l app=neo4j-kubernetes-operator --no-headers -o custom-columns="NAME:.metadata.name" | head -1)
+          if [[ -n "$OPERATOR_POD" ]]; then
+              echo "Pod: $OPERATOR_POD"
+              kubectl logs -n neo4j-operator-system "$OPERATOR_POD" --tail=50 || echo "❌ Failed to get logs"
+          else
+              echo "❌ No operator pods found"
+          fi
+          echo ""
+
+          # Check CRDs
+          echo ""
+          echo "📋 Custom Resource Definitions:"
+          echo "------------------------------"
+          kubectl get crd | grep neo4j.neo4j.com || echo "❌ No Neo4j CRDs found"
+          echo ""
+
+          # Check operator service
+          echo ""
+          echo "🔌 Operator Service:"
+          echo "-------------------"
+          kubectl get service -n neo4j-operator-system
+          echo ""
+
+          # Check operator endpoints
+          echo ""
+          echo "📍 Operator Endpoints:"
+          echo "---------------------"
+          kubectl get endpoints -n neo4j-operator-system
+          echo ""
+
+          # Check operator readiness probe
+          echo ""
+          echo "🏥 Operator Readiness Probe:"
+          echo "---------------------------"
+          if [[ -n "$OPERATOR_POD" ]]; then
+              kubectl describe pod "$OPERATOR_POD" -n neo4j-operator-system | grep -A 10 "Readiness:" || echo "No readiness probe found"
+          else
+              echo "❌ No operator pod to check"
+          fi
+          echo ""
+
+          # Check resource usage
+          echo ""
+          echo "💾 Resource Usage:"
+          echo "-----------------"
+          kubectl top pods -n neo4j-operator-system 2>/dev/null || echo "❌ Metrics server not available"
+          echo ""
+
+          # Check if operator is responding to health checks
+          echo ""
+          echo "❤️  Operator Health Check:"
+          echo "-------------------------"
+          OPERATOR_SERVICE=$(kubectl get service -n neo4j-operator-system -l app=neo4j-kubernetes-operator --no-headers -o custom-columns="NAME:.metadata.name" | head -1)
+          if [[ -n "$OPERATOR_SERVICE" ]]; then
+              echo "Service: $OPERATOR_SERVICE"
+              # Try to port-forward and check health endpoint
+              kubectl port-forward -n neo4j-operator-system service/"$OPERATOR_SERVICE" 8080:8080 &
+              PF_PID=$!
+              sleep 5
+              if curl -s http://localhost:8080/healthz >/dev/null 2>&1; then
+                  echo "✅ Health endpoint responding"
+              else
+                  echo "❌ Health endpoint not responding"
+              fi
+              kill $PF_PID 2>/dev/null || true
+          else
+              echo "❌ No operator service found"
+          fi
+          echo ""
+
+          # Check for common issues
+          echo ""
+          echo "🔍 Common Issues Check:"
+          echo "----------------------"
+
+          # Check if images are being pulled
+          echo "Checking image pull status..."
+          kubectl get pods -n neo4j-operator-system -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[*].state.waiting.reason}{"\n"}{end}' | grep -E "(ImagePullBackOff|ErrImagePull)" && echo "❌ Image pull issues detected" || echo "✅ No image pull issues"
+
+          # Check if pods are in pending state
+          echo "Checking for pending pods..."
+          kubectl get pods -n neo4j-operator-system --field-selector=status.phase=Pending -o name | wc -l | xargs -I {} echo "Pods in Pending state: {}"
+
+          # Check if pods are in failed state
+          echo "Checking for failed pods..."
+          kubectl get pods -n neo4j-operator-system --field-selector=status.phase=Failed -o name | wc -l | xargs -I {} echo "Pods in Failed state: {}"
+
+          echo ""
+          echo "🎯 Operator Readiness Summary:"
+          echo "-----------------------------"
+          READY_REPLICAS=$(kubectl get deployment -n neo4j-operator-system -o jsonpath='{.items[0].status.readyReplicas}' 2>/dev/null || echo "0")
+          DESIRED_REPLICAS=$(kubectl get deployment -n neo4j-operator-system -o jsonpath='{.items[0].spec.replicas}' 2>/dev/null || echo "0")
+          echo "Ready Replicas: $READY_REPLICAS"
+          echo "Desired Replicas: $DESIRED_REPLICAS"
+
+          if [[ "$READY_REPLICAS" == "$DESIRED_REPLICAS" && "$READY_REPLICAS" -gt 0 ]]; then
+              echo "✅ Operator is ready!"
+              echo "OPERATOR_READY=true" >> $GITHUB_ENV
+          else
+              echo "❌ Operator is not ready"
+              echo "OPERATOR_READY=false" >> $GITHUB_ENV
+          fi
+
+          echo ""
+          echo "🔧 Suggested Next Steps:"
+          echo "----------------------"
+          if [[ "$READY_REPLICAS" -eq 0 ]]; then
+              echo "1. Check pod logs for startup errors"
+              echo "2. Verify image tags and registry access"
+              echo "3. Check resource limits and requests"
+              echo "4. Verify RBAC permissions"
+          elif [[ "$READY_REPLICAS" -lt "$DESIRED_REPLICAS" ]]; then
+              echo "1. Check pod events for scaling issues"
+              echo "2. Verify node resources and scheduling"
+              echo "3. Check for resource constraints"
+          fi
+
+          echo ""
+          echo "📊 Debug information collection complete"
+        env:
+          KUBECONFIG: $(kind export kubeconfig --name neo4j-operator-test)
+
+      - name: Verify environment variables
+        run: |
+          echo "=== Verifying environment variables ==="
+          echo "CLUSTER_HEALTHY: ${CLUSTER_HEALTHY:-not set}"
+          echo "OPERATOR_READY: ${OPERATOR_READY:-not set}"
+          echo "CLUSTER_CREATED: ${CLUSTER_CREATED:-not set}"
+          echo "CLUSTER_CONFIG: ${CLUSTER_CONFIG:-not set}"
+
+          # Ensure critical variables are set
+          if [[ "${CLUSTER_HEALTHY:-false}" != "true" ]]; then
+            echo "⚠️  CLUSTER_HEALTHY is not true, setting to false"
+            echo "CLUSTER_HEALTHY=false" >> $GITHUB_ENV
+          fi
+
+          if [[ "${OPERATOR_READY:-false}" != "true" ]]; then
+            echo "⚠️  OPERATOR_READY is not true, setting to false"
+            echo "OPERATOR_READY=false" >> $GITHUB_ENV
+          fi
+
+          echo "✅ Environment variables verified"
+
       - name: Debug operator deployment on failure
-        if: failure() && env.CLUSTER_HEALTHY == 'true'
+        if: failure() && (env.CLUSTER_HEALTHY == 'true' || env.CLUSTER_HEALTHY == '')
         run: |
           echo "=== Debugging operator deployment failure ==="
 
@@ -355,7 +558,7 @@ jobs:
         timeout-minutes: 20
 
       - name: Debug integration test failure
-        if: failure() && env.CLUSTER_HEALTHY == 'true' && env.OPERATOR_READY == 'true'
+        if: failure() && (env.CLUSTER_HEALTHY == 'true' || env.CLUSTER_HEALTHY == '') && (env.OPERATOR_READY == 'true' || env.OPERATOR_READY == '')
         run: |
           echo "=== Debugging integration test failure ==="
 
