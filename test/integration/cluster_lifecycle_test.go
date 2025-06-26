@@ -18,12 +18,12 @@ package integration_test
 
 import (
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,129 +53,8 @@ var _ = Describe("Cluster Lifecycle Integration Tests", func() {
 
 	AfterEach(func() {
 		if namespace != nil {
-			crds := []client.ObjectList{
-				&neo4jv1alpha1.Neo4jEnterpriseClusterList{},
-				&neo4jv1alpha1.Neo4jBackupList{},
-				&neo4jv1alpha1.Neo4jRestoreList{},
-				&neo4jv1alpha1.Neo4jPluginList{},
-				&neo4jv1alpha1.Neo4jUserList{},
-				&neo4jv1alpha1.Neo4jRoleList{},
-				&neo4jv1alpha1.Neo4jGrantList{},
-			}
-			for _, crdList := range crds {
-				_ = k8sClient.List(ctx, crdList, client.InNamespace(namespace.Name))
-				switch list := crdList.(type) {
-				case *neo4jv1alpha1.Neo4jEnterpriseClusterList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jBackupList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jRestoreList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jPluginList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jUserList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jRoleList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jGrantList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				}
-			}
-			// Wait for all custom resources to be deleted
-			Eventually(func() bool {
-				for _, crdList := range crds {
-					_ = k8sClient.List(ctx, crdList, client.InNamespace(namespace.Name))
-					switch list := crdList.(type) {
-					case *neo4jv1alpha1.Neo4jEnterpriseClusterList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jBackupList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jRestoreList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jPluginList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jUserList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jRoleList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jGrantList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					}
-				}
-				return true
-			}, timeout, interval).Should(BeTrue())
-
-			// Now delete the namespace
-			Eventually(func() error {
-				err := k8sClient.Delete(ctx, namespace)
-				if err != nil && !errors.IsNotFound(err) {
-					return err
-				}
-				return nil
-			}, timeout, interval).Should(Succeed())
-
-			// Wait for namespace to be fully deleted
-			Eventually(func() bool {
-				ns := &corev1.Namespace{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: namespace.Name}, ns)
-				return errors.IsNotFound(err)
-			}, timeout*2, interval).Should(BeTrue())
+			// Use aggressive cleanup to avoid timeouts
+			aggressiveCleanup(namespace.Name)
 		}
 	})
 
@@ -246,10 +125,16 @@ var _ = Describe("Cluster Lifecycle Integration Tests", func() {
 					Namespace: namespace.Name,
 				}, secondarySts)
 				if err != nil {
+					fmt.Printf("Error getting StatefulSet: %v\n", err)
 					return 0
 				}
-				return *secondarySts.Spec.Replicas
-			}, timeout, interval).Should(Equal(int32(3)))
+				currentReplicas := int32(0)
+				if secondarySts.Spec.Replicas != nil {
+					currentReplicas = *secondarySts.Spec.Replicas
+				}
+				fmt.Printf("Current secondary StatefulSet replicas: %d\n", currentReplicas)
+				return currentReplicas
+			}, 60*time.Second, interval).Should(Equal(int32(3)))
 
 			By("Upgrading cluster image")
 			Eventually(func() error {

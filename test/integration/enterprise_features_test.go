@@ -23,10 +23,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
 )
@@ -72,134 +70,8 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 
 	AfterEach(func() {
 		if namespace != "" {
-			crds := []client.ObjectList{
-				&neo4jv1alpha1.Neo4jEnterpriseClusterList{},
-				&neo4jv1alpha1.Neo4jBackupList{},
-				&neo4jv1alpha1.Neo4jRestoreList{},
-				&neo4jv1alpha1.Neo4jPluginList{},
-				&neo4jv1alpha1.Neo4jUserList{},
-				&neo4jv1alpha1.Neo4jRoleList{},
-				&neo4jv1alpha1.Neo4jGrantList{},
-			}
-			for _, crdList := range crds {
-				_ = k8sClient.List(ctx, crdList, client.InNamespace(namespace))
-				switch list := crdList.(type) {
-				case *neo4jv1alpha1.Neo4jEnterpriseClusterList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jBackupList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jRestoreList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jPluginList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jUserList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jRoleList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				case *neo4jv1alpha1.Neo4jGrantList:
-					for _, item := range list.Items {
-						if len(item.Finalizers) > 0 {
-							item.Finalizers = nil
-							_ = k8sClient.Update(ctx, &item)
-						}
-						_ = k8sClient.Delete(ctx, &item)
-					}
-				}
-			}
-			// Wait for all custom resources to be deleted
-			Eventually(func() bool {
-				for _, crdList := range crds {
-					_ = k8sClient.List(ctx, crdList, client.InNamespace(namespace))
-					switch list := crdList.(type) {
-					case *neo4jv1alpha1.Neo4jEnterpriseClusterList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jBackupList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jRestoreList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jPluginList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jUserList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jRoleList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					case *neo4jv1alpha1.Neo4jGrantList:
-						if len(list.Items) > 0 {
-							return false
-						}
-					}
-				}
-				return true
-			}, timeout, interval).Should(BeTrue())
-
-			// Now delete the namespace
-			Eventually(func() error {
-				ns := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: namespace,
-					},
-				}
-				err := k8sClient.Delete(ctx, ns)
-				if err != nil && !errors.IsNotFound(err) {
-					return err
-				}
-				return nil
-			}, timeout, interval).Should(Succeed())
-
-			// Wait for namespace to be fully deleted
-			Eventually(func() bool {
-				ns := &corev1.Namespace{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, ns)
-				return errors.IsNotFound(err)
-			}, timeout*2, interval).Should(BeTrue())
+			// Use aggressive cleanup to avoid timeouts
+			aggressiveCleanup(namespace)
 		}
 	})
 

@@ -30,6 +30,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -180,7 +181,7 @@ var _ = BeforeSuite(func() {
 
 	// Wait for cache to sync with increased timeout for real cluster
 	By("waiting for cache to sync")
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	Expect(mgr.GetCache().WaitForCacheSync(ctxWithTimeout)).To(BeTrue())
 })
@@ -194,7 +195,7 @@ var _ = AfterSuite(func() {
 	cancel()
 
 	By("initiating manager shutdown sequence")
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
 	if mgr != nil {
@@ -213,8 +214,9 @@ var _ = AfterSuite(func() {
 
 // Common test utilities
 const (
-	timeout  = time.Second * 10
-	interval = time.Millisecond * 100
+	timeout        = time.Second * 10 // Increased from 5s to 10s for integration tests
+	interval       = time.Millisecond * 100
+	cleanupTimeout = time.Second * 30 // Longer timeout for cleanup operations
 )
 
 func createTestNamespace(name string) string {
@@ -250,4 +252,96 @@ func cleanupTestNamespaces() {
 // isTestNamespace checks if a namespace is a test namespace
 func isTestNamespace(name string) bool {
 	return strings.HasPrefix(name, "test-")
+}
+
+// aggressiveCleanup performs fast cleanup without waiting for complete deletion
+func aggressiveCleanup(namespace string) {
+	if k8sClient == nil || namespace == "" {
+		return
+	}
+
+	ctx := context.Background()
+
+	// List of CRDs to clean up
+	crds := []client.ObjectList{
+		&neo4jv1alpha1.Neo4jEnterpriseClusterList{},
+		&neo4jv1alpha1.Neo4jBackupList{},
+		&neo4jv1alpha1.Neo4jRestoreList{},
+		&neo4jv1alpha1.Neo4jPluginList{},
+		&neo4jv1alpha1.Neo4jUserList{},
+		&neo4jv1alpha1.Neo4jRoleList{},
+		&neo4jv1alpha1.Neo4jGrantList{},
+	}
+
+	// Force delete all custom resources
+	for _, crdList := range crds {
+		_ = k8sClient.List(ctx, crdList, client.InNamespace(namespace))
+		switch list := crdList.(type) {
+		case *neo4jv1alpha1.Neo4jEnterpriseClusterList:
+			for _, item := range list.Items {
+				// Remove finalizers and force delete
+				if len(item.Finalizers) > 0 {
+					item.Finalizers = nil
+					_ = k8sClient.Update(ctx, &item)
+				}
+				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
+			}
+		case *neo4jv1alpha1.Neo4jBackupList:
+			for _, item := range list.Items {
+				if len(item.Finalizers) > 0 {
+					item.Finalizers = nil
+					_ = k8sClient.Update(ctx, &item)
+				}
+				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
+			}
+		case *neo4jv1alpha1.Neo4jRestoreList:
+			for _, item := range list.Items {
+				if len(item.Finalizers) > 0 {
+					item.Finalizers = nil
+					_ = k8sClient.Update(ctx, &item)
+				}
+				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
+			}
+		case *neo4jv1alpha1.Neo4jPluginList:
+			for _, item := range list.Items {
+				if len(item.Finalizers) > 0 {
+					item.Finalizers = nil
+					_ = k8sClient.Update(ctx, &item)
+				}
+				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
+			}
+		case *neo4jv1alpha1.Neo4jUserList:
+			for _, item := range list.Items {
+				if len(item.Finalizers) > 0 {
+					item.Finalizers = nil
+					_ = k8sClient.Update(ctx, &item)
+				}
+				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
+			}
+		case *neo4jv1alpha1.Neo4jRoleList:
+			for _, item := range list.Items {
+				if len(item.Finalizers) > 0 {
+					item.Finalizers = nil
+					_ = k8sClient.Update(ctx, &item)
+				}
+				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
+			}
+		case *neo4jv1alpha1.Neo4jGrantList:
+			for _, item := range list.Items {
+				if len(item.Finalizers) > 0 {
+					item.Finalizers = nil
+					_ = k8sClient.Update(ctx, &item)
+				}
+				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
+			}
+		}
+	}
+
+	// Force delete the namespace without waiting
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+		},
+	}
+	_ = k8sClient.Delete(ctx, ns, client.GracePeriodSeconds(0))
 }

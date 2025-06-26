@@ -290,10 +290,45 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResource(ctx context.Co
 		return err
 	}
 
-	// Use controllerutil.CreateOrUpdate which properly handles immutable fields
+	// Capture the desired spec if this is a StatefulSet
+	var desiredSpec appsv1.StatefulSetSpec
+	if sts, ok := obj.(*appsv1.StatefulSet); ok {
+		desiredSpec = *sts.Spec.DeepCopy()
+	}
+
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
-		// This function is called to update the object if it already exists
-		// For StatefulSets, we need to be careful about immutable fields
+		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			existing := &appsv1.StatefulSet{}
+			if err := r.Get(ctx, client.ObjectKeyFromObject(sts), existing); err == nil {
+				// Preserve metadata and status
+				sts.ObjectMeta = existing.ObjectMeta
+				sts.Status = existing.Status
+
+				// Only update allowed mutable fields
+				sts.Spec.Replicas = desiredSpec.Replicas
+				sts.Spec.UpdateStrategy = desiredSpec.UpdateStrategy
+				sts.Spec.PersistentVolumeClaimRetentionPolicy = desiredSpec.PersistentVolumeClaimRetentionPolicy
+				sts.Spec.MinReadySeconds = desiredSpec.MinReadySeconds
+				sts.Spec.Ordinals = desiredSpec.Ordinals
+
+				// For template updates, ensure labels match the existing selector
+				if existing.Spec.Selector != nil {
+					// Copy the desired template but ensure labels match the existing selector
+					updatedTemplate := desiredSpec.Template.DeepCopy()
+					if updatedTemplate.Labels == nil {
+						updatedTemplate.Labels = make(map[string]string)
+					}
+					// Ensure all selector labels are present in the template
+					for key, value := range existing.Spec.Selector.MatchLabels {
+						updatedTemplate.Labels[key] = value
+					}
+					sts.Spec.Template = *updatedTemplate
+				} else {
+					// If no selector exists, just use the desired template
+					sts.Spec.Template = desiredSpec.Template
+				}
+			}
+		}
 		return nil
 	})
 

@@ -236,8 +236,11 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 	backupCmd := r.buildBackupCommand(backup)
 
 	// Build environment variables
-	env := []corev1.EnvVar{
-		{
+	env := []corev1.EnvVar{}
+
+	// Add admin password environment variable if auth is configured
+	if cluster.Spec.Auth != nil && cluster.Spec.Auth.AdminSecret != "" {
+		env = append(env, corev1.EnvVar{
 			Name: "NEO4J_ADMIN_PASSWORD",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
@@ -247,7 +250,7 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 					Key: "password",
 				},
 			},
-		},
+		})
 	}
 
 	// Add cloud storage environment variables
@@ -324,8 +327,11 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 	backupCmd := r.buildBackupCommand(backup)
 
 	// Build environment variables
-	env := []corev1.EnvVar{
-		{
+	env := []corev1.EnvVar{}
+
+	// Add admin password environment variable if auth is configured
+	if cluster.Spec.Auth != nil && cluster.Spec.Auth.AdminSecret != "" {
+		env = append(env, corev1.EnvVar{
 			Name: "NEO4J_ADMIN_PASSWORD",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
@@ -335,7 +341,7 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 					Key: "password",
 				},
 			},
-		},
+		})
 	}
 
 	// Add cloud storage environment variables
