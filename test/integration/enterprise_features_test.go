@@ -69,10 +69,7 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 	})
 
 	AfterEach(func() {
-		if namespace != "" {
-			// Use aggressive cleanup to avoid timeouts
-			aggressiveCleanup(namespace)
-		}
+		// Cleanup will be handled by the test suite cleanup
 	})
 
 	Describe("Auto-Scaling Feature", func() {

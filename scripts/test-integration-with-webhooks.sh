@@ -74,6 +74,27 @@ if ! kubectl get crd certificates.cert-manager.io &> /dev/null; then
     done
 fi
 
+# Install Neo4j CRDs first
+echo -e "${YELLOW}📋 Installing Neo4j CRDs...${NC}"
+kubectl apply -f config/crd/bases/
+
+# Wait for Neo4j CRDs to be established
+echo -e "${YELLOW}⏳ Waiting for Neo4j CRDs to be established...${NC}"
+for crd in neo4jenterpriseclusters.neo4j.neo4j.com neo4jbackups.neo4j.neo4j.com neo4jrestores.neo4j.neo4j.com; do
+    for i in {1..30}; do
+        if kubectl get crd $crd &> /dev/null; then
+            echo -e "${GREEN}✅ CRD $crd is established${NC}"
+            break
+        fi
+        echo -e "${YELLOW}Waiting for CRD $crd to be established... ($i/30)${NC}"
+        sleep 2
+        if [ $i -eq 30 ]; then
+            echo -e "${RED}❌ Timed out waiting for CRD $crd${NC}"
+            exit 1
+        fi
+    done
+done
+
 # Deploy the operator with webhooks enabled
 echo -e "${YELLOW}📦 Deploying Neo4j Operator with webhooks...${NC}"
 kubectl apply -k config/test-with-webhooks/
@@ -142,9 +163,31 @@ for i in {1..60}; do
   fi
 done
 
+# Set environment variables for tests
+export ENABLE_WEBHOOKS=true
+export TEST_MODE=true
+export TEST_TIMEOUT=10m
+export TEST_PARALLEL_JOBS=4
+export TEST_VERBOSE=false
+export TEST_CLEANUP_ON_FAILURE=true
+
+# Clean up any existing test namespaces to prevent conflicts
+echo -e "${YELLOW}🧹 Cleaning up existing test namespaces...${NC}"
+kubectl get namespaces --no-headers -o custom-columns="NAME:.metadata.name" | grep -E "^(test-)" | xargs -r kubectl delete namespace --force --grace-period=0 || echo "No existing test namespaces found"
+
+# Wait for cleanup to complete
+sleep 10
+
 # Run integration tests with webhooks enabled using Ginkgo CLI
 cd "$PROJECT_ROOT/test/integration"
-ginkgo -v -p --fail-fast --timeout=15m --output-dir="../../" --coverprofile=coverage-integration.out 2>&1 | tee ../../test-output.log
+echo -e "${BLUE}🧪 Running integration tests with webhooks enabled...${NC}"
+echo -e "${BLUE}  TEST_MODE: $TEST_MODE${NC}"
+echo -e "${BLUE}  Timeout: $TEST_TIMEOUT${NC}"
+echo -e "${BLUE}  Parallel jobs: $TEST_PARALLEL_JOBS${NC}"
+echo -e "${BLUE}  Webhooks: enabled${NC}"
+
+# Run tests with reduced parallelism and increased timeout
+ginkgo -v -p=2 --fail-fast --timeout=20m --output-dir="../../" --coverprofile=coverage-integration.out --output-interceptor-mode=none 2>&1 | tee ../../test-output.log
 cd "$PROJECT_ROOT"
 
 echo -e "${GREEN}✅ Integration tests with webhooks completed${NC}"

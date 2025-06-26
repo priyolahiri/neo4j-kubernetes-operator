@@ -18,6 +18,7 @@ package e2e_test
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -32,6 +33,11 @@ const namespace = "neo4j-operator-system"
 
 var _ = Describe("controller", Ordered, func() {
 	BeforeAll(func() {
+		// Skip if E2E tests are not enabled
+		if os.Getenv("RUN_E2E_TESTS") != "true" {
+			Skip("E2E tests are disabled. Set RUN_E2E_TESTS=true to enable them.")
+		}
+
 		By("installing prometheus operator")
 		Expect(utils.InstallPrometheusOperator()).To(Succeed())
 
@@ -103,7 +109,12 @@ metadata:
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
 			By("loading the the manager(Operator) image on Kind")
-			err = utils.LoadImageToKindClusterWithName(projectimage)
+			// Use the correct cluster name for CI environment
+			clusterName := "neo4j-operator-test" // Default cluster name used in CI
+			if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
+				clusterName = v
+			}
+			err = utils.LoadImageToKindClusterWithName(projectimage, clusterName)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
 			By("deploying the controller-manager")

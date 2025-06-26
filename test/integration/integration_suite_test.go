@@ -18,12 +18,12 @@ package integration_test
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
+	"os/exec"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,18 +32,16 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
-	"github.com/neo4j-labs/neo4j-kubernetes-operator/internal/controller"
-	"github.com/neo4j-labs/neo4j-kubernetes-operator/internal/webhooks"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
 var cfg *rest.Config
@@ -51,7 +49,26 @@ var k8sClient client.Client
 var ctx context.Context
 var cancel context.CancelFunc
 var testRunID string
-var mgr manager.Manager
+var setupMutex sync.Mutex
+var isSetup bool
+var namespaceCounter int64
+var namespaceMutex sync.Mutex
+
+// Test configuration variables
+var timeout = 5 * time.Minute
+var interval = 10 * time.Second
+
+// List of required CRDs for integration tests
+var requiredCRDs = []string{
+	"neo4jenterpriseclusters.neo4j.neo4j.com",
+	"neo4jbackups.neo4j.neo4j.com",
+	"neo4jrestores.neo4j.neo4j.com",
+	"neo4jplugins.neo4j.neo4j.com",
+	"neo4jdatabases.neo4j.neo4j.com",
+	"neo4jroles.neo4j.neo4j.com",
+	"neo4jusers.neo4j.neo4j.com",
+	"neo4jgrants.neo4j.neo4j.com",
+}
 
 func TestIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -59,12 +76,20 @@ func TestIntegration(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	setupMutex.Lock()
+	defer setupMutex.Unlock()
+
+	if isSetup {
+		return
+	}
+
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	ctx, cancel = context.WithCancel(context.Background())
 
 	// Generate unique test run ID
 	testRunID = fmt.Sprintf("%d", time.Now().UnixNano())
+	By(fmt.Sprintf("Generated test run ID: %s", testRunID))
 
 	// Set TEST_MODE for faster test execution
 	os.Setenv("TEST_MODE", "true")
@@ -75,369 +100,397 @@ var _ = BeforeSuite(func() {
 	cfg, err = ctrl.GetConfig()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
+	By("Successfully connected to cluster")
 
+	By("registering schemes")
 	// Register the scheme
 	err = neo4jv1alpha1.AddToScheme(clientgoscheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = apiextensionsv1.AddToScheme(clientgoscheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: clientgoscheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+	By("Successfully created k8s client")
 
-	// Set up the controller manager
-	By("setting up controller manager")
+	// Setup test environment with proper operator configuration
+	setupTestEnvironment()
 
-	// Use minimal cache options for faster test execution
-	cacheOpt := manager.Options{
-		Scheme:                 clientgoscheme.Scheme,
-		HealthProbeBindAddress: "0",
-		Metrics:                metricsserver.Options{BindAddress: "0"},
-	}
+	// Install CRDs if missing
+	By("Installing CRDs if missing")
+	installCRDsIfMissing()
 
-	mgr, err = manager.New(cfg, cacheOpt)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Set up controllers with test mode optimizations
-	err = (&controller.Neo4jEnterpriseClusterReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		Recorder:          mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
-		RequeueAfter:      controller.GetTestRequeueAfter(),
-		TopologyScheduler: controller.NewTopologyScheduler(mgr.GetClient()),
-	}).SetupWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = (&controller.Neo4jDatabaseReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-database-controller"),
-		RequeueAfter: controller.GetTestRequeueAfter(),
-	}).SetupWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = (&controller.Neo4jBackupReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
-		RequeueAfter: controller.GetTestRequeueAfter(),
-	}).SetupWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = (&controller.Neo4jRestoreReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
-		RequeueAfter: controller.GetTestRequeueAfter(),
-	}).SetupWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = (&controller.Neo4jRoleReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-role-controller"),
-		RequeueAfter: controller.GetTestRequeueAfter(),
-	}).SetupWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = (&controller.Neo4jGrantReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-grant-controller"),
-		RequeueAfter: controller.GetTestRequeueAfter(),
-	}).SetupWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = (&controller.Neo4jUserReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("neo4j-user-controller"),
-		RequeueAfter: controller.GetTestRequeueAfter(),
-	}).SetupWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = (&controller.Neo4jPluginReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		RequeueAfter: controller.GetTestRequeueAfter(),
-	}).SetupWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Setup webhooks if enabled via environment variable
-	enableWebhooks := os.Getenv("ENABLE_WEBHOOKS") == "true"
-	if enableWebhooks {
-		By("setting up webhooks for integration tests")
-
-		// Register webhooks
-		if err = (&webhooks.Neo4jEnterpriseClusterWebhook{
-			Client: mgr.GetClient(),
-		}).SetupWebhookWithManager(mgr); err != nil {
-			Expect(err).NotTo(HaveOccurred())
-		}
-
-		By("webhooks enabled for integration tests")
-	} else {
-		By("webhooks disabled for integration tests")
-	}
-
-	// Start the manager
-	By("starting the manager")
-	go func() {
-		defer GinkgoRecover()
-		Expect(mgr.Start(ctx)).To(Succeed())
-	}()
-
-	// Wait for cache to sync with increased timeout for real cluster
-	By("waiting for cache to sync")
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	Expect(mgr.GetCache().WaitForCacheSync(ctxWithTimeout)).To(BeTrue())
-
-	// Wait for webhook server to be ready if webhooks are enabled
-	if enableWebhooks {
-		By("waiting for webhook server to be ready")
-		webhookReady := waitForWebhookServerReady(ctx, 30*time.Second)
-		Expect(webhookReady).To(BeTrue(), "Webhook server should be ready within timeout")
-	}
+	isSetup = true
+	By("Integration test setup completed successfully")
 })
 
 var _ = AfterSuite(func() {
-	By("cleaning up any leftover test namespaces")
+	By("Cleaning up test environment")
+
+	// Cancel context
+	if cancel != nil {
+		cancel()
+	}
+
+	// Clean up test namespaces
 	cleanupTestNamespaces()
 
-	By("tearing down the test environment")
-	// Cancel the context to signal shutdown
-	cancel()
-
-	By("initiating manager shutdown sequence")
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
-
-	if mgr != nil {
-		By("waiting for manager to shut down")
-		select {
-		case <-shutdownCtx.Done():
-			By("manager shutdown timeout reached")
-		case <-time.After(5 * time.Second):
-			By("manager shutdown completed")
-		}
-	}
-
-	By("test environment teardown completed, forcefully exiting process to avoid controller-runtime goroutine leaks")
-	os.Exit(0)
+	By("Test environment cleanup completed")
 })
 
-// Common test utilities
-const (
-	timeout        = time.Second * 10 // Increased from 5s to 10s for integration tests
-	interval       = time.Millisecond * 100
-	cleanupTimeout = time.Second * 30 // Longer timeout for cleanup operations
-)
-
+// createTestNamespace creates a unique namespace for each test
 func createTestNamespace(name string) string {
-	return fmt.Sprintf("test-%s-%s-%d", name, testRunID, time.Now().UnixNano())
-}
+	namespaceMutex.Lock()
+	defer namespaceMutex.Unlock()
 
-// cleanupTestNamespaces removes any leftover test namespaces
-func cleanupTestNamespaces() {
-	if k8sClient == nil {
-		return
+	// Use atomic counter for guaranteed uniqueness
+	counter := atomic.AddInt64(&namespaceCounter, 1)
+
+	// Use a more unique identifier with timestamp and counter
+	timestamp := time.Now().UnixNano()
+	randSuffix := fmt.Sprintf("%04x", timestamp%0x10000)
+	uniqueName := fmt.Sprintf("%s-%s-%d-%s", name, testRunID[len(testRunID)-8:], counter, randSuffix)
+
+	// Ensure the name is within the 63 character limit
+	if len(uniqueName) > 63 {
+		uniqueName = uniqueName[:63]
 	}
 
-	ctx := context.Background()
-	namespaceList := &corev1.NamespaceList{}
-
-	err := k8sClient.List(ctx, namespaceList)
-	if err != nil {
-		return
-	}
-
-	for _, ns := range namespaceList.Items {
-		if isTestNamespace(ns.Name) {
-			// Force delete the namespace
-			err := k8sClient.Delete(ctx, &ns)
-			if err != nil && !errors.IsNotFound(err) {
-				// Log but don't fail the test
-				fmt.Printf("Warning: Failed to cleanup namespace %s: %v\n", ns.Name, err)
-			}
-		}
-	}
-}
-
-// isTestNamespace checks if a namespace is a test namespace
-func isTestNamespace(name string) bool {
-	return strings.HasPrefix(name, "test-")
-}
-
-// waitForWebhookServerReady waits for the webhook server to be ready by checking if the TLS certificate exists
-func waitForWebhookServerReady(ctx context.Context, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		// Check multiple possible certificate paths
-		possiblePaths := []string{
-			"/tmp/k8s-webhook-server/serving-certs/tls.crt",
-			os.TempDir() + "/k8s-webhook-server/serving-certs/tls.crt",
-			"/var/folders/8_/z8fx9g411bdc0n0fzsw545l80000gp/T/k8s-webhook-server/serving-certs/tls.crt",
-		}
-
-		for _, certPath := range possiblePaths {
-			if _, err := os.Stat(certPath); err == nil {
-				// Certificate exists, now check if webhook server is responding
-				if isWebhookServerResponding() {
-					return true
-				}
-			}
-		}
-
-		// Wait a bit before checking again
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(500 * time.Millisecond):
-			continue
-		}
-	}
-
-	return false
-}
-
-// isWebhookServerResponding checks if the webhook server is responding to requests
-func isWebhookServerResponding() bool {
-	// Try to make a simple HTTP request to the webhook server
-	// The webhook server typically runs on port 9443
-	client := &http.Client{
-		Timeout: 2 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // Skip certificate verification for testing
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: uniqueName,
+			Labels: map[string]string{
+				"test-run": testRunID,
 			},
 		},
 	}
 
-	// Try multiple endpoints that might be available
-	endpoints := []string{
-		"https://localhost:9443/healthz",
-		"https://localhost:9443/readyz",
-		"https://localhost:9443/",
+	err := k8sClient.Create(ctx, namespace)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		Expect(err).NotTo(HaveOccurred())
 	}
 
-	for _, endpoint := range endpoints {
-		resp, err := client.Get(endpoint)
-		if err == nil {
-			defer resp.Body.Close()
-			// Any response means the server is up
-			if resp.StatusCode >= 200 && resp.StatusCode < 500 {
-				return true
-			}
-		}
-	}
-
-	// If HTTP checks fail, try to check if the port is listening
-	return isPortListening("localhost", "9443")
+	return uniqueName
 }
 
-// isPortListening checks if a port is listening on the given host
-func isPortListening(host, port string) bool {
-	timeout := time.Second
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), timeout)
+// cleanupTestNamespaces removes all test namespaces
+func cleanupTestNamespaces() {
+	By("Cleaning up test namespaces")
+
+	// List all namespaces with test-run label
+	cmd := exec.Command("kubectl", "get", "namespaces", "-l", "test-run="+testRunID, "-o", "jsonpath={.items[*].metadata.name}")
+	output, err := cmd.Output()
 	if err != nil {
-		return false
-	}
-	if conn != nil {
-		defer conn.Close()
-		return true
-	}
-	return false
-}
-
-// aggressiveCleanup performs fast cleanup without waiting for complete deletion
-func aggressiveCleanup(namespace string) {
-	if k8sClient == nil || namespace == "" {
+		By("No test namespaces found to clean up")
 		return
 	}
 
-	ctx := context.Background()
+	namespaces := strings.Fields(string(output))
+	for _, namespace := range namespaces {
+		if namespace != "" {
+			By(fmt.Sprintf("Deleting test namespace: %s", namespace))
+			cmd := exec.Command("kubectl", "delete", "namespace", namespace, "--ignore-not-found=true")
+			cmd.Stdout = GinkgoWriter
+			cmd.Stderr = GinkgoWriter
+			cmd.Run()
+		}
+	}
+}
 
-	// List of CRDs to clean up
-	crds := []client.ObjectList{
-		&neo4jv1alpha1.Neo4jEnterpriseClusterList{},
-		&neo4jv1alpha1.Neo4jBackupList{},
-		&neo4jv1alpha1.Neo4jRestoreList{},
-		&neo4jv1alpha1.Neo4jPluginList{},
-		&neo4jv1alpha1.Neo4jUserList{},
-		&neo4jv1alpha1.Neo4jRoleList{},
-		&neo4jv1alpha1.Neo4jGrantList{},
+// Helper functions for test utilities
+
+// isCRDAvailable checks if a specific CRD is available and established in the cluster
+func isCRDAvailable(crdName string) bool {
+	crd := &apiextensionsv1.CustomResourceDefinition{}
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: crdName}, crd)
+	if err != nil {
+		return false
 	}
 
-	// Force delete all custom resources
-	for _, crdList := range crds {
-		_ = k8sClient.List(ctx, crdList, client.InNamespace(namespace))
-		switch list := crdList.(type) {
-		case *neo4jv1alpha1.Neo4jEnterpriseClusterList:
-			for _, item := range list.Items {
-				// Remove finalizers and force delete
-				if len(item.Finalizers) > 0 {
-					item.Finalizers = nil
-					_ = k8sClient.Update(ctx, &item)
-				}
-				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
-			}
-		case *neo4jv1alpha1.Neo4jBackupList:
-			for _, item := range list.Items {
-				if len(item.Finalizers) > 0 {
-					item.Finalizers = nil
-					_ = k8sClient.Update(ctx, &item)
-				}
-				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
-			}
-		case *neo4jv1alpha1.Neo4jRestoreList:
-			for _, item := range list.Items {
-				if len(item.Finalizers) > 0 {
-					item.Finalizers = nil
-					_ = k8sClient.Update(ctx, &item)
-				}
-				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
-			}
-		case *neo4jv1alpha1.Neo4jPluginList:
-			for _, item := range list.Items {
-				if len(item.Finalizers) > 0 {
-					item.Finalizers = nil
-					_ = k8sClient.Update(ctx, &item)
-				}
-				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
-			}
-		case *neo4jv1alpha1.Neo4jUserList:
-			for _, item := range list.Items {
-				if len(item.Finalizers) > 0 {
-					item.Finalizers = nil
-					_ = k8sClient.Update(ctx, &item)
-				}
-				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
-			}
-		case *neo4jv1alpha1.Neo4jRoleList:
-			for _, item := range list.Items {
-				if len(item.Finalizers) > 0 {
-					item.Finalizers = nil
-					_ = k8sClient.Update(ctx, &item)
-				}
-				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
-			}
-		case *neo4jv1alpha1.Neo4jGrantList:
-			for _, item := range list.Items {
-				if len(item.Finalizers) > 0 {
-					item.Finalizers = nil
-					_ = k8sClient.Update(ctx, &item)
-				}
-				_ = k8sClient.Delete(ctx, &item, client.GracePeriodSeconds(0))
-			}
+	// Check if the CRD is established
+	for _, condition := range crd.Status.Conditions {
+		if condition.Type == apiextensionsv1.Established && condition.Status == apiextensionsv1.ConditionTrue {
+			return true
 		}
 	}
 
-	// Force delete the namespace without waiting
-	ns := &corev1.Namespace{
+	return false
+}
+
+// installCRDsIfMissing installs required CRDs using kubectl if any are missing
+func installCRDsIfMissing() {
+	missing := []string{}
+	for _, crd := range requiredCRDs {
+		if !isCRDAvailable(crd) {
+			missing = append(missing, crd)
+		}
+	}
+	if len(missing) > 0 {
+		By(fmt.Sprintf("Installing missing CRDs for integration tests: %v", missing))
+		cmd := exec.Command("kubectl", "apply", "-f", "../../config/crd/bases/")
+		cmd.Stdout = GinkgoWriter
+		cmd.Stderr = GinkgoWriter
+		err := cmd.Run()
+		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs: %v", err)
+		// Wait for CRDs to be established
+		for _, crd := range missing {
+			By(fmt.Sprintf("Waiting for CRD %s to be established", crd))
+			Eventually(func() bool { return isCRDAvailable(crd) }, 30*time.Second, 2*time.Second).Should(BeTrue(), "CRD %s should be available", crd)
+		}
+	} else {
+		By("All required CRDs are already available")
+	}
+}
+
+// setupTestEnvironment ensures the test environment is properly configured
+func setupTestEnvironment() {
+	By("Setting up test environment with proper operator configuration")
+
+	// 1. Deploy cert-manager if not present
+	By("Ensuring cert-manager is deployed")
+	deployCertManagerIfNeeded()
+
+	// 2. Deploy operator with webhooks and TLS certificates
+	By("Deploying operator with webhooks and TLS certificates")
+	deployOperatorWithWebhooks()
+
+	// 3. Wait for operator to be ready
+	By("Waiting for operator to be ready")
+	waitForOperatorReady()
+
+	// 4. Verify webhook configuration
+	By("Verifying webhook configuration")
+	verifyWebhookConfiguration()
+
+	// 5. Verify RBAC permissions
+	By("Verifying RBAC permissions")
+	verifyRBACPermissions()
+
+	// 6. Verify operator functionality
+	By("Verifying operator functionality")
+	verifyOperatorFunctionality()
+
+	By("Test environment setup completed")
+}
+
+// deployCertManagerIfNeeded deploys cert-manager if it's not already present
+func deployCertManagerIfNeeded() {
+	// Check if cert-manager is already deployed
+	cmd := exec.Command("kubectl", "get", "namespace", "cert-manager")
+	if cmd.Run() == nil {
+		By("Cert-manager namespace exists, checking if it's ready")
+		// Wait for cert-manager to be ready
+		cmd = exec.Command("kubectl", "wait", "--for=condition=Available", "deployment/cert-manager", "-n", "cert-manager", "--timeout=60s")
+		if cmd.Run() != nil {
+			By("Cert-manager not ready, deploying...")
+			deployCertManager()
+		} else {
+			By("Cert-manager is already ready")
+		}
+	} else {
+		By("Cert-manager not found, deploying...")
+		deployCertManager()
+	}
+}
+
+// deployCertManager installs cert-manager
+func deployCertManager() {
+	cmd := exec.Command("kubectl", "apply", "-f", "https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml")
+	cmd.Stdout = GinkgoWriter
+	cmd.Stderr = GinkgoWriter
+	Expect(cmd.Run()).To(Succeed(), "Failed to deploy cert-manager")
+
+	// Wait for cert-manager to be ready
+	By("Waiting for cert-manager to be ready")
+	Eventually(func() error {
+		cmd := exec.Command("kubectl", "wait", "--for=condition=Available", "deployment/cert-manager", "-n", "cert-manager", "--timeout=30s")
+		return cmd.Run()
+	}, 2*time.Minute, 10*time.Second).Should(Succeed(), "Cert-manager failed to become ready")
+}
+
+// deployOperatorWithWebhooks deploys the operator with webhooks and TLS certificates
+func deployOperatorWithWebhooks() {
+	By("Deploying operator with webhooks using test configuration")
+
+	// Clean up any existing deployment first
+	cleanupExistingOperator()
+
+	// Deploy using the test-with-webhooks configuration
+	// Note: We need to run from the project root, so we change directory
+	cmd := exec.Command("kubectl", "apply", "-k", "../../config/test-with-webhooks")
+	cmd.Stdout = GinkgoWriter
+	cmd.Stderr = GinkgoWriter
+	Expect(cmd.Run()).To(Succeed(), "Failed to deploy operator with webhooks")
+
+	// Wait for the certificate to be ready
+	By("Waiting for TLS certificate to be ready")
+	Eventually(func() error {
+		cmd := exec.Command("kubectl", "wait", "--for=condition=Ready", "certificate/serving-cert", "-n", "neo4j-operator-system", "--timeout=30s")
+		return cmd.Run()
+	}, 2*time.Minute, 10*time.Second).Should(Succeed(), "TLS certificate failed to become ready")
+}
+
+// cleanupExistingOperator removes any existing operator deployment
+func cleanupExistingOperator() {
+	By("Cleaning up existing operator deployment")
+
+	// Delete existing deployment if it exists
+	cmd := exec.Command("kubectl", "delete", "deployment", "controller-manager", "-n", "neo4j-operator-system", "--ignore-not-found=true")
+	cmd.Run()
+
+	// Delete existing service account if it exists
+	cmd = exec.Command("kubectl", "delete", "serviceaccount", "neo4j-operator-controller-manager", "-n", "neo4j-operator-system", "--ignore-not-found=true")
+	cmd.Run()
+
+	// Delete existing RBAC bindings if they exist
+	cmd = exec.Command("kubectl", "delete", "clusterrolebinding", "neo4j-operator-manager-rolebinding", "--ignore-not-found=true")
+	cmd.Run()
+
+	cmd = exec.Command("kubectl", "delete", "clusterrolebinding", "neo4j-operator-leader-election-rolebinding", "--ignore-not-found=true")
+	cmd.Run()
+}
+
+// waitForOperatorReady waits for the operator to be fully ready
+func waitForOperatorReady() {
+	By("Waiting for operator deployment to be available")
+	Eventually(func() error {
+		cmd := exec.Command("kubectl", "wait", "--for=condition=Available", "deployment/controller-manager", "-n", "neo4j-operator-system", "--timeout=30s")
+		return cmd.Run()
+	}, 3*time.Minute, 10*time.Second).Should(Succeed(), "Operator deployment failed to become available")
+
+	// Wait for the pod to be ready
+	By("Waiting for operator pod to be ready")
+	Eventually(func() error {
+		cmd := exec.Command("kubectl", "wait", "--for=condition=Ready", "pod", "-l", "app=controller-manager", "-n", "neo4j-operator-system", "--timeout=30s")
+		return cmd.Run()
+	}, 2*time.Minute, 10*time.Second).Should(Succeed(), "Operator pod failed to become ready")
+
+	// Wait for leader election
+	By("Waiting for leader election")
+	Eventually(func() bool {
+		cmd := exec.Command("kubectl", "logs", "-n", "neo4j-operator-system", "-l", "app=controller-manager", "--tail=50")
+		output, err := cmd.Output()
+		if err != nil {
+			return false
+		}
+		return strings.Contains(string(output), "successfully acquired lease")
+	}, 2*time.Minute, 10*time.Second).Should(BeTrue(), "Leader election failed")
+}
+
+// verifyWebhookConfiguration verifies that webhooks are properly configured
+func verifyWebhookConfiguration() {
+	By("Verifying webhook configurations exist")
+
+	// Check for validating webhook
+	Eventually(func() error {
+		cmd := exec.Command("kubectl", "get", "validatingwebhookconfiguration", "validating-webhook-configuration")
+		return cmd.Run()
+	}, 1*time.Minute, 5*time.Second).Should(Succeed(), "Validating webhook configuration not found")
+
+	// Check for mutating webhook
+	Eventually(func() error {
+		cmd := exec.Command("kubectl", "get", "mutatingwebhookconfiguration", "mutating-webhook-configuration")
+		return cmd.Run()
+	}, 1*time.Minute, 5*time.Second).Should(Succeed(), "Mutating webhook configuration not found")
+
+	// Check for webhook service
+	Eventually(func() error {
+		cmd := exec.Command("kubectl", "get", "service", "webhook-service", "-n", "neo4j-operator-system")
+		return cmd.Run()
+	}, 1*time.Minute, 5*time.Second).Should(Succeed(), "Webhook service not found")
+
+	// Check for TLS certificate secret
+	Eventually(func() error {
+		cmd := exec.Command("kubectl", "get", "secret", "webhook-server-cert", "-n", "neo4j-operator-system")
+		return cmd.Run()
+	}, 1*time.Minute, 5*time.Second).Should(Succeed(), "TLS certificate secret not found")
+}
+
+// verifyRBACPermissions verifies that RBAC permissions are properly configured
+func verifyRBACPermissions() {
+	By("Verifying RBAC permissions")
+
+	// Check that the service account exists
+	Eventually(func() error {
+		cmd := exec.Command("kubectl", "get", "serviceaccount", "neo4j-operator-controller-manager", "-n", "neo4j-operator-system")
+		return cmd.Run()
+	}, 1*time.Minute, 5*time.Second).Should(Succeed(), "Service account not found")
+
+	// Check that the cluster role binding exists and is bound to the correct service account
+	Eventually(func() bool {
+		cmd := exec.Command("kubectl", "get", "clusterrolebinding", "neo4j-operator-manager-rolebinding", "-o", "jsonpath={.subjects[0].name}")
+		output, err := cmd.Output()
+		if err != nil {
+			return false
+		}
+		return strings.TrimSpace(string(output)) == "neo4j-operator-controller-manager"
+	}, 1*time.Minute, 5*time.Second).Should(BeTrue(), "RBAC binding not configured correctly")
+
+	// Check that the leader election role binding exists
+	Eventually(func() error {
+		cmd := exec.Command("kubectl", "get", "clusterrolebinding", "neo4j-operator-leader-election-rolebinding")
+		return cmd.Run()
+	}, 1*time.Minute, 5*time.Second).Should(Succeed(), "Leader election role binding not found")
+}
+
+// verifyOperatorFunctionality tests that the operator can create and manage resources
+func verifyOperatorFunctionality() {
+	By("Verifying operator functionality with a test resource")
+
+	// Create a test namespace
+	testNamespace := createTestNamespace("operator-test")
+
+	// Create a simple Neo4jEnterpriseCluster resource
+	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: namespace,
+			Name:      "test-cluster",
+			Namespace: testNamespace,
+		},
+		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+			Edition: "enterprise",
+			Image: neo4jv1alpha1.ImageSpec{
+				Repo: "neo4j",
+				Tag:  "5.26-enterprise",
+			},
+			Topology: neo4jv1alpha1.TopologyConfiguration{
+				Primaries: 1,
+			},
+			Storage: neo4jv1alpha1.StorageSpec{
+				ClassName: "local-path",
+				Size:      "1Gi",
+			},
 		},
 	}
-	_ = k8sClient.Delete(ctx, ns, client.GracePeriodSeconds(0))
+
+	// Create the resource
+	err := k8sClient.Create(ctx, cluster)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create test Neo4jEnterpriseCluster")
+
+	// Wait for the resource to be processed (this should trigger webhook validation)
+	By("Waiting for operator to process the test resource")
+	Eventually(func() bool {
+		var createdCluster neo4jv1alpha1.Neo4jEnterpriseCluster
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: "test-cluster", Namespace: testNamespace}, &createdCluster)
+		if err != nil {
+			return false
+		}
+		// Check if the resource has been processed (has some status or annotations)
+		return len(createdCluster.Status.Conditions) > 0 || len(createdCluster.Annotations) > 0
+	}, 30*time.Second, 5*time.Second).Should(BeTrue(), "Operator failed to process test resource")
+
+	// Clean up the test resource
+	By("Cleaning up test resource")
+	err = k8sClient.Delete(ctx, cluster)
+	Expect(err).NotTo(HaveOccurred(), "Failed to delete test Neo4jEnterpriseCluster")
+
+	// Wait for deletion to complete
+	Eventually(func() bool {
+		var deletedCluster neo4jv1alpha1.Neo4jEnterpriseCluster
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: "test-cluster", Namespace: testNamespace}, &deletedCluster)
+		return errors.IsNotFound(err)
+	}, 30*time.Second, 5*time.Second).Should(BeTrue(), "Test resource not deleted")
+
+	By("Operator functionality verification completed successfully")
 }

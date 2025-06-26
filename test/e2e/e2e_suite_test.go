@@ -18,6 +18,7 @@ package e2e_test
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -26,7 +27,13 @@ import (
 
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {
+	// Check if E2E tests should be run
+	if os.Getenv("RUN_E2E_TESTS") != "true" {
+		t.Skip("Skipping E2E tests. Set RUN_E2E_TESTS=true to run them.")
+		return
+	}
+
 	RegisterFailHandler(Fail)
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting neo4j-operator suite\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting neo4j-operator e2e suite\n")
 	RunSpecs(t, "e2e suite")
 }

@@ -123,96 +123,205 @@ lint-lenient: golangci-lint ## Run lenient static analysis with higher threshold
 
 ##@ Testing
 
+# Test Environment Management
+.PHONY: test-setup
+test-setup: ## Setup test environment (cleanup + validation)
+	@echo "🔧 Setting up test environment..."
+	@if [ -f "scripts/setup-test-environment.sh" ]; then \
+		chmod +x scripts/setup-test-environment.sh; \
+		./scripts/setup-test-environment.sh setup; \
+	else \
+		echo "❌ Test setup script not found"; \
+		exit 1; \
+	fi
+
+.PHONY: test-check
+test-check: ## Check test environment requirements
+	@echo "🔍 Checking test environment..."
+	@if [ -f "scripts/setup-test-environment.sh" ]; then \
+		chmod +x scripts/setup-test-environment.sh; \
+		./scripts/setup-test-environment.sh check; \
+	else \
+		echo "❌ Test setup script not found"; \
+		exit 1; \
+	fi
+
+.PHONY: test-cleanup
+test-cleanup: ## Clean up test environment and artifacts
+	@echo "🧹 Cleaning up test environment..."
+	@if [ -f "scripts/setup-test-environment.sh" ]; then \
+		chmod +x scripts/setup-test-environment.sh; \
+		./scripts/setup-test-environment.sh cleanup; \
+	else \
+		echo "⚠️  Test cleanup script not found, using fallback cleanup"; \
+		rm -rf test-results coverage logs tmp; \
+		rm -f test-output.log coverage-*.out coverage-*.html; \
+	fi
+
+# Unit Tests
 .PHONY: test-unit
 test-unit: manifests generate fmt vet envtest ## Run unit tests (no cluster required).
-	@echo "Running unit tests (no cluster required)..."
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /integration) -coverprofile cover.out -race -v
+	@echo "🧪 Running unit tests..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh unit --no-setup; \
+	else \
+		echo "📋 Running unit tests with go test..."; \
+		KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /integration) -coverprofile coverage/coverage-unit.out -race -v; \
+	fi
 
 .PHONY: test-webhooks
 test-webhooks: manifests generate fmt vet envtest ## Run webhook tests (no cluster required).
-	@echo "Running webhook tests (no cluster required)..."
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./internal/webhooks/... -v -timeout=10m
+	@echo "🔗 Running webhook tests..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh unit --no-setup; \
+	else \
+		echo "📋 Running webhook tests with go test..."; \
+		KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./internal/webhooks/... -v -timeout=10m; \
+	fi
 
 .PHONY: test-security
 test-security: ## Run security-focused tests (no cluster required).
-	@echo "Running security tests (no cluster required)..."
-	go test ./internal/controller/security_coordinator_test.go -v
-	go test ./internal/webhooks/... -v -run=".*Security.*"
+	@echo "🔒 Running security tests..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh unit --no-setup; \
+	else \
+		echo "📋 Running security tests with go test..."; \
+		go test ./internal/controller/security_coordinator_test.go -v; \
+		go test ./internal/webhooks/... -v -run=".*Security.*"; \
+	fi
 
 .PHONY: test-neo4j-client
 test-neo4j-client: ## Run Neo4j client tests (no cluster required).
-	@echo "Running Neo4j client tests (no cluster required)..."
-	go test ./internal/neo4j/... -v
+	@echo "🗄️  Running Neo4j client tests..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh unit --no-setup; \
+	else \
+		echo "📋 Running Neo4j client tests with go test..."; \
+		go test ./internal/neo4j/... -v; \
+	fi
 
 .PHONY: test-controllers
 test-controllers: ## Run controller tests (no cluster required).
-	@echo "Running controller tests (no cluster required)..."
-	go test ./internal/controller/... -v -run="Test.*" -timeout=10m
+	@echo "🎮 Running controller tests..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh unit --no-setup; \
+	else \
+		echo "📋 Running controller tests with go test..."; \
+		go test ./internal/controller/... -v -run="Test.*" -timeout=10m; \
+	fi
 
-.PHONY: test-integration test-integration-with-webhooks
+# Integration Tests
+.PHONY: test-integration
 
-# Run integration tests
-test-integration: ## Run integration tests
-	@echo "🧪 Running integration tests..."
-	@./scripts/run-tests.sh integration
+test-integration: ## Run integration tests with webhooks and cert-manager
+	@echo "🔗 Running integration tests with webhooks and cert-manager..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh integration; \
+	else \
+		echo "📋 Running integration tests with legacy script..."; \
+		@./scripts/run-tests.sh integration; \
+	fi
 
-# Run integration tests with webhooks enabled
-test-integration-with-webhooks: ## Run integration tests with webhooks enabled
-	@echo "🧪 Running integration tests with webhooks enabled..."
-	@./scripts/test-integration-with-webhooks.sh
-
+# E2E Tests
 .PHONY: test-e2e
-test-e2e: test-setup ## Run e2e tests (requires cluster).
-	@echo "Checking cluster availability for e2e tests..."
-	@export E2E_TEST=true; export KIND_CLUSTER=test-ci; go test -v ./test/e2e/... -ginkgo.v -ginkgo.timeout=1h
+test-e2e: test-setup ## Run e2e tests with webhooks and cert-manager (requires cluster).
+	@echo "🌐 Running e2e tests with webhooks and cert-manager..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh e2e --no-setup; \
+	else \
+		echo "📋 Running e2e tests with ginkgo..."; \
+		export E2E_TEST=true; export KIND_CLUSTER=neo4j-operator-test; go test -v ./test/e2e/... -ginkgo.v -ginkgo.timeout=1h; \
+	fi
 
+# Smoke Tests
+.PHONY: test-smoke
+test-smoke: ## Run smoke tests (basic functionality)
+	@echo "💨 Running smoke tests..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh smoke; \
+	else \
+		echo "❌ Smoke test script not found"; \
+		exit 1; \
+	fi
+
+# Comprehensive Test Suites
 .PHONY: test-no-cluster
 test-no-cluster: test-unit test-webhooks test-security test-neo4j-client test-controllers ## Run all tests that don't require a cluster.
 
 .PHONY: test-comprehensive
-test-comprehensive: test-unit test-integration test-webhooks test-security ## Run comprehensive test suite (integration tests conditional on cluster).
+test-comprehensive: test-unit test-integration test-webhooks test-security ## Run comprehensive test suite with webhooks.
 
 .PHONY: test-ci
-test-ci: test-unit test-webhooks test-security test-integration ## Run CI test suite (integration tests conditional on cluster).
+test-ci: test-unit test-webhooks test-security test-integration ## Run CI test suite with webhooks.
 
-.PHONY: test-setup
-test-setup: test-cleanup ## Set up clean test environment (cleanup + checks)
-	@echo "🔧 Setting up clean test environment..."
-	@echo "🧹 Performing aggressive cleanup..."
-	@if [ -f "scripts/test-cleanup.sh" ]; then \
-		chmod +x scripts/test-cleanup.sh; \
-		export AGGRESSIVE_CLEANUP=true; \
-		export FORCE_CLEANUP=true; \
-		export VERBOSE=true; \
-		export E2E_TEST=true; \
-		./scripts/test-cleanup.sh cleanup; \
+# Unified Test Runner
+.PHONY: test
+test: ## Run all tests using unified test runner
+	@echo "🚀 Running comprehensive test suite with webhooks..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh all --coverage; \
 	else \
-		echo "Warning: cleanup script not found"; \
+		echo "❌ Unified test runner not found, falling back to individual tests"; \
+		$(MAKE) test-comprehensive; \
 	fi
-	@echo "🔍 Performing environment checks..."
-	@if [ -f "scripts/setup-test-environment.sh" ]; then \
-		chmod +x scripts/setup-test-environment.sh; \
-		export E2E_TEST=true; \
-		./scripts/setup-test-environment.sh check; \
-	else \
-		echo "Warning: setup script not found, using fallback checks"; \
-		if [ -f "scripts/test-cleanup.sh" ]; then \
-			chmod +x scripts/test-cleanup.sh; \
-			export E2E_TEST=true; \
-			./scripts/test-cleanup.sh check; \
-		fi; \
-	fi
-	@echo "✅ Test environment setup completed"
 
-.PHONY: test-cleanup
-test-cleanup: ## Perform aggressive test environment cleanup
-	@echo "🧹 Performing aggressive test environment cleanup..."
-	@if [ -f "scripts/test-cleanup.sh" ]; then \
-		chmod +x scripts/test-cleanup.sh; \
-		export E2E_TEST=true; \
-		./scripts/test-cleanup.sh cleanup; \
+.PHONY: test-verbose
+test-verbose: ## Run all tests with verbose output
+	@echo "🚀 Running comprehensive test suite with verbose output..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh all --coverage --verbose; \
 	else \
-		echo "Warning: cleanup script not found"; \
+		echo "❌ Unified test runner not found"; \
+		exit 1; \
+	fi
+
+.PHONY: test-fast
+test-fast: ## Run fast test suite (unit + smoke)
+	@echo "⚡ Running fast test suite..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh unit --coverage; \
+		./scripts/run-tests.sh smoke --no-setup; \
+	else \
+		echo "❌ Unified test runner not found"; \
+		exit 1; \
+	fi
+
+# Test Coverage
+.PHONY: test-coverage
+test-coverage: ## Generate comprehensive coverage report
+	@echo "📊 Generating coverage report..."
+	@if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh all --coverage --verbose; \
+	else \
+		echo "📋 Generating coverage with go test..."; \
+		go test -coverprofile=coverage/coverage.out -covermode=atomic ./...; \
+		go tool cover -html=coverage/coverage.out -o coverage/coverage.html; \
+		go tool cover -func=coverage/coverage.out | tail -1; \
+	fi
+
+# Test Debug
+.PHONY: test-debug
+test-debug: ## Run tests in debug mode
+	@echo "🐛 Running tests in debug mode..."
+	@export TEST_DEBUG=true; \
+	if [ -f "scripts/run-tests.sh" ]; then \
+		chmod +x scripts/run-tests.sh; \
+		./scripts/run-tests.sh all --verbose --retain-logs; \
+	else \
+		echo "❌ Unified test runner not found"; \
+		exit 1; \
 	fi
 
 ##@ Build
@@ -255,14 +364,8 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
-.PHONY: deploy-ci
-deploy-ci: manifests kustomize ## Deploy controller to the K8s cluster with webhooks disabled for CI.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/ci | $(KUBECTL) apply -f -
-
 .PHONY: deploy-test-with-webhooks
-# Deploy controller to the K8s cluster with webhooks enabled and cert-manager for integration testing.
-deploy-test-with-webhooks: manifests kustomize
+deploy-test-with-webhooks: manifests kustomize ## Deploy controller to the K8s cluster with webhooks enabled and cert-manager for testing.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/test-with-webhooks | $(KUBECTL) apply -f -
 
@@ -399,6 +502,16 @@ catalog-build: opm ## Build a catalog image.
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
 
+# Build catalog image which contains a list of bundle images for testing, then push the image.
+.PHONY: catalog-build-test
+catalog-build-test: opm ## Build a catalog image for testing.
+	$(OPM) index add --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+
+# Push the catalog image for testing.
+.PHONY: catalog-push-test
+catalog-push-test: ## Push a catalog image for testing.
+	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+
 ##@ Development
 
 .PHONY: dev-cluster
@@ -462,3 +575,4 @@ clean: ## Clean build artifacts and temporary files.
 	@rm -f results.sarif
 	@rm -f build-errors.log
 	@rm -f .air.toml
+	@$(MAKE) test-cleanup

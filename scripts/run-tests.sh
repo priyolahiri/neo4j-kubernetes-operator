@@ -1,172 +1,496 @@
 #!/bin/bash
 
-# Enhanced test runner with optimized settings and better error handling
-set -euo pipefail
+# Neo4j Operator Test Runner Script
+# This script provides a unified interface for running all types of tests
 
-# Configuration
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-TIMEOUT_MINUTES=${TEST_TIMEOUT_MINUTES:-15}
-PARALLEL_JOBS=${TEST_PARALLEL_JOBS:-4}
-VERBOSE=${TEST_VERBOSE:-false}
-CLEANUP_ON_FAILURE=${TEST_CLEANUP_ON_FAILURE:-true}
+set -e
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Logging functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Default values
+TEST_TYPE="all"
+VERBOSE=false
+PARALLEL=false
+COVERAGE=false
+CLEANUP=true
+TIMEOUT="10m"
+SKIP_SETUP=false
+SKIP_CLEANUP=false
+FAIL_FAST=false
+RETAIN_LOGS=false
+TEST_NAMESPACE="neo4j-operator-system"
+
+# Test results
+TOTAL_TESTS=0
+PASSED_TESTS=0
+FAILED_TESTS=0
+SKIPPED_TESTS=0
+
+# Function to print colored output
+print_status() {
+    local color=$1
+    local message=$2
+    echo -e "${color}${message}${NC}"
 }
 
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Cleanup function
-cleanup() {
-    if [ "$CLEANUP_ON_FAILURE" = "true" ]; then
-        log_info "Performing cleanup..."
-        cd "$PROJECT_ROOT"
-        make test-cleanup || true
+# Function to print verbose output
+verbose() {
+    if [[ "$VERBOSE" == "true" ]]; then
+        echo -e "${BLUE}[VERBOSE] $1${NC}"
     fi
 }
 
-# Set up trap for cleanup on exit
-trap cleanup EXIT
+# Function to print test results
+print_test_results() {
+    echo ""
+    print_status $PURPLE "📊 Test Results Summary"
+    print_status $PURPLE "======================"
+    print_status $GREEN "✅ Passed: $PASSED_TESTS"
+    print_status $RED "❌ Failed: $FAILED_TESTS"
+    print_status $YELLOW "⏭️  Skipped: $SKIPPED_TESTS"
+    print_status $CYAN "📈 Total: $TOTAL_TESTS"
 
-# Function to check cluster health
-check_cluster_health() {
-    log_info "Checking cluster health..."
+    if [[ $FAILED_TESTS -gt 0 ]]; then
+        print_status $RED "❌ Some tests failed!"
+        return 1
+    else
+        print_status $GREEN "🎉 All tests passed!"
+        return 0
+    fi
+}
 
-    if ! kubectl cluster-info >/dev/null 2>&1; then
-        log_error "Cluster is not accessible"
+# Function to show usage
+show_usage() {
+    echo "Usage: $0 [OPTIONS] [TEST_TYPE]"
+    echo ""
+    echo "Test Types:"
+    echo "  unit         - Run unit tests only"
+    echo "  integration  - Run integration tests only"
+    echo "  e2e          - Run end-to-end tests only"
+    echo "  all          - Run all tests (default)"
+    echo "  simple       - Run simple integration tests"
+    echo "  smoke        - Run smoke tests"
+    echo ""
+    echo "Options:"
+    echo "  -v, --verbose        - Enable verbose output"
+    echo "  -p, --parallel       - Run tests in parallel"
+    echo "  -c, --coverage       - Generate coverage reports"
+    echo "  --no-cleanup         - Skip cleanup after tests"
+    echo "  --no-setup           - Skip test environment setup"
+    echo "  --fail-fast          - Stop on first failure"
+    echo "  --retain-logs        - Keep test logs after completion"
+    echo "  --timeout DURATION   - Set test timeout (default: 10m)"
+    echo "  --namespace NAME     - Set test namespace (default: neo4j-operator-system)"
+    echo "  -h, --help           - Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0                           # Run all tests"
+    echo "  $0 integration               # Run integration tests only"
+    echo "  $0 --coverage --verbose      # Run all tests with coverage and verbose output"
+    echo "  $0 simple --no-cleanup       # Run simple tests without cleanup"
+    echo "  $0 e2e --timeout 30m         # Run e2e tests with 30 minute timeout"
+}
+
+# Function to setup test environment
+setup_test_environment() {
+    if [[ "$SKIP_SETUP" == "true" ]]; then
+        print_status $YELLOW "⏭️  Skipping test environment setup"
+        return 0
+    fi
+
+    print_status $BLUE "🚀 Setting up test environment..."
+
+    # Run the setup script
+    if ! "$SCRIPT_DIR/setup-test-environment.sh" setup; then
+        print_status $RED "❌ Failed to setup test environment"
         return 1
     fi
 
-    # Check if operator is running
-    if ! kubectl get pods -n neo4j-operator-system --field-selector=status.phase=Running | grep -q neo4j-operator-controller-manager; then
-        log_warning "Neo4j operator is not running. Starting it..."
-        make deploy-test-with-webhooks
-        sleep 30
-    fi
-
-    log_success "Cluster health check passed"
-    return 0
+    print_status $GREEN "✅ Test environment setup completed"
 }
 
-# Function to run integration tests with optimized settings
-run_integration_tests() {
-    log_info "Running integration tests with optimized settings..."
-
-    # Check for ginkgo CLI
-    if ! command -v ginkgo &> /dev/null; then
-        log_warning "Ginkgo CLI not found. Installing..."
-        go install github.com/onsi/ginkgo/v2/ginkgo@latest
-        export PATH="$PATH:$(go env GOPATH)/bin"
+# Function to cleanup test environment
+cleanup_test_environment() {
+    if [[ "$SKIP_CLEANUP" == "true" ]]; then
+        print_status $YELLOW "⏭️  Skipping test environment cleanup"
+        return 0
     fi
 
-    # Set optimized environment variables
-    export TEST_TIMEOUT="${TIMEOUT_MINUTES}m"
-    export TEST_PARALLEL="$PARALLEL_JOBS"
-    export GOMAXPROCS="$PARALLEL_JOBS"
+    print_status $BLUE "🧹 Cleaning up test environment..."
 
-    # Run tests with Ginkgo CLI
-    cd "$PROJECT_ROOT/test/integration"
-
-    if [ "$VERBOSE" = "true" ]; then
-        ginkgo -v -p --fail-fast --timeout="${TIMEOUT_MINUTES}m" --output-dir="../../" --coverprofile=coverage-integration.out
-    else
-        ginkgo -v -p --fail-fast --timeout="${TIMEOUT_MINUTES}m" --output-dir="../../" --coverprofile=coverage-integration.out 2>&1 | tee ../../test-output.log
+    # Run the cleanup script
+    if ! "$SCRIPT_DIR/setup-test-environment.sh" cleanup; then
+        print_status $YELLOW "⚠️  Cleanup had some issues, but continuing..."
     fi
 
-    cd "$PROJECT_ROOT"
-
-    # Generate coverage report
-    if [ -f "coverage-integration.out" ]; then
-        go tool cover -html=coverage-integration.out -o coverage-integration.html
-    fi
-
-    log_success "Integration tests completed successfully"
+    print_status $GREEN "✅ Test environment cleanup completed"
 }
 
 # Function to run unit tests
 run_unit_tests() {
-    log_info "Running unit tests..."
+    print_status $BLUE "🧪 Running unit tests..."
 
-    cd "$PROJECT_ROOT"
-    go test -v -race -coverprofile=coverage-unit.out \
-        -timeout=5m \
-        -parallel="$PARALLEL_JOBS" \
-        ./internal/controller/... \
-        ./internal/webhooks/... \
-        ./internal/neo4j/...
+    local start_time=$(date +%s)
+    local test_args=()
 
-    go tool cover -html=coverage-unit.out -o coverage-unit.html
+    if [[ "$VERBOSE" == "true" ]]; then
+        test_args+=("-v")
+    fi
 
-    log_success "Unit tests completed successfully"
+    if [[ "$COVERAGE" == "true" ]]; then
+        test_args+=("-coverprofile=coverage/coverage-unit.out")
+        test_args+=("-covermode=atomic")
+    fi
+
+    if [[ "$FAIL_FAST" == "true" ]]; then
+        test_args+=("-failfast")
+    fi
+
+    # Run unit tests
+    if go test -timeout="$TIMEOUT" "${test_args[@]}" ./... 2>&1 | tee -a logs/unit-tests.log; then
+        print_status $GREEN "✅ Unit tests passed"
+        ((PASSED_TESTS++))
+    else
+        print_status $RED "❌ Unit tests failed"
+        ((FAILED_TESTS++))
+        return 1
+    fi
+
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    verbose "Unit tests completed in ${duration}s"
+
+    ((TOTAL_TESTS++))
 }
 
-# Function to run webhook tests
-run_webhook_tests() {
-    log_info "Running webhook tests..."
+# Function to run integration tests
+run_integration_tests() {
+    print_status $BLUE "🔗 Running integration tests with webhooks and cert-manager..."
 
-    cd "$PROJECT_ROOT"
-    go test -v -race -coverprofile=coverage-webhook.out \
-        -timeout=5m \
-        ./internal/webhooks/...
+    local start_time=$(date +%s)
 
-    go tool cover -html=coverage-webhook.out -o coverage-webhook.html
+    # Run the integration tests with webhooks
+    if go test -v -timeout="$TIMEOUT" ./test/integration/... 2>&1 | tee -a logs/integration-tests.log; then
+        print_status $GREEN "✅ Integration tests passed"
+        ((PASSED_TESTS++))
+    else
+        print_status $RED "❌ Integration tests failed"
+        ((FAILED_TESTS++))
+        return 1
+    fi
 
-    log_success "Webhook tests completed successfully"
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    verbose "Integration tests completed in ${duration}s"
+
+    ((TOTAL_TESTS++))
 }
 
-# Main execution
+# Function to run simple integration tests
+run_simple_integration_tests() {
+    print_status $BLUE "🔗 Running simple integration tests with webhooks..."
+
+    local start_time=$(date +%s)
+
+    # Run simple integration tests with webhooks
+    if go test -v -timeout="$TIMEOUT" ./test/integration/... -ginkgo.focus="Simple" 2>&1 | tee -a logs/simple-integration-tests.log; then
+        print_status $GREEN "✅ Simple integration tests passed"
+        ((PASSED_TESTS++))
+    else
+        print_status $RED "❌ Simple integration tests failed"
+        ((FAILED_TESTS++))
+        return 1
+    fi
+
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    verbose "Simple integration tests completed in ${duration}s"
+
+    ((TOTAL_TESTS++))
+}
+
+# Function to run e2e tests
+run_e2e_tests() {
+    print_status $BLUE "🌐 Running end-to-end tests with webhooks and cert-manager..."
+
+    local start_time=$(date +%s)
+
+    # Check if ginkgo is available
+    if ! command -v ginkgo &> /dev/null; then
+        print_status $YELLOW "📦 Installing ginkgo..."
+        go install github.com/onsi/ginkgo/v2/ginkgo@latest
+    fi
+
+    # Set up ginkgo arguments
+    local ginkgo_args=()
+
+    if [[ "$VERBOSE" == "true" ]]; then
+        ginkgo_args+=("-v")
+    fi
+
+    if [[ "$FAIL_FAST" == "true" ]]; then
+        ginkgo_args+=("-fail-fast")
+    fi
+
+    if [[ "$COVERAGE" == "true" ]]; then
+        ginkgo_args+=("-coverprofile=coverage/coverage-e2e.out")
+    fi
+
+    # Run e2e tests
+    if ginkgo -timeout="$TIMEOUT" "${ginkgo_args[@]}" ./test/e2e/... 2>&1 | tee -a logs/e2e-tests.log; then
+        print_status $GREEN "✅ E2E tests passed"
+        ((PASSED_TESTS++))
+    else
+        print_status $RED "❌ E2E tests failed"
+        ((FAILED_TESTS++))
+        return 1
+    fi
+
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    verbose "E2E tests completed in ${duration}s"
+
+    ((TOTAL_TESTS++))
+}
+
+# Function to run smoke tests
+run_smoke_tests() {
+    print_status $BLUE "💨 Running smoke tests with webhooks..."
+
+    local start_time=$(date +%s)
+
+    # Run basic functionality tests with webhooks
+    if go test -v -timeout="$TIMEOUT" ./test/integration/... -ginkgo.focus="Smoke" 2>&1 | tee -a logs/smoke-tests.log; then
+        print_status $GREEN "✅ Smoke tests passed"
+        ((PASSED_TESTS++))
+    else
+        print_status $RED "❌ Smoke tests failed"
+        ((FAILED_TESTS++))
+        return 1
+    fi
+
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    verbose "Smoke tests completed in ${duration}s"
+
+    ((TOTAL_TESTS++))
+}
+
+# Function to generate coverage report
+generate_coverage_report() {
+    if [[ "$COVERAGE" != "true" ]]; then
+        return 0
+    fi
+
+    print_status $BLUE "📊 Generating coverage report..."
+
+    # Merge coverage files if multiple exist
+    if [[ -f "coverage/coverage-unit.out" ]] && [[ -f "coverage/coverage-integration.out" ]]; then
+        echo "mode: atomic" > coverage/coverage-combined.out
+        tail -n +2 coverage/coverage-unit.out >> coverage/coverage-combined.out
+        tail -n +2 coverage/coverage-integration.out >> coverage/coverage-combined.out
+
+        # Generate HTML report
+        go tool cover -html=coverage/coverage-combined.out -o coverage/coverage.html
+
+        print_status $GREEN "✅ Coverage report generated: coverage/coverage.html"
+    elif [[ -f "coverage/coverage-unit.out" ]]; then
+        go tool cover -html=coverage/coverage-unit.out -o coverage/coverage.html
+        print_status $GREEN "✅ Coverage report generated: coverage/coverage.html"
+    elif [[ -f "coverage/coverage-integration.out" ]]; then
+        go tool cover -html=coverage/coverage-integration.out -o coverage/coverage.html
+        print_status $GREEN "✅ Coverage report generated: coverage/coverage.html"
+    fi
+
+    # Show coverage summary
+    if [[ -f "coverage/coverage-combined.out" ]]; then
+        go tool cover -func=coverage/coverage-combined.out | tail -1
+    fi
+}
+
+# Function to cleanup logs
+cleanup_logs() {
+    if [[ "$RETAIN_LOGS" == "true" ]]; then
+        print_status $YELLOW "📁 Retaining test logs"
+        return 0
+    fi
+
+    print_status $BLUE "🧹 Cleaning up test logs..."
+    rm -f logs/*.log
+    print_status $GREEN "✅ Test logs cleaned up"
+}
+
+# Function to handle signals
+cleanup_on_exit() {
+    print_status $YELLOW "🛑 Received interrupt signal, cleaning up..."
+    cleanup_test_environment
+    cleanup_logs
+    print_test_results
+    exit 1
+}
+
+# Main function
 main() {
-    log_info "Starting enhanced test runner..."
-    log_info "Configuration:"
-    log_info "  Timeout: ${TIMEOUT_MINUTES} minutes"
-    log_info "  Parallel jobs: $PARALLEL_JOBS"
-    log_info "  Verbose: $VERBOSE"
-    log_info "  Cleanup on failure: $CLEANUP_ON_FAILURE"
-
     # Parse command line arguments
-    case "${1:-all}" in
-        "unit")
-            run_unit_tests
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            unit|integration|e2e|all|simple|smoke)
+                TEST_TYPE="$1"
+                shift
+                ;;
+            -v|--verbose)
+                VERBOSE=true
+                shift
+                ;;
+            -p|--parallel)
+                PARALLEL=true
+                shift
+                ;;
+            -c|--coverage)
+                COVERAGE=true
+                shift
+                ;;
+            --no-cleanup)
+                SKIP_CLEANUP=true
+                shift
+                ;;
+            --no-setup)
+                SKIP_SETUP=true
+                shift
+                ;;
+            --fail-fast)
+                FAIL_FAST=true
+                shift
+                ;;
+            --retain-logs)
+                RETAIN_LOGS=true
+                shift
+                ;;
+            --timeout)
+                TIMEOUT="$2"
+                shift 2
+                ;;
+            --namespace)
+                TEST_NAMESPACE="$2"
+                shift 2
+                ;;
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
+            *)
+                echo "Unknown option: $1"
+                show_usage
+                exit 1
+                ;;
+        esac
+    done
+
+    # Set up signal handlers
+    trap cleanup_on_exit INT TERM
+
+    # Change to project root
+    cd "$PROJECT_ROOT"
+
+    # Create necessary directories
+    mkdir -p logs coverage test-results
+
+    print_status $PURPLE "🚀 Neo4j Operator Test Runner"
+    print_status $PURPLE "=========================="
+    print_status $CYAN "Test Type: $TEST_TYPE"
+    print_status $CYAN "Verbose: $VERBOSE"
+    print_status $CYAN "Coverage: $COVERAGE"
+    print_status $CYAN "Timeout: $TIMEOUT"
+    print_status $CYAN "Namespace: $TEST_NAMESPACE"
+    echo ""
+
+    # Setup test environment
+    if ! setup_test_environment; then
+        print_status $RED "❌ Failed to setup test environment"
+        exit 1
+    fi
+
+    # Run tests based on type
+    local test_failed=false
+
+    case "$TEST_TYPE" in
+        unit)
+            if ! run_unit_tests; then
+                test_failed=true
+            fi
             ;;
-        "integration")
-            check_cluster_health || exit 1
-            run_integration_tests
+        integration)
+            if ! run_integration_tests; then
+                test_failed=true
+            fi
             ;;
-        "webhook")
-            run_webhook_tests
+        e2e)
+            if ! run_e2e_tests; then
+                test_failed=true
+            fi
             ;;
-        "all")
-            run_unit_tests
-            run_webhook_tests
-            check_cluster_health && run_integration_tests || log_warning "Skipping integration tests due to cluster issues"
+        simple)
+            if ! run_simple_integration_tests; then
+                test_failed=true
+            fi
+            ;;
+        smoke)
+            if ! run_smoke_tests; then
+                test_failed=true
+            fi
+            ;;
+        all)
+            # Run all test types
+            if ! run_unit_tests; then
+                test_failed=true
+            fi
+
+            if ! run_simple_integration_tests; then
+                test_failed=true
+            fi
+
+            if ! run_integration_tests; then
+                test_failed=true
+            fi
+
+            if ! run_e2e_tests; then
+                test_failed=true
+            fi
             ;;
         *)
-            log_error "Unknown test type: $1"
-            log_info "Usage: $0 [unit|integration|webhook|all]"
+            print_status $RED "❌ Unknown test type: $TEST_TYPE"
+            show_usage
             exit 1
             ;;
     esac
 
-    log_success "All tests completed successfully!"
+    # Generate coverage report
+    generate_coverage_report
+
+    # Cleanup
+    cleanup_test_environment
+    cleanup_logs
+
+    # Print results
+    print_test_results
+
+    # Exit with appropriate code
+    if [[ "$test_failed" == "true" ]]; then
+        exit 1
+    else
+        exit 0
+    fi
 }
 
 # Run main function with all arguments

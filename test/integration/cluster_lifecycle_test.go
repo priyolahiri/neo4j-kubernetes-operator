@@ -39,27 +39,31 @@ var _ = Describe("Cluster Lifecycle Integration Tests", func() {
 	)
 
 	BeforeEach(func() {
+		By("Starting BeforeEach for cluster lifecycle test")
 		// Create test namespace
 		namespaceName := createTestNamespace("lifecycle")
+		By(fmt.Sprintf("Created namespace: %s", namespaceName))
+
 		namespace = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: namespaceName,
 			},
 		}
 		Expect(k8sClient.Create(ctx, namespace)).Should(Succeed())
+		By("Successfully created namespace object")
 
 		clusterName = fmt.Sprintf("lifecycle-cluster-%d", GinkgoRandomSeed())
+		By(fmt.Sprintf("Generated cluster name: %s", clusterName))
+		By("Completed BeforeEach setup")
 	})
 
 	AfterEach(func() {
-		if namespace != nil {
-			// Use aggressive cleanup to avoid timeouts
-			aggressiveCleanup(namespace.Name)
-		}
+		// Cleanup will be handled by the test suite cleanup
 	})
 
 	Context("End-to-end cluster lifecycle", func() {
 		It("Should create, scale, upgrade, and delete cluster successfully", func() {
+			By("Starting end-to-end cluster lifecycle test")
 			By("Creating a basic cluster")
 			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -82,7 +86,9 @@ var _ = Describe("Cluster Lifecycle Integration Tests", func() {
 					},
 				},
 			}
+			By("About to create Neo4jEnterpriseCluster")
 			Expect(k8sClient.Create(ctx, cluster)).Should(Succeed())
+			By("Successfully created Neo4jEnterpriseCluster")
 
 			By("Waiting for StatefulSets to be created")
 			primarySts := &appsv1.StatefulSet{}

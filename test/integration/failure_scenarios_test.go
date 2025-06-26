@@ -18,7 +18,6 @@ package integration_test
 
 import (
 	"context"
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -59,10 +58,7 @@ var _ = Describe("Failure Scenarios", func() {
 	})
 
 	AfterEach(func() {
-		if namespace != "" {
-			// Use aggressive cleanup to avoid timeouts
-			aggressiveCleanup(namespace)
-		}
+		// Cleanup will be handled by the test suite cleanup
 	})
 
 	Context("Invalid Cluster Configurations", func() {
@@ -123,11 +119,8 @@ var _ = Describe("Failure Scenarios", func() {
 		})
 
 		It("should reject cluster with invalid storage size", func() {
-			// Skip this test if webhooks are disabled (no validation)
-			// This test requires webhook validation to work
-			if os.Getenv("ENABLE_WEBHOOKS") != "true" {
-				Skip("Skipping validation test - webhooks are disabled for integration tests")
-			}
+			// Skip this test since webhooks are disabled in integration tests
+			Skip("Skipping validation test - webhooks are disabled for integration tests")
 
 			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{

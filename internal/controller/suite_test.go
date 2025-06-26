@@ -145,6 +145,16 @@ var _ = BeforeSuite(func() {
 		Expect(err).NotTo(HaveOccurred())
 	}
 
+	// Set up Neo4jRestore controller
+	if err := (&controller.Neo4jRestoreReconciler{
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
+		RequeueAfter: 30 * time.Second,
+	}).SetupWithManager(mgr); err != nil {
+		Expect(err).NotTo(HaveOccurred())
+	}
+
 	// Start the manager
 	By("starting the manager")
 	go func() {
