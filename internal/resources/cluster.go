@@ -664,36 +664,8 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, ro
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				Exec: &corev1.ExecAction{
-					Command: []string{
-						"/bin/bash",
-						"-c",
-						"/conf/health.sh",
-					},
-				},
-			},
-			InitialDelaySeconds: 30,
-			PeriodSeconds:       10,
-			TimeoutSeconds:      5,
-			FailureThreshold:    3,
-		},
-		LivenessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				Exec: &corev1.ExecAction{
-					Command: []string{
-						"/bin/bash",
-						"-c",
-						"/conf/health.sh",
-					},
-				},
-			},
-			InitialDelaySeconds: 60,
-			PeriodSeconds:       30,
-			TimeoutSeconds:      10,
-			FailureThreshold:    5,
-		},
+		ReadinessProbe: buildReadinessProbe(cluster),
+		LivenessProbe:  buildLivenessProbe(cluster),
 		Command: []string{
 			"/bin/bash",
 			"-c",
@@ -1101,4 +1073,68 @@ echo "Neo4j is healthy"
 exit 0
 `
 	}
+}
+
+// buildReadinessProbe creates a cluster-aware readiness probe
+func buildReadinessProbe(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Probe {
+	// Check if this is a single-node deployment
+	isSingleNode := cluster.Spec.Topology.Primaries == 1 && cluster.Spec.Topology.Secondaries == 0
+
+	probe := &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			Exec: &corev1.ExecAction{
+				Command: []string{
+					"/bin/bash",
+					"-c",
+					"/conf/health.sh",
+				},
+			},
+		},
+		TimeoutSeconds:   5,
+		FailureThreshold: 3,
+	}
+
+	if isSingleNode {
+		// Single-node: faster startup
+		probe.InitialDelaySeconds = 30
+		probe.PeriodSeconds = 10
+	} else {
+		// Multi-node cluster: longer startup time due to cluster formation
+		probe.InitialDelaySeconds = 45 // Allow time for cluster discovery and joining
+		probe.PeriodSeconds = 15       // Less frequent checks during startup
+	}
+
+	return probe
+}
+
+// buildLivenessProbe creates a cluster-aware liveness probe
+func buildLivenessProbe(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Probe {
+	// Check if this is a single-node deployment
+	isSingleNode := cluster.Spec.Topology.Primaries == 1 && cluster.Spec.Topology.Secondaries == 0
+
+	probe := &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			Exec: &corev1.ExecAction{
+				Command: []string{
+					"/bin/bash",
+					"-c",
+					"/conf/health.sh",
+				},
+			},
+		},
+		TimeoutSeconds:   10,
+		FailureThreshold: 3,
+	}
+
+	if isSingleNode {
+		// Single-node: standard timing
+		probe.InitialDelaySeconds = 60
+		probe.PeriodSeconds = 30
+	} else {
+		// Multi-node cluster: allow more time for cluster operations
+		probe.InitialDelaySeconds = 120 // Allow sufficient time for joining pods to connect
+		probe.PeriodSeconds = 60        // Less frequent checks to avoid interrupting cluster operations
+	}
+
+	return probe
 }
