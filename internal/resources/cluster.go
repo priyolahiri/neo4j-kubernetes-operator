@@ -907,22 +907,41 @@ server.routing.listen_address=0.0.0.0:7688
 	// Add TLS configuration if enabled
 	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == CertManagerMode {
 		config += `
-# TLS Configuration
+# TLS Configuration for Neo4j 5.26+
 server.https.enabled=true
 server.https.listen_address=0.0.0.0:7473
-server.bolt.tls_level=OPTIONAL
 server.https.advertised_address=${HOSTNAME}:7473
 
-# SSL certificates
+# SSL Policy Configuration
+# Base certificate directory
 server.directories.certificates=/ssl
-server.ssl.policy.bolt.enabled=true
-server.ssl.policy.bolt.base_directory=/ssl
-server.ssl.policy.bolt.private_key=tls.key
-server.ssl.policy.bolt.public_certificate=tls.crt
-server.ssl.policy.https.enabled=true
-server.ssl.policy.https.base_directory=/ssl
-server.ssl.policy.https.private_key=tls.key
-server.ssl.policy.https.public_certificate=tls.crt
+
+# Bolt SSL Policy
+dbms.ssl.policy.bolt.enabled=true
+dbms.ssl.policy.bolt.base_directory=/ssl
+dbms.ssl.policy.bolt.private_key=tls.key
+dbms.ssl.policy.bolt.public_certificate=tls.crt
+dbms.ssl.policy.bolt.client_auth=NONE
+dbms.ssl.policy.bolt.tls_versions=TLSv1.3,TLSv1.2
+
+# HTTPS SSL Policy
+dbms.ssl.policy.https.enabled=true
+dbms.ssl.policy.https.base_directory=/ssl
+dbms.ssl.policy.https.private_key=tls.key
+dbms.ssl.policy.https.public_certificate=tls.crt
+dbms.ssl.policy.https.client_auth=NONE
+dbms.ssl.policy.https.tls_versions=TLSv1.3,TLSv1.2
+
+# Cluster SSL Policy (for intra-cluster communication)
+dbms.ssl.policy.cluster.enabled=true
+dbms.ssl.policy.cluster.base_directory=/ssl
+dbms.ssl.policy.cluster.private_key=tls.key
+dbms.ssl.policy.cluster.public_certificate=tls.crt
+dbms.ssl.policy.cluster.client_auth=NONE
+dbms.ssl.policy.cluster.tls_versions=TLSv1.3,TLSv1.2
+
+# Enable TLS for connectors
+server.bolt.tls_level=OPTIONAL
 `
 	}
 

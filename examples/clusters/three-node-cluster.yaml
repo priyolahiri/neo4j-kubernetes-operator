@@ -41,8 +41,8 @@ spec:
   tls:
     mode: cert-manager
     issuerRef:
-      name: letsencrypt-prod  # Replace with your cert-manager issuer
-      kind: ClusterIssuer
+      name: ca-cluster-issuer  # Uses self-signed CA for development
+      kind: ClusterIssuer      # For production, replace with your own issuer
 
   # Service configuration
   service:
@@ -70,8 +70,8 @@ spec:
 #      --from-literal=username=neo4j \
 #      --from-literal=password=your-secure-password
 #
-# 2. For TLS mode, create cert-manager ClusterIssuer:
-#    kubectl apply -f your-cluster-issuer.yaml
+# 2. For TLS mode, cert-manager and ClusterIssuer are automatically set up:
+#    Development clusters include a self-signed ClusterIssuer (ca-cluster-issuer)
 #
 # 3. Expected deployment time: 3-5 minutes total
 #    - Pods start sequentially (StatefulSet behavior)

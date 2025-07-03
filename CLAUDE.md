@@ -144,10 +144,12 @@ The project uses two separate Kind clusters:
 - **Development Cluster** (`neo4j-operator-dev`): For local development and manual testing
   - Created with `make dev-cluster`
   - Uses `hack/kind-config.yaml` with development optimizations
-  - Includes cert-manager for webhook development
+  - Includes cert-manager v1.18.2 with self-signed ClusterIssuer (`ca-cluster-issuer`)
+  - Ready for TLS-enabled Neo4j deployments
 
 - **Test Cluster** (`neo4j-operator-test`): For automated testing only
   - Created with `make test-cluster`
+  - Includes cert-manager v1.18.2 with self-signed ClusterIssuer (`ca-cluster-issuer`)
   - Minimal configuration for fast test execution
   - Automatically managed by test scripts
 

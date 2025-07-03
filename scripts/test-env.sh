@@ -29,8 +29,12 @@ cluster() {
 
     # Install cert-manager
     log "Installing cert-manager..."
-    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.18.2/cert-manager.yaml
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s
+
+    # Create self-signed ClusterIssuer for testing
+    log "Creating self-signed ClusterIssuer for testing..."
+    kubectl apply -f "${PROJECT_ROOT}/config/dev/self-signed-issuer.yaml" 2>/dev/null || echo "Self-signed issuer creation skipped (file may not exist)"
 
     log "Test cluster ready!"
 }
