@@ -363,6 +363,25 @@ catalog-push-test: ## Push a catalog image for testing.
 
 ##@ Development
 
+.PHONY: demo
+demo: demo-setup ## Run interactive demo of the operator capabilities
+	@echo "Starting Neo4j Kubernetes Operator demo..."
+	@./scripts/demo.sh
+
+.PHONY: demo-fast
+demo-fast: demo-setup ## Run fast automated demo (no confirmations)
+	@echo "Starting fast automated demo..."
+	@./scripts/demo.sh --skip-confirmations --speed fast
+
+.PHONY: demo-only
+demo-only: ## Run demo without environment setup (assumes cluster exists)
+	@echo "Running demo on existing environment..."
+	@./scripts/demo.sh --skip-confirmations --speed fast
+
+.PHONY: demo-setup
+demo-setup: ## Setup complete demo environment (cluster + operator)
+	@SKIP_SETUP_CONFIRMATION=true ./scripts/demo-setup.sh
+
 .PHONY: dev-cluster
 dev-cluster: ## Create a Kind cluster for development
 	@echo "Creating development cluster..."
@@ -425,8 +444,13 @@ test-destroy: ## Completely destroy test environment
 	@echo "Test environment destroyed!"
 
 .PHONY: operator-setup
-operator-setup: ## Set up the Neo4j operator with webhooks
+operator-setup: ## Set up the Neo4j operator with webhooks (automated)
 	@echo "🔧 Setting up Neo4j operator with webhooks..."
+	@SKIP_OPERATOR_CONFIRMATION=true ./scripts/setup-operator.sh setup
+
+.PHONY: operator-setup-interactive
+operator-setup-interactive: ## Set up the Neo4j operator interactively
+	@echo "🔧 Setting up Neo4j operator (interactive mode)..."
 	@./scripts/setup-operator.sh setup
 
 .PHONY: operator-status
