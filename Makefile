@@ -141,7 +141,7 @@ test-cleanup: ## Clean up test environment
 test-unit: manifests generate fmt vet envtest ## Run unit tests (no cluster required)
 	@echo "🧪 Running unit tests..."
 	@mkdir -p coverage
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /integration | grep -v "/test/webhooks") -coverprofile coverage/coverage-unit.out -race -v
+	@./scripts/run-tests-clean.sh env KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /integration | grep -v "/test/webhooks") -coverprofile coverage/coverage-unit.out -race -v
 
 # Webhook tests removed - webhooks migrated to client-side validation
 
@@ -169,7 +169,7 @@ test: test-unit test-integration ## Run all tests
 test-coverage: ## Generate coverage report
 	@echo "📊 Generating coverage report..."
 	@mkdir -p coverage
-	@go test -coverprofile=coverage/coverage.out -covermode=atomic ./...
+	@./scripts/run-tests-clean.sh go test -coverprofile=coverage/coverage.out -covermode=atomic ./...
 	@go tool cover -html=coverage/coverage.out -o coverage/coverage.html
 	@go tool cover -func=coverage/coverage.out | tail -1
 

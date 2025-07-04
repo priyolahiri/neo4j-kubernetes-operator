@@ -17,6 +17,7 @@ limitations under the License.
 package validation
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -145,7 +146,7 @@ func TestMemoryValidator_Validate(t *testing.T) {
 			if tt.wantErrorMsg != "" && len(errors) > 0 {
 				found := false
 				for _, err := range errors {
-					if containsStringMemory(err.Error(), tt.wantErrorMsg) {
+					if strings.Contains(err.Error(), tt.wantErrorMsg) {
 						found = true
 						break
 					}
@@ -253,18 +254,4 @@ func TestMemoryValidator_formatMemorySize(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Helper function to check if a string contains a substring
-func containsStringMemory(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-			func() bool {
-				for i := 0; i <= len(s)-len(substr); i++ {
-					if s[i:i+len(substr)] == substr {
-						return true
-					}
-				}
-				return false
-			}())))
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package validation
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -163,7 +164,7 @@ func TestImageValidator_Validate(t *testing.T) {
 			if tt.expectedError != "" && len(errs) > 0 {
 				found := false
 				for _, err := range errs {
-					if err.Type == field.ErrorTypeInvalid && containsString(err.Detail, tt.expectedError) {
+					if err.Type == field.ErrorTypeInvalid && strings.Contains(err.Detail, tt.expectedError) {
 						found = true
 						break
 					}
@@ -212,11 +213,4 @@ func TestImageValidator_isVersionSupported(t *testing.T) {
 			assert.Equal(t, tt.supported, result, "Version %s support expected: %v, got: %v", tt.version, tt.supported, result)
 		})
 	}
-}
-
-// Helper function to check if error detail contains expected string
-func containsString(detail, expected string) bool {
-	return len(detail) > 0 && len(expected) > 0 &&
-		(detail == expected ||
-			(len(detail) >= len(expected) && detail[:len(expected)] == expected))
 }
