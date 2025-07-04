@@ -68,7 +68,7 @@ jobs:
         kind-version: ${{ env.KIND_VERSION }}
 
     - name: Run integration tests
-      run: make test-integration
+      run: make test-integration-ci
       env:
         KUBECONFIG: ~/.kube/config
 

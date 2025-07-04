@@ -152,8 +152,17 @@ test-unit: manifests generate fmt vet envtest ## Run unit tests (no cluster requ
 .PHONY: test-integration
 test-integration: test-cluster ## Run integration tests
 	@echo "🔗 Running integration tests..."
-	@export KUBECONFIG=$(kind export kubeconfig --name neo4j-operator-test 2>/dev/null) && \
+	@kind export kubeconfig --name neo4j-operator-test && \
 		go test ./test/integration/... -v -timeout=30m
+
+.PHONY: test-integration-ci
+test-integration-ci: ## Run integration tests in CI (assumes cluster already exists)
+	@echo "🔗 Running integration tests in CI..."
+	@if [ -z "$$KUBECONFIG" ]; then \
+		echo "KUBECONFIG not set, trying to export from kind cluster..."; \
+		kind export kubeconfig --name neo4j-operator-test; \
+	fi
+	@go test ./test/integration/... -v -timeout=30m
 
 # E2E Tests - Removed to simplify test structure
 
