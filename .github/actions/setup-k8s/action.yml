@@ -41,8 +41,15 @@ runs:
         make manifests
         make install
 
-    - name: Wait for cluster to be ready
+    - name: Build and deploy operator
+      shell: bash
+      run: |
+        make docker-build
+        make operator-setup
+
+    - name: Wait for operator to be ready
       shell: bash
       run: |
         kubectl wait --for=condition=Ready nodes --all --timeout=300s
         kubectl get nodes
+        kubectl wait --for=condition=available deployment/neo4j-operator-controller-manager -n neo4j-operator-system --timeout=300s || kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
