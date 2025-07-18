@@ -44,12 +44,22 @@ runs:
     - name: Build and deploy operator
       shell: bash
       run: |
-        make docker-build
-        make operator-setup
+        make docker-build IMG=neo4j-operator:test
+        kind load docker-image neo4j-operator:test --name neo4j-operator-test
+        make deploy IMG=neo4j-operator:test
 
     - name: Wait for operator to be ready
       shell: bash
       run: |
         kubectl wait --for=condition=Ready nodes --all --timeout=300s
         kubectl get nodes
-        kubectl wait --for=condition=available deployment/neo4j-operator-controller-manager -n neo4j-operator-system --timeout=300s || kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
+        echo "Waiting for operator deployment to be ready..."
+        kubectl wait --for=condition=available deployment/neo4j-operator-controller-manager -n neo4j-operator-system --timeout=300s || {
+          echo "Deployment failed to become ready. Checking pod status..."
+          kubectl get pods -n neo4j-operator-system
+          echo "Checking pod logs..."
+          kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=100 || true
+          echo "Describing pods..."
+          kubectl describe pods -n neo4j-operator-system
+          exit 1
+        }
