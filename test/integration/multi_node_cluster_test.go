@@ -17,6 +17,7 @@ limitations under the License.
 package integration_test
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -33,14 +34,16 @@ import (
 
 var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 	var (
+		ctx         context.Context
 		namespace   *corev1.Namespace
 		clusterName string
 		cluster     *neo4jv1alpha1.Neo4jEnterpriseCluster
 	)
 
 	BeforeEach(func() {
+		ctx = context.Background()
 		// Create a new namespace for each test
-		namespaceName := fmt.Sprintf("multinode-%d", time.Now().Unix())
+		namespaceName := createTestNamespace("multinode")
 		namespace = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: namespaceName,

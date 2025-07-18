@@ -208,9 +208,13 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 					return err
 				}
 
-				// Check if standalone has proper status conditions
-				if len(updatedStandalone.Status.Conditions) == 0 {
-					return fmt.Errorf("standalone should have status conditions")
+				// Check if standalone has proper status
+				if updatedStandalone.Status.Phase == "" {
+					return fmt.Errorf("standalone should have phase in status")
+				}
+
+				if updatedStandalone.Status.Ready != true {
+					return fmt.Errorf("standalone should be ready, current phase: %s", updatedStandalone.Status.Phase)
 				}
 
 				return nil
