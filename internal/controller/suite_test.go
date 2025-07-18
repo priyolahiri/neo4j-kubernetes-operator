@@ -39,6 +39,7 @@ import (
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
 	"github.com/neo4j-labs/neo4j-kubernetes-operator/internal/controller"
+	"github.com/neo4j-labs/neo4j-kubernetes-operator/internal/validation"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -105,6 +106,9 @@ var _ = BeforeSuite(func() {
 	err = corev1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	// Note: cert-manager types are not registered in tests as CRDs are not available
+	// The controllers handle this gracefully by checking if the types are recognized
+
 	// +kubebuilder:scaffold:scheme
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
@@ -152,6 +156,17 @@ var _ = BeforeSuite(func() {
 		Scheme:       mgr.GetScheme(),
 		Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
 		RequeueAfter: 30 * time.Second,
+	}).SetupWithManager(mgr); err != nil {
+		Expect(err).NotTo(HaveOccurred())
+	}
+
+	// Set up Neo4jEnterpriseStandalone controller
+	if err := (&controller.Neo4jEnterpriseStandaloneReconciler{
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Recorder:     mgr.GetEventRecorderFor("neo4j-enterprise-standalone-controller"),
+		RequeueAfter: 30 * time.Second,
+		Validator:    validation.NewStandaloneValidator(),
 	}).SetupWithManager(mgr); err != nil {
 		Expect(err).NotTo(HaveOccurred())
 	}

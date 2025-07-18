@@ -299,6 +299,15 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv
 	configLines = append(configLines, "# Neo4j Standalone Configuration (5.26+ / 2025.x.x)")
 	configLines = append(configLines, "")
 
+	// Add basic server configuration
+	configLines = append(configLines, "# Basic Server Configuration")
+	configLines = append(configLines, "server.default_listen_address=0.0.0.0")
+	configLines = append(configLines, "server.bolt.enabled=true")
+	configLines = append(configLines, "server.bolt.listen_address=:7687")
+	configLines = append(configLines, "server.http.enabled=true")
+	configLines = append(configLines, "server.http.listen_address=:7474")
+	configLines = append(configLines, "")
+
 	// Add TLS configuration if enabled
 	if standalone.Spec.TLS != nil && standalone.Spec.TLS.Mode == "cert-manager" {
 		configLines = append(configLines, "# TLS Configuration")
@@ -683,11 +692,17 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createTLSCertificate(standalone *n
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Neo4jEnterpriseStandaloneReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1alpha1.Neo4jEnterpriseStandalone{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
-		Owns(&corev1.ConfigMap{}).
-		Owns(&certmanagerv1.Certificate{}).
-		Complete(r)
+		Owns(&corev1.ConfigMap{})
+
+	// Only watch Certificate resources if cert-manager is available
+	// This allows tests to run without cert-manager CRDs
+	if mgr.GetScheme().Recognizes(certmanagerv1.SchemeGroupVersion.WithKind("Certificate")) {
+		builder = builder.Owns(&certmanagerv1.Certificate{})
+	}
+
+	return builder.Complete(r)
 }
