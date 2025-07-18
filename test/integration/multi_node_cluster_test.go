@@ -116,9 +116,9 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 					return fmt.Errorf("startup script does not contain unified bootstrap approach")
 				}
 
-				// Check for unified cluster formation (all primaries required)
-				if !containsString(startupScript, "MIN_PRIMARIES=${TOTAL_PRIMARIES}") {
-					return fmt.Errorf("startup script does not contain unified cluster formation logic")
+				// Check for flexible cluster formation (MIN_PRIMARIES=1)
+				if !containsString(startupScript, "MIN_PRIMARIES=1") {
+					return fmt.Errorf("startup script does not contain flexible cluster formation logic (MIN_PRIMARIES=1)")
 				}
 
 				// Check for Kubernetes service discovery

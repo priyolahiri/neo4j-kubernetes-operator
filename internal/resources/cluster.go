@@ -1298,11 +1298,11 @@ echo "Configuring Kubernetes service discovery with label selectors"
 # Unified approach: Use bootstrap discovery with timeout for cluster formation
 echo "Using unified bootstrap discovery approach for cluster formation"
 
-# Set minimum primaries to total primaries for unified cluster formation
+# Set minimum primaries to 1 to allow flexible cluster formation
 # With Parallel pod management, all pods (primaries and secondaries) start simultaneously
-# All primaries must be present before cluster forms (unified approach)
+# First pod forms cluster, others join it
 # This works reliably even with TLS enabled due to trust_all=true in cluster SSL policy
-MIN_PRIMARIES=${TOTAL_PRIMARIES}
+MIN_PRIMARIES=1
 
 echo "Setting minimum primaries for bootstrap: ${MIN_PRIMARIES}"
 
