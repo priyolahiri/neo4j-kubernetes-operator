@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -37,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	neo4jv1alpha1 "github.com/neo4j-labs/neo4j-kubernetes-operator/api/v1alpha1"
+	"github.com/neo4j-labs/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/neo4j-labs/neo4j-kubernetes-operator/internal/validation"
 )
 
@@ -241,7 +243,10 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 	jobName := backup.Name + "-backup"
 
 	// Build backup command
-	backupCmd := r.buildBackupCommand(backup)
+	backupCmd, err := r.buildBackupCommand(backup, cluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build backup command: %w", err)
+	}
 
 	// Build environment variables
 	env := []corev1.EnvVar{}
@@ -332,7 +337,10 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 	}
 
 	// Build backup command
-	backupCmd := r.buildBackupCommand(backup)
+	backupCmd, err := r.buildBackupCommand(backup, cluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build backup command: %w", err)
+	}
 
 	// Build environment variables
 	env := []corev1.EnvVar{}
@@ -411,49 +419,67 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 	return cronJob, nil
 }
 
-func (r *Neo4jBackupReconciler) buildBackupCommand(backup *neo4jv1alpha1.Neo4jBackup) string {
-	var cmd string
+func (r *Neo4jBackupReconciler) buildBackupCommand(backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (string, error) {
+	// Extract Neo4j version from cluster image
+	imageTag := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
+	version, err := neo4j.GetImageVersion(imageTag)
+	if err != nil {
+		// Default to 5.26 behavior if we can't parse version
+		version = &neo4j.Version{Major: 5, Minor: 26, Patch: 0}
+	}
 
-	// Build the neo4j-admin backup command
+	// Build the neo4j-admin backup command with correct syntax for Neo4j 5.26+
 	backupName := fmt.Sprintf("%s-%s", backup.Name, time.Now().Format("20060102-150405"))
+	backupPath := fmt.Sprintf("/backup/%s", backupName)
 
+	var cmd string
 	switch backup.Spec.Target.Kind {
 	case "Cluster":
-		// For cluster backups, backup all databases using --all-databases flag for Neo4j 5.26+
-		cmd = "neo4j-admin backup --all-databases --to=/backup/" + backupName
+		// For cluster backups, backup all databases with metadata
+		cmd = neo4j.GetBackupCommand(version, "", backupPath, true)
 	case "Database":
-		cmd = fmt.Sprintf("neo4j-admin backup --database=%s --to=/backup/%s", backup.Spec.Target.Name, backupName)
+		// For database-specific backups
+		cmd = neo4j.GetBackupCommand(version, backup.Spec.Target.Name, backupPath, false)
 	default:
-		// Default to all databases for Neo4j 5.26+ compatibility
-		cmd = "neo4j-admin backup --all-databases --to=/backup/" + backupName
+		// Default to all databases
+		cmd = neo4j.GetBackupCommand(version, "", backupPath, true)
 	}
 
-	// Add compression if specified
-	if backup.Spec.Options != nil && backup.Spec.Options.Compress {
-		cmd += " --compress"
+	// Add correct flags based on Neo4j 5.26+ documentation
+
+	// Add backup type if specified (FULL, DIFF, AUTO)
+	if backup.Spec.Options != nil && backup.Spec.Options.BackupType != "" {
+		cmd += " --type=" + backup.Spec.Options.BackupType
 	}
 
-	// Add verification if specified
-	if backup.Spec.Options != nil && backup.Spec.Options.Verify {
-		cmd += " --check-consistency"
+	// Add compression if specified (default is true in Neo4j)
+	if backup.Spec.Options != nil && !backup.Spec.Options.Compress {
+		cmd += " --compress=false"
 	}
 
-	// Add backup aggregation for Neo4j 5.26+ (improves backup chain management)
-	cmd += " --backup-aggregation"
+	// Add page cache size if specified
+	if backup.Spec.Options != nil && backup.Spec.Options.PageCache != "" {
+		cmd += " --pagecache=" + backup.Spec.Options.PageCache
+	}
 
-	// Add metadata inspection to capture backup information
-	cmd += " --include-metadata"
+	// Add backup from secondary servers if in cluster
+	if backup.Spec.Target.Kind == "Cluster" && cluster.Spec.Topology.Secondaries > 0 {
+		// Build list of secondary servers to backup from
+		// This would need to be determined at runtime in the job
+		cmd = fmt.Sprintf("BACKUP_FROM=$(kubectl get pods -l neo4j.com/cluster=%s,neo4j.com/server-group=secondary -o jsonpath='{.items[0].metadata.name}'):6362; %s --from=$BACKUP_FROM", cluster.Name, cmd)
+	}
 
-	// Add retention policy flags (note: these are not actual neo4j-admin flags,
-	// but will be handled by our retention cleanup job)
+	// Handle retention policy (these are environment variables for our cleanup logic)
 	if backup.Spec.Retention != nil {
+		envVars := []string{}
 		if backup.Spec.Retention.MaxAge != "" {
-			// Store retention info in environment for cleanup job
-			cmd = fmt.Sprintf("export BACKUP_MAX_AGE='%s'; %s", backup.Spec.Retention.MaxAge, cmd)
+			envVars = append(envVars, fmt.Sprintf("export BACKUP_MAX_AGE='%s'", backup.Spec.Retention.MaxAge))
 		}
 		if backup.Spec.Retention.MaxCount > 0 {
-			// Store retention info in environment for cleanup job
-			cmd = fmt.Sprintf("export BACKUP_MAX_COUNT='%d'; %s", backup.Spec.Retention.MaxCount, cmd)
+			envVars = append(envVars, fmt.Sprintf("export BACKUP_MAX_COUNT='%d'", backup.Spec.Retention.MaxCount))
+		}
+		if len(envVars) > 0 {
+			cmd = strings.Join(envVars, "; ") + "; " + cmd
 		}
 	}
 
@@ -464,7 +490,49 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(backup *neo4jv1alpha1.Neo4jBa
 		}
 	}
 
-	return cmd
+	// Post-backup: For cloud storage, copy backup to destination
+	if backup.Spec.Storage.Type != "pvc" {
+		uploadCmd := r.buildCloudUploadCommand(backup, backupPath)
+		if uploadCmd != "" {
+			cmd = fmt.Sprintf("%s && %s", cmd, uploadCmd)
+		}
+	}
+
+	return cmd, nil
+}
+
+// buildCloudUploadCommand builds the command to upload backup to cloud storage
+func (r *Neo4jBackupReconciler) buildCloudUploadCommand(backup *neo4jv1alpha1.Neo4jBackup, localPath string) string {
+	switch backup.Spec.Storage.Type {
+	case "s3":
+		if backup.Spec.Storage.Bucket != "" {
+			path := backup.Spec.Storage.Path
+			if path == "" {
+				path = "backups"
+			}
+			return fmt.Sprintf("aws s3 cp %s s3://%s/%s/ --recursive",
+				localPath, backup.Spec.Storage.Bucket, path)
+		}
+	case "gcs":
+		if backup.Spec.Storage.Bucket != "" {
+			path := backup.Spec.Storage.Path
+			if path == "" {
+				path = "backups"
+			}
+			return fmt.Sprintf("gsutil -m cp -r %s gs://%s/%s/",
+				localPath, backup.Spec.Storage.Bucket, path)
+		}
+	case "azure":
+		if backup.Spec.Storage.Bucket != "" {
+			path := backup.Spec.Storage.Path
+			if path == "" {
+				path = "backups"
+			}
+			return fmt.Sprintf("az storage blob upload-batch --source %s --destination %s --destination-path %s",
+				localPath, backup.Spec.Storage.Bucket, path)
+		}
+	}
+	return ""
 }
 
 func (r *Neo4jBackupReconciler) buildVolumeMounts(_ *neo4jv1alpha1.Neo4jBackup) []corev1.VolumeMount {
