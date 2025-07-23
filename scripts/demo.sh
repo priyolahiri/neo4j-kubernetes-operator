@@ -559,32 +559,13 @@ EOF
 
     show_progress $PAUSE_MEDIUM "Monitoring cluster formation"
 
-    # Monitor each pod coming online
+    # Wait for all cluster pods to be ready
+    log_info "Waiting for all 3 cluster pods to be ready..."
+    wait_for_pods "neo4j.com/cluster=${CLUSTER_NAME_MULTI}" "${DEMO_NAMESPACE}" 300 3
+
+    # Show individual pod status
     for i in 0 1 2; do
-        log_info "Waiting for ${CLUSTER_NAME_MULTI}-primary-${i} to be ready..."
-        log_command "kubectl get pod ${CLUSTER_NAME_MULTI}-primary-${i} -n ${DEMO_NAMESPACE} --watch"
-
-        local pod_ready=false
-        local dots=0
-
-        while [[ "${pod_ready}" != "true" ]]; do
-            if kubectl get pod "${CLUSTER_NAME_MULTI}-primary-${i}" -n "${DEMO_NAMESPACE}" --no-headers 2>/dev/null | grep -q "1/1.*Running"; then
-                pod_ready=true
-            else
-                # Show pod status every 5 seconds
-                if [[ $((dots % 5)) -eq 0 ]]; then
-                    local pod_status=$(kubectl get pod "${CLUSTER_NAME_MULTI}-primary-${i}" -n "${DEMO_NAMESPACE}" --no-headers 2>/dev/null || echo "Pod not found")
-                    echo
-                    log_info "Pod ${i} status: ${pod_status}"
-                fi
-                echo -n "."
-                sleep 1
-                ((dots++))
-            fi
-        done
-        echo
-
-        log_success "Pod ${i} is ready!"
+        log_info "Pod ${i} status:"
         kubectl get pod "${CLUSTER_NAME_MULTI}-primary-${i}" -n "${DEMO_NAMESPACE}" -o wide
 
         if [[ $i -eq 0 ]]; then
@@ -592,7 +573,6 @@ EOF
         else
             log_demo "Pod ${i} successfully joined the cluster"
         fi
-        echo
     done
 
     log_success "All cluster nodes are ready!"
