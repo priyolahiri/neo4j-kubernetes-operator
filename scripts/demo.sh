@@ -133,7 +133,7 @@ wait_for_pods() {
     local last_status=""
 
     while true; do
-        local ready_count=$(kubectl get pods -l "${label_selector}" -n "${namespace}" --no-headers 2>/dev/null | grep "1/1.*Running" | wc -l | tr -d ' ')
+        local ready_count=$(kubectl get pods -l "${label_selector}" -n "${namespace}" --no-headers 2>/dev/null | grep -E "[1-9]/[1-9].*Running" | wc -l | tr -d ' ')
         local current_time=$(date +%s)
         local elapsed=$((current_time - start_time))
 
