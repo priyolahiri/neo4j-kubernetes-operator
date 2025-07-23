@@ -323,11 +323,36 @@ kubectl logs job/production-backup-backup
 ### Automatic Secondary Backup
 When the target cluster has secondary servers, the operator automatically configures backups to run from a secondary server using the `--from` parameter. This reduces load on primary servers during backup operations.
 
+## RBAC and Permissions
+
+The Neo4j Operator automatically manages all RBAC resources required for backup operations:
+
+### Automatic RBAC Creation
+
+When you create a `Neo4jBackup` resource, the operator automatically:
+
+1. **Creates a ServiceAccount** for the backup job
+2. **Creates a Role** with the following permissions:
+   - `pods/exec` - Required to execute backup commands in the Neo4j pods
+   - `pods/log` - Required to read logs from backup operations
+3. **Creates a RoleBinding** to grant the ServiceAccount the necessary permissions
+
+**Important**: No manual RBAC configuration is required. The operator handles all permission management automatically.
+
+### Required Operator Permissions
+
+The operator itself requires the following cluster-level permissions to manage backup RBAC:
+- Create, update, and delete ServiceAccounts
+- Create, update, and delete Roles and RoleBindings
+- Grant `pods/exec` and `pods/log` permissions to backup jobs
+
+These permissions are included in the operator's ClusterRole when installed from the official manifests.
+
 ## Version Requirements
 
 - **Neo4j Version**: 5.26.0+ (semver) or 2025.01.0+ (calver)
 - **Kubernetes**: 1.19+
-- **Neo4j Operator**: Latest version with backup support
+- **Neo4j Operator**: Latest version with automatic RBAC support
 
 ## Related Resources
 

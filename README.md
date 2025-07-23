@@ -122,11 +122,11 @@ Complete CRD documentation for all custom resources:
 ### 🔐 Security & Authentication
 - **TLS/SSL**: Configurable TLS encryption for client and cluster communications
 - **Authentication**: Support for LDAP, OIDC, and native authentication
-- **RBAC**: Kubernetes role-based access control integration
+- **Automatic RBAC**: Operator automatically creates all necessary RBAC resources for backups
 - **Network Policies**: Pod-to-pod communication security
 
 ### 🚀 Operations & Automation
-- **Automated Backups**: Scheduled backups with configurable retention and backup types (FULL, DIFF, AUTO)
+- **Automated Backups**: Scheduled backups with automatic RBAC management
 - **Point-in-Time Recovery**: Restore clusters to specific timestamps with `--restore-until`
 - **Database Management**: Create databases with IF NOT EXISTS, WAIT/NOWAIT, and topology constraints
 - **Version-Aware Operations**: Automatic detection and adaptation for Neo4j 5.26.x and 2025.x
@@ -175,6 +175,19 @@ kubectl logs -l app.kubernetes.io/name=neo4j-operator
 - **Plugin ecosystem** (APOC, Graph Data Science, Bloom)
 - **Compliance-ready** logging and auditing
 - **Resource quotas** and governance controls
+
+## 🎯 Recent Improvements
+
+### Latest Version Enhancements
+- **Automatic RBAC for Backups**: The operator now automatically creates all necessary RBAC resources (ServiceAccounts, Roles, RoleBindings) for backup operations - no manual configuration required
+- **Enhanced Test Stability**: Improved integration test cleanup with automatic finalizer removal prevents namespace termination issues
+- **Better Error Handling**: Fixed nil pointer dereferences and improved error messages for better troubleshooting
+- **Improved TLS Cluster Formation**: Enhanced stability for TLS-enabled clusters during initial formation
+
+### Developer Experience
+- **Simplified Testing**: New test cleanup patterns and helpers make integration testing more reliable
+- **Better Documentation**: Updated troubleshooting guides with common issues and solutions
+- **CI/CD Ready**: GitHub workflows automatically handle RBAC generation and deployment
 
 ## 🤝 Contributing
 

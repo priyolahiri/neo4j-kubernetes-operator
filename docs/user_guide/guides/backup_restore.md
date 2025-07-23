@@ -79,15 +79,17 @@ The Neo4j Kubernetes Operator uses a **backup sidecar** architecture for reliabi
 
 4. **RBAC Management**: The operator automatically:
    - Creates necessary service accounts in each namespace
-   - Sets up roles with pod/exec permissions for backup jobs
+   - Sets up roles with `pods/exec` and `pods/log` permissions for backup jobs
    - Manages role bindings for secure backup execution
+   - **No manual RBAC configuration required** - all permissions are handled automatically
 
 ### Important Notes
 
 - **Path Creation**: Neo4j 5.26+ and 2025.x+ require the backup destination path to exist before running the backup command. The operator handles this automatically.
 - **Memory Requirements**: The backup sidecar requires 1Gi memory for reliable operation
 - **Direct Execution**: Backups run directly on Neo4j nodes, not through kubectl
-- **RBAC**: No manual RBAC setup required - the operator creates all necessary permissions automatically
+- **RBAC**: Starting with the latest version, the operator automatically creates all necessary RBAC resources. No manual role or binding creation is needed.
+- **Permissions**: The operator grants backup jobs the ability to execute commands in pods (`pods/exec`) and read pod logs (`pods/log`)
 
 ## Backup Operations
 
