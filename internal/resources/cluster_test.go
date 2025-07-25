@@ -440,3 +440,127 @@ func TestBuildCertificateForEnterprise_DNSNames(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildClientServiceForEnterprise_WithEnhancedFeatures(t *testing.T) {
+	tests := []struct {
+		name      string
+		cluster   *neo4jv1alpha1.Neo4jEnterpriseCluster
+		checkFunc func(t *testing.T, service *corev1.Service)
+	}{
+		{
+			name: "LoadBalancer with IP and external traffic policy",
+			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "default",
+				},
+				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Service: &neo4jv1alpha1.ServiceSpec{
+						Type:                  "LoadBalancer",
+						LoadBalancerIP:        "10.0.0.100",
+						ExternalTrafficPolicy: "Local",
+						LoadBalancerSourceRanges: []string{
+							"10.0.0.0/8",
+							"192.168.0.0/16",
+						},
+					},
+				},
+			},
+			checkFunc: func(t *testing.T, service *corev1.Service) {
+				assert.Equal(t, corev1.ServiceTypeLoadBalancer, service.Spec.Type)
+				assert.Equal(t, "10.0.0.100", service.Spec.LoadBalancerIP)
+				assert.Equal(t, corev1.ServiceExternalTrafficPolicyTypeLocal, service.Spec.ExternalTrafficPolicy)
+				assert.Equal(t, []string{"10.0.0.0/8", "192.168.0.0/16"}, service.Spec.LoadBalancerSourceRanges)
+			},
+		},
+		{
+			name: "NodePort service",
+			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "default",
+				},
+				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Service: &neo4jv1alpha1.ServiceSpec{
+						Type: "NodePort",
+					},
+				},
+			},
+			checkFunc: func(t *testing.T, service *corev1.Service) {
+				assert.Equal(t, corev1.ServiceTypeNodePort, service.Spec.Type)
+			},
+		},
+		{
+			name: "Default ClusterIP when service spec is nil",
+			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "default",
+				},
+				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Service: nil,
+				},
+			},
+			checkFunc: func(t *testing.T, service *corev1.Service) {
+				assert.Equal(t, corev1.ServiceTypeClusterIP, service.Spec.Type)
+			},
+		},
+		{
+			name: "Service with annotations",
+			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "default",
+				},
+				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Service: &neo4jv1alpha1.ServiceSpec{
+						Type: "LoadBalancer",
+						Annotations: map[string]string{
+							"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
+							"custom-annotation": "custom-value",
+						},
+					},
+				},
+			},
+			checkFunc: func(t *testing.T, service *corev1.Service) {
+				assert.Equal(t, corev1.ServiceTypeLoadBalancer, service.Spec.Type)
+				assert.Equal(t, "nlb", service.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"])
+				assert.Equal(t, "custom-value", service.Annotations["custom-annotation"])
+			},
+		},
+		{
+			name: "Service with external traffic policy Cluster",
+			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "default",
+				},
+				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Service: &neo4jv1alpha1.ServiceSpec{
+						Type:                  "LoadBalancer",
+						ExternalTrafficPolicy: "Cluster",
+					},
+				},
+			},
+			checkFunc: func(t *testing.T, service *corev1.Service) {
+				assert.Equal(t, corev1.ServiceTypeLoadBalancer, service.Spec.Type)
+				assert.Equal(t, corev1.ServiceExternalTrafficPolicyTypeCluster, service.Spec.ExternalTrafficPolicy)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := resources.BuildClientServiceForEnterprise(tt.cluster)
+			assert.NotNil(t, service)
+			assert.Equal(t, "test-cluster-client", service.Name)
+			assert.Equal(t, "default", service.Namespace)
+
+			// Check that basic ports are present (2 without TLS, 3 with TLS)
+			assert.GreaterOrEqual(t, len(service.Spec.Ports), 2)
+
+			// Run custom checks
+			tt.checkFunc(t, service)
+		})
+	}
+}

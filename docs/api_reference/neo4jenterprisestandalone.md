@@ -127,8 +127,18 @@ Service configuration for external access.
 ```yaml
 service:
   type: ClusterIP              # ClusterIP, NodePort, LoadBalancer
-  annotations:
+  annotations:                 # Service annotations (e.g., for cloud LB)
     service.beta.kubernetes.io/aws-load-balancer-type: nlb
+  loadBalancerIP: "10.0.0.100"     # Static IP for LoadBalancer
+  loadBalancerSourceRanges:        # IP ranges allowed to access
+    - "10.0.0.0/8"
+    - "192.168.0.0/16"
+  externalTrafficPolicy: Local     # Cluster or Local
+  ingress:                         # Ingress configuration
+    enabled: true
+    className: nginx
+    host: neo4j.example.com
+    tlsSecretName: neo4j-tls
 ```
 
 #### `persistence` (PersistenceSpec)
@@ -287,6 +297,97 @@ spec:
 
   tls:
     mode: disabled
+
+  auth:
+    provider: native
+    adminSecret: neo4j-admin-secret
+
+  env:
+    - name: NEO4J_ACCEPT_LICENSE_AGREEMENT
+      value: "yes"
+```
+
+### Standalone with LoadBalancer Service
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseStandalone
+metadata:
+  name: public-neo4j
+  namespace: production
+spec:
+  image:
+    repo: neo4j
+    tag: "5.26-enterprise"
+
+  storage:
+    className: fast-ssd
+    size: "50Gi"
+
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2"
+    limits:
+      memory: "8Gi"
+      cpu: "4"
+
+  # LoadBalancer service for external access
+  service:
+    type: LoadBalancer
+    annotations:
+      # Example for AWS NLB
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "tcp"
+    loadBalancerSourceRanges:
+      - "10.0.0.0/8"      # Corporate network
+      - "192.168.0.0/16"  # VPN range
+    externalTrafficPolicy: Local  # Preserve client IPs
+
+  auth:
+    provider: native
+    adminSecret: neo4j-admin-secret
+
+  env:
+    - name: NEO4J_ACCEPT_LICENSE_AGREEMENT
+      value: "yes"
+```
+
+### Standalone with Ingress
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseStandalone
+metadata:
+  name: web-neo4j
+  namespace: production
+spec:
+  image:
+    repo: neo4j
+    tag: "5.26-enterprise"
+
+  storage:
+    className: standard
+    size: "20Gi"
+
+  # TLS configuration
+  tls:
+    mode: cert-manager
+    issuerRef:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+
+  # Ingress for HTTPS access
+  service:
+    ingress:
+      enabled: true
+      className: nginx
+      host: neo4j.example.com
+      tlsEnabled: true
+      tlsSecretName: neo4j-tls
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
 
   auth:
     provider: native

@@ -1699,9 +1699,16 @@ spec:
                   annotations:
                     additionalProperties:
                       type: string
+                    description: Annotations to add to the service
                     type: object
+                  externalTrafficPolicy:
+                    description: 'External traffic policy: Cluster or Local'
+                    enum:
+                    - Cluster
+                    - Local
+                    type: string
                   ingress:
-                    description: IngressSpec defines ingress configuration
+                    description: Ingress configuration
                     properties:
                       annotations:
                         additionalProperties:
@@ -1716,7 +1723,20 @@ spec:
                       tlsSecretName:
                         type: string
                     type: object
+                  loadBalancerIP:
+                    description: LoadBalancer specific configuration
+                    type: string
+                  loadBalancerSourceRanges:
+                    items:
+                      type: string
+                    type: array
                   type:
+                    default: ClusterIP
+                    description: 'Service type: ClusterIP, NodePort, LoadBalancer'
+                    enum:
+                    - ClusterIP
+                    - NodePort
+                    - LoadBalancer
                     type: string
                 type: object
               storage:
@@ -2088,6 +2108,27 @@ spec:
                   bolt:
                     description: Bolt protocol endpoint
                     type: string
+                  connectionExamples:
+                    description: Connection examples for external access
+                    properties:
+                      boltURI:
+                        description: Driver connection examples
+                        type: string
+                      browserURL:
+                        description: Browser URL examples
+                        type: string
+                      javaExample:
+                        description: Java driver example
+                        type: string
+                      neo4jURI:
+                        type: string
+                      portForward:
+                        description: Port forwarding command example
+                        type: string
+                      pythonExample:
+                        description: Python driver example
+                        type: string
+                    type: object
                   http:
                     description: HTTP endpoint
                     type: string

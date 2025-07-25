@@ -63,6 +63,12 @@ The `Neo4jEnterpriseClusterSpec` defines the desired state of a Neo4j Enterprise
 | `maintenance` | [`MaintenanceSpec`](#maintenancespec) | Maintenance mode configuration |
 | `upgradeStrategy` | [`UpgradeStrategySpec`](#upgradestrategyspec) | Upgrade strategy configuration |
 
+### Networking
+
+| Field | Type | Description |
+|---|---|---|
+| `service` | [`ServiceSpec`](#servicespec) | Service configuration for external access |
+
 ### Extensions
 
 | Field | Type | Description |
@@ -214,6 +220,34 @@ The `Neo4jEnterpriseClusterSpec` defines the desired state of a Neo4j Enterprise
 | `primaryTopologySpreadConstraints` | `[]corev1.TopologySpreadConstraint` | Primary topology constraints |
 | `secondaryTopologySpreadConstraints` | `[]corev1.TopologySpreadConstraint` | Secondary topology constraints |
 
+### ServiceSpec
+
+Configures how Neo4j is exposed outside the Kubernetes cluster.
+
+| Field | Type | Description |
+|---|---|---|
+| `type` | `string` | Service type: `"ClusterIP"`, `"NodePort"`, `"LoadBalancer"` (default: `"ClusterIP"`) |
+| `annotations` | `map[string]string` | Service annotations (e.g., for cloud load balancer configuration) |
+| `loadBalancerIP` | `string` | Static IP for LoadBalancer service (cloud provider specific) |
+| `loadBalancerSourceRanges` | `[]string` | IP ranges allowed to access LoadBalancer |
+| `externalTrafficPolicy` | `string` | External traffic policy: `"Cluster"` or `"Local"` |
+| `ingress` | [`IngressSpec`](#ingressspec) | Ingress configuration |
+
+### IngressSpec
+
+Configures an Ingress resource for HTTP(S) access to Neo4j Browser.
+
+| Field | Type | Description |
+|---|---|---|
+| `enabled` | `bool` | Enable Ingress creation |
+| `className` | `string` | Ingress class name (e.g., `"nginx"`) |
+| `host` | `string` | Hostname for the Ingress |
+| `path` | `string` | Path prefix (default: `"/"`) |
+| `pathType` | `string` | Path type: `"Prefix"`, `"Exact"`, `"ImplementationSpecific"` |
+| `tlsEnabled` | `bool` | Enable TLS on the Ingress |
+| `tlsSecretName` | `string` | TLS certificate secret name |
+| `annotations` | `map[string]string` | Ingress annotations |
+
 ## Status
 
 The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
@@ -231,6 +265,29 @@ The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
 | `upgradeStatus` | [`*UpgradeStatus`](#upgradestatus) | Upgrade status |
 | `lastBackup` | `*metav1.Time` | Last backup timestamp |
 | `observedGeneration` | `int64` | Last observed generation |
+
+### EndpointStatus
+
+Service endpoints and connection information.
+
+| Field | Type | Description |
+|---|---|---|
+| `boltURL` | `string` | Bolt protocol endpoint |
+| `httpURL` | `string` | HTTP endpoint for Neo4j Browser |
+| `httpsURL` | `string` | HTTPS endpoint for Neo4j Browser |
+| `internalURL` | `string` | Internal cluster communication endpoint |
+| `connectionExamples` | [`ConnectionExamples`](#connectionexamples) | Example connection strings |
+
+### ConnectionExamples
+
+Example connection strings for various scenarios.
+
+| Field | Type | Description |
+|---|---|---|
+| `portForward` | `string` | kubectl port-forward command |
+| `browserURL` | `string` | Neo4j Browser URL |
+| `boltURI` | `string` | Bolt connection URI |
+| `neo4jURI` | `string` | Neo4j driver URI |
 
 ## Examples
 
@@ -309,6 +366,78 @@ spec:
       enabled: true
       labels:
         prometheus: kube-prometheus
+```
+
+### Cluster with LoadBalancer Service
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: public-cluster
+spec:
+  edition: enterprise
+  image:
+    repository: neo4j
+    tag: "5.26.0-enterprise"
+  topology:
+    primaries: 3
+    secondaries: 2
+  storage:
+    size: 20Gi
+  auth:
+    provider: secrets
+    secret: neo4j-auth
+  # LoadBalancer service configuration
+  service:
+    type: LoadBalancer
+    annotations:
+      # AWS NLB example
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    loadBalancerSourceRanges:
+      - "10.0.0.0/8"      # Corporate network
+      - "172.16.0.0/12"   # VPN range
+    externalTrafficPolicy: Local  # Preserve client IPs
+```
+
+### Cluster with Ingress
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: ingress-cluster
+spec:
+  edition: enterprise
+  image:
+    repository: neo4j
+    tag: "5.26.0-enterprise"
+  topology:
+    primaries: 3
+    secondaries: 1
+  storage:
+    size: 20Gi
+  auth:
+    provider: secrets
+    secret: neo4j-auth
+  # TLS configuration
+  tls:
+    mode: cert-manager
+    issuerRef:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+  # Ingress configuration
+  service:
+    ingress:
+      enabled: true
+      className: nginx
+      host: neo4j.example.com
+      tlsEnabled: true
+      tlsSecretName: neo4j-tls
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
 ```
 
 For more information on configuration best practices, see the [Configuration Best Practices Guide](../user_guide/guides/configuration_best_practices.md).

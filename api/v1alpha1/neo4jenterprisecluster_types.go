@@ -351,10 +351,23 @@ type KerberosKeytabSpec struct {
 
 // ServiceSpec defines service configuration
 type ServiceSpec struct {
+	// Service type: ClusterIP, NodePort, LoadBalancer
+	// +kubebuilder:validation:Enum=ClusterIP;NodePort;LoadBalancer
+	// +kubebuilder:default=ClusterIP
 	Type string `json:"type,omitempty"`
 
+	// Annotations to add to the service
 	Annotations map[string]string `json:"annotations,omitempty"`
 
+	// LoadBalancer specific configuration
+	LoadBalancerIP           string   `json:"loadBalancerIP,omitempty"`
+	LoadBalancerSourceRanges []string `json:"loadBalancerSourceRanges,omitempty"`
+
+	// External traffic policy: Cluster or Local
+	// +kubebuilder:validation:Enum=Cluster;Local
+	ExternalTrafficPolicy string `json:"externalTrafficPolicy,omitempty"`
+
+	// Ingress configuration
 	Ingress *IngressSpec `json:"ingress,omitempty"`
 }
 
@@ -577,12 +590,34 @@ type EndpointStatus struct {
 
 	// Internal service endpoints
 	Internal *InternalEndpoints `json:"internal,omitempty"`
+
+	// Connection examples for external access
+	ConnectionExamples *ConnectionExamples `json:"connectionExamples,omitempty"`
 }
 
 // InternalEndpoints provides internal service endpoints
 type InternalEndpoints struct {
 	Headless string `json:"headless,omitempty"`
 	Client   string `json:"client,omitempty"`
+}
+
+// ConnectionExamples provides example connection strings
+type ConnectionExamples struct {
+	// Port forwarding command example
+	PortForward string `json:"portForward,omitempty"`
+
+	// Browser URL examples
+	BrowserURL string `json:"browserURL,omitempty"`
+
+	// Driver connection examples
+	BoltURI  string `json:"boltURI,omitempty"`
+	Neo4jURI string `json:"neo4jURI,omitempty"`
+
+	// Python driver example
+	PythonExample string `json:"pythonExample,omitempty"`
+
+	// Java driver example
+	JavaExample string `json:"javaExample,omitempty"`
 }
 
 // UpgradeStrategySpec defines upgrade strategy configuration

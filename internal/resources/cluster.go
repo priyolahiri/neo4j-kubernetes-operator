@@ -395,7 +395,7 @@ func BuildClientServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseClust
 	selector := make(map[string]string)
 	selector["neo4j.com/cluster"] = cluster.Name
 
-	return &corev1.Service{
+	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        fmt.Sprintf("%s-client", cluster.Name),
 			Namespace:   cluster.Namespace,
@@ -408,6 +408,24 @@ func BuildClientServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseClust
 			Ports:    ports,
 		},
 	}
+
+	// Add enhanced features if specified
+	if cluster.Spec.Service != nil {
+		// LoadBalancer specific configurations
+		if cluster.Spec.Service.LoadBalancerIP != "" {
+			svc.Spec.LoadBalancerIP = cluster.Spec.Service.LoadBalancerIP
+		}
+		if len(cluster.Spec.Service.LoadBalancerSourceRanges) > 0 {
+			svc.Spec.LoadBalancerSourceRanges = cluster.Spec.Service.LoadBalancerSourceRanges
+		}
+
+		// External traffic policy
+		if cluster.Spec.Service.ExternalTrafficPolicy != "" {
+			svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyType(cluster.Spec.Service.ExternalTrafficPolicy)
+		}
+	}
+
+	return svc
 }
 
 // BuildConfigMapForEnterprise creates a ConfigMap with Neo4j configuration

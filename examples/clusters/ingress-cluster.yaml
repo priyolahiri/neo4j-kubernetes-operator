@@ -1,0 +1,121 @@
+# Ingress Example for Neo4j Enterprise Cluster
+# This example shows how to expose Neo4j Browser via Ingress
+# Requires an Ingress controller (e.g., nginx-ingress) and cert-manager for TLS
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: neo4j-admin-secret
+type: Opaque
+stringData:
+  username: neo4j
+  password: changeme123!  # CHANGE THIS IN PRODUCTION
+
+---
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: ingress-cluster
+spec:
+  edition: enterprise
+
+  image:
+    repository: neo4j
+    tag: "5.26-enterprise"
+    pullPolicy: IfNotPresent
+
+  topology:
+    primaries: 3
+    secondaries: 2
+
+  storage:
+    className: standard
+    size: "20Gi"
+
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1"
+    limits:
+      memory: "4Gi"
+      cpu: "2"
+
+  # TLS configuration for secure connections
+  tls:
+    mode: cert-manager
+    issuerRef:
+      name: letsencrypt-prod  # or your ClusterIssuer
+      kind: ClusterIssuer
+
+  # Service and Ingress configuration
+  service:
+    # Keep default ClusterIP for internal access
+    type: ClusterIP
+
+    # Ingress configuration for HTTPS access
+    ingress:
+      enabled: true
+      className: nginx  # Your ingress controller class
+      host: neo4j.example.com  # CHANGE THIS to your domain
+
+      # Enable TLS on the Ingress
+      tlsEnabled: true
+      tlsSecretName: neo4j-tls-ingress
+
+      # Ingress annotations
+      annotations:
+        # Cert-manager annotation for automatic certificate provisioning
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+
+        # NGINX specific annotations
+        nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+        nginx.ingress.kubernetes.io/proxy-body-size: "0"
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+
+        # Enable websocket support for Neo4j Browser
+        nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+        nginx.ingress.kubernetes.io/configuration-snippet: |
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+
+  # Authentication
+  auth:
+    provider: native
+    adminSecret: neo4j-admin-secret
+
+  # Environment variables
+  env:
+    - name: NEO4J_ACCEPT_LICENSE_AGREEMENT
+      value: "yes"
+
+  # Configuration
+  config:
+    # Memory settings
+    server.memory.heap.initial_size: "1G"
+    server.memory.heap.max_size: "2G"
+    server.memory.pagecache.size: "1G"
+
+    # Browser settings for Ingress
+    browser.remote_content_hostname_whitelist: "*"
+    browser.post_connect_cmd: "RETURN 'Connected via Ingress!'"
+
+---
+# Notes:
+#
+# 1. Prerequisites:
+#    - Ingress controller installed (e.g., nginx-ingress)
+#    - cert-manager installed for automatic TLS certificates
+#    - DNS configured to point neo4j.example.com to your ingress IP
+#
+# 2. Access Neo4j Browser:
+#    https://neo4j.example.com
+#
+# 3. For Bolt connections through Ingress (requires TCP support):
+#    - Use a TCP-capable ingress controller
+#    - Or use kubectl port-forward for Bolt:
+#      kubectl port-forward svc/ingress-cluster-client 7687:7687
+#
+# 4. Check Ingress status:
+#    kubectl get ingress
+#    kubectl describe ingress ingress-cluster-ingress

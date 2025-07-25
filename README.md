@@ -83,11 +83,15 @@ Ready-to-use configurations for common deployment scenarios:
 
 ### Standalone Deployments (Single-Node, Non-Clustered)
 - **[Single-node standalone](examples/standalone/single-node-standalone.yaml)** - Development and testing
+- **[LoadBalancer standalone](examples/standalone/loadbalancer-standalone.yaml)** - External access with LoadBalancer
+- **[NodePort standalone](examples/standalone/nodeport-standalone.yaml)** - External access with NodePort
 
 ### Clustered Deployments (Enterprise Clustering)
 - **[Minimal cluster](examples/clusters/minimal-cluster.yaml)** - 1 primary + 1 secondary (minimum cluster topology)
 - **[Multi-primary cluster](examples/clusters/multi-primary-cluster.yaml)** - Production with high availability
 - **[Kubernetes discovery cluster](examples/clusters/k8s-discovery-cluster.yaml)** - Production with automatic discovery
+- **[LoadBalancer cluster](examples/clusters/loadbalancer-cluster.yaml)** - External access with cloud load balancer
+- **[Ingress cluster](examples/clusters/ingress-cluster.yaml)** - HTTPS access via Ingress controller
 
 See the [examples directory](examples/) for complete documentation and additional configurations.
 
@@ -187,6 +191,9 @@ kubectl logs -l app.kubernetes.io/name=neo4j-operator
 ## 🎯 Recent Improvements
 
 ### Latest Version Enhancements
+- **Enhanced External Access**: Full support for LoadBalancer, NodePort services and Ingress resources with automatic connection string generation in status
+- **Cloud Provider Integration**: Automatic detection of AWS, GCP, and Azure with optimal LoadBalancer configurations
+- **Improved Service Configuration**: Support for static IPs, source ranges, external traffic policies, and custom annotations
 - **Automatic RBAC for Backups**: The operator now automatically creates all necessary RBAC resources (ServiceAccounts, Roles, RoleBindings) for backup operations - no manual configuration required
 - **Enhanced Test Stability**: Improved integration test cleanup with automatic finalizer removal prevents namespace termination issues
 - **Better Error Handling**: Fixed nil pointer dereferences and improved error messages for better troubleshooting

@@ -24,11 +24,13 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -175,6 +177,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile StatefulSet: %w", err)
 	}
 
+	// Reconcile Ingress (if configured)
+	if standalone.Spec.Service != nil && standalone.Spec.Service.Ingress != nil && standalone.Spec.Service.Ingress.Enabled {
+		if err := r.reconcileIngress(ctx, standalone); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile Ingress: %w", err)
+		}
+	}
+
 	// Update status once at the end
 	if err := r.updateStatus(ctx, standalone); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
@@ -290,6 +299,44 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 	return nil
 }
 
+// reconcileIngress reconciles the Ingress for the standalone deployment
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileIngress(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+	logger := log.FromContext(ctx)
+
+	ingress := r.createIngress(standalone)
+	if ingress == nil {
+		return nil
+	}
+
+	// Set owner reference
+	if err := controllerutil.SetControllerReference(standalone, ingress, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	// Create or update Ingress
+	existing := &networkingv1.Ingress{}
+	if err := r.Get(ctx, types.NamespacedName{Name: ingress.Name, Namespace: ingress.Namespace}, existing); err != nil {
+		if errors.IsNotFound(err) {
+			logger.Info("Creating Ingress", "name", ingress.Name)
+			if err := r.Create(ctx, ingress); err != nil {
+				return fmt.Errorf("failed to create Ingress: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to get Ingress: %w", err)
+		}
+	} else {
+		// Update existing Ingress
+		existing.Spec = ingress.Spec
+		existing.Annotations = ingress.Annotations
+		logger.Info("Updating Ingress", "name", ingress.Name)
+		if err := r.Update(ctx, existing); err != nil {
+			return fmt.Errorf("failed to update Ingress: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // createConfigMap creates a ConfigMap for the standalone deployment
 func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *corev1.ConfigMap {
 	// Build neo4j.conf content
@@ -356,34 +403,82 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv
 
 // createService creates a Service for the standalone deployment
 func (r *Neo4jEnterpriseStandaloneReconciler) createService(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *corev1.Service {
-	return &corev1.Service{
+	// Determine service type from spec
+	serviceType := corev1.ServiceTypeClusterIP
+	if standalone.Spec.Service != nil && standalone.Spec.Service.Type != "" {
+		serviceType = corev1.ServiceType(standalone.Spec.Service.Type)
+	}
+
+	// Get annotations from spec
+	annotations := make(map[string]string)
+	if standalone.Spec.Service != nil && standalone.Spec.Service.Annotations != nil {
+		annotations = standalone.Spec.Service.Annotations
+	}
+
+	// Build service ports
+	ports := []corev1.ServicePort{
+		{
+			Name:       "http",
+			Port:       7474,
+			TargetPort: intstr.FromInt(7474),
+			Protocol:   corev1.ProtocolTCP,
+		},
+		{
+			Name:       "bolt",
+			Port:       7687,
+			TargetPort: intstr.FromInt(7687),
+			Protocol:   corev1.ProtocolTCP,
+		},
+	}
+
+	// Add HTTPS port if TLS is enabled
+	if standalone.Spec.TLS != nil && standalone.Spec.TLS.Mode == "cert-manager" {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "https",
+			Port:       7473,
+			TargetPort: intstr.FromInt(7473),
+			Protocol:   corev1.ProtocolTCP,
+		})
+	}
+
+	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-service", standalone.Name),
-			Namespace: standalone.Namespace,
+			Name:        fmt.Sprintf("%s-service", standalone.Name),
+			Namespace:   standalone.Namespace,
+			Annotations: annotations,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":       "neo4j",
+				"app.kubernetes.io/instance":   standalone.Name,
+				"app.kubernetes.io/component":  "standalone",
+				"app.kubernetes.io/managed-by": "neo4j-operator",
+			},
 		},
 		Spec: corev1.ServiceSpec{
+			Type: serviceType,
 			Selector: map[string]string{
 				"app": standalone.Name,
 			},
-			Ports: []corev1.ServicePort{
-				{
-					Name:     "http",
-					Port:     7474,
-					Protocol: corev1.ProtocolTCP,
-				},
-				{
-					Name:     "https",
-					Port:     7473,
-					Protocol: corev1.ProtocolTCP,
-				},
-				{
-					Name:     "bolt",
-					Port:     7687,
-					Protocol: corev1.ProtocolTCP,
-				},
-			},
+			Ports: ports,
 		},
 	}
+
+	// Add enhanced features if specified
+	if standalone.Spec.Service != nil {
+		// LoadBalancer specific configurations
+		if standalone.Spec.Service.LoadBalancerIP != "" {
+			svc.Spec.LoadBalancerIP = standalone.Spec.Service.LoadBalancerIP
+		}
+		if len(standalone.Spec.Service.LoadBalancerSourceRanges) > 0 {
+			svc.Spec.LoadBalancerSourceRanges = standalone.Spec.Service.LoadBalancerSourceRanges
+		}
+
+		// External traffic policy
+		if standalone.Spec.Service.ExternalTrafficPolicy != "" {
+			svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyType(standalone.Spec.Service.ExternalTrafficPolicy)
+		}
+	}
+
+	return svc
 }
 
 // createStatefulSet creates a StatefulSet for the standalone deployment
@@ -875,13 +970,79 @@ done`,
 	}
 }
 
+// createIngress creates an Ingress for the standalone deployment
+func (r *Neo4jEnterpriseStandaloneReconciler) createIngress(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *networkingv1.Ingress {
+	if standalone.Spec.Service == nil || standalone.Spec.Service.Ingress == nil || !standalone.Spec.Service.Ingress.Enabled {
+		return nil
+	}
+
+	ingressSpec := standalone.Spec.Service.Ingress
+
+	// Build TLS configuration
+	var tls []networkingv1.IngressTLS
+	if ingressSpec.TLSSecretName != "" {
+		tls = []networkingv1.IngressTLS{
+			{
+				Hosts:      []string{ingressSpec.Host},
+				SecretName: ingressSpec.TLSSecretName,
+			},
+		}
+	}
+
+	// Build HTTP paths
+	pathType := networkingv1.PathTypePrefix
+	paths := []networkingv1.HTTPIngressPath{
+		{
+			Path:     "/",
+			PathType: &pathType,
+			Backend: networkingv1.IngressBackend{
+				Service: &networkingv1.IngressServiceBackend{
+					Name: fmt.Sprintf("%s-service", standalone.Name),
+					Port: networkingv1.ServiceBackendPort{
+						Number: 7474,
+					},
+				},
+			},
+		},
+	}
+
+	return &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        fmt.Sprintf("%s-ingress", standalone.Name),
+			Namespace:   standalone.Namespace,
+			Annotations: ingressSpec.Annotations,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":       "neo4j",
+				"app.kubernetes.io/instance":   standalone.Name,
+				"app.kubernetes.io/component":  "ingress",
+				"app.kubernetes.io/managed-by": "neo4j-operator",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: &ingressSpec.ClassName,
+			TLS:              tls,
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: ingressSpec.Host,
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: paths,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *Neo4jEnterpriseStandaloneReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1alpha1.Neo4jEnterpriseStandalone{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
-		Owns(&corev1.ConfigMap{})
+		Owns(&corev1.ConfigMap{}).
+		Owns(&networkingv1.Ingress{})
 
 	// Only watch Certificate resources if cert-manager is available
 	// This allows tests to run without cert-manager CRDs

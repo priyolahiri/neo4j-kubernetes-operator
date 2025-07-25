@@ -1,0 +1,95 @@
+# NodePort Service Example for Neo4j Enterprise Cluster
+# This example shows how to expose a Neo4j cluster using NodePort services
+# Suitable for on-premises or development environments
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: neo4j-admin-secret
+type: Opaque
+stringData:
+  username: neo4j
+  password: changeme123!  # CHANGE THIS IN PRODUCTION
+
+---
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: nodeport-cluster
+spec:
+  edition: enterprise
+
+  image:
+    repository: neo4j
+    tag: "5.26-enterprise"
+    pullPolicy: IfNotPresent
+
+  topology:
+    primaries: 3
+    secondaries: 1
+
+  storage:
+    className: standard
+    size: "10Gi"
+
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2"
+
+  # NodePort service configuration
+  service:
+    type: NodePort
+
+    # Optional: Annotations for service
+    annotations:
+      # Custom annotations if needed
+      example.com/owner: "data-team"
+
+    # Note: NodePort will automatically assign ports in the 30000-32767 range
+    # You can check the assigned ports with:
+    # kubectl get svc nodeport-cluster-client -o yaml
+
+  # Authentication
+  auth:
+    provider: native
+    adminSecret: neo4j-admin-secret
+
+  # Environment variables
+  env:
+    - name: NEO4J_ACCEPT_LICENSE_AGREEMENT
+      value: "yes"
+
+  # Configuration
+  config:
+    # Memory settings
+    server.memory.heap.initial_size: "1G"
+    server.memory.heap.max_size: "2G"
+    server.memory.pagecache.size: "512m"
+
+    # Enable metrics
+    metrics.enabled: "true"
+    metrics.neo4j.enabled: "true"
+
+    # Query logging
+    db.logs.query.enabled: "INFO"
+    db.logs.query.threshold: "500ms"
+
+---
+# Example: How to access the NodePort service
+#
+# 1. Get the NodePort assignments:
+#    kubectl get svc nodeport-cluster-client
+#
+# 2. Get a node IP:
+#    kubectl get nodes -o wide
+#
+# 3. Connect using the node IP and NodePort:
+#    - Browser: http://<node-ip>:<http-nodeport>
+#    - Bolt: bolt://<node-ip>:<bolt-nodeport>
+#
+# 4. Alternative: Use kubectl port-forward for easier access:
+#    kubectl port-forward svc/nodeport-cluster-client 7474:7474 7687:7687

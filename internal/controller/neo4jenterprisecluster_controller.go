@@ -275,6 +275,18 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
+	// Create Ingress if configured
+	if cluster.Spec.Service != nil && cluster.Spec.Service.Ingress != nil && cluster.Spec.Service.Ingress.Enabled {
+		ingress := resources.BuildIngressForEnterprise(cluster)
+		if ingress != nil {
+			if err := r.createOrUpdateResource(ctx, ingress, cluster); err != nil {
+				logger.Error(err, "Failed to create Ingress")
+				_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Ingress: %v", err))
+				return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			}
+		}
+	}
+
 	// Calculate topology placement if topology scheduler is available
 	var topologyPlacement *TopologyPlacement
 	if r.TopologyScheduler != nil {

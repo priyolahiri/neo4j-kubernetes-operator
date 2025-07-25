@@ -9,6 +9,8 @@ The [User Guide](user_guide) is for users of the Neo4j Enterprise Operator. It c
 *   **[Getting Started](user_guide/getting_started.md)**: A quickstart guide to get you up and running in minutes.
 *   **[Installation](user_guide/installation.md)**: Detailed installation instructions.
 *   **[Configuration](user_guide/configuration.md)**: Comprehensive configuration options.
+*   **[External Access](user_guide/external_access.md)**: Expose Neo4j outside Kubernetes using LoadBalancer, NodePort, or Ingress.
+*   **[Topology Placement](user_guide/topology_placement.md)**: Configure zone distribution, anti-affinity, and advanced placement strategies.
 *   **[Guides](user_guide/guides)**: In-depth guides on specific topics, such as:
     *   [Configuration Best Practices](user_guide/guides/configuration_best_practices.md) - Neo4j 5.26+ configuration guidelines
     *   [Backup and Restore](user_guide/guides/backup_restore.md) - Comprehensive backup and restore operations including PITR

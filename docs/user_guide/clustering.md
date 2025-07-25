@@ -236,6 +236,8 @@ spec:
         whenUnsatisfiable: DoNotSchedule
 ```
 
+> **📖 For comprehensive topology placement options**, including zone distribution strategies, anti-affinity configurations, and troubleshooting tips, see the [Topology Placement Guide](./topology_placement.md).
+
 ### TLS Configuration
 
 Enable TLS encryption for cluster communication:
