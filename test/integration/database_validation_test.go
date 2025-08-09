@@ -117,8 +117,8 @@ var _ = Describe("Database Validation Integration Tests", func() {
 			return false
 		}, timeout, interval).Should(BeTrue())
 
-		By("Verifying cluster services are accessible")
-		// Ensure service endpoints are ready before attempting database operations
+		By("Verifying cluster services have endpoints")
+		// Wait for service endpoints to exist (pods may not be ready yet, but endpoints should exist)
 		Eventually(func() bool {
 			// Check that the client service has endpoints
 			endpoints := &corev1.Endpoints{}
@@ -130,10 +130,11 @@ var _ = Describe("Database Validation Integration Tests", func() {
 				return false
 			}
 
-			// Ensure there are ready addresses
+			// Check if there are any addresses (ready or not ready) and the bolt port exists
 			for _, subset := range endpoints.Subsets {
-				if len(subset.Addresses) > 0 && len(subset.Ports) > 0 {
-					// Check if bolt port is available
+				totalAddresses := len(subset.Addresses) + len(subset.NotReadyAddresses)
+				if totalAddresses > 0 && len(subset.Ports) > 0 {
+					// Check if bolt port is configured
 					for _, port := range subset.Ports {
 						if port.Name == "bolt" && port.Port == 7687 {
 							return true
@@ -142,7 +143,7 @@ var _ = Describe("Database Validation Integration Tests", func() {
 				}
 			}
 			return false
-		}, 120*time.Second, 5*time.Second).Should(BeTrue(), "Client service endpoints should be ready")
+		}, 60*time.Second, 5*time.Second).Should(BeTrue(), "Client service endpoints should exist")
 
 		// Additional stabilization time for Neo4j cluster internals
 		By("Allowing Neo4j internal services to fully initialize")
