@@ -19,6 +19,7 @@ package neo4j
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -550,8 +551,16 @@ func (c *Client) CreateDatabase(ctx context.Context, databaseName string, option
 		query += " NOWAIT"
 	}
 
-	_, err := session.Run(ctx, query, nil)
+	// Use timeout protection for WAIT operations
+	err := c.executeWithWaitTimeout(ctx, session, query, nil, wait, 60)
 	if err != nil {
+		// Check if database was created despite timeout
+		if wait && errors.Is(err, context.DeadlineExceeded) {
+			exists, checkErr := c.DatabaseExists(ctx, databaseName)
+			if checkErr == nil && exists {
+				return nil // Database created, just took too long to be ready
+			}
+		}
 		return fmt.Errorf("failed to create database %s: %w", databaseName, err)
 	}
 
@@ -618,12 +627,42 @@ func (c *Client) CreateDatabaseWithTopology(ctx context.Context, databaseName st
 		query += " NOWAIT"
 	}
 
-	_, err := session.Run(ctx, query, nil)
+	// Use timeout protection for WAIT operations
+	err := c.executeWithWaitTimeout(ctx, session, query, nil, wait, 60)
 	if err != nil {
+		// Check if database was created despite timeout
+		if wait && errors.Is(err, context.DeadlineExceeded) {
+			exists, checkErr := c.DatabaseExists(ctx, databaseName)
+			if checkErr == nil && exists {
+				return nil // Database created, just took too long to be ready
+			}
+		}
 		return fmt.Errorf("failed to create database %s with topology: %w", databaseName, err)
 	}
 
 	return nil
+}
+
+// executeWithWaitTimeout executes a Neo4j query with timeout protection for WAIT operations
+func (c *Client) executeWithWaitTimeout(ctx context.Context, session neo4j.SessionWithContext, query string, params map[string]interface{}, wait bool, timeoutSeconds int) error {
+	if wait && strings.Contains(query, " WAIT") {
+		// Create a context with timeout for WAIT operations
+		waitCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+		defer cancel()
+
+		_, err := session.Run(waitCtx, query, params)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return fmt.Errorf("operation timed out after %ds: %w", timeoutSeconds, err)
+			}
+			return err
+		}
+		return nil
+	}
+
+	// For non-WAIT operations, use the original context
+	_, err := session.Run(ctx, query, params)
+	return err
 }
 
 // StartDatabase starts a stopped database

@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -62,6 +63,15 @@ const (
 // Reconcile handles the reconciliation of Neo4jDatabase resources
 func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+
+	// Track reconciliation start time for monitoring
+	startTime := time.Now()
+	defer func() {
+		duration := time.Since(startTime)
+		if duration > 30*time.Second {
+			logger.Info("Long reconciliation detected", "duration", duration, "database", req.NamespacedName)
+		}
+	}()
 
 	// Fetch the Neo4jDatabase instance
 	database := &neo4jv1alpha1.Neo4jDatabase{}
@@ -138,10 +148,19 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
-	// Create Neo4j client
-	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
+	// Create Neo4j client with retry for transient connection issues
+	var neo4jClient *neo4j.Client
+	err := retry.OnError(retry.DefaultBackoff, func(err error) bool {
+		// Retry on connection errors
+		return strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "timeout")
+	}, func() error {
+		var clientErr error
+		neo4jClient, clientErr = r.createNeo4jClient(ctx, cluster)
+		return clientErr
+	})
+
 	if err != nil {
-		logger.Error(err, "Failed to create Neo4j client")
+		logger.Error(err, "Failed to create Neo4j client after retries")
 		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, "ConnectionFailed",
 			"Failed to connect to Neo4j cluster")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
@@ -153,14 +172,16 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}()
 
 	// Ensure database exists (with seed URI support)
+	logger.Info("Starting database creation/verification", "database", database.Spec.Name, "wait", database.Spec.Wait)
 	if err := r.ensureDatabase(ctx, neo4jClient, database); err != nil {
-		logger.Error(err, "Failed to ensure database")
+		logger.Error(err, "Failed to ensure database", "database", database.Spec.Name)
 		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, "CreationFailed",
 			fmt.Sprintf("Failed to create database: %v", err))
 		r.Recorder.Eventf(database, "Warning", "CreationFailed",
 			"Failed to create database: %v", err)
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 	}
+	logger.Info("Database creation/verification completed successfully", "database", database.Spec.Name)
 
 	// Import initial data if specified (skip if using seed URI since data comes from the seed)
 	if database.Spec.InitialData != nil && database.Spec.SeedURI == "" && database.Status.DataImported == nil {
