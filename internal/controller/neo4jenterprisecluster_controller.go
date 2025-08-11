@@ -362,39 +362,8 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
-	// Perform split-brain detection if enabled
-	if r.SplitBrainDetector != nil && cluster.Spec.Topology.Servers > 1 {
-		analysis, err := r.SplitBrainDetector.DetectSplitBrain(ctx, cluster)
-		if err != nil {
-			logger.Error(err, "Failed to perform split-brain detection")
-			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, "SplitBrainDetectionFailed", "Failed to detect split-brain: %v", err)
-		} else {
-			if analysis.IsSplitBrain {
-				logger.Info("Split-brain detected", "orphanedPods", analysis.OrphanedPods, "repairAction", analysis.RepairAction)
-				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, "SplitBrainDetected",
-					"Split-brain detected: %s. Repair action: %s. Orphaned pods: %v",
-					analysis.ErrorMessage, analysis.RepairAction, analysis.OrphanedPods)
-
-				// Attempt to repair the split-brain
-				if err := r.SplitBrainDetector.RepairSplitBrain(ctx, cluster, analysis); err != nil {
-					logger.Error(err, "Failed to repair split-brain")
-					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, "SplitBrainRepairFailed", "Failed to repair split-brain: %v", err)
-					_ = r.updateClusterStatus(ctx, cluster, "SplitBrain", fmt.Sprintf("Split-brain detected and repair failed: %v", err))
-					return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
-				} else {
-					logger.Info("Split-brain repair initiated")
-					r.Recorder.Event(cluster, corev1.EventTypeNormal, "SplitBrainRepaired", "Split-brain detected and repair actions initiated")
-					// Requeue to verify repair success
-					return ctrl.Result{RequeueAfter: time.Second * 30}, nil
-				}
-			} else {
-				// Log when no split-brain is detected during formation (helps with debugging)
-				logger.V(1).Info("Split-brain detection completed - no split-brain detected", "expectedServers", analysis.ExpectedServers)
-			}
-		}
-	}
-
 	// Update status to "Ready" only if cluster formation is verified
+	// Note: Split-brain detection is already performed in verifyNeo4jClusterFormation
 	statusChanged := r.updateClusterStatus(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready")
 
 	// Only create event if status actually changed
@@ -1081,7 +1050,12 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 
 	// Now perform split-brain detection since Neo4j is responsive
 	logger.Info("Neo4j is responsive, performing split-brain detection")
-	splitBrainDetector := NewSplitBrainDetector(r.Client)
+
+	// Use the reconciler's SplitBrainDetector if available, otherwise create a new one
+	splitBrainDetector := r.SplitBrainDetector
+	if splitBrainDetector == nil {
+		splitBrainDetector = NewSplitBrainDetector(r.Client)
+	}
 	analysis, err := splitBrainDetector.DetectSplitBrain(ctx, cluster)
 	if err != nil {
 		logger.Error(err, "Failed to perform split-brain detection")
