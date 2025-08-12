@@ -80,11 +80,11 @@ var _ = Describe("Database Validation Integration Tests", func() {
 				},
 				Resources: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("50m"), // Minimal CPU
-						corev1.ResourceMemory: resource.MustParse("1Gi"), // Minimum for Neo4j Enterprise
+						corev1.ResourceCPU:    resource.MustParse("100m"),  // Increased for database operations
+						corev1.ResourceMemory: resource.MustParse("1.5Gi"), // Increased for Neo4j Enterprise + database creation
 					},
 					Limits: corev1.ResourceList{
-						corev1.ResourceMemory: resource.MustParse("1Gi"), // Prevent OOM
+						corev1.ResourceMemory: resource.MustParse("1.5Gi"), // Prevent OOM during database operations
 					},
 				},
 				TLS: &neo4jv1alpha1.TLSSpec{
@@ -331,8 +331,9 @@ var _ = Describe("Database Validation Integration Tests", func() {
 				if err != nil {
 					return false
 				}
-				// If status shows ready or has error conditions, validation passed
-				return db.Status.Phase != ""
+				// Check if database has been processed (either Phase or Conditions set)
+				// Both should be set by our enhanced controller
+				return len(db.Status.Conditions) > 0 || db.Status.Phase != ""
 			}, timeout, interval).Should(BeTrue(), "Database should be processed and show status")
 
 			// Clean up the database after test

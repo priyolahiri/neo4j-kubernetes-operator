@@ -465,6 +465,34 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, data
 		if !updated {
 			latest.Status.Conditions = append(latest.Status.Conditions, condition)
 		}
+
+		// Set Phase field based on condition status for API consistency
+		switch status {
+		case metav1.ConditionTrue:
+			latest.Status.Phase = "Ready"
+			// Set creation time if this is the first time the database becomes ready
+			if latest.Status.CreationTime == nil && reason == "DatabaseReady" {
+				now := metav1.Now()
+				latest.Status.CreationTime = &now
+			}
+		case metav1.ConditionFalse:
+			// Set phase based on the reason for failure
+			switch reason {
+			case "ValidationFailed":
+				latest.Status.Phase = "ValidationFailed"
+			case "ClusterNotFound", "ClusterNotReady":
+				latest.Status.Phase = "Pending"
+			case "ConnectionFailed", "CreationFailed", "DataImportFailed":
+				latest.Status.Phase = "Failed"
+			default:
+				latest.Status.Phase = "Unknown"
+			}
+		case metav1.ConditionUnknown:
+			latest.Status.Phase = "Unknown"
+		}
+
+		// Also update the message field for quick access
+		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
 		return r.Status().Update(ctx, latest)
 	}
