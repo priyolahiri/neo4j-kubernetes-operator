@@ -144,7 +144,7 @@ var _ = Describe("Database Validation Integration Tests", func() {
 				}
 			}
 			return false
-		}, 600*time.Second, 10*time.Second).Should(BeTrue(), "Client service endpoints should exist")
+		}, timeout, interval).Should(BeTrue(), "Client service endpoints should exist")
 
 		// Additional stabilization time for Neo4j cluster internals
 		By("Allowing Neo4j internal services to fully initialize")
