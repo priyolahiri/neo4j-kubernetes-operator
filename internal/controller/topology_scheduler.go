@@ -153,7 +153,7 @@ func (ts *TopologyScheduler) buildTopologySpreadConstraints(cluster *neo4jv1alph
 				MatchLabels: map[string]string{
 					"app.kubernetes.io/name":      "neo4j",
 					"app.kubernetes.io/instance":  cluster.Name,
-					"app.kubernetes.io/component": "primary",
+					"app.kubernetes.io/component": "database",
 				},
 			},
 		})
@@ -258,12 +258,12 @@ func (ts *TopologyScheduler) validateTopologyConfiguration(cluster *neo4jv1alpha
 		return fmt.Errorf("placement cannot be nil")
 	}
 
-	totalReplicas := cluster.Spec.Topology.Servers + 0 // No secondaries in server architecture
+	totalReplicas := cluster.Spec.Topology.Servers // All replicas are servers in server architecture
 	numZones := int32(len(placement.AvailabilityZones))
 
-	// Validate primary count
-	if cluster.Spec.Topology.Servers < 1 {
-		return fmt.Errorf("primaries must be at least 1, got %d", cluster.Spec.Topology.Servers)
+	// Validate server count
+	if cluster.Spec.Topology.Servers < 2 {
+		return fmt.Errorf("servers must be at least 2, got %d", cluster.Spec.Topology.Servers)
 	}
 
 	// Validate odd number of primaries for quorum
