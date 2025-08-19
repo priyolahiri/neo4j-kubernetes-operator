@@ -84,10 +84,10 @@ var _ = Describe("Split-Brain Detection Integration Tests", func() {
 					Resources: &corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("50m"),
-							corev1.ResourceMemory: resource.MustParse("800Mi"), // Reduced for CI environment constraints
+							corev1.ResourceMemory: resource.MustParse("1.5Gi"), // Neo4j Enterprise minimum for database operations
 						},
 						Limits: corev1.ResourceList{
-							corev1.ResourceMemory: resource.MustParse("800Mi"), // 3 pods × 800Mi = 2.4Gi total vs 3Gi
+							corev1.ResourceMemory: resource.MustParse("1.5Gi"), // 3 pods × 1.5Gi = 4.5Gi total
 						},
 					},
 					TLS: &neo4jv1alpha1.TLSSpec{
@@ -226,10 +226,10 @@ var _ = Describe("Split-Brain Detection Integration Tests", func() {
 					Resources: &corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("50m"),
-							corev1.ResourceMemory: resource.MustParse("800Mi"), // Reduced for CI environment constraints
+							corev1.ResourceMemory: resource.MustParse("1.5Gi"), // Neo4j Enterprise minimum for database operations
 						},
 						Limits: corev1.ResourceList{
-							corev1.ResourceMemory: resource.MustParse("800Mi"), // 3 pods × 800Mi = 2.4Gi total vs 3Gi
+							corev1.ResourceMemory: resource.MustParse("1.5Gi"), // 3 pods × 1.5Gi = 4.5Gi total
 						},
 					},
 					TLS: &neo4jv1alpha1.TLSSpec{
