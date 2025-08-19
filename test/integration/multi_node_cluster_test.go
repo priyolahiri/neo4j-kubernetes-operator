@@ -146,35 +146,21 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 				return nil
 			}, time.Minute*2, time.Second*5).Should(Succeed())
 
-			By("Waiting for individual Server StatefulSets to be created")
-			// NEW ARCHITECTURE: Individual StatefulSets per server
+			By("Waiting for single server StatefulSet to be created")
+			// CURRENT ARCHITECTURE: Single StatefulSet with multiple replicas
 			Eventually(func() error {
-				// Check server-0 StatefulSet
-				server0Key := types.NamespacedName{
-					Name:      clusterName + "-server-0",
+				// Check single server StatefulSet
+				serverKey := types.NamespacedName{
+					Name:      clusterName + "-server",
 					Namespace: namespace.Name,
 				}
-				statefulSet0 := &appsv1.StatefulSet{}
-				if err := k8sClient.Get(ctx, server0Key, statefulSet0); err != nil {
-					return fmt.Errorf("server-0 StatefulSet not found: %v", err)
+				statefulSet := &appsv1.StatefulSet{}
+				if err := k8sClient.Get(ctx, serverKey, statefulSet); err != nil {
+					return fmt.Errorf("server StatefulSet not found: %v", err)
 				}
 
-				if statefulSet0.Spec.Replicas == nil || *statefulSet0.Spec.Replicas != 1 {
-					return fmt.Errorf("server-0 StatefulSet should have 1 replica, got %v", statefulSet0.Spec.Replicas)
-				}
-
-				// Check server-1 StatefulSet
-				server1Key := types.NamespacedName{
-					Name:      clusterName + "-server-1",
-					Namespace: namespace.Name,
-				}
-				statefulSet1 := &appsv1.StatefulSet{}
-				if err := k8sClient.Get(ctx, server1Key, statefulSet1); err != nil {
-					return fmt.Errorf("server-1 StatefulSet not found: %v", err)
-				}
-
-				if statefulSet1.Spec.Replicas == nil || *statefulSet1.Spec.Replicas != 1 {
-					return fmt.Errorf("server-1 StatefulSet should have 1 replica, got %v", statefulSet1.Spec.Replicas)
+				if statefulSet.Spec.Replicas == nil || *statefulSet.Spec.Replicas != 2 {
+					return fmt.Errorf("server StatefulSet should have 2 replicas, got %v", statefulSet.Spec.Replicas)
 				}
 
 				return nil

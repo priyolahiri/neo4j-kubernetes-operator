@@ -395,7 +395,5 @@ If you have existing clusters without topology placement:
 
 ## Related Documentation
 
-- [High Availability Guide](./high_availability.md)
 - [Fault Tolerance Guide](./guides/fault_tolerance.md)
-- [Performance Tuning](./performance.md)
 - [Kubernetes Topology Documentation](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/)
