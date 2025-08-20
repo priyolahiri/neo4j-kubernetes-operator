@@ -444,7 +444,7 @@ deploy_multi_node_tls() {
 
     log_manifest "Creating multi-node TLS cluster manifest:"
     log_info "This manifest will create a Neo4j Enterprise cluster with:"
-    log_info "  • 3 primary nodes (HA clustering)"
+    log_info "  • 3 server nodes (HA clustering)"
     log_info "  • TLS enabled using cert-manager"
     log_info "  • Optimized resource allocation for Kind"
     log_info "  • 10Gi storage per node"
@@ -477,8 +477,7 @@ spec:
 
   # Multi-node topology for high availability
   topology:
-    primaries: 3
-    secondaries: 0
+    servers: 3
 
   # Production resource allocation
   resources:
@@ -528,7 +527,7 @@ EOF
     log_success "Multi-node TLS cluster manifest applied!"
 
     log_info "The operator is now creating the following resources:"
-    log_info "  • StatefulSet with 3 replicas (primary nodes)"
+    log_info "  • StatefulSet with 3 replicas (server nodes)"
     log_info "  • cert-manager Certificate for TLS"
     log_info "  • Client and headless services with TLS support"
     log_info "  • ConfigMap with cluster and TLS configuration"
@@ -565,13 +564,13 @@ EOF
 
     # Show individual pod status
     for i in 0 1 2; do
-        log_info "Pod ${i} status:"
-        kubectl get pod "${CLUSTER_NAME_MULTI}-primary-${i}" -n "${DEMO_NAMESPACE}" -o wide
+        log_info "Server ${i} status:"
+        kubectl get pod "${CLUSTER_NAME_MULTI}-server-${i}" -n "${DEMO_NAMESPACE}" -o wide
 
         if [[ $i -eq 0 ]]; then
-            log_demo "Bootstrap pod formed the cluster foundation"
+            log_demo "Bootstrap server formed the cluster foundation"
         else
-            log_demo "Pod ${i} successfully joined the cluster"
+            log_demo "Server ${i} successfully joined the cluster"
         fi
     done
 
@@ -593,7 +592,7 @@ EOF
     log_success "Multi-node TLS cluster is fully operational!"
 
     log_demo "The cluster now provides:"
-    log_demo "  ✓ High availability with 3 primary nodes"
+    log_demo "  ✓ High availability with 3 server nodes"
     log_demo "  ✓ Automatic failover and leader election"
     log_demo "  ✓ TLS encryption for all communications"
     log_demo "  ✓ Raft consensus for data consistency"
