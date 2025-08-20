@@ -641,8 +641,13 @@ validate_prerequisites() {
         exit 1
     fi
 
-    # Ensure we're using the dev cluster context
-    kind export kubeconfig --name "neo4j-operator-dev" 2>/dev/null || true
+    # Check if dev cluster exists and use it, otherwise check current context
+    if kind get clusters 2>/dev/null | grep -q "neo4j-operator-dev"; then
+        log_info "Found existing neo4j-operator-dev cluster, using it..."
+        kind export kubeconfig --name "neo4j-operator-dev" 2>/dev/null
+    else
+        log_info "Using current kubectl context: $(kubectl config current-context 2>/dev/null || echo 'none')"
+    fi
 
     # Check cluster access
     if ! kubectl cluster-info >/dev/null 2>&1; then

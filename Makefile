@@ -402,9 +402,14 @@ demo-fast: demo-setup ## Run fast automated demo (no confirmations)
 	@./scripts/demo.sh --skip-confirmations --speed fast
 
 .PHONY: demo-only
-demo-only: ## Run demo without environment setup (assumes cluster exists)
-	@echo "Running demo on existing environment..."
+demo-only: ## Run fast demo without environment setup (assumes cluster exists)
+	@echo "Running fast demo on existing environment..."
 	@./scripts/demo.sh --skip-confirmations --speed fast
+
+.PHONY: demo-interactive
+demo-interactive: ## Run interactive demo without environment setup (assumes cluster exists)
+	@echo "Running interactive demo on existing environment..."
+	@./scripts/demo.sh
 
 .PHONY: demo-setup
 demo-setup: ## Setup complete demo environment (cluster + operator)
