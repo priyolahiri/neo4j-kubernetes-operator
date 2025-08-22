@@ -586,6 +586,131 @@ Integration tests should verify:
 - **Resource Cleanup**: Proper finalizer handling and cleanup
 - **Performance**: Efficient reconciliation and resource usage
 
+## CI Workflow Emulation for Troubleshooting (Added 2025-08-22)
+
+When encountering CI failures or testing memory-constrained environments, use the comprehensive CI workflow emulation:
+
+### Quick Start
+```bash
+# Emulate complete CI workflow with debug logging
+make test-ci-local
+```
+
+### What It Does
+
+The `test-ci-local` target provides a complete emulation of the GitHub Actions CI workflow:
+
+1. **Environment Setup**
+   - Sets `CI=true GITHUB_ACTIONS=true` environment variables
+   - Creates `logs/` directory for comprehensive debug output
+   - Cleans up any previous test environment
+
+2. **Unit Test Phase**
+   - Runs unit tests with CI environment variables
+   - Logs Go version, kubectl version, and environment details
+   - Saves output to `logs/ci-local-unit.log`
+
+3. **Integration Test Phase**
+   - Creates test cluster with CI-appropriate resource constraints
+   - Deploys Neo4j operator
+   - Runs integration tests with 512Mi memory limits (same as CI)
+   - Saves output to `logs/ci-local-integration.log`
+
+4. **Cleanup Phase**
+   - Complete environment destruction
+   - Saves cleanup output to `logs/ci-local-cleanup.log`
+
+### Key Differences from Local Testing
+
+| Aspect | Local Development | CI Environment | CI Emulation |
+|--------|------------------|----------------|--------------|
+| Memory Limits | 1.5Gi | 512Mi | 512Mi ✅ |
+| Environment Variables | Local defaults | CI=true, GITHUB_ACTIONS=true | CI=true, GITHUB_ACTIONS=true ✅ |
+| Resource Constraints | Generous | Limited (~7GB total) | Limited ✅ |
+| Debug Logging | Console only | Limited | Comprehensive files ✅ |
+| Troubleshooting | Manual | Minimal | Auto-provided commands ✅ |
+
+### Debug Output Files
+
+Generated debug files provide comprehensive troubleshooting information:
+
+- **`logs/ci-local-unit.log`**
+  - Unit test output with environment information
+  - Go version and tool versions
+  - Complete test execution logs
+
+- **`logs/ci-local-integration.log`**
+  - Test cluster creation and operator deployment
+  - Integration test execution with CI constraints
+  - Resource allocation and memory limit information
+
+- **`logs/ci-local-cleanup.log`**
+  - Environment cleanup operations
+  - Resource removal confirmation
+
+### Automatic Troubleshooting Commands
+
+If integration tests fail, the target automatically provides troubleshooting commands:
+
+```bash
+# Check operator logs
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
+
+# Check pod status
+kubectl get pods --all-namespaces
+
+# Check events
+kubectl get events --all-namespaces --sort-by='.lastTimestamp'
+```
+
+### Usage Scenarios
+
+**1. Debugging CI Failures**
+```bash
+# CI failed with memory issues? Reproduce locally:
+make test-ci-local
+
+# Check specific integration logs
+cat logs/ci-local-integration.log | grep -E "(OOMKilled|Memory|Insufficient)"
+```
+
+**2. Testing Resource Constraints**
+```bash
+# Test with CI memory limits before pushing
+make test-ci-local
+
+# Verify resource requirements are appropriate
+grep -A5 "memory" logs/ci-local-integration.log
+```
+
+**3. Validating CI Fixes**
+```bash
+# After fixing CI issues, validate locally
+make test-ci-local
+
+# Confirm tests pass with CI constraints
+echo "Exit code: $?"
+```
+
+### Performance Analysis
+
+The CI emulation includes performance timing information:
+
+```bash
+# View test execution timeline
+grep "Started at\|Finished at" logs/ci-local-*.log
+
+# Analyze test duration by phase
+grep -E "PHASE|✅|❌" logs/ci-local-integration.log
+```
+
+### Best Practices
+
+1. **Use Before CI Push**: Run `make test-ci-local` before pushing changes that affect tests
+2. **Review All Logs**: Check all three log files for complete understanding
+3. **Memory Optimization**: Use findings to optimize resource requirements
+4. **Document Issues**: Add findings to troubleshooting guides
+
 ## Writing New Tests
 
 ### Adding Unit Tests

@@ -4,14 +4,86 @@ Welcome to the Neo4j Enterprise Operator project! We're excited to have you cont
 
 ## Prerequisites
 
+> **⚠️ IMPORTANT: Kind is Required**
+> This project **exclusively uses Kind (Kubernetes in Docker)** for development and testing. All development workflows, testing, and CI emulation depend on Kind clusters. You cannot contribute without Kind installed.
+
 Before contributing, ensure you have the following tools installed:
+
+### Required Tools
 
 - **Go 1.21+**: [Installation Guide](https://golang.org/doc/install)
 - **Docker**: [Installation Guide](https://docs.docker.com/get-docker/)
 - **kubectl**: [Installation Guide](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
-- **kind**: [Installation Guide](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)
+- **Kind (Kubernetes in Docker)**: **REQUIRED** - See installation instructions below
 - **make**: Usually pre-installed on Unix systems
 - **git**: [Installation Guide](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
+
+### Kind Installation Instructions
+
+Kind is **mandatory** for all development workflows. Choose your platform:
+
+#### macOS (using Homebrew - Recommended)
+```bash
+# Install Kind via Homebrew
+brew install kind
+
+# Verify installation
+kind version
+```
+
+#### Linux (using Go or Binary)
+```bash
+# Option 1: Install via Go (if you have Go installed)
+go install sigs.k8s.io/kind@latest
+
+# Option 2: Download binary directly
+# For AMD64 / x86_64
+[ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+# For ARM64
+[ $(uname -m) = aarch64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-arm64
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+# Verify installation
+kind version
+```
+
+#### Windows (using Chocolatey or Scoop)
+```bash
+# Using Chocolatey
+choco install kind
+
+# Using Scoop
+scoop install kind
+
+# Verify installation
+kind version
+```
+
+#### Why Kind is Required
+
+- **Development Clusters**: All local development uses Kind clusters (`make dev-cluster`)
+- **Testing Infrastructure**: Integration and E2E tests require Kind (`make test-integration`)
+- **CI Emulation**: The `make test-ci-local` target depends on Kind clusters
+- **No Alternatives**: We do **not** support minikube, k3s, or other local Kubernetes solutions
+
+### Verify Prerequisites
+
+Once you have all tools installed, verify your setup:
+
+```bash
+# Check all required tools
+go version          # Should show Go 1.21+
+docker version      # Should show Docker info
+kubectl version     # Should show kubectl client
+kind version        # Should show Kind version
+make --version      # Should show GNU Make
+git --version       # Should show Git version
+
+# Test Kind functionality
+kind create cluster --name test-setup
+kind delete cluster --name test-setup
+```
 
 ## Quick Start
 
@@ -107,6 +179,44 @@ We have several levels of testing:
 - **All Tests**: `make test`
 - **Coverage Report**: `make test-coverage`
 
+#### CI Workflow Emulation (Added 2025-08-22)
+
+Before submitting PRs, test your changes with CI-identical resource constraints:
+
+```bash
+# Emulate complete CI workflow with debug logging
+make test-ci-local
+```
+
+**Why Use CI Emulation:**
+- **Prevent CI Failures**: Test with same memory constraints as GitHub Actions (512Mi vs 1.5Gi local)
+- **Debug Information**: Comprehensive logs for troubleshooting (`logs/ci-local-*.log`)
+- **Complete Testing**: Full workflow from unit tests to integration cleanup
+- **Resource Validation**: Ensures your changes work in memory-constrained environments
+
+**When to Use:**
+- Before pushing changes that affect resource requirements
+- When debugging failed CI runs
+- Before submitting PRs with test modifications
+- When adding new integration tests
+
+**Generated Debug Files:**
+- `logs/ci-local-unit.log` - Unit test execution logs
+- `logs/ci-local-integration.log` - Integration test and cluster setup logs
+- `logs/ci-local-cleanup.log` - Environment cleanup logs
+
+**Example Usage:**
+```bash
+# Test changes before pushing
+make test-ci-local
+
+# Check for memory-related issues
+grep -E "(memory|Memory|OOM)" logs/ci-local-integration.log
+
+# Verify CI readiness
+echo "If this passes, CI should pass too ✅"
+```
+
 ### Code Generation
 
 When you modify API types, run:
@@ -135,6 +245,45 @@ make generate manifests
    - Reference to any related issues
    - Screenshots for UI changes
    - Test results
+
+### CI/CD Workflow (Updated 2025-08-22)
+
+Our CI pipeline has been optimized for faster feedback and resource efficiency:
+
+#### Automatic Testing
+- **✅ Unit Tests**: Run automatically on every push and PR
+- **⚡ Fast Feedback**: Unit tests provide immediate feedback without cluster overhead
+
+#### Optional Integration Tests (On-demand)
+Integration tests are now **optional** and only run when explicitly requested to save CI resources:
+
+**How to trigger integration tests:**
+
+1. **Manual Trigger** (Recommended for testing):
+   ```
+   Go to Actions → CI → "Run workflow" → Check "Run integration tests"
+   ```
+
+2. **PR Label** (For PRs requiring integration testing):
+   ```
+   Add "run-integration-tests" label to your pull request
+   ```
+
+3. **Commit Message** (For specific commits):
+   ```bash
+   git commit -m "feat: add new cluster feature [run-integration]"
+   ```
+
+**Why this change?**
+- **Resource Efficiency**: Integration tests require significant memory (~7GB) and time (10+ minutes)
+- **Faster PRs**: Most changes only need unit tests for validation
+- **On-demand**: Run integration tests only when needed for cluster/integration changes
+
+**When to run integration tests:**
+- Changes to controllers or cluster logic
+- New integration test additions
+- Before important releases
+- When troubleshooting CI-specific issues
 
 ## Development Tools
 

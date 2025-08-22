@@ -7,6 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Neo4j Enterprise Operator for Kubernetes - manages Neo4j Enterprise deployments (v5.26+) using Kubebuilder framework.
 
 **Supported Neo4j Versions**: Only 5.26+ (Semver: 5.26.0+, Calver: 2025.01.0+)
+**CRITICAL: KIND IS MANDATORY**: This project exclusively uses Kind (Kubernetes in Docker) for ALL development, testing, and CI workflows. No alternatives (minikube, k3s) are supported.
+
+**CRITICAL: ENTERPRISE IMAGES ONLY**: Never use Neo4j community images (neo4j:5.26), only enterprise ones (neo4j:5.26-enterprise, neo4j:2025.01.0-enterprise)
 **Discovery**: V2_ONLY mode exclusively
 
 **Deployment Types:**
@@ -27,6 +30,19 @@ Neo4j Enterprise Operator for Kubernetes - manages Neo4j Enterprise deployments 
 - `test/` - Unit, integration, e2e tests
 
 ## Essential Commands
+
+### Prerequisites Check & Kind Installation
+```bash
+# Verify Kind is installed (MANDATORY)
+kind version
+
+# Install Kind if missing:
+# macOS: brew install kind
+# Linux: curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64 && chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+
+# Test Kind functionality
+kind create cluster --name test && kind delete cluster --name test
+```
 
 ### Build & Development
 ```bash
@@ -92,6 +108,14 @@ make test-e2e            # End-to-end tests (requires test cluster)
 # Full test suite
 make test                 # Run unit + integration tests
 make test-coverage       # Generate coverage report
+
+# CI Workflow Emulation (Added 2025-08-22)
+make test-ci-local       # Emulate CI workflow locally with debug logging
+                         # - Runs unit tests with CI=true GITHUB_ACTIONS=true
+                         # - Creates test cluster and deploys operator
+                         # - Runs integration tests with 512Mi memory constraints
+                         # - Provides detailed logging for troubleshooting
+                         # - Logs saved to: logs/ci-local-*.log
 
 # Environment cleanup
 make test-cleanup        # Clean test artifacts (keep cluster)
@@ -235,8 +259,23 @@ See detailed implementation: `/reports/2025-08-19-server-based-architecture-impl
 
 ## CI/CD & Debugging
 
-**GitHub Actions**: Unit/lint → Integration → E2E → Multi-arch builds
-**PR Requirements**: All checks must pass, use conventional commits
+**GitHub Actions (Updated 2025-08-22)**:
+- **Unit Tests**: ✅ Always run automatically on all pushes/PRs
+- **Integration Tests**: ⏭️ Optional, on-demand only (trigger with PR label `run-integration-tests`, commit message `[run-integration]`, or manual dispatch)
+- **E2E Tests**: Manual workflow dispatch only
+- **Release**: Multi-arch builds triggered by git tags
+
+**PR Requirements**: Unit tests must pass, integration tests optional unless requested
+**Triggers**:
+```bash
+# PR label method
+gh pr edit --add-label "run-integration-tests"
+
+# Commit message method
+git commit -m "feat: cluster changes [run-integration]"
+
+# Manual dispatch: Actions → CI → Run workflow → Check "Run integration tests"
+```
 
 **Debug Failed Reconciliation**:
 ```bash

@@ -321,6 +321,33 @@ kubectl logs -l app.kubernetes.io/name=neo4j-operator
 
 We welcome contributions from both Kubernetes beginners and experts!
 
+> **⚠️ IMPORTANT: Kind Required for Development**
+> This project **exclusively uses Kind (Kubernetes in Docker)** for all development workflows, testing, and CI emulation. You must install Kind before contributing.
+
+### Prerequisites for Contributors
+
+**Required Tools:**
+- **Go 1.21+**
+- **Docker**
+- **kubectl**
+- **Kind** (Kubernetes in Docker) - **MANDATORY**
+- **make**
+
+**Quick Kind Installation:**
+```bash
+# macOS (Homebrew)
+brew install kind
+
+# Linux (binary download)
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+
+# Verify installation
+kind version
+```
+
+For detailed installation instructions, see our [Contributing Guide](CONTRIBUTING.md).
+
 ### Quick Contribution Setup
 ```bash
 # Clone and setup development environment
@@ -331,9 +358,10 @@ cd neo4j-kubernetes-operator
 make dev-cluster
 
 # Run tests to verify setup
-make test-unit     # Unit tests
-make test-cluster  # Create test cluster
-make test-integration  # Integration tests
+make test-unit          # Unit tests
+make test-cluster       # Create test cluster
+make test-integration   # Integration tests
+make test-ci-local      # Emulate CI workflow with debug logging (Added 2025-08-22)
 
 # Deploy operator for development
 make operator-setup
@@ -348,6 +376,7 @@ make operator-setup
 - `make test-unit` - Run unit tests
 - `make test-integration` - Run integration tests
 - `make test-e2e` - Run end-to-end tests
+- `make test-ci-local` - Emulate CI workflow with debug logging (Added 2025-08-22)
 
 **Operator Installation**:
 

@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -116,16 +115,7 @@ var _ = Describe("Centralized Backup Configuration", func() {
 						ClassName: "standard",
 						Size:      "500Mi",
 					},
-					Resources: &corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("50m"), // Reduced for CI constraints
-							corev1.ResourceMemory: resource.MustParse("256Mi"),
-						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("200m"), // Reduced for CI constraints
-							corev1.ResourceMemory: resource.MustParse("1Gi"),  // Neo4j Enterprise minimum requirement
-						},
-					},
+					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
 					Auth: &neo4jv1alpha1.AuthSpec{
 						AdminSecret: adminSecret.Name,
 					},
@@ -258,16 +248,7 @@ var _ = Describe("Centralized Backup Configuration", func() {
 						ClassName: "standard",
 						Size:      "500Mi",
 					},
-					Resources: &corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("50m"), // Reduced for CI constraints
-							corev1.ResourceMemory: resource.MustParse("256Mi"),
-						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("200m"), // Reduced for CI constraints
-							corev1.ResourceMemory: resource.MustParse("1Gi"),  // Neo4j Enterprise minimum requirement
-						},
-					},
+					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
 					Auth: &neo4jv1alpha1.AuthSpec{
 						AdminSecret: adminSecret.Name,
 					},

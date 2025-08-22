@@ -5,19 +5,25 @@ This directory contains streamlined GitHub Actions workflows for the Neo4j Kuber
 ## 🔄 Workflows
 
 ### 🧪 ci.yml - Main CI Pipeline
-**Triggers:** Push to main/develop, Pull Requests
-**Purpose:** Complete CI pipeline with unit tests and conditional integration tests
+**Triggers:** Push to main/develop, Pull Requests, Manual dispatch
+**Purpose:** Streamlined CI with automatic unit tests and optional integration tests
 
 **Jobs:**
-1. **Unit Tests** - Fast unit tests (no cluster required)
-2. **Integration Tests** - Full integration tests (requires `integration-tests` label on PR or push to main/develop)
+1. **Unit Tests** - ✅ Always run on all pushes/PRs (fast, no cluster required)
+2. **Integration Tests** - ⏭️ Optional, on-demand only (memory-intensive, requires explicit trigger)
+3. **CI Summary** - Status summary with integration test trigger instructions
+
+**Integration Test Triggers (Optional):**
+- **Manual**: Use "Run workflow" button in GitHub Actions with "Run integration tests" checked
+- **PR Label**: Add `run-integration-tests` label to pull request
+- **Commit Message**: Include `[run-integration]` in commit message
 
 **Features:**
-- Fast feedback with unit tests first
-- Integration tests only run when needed to save resources
-- Coverage reporting to Codecov
-- Artifact collection for debugging
-- Automatic cluster cleanup
+- ⚡ Fast feedback with automatic unit tests
+- 💾 Resource savings - integration tests only run when explicitly requested
+- 🎛️ Configurable Neo4j version for integration tests
+- 📊 Clear status reporting with trigger instructions
+- 🧹 Automatic cluster cleanup
 
 ### 🚀 release.yml - Release Pipeline
 **Triggers:** Git tags (v*.*.*), Manual dispatch
@@ -91,11 +97,17 @@ make test-cluster-delete
 
 ### Triggering Workflows
 
-**Unit Tests:** Run on every push/PR automatically
+**Unit Tests:** ✅ Run automatically on every push/PR
 
-**Integration Tests:**
-- Automatic on main/develop branch pushes
-- On PRs with `integration-tests` label
+**Integration Tests (Optional - On-demand only):**
+- **Manual Trigger**: Go to Actions → CI → "Run workflow" → Check "Run integration tests"
+- **PR Label**: Add `run-integration-tests` label to any pull request
+- **Commit Message**: Include `[run-integration]` anywhere in commit message
+- **Configuration**: Optionally specify Neo4j version (default: `5.26-enterprise`)
+
+**Full E2E Tests:**
+- **Manual Trigger**: Actions → "Full Integration Tests (E2E)" → "Run workflow"
+- **Features**: Complete operator deployment testing with custom image tags
 
 **Release:**
 - Push git tag: `git tag v1.0.0 && git push origin v1.0.0`

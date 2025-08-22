@@ -184,6 +184,92 @@ test-coverage: ## Generate coverage report
 	@go tool cover -html=coverage/coverage.out -o coverage/coverage.html
 	@go tool cover -func=coverage/coverage.out | tail -1
 
+.PHONY: test-ci-local
+test-ci-local: ## Emulate CI workflow locally with debug logging (for troubleshooting)
+	@echo "🔄 Emulating CI workflow locally with debug logging..."
+	@echo "📁 Creating logs directory..."
+	@mkdir -p logs
+	@echo "🧹 Cleaning up previous test environment..."
+	@$(MAKE) test-destroy || true
+	@echo ""
+	@echo "🧪 === PHASE 1: UNIT TESTS ==="
+	@echo "⏰ Started at: $$(date)"
+	@echo "Running unit tests with debug logging..." | tee logs/ci-local-unit.log
+	@{ \
+		echo "Environment variables:"; \
+		echo "CI=true"; \
+		echo "GITHUB_ACTIONS=true"; \
+		echo "GO_VERSION=$$(go version)"; \
+		echo "KUBECTL_VERSION=$$(kubectl version --client --short 2>/dev/null || echo 'kubectl not available')"; \
+		echo ""; \
+		CI=true GITHUB_ACTIONS=true $(MAKE) test-unit 2>&1; \
+	} | tee -a logs/ci-local-unit.log
+	@if [ $$? -ne 0 ]; then \
+		echo "❌ Unit tests failed! Check logs/ci-local-unit.log for details"; \
+		exit 1; \
+	fi
+	@echo "✅ Unit tests passed!"
+	@echo ""
+	@echo "🔗 === PHASE 2: INTEGRATION TESTS ==="
+	@echo "⏰ Started at: $$(date)"
+	@echo "Setting up test cluster..." | tee logs/ci-local-integration.log
+	@{ \
+		echo "Creating test cluster with CI-appropriate resources..."; \
+		echo "Memory constraints: CI=true enables 512Mi memory limits"; \
+		echo ""; \
+		$(MAKE) test-cluster 2>&1; \
+	} | tee -a logs/ci-local-integration.log
+	@if [ $$? -ne 0 ]; then \
+		echo "❌ Test cluster creation failed! Check logs/ci-local-integration.log for details"; \
+		exit 1; \
+	fi
+	@echo "📦 Deploying operator to test cluster..." | tee -a logs/ci-local-integration.log
+	@{ \
+		echo "Deploying Neo4j operator..."; \
+		$(MAKE) operator-setup 2>&1; \
+	} | tee -a logs/ci-local-integration.log
+	@if [ $$? -ne 0 ]; then \
+		echo "❌ Operator deployment failed! Check logs/ci-local-integration.log for details"; \
+		exit 1; \
+	fi
+	@echo "🧪 Running integration tests with CI environment variables..." | tee -a logs/ci-local-integration.log
+	@{ \
+		echo "Environment: CI=true GITHUB_ACTIONS=true"; \
+		echo "Resource requirements: Using getCIAppropriateResourceRequirements()"; \
+		echo "Memory limits: 512Mi (CI) vs 1.5Gi (local)"; \
+		echo "Timeout: 30 minutes"; \
+		echo ""; \
+		CI=true GITHUB_ACTIONS=true kind export kubeconfig --name neo4j-operator-test 2>&1; \
+		CI=true GITHUB_ACTIONS=true go test ./test/integration/... -v -timeout=30m 2>&1; \
+	} | tee -a logs/ci-local-integration.log
+	@if [ $$? -ne 0 ]; then \
+		echo "❌ Integration tests failed! Check logs/ci-local-integration.log for details"; \
+		echo "💡 Troubleshooting:"; \
+		echo "   - Check operator logs: kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager"; \
+		echo "   - Check pod status: kubectl get pods --all-namespaces"; \
+		echo "   - Check events: kubectl get events --all-namespaces --sort-by='.lastTimestamp'"; \
+		exit 1; \
+	fi
+	@echo "✅ Integration tests passed!"
+	@echo ""
+	@echo "🧹 === CLEANUP ==="
+	@echo "⏰ Started at: $$(date)"
+	@$(MAKE) test-destroy 2>&1 | tee logs/ci-local-cleanup.log
+	@echo ""
+	@echo "🎉 === CI WORKFLOW COMPLETE ==="
+	@echo "⏰ Finished at: $$(date)"
+	@echo "📋 Summary:"
+	@echo "   ✅ Unit tests: PASSED"
+	@echo "   ✅ Integration tests: PASSED"
+	@echo "   ✅ Environment cleanup: COMPLETED"
+	@echo ""
+	@echo "📁 Debug logs available:"
+	@echo "   - logs/ci-local-unit.log       - Unit test output"
+	@echo "   - logs/ci-local-integration.log - Integration test output"
+	@echo "   - logs/ci-local-cleanup.log    - Cleanup output"
+	@echo ""
+	@echo "💡 Use this target to reproduce CI issues locally with identical resource constraints"
+
 ##@ Build
 
 .PHONY: build

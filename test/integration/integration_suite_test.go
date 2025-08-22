@@ -441,15 +441,15 @@ func createBasicStandalone(name, namespace string) *neo4jv1alpha1.Neo4jEnterpris
 func getCIAppropriateResourceRequirements() *corev1.ResourceRequirements {
 	// Check if running in CI environment
 	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
-		// CI environment: Use reduced memory to fit within GitHub Actions runners
-		// GitHub Actions runners have ~7GB total memory, need to fit 3 Neo4j pods + system overhead
+		// CI environment: Use very reduced memory to fit within GitHub Actions runners
+		// GitHub Actions runners have limited memory, need to accommodate all pods + system overhead
 		return &corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("25m"), // Minimal CPU for CI scheduling
-				corev1.ResourceMemory: resource.MustParse("1Gi"), // Reduced memory for CI constraints
+				corev1.ResourceCPU:    resource.MustParse("25m"),   // Minimal CPU for CI scheduling
+				corev1.ResourceMemory: resource.MustParse("512Mi"), // Reduced memory for tight CI constraints
 			},
 			Limits: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("1Gi"), // 3 pods × 1Gi = 3Gi total (fits in CI)
+				corev1.ResourceMemory: resource.MustParse("768Mi"), // Allow some burst, but keep low for CI
 			},
 		}
 	} else {

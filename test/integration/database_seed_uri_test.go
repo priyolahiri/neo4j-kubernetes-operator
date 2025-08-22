@@ -23,7 +23,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -83,16 +82,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 						Size:      "500Mi", // Minimal for integration tests
 						ClassName: "standard",
 					},
-					Resources: &corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("50m"), // Minimal CPU
-							corev1.ResourceMemory: resource.MustParse("1Gi"), // Minimum for Neo4j Enterprise
-						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("200m"), // Keep low for CI
-							corev1.ResourceMemory: resource.MustParse("1Gi"),
-						},
-					},
+					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
 					Auth: &neo4jv1alpha1.AuthSpec{
 						AdminSecret: "neo4j-admin-secret",
 					},

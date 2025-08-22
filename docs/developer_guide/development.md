@@ -4,12 +4,79 @@ This guide explains how to set up your development environment and get started w
 
 ## Prerequisites
 
+> **⚠️ CRITICAL: Kind (Kubernetes in Docker) is Mandatory**
+> This project **exclusively uses Kind** for all development and testing workflows. You cannot develop, test, or contribute to this project without Kind installed. We do **not** support minikube, k3s, or other local Kubernetes solutions.
+
 ### Required Tools
+
 - **Go**: Version 1.21+ (for development and testing)
 - **Docker**: Container runtime for building images
 - **kubectl**: Kubernetes CLI tool
-- **kind**: Kubernetes in Docker for local clusters
+- **Kind**: **MANDATORY** - Kubernetes in Docker for local clusters (see installation below)
 - **make**: Build automation (GNU Make)
+
+### Kind Installation (Required)
+
+Kind is essential for all development workflows. Install it for your platform:
+
+#### macOS (Recommended: Homebrew)
+```bash
+# Install Kind via Homebrew
+brew install kind
+
+# Verify installation
+kind version
+# Expected output: kind v0.x.x go1.x.x ...
+```
+
+#### Linux (Binary Installation)
+```bash
+# Download and install Kind binary
+# For AMD64 / x86_64
+[ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+
+# For ARM64
+[ $(uname -m) = aarch64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-arm64
+
+# Make executable and move to PATH
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+# Verify installation
+kind version
+```
+
+#### Alternative: Install via Go
+```bash
+# If you have Go installed
+go install sigs.k8s.io/kind@latest
+
+# Verify installation
+kind version
+```
+
+### Verify Kind Installation
+
+Test that Kind works correctly:
+
+```bash
+# Create a test cluster
+kind create cluster --name test-installation
+
+# Check cluster status
+kubectl cluster-info --context kind-test-installation
+
+# Clean up test cluster
+kind delete cluster --name test-installation
+```
+
+### Why Kind is Required
+
+- **Development Clusters**: All `make dev-*` targets use Kind
+- **Testing Infrastructure**: Integration tests (`make test-integration`) require Kind clusters
+- **CI Emulation**: The `make test-ci-local` target creates Kind clusters with CI-appropriate constraints
+- **Consistent Environment**: Ensures all developers use identical Kubernetes environments
+- **Resource Efficiency**: Kind clusters are lightweight and fast to create/destroy
 
 ### Recommended Tools
 - **VS Code** with Go extension
@@ -194,6 +261,55 @@ make test-integration
 
 # Run specific integration tests
 ginkgo run -focus "should create backup" ./test/integration
+```
+
+### CI Workflow Emulation (Added 2025-08-22)
+
+When debugging CI failures or testing resource-constrained environments, use the CI workflow emulation target:
+
+```bash
+# Emulate complete CI workflow locally with debug logging
+make test-ci-local
+```
+
+**What it does:**
+1. **Environment Setup**: Sets `CI=true GITHUB_ACTIONS=true` environment variables
+2. **Unit Tests**: Runs unit tests with CI constraints and logging
+3. **Integration Tests**: Creates test cluster with 512Mi memory limits (same as CI)
+4. **Debug Logging**: Saves comprehensive logs for troubleshooting
+5. **Cleanup**: Complete environment cleanup
+
+**Generated Debug Files:**
+- `logs/ci-local-unit.log` - Unit test output with environment info
+- `logs/ci-local-integration.log` - Integration test output with cluster setup
+- `logs/ci-local-cleanup.log` - Environment cleanup output
+
+**Key Benefits:**
+- **Identical CI Environment**: Same memory constraints (512Mi vs 1.5Gi local)
+- **Resource Constraint Testing**: Tests memory limits that cause CI failures
+- **Debug Information**: Comprehensive logging for troubleshooting
+- **Complete Workflow**: Unit → Integration → Cleanup (like CI)
+
+**Usage Scenarios:**
+- Debugging CI failures locally
+- Testing memory-constrained environments
+- Validating resource requirements
+- Troubleshooting integration test failures
+
+**Troubleshooting Commands (automatically provided on failure):**
+```bash
+# Check operator logs
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
+
+# Check pod status
+kubectl get pods --all-namespaces
+
+# Check events
+kubectl get events --all-namespaces --sort-by='.lastTimestamp'
+
+# Review specific debug logs
+cat logs/ci-local-integration.log
+tail -f logs/ci-local-integration.log  # Follow real-time
 ```
 
 ### Manual Testing Examples
