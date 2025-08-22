@@ -437,19 +437,19 @@ func createBasicStandalone(name, namespace string) *neo4jv1alpha1.Neo4jEnterpris
 }
 
 // getCIAppropriateResourceRequirements returns resource requirements optimized for CI environments
-// Uses lower memory limits to work within GitHub Actions constraints while maintaining functionality
+// Uses minimal resources while respecting Neo4j Enterprise's 1Gi memory minimum requirement
 func getCIAppropriateResourceRequirements() *corev1.ResourceRequirements {
 	// Check if running in CI environment
 	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
-		// CI environment: Use very reduced memory to fit within GitHub Actions runners
-		// GitHub Actions runners have limited memory, need to accommodate all pods + system overhead
+		// CI environment: Use minimal resources that still meet Neo4j Enterprise requirements
+		// CRITICAL: Neo4j Enterprise requires minimum 1Gi memory limit for validation to pass
 		return &corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("25m"),   // Minimal CPU for CI scheduling
-				corev1.ResourceMemory: resource.MustParse("512Mi"), // Reduced memory for tight CI constraints
+				corev1.ResourceCPU:    resource.MustParse("50m"), // Minimal CPU for CI scheduling
+				corev1.ResourceMemory: resource.MustParse("1Gi"), // Meet Neo4j Enterprise minimum requirement
 			},
 			Limits: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("768Mi"), // Allow some burst, but keep low for CI
+				corev1.ResourceMemory: resource.MustParse("1.5Gi"), // Safe limit above minimum for CI stability
 			},
 		}
 	} else {
