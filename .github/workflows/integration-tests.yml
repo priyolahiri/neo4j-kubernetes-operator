@@ -61,21 +61,59 @@ jobs:
         kubectl wait --for=condition=Available deployment/neo4j-operator-controller-manager \
           -n neo4j-operator-system --timeout=300s
 
+    - name: Pre-load Neo4j images to avoid Docker rate limits
+      run: |
+        echo "Pre-loading Neo4j images to avoid Docker rate limits..."
+
+        # Pre-pull common Neo4j images used in tests
+        NEO4J_VERSION="${{ github.event.inputs.neo4j-version || '5.26.0-enterprise' }}"
+        echo "Pulling Neo4j image: neo4j:${NEO4J_VERSION}"
+        docker pull neo4j:${NEO4J_VERSION} || {
+          echo "Failed to pull neo4j:${NEO4J_VERSION}, trying fallback versions..."
+          docker pull neo4j:5.26-enterprise || docker pull neo4j:5.26.0-enterprise
+        }
+
+        # Load images into Kind cluster
+        echo "Loading images into Kind cluster..."
+        kind load docker-image neo4j:${NEO4J_VERSION} --name neo4j-operator-test || true
+        kind load docker-image neo4j:5.26-enterprise --name neo4j-operator-test || true
+        kind load docker-image neo4j:5.26.0-enterprise --name neo4j-operator-test || true
+
+        echo "Available images in Kind cluster:"
+        docker exec neo4j-operator-test-control-plane crictl images | grep neo4j || echo "No Neo4j images found"
+
     - name: Run integration tests
       run: |
         # Enable line-buffered output for real-time progress
         export PYTHONUNBUFFERED=1
+        export FORCE_COLOR=1
+
+        # Store the exit code properly
+        EXIT_CODE=0
 
         if [ "${{ github.event.inputs.run-full-suite }}" == "true" ]; then
           echo "Running full integration test suite with real-time progress..."
-          make test-integration-ci | tee integration-test-output.log
+          set +e  # Don't exit on test failure, capture exit code
+          make test-integration-ci 2>&1 | tee integration-test-output.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
         else
           echo "Running basic smoke tests with real-time progress..."
-          ginkgo run --procs=1 --v --progress --trace ./test/integration/... --timeout=30m --focus="Basic.*Smoke" | tee integration-test-output.log
+          set +e  # Don't exit on test failure, capture exit code
+          go test ./test/integration/... -v -timeout=30m -run="TestIntegration" -ginkgo.focus="Basic.*Smoke" 2>&1 | tee integration-test-output.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
         fi
 
-        # Also save the exit code
-        echo "Test run completed with exit code: $?"
+        echo "Test run completed with exit code: ${EXIT_CODE}"
+
+        # Fail the step if tests failed
+        if [ ${EXIT_CODE} -ne 0 ]; then
+          echo "❌ Integration tests failed with exit code ${EXIT_CODE}"
+          exit ${EXIT_CODE}
+        else
+          echo "✅ Integration tests passed successfully"
+        fi
       env:
         KUBECONFIG: /home/runner/.kube/config
         NEO4J_VERSION: ${{ github.event.inputs.neo4j-version || '5.26-enterprise' }}
