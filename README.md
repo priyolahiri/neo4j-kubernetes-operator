@@ -40,6 +40,7 @@ The Neo4j Enterprise Operator for Kubernetes provides a complete solution for de
 Installation requires cloning from source:
 
 1. **Clone the repository** and checkout the latest tag:
+
    ```bash
    # Clone the repository
    git clone https://github.com/neo4j-labs/neo4j-kubernetes-operator.git
@@ -51,6 +52,7 @@ Installation requires cloning from source:
    ```
 
 2. **Install the operator** using make targets:
+
    ```bash
    # Install CRDs into your cluster
    make install
@@ -109,19 +111,47 @@ Installation requires cloning from source:
 
 ## 📊 Database Management
 
-Once your cluster is running, you can create and manage databases using the Neo4jDatabase CRD:
+After deploying a Neo4j instance (standalone or cluster), you can create and manage databases using the Neo4jDatabase CRD.
 
-### Creating Databases
+> **Prerequisites**: You must first deploy either a `Neo4jEnterpriseStandalone` or `Neo4jEnterpriseCluster` before creating databases.
+
+### Step 1: Deploy a Neo4j Instance
+
+Choose one of the following deployment types:
+
+**Option A: Standalone Instance (Development/Testing)**
 
 ```bash
-# Create a basic database
+kubectl apply -f examples/standalone/single-node-standalone.yaml
+
+# Wait for deployment
+kubectl get neo4jenterprisestandalone
+kubectl wait --for=condition=Ready neo4jenterprisestandalone/standalone --timeout=300s
+```
+
+**Option B: Cluster Instance (Production)**
+
+```bash
+kubectl apply -f examples/clusters/minimal-cluster.yaml
+
+# Wait for cluster formation
+kubectl get neo4jenterprisecluster
+kubectl wait --for=condition=Ready neo4jenterprisecluster/minimal-cluster --timeout=300s
+```
+
+### Step 2: Create Databases
+
+**For cluster deployments:**
+
+```bash
+# Create a database on your cluster
 kubectl apply -f - <<EOF
 apiVersion: neo4j.neo4j.com/v1alpha1
 kind: Neo4jDatabase
 metadata:
-  name: my-application-db
+  name: my-cluster-database
 spec:
-  clusterRef: minimal-cluster  # Reference to your cluster
+  clusterRef: minimal-cluster  # Reference to your Neo4jEnterpriseCluster
   name: appdb
   topology:
     primaries: 1
@@ -131,7 +161,25 @@ spec:
 EOF
 ```
 
+**For standalone deployments:**
+
+```bash
+# Create a database on your standalone instance
+kubectl apply -f - <<EOF
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jDatabase
+metadata:
+  name: my-standalone-database
+spec:
+  clusterRef: standalone  # Reference to your Neo4jEnterpriseStandalone
+  name: devdb
+  wait: true
+  ifNotExists: true
+EOF
+```
+
 **More database examples:**
+
 - [Database with custom topology](examples/database/database-with-topology.yaml)
 - [Database for standalone instance](examples/database/database-standalone.yaml)
 - [Database from S3 backup](examples/databases/database-from-s3-seed.yaml)
@@ -142,16 +190,19 @@ EOF
 ### Setting up Backups
 
 **Simple PVC-based backup:**
+
 ```bash
 kubectl apply -f examples/backup-restore/backup-pvc-simple.yaml
 ```
 
 **S3-based backup with scheduling:**
+
 ```bash
 kubectl apply -f examples/backup-restore/backup-s3-basic.yaml
 ```
 
 **Scheduled daily backups:**
+
 ```bash
 kubectl apply -f examples/backup-restore/backup-scheduled-daily.yaml
 ```
@@ -164,6 +215,7 @@ kubectl apply -f examples/backup-restore/restore-from-backup.yaml
 ```
 
 **Advanced backup features:**
+
 - [Point-in-time recovery setup](examples/backup-restore/pitr-setup-complete.yaml)
 - [Incremental backups](examples/backup/backup-incremental.yaml)
 - [Backup with specific types](examples/backup/backup-with-type.yaml)
