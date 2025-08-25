@@ -163,7 +163,7 @@ test-integration-ci: ## Run integration tests in CI (assumes cluster already exi
 	fi
 	@echo "Using KUBECONFIG: $$KUBECONFIG"
 	@echo "📊 Running with enhanced progress output..."
-	@KUBECONFIG="$$KUBECONFIG" ginkgo run --procs=1 --keep-going --v --progress --trace ./test/integration/... --timeout=30m
+	@KUBECONFIG="$$KUBECONFIG" go test ./test/integration/... -v -timeout=30m
 
 # E2E Tests - Removed to simplify test structure
 
