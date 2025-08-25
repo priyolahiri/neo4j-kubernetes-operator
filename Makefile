@@ -92,7 +92,7 @@ all: build
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-##@ Development
+##@ Code Generation
 
 .PHONY: manifests
 manifests: controller-gen ## Generate ClusterRole and CustomResourceDefinition objects.
@@ -145,8 +145,6 @@ test-unit: manifests generate fmt vet envtest ## Run unit tests (no cluster requ
 
 # Webhook tests removed - webhooks migrated to client-side validation
 
-# Webhook tests removed - webhooks migrated to client-side validation
-
 
 # Integration Tests
 .PHONY: test-integration
@@ -170,8 +168,7 @@ test-integration-ci: ## Run integration tests in CI (assumes cluster already exi
 # E2E Tests - Removed to simplify test structure
 
 # Test Suites
-.PHONY: test-no-cluster
-test-no-cluster: test-unit ## Run all tests that don't require a cluster
+# Removed: test-no-cluster target - redundant alias for test-unit
 
 .PHONY: test
 test: test-unit test-integration ## Run all tests
@@ -277,9 +274,7 @@ test-ci-local: ## Emulate CI workflow locally with debug logging (for troublesho
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
-.PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+# Removed: run target - operator must run in-cluster for proper DNS resolution
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -306,15 +301,7 @@ install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=true -f -
 
-.PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
-
-
-.PHONY: undeploy
-undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+# Removed: deploy/undeploy targets - use explicit deploy-prod or deploy-dev instead
 
 .PHONY: deploy-dev
 deploy-dev: manifests kustomize ## Deploy controller with development configuration to the K8s cluster.
@@ -462,17 +449,9 @@ catalog-build: opm ## Build a catalog image.
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
 
-# Build catalog image which contains a list of bundle images for testing, then push the image.
-.PHONY: catalog-build-test
-catalog-build-test: opm ## Build a catalog image for testing.
-	$(OPM) index add --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+# Removed: catalog-build-test and catalog-push-test targets - duplicates of catalog-build and catalog-push
 
-# Push the catalog image for testing.
-.PHONY: catalog-push-test
-catalog-push-test: ## Push a catalog image for testing.
-	$(MAKE) docker-push IMG=$(CATALOG_IMG)
-
-##@ Development
+##@ Development Environment
 
 .PHONY: demo
 demo: demo-setup ## Run interactive demo of the operator capabilities
@@ -603,9 +582,7 @@ dev-cluster-delete: ## Delete the Kind development cluster
 dev-cluster-reset: dev-cluster-delete dev-cluster ## Reset development cluster (delete and recreate)
 	@echo "Development cluster reset complete!"
 
-.PHONY: dev-run
-dev-run: ## Run the operator locally for development
-	@hack/dev-run.sh
+# Removed: dev-run target - operator must run in-cluster for proper DNS resolution
 
 .PHONY: dev-cleanup
 dev-cleanup: ## Clean up development environment completely

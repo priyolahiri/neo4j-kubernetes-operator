@@ -126,9 +126,11 @@ This creates a Kind cluster with:
 ### 4. Local Development
 
 ```bash
-# Run operator locally (outside cluster)
-make dev-run
+# Deploy operator in development cluster (REQUIRED)
+make deploy-dev
 ```
+
+**⚠️ CRITICAL:** The operator must run in-cluster to avoid DNS resolution issues and ensure proper Neo4j cluster formation.
 
 **Benefits of local development**:
 - **Rapid Iteration**: Immediate code changes without rebuilds
@@ -138,8 +140,10 @@ make dev-run
 
 **Optional arguments**:
 ```bash
-# Run with debug logging
-make dev-run ARGS="--zap-log-level=debug"
+# Deploy with debug logging enabled
+make deploy-dev
+kubectl patch -n neo4j-operator-dev deployment/neo4j-operator-controller-manager \
+  -p '{"spec":{"template":{"spec":{"containers":[{"name":"manager","args":["--mode=dev","--zap-log-level=debug"]}]}}}}'
 ```
 
 ## Development Workflow
@@ -149,7 +153,7 @@ make dev-run ARGS="--zap-log-level=debug"
 1. **Start with clean environment**:
    ```bash
    make dev-cluster        # Create fresh cluster
-   make dev-run           # Start operator locally
+   make deploy-dev         # Deploy operator in cluster
    ```
 
 2. **Test your changes**:
@@ -157,7 +161,8 @@ make dev-run ARGS="--zap-log-level=debug"
    # Deploy test resources
    kubectl apply -f examples/clusters/minimal-cluster.yaml
 
-   # Monitor operator logs (from dev-run terminal)
+   # Monitor operator logs
+   kubectl logs -f -n neo4j-operator-dev deployment/neo4j-operator-controller-manager
    # Check cluster status
    kubectl get neo4jenterprisecluster
    kubectl describe neo4jenterprisecluster minimal-cluster
@@ -165,7 +170,7 @@ make dev-run ARGS="--zap-log-level=debug"
 
 3. **Iterate quickly**:
    - Make code changes
-   - Operator automatically restarts (when running via `make dev-run`)
+   - Rebuild and redeploy: `make docker-build deploy-dev`
    - Test changes immediately
 
 ### Development Environment Management
@@ -458,7 +463,7 @@ kubectl logs -l app.kubernetes.io/name=neo4j-operator | grep -i "reconcile"
 
 ### Development Performance Tips
 
-1. **Use dev-run for fast iteration**: Avoid container rebuilds
+1. **Use in-cluster development**: Required for proper DNS resolution
 2. **Limit cluster size**: Use minimal examples during development
 3. **Clean up regularly**: Use `make dev-cleanup` to avoid resource buildup
 4. **Monitor memory usage**: Watch for memory leaks during long development sessions

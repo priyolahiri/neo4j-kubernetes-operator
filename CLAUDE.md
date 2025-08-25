@@ -281,7 +281,9 @@ git commit -m "feat: cluster changes [run-integration]"
 ```bash
 kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager -f
 kubectl describe neo4jenterprisecluster <name>
-make dev-run ARGS="--zap-log-level=debug"
+# Enable debug logging in deployed operator
+kubectl patch -n neo4j-operator-dev deployment/neo4j-operator-controller-manager \
+  -p '{"spec":{"template":{"spec":{"containers":[{"name":"manager","args":["--mode=dev","--zap-log-level=debug"]}]}}}}'
 ```
 
 ## Key Features

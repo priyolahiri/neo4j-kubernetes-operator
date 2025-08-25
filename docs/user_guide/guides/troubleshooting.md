@@ -94,7 +94,7 @@ Integration tests fail because operator is not running.
 **Solution**: Deploy operator before running tests:
 ```bash
 kubectl config use-context kind-neo4j-operator-test
-make deploy IMG=neo4j-operator:dev
+make operator-setup  # Deploy operator to cluster
 make test-integration
 ```
 

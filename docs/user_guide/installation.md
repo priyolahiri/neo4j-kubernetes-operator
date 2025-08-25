@@ -18,8 +18,8 @@ LATEST_TAG=$(git describe --tags --abbrev=0)
 git checkout $LATEST_TAG
 
 # Install CRDs and operator
-make install  # Install CRDs
-make deploy   # Deploy operator
+make install     # Install CRDs
+make deploy-prod # Deploy operator (production mode)
 ```
 
 This installs:
@@ -40,11 +40,8 @@ cd neo4j-kubernetes-operator
 # Create development cluster
 make dev-cluster
 
-# Deploy operator to development cluster
+# Deploy operator to development cluster (REQUIRED - in-cluster only)
 make operator-setup
-
-# Or run operator locally (outside cluster)
-make dev-run
 ```
 
 ## Advanced Installation Methods
@@ -127,17 +124,17 @@ After cloning the repository, you have access to these make targets:
 | Target | Description |
 |--------|-------------|
 | `make install` | Install CRDs into your cluster |
-| `make deploy` | Deploy operator with default configuration |
+| `make deploy-prod` | Deploy operator with production configuration |
 | `make deploy-dev` | Deploy with development configuration |
 | `make deploy-prod` | Deploy with production configuration |
-| `make undeploy` | Remove operator deployment |
+| `make undeploy-prod/undeploy-dev` | Remove operator deployment |
 | `make uninstall` | Remove CRDs (also removes all Neo4j instances) |
 
 ### Development & Testing
 | Target | Description |
 |--------|-------------|
 | `make dev-cluster` | Create Kind development cluster |
-| `make dev-run` | Run operator locally (outside cluster) |
+| `make operator-setup` | Deploy operator in-cluster (required for proper DNS) |
 | `make operator-setup` | Deploy operator to existing cluster |
 | `make test-unit` | Run unit tests |
 | `make test-integration` | Run integration tests |

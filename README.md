@@ -37,8 +37,8 @@ Since this is a private repository, installation requires cloning from source:
    # Install CRDs into your cluster
    make install
 
-   # Deploy the operator to your cluster
-   make deploy
+   # Deploy the operator to your cluster (use explicit mode)
+   make deploy-prod  # or deploy-dev
    ```
 
    **Alternative installation methods**:
@@ -122,8 +122,8 @@ For development work:
 make dev-cluster
 make operator-setup  # Deploy operator to cluster (recommended)
 
-# Note: 'make dev-run' (running operator outside cluster) is not recommended
-# as it causes DNS resolution issues and cluster formation problems
+# Note: Operator must always run in-cluster for proper DNS resolution
+# Local execution has been removed to prevent cluster formation issues
 ```
 
 For additional deployment options, see the Installation section above.
@@ -372,7 +372,7 @@ make operator-setup
 **Development & Testing**:
 
 - `make dev-cluster` - Create development Kind cluster
-- `make dev-run` - Run operator locally (outside cluster)
+- `make operator-setup` - Deploy operator in-cluster (recommended)
 - `make test-unit` - Run unit tests
 - `make test-integration` - Run integration tests
 - `make test-e2e` - Run end-to-end tests
@@ -381,10 +381,10 @@ make operator-setup
 **Operator Installation**:
 
 - `make install` - Install CRDs
-- `make deploy` - Deploy operator
+- `make deploy-prod` - Deploy with production config
 - `make deploy-dev` - Deploy with dev config
 - `make deploy-prod` - Deploy with production config
-- `make undeploy` - Remove operator
+- `make undeploy-prod/undeploy-dev` - Remove operator deployment
 - `make uninstall` - Remove CRDs
 
 **Code Quality**:

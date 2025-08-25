@@ -256,8 +256,10 @@ ginkgo run --focus "Split-Brain Detection" ./test/integration/
 Enable debug logging for detailed analysis:
 
 ```bash
-# Run operator in debug mode locally
-make dev-run ARGS="--zap-log-level=debug"
+# Deploy operator with debug logging in development cluster
+make operator-setup
+kubectl patch -n neo4j-operator-dev deployment/neo4j-operator-controller-manager \
+  -p '{"spec":{"template":{"spec":{"containers":[{"name":"manager","args":["--mode=dev","--zap-log-level=debug"]}]}}}}'
 
 # Or patch deployment for debug logging
 kubectl patch deployment neo4j-operator-controller-manager -n neo4j-operator-system -p '{"spec":{"template":{"spec":{"containers":[{"name":"manager","args":["--zap-log-level=debug"]}]}}}}'

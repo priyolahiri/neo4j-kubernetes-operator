@@ -55,7 +55,7 @@ jobs:
         make install
 
         echo "Deploying operator..."
-        make deploy IMG=neo4j-operator:integration-test
+        make deploy-prod IMG=neo4j-operator:integration-test
 
         echo "Waiting for operator to be ready..."
         kubectl wait --for=condition=Available deployment/neo4j-operator-controller-manager \

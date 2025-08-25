@@ -24,9 +24,30 @@ LATEST_TAG=$(git describe --tags --abbrev=0)
 git checkout $LATEST_TAG
 
 # Install CRDs and operator
-make install  # Install CRDs
-make deploy   # Deploy operator
+make install     # Install CRDs
+make deploy-prod # Deploy operator (production mode)
 ```
+
+## Operator Modes
+
+The Neo4j Operator supports two operational modes:
+
+- **Production Mode** (default): Optimized for stability, security, and monitoring in production environments
+- **Development Mode**: Optimized for rapid development, debugging, and local testing
+
+For detailed information about modes, configuration options, and caching strategies, see the [Operator Modes Guide](operator-modes.md).
+
+### Quick Mode Selection
+
+```bash
+# Production deployment (default)
+make deploy-prod
+
+# Development deployment
+make deploy-dev
+```
+
+**⚠️ Important:** The operator must always run in-cluster, even for development. This ensures proper DNS resolution and cluster connectivity required for Neo4j cluster formation.
 
 ## Choosing Your Deployment Type
 

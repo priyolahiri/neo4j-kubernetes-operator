@@ -7,6 +7,7 @@ Welcome to the documentation for the Neo4j Enterprise Operator for Kubernetes.
 The [User Guide](user_guide) is for users of the Neo4j Enterprise Operator. It contains all the information you need to deploy, manage, and operate Neo4j clusters on Kubernetes.
 
 *   **[Getting Started](user_guide/getting_started.md)**: A quickstart guide to get you up and running in minutes.
+*   **[Operator Modes](user_guide/operator-modes.md)**: Complete guide to production and development modes, caching strategies, and performance tuning.
 *   **[Installation](../README.md#quick-start)**: Installation instructions via git clone and make commands.
 *   **[Configuration](user_guide/configuration.md)**: Comprehensive configuration options.
 *   **[External Access](user_guide/external_access.md)**: Expose Neo4j outside Kubernetes using LoadBalancer, NodePort, or Ingress.
@@ -28,6 +29,12 @@ The [Developer Guide](developer_guide) is for contributors and developers who wa
 *   **[Development](developer_guide/development.md)**: How to set up your development environment and get started with contributing.
 *   **[Architecture](developer_guide/architecture.md)**: An overview of the operator's architecture.
 *   **[Testing](developer_guide/testing.md)**: How to run the test suite.
+
+## 📋 Quick Reference
+
+Need something fast? Check out our quick reference materials:
+
+*   **[Operator Modes Cheat Sheet](quick-reference/operator-modes-cheat-sheet.md)**: Essential commands, flags, and troubleshooting for production and development modes
 
 ## 📄 API Reference
 

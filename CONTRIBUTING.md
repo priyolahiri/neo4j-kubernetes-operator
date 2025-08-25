@@ -118,7 +118,7 @@ cd neo4j-kubernetes-operator
 
    ```bash
    make dev-cluster
-   make dev-run
+   make operator-setup  # Deploy operator in development cluster
    ```
 
 ## Development Workflow
@@ -167,7 +167,7 @@ cd neo4j-kubernetes-operator
 4. **Test your changes locally**:
 
    ```bash
-   make dev-run
+   make operator-setup  # Deploy operator to test your changes
    ```
 
 ### Testing Your Changes
@@ -305,7 +305,7 @@ Install the Go extension and use the provided `.vscode/settings.json` for optima
 
 ### Debugging
 
-Use `make dev-run` to run the operator locally for development and debugging.
+Use `make operator-setup` to deploy the operator in your development cluster for testing and debugging.
 
 ## Project Structure
 

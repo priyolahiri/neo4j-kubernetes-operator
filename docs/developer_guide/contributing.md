@@ -35,8 +35,8 @@ make manifests generate
 # Create development Kind cluster (includes cert-manager for TLS features)
 make dev-cluster
 
-# Start the operator locally for development
-make dev-run
+# Deploy the operator to development cluster (REQUIRED - in-cluster only)
+make operator-setup
 ```
 
 **Benefits of this setup**:
@@ -377,8 +377,11 @@ When adding new Custom Resource Definitions:
 
 #### Local Debugging
 ```bash
-# Run operator with debug logging
-make dev-run ARGS="--zap-log-level=debug"
+# Deploy operator with debug logging to development cluster
+make operator-setup
+# Check operator logs with debug verbosity
+kubectl patch -n neo4j-operator-dev deployment/neo4j-operator-controller-manager \
+  -p '{"spec":{"template":{"spec":{"containers":[{"name":"manager","args":["--mode=dev","--zap-log-level=debug"]}]}}}}'
 
 # Check operator logs
 kubectl logs -l app.kubernetes.io/name=neo4j-operator -f
