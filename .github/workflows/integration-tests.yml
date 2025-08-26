@@ -78,7 +78,7 @@ jobs:
         fi
 
         # Pull common fallback versions used in tests
-        for VERSION in "5.26-enterprise" "5.26.0-enterprise" "latest"; do
+        for VERSION in "5.26-enterprise" "latest"; do
           if [ "$VERSION" != "$NEO4J_VERSION" ]; then
             echo "Pulling fallback version: neo4j:${VERSION}"
             if docker pull neo4j:${VERSION}; then
