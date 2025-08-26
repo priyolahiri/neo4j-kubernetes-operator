@@ -34,7 +34,7 @@ import (
 
 var _ = Describe("Neo4jPlugin Integration Tests", func() {
 	const (
-		timeout  = time.Second * 900 // 15 minutes for CI cluster provisioning + plugin installation
+		timeout  = time.Second * 300 // 5 minutes should be sufficient for standalone + plugin
 		interval = time.Second * 5
 	)
 
