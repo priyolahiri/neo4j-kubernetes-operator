@@ -126,8 +126,22 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 		})
 
 		AfterEach(func() {
-			// Cleanup is handled by the test suite's cleanup of test namespaces
-			// The createTestNamespace function already tracks namespaces for cleanup
+			// Critical: Clean up cluster resources immediately to prevent CI resource exhaustion
+			if testCluster != nil {
+				By("Cleaning up test cluster in database seed URI test AfterEach")
+				// Remove finalizers first
+				if len(testCluster.GetFinalizers()) > 0 {
+					testCluster.SetFinalizers([]string{})
+					_ = k8sClient.Update(context.Background(), testCluster)
+				}
+				// Delete the cluster resource
+				_ = k8sClient.Delete(context.Background(), testCluster)
+				testCluster = nil
+			}
+			// Clean up any remaining resources in namespace
+			if testNamespace != "" {
+				cleanupCustomResourcesInNamespace(testNamespace)
+			}
 		})
 
 		It("should create database with valid S3 seed URI successfully", func() {
