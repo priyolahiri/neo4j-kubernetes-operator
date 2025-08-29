@@ -106,7 +106,7 @@ var _ = Describe("Centralized Backup Configuration", func() {
 					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
-						Tag:  "5.26-enterprise",
+						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
 					Topology: neo4jv1alpha1.TopologyConfiguration{
 						Servers: 2,
@@ -240,7 +240,7 @@ var _ = Describe("Centralized Backup Configuration", func() {
 					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
-						Tag:  "2025.01.0-enterprise",
+						Tag:  getNeo4jImageTag(), // Use the environment-specified version
 					},
 					Topology: neo4jv1alpha1.TopologyConfiguration{
 						Servers: 2,

@@ -454,7 +454,7 @@ func createBasicCluster(name, namespace string) *neo4jv1alpha1.Neo4jEnterpriseCl
 			Edition: "enterprise",
 			Image: neo4jv1alpha1.ImageSpec{
 				Repo: "neo4j",
-				Tag:  "5.26-enterprise",
+				Tag:  getNeo4jImageTag(), // Use environment-specified version
 			},
 			Topology: neo4jv1alpha1.TopologyConfiguration{
 				Servers: 2, // Minimum cluster topology
@@ -478,7 +478,7 @@ func createBasicStandalone(name, namespace string) *neo4jv1alpha1.Neo4jEnterpris
 			Edition: "enterprise",
 			Image: neo4jv1alpha1.ImageSpec{
 				Repo: "neo4j",
-				Tag:  "5.26-enterprise",
+				Tag:  getNeo4jImageTag(), // Use environment-specified version
 			},
 			Storage: neo4jv1alpha1.StorageSpec{
 				ClassName: "standard",

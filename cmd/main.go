@@ -427,6 +427,7 @@ func setupDevelopmentControllers(mgr ctrl.Manager, controllers []string) error {
 			return &controller.Neo4jPluginReconciler{
 				Client:       mgr.GetClient(),
 				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-plugin-controller"),
 				RequeueAfter: controller.GetTestRequeueAfter(),
 			}, "Neo4jPlugin"
 		},

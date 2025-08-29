@@ -102,7 +102,7 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
-						Tag:  "5.26-enterprise",
+						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
 					Auth: &neo4jv1alpha1.AuthSpec{
 						Provider:    "native",

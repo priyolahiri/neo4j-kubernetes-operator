@@ -545,6 +545,11 @@ demo-interactive: ## Run interactive demo without environment setup (assumes clu
 demo-setup: ## Setup complete demo environment (cluster + operator)
 	@SKIP_SETUP_CONFIRMATION=true ./scripts/demo-setup.sh
 
+.PHONY: operator-setup
+operator-setup: ## Deploy operator to available Kind cluster
+	@echo "🔧 Setting up Neo4j operator..."
+	@./scripts/setup-operator.sh
+
 .PHONY: dev-cluster
 dev-cluster: ## Create a Kind cluster for development
 	@echo "Creating development cluster..."

@@ -71,7 +71,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 					},
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
-						Tag:  "5.26-enterprise",
+						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
 					Storage: neo4jv1alpha1.StorageSpec{
 						Size:      "500Mi", // Minimal for integration tests

@@ -78,7 +78,7 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
-						Tag:  "5.26-enterprise",
+						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
 					Topology: neo4jv1alpha1.TopologyConfiguration{
 						Servers: 3,
@@ -155,7 +155,7 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
-						Tag:  "5.26-enterprise",
+						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
 					Topology: neo4jv1alpha1.TopologyConfiguration{
 						Servers: 3,

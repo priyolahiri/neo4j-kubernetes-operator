@@ -112,7 +112,7 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		logger.Error(err, "Failed to get target deployment")
 		r.updatePluginStatus(ctx, plugin, "Failed", fmt.Sprintf("Target deployment not found: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, nil // Don't return error - status is set correctly
 	}
 
 	// Check if deployment is actually functional, not just status reporting
@@ -129,7 +129,7 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.installPluginViaEnvironment(ctx, plugin, deployment); err != nil {
 		logger.Error(err, "Failed to install plugin")
 		r.updatePluginStatus(ctx, plugin, "Failed", fmt.Sprintf("Plugin installation failed: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, nil // Don't return error - status is set correctly
 	}
 
 	// Check if deployment is ready after restart (non-blocking)
@@ -143,7 +143,7 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.configurePlugin(ctx, plugin, deployment); err != nil {
 		logger.Error(err, "Failed to configure plugin")
 		r.updatePluginStatus(ctx, plugin, "Failed", fmt.Sprintf("Plugin configuration failed: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, nil // Don't return error - status is set correctly
 	}
 
 	// Update status to "Ready"
