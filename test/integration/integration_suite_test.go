@@ -523,8 +523,8 @@ func getCIAppropriateResourceRequirements() *corev1.ResourceRequirements {
 				corev1.ResourceMemory: resource.MustParse("200Mi"), // Reduced memory request for CI
 			},
 			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("100m"),  // Reduced CPU limit for CI
-				corev1.ResourceMemory: resource.MustParse("1.0Gi"), // Neo4j Enterprise minimum memory requirement
+				corev1.ResourceCPU:    resource.MustParse("100m"), // Reduced CPU limit for CI
+				corev1.ResourceMemory: resource.MustParse("1Gi"),  // Neo4j Enterprise minimum memory requirement (use 1Gi not 1.0Gi for consistency)
 			},
 		}
 	} else {

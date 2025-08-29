@@ -37,10 +37,9 @@ jobs:
         export FORCE_COLOR=1
 
         echo "Running unit tests with enhanced progress output..."
+        # Use pipefail to ensure the exit code from make test-unit is propagated
+        set -o pipefail
         make test-unit | tee unit-test-output.log
-
-        # Also save the exit code
-        echo "Unit tests completed with exit code: $?"
       env:
         GOMAXPROCS: 2
 
@@ -141,6 +140,8 @@ jobs:
         export FORCE_COLOR=1
 
         echo "Running integration tests with enhanced logging..."
+        # Use pipefail to ensure the exit code from make test-integration is propagated
+        set -o pipefail
         make test-integration | tee integration-test-output.log
       env:
         KUBECONFIG: /home/runner/.kube/config
