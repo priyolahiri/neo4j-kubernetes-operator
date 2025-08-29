@@ -48,7 +48,7 @@ var _ = Describe("Topology Placement Simple", func() {
 			}
 		}
 		// Clean up any remaining resources in namespace
-		cleanupCustomResourcesInNamespace(testNamespace)
+		cleanupCustomResourcesInNamespace(namespaceName)
 	})
 
 	Context("Topology Spread Constraints", func() {
