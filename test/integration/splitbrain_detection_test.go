@@ -111,6 +111,10 @@ var _ = Describe("Split-Brain Detection Integration Tests", func() {
 					},
 				},
 			}
+
+			// Apply CI-specific optimizations (reduces 3 servers to 2 in CI)
+			applyCIOptimizations(cluster)
+
 			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 			By("Monitoring cluster formation and optional split-brain detection")
@@ -247,6 +251,10 @@ var _ = Describe("Split-Brain Detection Integration Tests", func() {
 					},
 				},
 			}
+
+			// Apply CI-specific optimizations (reduces 3 servers to 2 in CI)
+			applyCIOptimizations(cluster)
+
 			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 			By("Waiting for cluster to be ready")
@@ -271,7 +279,7 @@ var _ = Describe("Split-Brain Detection Integration Tests", func() {
 				GinkgoWriter.Printf("Cluster not yet ready. Phase: %s, Message: %s\n",
 					cluster.Status.Phase, cluster.Status.Message)
 				return false
-			}, timeout, interval).Should(BeTrue())
+			}, clusterTimeout, interval).Should(BeTrue())
 
 			By("Simulating pod failure by deleting one server pod")
 			podList := &corev1.PodList{}

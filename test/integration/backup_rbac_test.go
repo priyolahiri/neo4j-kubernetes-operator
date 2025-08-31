@@ -94,6 +94,10 @@ var _ = Describe("Backup RBAC Automatic Creation", func() {
 					},
 				},
 			}
+
+			// Apply CI-specific optimizations
+			applyCIOptimizations(cluster)
+
 			Expect(k8sClient.Create(ctx, cluster)).Should(Succeed())
 
 			By("Waiting for cluster to be ready")
@@ -119,7 +123,7 @@ var _ = Describe("Backup RBAC Automatic Creation", func() {
 				GinkgoWriter.Printf("Cluster not yet ready. Phase: %s, Message: %s\n",
 					clusterStatus.Status.Phase, clusterStatus.Status.Message)
 				return false
-			}, timeout, interval).Should(BeTrue())
+			}, clusterTimeout, interval).Should(BeTrue())
 		})
 
 		It("should automatically create RBAC resources when backup is created", func() {

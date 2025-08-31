@@ -100,11 +100,25 @@ var _ = Describe("Simple Backup Test", func() {
 						ClassName: "standard",
 						Size:      "1Gi",
 					},
+					Resources: getCIAppropriateResourceRequirements(), // Add CI resource constraints
 					Auth: &neo4jv1alpha1.AuthSpec{
 						AdminSecret: adminSecret.Name,
 					},
+					TLS: &neo4jv1alpha1.TLSSpec{
+						Mode: "disabled",
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "NEO4J_ACCEPT_LICENSE_AGREEMENT",
+							Value: "eval",
+						},
+					},
 				},
 			}
+
+			// Apply CI-specific optimizations
+			applyCIOptimizations(cluster)
+
 			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 			By("Waiting for cluster to be ready")
@@ -129,7 +143,7 @@ var _ = Describe("Simple Backup Test", func() {
 				GinkgoWriter.Printf("Cluster not yet ready. Phase: %s, Message: %s\n",
 					cluster.Status.Phase, cluster.Status.Message)
 				return false
-			}, timeout, interval).Should(BeTrue())
+			}, clusterTimeout, interval).Should(BeTrue())
 		})
 
 		AfterEach(func() {

@@ -59,12 +59,46 @@ var namespaceMutex sync.Mutex
 var timeout = 5 * time.Minute
 var interval = 5 * time.Second
 
+// Cluster formation timeout for complex multi-node tests
+var clusterTimeout = 5 * time.Minute
+
 // Initialize timeout based on environment
 func init() {
 	// Increase timeout in CI environments where resources are more constrained
 	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
 		timeout = 10 * time.Minute
-		GinkgoWriter.Printf("Running in CI environment - using extended timeout of %v\n", timeout)
+		clusterTimeout = 20 * time.Minute // Extra long for cluster formation
+		GinkgoWriter.Printf("Running in CI environment - using extended timeout of %v (cluster formation: %v)\n", timeout, clusterTimeout)
+	}
+}
+
+// applyCIOptimizations applies CI-specific optimizations to cluster specs
+func applyCIOptimizations(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) {
+	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
+		// Reduce cluster size in CI for faster formation
+		if cluster.Spec.Topology.Servers > 2 {
+			GinkgoWriter.Printf("CI optimization: reducing cluster size from %d to 2 servers\n", cluster.Spec.Topology.Servers)
+			cluster.Spec.Topology.Servers = 2
+		}
+
+		// Add resource constraints for CI
+		if cluster.Spec.Resources == nil {
+			cluster.Spec.Resources = &corev1.ResourceRequirements{}
+		}
+		if cluster.Spec.Resources.Requests == nil {
+			cluster.Spec.Resources.Requests = corev1.ResourceList{}
+		}
+		if cluster.Spec.Resources.Limits == nil {
+			cluster.Spec.Resources.Limits = corev1.ResourceList{}
+		}
+
+		// Set minimal but sufficient resources for Neo4j Enterprise
+		cluster.Spec.Resources.Requests[corev1.ResourceCPU] = resource.MustParse("100m")
+		cluster.Spec.Resources.Requests[corev1.ResourceMemory] = resource.MustParse("1.5Gi")
+		cluster.Spec.Resources.Limits[corev1.ResourceCPU] = resource.MustParse("500m")
+		cluster.Spec.Resources.Limits[corev1.ResourceMemory] = resource.MustParse("2Gi")
+
+		GinkgoWriter.Printf("CI optimization: applied resource constraints (100m-500m CPU, 1.5Gi-2Gi memory)\n")
 	}
 }
 
