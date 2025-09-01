@@ -23,10 +23,6 @@ import (
 
 // Neo4jEnterpriseStandaloneSpec defines the desired state of Neo4jEnterpriseStandalone
 type Neo4jEnterpriseStandaloneSpec struct {
-	// +kubebuilder:validation:Enum=enterprise
-	// +kubebuilder:default=enterprise
-	Edition string `json:"edition,omitempty"`
-
 	// +kubebuilder:validation:Required
 	Image ImageSpec `json:"image"`
 

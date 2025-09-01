@@ -86,10 +86,7 @@ func (v *ClusterValidator) ValidateUpdate(ctx context.Context, oldCluster, newCl
 
 // ApplyDefaults applies default values to the cluster
 func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) {
-	// Default edition to enterprise
-	if cluster.Spec.Edition == "" {
-		cluster.Spec.Edition = "enterprise"
-	}
+	// Edition field removed - operator only supports enterprise edition
 
 	// Default image pull policy
 	if cluster.Spec.Image.PullPolicy == "" {
@@ -144,12 +141,7 @@ func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1
 	// Preallocate slice with estimated capacity to reduce allocations
 	allErrs = make(field.ErrorList, 0, 10)
 
-	// Validate edition (fail fast - most critical validation)
-	if editionErrs := v.editionValidator.Validate(cluster); len(editionErrs) > 0 {
-		allErrs = append(allErrs, editionErrs...)
-		// For edition errors, fail fast to avoid unnecessary processing
-		return allErrs
-	}
+	// Edition validation removed - operator only supports enterprise edition
 
 	// Validate topology (second most critical)
 	allErrs = append(allErrs, v.topologyValidator.Validate(cluster)...)

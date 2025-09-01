@@ -31,17 +31,7 @@ func NewEditionValidator() *EditionValidator {
 }
 
 // Validate validates the edition configuration
+// Edition field has been removed - operator only supports enterprise edition
 func (v *EditionValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
-	var allErrs field.ErrorList
-	specPath := field.NewPath("spec")
-
-	if cluster.Spec.Edition != "enterprise" {
-		allErrs = append(allErrs, field.Invalid(
-			specPath.Child("edition"),
-			cluster.Spec.Edition,
-			"only 'enterprise' edition is supported",
-		))
-	}
-
-	return allErrs
+	return field.ErrorList{}
 }

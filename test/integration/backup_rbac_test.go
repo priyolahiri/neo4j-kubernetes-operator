@@ -68,7 +68,6 @@ var _ = Describe("Backup RBAC Automatic Creation", func() {
 					Namespace: testNamespace,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(),

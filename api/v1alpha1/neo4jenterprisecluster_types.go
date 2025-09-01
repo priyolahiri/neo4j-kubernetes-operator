@@ -26,10 +26,6 @@ import (
 
 // Neo4jEnterpriseClusterSpec defines the desired state of Neo4jEnterpriseCluster
 type Neo4jEnterpriseClusterSpec struct {
-	// +kubebuilder:validation:Enum=enterprise
-	// +kubebuilder:default=enterprise
-	Edition string `json:"edition,omitempty"`
-
 	// +kubebuilder:validation:Required
 	Image ImageSpec `json:"image"`
 

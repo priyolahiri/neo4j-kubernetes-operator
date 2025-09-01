@@ -89,7 +89,6 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 					Namespace: namespace.Name,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        getNeo4jImageTag(), // Use environment-specified version
@@ -299,7 +298,6 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 					Namespace: namespace.Name,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        getNeo4jImageTag(), // Use environment-specified version
@@ -391,7 +389,6 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 					Namespace: namespace.Name,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        getNeo4jImageTag(), // Use environment-specified version
@@ -490,7 +487,6 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 					Namespace: namespace.Name,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        getNeo4jImageTag(), // Use environment-specified version
@@ -581,7 +577,6 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 					Namespace: namespace.Name,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        getNeo4jImageTag(), // Use environment-specified version

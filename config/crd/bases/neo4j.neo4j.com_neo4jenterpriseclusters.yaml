@@ -1274,11 +1274,6 @@ spec:
                   type: string
                 description: Custom configuration for Neo4j
                 type: object
-              edition:
-                default: enterprise
-                enum:
-                - enterprise
-                type: string
               env:
                 description: Environment variables for Neo4j pods
                 items:

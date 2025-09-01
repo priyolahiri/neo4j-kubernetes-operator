@@ -103,7 +103,6 @@ var _ = Describe("Centralized Backup Configuration", func() {
 					Namespace: testNamespace,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
@@ -237,7 +236,6 @@ var _ = Describe("Centralized Backup Configuration", func() {
 					Namespace: testNamespace,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use the environment-specified version

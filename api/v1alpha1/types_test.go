@@ -34,24 +34,6 @@ func TestNeo4jEnterpriseClusterSpec_BasicValidation(t *testing.T) {
 			},
 			valid: true,
 		},
-		{
-			name: "invalid edition",
-			spec: Neo4jEnterpriseClusterSpec{
-				Edition: "community",
-				Image: ImageSpec{
-					Repo: "neo4j",
-					Tag:  "5.26.0-enterprise",
-				},
-				Topology: TopologyConfiguration{
-					Servers: 2,
-				},
-				Storage: StorageSpec{
-					Size:      "10Gi",
-					ClassName: "standard",
-				},
-			},
-			valid: false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -66,14 +48,8 @@ func TestNeo4jEnterpriseClusterSpec_BasicValidation(t *testing.T) {
 
 			// Test basic field validation
 			if tt.valid {
-				assert.Equal(t, "enterprise", cluster.Spec.Edition)
 				assert.NotEmpty(t, cluster.Spec.Image.Repo)
 				assert.NotEmpty(t, cluster.Spec.Image.Tag)
-			} else {
-				// For invalid specs, check that the problematic field is set incorrectly
-				if cluster.Spec.Edition != "enterprise" {
-					assert.NotEqual(t, "enterprise", cluster.Spec.Edition)
-				}
 			}
 		})
 	}
@@ -313,7 +289,6 @@ func TestDeepCopyMethods(t *testing.T) {
 	require.NotNil(t, copied)
 	assert.Equal(t, original.Name, copied.Name)
 	assert.Equal(t, original.Namespace, copied.Namespace)
-	assert.Equal(t, original.Spec.Edition, copied.Spec.Edition)
 	assert.Equal(t, original.Spec.Image.Repo, copied.Spec.Image.Repo)
 	assert.Equal(t, original.Spec.Image.Tag, copied.Spec.Image.Tag)
 

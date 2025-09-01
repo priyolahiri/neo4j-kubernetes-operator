@@ -74,7 +74,6 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 					Namespace: namespace,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
@@ -165,7 +164,6 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 					Namespace: namespace,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version

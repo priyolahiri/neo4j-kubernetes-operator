@@ -99,7 +99,6 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 					Namespace: namespace.Name,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
@@ -213,7 +212,6 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 					Namespace: namespace.Name,
 				},
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Edition: "enterprise",
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "2025.02.0-enterprise", // Test 2025.x version

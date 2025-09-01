@@ -494,7 +494,6 @@ func createBasicCluster(name, namespace string) *neo4jv1alpha1.Neo4jEnterpriseCl
 			Namespace: namespace,
 		},
 		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Edition: "enterprise",
 			Image: neo4jv1alpha1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  getNeo4jImageTag(), // Use environment-specified version
@@ -518,7 +517,6 @@ func createBasicStandalone(name, namespace string) *neo4jv1alpha1.Neo4jEnterpris
 			Namespace: namespace,
 		},
 		Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-			Edition: "enterprise",
 			Image: neo4jv1alpha1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  getNeo4jImageTag(), // Use environment-specified version

@@ -49,10 +49,7 @@ func NewStandaloneValidator() *StandaloneValidator {
 func (v *StandaloneValidator) ValidateCreate(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
 	var allErrs field.ErrorList
 
-	// Validate edition (must be enterprise)
-	if errs := v.validateEdition(standalone); len(errs) > 0 {
-		allErrs = append(allErrs, errs...)
-	}
+	// Edition validation removed - operator only supports enterprise edition
 
 	// Validate image
 	if errs := v.validateImage(standalone); len(errs) > 0 {
@@ -105,19 +102,9 @@ func (v *StandaloneValidator) ValidateUpdate(oldStandalone, newStandalone *neo4j
 }
 
 // validateEdition validates the edition field
+// Edition field has been removed - operator only supports enterprise edition
 func (v *StandaloneValidator) validateEdition(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
-	var allErrs field.ErrorList
-	editionPath := field.NewPath("spec", "edition")
-
-	if standalone.Spec.Edition != "enterprise" {
-		allErrs = append(allErrs, field.Invalid(
-			editionPath,
-			standalone.Spec.Edition,
-			"only 'enterprise' edition is supported for standalone deployments",
-		))
-	}
-
-	return allErrs
+	return field.ErrorList{}
 }
 
 // validateImage validates the image configuration
