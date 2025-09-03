@@ -1415,6 +1415,25 @@ spec:
                   type: string
                 description: Node selector for pod scheduling
                 type: object
+              propertySharding:
+                description: |-
+                  Property Sharding configuration for Neo4j 2025.06+
+                  Enables support for creating sharded databases that separate
+                  graph topology from node/relationship properties
+                properties:
+                  config:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Property sharding specific Neo4j configuration
+                      Applied when propertySharding.enabled is true
+                      These settings are required for Neo4j property sharding functionality
+                    type: object
+                  enabled:
+                    default: false
+                    description: Enable property sharding support on this cluster
+                    type: boolean
+                type: object
               queryMonitoring:
                 description: Query performance monitoring
                 properties:
@@ -2193,6 +2212,20 @@ spec:
               phase:
                 description: Phase represents the current phase of the cluster
                 type: string
+              propertyShardingReady:
+                description: |-
+                  PropertyShardingReady indicates whether property sharding is configured and ready
+
+                  This field tracks the operational status of property sharding capability
+                  on this cluster. When true, the cluster is ready to host sharded databases
+                  that separate graph topology from node/relationship properties.
+
+                  Prerequisites for PropertyShardingReady=true:
+                  - Neo4j version >= 2025.06.0
+                  - Cluster phase = Ready
+                  - Property sharding configuration applied successfully
+                  - All required Neo4j configuration settings validated
+                type: boolean
               replicas:
                 description: Replicas shows the current number of replicas
                 properties:
