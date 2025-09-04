@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -1564,18 +1565,29 @@ func (r *Neo4jEnterpriseClusterReconciler) validatePropertyShardingConfiguration
 // validatePropertyShardingVersion checks if Neo4j version supports property sharding
 func validatePropertyShardingVersion(imageTag string) error {
 	// Property sharding requires Neo4j 2025.06+
-	// This is a simplified version check - in production should use semver parsing
 	if imageTag == "" {
 		return fmt.Errorf("image tag is required for property sharding")
 	}
 
-	// For now, accept tags starting with "2025." (calver) or >= "2025.06" (semver)
-	// More sophisticated version parsing can be added later
-	if !contains([]string{"2025.", "2026.", "2027."}, imageTag) {
-		return fmt.Errorf("property sharding requires Neo4j 2025.06+, got %s", imageTag)
+	// Handle calver format (2025.MM.DD)
+	if strings.HasPrefix(imageTag, "2025.") {
+		// Extract month portion
+		parts := strings.Split(imageTag, ".")
+		if len(parts) >= 2 {
+			month := parts[1]
+			if month < "06" {
+				return fmt.Errorf("property sharding requires Neo4j 2025.06+, got %s", imageTag)
+			}
+		}
+		return nil
 	}
 
-	return nil
+	// Handle future years (2026+)
+	if contains([]string{"2026.", "2027.", "2028.", "2029."}, imageTag) {
+		return nil
+	}
+
+	return fmt.Errorf("property sharding requires Neo4j 2025.06+, got %s", imageTag)
 }
 
 // contains checks if string starts with any of the prefixes

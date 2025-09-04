@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -450,8 +449,3 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 		})
 	})
 })
-
-func TestNeo4jEnterpriseClusterController(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Neo4jEnterpriseCluster Controller Suite")
-}
