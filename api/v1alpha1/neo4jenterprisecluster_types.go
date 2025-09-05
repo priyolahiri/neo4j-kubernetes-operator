@@ -73,6 +73,11 @@ type Neo4jEnterpriseClusterSpec struct {
 
 	// Query performance monitoring
 	QueryMonitoring *QueryMonitoringSpec `json:"queryMonitoring,omitempty"`
+
+	// Property Sharding configuration for Neo4j 2025.06+
+	// Enables support for creating sharded databases that separate
+	// graph topology from node/relationship properties
+	PropertySharding *PropertyShardingSpec `json:"propertySharding,omitempty"`
 }
 
 // ImageSpec defines the Neo4j image configuration
@@ -493,6 +498,19 @@ type Neo4jEnterpriseClusterStatus struct {
 
 	// UpgradeStatus provides detailed upgrade progress information
 	UpgradeStatus *UpgradeStatus `json:"upgradeStatus,omitempty"`
+
+	// PropertyShardingReady indicates whether property sharding is configured and ready
+	//
+	// This field tracks the operational status of property sharding capability
+	// on this cluster. When true, the cluster is ready to host sharded databases
+	// that separate graph topology from node/relationship properties.
+	//
+	// Prerequisites for PropertyShardingReady=true:
+	// - Neo4j version >= 2025.06.0
+	// - Cluster phase = Ready
+	// - Property sharding configuration applied successfully
+	// - All required Neo4j configuration settings validated
+	PropertyShardingReady *bool `json:"propertyShardingReady,omitempty"`
 }
 
 // UpgradeStatus tracks the progress of an ongoing upgrade
@@ -827,6 +845,19 @@ type QueryMetricsExportConfig struct {
 
 	// Export interval
 	Interval string `json:"interval,omitempty"`
+}
+
+// PropertyShardingSpec defines property sharding configuration
+// for Neo4j 2025.06+ to enable separated storage of graph topology and properties
+type PropertyShardingSpec struct {
+	// Enable property sharding support on this cluster
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Property sharding specific Neo4j configuration
+	// Applied when propertySharding.enabled is true
+	// These settings are required for Neo4j property sharding functionality
+	Config map[string]string `json:"config,omitempty"`
 }
 
 func init() {

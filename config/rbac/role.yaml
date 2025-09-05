@@ -134,6 +134,7 @@ rules:
   - neo4jenterprisestandalones
   - neo4jplugins
   - neo4jrestores
+  - neo4jshardeddatabases
   verbs:
   - create
   - delete
@@ -151,6 +152,7 @@ rules:
   - neo4jenterprisestandalones/finalizers
   - neo4jplugins/finalizers
   - neo4jrestores/finalizers
+  - neo4jshardeddatabases/finalizers
   verbs:
   - update
 - apiGroups:
@@ -162,6 +164,7 @@ rules:
   - neo4jenterprisestandalones/status
   - neo4jplugins/status
   - neo4jrestores/status
+  - neo4jshardeddatabases/status
   verbs:
   - get
   - patch
