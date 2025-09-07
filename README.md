@@ -205,7 +205,7 @@ Property sharding separates your graph data into:
 
 - **Neo4j Version**: 2025.06+ (CalVer format)
 - **Minimum Servers**: 5 servers required (property sharding minimum)
-- **Memory**: 12GB+ heap per server (16GB+ total memory recommended)
+- **Memory**: 4GB+ memory per server (8GB+ recommended for production)
 - **CPU**: 2+ cores per server (cross-shard queries require additional overhead)
 - **Authentication**: Admin secret required
 - **Storage**: Storage class must be specified
