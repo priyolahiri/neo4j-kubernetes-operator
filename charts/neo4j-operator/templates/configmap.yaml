@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "neo4j-operator.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "neo4j-operator.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    # Operator configuration
+    maxConcurrentReconciles: {{ .Values.config.maxConcurrentReconciles }}
+    requeueInterval: {{ .Values.config.requeueInterval }}
+    cacheSyncTimeout: {{ .Values.config.cacheSyncTimeout }}
+    enableWebhooks: {{ .Values.config.enableWebhooks }}
+
+    # Neo4j defaults
+    neo4j:
+      defaultImage: {{ .Values.neo4j.defaultImage }}
+      defaultStorageSize: {{ .Values.neo4j.defaultStorageSize }}
+      defaultStorageClass: {{ .Values.neo4j.defaultStorageClass | quote }}
+      defaultResources:
+        requests:
+          cpu: {{ .Values.neo4j.defaultResources.requests.cpu }}
+          memory: {{ .Values.neo4j.defaultResources.requests.memory }}
+        limits:
+          cpu: {{ .Values.neo4j.defaultResources.limits.cpu }}
+          memory: {{ .Values.neo4j.defaultResources.limits.memory }}
+
+    # Backup defaults
+    backup:
+      defaultSchedule: {{ .Values.backup.defaultSchedule | quote }}
+      defaultRetention: {{ .Values.backup.defaultRetention }}
+      defaultStorageSize: {{ .Values.backup.defaultStorageSize }}

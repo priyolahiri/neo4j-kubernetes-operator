@@ -1,0 +1,82 @@
+🎉 Neo4j Kubernetes Operator has been installed!
+
+Release Name: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Chart Version: {{ .Chart.Version }}
+App Version: {{ .Chart.AppVersion }}
+
+{{- if eq .Values.operatorMode "cluster" }}
+📍 Mode: Cluster-wide (watching all namespaces)
+{{- else if eq .Values.operatorMode "namespace" }}
+📍 Mode: Namespace-scoped (watching namespace: {{ .Release.Namespace }})
+{{- else if eq .Values.operatorMode "namespaces" }}
+📍 Mode: Multi-namespace (watching: {{ join ", " .Values.watchNamespaces }})
+{{- end }}
+
+## Verify Installation
+
+Check the operator deployment:
+  kubectl get deployment -n {{ .Release.Namespace }} {{ include "neo4j-operator.fullname" . }}
+
+Check the operator logs:
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "neo4j-operator.name" . }} -f
+
+Verify CRDs are installed:
+  kubectl get crds | grep neo4j
+
+## Quick Start
+
+1. Create a secret for Neo4j authentication:
+   kubectl create secret generic neo4j-admin-secret \
+     --from-literal=username=neo4j \
+     --from-literal=password=your-secure-password
+
+2. Deploy a Neo4j standalone instance:
+   cat <<EOF | kubectl apply -f -
+   apiVersion: neo4j.neo4j.com/v1alpha1
+   kind: Neo4jEnterpriseStandalone
+   metadata:
+     name: my-neo4j
+   spec:
+     image: neo4j:{{ .Values.neo4j.defaultImage }}
+     auth:
+       adminSecret: neo4j-admin-secret
+   EOF
+
+3. Or deploy a Neo4j cluster:
+   cat <<EOF | kubectl apply -f -
+   apiVersion: neo4j.neo4j.com/v1alpha1
+   kind: Neo4jEnterpriseCluster
+   metadata:
+     name: my-cluster
+   spec:
+     image: neo4j:{{ .Values.neo4j.defaultImage }}
+     topology:
+       servers: 3
+     auth:
+       adminSecret: neo4j-admin-secret
+   EOF
+
+{{- if .Values.metrics.enabled }}
+
+## Metrics
+
+Metrics are exposed at:
+  http://{{ include "neo4j-operator.fullname" . }}-metrics.{{ .Release.Namespace }}:{{ .Values.metrics.service.port }}/metrics
+
+{{- if .Values.metrics.serviceMonitor.enabled }}
+ServiceMonitor has been created for Prometheus Operator integration.
+{{- end }}
+{{- end }}
+
+## Documentation
+
+For more information, visit:
+- GitHub: https://github.com/neo4j-labs/neo4j-kubernetes-operator
+- Neo4j Documentation: https://neo4j.com/docs/
+
+## Support
+
+For issues and support:
+- GitHub Issues: https://github.com/neo4j-labs/neo4j-kubernetes-operator/issues
+- Neo4j Community: https://community.neo4j.com/

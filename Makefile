@@ -311,6 +311,44 @@ docker-build: ## Build docker image with the manager.
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
 
+##@ Helm Chart (Recommended Installation Method)
+
+.PHONY: helm-lint
+helm-lint: ## Lint the Helm chart
+	helm lint charts/neo4j-operator
+
+.PHONY: helm-template
+helm-template: ## Generate Kubernetes manifests from Helm chart
+	helm template neo4j-operator charts/neo4j-operator \
+		--namespace neo4j-operator-system
+
+.PHONY: helm-install
+helm-install: ## Install the operator using Helm chart
+	helm install neo4j-operator charts/neo4j-operator \
+		--namespace neo4j-operator-system \
+		--create-namespace
+
+.PHONY: helm-upgrade
+helm-upgrade: ## Upgrade the operator using Helm chart
+	helm upgrade neo4j-operator charts/neo4j-operator \
+		--namespace neo4j-operator-system
+
+.PHONY: helm-uninstall
+helm-uninstall: ## Uninstall the operator using Helm chart
+	helm uninstall neo4j-operator --namespace neo4j-operator-system
+
+.PHONY: helm-package
+helm-package: ## Package the Helm chart
+	helm package charts/neo4j-operator
+
+.PHONY: helm-docs
+helm-docs: ## Generate Helm chart documentation
+	@if command -v helm-docs > /dev/null; then \
+		helm-docs -c charts/neo4j-operator; \
+	else \
+		echo "helm-docs not installed. Install with: go install github.com/norwoodj/helm-docs/cmd/helm-docs@latest"; \
+	fi
+
 ##@ Deployment
 
 ifndef ignore-not-found

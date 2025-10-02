@@ -52,8 +52,17 @@ Installation requires cloning from source:
    git checkout $LATEST_TAG
    ```
 
-2. **Install the operator** using make targets:
+2. **Install the operator** using Helm (recommended) or make targets:
 
+   **Helm Installation (Recommended)**:
+   ```bash
+   # Install using Helm chart (automatically handles RBAC)
+   helm install neo4j-operator ./charts/neo4j-operator \
+     --namespace neo4j-operator-system \
+     --create-namespace
+   ```
+
+   **Make Targets**:
    ```bash
    # Install CRDs into your cluster
    make install
@@ -70,7 +79,10 @@ Installation requires cloning from source:
    make deploy-namespace-scoped  # Deploy with namespace-only permissions (limited functionality)
    ```
 
-   **Note**: Registry deployments automatically check and help set up RBAC permissions. If you encounter permission errors, the operator will guide you through the setup process.
+   **Note**:
+   - **Helm chart** automatically creates all necessary RBAC permissions
+   - **Registry deployments** automatically check and help set up RBAC permissions
+   - If you encounter permission errors, the operator will guide you through the setup process
 
 3. **Create admin credentials** (Required for authentication):
 

@@ -1,0 +1,217 @@
+# Default values for neo4j-operator.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Number of operator replicas
+replicaCount: 1
+
+image:
+  repository: neo4j-operator
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Operator deployment mode
+# cluster: Operator watches all namespaces (requires ClusterRole)
+# namespace: Operator watches only its own namespace (uses Role)
+# namespaces: Operator watches specific namespaces (requires ClusterRole)
+operatorMode: cluster
+
+# Namespaces to watch (only used when operatorMode is "namespaces")
+watchNamespaces: []
+
+# Development mode settings
+developmentMode: false
+logLevel: info  # debug, info, warn, error
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+rbac:
+  # Specifies whether RBAC resources should be created
+  create: true
+  # Create ClusterRole/ClusterRoleBinding (for cluster/namespaces mode)
+  # or Role/RoleBinding (for namespace mode)
+  clusterScoped: true
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Liveness and readiness probe configuration
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Metrics configuration
+metrics:
+  enabled: true
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+  # ServiceMonitor for Prometheus Operator
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    honorLabels: false
+    relabelings: []
+    metricRelabelings: []
+
+# Leader election configuration
+leaderElection:
+  enabled: true
+  namespace: ""  # Uses Release.Namespace if not specified
+
+# CRD installation
+installCRDs: true
+
+# Webhook configuration (future support)
+webhook:
+  enabled: false
+  port: 9443
+  certManager:
+    enabled: false
+    issuerRef:
+      name: ""
+      kind: ""
+
+# Network Policy
+networkPolicy:
+  enabled: false
+  ingress: []
+  egress: []
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# Priority Class
+priorityClassName: ""
+
+# Additional environment variables
+env: []
+# - name: VARIABLE_NAME
+#   value: "value"
+
+# Additional environment variables from ConfigMaps or Secrets
+envFrom: []
+# - configMapRef:
+#     name: config-map-name
+# - secretRef:
+#     name: secret-name
+
+# Additional volumes
+volumes: []
+# - name: extra-volume
+#   configMap:
+#     name: extra-volume-config
+
+# Additional volume mounts
+volumeMounts: []
+# - name: extra-volume
+#   mountPath: /etc/extra
+
+# Operator configuration
+config:
+  # Maximum number of concurrent reconciles
+  maxConcurrentReconciles: 1
+  # Requeue interval for resources
+  requeueInterval: 30s
+  # Cache sync timeout
+  cacheSyncTimeout: 2m
+  # Enable webhook (requires cert-manager)
+  enableWebhooks: false
+
+# Neo4j-specific configuration
+neo4j:
+  # Default Neo4j enterprise image to use if not specified in CR
+  defaultImage: neo4j:5.26-enterprise
+  # Default resource requirements for Neo4j pods if not specified in CR
+  defaultResources:
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  # Default storage size for Neo4j persistent volumes
+  defaultStorageSize: "10Gi"
+  # Default storage class (leave empty to use cluster default)
+  defaultStorageClass: ""
+
+# Backup configuration defaults
+backup:
+  # Default backup schedule (cron format)
+  defaultSchedule: "0 2 * * *"
+  # Default retention policy
+  defaultRetention: 7
+  # Default backup storage
+  defaultStorageSize: "50Gi"
+
+# TLS configuration
+tls:
+  # Enable TLS for operator metrics endpoint
+  enabled: false
+  # Secret containing TLS certificates
+  secretName: ""
+
+# Extra manifests to deploy
+extraManifests: []
+# - apiVersion: v1
+#   kind: ConfigMap
+#   metadata:
+#     name: extra-configmap
+#   data:
+#     key: value
