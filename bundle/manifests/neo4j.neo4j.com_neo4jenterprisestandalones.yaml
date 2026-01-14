@@ -1,28 +1,28 @@
----
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
-  name: neo4jenterpriseclusters.neo4j.neo4j.com
+  creationTimestamp: null
+  name: neo4jenterprisestandalones.neo4j.neo4j.com
 spec:
   group: neo4j.neo4j.com
   names:
-    kind: Neo4jEnterpriseCluster
-    listKind: Neo4jEnterpriseClusterList
-    plural: neo4jenterpriseclusters
-    singular: neo4jenterprisecluster
+    kind: Neo4jEnterpriseStandalone
+    listKind: Neo4jEnterpriseStandaloneList
+    plural: neo4jenterprisestandalones
+    singular: neo4jenterprisestandalone
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.topology.servers
-      name: Servers
-      type: integer
-    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+    - jsonPath: .status.ready
       name: Ready
-      type: string
+      type: boolean
     - jsonPath: .status.phase
       name: Phase
+      type: string
+    - jsonPath: .status.version
+      name: Version
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -30,7 +30,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Neo4jEnterpriseCluster is the Schema for the neo4jenterpriseclusters
+        description: Neo4jEnterpriseStandalone is the Schema for the neo4jenterprisestandalones
           API
         properties:
           apiVersion:
@@ -51,7 +51,8 @@ spec:
           metadata:
             type: object
           spec:
-            description: Neo4jEnterpriseClusterSpec defines the desired state of Neo4jEnterpriseCluster
+            description: Neo4jEnterpriseStandaloneSpec defines the desired state of
+              Neo4jEnterpriseStandalone
             properties:
               affinity:
                 description: Affinity rules for pod scheduling
@@ -1272,10 +1273,10 @@ spec:
               config:
                 additionalProperties:
                   type: string
-                description: Custom configuration for Neo4j
+                description: Custom configuration for Neo4j (single mode only)
                 type: object
               env:
-                description: Environment variables for Neo4j pods
+                description: Environment variables for Neo4j pod
                 items:
                   description: EnvVar represents an environment variable present in
                     a Container.
@@ -1415,24 +1416,27 @@ spec:
                   type: string
                 description: Node selector for pod scheduling
                 type: object
-              propertySharding:
-                description: |-
-                  Property Sharding configuration for Neo4j 2025.06+
-                  Enables support for creating sharded databases that separate
-                  graph topology from node/relationship properties
+              persistence:
+                description: Persistence configuration for standalone deployment
                 properties:
-                  config:
-                    additionalProperties:
+                  accessModes:
+                    default:
+                    - ReadWriteOnce
+                    description: Access modes for the PVC
+                    items:
                       type: string
-                    description: |-
-                      Property sharding specific Neo4j configuration
-                      Applied when propertySharding.enabled is true
-                      These settings are required for Neo4j property sharding functionality
-                    type: object
+                    type: array
                   enabled:
-                    default: false
-                    description: Enable property sharding support on this cluster
+                    default: true
+                    description: Enable persistent storage
                     type: boolean
+                  retentionPolicy:
+                    default: Delete
+                    description: PVC retention policy when standalone is deleted
+                    enum:
+                    - Delete
+                    - Retain
+                    type: string
                 type: object
               queryMonitoring:
                 description: Query performance monitoring
@@ -1479,7 +1483,7 @@ spec:
                     type: string
                 type: object
               resources:
-                description: Resource requirements for Neo4j pods
+                description: Resource requirements for Neo4j pod
                 properties:
                   claims:
                     description: |-
@@ -1538,7 +1542,7 @@ spec:
                     type: object
                 type: object
               restoreFrom:
-                description: RestoreFrom specifies backup to restore from during cluster
+                description: RestoreFrom specifies backup to restore from during standalone
                   creation
                 properties:
                   backupRef:
@@ -1613,6 +1617,34 @@ spec:
                     required:
                     - type
                     type: object
+                type: object
+              route:
+                description: Optional OpenShift Route configuration for external access
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: Additional route annotations
+                    type: object
+                  caCertificate:
+                    type: string
+                  certificate:
+                    description: For reencrypt/edge termination
+                    type: string
+                  destinationCACertificate:
+                    description: For reencrypt to backend
+                    type: string
+                  enabled:
+                    type: boolean
+                  host:
+                    type: string
+                  insecureEdgeTerminationPolicy:
+                    type: string
+                  key:
+                    type: string
+                  termination:
+                    description: Edge, Passthrough, Reencrypt
+                    type: string
                 type: object
               securityContext:
                 description: SecurityContext allows overriding pod/container security
@@ -2302,127 +2334,6 @@ spec:
                       type: string
                   type: object
                 type: array
-              topology:
-                description: TopologyConfiguration defines cluster topology requirements
-                properties:
-                  availabilityZones:
-                    description: AvailabilityZones specifies the expected availability
-                      zones for distribution
-                    items:
-                      type: string
-                    type: array
-                  enforceDistribution:
-                    description: EnforceDistribution ensures servers are distributed
-                      across topology domains
-                    type: boolean
-                  placement:
-                    description: Placement defines how instances should be distributed
-                      across the cluster
-                    properties:
-                      antiAffinity:
-                        description: AntiAffinity configures pod anti-affinity rules
-                        properties:
-                          enabled:
-                            description: Enabled indicates whether anti-affinity should
-                              be applied
-                            type: boolean
-                          topologyKey:
-                            description: TopologyKey specifies the anti-affinity topology
-                              domain
-                            type: string
-                          type:
-                            description: Type specifies whether anti-affinity is required
-                              or preferred
-                            type: string
-                        type: object
-                      nodeSelector:
-                        additionalProperties:
-                          type: string
-                        description: NodeSelector specifies node selection constraints
-                        type: object
-                      requiredDuringScheduling:
-                        description: RequiredDuringScheduling indicates hard placement
-                          requirements
-                        type: boolean
-                      topologySpread:
-                        description: TopologySpread configures topology spread constraints
-                        properties:
-                          enabled:
-                            description: Enabled indicates whether topology spread
-                              constraints should be applied
-                            type: boolean
-                          maxSkew:
-                            description: MaxSkew describes the degree to which instances
-                              may be unevenly distributed
-                            format: int32
-                            type: integer
-                          minDomains:
-                            description: MinDomains indicates a minimum number of
-                              eligible domains
-                            format: int32
-                            type: integer
-                          topologyKey:
-                            description: TopologyKey specifies the topology domain
-                              (e.g., "topology.kubernetes.io/zone")
-                            type: string
-                          whenUnsatisfiable:
-                            description: WhenUnsatisfiable indicates how to deal with
-                              a Pod if it doesn't satisfy the spread constraint
-                            type: string
-                        type: object
-                    type: object
-                  serverModeConstraint:
-                    default: NONE
-                    description: |-
-                      ServerModeConstraint optionally constrains all servers to a specific mode
-                      Valid values: "PRIMARY", "SECONDARY", "NONE" (default: "NONE")
-                    enum:
-                    - NONE
-                    - PRIMARY
-                    - SECONDARY
-                    type: string
-                  serverRoles:
-                    description: |-
-                      ServerRoles allows specifying role constraints for individual servers
-                      Takes precedence over ServerModeConstraint for specified servers
-                    items:
-                      description: ServerRoleHint specifies a preferred role constraint
-                        for a specific server
-                      properties:
-                        modeConstraint:
-                          description: |-
-                            ModeConstraint specifies the preferred role constraint for this server
-                            Valid values: "PRIMARY", "SECONDARY", "NONE"
-                            - PRIMARY: Server should only host databases in primary mode
-                            - SECONDARY: Server should only host databases in secondary mode
-                            - NONE: Server can host databases in any mode (default)
-                          enum:
-                          - NONE
-                          - PRIMARY
-                          - SECONDARY
-                          type: string
-                        serverIndex:
-                          description: ServerIndex specifies which server this role
-                            hint applies to (0-based)
-                          format: int32
-                          minimum: 0
-                          type: integer
-                      required:
-                      - modeConstraint
-                      - serverIndex
-                      type: object
-                    type: array
-                  servers:
-                    description: |-
-                      Servers specifies the number of Neo4j servers in the cluster
-                      Servers self-organize and can host databases in primary or secondary mode
-                    format: int32
-                    maximum: 20
-                    minimum: 2
-                    type: integer
-                required:
-                - servers
-                type: object
               ui:
                 description: UISpec defines Web UI configuration
                 properties:
@@ -2505,63 +2416,17 @@ spec:
                         type: object
                     type: object
                 type: object
-              upgradeStrategy:
-                description: UpgradeStrategy specifies how to handle rolling upgrades
-                properties:
-                  autoPauseOnFailure:
-                    default: true
-                    description: AutoPauseOnFailure pauses upgrade on failure for
-                      manual intervention
-                    type: boolean
-                  healthCheckTimeout:
-                    default: 5m
-                    description: HealthCheckTimeout specifies timeout for health checks
-                    type: string
-                  maxUnavailableDuringUpgrade:
-                    default: 1
-                    description: MaxUnavailableDuringUpgrade specifies max unavailable
-                      replicas during upgrade
-                    format: int32
-                    type: integer
-                  postUpgradeHealthCheck:
-                    default: true
-                    description: PostUpgradeHealthCheck enables cluster health validation
-                      after upgrade
-                    type: boolean
-                  preUpgradeHealthCheck:
-                    default: true
-                    description: PreUpgradeHealthCheck enables cluster health validation
-                      before upgrade
-                    type: boolean
-                  stabilizationTimeout:
-                    default: 3m
-                    description: StabilizationTimeout specifies how long to wait for
-                      cluster stabilization
-                    type: string
-                  strategy:
-                    default: RollingUpgrade
-                    description: Strategy specifies the upgrade strategy
-                    enum:
-                    - RollingUpgrade
-                    - Recreate
-                    type: string
-                  upgradeTimeout:
-                    default: 30m
-                    description: UpgradeTimeout specifies timeout for the entire upgrade
-                      process
-                    type: string
-                type: object
             required:
             - image
             - storage
-            - topology
             type: object
           status:
-            description: Neo4jEnterpriseClusterStatus defines the observed state of
-              Neo4jEnterpriseCluster
+            description: Neo4jEnterpriseStandaloneStatus defines the observed state
+              of Neo4jEnterpriseStandalone
             properties:
               conditions:
-                description: Conditions represent the current state of the cluster
+                description: Conditions represent the current state of the standalone
+                  deployment
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -2617,6 +2482,37 @@ spec:
                   - type
                   type: object
                 type: array
+              databaseStatus:
+                description: DatabaseStatus provides information about the Neo4j database
+                properties:
+                  connectionCount:
+                    description: ConnectionCount shows the number of active connections
+                    format: int32
+                    type: integer
+                  databaseMode:
+                    description: DatabaseMode shows the current database mode (should
+                      be "SINGLE")
+                    type: string
+                  databaseName:
+                    description: DatabaseName shows the active database name
+                    type: string
+                  healthStatus:
+                    description: HealthStatus shows the current health status of the
+                      database
+                    type: string
+                  lastBackupTime:
+                    description: LastBackupTime shows when the last backup was completed
+                    format: date-time
+                    type: string
+                  lastHealthCheck:
+                    description: LastHealthCheck shows when the last health check
+                      was performed
+                    format: date-time
+                    type: string
+                  storageSize:
+                    description: StorageSize shows the current storage usage
+                    type: string
+                type: object
               endpoints:
                 description: Endpoints provides connection information
                 properties:
@@ -2659,8 +2555,9 @@ spec:
                         type: string
                     type: object
                 type: object
-              lastUpgradeTime:
-                description: LastUpgradeTime shows when the last upgrade was performed
+              lastStartTime:
+                description: LastStartTime shows when the standalone deployment was
+                  last started
                 format: date-time
                 type: string
               message:
@@ -2668,112 +2565,85 @@ spec:
                   state
                 type: string
               phase:
-                description: Phase represents the current phase of the cluster
+                description: Phase represents the current phase of the standalone
+                  deployment
                 type: string
-              propertyShardingReady:
-                description: |-
-                  PropertyShardingReady indicates whether property sharding is configured and ready
-
-                  This field tracks the operational status of property sharding capability
-                  on this cluster. When true, the cluster is ready to host sharded databases
-                  that separate graph topology from node/relationship properties.
-
-                  Prerequisites for PropertyShardingReady=true:
-                  - Neo4j version >= 2025.06.0
-                  - Cluster phase = Ready
-                  - Property sharding configuration applied successfully
-                  - All required Neo4j configuration settings validated
-                type: boolean
-              replicas:
-                description: Replicas shows the current number of replicas
+              podStatus:
+                description: PodStatus provides information about the Neo4j pod
                 properties:
-                  ready:
-                    format: int32
-                    type: integer
-                  servers:
-                    format: int32
-                    type: integer
-                type: object
-              upgradeStatus:
-                description: UpgradeStatus provides detailed upgrade progress information
-                properties:
-                  completionTime:
-                    description: CompletionTime shows when the upgrade completed
-                    format: date-time
-                    type: string
-                  currentStep:
-                    description: CurrentStep describes the current upgrade step
-                    type: string
-                  lastError:
-                    description: LastError contains the last error encountered during
-                      upgrade
-                    type: string
-                  message:
-                    description: Message provides additional details about the upgrade
+                  conditions:
+                    description: Conditions represent the current conditions of the
+                      pod
+                    items:
+                      description: PodCondition contains details for the current condition
+                        of this pod.
+                      properties:
+                        lastProbeTime:
+                          description: Last time we probed the condition.
+                          format: date-time
+                          type: string
+                        lastTransitionTime:
+                          description: Last time the condition transitioned from one
+                            status to another.
+                          format: date-time
+                          type: string
+                        message:
+                          description: Human-readable message indicating details about
+                            last transition.
+                          type: string
+                        observedGeneration:
+                          description: |-
+                            If set, this represents the .metadata.generation that the pod condition was set based upon.
+                            This is an alpha field. Enable PodObservedGenerationTracking to be able to use this field.
+                          format: int64
+                          type: integer
+                        reason:
+                          description: Unique, one-word, CamelCase reason for the
+                            condition's last transition.
+                          type: string
+                        status:
+                          description: |-
+                            Status is the status of the condition.
+                            Can be True, False, Unknown.
+                            More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#pod-conditions
+                          type: string
+                        type:
+                          description: |-
+                            Type is the type of the condition.
+                            More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#pod-conditions
+                          type: string
+                      required:
+                      - status
+                      - type
+                      type: object
+                    type: array
+                  nodeName:
+                    description: NodeName is the name of the Kubernetes node hosting
+                      the pod
                     type: string
                   phase:
-                    description: Phase represents the current phase of the upgrade
-                    enum:
-                    - Pending
-                    - InProgress
-                    - Paused
-                    - Completed
-                    - Failed
+                    description: Phase is the current phase of the pod
                     type: string
-                  previousVersion:
-                    description: PreviousVersion shows the version before upgrade
+                  podIP:
+                    description: PodIP is the IP address of the Neo4j pod
                     type: string
-                  progress:
-                    description: Progress shows upgrade progress statistics
-                    properties:
-                      inProgress:
-                        description: Number of servers currently being upgraded
-                        format: int32
-                        type: integer
-                      pending:
-                        description: Number of servers pending upgrade
-                        format: int32
-                        type: integer
-                      servers:
-                        description: Server upgrade details
-                        properties:
-                          currentLeader:
-                            description: Current leader server
-                            type: string
-                          inProgress:
-                            description: Number of servers currently being upgraded
-                            format: int32
-                            type: integer
-                          pending:
-                            description: Number of servers pending upgrade
-                            format: int32
-                            type: integer
-                          total:
-                            description: Total number of servers
-                            format: int32
-                            type: integer
-                          upgraded:
-                            description: Number of servers successfully upgraded
-                            format: int32
-                            type: integer
-                        type: object
-                      total:
-                        description: Total number of servers to upgrade
-                        format: int32
-                        type: integer
-                      upgraded:
-                        description: Number of servers successfully upgraded
-                        format: int32
-                        type: integer
-                    type: object
+                  podName:
+                    description: PodName is the name of the Neo4j pod
+                    type: string
+                  restartCount:
+                    description: RestartCount is the number of times the pod has been
+                      restarted
+                    format: int32
+                    type: integer
                   startTime:
-                    description: StartTime shows when the upgrade started
+                    description: StartTime is when the pod was started
                     format: date-time
                     type: string
-                  targetVersion:
-                    description: TargetVersion shows the version being upgraded to
-                    type: string
                 type: object
+              ready:
+                description: Ready indicates if the standalone deployment is ready
+                  for connections
+                type: boolean
               version:
                 description: Version shows the current Neo4j version
                 type: string
@@ -2783,3 +2653,9 @@ spec:
     storage: true
     subresources:
       status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions: null

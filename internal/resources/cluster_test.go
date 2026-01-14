@@ -8,6 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
@@ -817,5 +818,80 @@ func TestBuildServerModeConstraintConfig(t *testing.T) {
 				assert.NotContains(t, startupScript, notExpected, "Content should not be in startup script")
 			}
 		})
+	}
+}
+
+func TestBuildPodSpecForEnterprise_DefaultSecurityContext(t *testing.T) {
+	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1alpha1.ImageSpec{
+				Repo: "neo4j/neo4j",
+				Tag:  "5.26-enterprise",
+			},
+			Topology: neo4jv1alpha1.TopologyConfiguration{
+				Servers: 3,
+			},
+			Storage: neo4jv1alpha1.StorageSpec{
+				ClassName: "fast-ssd",
+				Size:      "10Gi",
+			},
+		},
+	}
+
+	podSpec := resources.BuildPodSpecForEnterprise(cluster, "server", "neo4j-admin-secret")
+
+	require.NotNil(t, podSpec.SecurityContext)
+	require.NotNil(t, podSpec.SecurityContext.RunAsUser)
+	assert.Equal(t, int64(7474), *podSpec.SecurityContext.RunAsUser)
+	require.NotNil(t, podSpec.SecurityContext.FSGroup)
+	assert.Equal(t, int64(7474), *podSpec.SecurityContext.FSGroup)
+
+	require.NotEmpty(t, podSpec.Containers)
+	for _, container := range podSpec.Containers {
+		require.NotNil(t, container.SecurityContext)
+		require.NotNil(t, container.SecurityContext.RunAsUser)
+		assert.Equal(t, int64(7474), *container.SecurityContext.RunAsUser)
+	}
+}
+
+func TestBuildPodSpecForEnterprise_CustomSecurityContext(t *testing.T) {
+	customPodSC := &corev1.PodSecurityContext{
+		RunAsNonRoot: ptr.To(true),
+	}
+	customContainerSC := &corev1.SecurityContext{
+		RunAsNonRoot:             ptr.To(true),
+		ReadOnlyRootFilesystem:   ptr.To(true),
+		AllowPrivilegeEscalation: ptr.To(false),
+	}
+
+	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1alpha1.ImageSpec{
+				Repo: "neo4j/neo4j",
+				Tag:  "5.26-enterprise",
+			},
+			Topology: neo4jv1alpha1.TopologyConfiguration{
+				Servers: 3,
+			},
+			Storage: neo4jv1alpha1.StorageSpec{
+				ClassName: "fast-ssd",
+				Size:      "10Gi",
+			},
+			QueryMonitoring: &neo4jv1alpha1.QueryMonitoringSpec{
+				Enabled: true,
+			},
+			SecurityContext: &neo4jv1alpha1.SecurityContextSpec{
+				PodSecurityContext:       customPodSC,
+				ContainerSecurityContext: customContainerSC,
+			},
+		},
+	}
+
+	podSpec := resources.BuildPodSpecForEnterprise(cluster, "server", "neo4j-admin-secret")
+
+	assert.Equal(t, customPodSC, podSpec.SecurityContext)
+	require.NotEmpty(t, podSpec.Containers)
+	for _, container := range podSpec.Containers {
+		assert.Equal(t, customContainerSC, container.SecurityContext)
 	}
 }

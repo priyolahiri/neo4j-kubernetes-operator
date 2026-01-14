@@ -1,0 +1,411 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: "[\n  {\n    \"apiVersion\": \"neo4j.neo4j.com/v1alpha1\",\n   \
+      \ \"kind\": \"Neo4jEnterpriseCluster\",\n    \"metadata\": {\n      \"name\"\
+      : \"example-cluster\"\n    },\n    \"spec\": {\n      \"image\": {\n       \
+      \ \"repo\": \"neo4j\",\n        \"tag\": \"5.26.0-enterprise\"\n      },\n \
+      \     \"topology\": {\n        \"servers\": 3\n      },\n      \"storage\":\
+      \ {\n        \"className\": \"standard\",\n        \"size\": \"10Gi\"\n    \
+      \  },\n      \"auth\": {\n        \"adminSecret\": \"neo4j-admin-secret\"\n\
+      \      }\n    }\n  },\n  {\n    \"apiVersion\": \"neo4j.neo4j.com/v1alpha1\"\
+      ,\n    \"kind\": \"Neo4jEnterpriseStandalone\",\n    \"metadata\": {\n     \
+      \ \"name\": \"example-standalone\"\n    },\n    \"spec\": {\n      \"image\"\
+      : {\n        \"repo\": \"neo4j\",\n        \"tag\": \"5.26.0-enterprise\"\n\
+      \      },\n      \"storage\": {\n        \"className\": \"standard\",\n    \
+      \    \"size\": \"10Gi\"\n      },\n      \"auth\": {\n        \"adminSecret\"\
+      : \"neo4j-admin-secret\"\n      }\n    }\n  },\n  {\n    \"apiVersion\": \"\
+      neo4j.neo4j.com/v1alpha1\",\n    \"kind\": \"Neo4jDatabase\",\n    \"metadata\"\
+      : {\n      \"name\": \"example-database\"\n    },\n    \"spec\": {\n      \"\
+      name\": \"exampledb\",\n      \"clusterRef\": \"example-cluster\"\n    }\n \
+      \ },\n  {\n    \"apiVersion\": \"neo4j.neo4j.com/v1alpha1\",\n    \"kind\":\
+      \ \"Neo4jBackup\",\n    \"metadata\": {\n      \"name\": \"example-backup\"\n\
+      \    },\n    \"spec\": {\n      \"source\": {\n        \"clusterRef\": \"example-cluster\"\
+      \n      },\n      \"storage\": {\n        \"className\": \"standard\",\n   \
+      \     \"size\": \"10Gi\"\n      }\n    }\n  },\n  {\n    \"apiVersion\": \"\
+      neo4j.neo4j.com/v1alpha1\",\n    \"kind\": \"Neo4jRestore\",\n    \"metadata\"\
+      : {\n      \"name\": \"example-restore\"\n    },\n    \"spec\": {\n      \"\
+      target\": {\n        \"clusterRef\": \"example-cluster\"\n      },\n      \"\
+      source\": {\n        \"backupRef\": \"example-backup\"\n      }\n    }\n  },\n\
+      \  {\n    \"apiVersion\": \"neo4j.neo4j.com/v1alpha1\",\n    \"kind\": \"Neo4jPlugin\"\
+      ,\n    \"metadata\": {\n      \"name\": \"example-plugin\"\n    },\n    \"spec\"\
+      : {\n      \"clusterRef\": \"example-cluster\",\n      \"name\": \"apoc\",\n\
+      \      \"source\": \"neo4j-apoc:5.26.0\"\n    }\n  },\n  {\n    \"apiVersion\"\
+      : \"neo4j.neo4j.com/v1alpha1\",\n    \"kind\": \"Neo4jShardedDatabase\",\n \
+      \   \"metadata\": {\n      \"name\": \"example-sharded\"\n    },\n    \"spec\"\
+      : {\n      \"name\": \"shardeddb\",\n      \"clusterRef\": \"example-cluster\"\
+      ,\n      \"shards\": 3\n    }\n  }\n]"
+    capabilities: Basic Install
+    createdAt: '2026-01-14T12:38:16Z'
+    operators.operatorframework.io/builder: operator-sdk-v1.39.1
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
+  name: neo4j-kubernetes-operator.v0.0.0-ci
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - kind: Neo4jBackup
+      name: neo4jbackups.neo4j.neo4j.com
+      version: v1alpha1
+    - kind: Neo4jDatabase
+      name: neo4jdatabases.neo4j.neo4j.com
+      version: v1alpha1
+    - kind: Neo4jEnterpriseCluster
+      name: neo4jenterpriseclusters.neo4j.neo4j.com
+      version: v1alpha1
+    - kind: Neo4jEnterpriseStandalone
+      name: neo4jenterprisestandalones.neo4j.neo4j.com
+      version: v1alpha1
+    - kind: Neo4jPlugin
+      name: neo4jplugins.neo4j.neo4j.com
+      version: v1alpha1
+    - kind: Neo4jRestore
+      name: neo4jrestores.neo4j.neo4j.com
+      version: v1alpha1
+    - kind: Neo4jShardedDatabase
+      name: neo4jshardeddatabases.neo4j.neo4j.com
+      version: v1alpha1
+  description: Neo4j Enterprise Operator automates Neo4j Enterprise clusters and standalone
+    instances on Kubernetes.
+  displayName: Neo4j Kubernetes Operator
+  minKubeVersion: 1.21.0
+  icon:
+  - base64data: ''
+    mediatype: ''
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - ''
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - coordination.k8s.io
+          resources:
+          - leases
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ''
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        - apiGroups:
+          - ''
+          resources:
+          - configmaps
+          - endpoints
+          - persistentvolumeclaims
+          - secrets
+          - serviceaccounts
+          - services
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ''
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        - apiGroups:
+          - ''
+          resources:
+          - nodes
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - ''
+          resources:
+          - pods
+          verbs:
+          - delete
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - ''
+          resources:
+          - pods/exec
+          verbs:
+          - create
+          - get
+        - apiGroups:
+          - ''
+          resources:
+          - pods/log
+          verbs:
+          - get
+        - apiGroups:
+          - apps
+          resources:
+          - statefulsets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - batch
+          resources:
+          - cronjobs
+          - jobs
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - cert-manager.io
+          resources:
+          - certificates
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - cert-manager.io
+          resources:
+          - clusterissuers
+          - issuers
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - external-secrets.io
+          resources:
+          - clustersecretstores
+          - secretstores
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - external-secrets.io
+          resources:
+          - externalsecrets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - neo4j.neo4j.com
+          resources:
+          - neo4jbackups
+          - neo4jdatabases
+          - neo4jenterpriseclusters
+          - neo4jenterprisestandalones
+          - neo4jplugins
+          - neo4jrestores
+          - neo4jshardeddatabases
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - neo4j.neo4j.com
+          resources:
+          - neo4jbackups/finalizers
+          - neo4jdatabases/finalizers
+          - neo4jenterpriseclusters/finalizers
+          - neo4jenterprisestandalones/finalizers
+          - neo4jplugins/finalizers
+          - neo4jrestores/finalizers
+          - neo4jshardeddatabases/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - neo4j.neo4j.com
+          resources:
+          - neo4jbackups/status
+          - neo4jdatabases/status
+          - neo4jenterpriseclusters/status
+          - neo4jenterprisestandalones/status
+          - neo4jplugins/status
+          - neo4jrestores/status
+          - neo4jshardeddatabases/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - networking.k8s.io
+          resources:
+          - ingresses
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - rbac.authorization.k8s.io
+          resources:
+          - rolebindings
+          - roles
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - authentication.k8s.io
+          resources:
+          - tokenreviews
+          verbs:
+          - create
+        - apiGroups:
+          - authorization.k8s.io
+          resources:
+          - subjectaccessreviews
+          verbs:
+          - create
+        serviceAccountName: neo4j-operator-controller-manager
+      deployments:
+      - label:
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/name: neo4j-operator
+          control-plane: controller-manager
+        name: neo4j-operator-controller-manager
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              control-plane: controller-manager
+          strategy: {}
+          template:
+            metadata:
+              annotations:
+                kubectl.kubernetes.io/default-container: manager
+              labels:
+                control-plane: controller-manager
+            spec:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                    - matchExpressions:
+                      - key: kubernetes.io/arch
+                        operator: In
+                        values:
+                        - amd64
+                        - arm64
+                      - key: kubernetes.io/os
+                        operator: In
+                        values:
+                        - linux
+              containers:
+              - args:
+                - --metrics-bind-address=:8443
+                - --leader-elect
+                - --health-probe-bind-address=:8081
+                - --zap-log-level=debug
+                command:
+                - /manager
+                image: controller:latest
+                imagePullPolicy: IfNotPresent
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                name: manager
+                readinessProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                resources:
+                  limits:
+                    cpu: '1'
+                    memory: 512Mi
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
+              securityContext:
+                runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
+              serviceAccountName: neo4j-operator-controller-manager
+              terminationGracePeriodSeconds: 10
+    strategy: deployment
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - neo4j-kubernetes-operator
+  links:
+  - name: Neo4j Kubernetes Operator
+    url: https://neo4j-kubernetes-operator.domain
+  maintainers:
+  - email: your@email.com
+    name: Maintainer Name
+  maturity: alpha
+  provider:
+    name: Provider Name
+    url: https://your.domain
+  version: 0.0.0-ci

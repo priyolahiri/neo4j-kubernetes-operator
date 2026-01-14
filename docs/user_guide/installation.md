@@ -451,6 +451,21 @@ gh release list --repo priyolahiri/neo4j-kubernetes-operator
 - **cert-manager**: Version 1.5+ (optional, only required for TLS-enabled Neo4j deployments)
 - **Permissions**: Cluster-admin access for CRD and RBAC installation
 
+> **OpenShift note**: Clusters enforcing SCCs with allocated UID/FSGroup ranges should disable the chart’s pod security context so SCC can inject IDs, then bind an appropriate SCC (e.g., `restricted`) to the operator service account:
+> ```
+> helm install neo4j-operator ./charts/neo4j-operator \
+>   --namespace neo4j-operator-system \
+>   --create-namespace \
+>   --set podSecurityContextEnabled=false
+>
+> oc adm policy add-scc-to-user restricted -z neo4j-operator -n neo4j-operator-system
+> ```
+
+### Installing via OLM on OpenShift
+
+- Build/push a bundle and catalog (see `docs/developer_guide/openshift_olm.md`).
+- Apply the sample `CatalogSource` and `Subscription` under `config/samples/olm/` after updating the catalog image and channel to match your bundle.
+
 ### Next Steps
 
 Once installed, see:

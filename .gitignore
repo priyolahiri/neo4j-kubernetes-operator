@@ -73,8 +73,6 @@ docker-compose.override.yml
 .env.development
 
 # Operator SDK generated files
-/bundle/
-/bundle.Dockerfile
 
 # Generated reports and coverage
 # Note: /reports/ is tracked in git for documentation purposes

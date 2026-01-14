@@ -569,6 +569,10 @@ catalog-build: opm ## Build a catalog image.
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
 
+.PHONY: scorecard
+scorecard: ## Run operator-sdk scorecard checks against the generated bundle.
+	operator-sdk scorecard --config config/scorecard/scorecard.yaml bundle
+
 # Removed: catalog-build-test and catalog-push-test targets - duplicates of catalog-build and catalog-push
 
 ##@ Development Environment

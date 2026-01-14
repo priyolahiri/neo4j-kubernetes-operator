@@ -57,6 +57,9 @@ kubectl apply -f examples/clusters/six-server-cluster.yaml
 
 # Two-server cluster (minimum for high availability)
 kubectl apply -f examples/clusters/two-server-cluster.yaml
+
+# Expose via OpenShift Route
+kubectl apply -f examples/clusters/route-cluster.yaml
 ```
 
 ### 3. Access Neo4j
@@ -69,6 +72,9 @@ kubectl port-forward svc/your-cluster-name-client 7474:7474 7687:7687
 
 # Open Neo4j Browser
 open http://localhost:7474
+
+# On OpenShift with Routes enabled
+oc get route -n <namespace>
 ```
 
 ## Automatic Kubernetes Discovery

@@ -50,6 +50,9 @@ type Neo4jEnterpriseClusterSpec struct {
 	// Affinity rules for pod scheduling
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 
+	// SecurityContext allows overriding pod/container security settings (e.g., for OpenShift SCC compatibility)
+	SecurityContext *SecurityContextSpec `json:"securityContext,omitempty"`
+
 	// Custom configuration for Neo4j
 	Config map[string]string `json:"config,omitempty"`
 
@@ -199,6 +202,15 @@ type ExternalSecretRemoteRef struct {
 
 	// Version of the secret
 	Version string `json:"version,omitempty"`
+}
+
+// SecurityContextSpec defines pod/container security overrides for Neo4j workloads
+type SecurityContextSpec struct {
+	// Pod-level security settings to apply to all Neo4j pods
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+
+	// Container-level security settings for Neo4j containers
+	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 }
 
 // IssuerRef references a cert-manager issuer
@@ -369,6 +381,9 @@ type ServiceSpec struct {
 
 	// Ingress configuration
 	Ingress *IngressSpec `json:"ingress,omitempty"`
+
+	// OpenShift Route configuration
+	Route *RouteSpec `json:"route,omitempty"`
 }
 
 // IngressSpec defines ingress configuration
@@ -382,6 +397,29 @@ type IngressSpec struct {
 	Host string `json:"host,omitempty"`
 
 	TLSSecretName string `json:"tlsSecretName,omitempty"`
+}
+
+// RouteSpec defines OpenShift Route configuration
+type RouteSpec struct {
+	Enabled bool `json:"enabled,omitempty"`
+
+	Host string `json:"host,omitempty"`
+
+	// Edge, Passthrough, Reencrypt
+	Termination string `json:"termination,omitempty"`
+
+	// For reencrypt/edge termination
+	Certificate   string `json:"certificate,omitempty"`
+	Key           string `json:"key,omitempty"`
+	CaCertificate string `json:"caCertificate,omitempty"`
+
+	// For reencrypt to backend
+	DestinationCACertificate string `json:"destinationCACertificate,omitempty"`
+
+	InsecureEdgeTerminationPolicy string `json:"insecureEdgeTerminationPolicy,omitempty"`
+
+	// Additional route annotations
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 // BackupsSpec defines default backup configuration

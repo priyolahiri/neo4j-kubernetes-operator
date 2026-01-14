@@ -25,7 +25,9 @@ import (
 	"golang.org/x/time/rate"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -38,8 +40,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/metrics"
@@ -312,6 +316,25 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
+	// Create OpenShift Route if configured
+	if cluster.Spec.Service != nil && cluster.Spec.Service.Route != nil && cluster.Spec.Service.Route.Enabled {
+		route := resources.BuildRouteForEnterprise(cluster)
+		if route != nil {
+			ownerRef := metav1.NewControllerRef(cluster, neo4jv1alpha1.GroupVersion.WithKind("Neo4jEnterpriseCluster"))
+			route.SetOwnerReferences([]metav1.OwnerReference{*ownerRef})
+
+			if err := r.createOrUpdateUnstructured(ctx, route); err != nil {
+				if meta.IsNoMatchError(err) {
+					logger.Info("Route API not available; skipping Route creation")
+				} else {
+					logger.Error(err, "Failed to create Route")
+					_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Route: %v", err))
+					return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+				}
+			}
+		}
+	}
+
 	// Calculate topology placement if topology scheduler is available
 	var topologyPlacement *TopologyPlacement
 	if r.TopologyScheduler != nil {
@@ -522,6 +545,22 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResource(ctx context.Co
 	return err
 }
 
+func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateUnstructured(ctx context.Context, obj *unstructured.Unstructured) error {
+	existing := &unstructured.Unstructured{}
+	existing.SetGroupVersionKind(obj.GroupVersionKind())
+
+	err := r.Get(ctx, client.ObjectKeyFromObject(obj), existing)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return r.Create(ctx, obj)
+		}
+		return err
+	}
+
+	obj.SetResourceVersion(existing.GetResourceVersion())
+	return r.Update(ctx, obj)
+}
+
 // createOrUpdateResourceInternal performs the actual create or update operation with resource conflict handling
 //
 // This function implements critical resource version conflict resolution that eliminates the Pod-2 restart
@@ -664,6 +703,11 @@ func (r *Neo4jEnterpriseClusterReconciler) hasCriticalTemplateChanges(current, d
 		if !r.resourcesEqual(currentContainer.Resources, desiredContainer.Resources) {
 			return true
 		}
+
+		// Security context changes are critical
+		if !r.containerSecurityContextEqual(currentContainer.SecurityContext, desiredContainer.SecurityContext) {
+			return true
+		}
 	}
 
 	// Check for security context changes (critical)
@@ -732,21 +776,11 @@ func (r *Neo4jEnterpriseClusterReconciler) resourcesEqual(current, desired corev
 }
 
 func (r *Neo4jEnterpriseClusterReconciler) securityContextEqual(current, desired *corev1.PodSecurityContext) bool {
-	if (current == nil) != (desired == nil) {
-		return false
-	}
-	if current == nil && desired == nil {
-		return true
-	}
+	return equality.Semantic.DeepEqual(current, desired)
+}
 
-	// Compare critical security context fields
-	if current.RunAsUser != desired.RunAsUser ||
-		current.RunAsGroup != desired.RunAsGroup ||
-		current.RunAsNonRoot != desired.RunAsNonRoot {
-		return false
-	}
-
-	return true
+func (r *Neo4jEnterpriseClusterReconciler) containerSecurityContextEqual(current, desired *corev1.SecurityContext) bool {
+	return equality.Semantic.DeepEqual(current, desired)
 }
 
 func (r *Neo4jEnterpriseClusterReconciler) envVarsEqual(current, desired []corev1.EnvVar) bool {
@@ -1641,7 +1675,7 @@ func (r *Neo4jEnterpriseClusterReconciler) updatePropertyShardingStatus(ctx cont
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Neo4jEnterpriseClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1alpha1.Neo4jEnterpriseCluster{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
@@ -1658,6 +1692,15 @@ func (r *Neo4jEnterpriseClusterReconciler) SetupWithManager(mgr ctrl.Manager) er
 					Limiter: rate.NewLimiter(rate.Every(6*time.Second), 10),
 				},
 			),
-		}).
-		Complete(r)
+		})
+
+	routeGVK := schema.GroupVersionKind{Group: "route.openshift.io", Version: "v1", Kind: "Route"}
+	if _, err := mgr.GetRESTMapper().RESTMapping(routeGVK.GroupKind(), routeGVK.Version); err == nil {
+		routeObj := &unstructured.Unstructured{}
+		routeObj.SetGroupVersionKind(routeGVK)
+		routeHandler := handler.TypedEnqueueRequestForOwner[*unstructured.Unstructured](mgr.GetScheme(), mgr.GetRESTMapper(), &neo4jv1alpha1.Neo4jEnterpriseCluster{}, handler.OnlyControllerOwner())
+		builder = builder.WatchesRawSource(source.Kind(mgr.GetCache(), routeObj, routeHandler))
+	}
+
+	return builder.Complete(r)
 }

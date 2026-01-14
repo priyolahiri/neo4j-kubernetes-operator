@@ -44,6 +44,9 @@ type Neo4jEnterpriseStandaloneSpec struct {
 	// Affinity rules for pod scheduling
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 
+	// SecurityContext allows overriding pod/container security settings (e.g., for OpenShift SCC compatibility)
+	SecurityContext *SecurityContextSpec `json:"securityContext,omitempty"`
+
 	// Custom configuration for Neo4j (single mode only)
 	Config map[string]string `json:"config,omitempty"`
 
@@ -52,6 +55,9 @@ type Neo4jEnterpriseStandaloneSpec struct {
 	Auth *AuthSpec `json:"auth,omitempty"`
 
 	Service *ServiceSpec `json:"service,omitempty"`
+
+	// Optional OpenShift Route configuration for external access
+	Route *RouteSpec `json:"route,omitempty"`
 
 	Backups *BackupsSpec `json:"backups,omitempty"`
 
