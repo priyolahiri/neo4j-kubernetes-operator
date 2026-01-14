@@ -98,6 +98,12 @@ type BackupOptions struct {
 	// +kubebuilder:validation:Pattern="^[0-9]+[KMG]?$"
 	PageCache string `json:"pageCache,omitempty"`
 
+	// Enable parallel download for remote backups
+	ParallelDownload bool `json:"parallelDownload,omitempty"`
+
+	// Resolve remote addresses for backups (useful in multi-homed environments)
+	RemoteAddressResolution bool `json:"remoteAddressResolution,omitempty"`
+
 	// Additional neo4j-admin backup arguments
 	AdditionalArgs []string `json:"additionalArgs,omitempty"`
 }

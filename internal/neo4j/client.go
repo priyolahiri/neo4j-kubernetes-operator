@@ -2229,6 +2229,14 @@ func (c *Client) buildBackupArgs(databaseName, backupName, backupPath string, op
 		args = append(args, "--compress")
 	}
 
+	if options.ParallelDownload {
+		args = append(args, "--parallel-download")
+	}
+
+	if options.RemoteAddressResolution {
+		args = append(args, "--remote-address-resolution")
+	}
+
 	// Add verification if enabled
 	if options.Verify {
 		args = append(args, "--check-consistency")
@@ -2242,10 +2250,12 @@ func (c *Client) buildBackupArgs(databaseName, backupName, backupPath string, op
 
 // BackupOptions defines options for backup operations
 type BackupOptions struct {
-	Compress       bool
-	Verify         bool
-	AdditionalArgs []string
-	Encryption     *EncryptionOptions
+	Compress                bool
+	Verify                  bool
+	ParallelDownload        bool
+	RemoteAddressResolution bool
+	AdditionalArgs          []string
+	Encryption              *EncryptionOptions
 }
 
 // RestoreOptions defines options for restore operations

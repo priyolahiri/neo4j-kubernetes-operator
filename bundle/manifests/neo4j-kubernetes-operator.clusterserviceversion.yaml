@@ -37,7 +37,7 @@ metadata:
       : {\n      \"name\": \"shardeddb\",\n      \"clusterRef\": \"example-cluster\"\
       ,\n      \"shards\": 3\n    }\n  }\n]"
     capabilities: Basic Install
-    createdAt: '2026-01-14T12:38:16Z'
+    createdAt: '2026-01-14T13:10:43Z'
     operators.operatorframework.io/builder: operator-sdk-v1.39.1
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: neo4j-kubernetes-operator.v0.0.0-ci
@@ -67,307 +67,23 @@ spec:
     - kind: Neo4jShardedDatabase
       name: neo4jshardeddatabases.neo4j.neo4j.com
       version: v1alpha1
-  description: Neo4j Enterprise Operator automates Neo4j Enterprise clusters and standalone
-    instances on Kubernetes.
+  description: Neo4j Kubernetes Operator description. TODO.
   displayName: Neo4j Kubernetes Operator
-  minKubeVersion: 1.21.0
   icon:
   - base64data: ''
     mediatype: ''
   install:
     spec:
-      clusterPermissions:
-      - rules:
-        - apiGroups:
-          - ''
-          resources:
-          - configmaps
-          verbs:
-          - get
-          - list
-          - watch
-          - create
-          - update
-          - patch
-          - delete
-        - apiGroups:
-          - coordination.k8s.io
-          resources:
-          - leases
-          verbs:
-          - get
-          - list
-          - watch
-          - create
-          - update
-          - patch
-          - delete
-        - apiGroups:
-          - ''
-          resources:
-          - events
-          verbs:
-          - create
-          - patch
-        - apiGroups:
-          - ''
-          resources:
-          - configmaps
-          - endpoints
-          - persistentvolumeclaims
-          - secrets
-          - serviceaccounts
-          - services
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - ''
-          resources:
-          - events
-          verbs:
-          - create
-          - patch
-        - apiGroups:
-          - ''
-          resources:
-          - nodes
-          verbs:
-          - get
-          - list
-          - watch
-        - apiGroups:
-          - ''
-          resources:
-          - pods
-          verbs:
-          - delete
-          - get
-          - list
-          - watch
-        - apiGroups:
-          - ''
-          resources:
-          - pods/exec
-          verbs:
-          - create
-          - get
-        - apiGroups:
-          - ''
-          resources:
-          - pods/log
-          verbs:
-          - get
-        - apiGroups:
-          - apps
-          resources:
-          - statefulsets
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - batch
-          resources:
-          - cronjobs
-          - jobs
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - cert-manager.io
-          resources:
-          - certificates
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - cert-manager.io
-          resources:
-          - clusterissuers
-          - issuers
-          verbs:
-          - get
-          - list
-          - watch
-        - apiGroups:
-          - external-secrets.io
-          resources:
-          - clustersecretstores
-          - secretstores
-          verbs:
-          - get
-          - list
-          - watch
-        - apiGroups:
-          - external-secrets.io
-          resources:
-          - externalsecrets
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - neo4j.neo4j.com
-          resources:
-          - neo4jbackups
-          - neo4jdatabases
-          - neo4jenterpriseclusters
-          - neo4jenterprisestandalones
-          - neo4jplugins
-          - neo4jrestores
-          - neo4jshardeddatabases
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - neo4j.neo4j.com
-          resources:
-          - neo4jbackups/finalizers
-          - neo4jdatabases/finalizers
-          - neo4jenterpriseclusters/finalizers
-          - neo4jenterprisestandalones/finalizers
-          - neo4jplugins/finalizers
-          - neo4jrestores/finalizers
-          - neo4jshardeddatabases/finalizers
-          verbs:
-          - update
-        - apiGroups:
-          - neo4j.neo4j.com
-          resources:
-          - neo4jbackups/status
-          - neo4jdatabases/status
-          - neo4jenterpriseclusters/status
-          - neo4jenterprisestandalones/status
-          - neo4jplugins/status
-          - neo4jrestores/status
-          - neo4jshardeddatabases/status
-          verbs:
-          - get
-          - patch
-          - update
-        - apiGroups:
-          - networking.k8s.io
-          resources:
-          - ingresses
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - rbac.authorization.k8s.io
-          resources:
-          - rolebindings
-          - roles
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
-          - authentication.k8s.io
-          resources:
-          - tokenreviews
-          verbs:
-          - create
-        - apiGroups:
-          - authorization.k8s.io
-          resources:
-          - subjectaccessreviews
-          verbs:
-          - create
-        serviceAccountName: neo4j-operator-controller-manager
       deployments:
-      - label:
-          app.kubernetes.io/managed-by: kustomize
-          app.kubernetes.io/name: neo4j-operator
-          control-plane: controller-manager
-        name: neo4j-operator-controller-manager
+      - name: controller-manager
         spec:
-          replicas: 1
-          selector:
-            matchLabels:
-              control-plane: controller-manager
+          selector: null
           strategy: {}
           template:
-            metadata:
-              annotations:
-                kubectl.kubernetes.io/default-container: manager
-              labels:
-                control-plane: controller-manager
+            metadata: {}
             spec:
-              affinity:
-                nodeAffinity:
-                  requiredDuringSchedulingIgnoredDuringExecution:
-                    nodeSelectorTerms:
-                    - matchExpressions:
-                      - key: kubernetes.io/arch
-                        operator: In
-                        values:
-                        - amd64
-                        - arm64
-                      - key: kubernetes.io/os
-                        operator: In
-                        values:
-                        - linux
               containers:
-              - args:
-                - --metrics-bind-address=:8443
-                - --leader-elect
-                - --health-probe-bind-address=:8081
-                - --zap-log-level=debug
-                command:
-                - /manager
-                image: controller:latest
-                imagePullPolicy: IfNotPresent
-                livenessProbe:
-                  httpGet:
-                    path: /healthz
-                    port: 8081
-                  initialDelaySeconds: 15
-                  periodSeconds: 20
-                name: manager
-                readinessProbe:
-                  httpGet:
-                    path: /readyz
-                    port: 8081
-                  initialDelaySeconds: 5
-                  periodSeconds: 10
+              - name: manager
                 resources:
                   limits:
                     cpu: '1'
@@ -375,17 +91,6 @@ spec:
                   requests:
                     cpu: 100m
                     memory: 128Mi
-                securityContext:
-                  allowPrivilegeEscalation: false
-                  capabilities:
-                    drop:
-                    - ALL
-              securityContext:
-                runAsNonRoot: true
-                seccompProfile:
-                  type: RuntimeDefault
-              serviceAccountName: neo4j-operator-controller-manager
-              terminationGracePeriodSeconds: 10
     strategy: deployment
   installModes:
   - supported: false
@@ -409,3 +114,4 @@ spec:
     name: Provider Name
     url: https://your.domain
   version: 0.0.0-ci
+  minKubeVersion: 1.21.0
