@@ -74,7 +74,7 @@ type Neo4jEnterpriseClusterSpec struct {
 	// Query performance monitoring
 	QueryMonitoring *QueryMonitoringSpec `json:"queryMonitoring,omitempty"`
 
-	// Property Sharding configuration for Neo4j 2025.06+
+	// Property Sharding configuration for Neo4j 2025.10+
 	// Enables support for creating sharded databases that separate
 	// graph topology from node/relationship properties
 	PropertySharding *PropertyShardingSpec `json:"propertySharding,omitempty"`
@@ -506,7 +506,7 @@ type Neo4jEnterpriseClusterStatus struct {
 	// that separate graph topology from node/relationship properties.
 	//
 	// Prerequisites for PropertyShardingReady=true:
-	// - Neo4j version >= 2025.06.0
+	// - Neo4j version >= 2025.10.0
 	// - Cluster phase = Ready
 	// - Property sharding configuration applied successfully
 	// - All required Neo4j configuration settings validated
@@ -848,7 +848,7 @@ type QueryMetricsExportConfig struct {
 }
 
 // PropertyShardingSpec defines property sharding configuration
-// for Neo4j 2025.06+ to enable separated storage of graph topology and properties
+// for Neo4j 2025.10+ to enable separated storage of graph topology and properties
 type PropertyShardingSpec struct {
 	// Enable property sharding support on this cluster
 	// +kubebuilder:default=false
