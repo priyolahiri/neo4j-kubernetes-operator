@@ -2237,6 +2237,10 @@ func (c *Client) buildBackupArgs(databaseName, backupName, backupPath string, op
 		args = append(args, "--remote-address-resolution")
 	}
 
+	if options.SkipRecovery {
+		args = append(args, "--skip-recovery")
+	}
+
 	// Add verification if enabled
 	if options.Verify {
 		args = append(args, "--check-consistency")
@@ -2254,6 +2258,7 @@ type BackupOptions struct {
 	Verify                  bool
 	ParallelDownload        bool
 	RemoteAddressResolution bool
+	SkipRecovery            bool
 	AdditionalArgs          []string
 	Encryption              *EncryptionOptions
 }

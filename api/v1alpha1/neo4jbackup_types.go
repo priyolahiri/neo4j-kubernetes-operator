@@ -104,6 +104,9 @@ type BackupOptions struct {
 	// Resolve remote addresses for backups (useful in multi-homed environments)
 	RemoteAddressResolution bool `json:"remoteAddressResolution,omitempty"`
 
+	// Skip recovery step after backup (advanced; use when recovery is handled separately)
+	SkipRecovery bool `json:"skipRecovery,omitempty"`
+
 	// Additional neo4j-admin backup arguments
 	AdditionalArgs []string `json:"additionalArgs,omitempty"`
 }
