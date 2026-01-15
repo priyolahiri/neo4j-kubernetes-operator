@@ -117,6 +117,20 @@ var (
 	}
 )
 
+func podSecurityContextForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.PodSecurityContext {
+	if cluster.Spec.SecurityContext != nil && cluster.Spec.SecurityContext.PodSecurityContext != nil {
+		return cluster.Spec.SecurityContext.PodSecurityContext
+	}
+	return defaultPodSecurityContext
+}
+
+func containerSecurityContextForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.SecurityContext {
+	if cluster.Spec.SecurityContext != nil && cluster.Spec.SecurityContext.ContainerSecurityContext != nil {
+		return cluster.Spec.SecurityContext.ContainerSecurityContext
+	}
+	return defaultContainerSecurityContext
+}
+
 // BuildServerStatefulSetForEnterprise creates a single StatefulSet for all Neo4j servers
 // This StatefulSet has multiple replicas (one per server) that self-organize into roles
 // Replaces the previous individual StatefulSet per server approach for better management
@@ -1033,7 +1047,7 @@ done`
 
 	return corev1.PodSpec{
 		ServiceAccountName: getServiceAccountNameForEnterprise(cluster),
-		SecurityContext:    defaultPodSecurityContext,
+		SecurityContext:    podSecurityContextForCluster(cluster),
 		Containers: []corev1.Container{
 			{
 				Name:            "backup",
@@ -1043,7 +1057,7 @@ done`
 				Resources:       resources,
 				Command:         []string{"/bin/bash", "-c"},
 				Args:            []string{backupScript},
-				SecurityContext: defaultContainerSecurityContext,
+				SecurityContext: containerSecurityContextForCluster(cluster),
 				VolumeMounts: []corev1.VolumeMount{
 					{
 						Name:      "backup-storage",
@@ -1215,7 +1229,7 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, se
 		Image:           fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag),
 		ImagePullPolicy: corev1.PullPolicy(cluster.Spec.Image.PullPolicy),
 		Env:             env,
-		SecurityContext: defaultContainerSecurityContext,
+		SecurityContext: containerSecurityContextForCluster(cluster),
 		VolumeMounts:    volumeMounts,
 		Ports: []corev1.ContainerPort{
 			{
@@ -1332,7 +1346,7 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, se
 	// Build pod spec - backup is now handled by centralized StatefulSet, not sidecars
 	podSpec := corev1.PodSpec{
 		ServiceAccountName: getDiscoveryServiceAccountNameForEnterprise(cluster),
-		SecurityContext:    defaultPodSecurityContext,
+		SecurityContext:    podSecurityContextForCluster(cluster),
 		Containers:         []corev1.Container{neo4jContainer}, // Only Neo4j container, no backup sidecar
 		Volumes:            volumes,
 	}
@@ -1380,7 +1394,7 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, se
 				ContainerPort: 2004,
 				Protocol:      corev1.ProtocolTCP,
 			}},
-			SecurityContext: defaultContainerSecurityContext,
+			SecurityContext: containerSecurityContextForCluster(cluster),
 		}
 		podSpec.Containers = append(podSpec.Containers, exporterContainer)
 	}

@@ -46,6 +46,8 @@ rbac:
 
 podAnnotations: {}
 
+# Disable to let platform defaults (e.g., OpenShift SCC) control pod security settings
+podSecurityContextEnabled: true
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532

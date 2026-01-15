@@ -1,0 +1,22 @@
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseStandalone
+metadata:
+  name: route-standalone
+spec:
+  image:
+    repo: neo4j
+    tag: 5.26.0-enterprise
+  storage:
+    className: standard
+    size: 10Gi
+  auth:
+    adminSecret: neo4j-admin-secret
+  service:
+    type: ClusterIP
+  route:
+    enabled: true
+    host: route-standalone.apps.example.com
+    termination: edge
+  securityContext:
+    podSecurityContext:
+      runAsNonRoot: true

@@ -50,6 +50,9 @@ type Neo4jEnterpriseClusterSpec struct {
 	// Affinity rules for pod scheduling
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 
+	// SecurityContext allows overriding pod/container security settings (e.g., for OpenShift SCC compatibility)
+	SecurityContext *SecurityContextSpec `json:"securityContext,omitempty"`
+
 	// Custom configuration for Neo4j
 	Config map[string]string `json:"config,omitempty"`
 
@@ -199,6 +202,15 @@ type ExternalSecretRemoteRef struct {
 
 	// Version of the secret
 	Version string `json:"version,omitempty"`
+}
+
+// SecurityContextSpec defines pod/container security overrides for Neo4j workloads
+type SecurityContextSpec struct {
+	// Pod-level security settings to apply to all Neo4j pods
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+
+	// Container-level security settings for Neo4j containers
+	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 }
 
 // IssuerRef references a cert-manager issuer

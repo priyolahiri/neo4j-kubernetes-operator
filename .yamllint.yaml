@@ -19,6 +19,7 @@ rules:
 
 ignore: |
   /config/
+  /charts/
   /hack/
   /.github/workflows/
   /dev-data/

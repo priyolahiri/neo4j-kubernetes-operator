@@ -26,8 +26,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "neo4j-operator.serviceAccountName" . }}
+      {{- if .Values.podSecurityContextEnabled }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- end }}
       containers:
       - name: manager
         image: {{ include "neo4j-operator.image" . }}

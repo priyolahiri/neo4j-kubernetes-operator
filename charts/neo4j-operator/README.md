@@ -97,6 +97,7 @@ The following table lists the configurable parameters of the Neo4j Operator char
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
+| `podSecurityContextEnabled` | Set to `false` to allow platform defaults (e.g., OpenShift SCC) to supply UID/FSGroup | `true` |
 | `podSecurityContext.runAsNonRoot` | Run as non-root user | `true` |
 | `podSecurityContext.runAsUser` | User ID | `65532` |
 | `podSecurityContext.fsGroup` | File system group | `65532` |
@@ -268,6 +269,36 @@ affinity:
                   - neo4j-operator
           topologyKey: kubernetes.io/hostname
 ```
+
+### Expose Neo4j via OpenShift Route
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: graph
+spec:
+  service:
+    route:
+      enabled: true
+      host: graph.apps.example.com
+      termination: reencrypt
+```
+
+## OpenShift Notes
+
+- Disable the chart pod security context to let the SCC inject UID/FSGroup:
+  ```bash
+  helm install neo4j-operator ./charts/neo4j-operator \
+    --namespace neo4j-operator-system \
+    --create-namespace \
+    --set podSecurityContextEnabled=false
+  ```
+- Grant an appropriate SCC to the operator service account (example uses `restricted`; adjust per policy):
+  ```bash
+  oc adm policy add-scc-to-user restricted -z neo4j-operator -n neo4j-operator-system
+  ```
+- Neo4j pods will inherit UID/FSGroup from the SCC; keep workload security contexts at defaults or override via CR fields if needed.
 
 ## Troubleshooting
 

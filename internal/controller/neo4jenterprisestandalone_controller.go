@@ -29,7 +29,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
@@ -38,7 +40,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
@@ -57,7 +61,11 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	ConfigMapManager *ConfigMapManager
 }
 
-func hardenedPodSecurityContext() *corev1.PodSecurityContext {
+func podSecurityContextForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *corev1.PodSecurityContext {
+	if standalone.Spec.SecurityContext != nil && standalone.Spec.SecurityContext.PodSecurityContext != nil {
+		return standalone.Spec.SecurityContext.PodSecurityContext
+	}
+
 	uid := int64(7474)
 	return &corev1.PodSecurityContext{
 		RunAsUser:    ptr.To(uid),
@@ -70,7 +78,11 @@ func hardenedPodSecurityContext() *corev1.PodSecurityContext {
 	}
 }
 
-func hardenedContainerSecurityContext() *corev1.SecurityContext {
+func containerSecurityContextForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *corev1.SecurityContext {
+	if standalone.Spec.SecurityContext != nil && standalone.Spec.SecurityContext.ContainerSecurityContext != nil {
+		return standalone.Spec.SecurityContext.ContainerSecurityContext
+	}
+
 	uid := int64(7474)
 	return &corev1.SecurityContext{
 		RunAsUser:                ptr.To(uid),
@@ -213,6 +225,22 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 	if standalone.Spec.Service != nil && standalone.Spec.Service.Ingress != nil && standalone.Spec.Service.Ingress.Enabled {
 		if err := r.reconcileIngress(ctx, standalone); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile Ingress: %w", err)
+		}
+	}
+
+	// Reconcile OpenShift Route (if configured)
+	if standalone.Spec.Route != nil && standalone.Spec.Route.Enabled {
+		route := resources.BuildRouteForStandalone(standalone)
+		if route != nil {
+			route.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(standalone, neo4jv1alpha1.GroupVersion.WithKind("Neo4jEnterpriseStandalone"))})
+
+			if err := r.createOrUpdateUnstructured(ctx, route); err != nil {
+				if meta.IsNoMatchError(err) {
+					logger.Info("Route API not available; skipping Route creation")
+				} else {
+					return ctrl.Result{}, fmt.Errorf("failed to reconcile Route: %w", err)
+				}
+			}
 		}
 	}
 
@@ -559,7 +587,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(standalone *neo4
 						{
 							Name:            "neo4j",
 							Image:           fmt.Sprintf("%s:%s", standalone.Spec.Image.Repo, standalone.Spec.Image.Tag),
-							SecurityContext: hardenedContainerSecurityContext(),
+							SecurityContext: containerSecurityContextForStandalone(standalone),
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "http",
@@ -593,7 +621,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(standalone *neo4
 						},
 						r.buildBackupSidecarContainer(standalone),
 					},
-					SecurityContext: hardenedPodSecurityContext(),
+					SecurityContext: podSecurityContextForStandalone(standalone),
 					Volumes:         r.buildVolumes(standalone),
 					NodeSelector:    standalone.Spec.NodeSelector,
 					Tolerations:     standalone.Spec.Tolerations,
@@ -907,7 +935,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildBackupSidecarContainer(standa
 		Name:            "backup-sidecar",
 		Image:           fmt.Sprintf("%s:%s", standalone.Spec.Image.Repo, standalone.Spec.Image.Tag),
 		ImagePullPolicy: corev1.PullPolicy(standalone.Spec.Image.PullPolicy),
-		SecurityContext: hardenedContainerSecurityContext(),
+		SecurityContext: containerSecurityContextForStandalone(standalone),
 		Command: []string{
 			"/bin/bash",
 			"-c",
@@ -1100,6 +1128,22 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createIngress(standalone *neo4jv1a
 	}
 }
 
+func (r *Neo4jEnterpriseStandaloneReconciler) createOrUpdateUnstructured(ctx context.Context, obj *unstructured.Unstructured) error {
+	existing := &unstructured.Unstructured{}
+	existing.SetGroupVersionKind(obj.GroupVersionKind())
+
+	err := r.Get(ctx, client.ObjectKeyFromObject(obj), existing)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return r.Create(ctx, obj)
+		}
+		return err
+	}
+
+	obj.SetResourceVersion(existing.GetResourceVersion())
+	return r.Update(ctx, obj)
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *Neo4jEnterpriseStandaloneReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
@@ -1113,6 +1157,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) SetupWithManager(mgr ctrl.Manager)
 	// This allows tests to run without cert-manager CRDs
 	if mgr.GetScheme().Recognizes(certmanagerv1.SchemeGroupVersion.WithKind("Certificate")) {
 		builder = builder.Owns(&certmanagerv1.Certificate{})
+	}
+
+	routeGVK := schema.GroupVersionKind{Group: "route.openshift.io", Version: "v1", Kind: "Route"}
+	if _, err := mgr.GetRESTMapper().RESTMapping(routeGVK.GroupKind(), routeGVK.Version); err == nil {
+		routeObj := &unstructured.Unstructured{}
+		routeObj.SetGroupVersionKind(routeGVK)
+		routeHandler := handler.TypedEnqueueRequestForOwner[*unstructured.Unstructured](mgr.GetScheme(), mgr.GetRESTMapper(), &neo4jv1alpha1.Neo4jEnterpriseStandalone{}, handler.OnlyControllerOwner())
+		builder = builder.WatchesRawSource(source.Kind(mgr.GetCache(), routeObj, routeHandler))
 	}
 
 	return builder.Complete(r)
