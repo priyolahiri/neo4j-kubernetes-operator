@@ -99,12 +99,14 @@ jobs:
         cache-to: type=gha,mode=max
 
     - name: Log in to GHCR for Helm
+      if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
       run: |
         helm registry login ghcr.io \
           --username "${{ github.actor }}" \
           --password "${{ secrets.GITHUB_TOKEN }}"
 
     - name: Package and push Helm chart (OCI)
+      if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
       run: |
         helm package charts/neo4j-operator \
           --version "${{ steps.release-tag.outputs.clean_tag }}" \
@@ -194,6 +196,15 @@ jobs:
         - **Examples**: \`examples-\${TAG_NAME#v}.tar.gz\` - Example configurations
         - **Operator Manifests**: \`neo4j-kubernetes-operator-complete.yaml\` - Complete operator installation
         - **CRD Manifests**: \`neo4j-kubernetes-operator.yaml\` - Custom Resource Definitions only
+
+        ## ⎈ Helm (OCI)
+
+        \`\`\`bash
+        helm install neo4j-operator oci://ghcr.io/priyolahiri/charts/neo4j-operator \\
+          --version ${TAG_NAME#v} \\
+          --namespace neo4j-operator-system \\
+          --create-namespace
+        \`\`\`
 
         ## 📋 Requirements
 
