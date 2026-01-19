@@ -49,6 +49,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      mcp_tag: ${{ steps.mcp-tag.outputs.mcp_tag }}
 
     steps:
     - name: Checkout code
@@ -203,12 +205,14 @@ jobs:
 
     - name: Generate release notes
       id: release-notes
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         TAG_NAME=${GITHUB_REF#refs/tags/}
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
           TAG_NAME="${{ github.event.inputs.tag }}"
         fi
-        MCP_TAG="${{ steps.mcp-tag.outputs.mcp_tag }}"
+        MCP_TAG="${{ needs.build-and-push.outputs.mcp_tag }}"
 
         echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
 
@@ -269,6 +273,24 @@ jobs:
 
         Please report issues at [GitHub Issues](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues)
         EOF
+
+        curl -sSf \
+          -H "Authorization: Bearer $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+          -d "{\"tag_name\":\"${TAG_NAME}\"}" > auto-notes.json
+
+        python - <<'PY'
+        import json
+
+        with open("auto-notes.json", "r") as handle:
+            body = json.load(handle).get("body", "").strip()
+
+        if body:
+            with open("release-notes.md", "a") as handle:
+                handle.write("\n\n## Changelog\n\n")
+                handle.write(body)
+        PY
 
 
     - name: Create GitHub Release
