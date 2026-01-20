@@ -185,11 +185,23 @@ jobs:
         # Generate manifests
         make manifests
 
+        # Generate OperatorHub bundle/CSV for this release
+        make bundle \
+          VERSION="${CLEAN_TAG}" \
+          CHANNELS=alpha \
+          DEFAULT_CHANNEL=alpha \
+          IMG="${REGISTRY}/${IMAGE_NAME}:${TAG_NAME}"
+
         # Create release artifacts directory
         mkdir -p release-artifacts
 
         # Copy CRD manifests
         cp config/crd/bases/*.yaml release-artifacts/
+
+        # Copy OperatorHub bundle/CSV
+        cp bundle/manifests/*.yaml release-artifacts/
+        cp bundle/metadata/annotations.yaml release-artifacts/
+        tar -czf "release-artifacts/operatorhub-bundle-${CLEAN_TAG}.tar.gz" bundle/
 
         # Create source tarball
         git archive --format=tar.gz --prefix=neo4j-kubernetes-operator-${CLEAN_TAG}/ ${TAG_NAME} > release-artifacts/neo4j-kubernetes-operator-${CLEAN_TAG}.tar.gz

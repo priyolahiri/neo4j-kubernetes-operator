@@ -26,6 +26,15 @@ resources:
   controller: true
   domain: neo4j.com
   group: neo4j
+  kind: Neo4jEnterpriseStandalone
+  path: github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: neo4j.com
+  group: neo4j
   kind: Neo4jDatabase
   path: github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1
   version: v1alpha1
@@ -54,6 +63,15 @@ resources:
   domain: neo4j.com
   group: neo4j
   kind: Neo4jPlugin
+  path: github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: neo4j.com
+  group: neo4j
+  kind: Neo4jShardedDatabase
   path: github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1
   version: v1alpha1
 version: "3"
