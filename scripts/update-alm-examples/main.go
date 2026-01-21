@@ -126,6 +126,15 @@ func main() {
 		os.Exit(2)
 	}
 
+	if _, err := os.Stat(*samplesDir); err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "samples directory not found (%s); skipping alm-examples update\n", *samplesDir)
+			os.Exit(0)
+		}
+		fmt.Fprintf(os.Stderr, "stat samples dir: %v\n", err)
+		os.Exit(1)
+	}
+
 	samples, err := loadSamples(*samplesDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load samples: %v\n", err)
