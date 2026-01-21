@@ -1,0 +1,12 @@
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jBackup
+metadata:
+  name: example-backup
+spec:
+  target:
+    kind: Cluster
+    name: sample-cluster
+  storage:
+    type: pvc
+    pvc:
+      name: neo4j-backup-pvc

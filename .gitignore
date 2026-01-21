@@ -31,6 +31,8 @@ go.work.sum
 /dist/
 /.gocache/
 samples/
+!config/samples/
+!config/samples/**
 .air.toml
 build-errors.log
 results.sarif
