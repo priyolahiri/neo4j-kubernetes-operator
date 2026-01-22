@@ -230,7 +230,7 @@ var _ = Describe("MCP Integration Tests", func() {
 	Context("MCP HTTP runtime verification", func() {
 		It("serves tools/list over HTTP with Basic Auth", func() {
 			imageSpec := mcpRuntimeImageSpec()
-			pullSecretName := createRegistryPullSecret(ctx, namespace.Name)
+			pullSecretName := createRegistryPullSecret(ctx, namespace.Name, imageSpec.Repo)
 
 			adminSecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -250,15 +250,14 @@ var _ = Describe("MCP Integration Tests", func() {
 			}
 			standalone.Spec.Resources = getCIAppropriateResourceRequirements()
 			standalone.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
-				Enabled: true,
-				Image: &neo4jv1alpha1.ImageSpec{
-					Repo:        imageSpec.Repo,
-					Tag:         imageSpec.Tag,
-					PullSecrets: []string{pullSecretName},
-				},
+				Enabled:   true,
+				Image:     imageSpec,
 				Transport: "http",
 				ReadOnly:  true,
 				Telemetry: false,
+			}
+			if pullSecretName != "" {
+				standalone.Spec.MCP.Image.PullSecrets = []string{pullSecretName}
 			}
 
 			Expect(k8sClient.Create(ctx, standalone)).To(Succeed())
@@ -570,8 +569,11 @@ func splitImageTag(image string) (string, string) {
 	return image[:colon], image[colon+1:]
 }
 
-func createRegistryPullSecret(ctx context.Context, namespace string) string {
-	registry := os.Getenv("MCP_REGISTRY_SERVER")
+func createRegistryPullSecret(ctx context.Context, namespace, repo string) string {
+	registry, needsAuth := registryHostFromRepo(repo)
+	if !needsAuth {
+		return ""
+	}
 	if registry == "" {
 		registry = "ghcr.io"
 	}
@@ -619,4 +621,16 @@ func createRegistryPullSecret(ctx context.Context, namespace string) string {
 	}
 
 	return secret.Name
+}
+
+func registryHostFromRepo(repo string) (string, bool) {
+	parts := strings.Split(repo, "/")
+	if len(parts) == 0 {
+		return "", false
+	}
+	host := parts[0]
+	if strings.Contains(host, ".") || strings.Contains(host, ":") || host == "localhost" {
+		return host, true
+	}
+	return "", false
 }

@@ -4,6 +4,8 @@
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
 VERSION ?= 0.0.1
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+VCS_REF ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -160,12 +162,14 @@ test-integration: test-cluster ## Run integration tests
 	@kind export kubeconfig --name neo4j-operator-test
 	@$(MAKE) docker-build IMG=neo4j-operator:integration-test
 	@kind load docker-image neo4j-operator:integration-test --name neo4j-operator-test
+	@$(MAKE) mcp-docker-build MCP_IMAGE=neo4j-operator-mcp:integration-test
+	@kind load docker-image neo4j-operator-mcp:integration-test --name neo4j-operator-test
 	@$(MAKE) deploy-dev IMG=neo4j-operator:integration-test
 	@kubectl set image deployment/neo4j-operator-controller-manager manager=neo4j-operator:integration-test -n neo4j-operator-dev
 	@kubectl rollout status deployment/neo4j-operator-controller-manager -n neo4j-operator-dev --timeout=120s
 	@echo "✅ Operator deployed successfully!"
 	@echo "🔗 Running integration tests..."
-	@go test ./test/integration/... -v -timeout=60m
+	@MCP_TEST_IMAGE=neo4j-operator-mcp:integration-test go test ./test/integration/... -v -timeout=60m
 
 .PHONY: test-integration-ci
 test-integration-ci: ginkgo ## Run integration tests in CI (assumes cluster already exists)
@@ -311,7 +315,11 @@ build: manifests generate fmt vet ## Build manager binary.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+	$(CONTAINER_TOOL) build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		--build-arg VCS_REF=$(VCS_REF) \
+		-t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -419,7 +427,11 @@ deploy-prod: deploy-prod-local ## Deploy controller with production configuratio
 .PHONY: deploy-dev-local
 deploy-dev-local: manifests kustomize docker-build ## Build and deploy controller with local dev image to Kind cluster.
 	@echo "Building local dev image..."
-	$(CONTAINER_TOOL) build -t neo4j-operator:dev .
+	$(CONTAINER_TOOL) build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		--build-arg VCS_REF=$(VCS_REF) \
+		-t neo4j-operator:dev .
 	@echo "Loading image into Kind cluster..."
 	@if kind get clusters | grep -q neo4j-operator-dev; then \
 		kind load docker-image neo4j-operator:dev --name neo4j-operator-dev; \
@@ -435,7 +447,11 @@ deploy-dev-local: manifests kustomize docker-build ## Build and deploy controlle
 .PHONY: deploy-prod-local
 deploy-prod-local: manifests kustomize ## Build and deploy controller with local prod image to Kind cluster.
 	@echo "Building local prod image..."
-	$(CONTAINER_TOOL) build -t neo4j-operator:latest .
+	$(CONTAINER_TOOL) build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		--build-arg VCS_REF=$(VCS_REF) \
+		-t neo4j-operator:latest .
 	@echo "Loading image into Kind cluster..."
 	@if kind get clusters | grep -q neo4j-operator-dev; then \
 		kind load docker-image neo4j-operator:latest --name neo4j-operator-dev; \
