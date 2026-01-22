@@ -57,7 +57,7 @@ runs:
         resources:
         - ../../default
         images:
-        - name: controller
+        - name: ghcr.io/priyolahiri/neo4j-kubernetes-operator
           newName: neo4j-operator
           newTag: latest
         EOF

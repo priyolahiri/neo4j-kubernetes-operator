@@ -112,7 +112,7 @@ jobs:
         resources:
         - ../../default
         images:
-        - name: controller
+        - name: ghcr.io/priyolahiri/neo4j-kubernetes-operator
           newName: neo4j-operator
           newTag: integration-test
         EOF
