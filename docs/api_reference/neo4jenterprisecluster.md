@@ -246,9 +246,35 @@ Specifies role constraints for individual servers.
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | `string` | Issuer name |
-| `kind` | `string` | Issuer kind: `"Issuer"` or `"ClusterIssuer"` |
-| `group` | `string` | Issuer API group (default: `cert-manager.io`) |
+| `name` | `string` | **Required.** Issuer resource name |
+| `kind` | `string` | Issuer resource kind. Default: `"ClusterIssuer"`. Use `"Issuer"` for namespace-scoped issuers, or any external issuer kind (e.g. `"AWSPCAClusterIssuer"`, `"VaultIssuer"`, `"GoogleCASClusterIssuer"`) |
+| `group` | `string` | API group of the issuer. Default: `cert-manager.io`. Set to the external issuer's API group when using third-party issuers (e.g. `"awspca.cert-manager.io"`) |
+
+**Examples**:
+
+```yaml
+# Standard cert-manager ClusterIssuer (default)
+issuerRef:
+  name: ca-cluster-issuer
+  kind: ClusterIssuer
+
+# Namespace-scoped Issuer
+issuerRef:
+  name: my-issuer
+  kind: Issuer
+
+# AWS Private CA (external issuer)
+issuerRef:
+  name: aws-pca-issuer
+  kind: AWSPCAClusterIssuer
+  group: awspca.cert-manager.io
+
+# HashiCorp Vault
+issuerRef:
+  name: vault-issuer
+  kind: VaultIssuer
+  group: cert.cert-manager.io
+```
 
 ### CertificateSubject
 

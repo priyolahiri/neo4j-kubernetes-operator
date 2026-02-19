@@ -13,7 +13,7 @@ The operator supports automatic TLS certificate management through cert-manager,
 ## Prerequisites
 
 - cert-manager installed in your cluster (v1.0+)
-- A ClusterIssuer or Issuer configured
+- A cert-manager-compatible issuer configured (`ClusterIssuer`, `Issuer`, or a third-party external issuer)
 - Neo4j Enterprise 5.26+ or 2025.x+
 
 ## Basic TLS Configuration
@@ -189,17 +189,56 @@ If TLS connections fail:
 
 ## Advanced Configuration
 
-### Using External CA
+### Using an External CA or Third-Party Issuer
 
+The operator supports any cert-manager-compatible issuer, including third-party external issuers.
+Set `kind` to the issuer's resource kind and `group` to its API group.
+
+**Standard cert-manager CA** (most common):
 ```yaml
 spec:
   tls:
     mode: cert-manager
     issuerRef:
-      name: external-ca-issuer
+      name: my-internal-ca
       kind: ClusterIssuer
-      group: cert-manager.io  # Optional, defaults to cert-manager.io
+      # group defaults to cert-manager.io — can be omitted
 ```
+
+**AWS Private Certificate Authority**:
+```yaml
+spec:
+  tls:
+    mode: cert-manager
+    issuerRef:
+      name: aws-pca-issuer
+      kind: AWSPCAClusterIssuer
+      group: awspca.cert-manager.io
+```
+
+**HashiCorp Vault**:
+```yaml
+spec:
+  tls:
+    mode: cert-manager
+    issuerRef:
+      name: vault-issuer
+      kind: VaultIssuer
+      group: cert.cert-manager.io
+```
+
+**Google Certificate Authority Service**:
+```yaml
+spec:
+  tls:
+    mode: cert-manager
+    issuerRef:
+      name: google-cas-issuer
+      kind: GoogleCASClusterIssuer
+      group: cas-issuer.jetstack.io
+```
+
+The `kind` field is intentionally unrestricted — the operator passes it through directly to cert-manager's `Certificate` resource, which supports any registered external issuer CRD.
 
 ### Custom Certificate Duration
 
