@@ -80,30 +80,26 @@ jobs:
           -n neo4j-operator-system | grep -A2 "Image:" || true
 
         echo "▶ Pre-loading Neo4j image: neo4j:${NEO4J_VERSION}"
-        # Pull the linux/amd64 image, save it as a Docker archive, then load it
-        # into Kind using `kind load image-archive`.
+        # Both `kind load docker-image` and `kind load image-archive` pipe
+        # docker save output to `ctr images import --all-platforms`, which
+        # chases every digest in the OCI manifest index and fails on blobs for
+        # other platforms not downloaded locally.
         #
-        # Why not `kind load docker-image`?
-        # That command pipes `docker save` output to
-        # `ctr images import --all-platforms`, which chases every digest in the
-        # multi-platform manifest index and fails on blobs for other platforms
-        # that were never downloaded.
+        # Docker 27+ uses the containerd image store by default, which stores
+        # the full OCI manifest index even for a `--platform linux/amd64` pull,
+        # so the `docker save` archive always contains the multi-platform index.
         #
-        # Why not `skopeo copy docker-daemon:`?
-        # The skopeo version on ubuntu-latest uses an internal Docker API client
-        # library that is too old for the current Docker daemon
-        # (API 1.41 < required 1.44).
-        #
-        # `kind load image-archive <file>` uses `ctr images import` WITHOUT
-        # `--all-platforms`, so a Docker archive produced by `docker save` of a
-        # single-platform pull imports cleanly.
+        # Fix: bypass Kind's loader entirely and run `ctr import` directly
+        # WITHOUT `--all-platforms`. Containerd then imports only the manifest
+        # that matches the Kind node's platform (linux/amd64) and ignores the
+        # others whose blobs are absent.
         if ! docker pull --platform linux/amd64 neo4j:${NEO4J_VERSION}; then
           echo "❌ Failed to pull neo4j:${NEO4J_VERSION} — image is required for tests"
           exit 1
         fi
-        docker save neo4j:${NEO4J_VERSION} -o /tmp/neo4j-image.tar
-        kind load image-archive /tmp/neo4j-image.tar --name neo4j-operator-test
-        rm -f /tmp/neo4j-image.tar
+        docker save neo4j:${NEO4J_VERSION} | \
+          docker exec --privileged -i neo4j-operator-test-control-plane \
+          ctr --namespace=k8s.io images import --snapshotter=overlayfs -
         echo "✅ neo4j:${NEO4J_VERSION} loaded into Kind"
 
     - name: Run extended integration tests
