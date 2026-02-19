@@ -6,7 +6,7 @@ We welcome contributions to the Neo4j Enterprise Operator! This guide provides c
 
 ### Prerequisites
 
-- **Go**: Version 1.21+ for development
+- **Go**: Version 1.24+ for development
 - **Docker**: Container runtime for building images
 - **kubectl**: Kubernetes CLI tool
 - **kind**: Kubernetes in Docker for local clusters

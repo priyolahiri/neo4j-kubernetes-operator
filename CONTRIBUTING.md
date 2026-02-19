@@ -11,7 +11,7 @@ Before contributing, ensure you have the following tools installed:
 
 ### Required Tools
 
-- **Go 1.21+**: [Installation Guide](https://golang.org/doc/install)
+- **Go 1.24+**: [Installation Guide](https://golang.org/doc/install)
 - **Docker**: [Installation Guide](https://docs.docker.com/get-docker/)
 - **kubectl**: [Installation Guide](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
 - **Kind (Kubernetes in Docker)**: **REQUIRED** - See installation instructions below
@@ -73,7 +73,7 @@ Once you have all tools installed, verify your setup:
 
 ```bash
 # Check all required tools
-go version          # Should show Go 1.21+
+go version          # Should show Go 1.24+
 docker version      # Should show Docker info
 kubectl version     # Should show kubectl client
 kind version        # Should show Kind version

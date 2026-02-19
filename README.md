@@ -31,7 +31,7 @@ The Operator deploys Neo4j EE v5.26+.  It supports both clustered and standalone
 
 - **Neo4j**: Version 5.26 or higher (supports both SemVer 5.x and CalVer 2025.x formats)
 - **Kubernetes**: Version 1.21 or higher
-- **Go**: Version 1.22+ (for development)
+- **Go**: Version 1.24+ (for development)
 - **cert-manager**: Version 1.18+ (optional, only required for TLS-enabled Neo4j deployments)
 
 ## 🚀 Quick Start
@@ -138,10 +138,10 @@ Installation requires cloning from source:
    # Run integration tests (automatically creates cluster and deploys operator)
    make test-integration
 
-   # Or run tests step by step
-   make test-cluster        # Create test cluster
-   make test-integration    # Run integration tests
-   make test-cluster-delete # Clean up test cluster
+   # Or run tests step by step against an existing cluster
+   make test-cluster             # Create test cluster
+   make test-integration-ci      # Run essential tests (assumes cluster exists)
+   make test-cluster-delete      # Clean up test cluster
    ```
 
 ## 📊 Database Management
@@ -592,7 +592,7 @@ We welcome contributions from both Kubernetes beginners and experts!
 ### Prerequisites for Contributors
 
 **Required Tools:**
-- **Go 1.21+**
+- **Go 1.24+**
 - **Docker**
 - **kubectl**
 - **Kind** (Kubernetes in Docker) - **MANDATORY**
