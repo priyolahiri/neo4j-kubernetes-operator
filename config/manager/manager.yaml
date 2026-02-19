@@ -60,6 +60,9 @@ spec:
         image: controller:latest
         imagePullPolicy: IfNotPresent
         name: manager
+        env:
+        - name: OPERATOR_VERSION
+          value: latest
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true

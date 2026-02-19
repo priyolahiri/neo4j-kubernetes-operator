@@ -45,7 +45,6 @@ const (
 	mcpTLSKeyFile         = "/tls/tls.key"
 	mcpImageRepoDefault   = "ghcr.io/priyolahiri/neo4j-kubernetes-operator-mcp"
 	mcpImageTagDefault    = "latest"
-	mcpOperatorVersionEnv = "OPERATOR_VERSION"
 )
 
 var (
@@ -588,7 +587,7 @@ func mcpImageTag(spec *neo4jv1alpha1.MCPServerSpec) string {
 	if spec != nil && spec.Image != nil && spec.Image.Tag != "" {
 		return spec.Image.Tag
 	}
-	if operatorVersion := os.Getenv(mcpOperatorVersionEnv); operatorVersion != "" {
+	if operatorVersion := os.Getenv(operatorVersionEnv); operatorVersion != "" {
 		return operatorVersion
 	}
 	return mcpImageTagDefault

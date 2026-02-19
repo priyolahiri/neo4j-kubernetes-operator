@@ -39,6 +39,8 @@ spec:
         args:
         {{- include "neo4j-operator.args" . | nindent 8 }}
         env:
+        - name: OPERATOR_VERSION
+          value: {{ .Chart.AppVersion | quote }}
         {{- range .Values.env }}
         - name: {{ .name }}
           value: {{ .value | quote }}

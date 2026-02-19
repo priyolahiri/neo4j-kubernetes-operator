@@ -901,6 +901,10 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildEnvVars(standalone *neo4jv1al
 		Name:  "NEO4J_ACCEPT_LICENSE_AGREEMENT",
 		Value: "yes",
 	})
+	envVars = append(envVars, corev1.EnvVar{
+		Name:  "NEO4J_UDC_PACKAGING",
+		Value: resources.OperatorUDCPackagingValue(),
+	})
 
 	// Determine auth secret name (use default if not specified)
 	authSecretName := "neo4j-admin-secret" // Default secret name

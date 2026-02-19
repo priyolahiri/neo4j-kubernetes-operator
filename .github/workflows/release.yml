@@ -17,13 +17,33 @@ env:
   MCP_IMAGE_NAME: priyolahiri/neo4j-kubernetes-operator-mcp
   MCP_REPO: https://github.com/neo4j/mcp.git
   CHART_REGISTRY: ghcr.io/priyolahiri/charts
-  GO_VERSION: '1.22'
+  GO_VERSION: '1.24'
 
 jobs:
+  # Compute the release tag once and share it across all dependent jobs.
+  # This eliminates the duplicated tag-parsing logic that previously appeared
+  # three times in the file.
+  determine-tag:
+    name: Determine Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.tag.outputs.tag_name }}
+      clean_tag: ${{ steps.tag.outputs.clean_tag }}
+    steps:
+    - name: Compute tag
+      id: tag
+      run: |
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          TAG_NAME="${{ github.event.inputs.tag }}"
+        fi
+        CLEAN_TAG=${TAG_NAME#v}
+        echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+        echo "clean_tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
+
   validate-release:
     name: Validate Release
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -42,13 +62,24 @@ jobs:
     - name: Generate manifests
       run: make manifests
 
+    # Upload generated CRDs as an artifact so create-release can reuse them
+    # exactly, guaranteeing the released manifests are identical to what was
+    # validated here without re-running controller-gen a second time.
+    - name: Upload generated manifests
+      uses: actions/upload-artifact@v4
+      with:
+        name: generated-manifests
+        path: config/crd/bases/
+        retention-days: 1
+
   build-and-push:
     name: Build and Push Container
     runs-on: ubuntu-latest
-    needs: validate-release
+    needs: [validate-release, determine-tag]
     permissions:
       contents: read
       packages: write
+      id-token: write  # Required for Cosign keyless OIDC signing
     outputs:
       mcp_tag: ${{ steps.mcp-tag.outputs.mcp_tag }}
 
@@ -66,19 +97,11 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Install Cosign
+      uses: sigstore/cosign-installer@v3
+
     - name: Set up Helm
       uses: azure/setup-helm@v4
-
-    - name: Determine release tag
-      id: release-tag
-      run: |
-        TAG_NAME=${GITHUB_REF#refs/tags/}
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          TAG_NAME="${{ github.event.inputs.tag }}"
-        fi
-        CLEAN_TAG=${TAG_NAME#v}
-        echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
-        echo "clean_tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
 
     - name: Determine MCP release tag
       id: mcp-tag
@@ -94,7 +117,7 @@ jobs:
         fi
         echo "mcp_tag=${MCP_TAG}" >> $GITHUB_OUTPUT
 
-    - name: Extract metadata
+    - name: Extract operator metadata
       id: meta
       uses: docker/metadata-action@v5
       with:
@@ -112,8 +135,10 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.MCP_IMAGE_NAME }}
         tags: |
           type=raw,value=${{ steps.mcp-tag.outputs.mcp_tag }}
+          type=raw,value=latest
 
-    - name: Build and push container image
+    - name: Build and push operator image
+      id: build-operator
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -121,10 +146,15 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         platforms: linux/amd64,linux/arm64
+        build-args: |
+          VERSION=${{ needs.determine-tag.outputs.clean_tag }}
+          BUILD_DATE=${{ github.event.head_commit.timestamp || github.run_started_at }}
+          VCS_REF=${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
     - name: Build and push MCP image
+      id: build-mcp
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -140,26 +170,37 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
+    # Keyless signing using Sigstore/Cosign. No long-lived secrets required;
+    # the OIDC token from the GitHub Actions workflow is used as proof of identity.
+    # Signatures are published to the public Rekor transparency log.
+    - name: Sign operator image
+      run: |
+        cosign sign --yes \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-operator.outputs.digest }}
+
+    - name: Sign MCP image
+      run: |
+        cosign sign --yes \
+          ${{ env.REGISTRY }}/${{ env.MCP_IMAGE_NAME }}@${{ steps.build-mcp.outputs.digest }}
+
     - name: Log in to GHCR for Helm
-      if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
       run: |
         helm registry login ghcr.io \
           --username "${{ github.actor }}" \
           --password "${{ secrets.GITHUB_TOKEN }}"
 
     - name: Package and push Helm chart (OCI)
-      if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
       run: |
         helm package charts/neo4j-operator \
-          --version "${{ steps.release-tag.outputs.clean_tag }}" \
-          --app-version "${{ steps.release-tag.outputs.clean_tag }}"
-        helm push "neo4j-operator-${{ steps.release-tag.outputs.clean_tag }}.tgz" \
+          --version "${{ needs.determine-tag.outputs.clean_tag }}" \
+          --app-version "${{ needs.determine-tag.outputs.clean_tag }}"
+        helm push "neo4j-operator-${{ needs.determine-tag.outputs.clean_tag }}.tgz" \
           "oci://${{ env.CHART_REGISTRY }}"
 
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: [build-and-push, determine-tag]
     permissions:
       contents: write
 
@@ -172,93 +213,118 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
 
-    - name: Generate release tarball and manifests
+    # Reuse the CRDs generated and validated in the validate-release job.
+    # This ensures the released manifests are byte-for-byte identical to what
+    # was validated, without running controller-gen a second time.
+    - name: Download generated manifests
+      uses: actions/download-artifact@v4
+      with:
+        name: generated-manifests
+        path: config/crd/bases/
+
+    - name: Generate release artifacts
+      env:
+        TAG_NAME: ${{ needs.determine-tag.outputs.tag_name }}
+        CLEAN_TAG: ${{ needs.determine-tag.outputs.clean_tag }}
       run: |
-        TAG_NAME=${GITHUB_REF#refs/tags/}
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          TAG_NAME="${{ github.event.inputs.tag }}"
-        fi
-
-        # Clean tag name for directory
-        CLEAN_TAG=${TAG_NAME#v}
-
-        # Generate manifests
-        make manifests
-
-        # Generate OperatorHub bundle/CSV for this release
+        # Generate OperatorHub bundle/CSV using pre-generated CRDs (SKIP_MANIFESTS=true)
         make bundle \
+          SKIP_MANIFESTS=true \
           VERSION="${CLEAN_TAG}" \
           CHANNELS=alpha \
           DEFAULT_CHANNEL=alpha \
           IMG="${REGISTRY}/${IMAGE_NAME}:${TAG_NAME}"
 
-        # Create release artifacts directory
         mkdir -p release-artifacts
 
-        # Copy CRD manifests
+        # CRD-only manifest (already downloaded from artifact)
         cp config/crd/bases/*.yaml release-artifacts/
+        cat config/crd/bases/*.yaml > release-artifacts/neo4j-kubernetes-operator.yaml
 
-        # Copy OperatorHub bundle/CSV
+        # OperatorHub bundle
         cp bundle/manifests/*.yaml release-artifacts/
         cp bundle/metadata/annotations.yaml release-artifacts/
         tar -czf "release-artifacts/operatorhub-bundle-${CLEAN_TAG}.tar.gz" bundle/
 
-        # Create source tarball
-        git archive --format=tar.gz --prefix=neo4j-kubernetes-operator-${CLEAN_TAG}/ ${TAG_NAME} > release-artifacts/neo4j-kubernetes-operator-${CLEAN_TAG}.tar.gz
+        # Source tarball — fall back to HEAD if the tag does not exist in git
+        # history (happens with workflow_dispatch when the tag was not pushed first).
+        GIT_REF="${TAG_NAME}"
+        if ! git rev-parse --verify "${GIT_REF}^{}" > /dev/null 2>&1; then
+          echo "Warning: ${TAG_NAME} not found in git history; using HEAD for source tarball"
+          GIT_REF="HEAD"
+        fi
+        git archive --format=tar.gz \
+          --prefix=neo4j-kubernetes-operator-${CLEAN_TAG}/ \
+          "${GIT_REF}" \
+          > release-artifacts/neo4j-kubernetes-operator-${CLEAN_TAG}.tar.gz
 
-        # Create examples archive
+        # Examples archive
         tar -czf release-artifacts/examples-${CLEAN_TAG}.tar.gz examples/
 
-        # Bundle manifests for easy deployment
-        cat config/crd/bases/*.yaml > release-artifacts/neo4j-kubernetes-operator.yaml
-
-        # Create operator deployment manifest (includes CRDs + operator)
-        kubectl kustomize config/default > release-artifacts/neo4j-kubernetes-operator-complete.yaml
+        # Complete operator manifest (CRDs + RBAC + Deployment) with OPERATOR_VERSION
+        # stamped to the release tag via a kustomize strategic merge patch overlay.
+        # This avoids the fragile regex/sed approach that breaks on formatting changes.
+        make kustomize
+        mkdir -p config/overlays/release-temp
+        cat > config/overlays/release-temp/version-patch.yaml << EOF
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: controller-manager
+        spec:
+          template:
+            spec:
+              containers:
+              - name: manager
+                env:
+                - name: OPERATOR_VERSION
+                  value: "${TAG_NAME}"
+        EOF
+        cat > config/overlays/release-temp/kustomization.yaml << EOF
+        apiVersion: kustomize.config.k8s.io/v1beta1
+        kind: Kustomization
+        resources:
+        - ../../default
+        patches:
+        - path: version-patch.yaml
+          target:
+            kind: Deployment
+            labelSelector: "control-plane=controller-manager"
+        EOF
+        ./bin/kustomize build config/overlays/release-temp \
+          > release-artifacts/neo4j-kubernetes-operator-complete.yaml
+        rm -rf config/overlays/release-temp
 
     - name: Generate release notes
       id: release-notes
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG_NAME: ${{ needs.determine-tag.outputs.tag_name }}
+        CLEAN_TAG: ${{ needs.determine-tag.outputs.clean_tag }}
+        MCP_TAG: ${{ needs.build-and-push.outputs.mcp_tag }}
       run: |
-        TAG_NAME=${GITHUB_REF#refs/tags/}
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          TAG_NAME="${{ github.event.inputs.tag }}"
-        fi
-        MCP_TAG="${{ needs.build-and-push.outputs.mcp_tag }}"
-
-        echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
+        echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_OUTPUT
 
         cat > release-notes.md << EOF
-        # Neo4j Kubernetes Operator $TAG_NAME
-
-        ## 🚀 What's New
-
-        This release includes the latest updates to the Neo4j Kubernetes Operator.
+        # Neo4j Kubernetes Operator ${TAG_NAME}
 
         ## 🔧 Installation
 
         ### Quick Install (Complete Operator)
         \`\`\`bash
-        kubectl apply -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/$TAG_NAME/neo4j-kubernetes-operator-complete.yaml
+        kubectl apply -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/${TAG_NAME}/neo4j-kubernetes-operator-complete.yaml
         \`\`\`
 
         ### CRDs Only
         \`\`\`bash
-        kubectl apply -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/$TAG_NAME/neo4j-kubernetes-operator.yaml
+        kubectl apply -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/${TAG_NAME}/neo4j-kubernetes-operator.yaml
         \`\`\`
-
-        ## 📦 Release Assets
-
-        - **Source Code**: \`neo4j-kubernetes-operator-\${TAG_NAME#v}.tar.gz\` - Complete source code tarball
-        - **Examples**: \`examples-\${TAG_NAME#v}.tar.gz\` - Example configurations
-        - **Operator Manifests**: \`neo4j-kubernetes-operator-complete.yaml\` - Complete operator installation
-        - **CRD Manifests**: \`neo4j-kubernetes-operator.yaml\` - Custom Resource Definitions only
 
         ## ⎈ Helm (OCI)
 
         \`\`\`bash
         helm install neo4j-operator oci://ghcr.io/priyolahiri/charts/neo4j-operator \\
-          --version ${TAG_NAME#v} \\
+          --version ${CLEAN_TAG} \\
           --namespace neo4j-operator-system \\
           --create-namespace
         \`\`\`
@@ -271,9 +337,23 @@ jobs:
 
         ## 🔗 Container Images
 
-        - \`ghcr.io/priyolahiri/neo4j-kubernetes-operator:$TAG_NAME\`
-        - \`ghcr.io/priyolahiri/neo4j-kubernetes-operator:latest\`
-        - \`ghcr.io/priyolahiri/neo4j-kubernetes-operator-mcp:$MCP_TAG\`
+        | Image | Tag |
+        |-------|-----|
+        | \`ghcr.io/priyolahiri/neo4j-kubernetes-operator\` | \`${TAG_NAME}\` |
+        | \`ghcr.io/priyolahiri/neo4j-kubernetes-operator-mcp\` | \`${MCP_TAG}\` |
+
+        Images are signed with [Sigstore Cosign](https://docs.sigstore.dev/cosign/overview/) keyless signing.
+        Verify with: \`cosign verify ghcr.io/priyolahiri/neo4j-kubernetes-operator:${TAG_NAME} --certificate-identity-regexp='github.com/priyolahiri' --certificate-oidc-issuer='https://token.actions.githubusercontent.com'\`
+
+        ## 📦 Release Assets
+
+        | Asset | Description |
+        |-------|-------------|
+        | \`neo4j-kubernetes-operator-complete.yaml\` | Complete operator install (CRDs + RBAC + Deployment) |
+        | \`neo4j-kubernetes-operator.yaml\` | CRDs only |
+        | \`operatorhub-bundle-${CLEAN_TAG}.tar.gz\` | OperatorHub bundle |
+        | \`neo4j-kubernetes-operator-${CLEAN_TAG}.tar.gz\` | Source code tarball |
+        | \`examples-${CLEAN_TAG}.tar.gz\` | Example configurations |
 
         ## 📚 Documentation
 
@@ -292,7 +372,7 @@ jobs:
           "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
           -d "{\"tag_name\":\"${TAG_NAME}\"}" > auto-notes.json
 
-        python - <<'PY'
+        python3 - <<'PY'
         import json
 
         with open("auto-notes.json", "r") as handle:
@@ -303,7 +383,6 @@ jobs:
                 handle.write("\n\n## Changelog\n\n")
                 handle.write(body)
         PY
-
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1

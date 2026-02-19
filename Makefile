@@ -574,8 +574,18 @@ OPERATOR_SDK = $(shell which operator-sdk)
 endif
 endif
 
+# SKIP_MANIFESTS=true lets CI reuse pre-generated CRD manifests from a prior job
+# instead of re-running controller-gen, ensuring the released artifacts are byte-for-byte
+# identical to what was validated.
+SKIP_MANIFESTS ?= false
+
+ifeq ($(SKIP_MANIFESTS),true)
+.PHONY: bundle
+bundle: kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
+else
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
+endif
 	$(OPERATOR_SDK) generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	go run ./scripts/update-alm-examples config/manifests/bases/neo4j-kubernetes-operator.clusterserviceversion.yaml

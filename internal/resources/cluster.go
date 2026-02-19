@@ -19,6 +19,7 @@ package resources
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -92,6 +93,9 @@ const (
 
 	// Default non-root UID/GID for Neo4j containers
 	defaultNeo4jUID int64 = 7474
+
+	// operatorVersionEnv is the environment variable that holds the operator version
+	operatorVersionEnv = "OPERATOR_VERSION"
 )
 
 var (
@@ -117,6 +121,15 @@ var (
 		},
 	}
 )
+
+// OperatorUDCPackagingValue returns the value for the NEO4J_UDC_PACKAGING environment variable.
+// It reads the OPERATOR_VERSION env var and returns "k8s-<version>", or "k8s-development" if unset.
+func OperatorUDCPackagingValue() string {
+	if v := os.Getenv(operatorVersionEnv); v != "" {
+		return "k8s-" + v
+	}
+	return "k8s-development"
+}
 
 func podSecurityContextForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.PodSecurityContext {
 	if cluster.Spec.SecurityContext != nil && cluster.Spec.SecurityContext.PodSecurityContext != nil {
@@ -1178,6 +1191,10 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, se
 		{
 			Name:  "NEO4J_ACCEPT_LICENSE_AGREEMENT",
 			Value: "yes",
+		},
+		{
+			Name:  "NEO4J_UDC_PACKAGING",
+			Value: OperatorUDCPackagingValue(),
 		},
 		{
 			Name: "DB_USERNAME",

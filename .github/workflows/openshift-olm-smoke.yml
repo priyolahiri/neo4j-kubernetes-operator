@@ -7,11 +7,15 @@ on:
         description: "Bundle version tag (e.g., 0.0.0-ci)"
         required: false
         default: "0.0.0-ci"
+      operator-tag:
+        description: "Operator image tag to test against (e.g., v0.9.4-alpha). Defaults to latest."
+        required: false
+        default: "latest"
 
 env:
-  GO_VERSION: "1.22"
+  GO_VERSION: "1.24"
   VERSION: ${{ inputs.version }}
-  OPERATOR_IMG: ghcr.io/${{ github.repository_owner }}/neo4j-kubernetes-operator:latest
+  OPERATOR_IMG: ghcr.io/${{ github.repository_owner }}/neo4j-kubernetes-operator:${{ inputs.operator-tag || 'latest' }}
   BUNDLE_IMG: ghcr.io/${{ github.repository_owner }}/neo4j-operator-bundle:${{ github.sha }}
   CATALOG_IMG: ghcr.io/${{ github.repository_owner }}/neo4j-operator-catalog:${{ github.sha }}
   OPERATOR_NAMESPACE: neo4j-operator-system
