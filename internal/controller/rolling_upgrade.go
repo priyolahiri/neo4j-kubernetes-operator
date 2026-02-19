@@ -196,15 +196,6 @@ func (r *RollingUpgradeOrchestrator) upgradeServers(
 ) error {
 	logger := log.FromContext(ctx)
 
-	leader, err := neo4jClient.GetLeader(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get current leader: %w", err)
-	}
-
-	if leader == nil {
-		return fmt.Errorf("no leader found in cluster")
-	}
-
 	serverSts, err := r.getServerStatefulSet(ctx, cluster)
 	if err != nil {
 		return fmt.Errorf("failed to get server StatefulSet: %w", err)
@@ -222,10 +213,31 @@ func (r *RollingUpgradeOrchestrator) upgradeServers(
 		return fmt.Errorf("server StatefulSet has zero replicas configured")
 	}
 
-	leaderOrdinal := r.extractOrdinalFromMemberID(leader.ID)
-	if leaderOrdinal < 0 || leaderOrdinal >= int(replicas) {
-		logger.Info("Unable to parse leader ordinal from member ID, proceeding with best-effort rolling upgrade", "memberID", leader.ID)
-		leaderOrdinal = int(replicas) - 1
+	// Identify the system-database primary so it can be rolled last.
+	// With a partition-based StatefulSet RollingUpdate, Kubernetes always restarts
+	// pods from the highest ordinal down to the lowest.  The LAST pod restarted is
+	// therefore ordinal 0, making 0 the correct "roll-last" position.
+	//
+	// We try to detect the actual primary and use its ordinal if it equals 0; for
+	// any other ordinal we log a warning and keep ordinal 0 as the safe fallback so
+	// the partition sequence is always correct.
+	leaderOrdinal := 0 // safe default: ordinal 0 is always rolled last by K8s partition strategy
+	if primaryAddr, err := neo4jClient.FindSystemDatabasePrimaryAddress(ctx); err == nil && primaryAddr != "" {
+		for i := 0; i < int(replicas); i++ {
+			podPrefix := fmt.Sprintf("%s-server-%d", cluster.Name, i)
+			if strings.Contains(primaryAddr, podPrefix) {
+				if i == 0 {
+					logger.Info("System DB primary is ordinal 0 — will be rolled last as intended", "address", primaryAddr)
+				} else {
+					logger.Info("System DB primary is not ordinal 0; falling back to ordinal 0 as roll-last position",
+						"actualPrimaryOrdinal", i, "address", primaryAddr)
+				}
+				leaderOrdinal = 0 // always keep ordinal 0 as last — partition strategy enforces this
+				break
+			}
+		}
+	} else {
+		logger.Info("Could not determine system DB primary address, using ordinal 0 as roll-last position", "error", err)
 	}
 
 	newImage := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
@@ -234,8 +246,13 @@ func (r *RollingUpgradeOrchestrator) upgradeServers(
 		return nil
 	}
 	timeout := r.getUpgradeTimeout(cluster)
+	// Per-pod timeout for the Neo4j cluster-membership health check that follows
+	// each Kubernetes readiness gate.  5 minutes is generous; a server that can
+	// connect to the cluster at all should rejoin in well under a minute.
+	perPodHealthTimeout := 5 * time.Minute
 
-	// Prime the StatefulSet with the target image and freeze updates via partition
+	// Prime the StatefulSet with the target image and freeze all pod restarts by
+	// setting partition = replicas.  No pod will restart until we lower the partition.
 	serverSts, err = r.updateServerStatefulSet(ctx, cluster, func(sts *appsv1.StatefulSet) {
 		sts.Spec.Template.Spec.Containers[0].Image = newImage
 		if sts.Spec.Template.Annotations == nil {
@@ -253,33 +270,52 @@ func (r *RollingUpgradeOrchestrator) upgradeServers(
 		return fmt.Errorf("failed to stage server StatefulSet for upgrade: %w", err)
 	}
 
-	// Upgrade non-leader ordinals from highest to lowest to keep rollout controlled
-	for ord := replicas - 1; ord >= 0; ord-- {
-		if int(ord) == leaderOrdinal {
-			continue
-		}
+	// Roll pods from highest ordinal down to 1, skipping the leader (ordinal 0).
+	// Each step lowers the partition by one, causing exactly one new pod to restart.
+	for ord := replicas - 1; ord > int32(leaderOrdinal); ord-- {
 		if err := r.updatePartitionAndWait(ctx, cluster, ord, timeout); err != nil {
 			return fmt.Errorf("failed to roll ordinal %d: %w", ord, err)
 		}
+
+		// Verify the restarted pod has actually re-joined the Neo4j cluster before
+		// proceeding to the next pod.  Kubernetes readiness only checks port 7474;
+		// this confirms the server is Enabled+Available in SHOW SERVERS.
+		podName := fmt.Sprintf("%s-server-%d", cluster.Name, ord)
+		logger.Info("Waiting for server to rejoin cluster after restart", "pod", podName)
+		if err := neo4jClient.WaitForServerAvailable(ctx, podName, perPodHealthTimeout); err != nil {
+			return fmt.Errorf("pod %s did not rejoin cluster after restart: %w", podName, err)
+		}
+		logger.Info("Server rejoined cluster successfully", "pod", podName)
 	}
 
-	// Upgrade leader last
+	// Roll the leader (ordinal 0) last.
 	if err := r.updatePartitionAndWait(ctx, cluster, int32(leaderOrdinal), timeout); err != nil {
 		return fmt.Errorf("failed to roll leader ordinal %d: %w", leaderOrdinal, err)
 	}
-
-	// Reset partition to 0 to allow future full rollouts
-	if err := r.updatePartitionAndWait(ctx, cluster, 0, timeout); err != nil {
-		return fmt.Errorf("failed to finalize rollout: %w", err)
+	leaderPodName := fmt.Sprintf("%s-server-%d", cluster.Name, leaderOrdinal)
+	logger.Info("Waiting for leader pod to rejoin cluster after restart", "pod", leaderPodName)
+	if err := neo4jClient.WaitForServerAvailable(ctx, leaderPodName, perPodHealthTimeout); err != nil {
+		return fmt.Errorf("leader pod %s did not rejoin cluster after restart: %w", leaderPodName, err)
 	}
 
-	// Final cluster stabilization
+	// Clear the partition so future reconcile loops do not block normal StatefulSet updates.
+	_, err = r.updateServerStatefulSet(ctx, cluster, func(sts *appsv1.StatefulSet) {
+		if sts.Spec.UpdateStrategy.RollingUpdate != nil {
+			zero := int32(0)
+			sts.Spec.UpdateStrategy.RollingUpdate.Partition = &zero
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("failed to clear partition after upgrade: %w", err)
+	}
+
+	// Final cluster stabilization — wait for health+consensus to be consistently true.
 	stabilizationTimeout := r.getStabilizationTimeout(cluster)
 	if err := neo4jClient.WaitForClusterStabilization(ctx, stabilizationTimeout); err != nil {
 		return fmt.Errorf("cluster failed to stabilize after server upgrade: %w", err)
 	}
 
-	// Update progress - all servers upgraded
+	// Update progress — all servers upgraded.
 	cluster.Status.UpgradeStatus.Progress.Upgraded = replicas
 	cluster.Status.UpgradeStatus.Progress.Pending = 0
 
@@ -436,12 +472,19 @@ func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 }
 
 func (r *RollingUpgradeOrchestrator) validateVersionCompatibility(currentVersion, targetVersion string) error {
+	// When Status.Version is empty (e.g. first upgrade after operator deployment or
+	// status was cleared), we cannot check the upgrade path but we must not block
+	// the upgrade entirely.  Skip compatibility checks and allow it to proceed.
+	if currentVersion == "" {
+		return nil
+	}
+
 	// Parse current and target versions
 	current := r.parseVersion(currentVersion)
 	target := r.parseVersion(targetVersion)
 
 	if current == nil || target == nil {
-		return fmt.Errorf("invalid version format")
+		return fmt.Errorf("invalid version format (current=%q, target=%q)", currentVersion, targetVersion)
 	}
 
 	// Prevent downgrades
@@ -934,17 +977,6 @@ func (r *RollingUpgradeOrchestrator) versionsMatch(actual, expected string) bool
 	}
 
 	return true
-}
-
-func (r *RollingUpgradeOrchestrator) extractOrdinalFromMemberID(memberID string) int {
-	// Extract ordinal from member ID (e.g., "cluster-primary-2" -> 2)
-	parts := strings.Split(memberID, "-")
-	if len(parts) > 0 {
-		if ordinal, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
-			return ordinal
-		}
-	}
-	return -1
 }
 
 // Configuration helpers

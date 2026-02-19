@@ -1140,36 +1140,123 @@ func (c *Client) CheckUpgradeCompatibility(ctx context.Context, targetVersion st
 
 // IsClusterHealthy checks if the cluster is in a healthy state
 func (c *Client) IsClusterHealthy(ctx context.Context) (bool, error) {
-	members, err := c.GetClusterOverview(ctx)
+	servers, err := c.GetServerList(ctx)
 	if err != nil {
 		return false, err
 	}
-
+	if len(servers) == 0 {
+		return false, nil
+	}
 	healthyCount := 0
-	for _, member := range members {
-		if member.Health == "AVAILABLE" {
+	for _, s := range servers {
+		if s.Health == "Available" {
 			healthyCount++
 		}
 	}
-
-	// Consider cluster healthy if majority of members are available
-	return healthyCount > len(members)/2, nil
+	return healthyCount > len(servers)/2, nil
 }
 
-// GetLeader returns the current cluster leader
-func (c *Client) GetLeader(ctx context.Context) (*ClusterMember, error) {
-	members, err := c.GetClusterOverview(ctx)
+// FindSystemDatabasePrimaryAddress returns the bolt address of the server currently
+// holding the primary role for the system database. This is the most important server
+// to roll last during a rolling upgrade. Returns ("", nil) if the primary cannot be
+// determined (caller should fall back to a safe default).
+func (c *Client) FindSystemDatabasePrimaryAddress(ctx context.Context) (string, error) {
+	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+		AccessMode:   neo4j.AccessModeRead,
+		DatabaseName: "system",
+	})
+	defer session.Close(ctx)
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// SHOW DATABASES with address and role is available in Neo4j 5.x and 2025.x.
+	// It returns one row per (database, member) pair; we filter for the system database primary.
+	result, err := session.Run(timeoutCtx,
+		"SHOW DATABASES YIELD name, role, address WHERE name = 'system' AND role = 'primary' RETURN address",
+		nil)
 	if err != nil {
-		return nil, err
+		return "", fmt.Errorf("failed to query system database primary: %w", err)
 	}
 
-	for _, member := range members {
-		if member.Role == "LEADER" {
-			return &member, nil
+	if result.Next(timeoutCtx) {
+		record := result.Record()
+		if addr, ok := record.Get("address"); ok {
+			return fmt.Sprintf("%v", addr), nil
 		}
 	}
 
-	return nil, fmt.Errorf("no leader found in cluster")
+	if err = result.Err(); err != nil {
+		return "", err
+	}
+
+	return "", nil
+}
+
+// WaitForServerAvailable waits until the Neo4j server whose bolt address contains
+// podName (e.g. "mycluster-server-2") appears in SHOW SERVERS as Enabled+Available.
+// This should be called after each pod rolls during a rolling upgrade to ensure the
+// server has re-joined the cluster before the next pod is restarted.
+func (c *Client) WaitForServerAvailable(ctx context.Context, podName string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for server %q to become Enabled/Available in cluster", podName)
+		case <-ticker.C:
+			servers, err := c.GetServerList(ctx)
+			if err != nil {
+				continue // Neo4j not yet accepting queries; keep waiting
+			}
+			for _, s := range servers {
+				if strings.Contains(s.Address, podName) &&
+					s.State == "Enabled" && s.Health == "Available" {
+					return nil
+				}
+			}
+		}
+	}
+}
+
+// GetLeader returns the cluster member that holds the primary role for the system
+// database. It replaces the previous implementation that used the deprecated
+// dbms.cluster.overview() procedure.
+func (c *Client) GetLeader(ctx context.Context) (*ClusterMember, error) {
+	primaryAddr, err := c.FindSystemDatabasePrimaryAddress(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find system database primary: %w", err)
+	}
+	if primaryAddr == "" {
+		return nil, fmt.Errorf("no primary found for system database")
+	}
+
+	// Match the address to a known server to populate the ClusterMember fields.
+	servers, err := c.GetServerList(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list servers: %w", err)
+	}
+	for _, s := range servers {
+		if s.Address == primaryAddr || strings.HasPrefix(primaryAddr, s.Address) {
+			return &ClusterMember{
+				ID:      s.Name,
+				Address: s.Address,
+				Role:    "LEADER",
+				Health:  s.Health,
+			}, nil
+		}
+	}
+
+	// Address found but no matching server in SHOW SERVERS — return with just the address.
+	return &ClusterMember{
+		ID:      primaryAddr,
+		Address: primaryAddr,
+		Role:    "LEADER",
+	}, nil
 }
 
 // WaitForClusterReady waits for the cluster to be ready
