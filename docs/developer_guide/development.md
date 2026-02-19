@@ -9,7 +9,7 @@ This guide explains how to set up your development environment and get started w
 
 ### Required Tools
 
-- **Go**: Version 1.22+ (for development and testing)
+- **Go**: Version 1.24+ (for development and testing)
 - **Docker**: Container runtime for building images
 - **kubectl**: Kubernetes CLI tool
 - **Kind**: **MANDATORY** - Kubernetes in Docker for local clusters v0.20+ (see installation below)
@@ -283,17 +283,25 @@ go test ./internal/validation -v
 
 ### Integration Testing
 ```bash
-# Full integration test suite (automatically creates cluster and deploys operator)
+# Full integration test suite — creates a fresh cluster, builds and deploys
+# the operator, runs all tests, then leaves the cluster for inspection
 make test-integration
 
-# Alternative: step-by-step approach for debugging
-make test-cluster         # Create test cluster only
-make test-integration     # Run tests with existing cluster
-make test-cluster-delete  # Clean up test cluster
+# Step-by-step approach for debugging (reuse an existing cluster)
+make test-cluster              # Create test cluster only (cert-manager + issuer)
+# ... build and deploy operator manually, or use make operator-setup ...
+make test-integration-ci       # Run essential tests against the existing cluster
+make test-integration-ci-full  # Or run the complete suite (more resource-intensive)
+make test-cluster-delete       # Clean up when done
 
-# Run specific integration tests
-ginkgo run -focus "should create backup" ./test/integration
+# Run a specific integration test
+./bin/ginkgo run -focus "should create backup" ./test/integration
 ```
+
+> **Note**: `make test-integration` always recreates the cluster from scratch (it has
+> `test-cluster` as a prerequisite, which deletes any existing cluster first). Use
+> `make test-integration-ci` / `make test-integration-ci-full` when you want to run
+> tests against an already-configured cluster without rebuilding the environment.
 
 ### CI Workflow Emulation (Added 2025-08-22)
 
