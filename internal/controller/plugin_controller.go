@@ -866,10 +866,7 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 					if currentValue == "[]" || currentValue == "" {
 						pluginsEnvVar.Value = fmt.Sprintf("[\"%s\"]", plugin)
 					} else {
-						// Remove closing bracket and add new plugin
-						if strings.HasSuffix(currentValue, "]") {
-							currentValue = currentValue[:len(currentValue)-1]
-						}
+						currentValue = strings.TrimSuffix(currentValue, "]")
 						pluginsEnvVar.Value = fmt.Sprintf("%s,\"%s\"]", currentValue, plugin)
 					}
 				}

@@ -372,9 +372,9 @@ func TestPluginValidator_validatePluginCompatibility(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "valid newer version",
+			name:        "valid plugin version newer than minimum",
 			pluginName:  "apoc",
-			version:     "5.27.0",
+			version:     "5.26.5", // patch release of APOC for Neo4j 5.26.x
 			expectError: false,
 		},
 		{
@@ -418,6 +418,7 @@ func TestPluginValidator_compareVersions(t *testing.T) {
 			expected: 0,
 		},
 		{
+			// 5.27.x does not exist in practice; used only for comparison arithmetic
 			name:     "version1 greater",
 			version1: "5.27.0",
 			version2: "5.26.0",

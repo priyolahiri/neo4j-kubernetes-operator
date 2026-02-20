@@ -143,23 +143,21 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 					return fmt.Errorf("startup.sh not found in ConfigMap")
 				}
 
-				// Verify minimal cluster uses same unified approach as larger clusters
-				if !containsString(startupScript, "dbms.cluster.discovery.resolver_type=K8S") {
-					return fmt.Errorf("startup script does not contain Kubernetes discovery")
+				// Verify LIST discovery is used (not K8S ClusterIP which returns only 1 endpoint)
+				if !containsString(startupScript, "dbms.cluster.discovery.resolver_type=LIST") {
+					return fmt.Errorf("startup script does not use LIST discovery")
 				}
 
-				// Verify bootstrapping strategy configuration is present
-				if !containsString(startupScript, "internal.dbms.cluster.discovery.system_bootstrapping_strategy=$BOOTSTRAP_STRATEGY") {
-					return fmt.Errorf("startup script does not contain bootstrapping strategy configuration")
+				// Verify static pod FQDNs are present
+				expectedFQDN := fmt.Sprintf("%s-server-0.%s-headless.%s.svc.cluster.local:6000",
+					clusterName, clusterName, namespace.Name)
+				if !containsString(startupScript, expectedFQDN) {
+					return fmt.Errorf("startup script does not contain pod FQDN: %s", expectedFQDN)
 				}
 
-				// Verify server-0 gets "me" strategy and others get "other"
-				if !containsString(startupScript, "SERVER_INDEX=\"0\"") && !containsString(startupScript, "BOOTSTRAP_STRATEGY=\"me\"") {
-					return fmt.Errorf("startup script does not contain server-0 bootstrapping strategy logic")
-				}
-
-				if !containsString(startupScript, "BOOTSTRAP_STRATEGY=\"other\"") {
-					return fmt.Errorf("startup script does not contain other servers bootstrapping strategy")
+				// Verify ME/OTHER bootstrap strategy
+				if !containsString(startupScript, `BOOTSTRAP_STRATEGY="me"`) {
+					return fmt.Errorf("startup script does not contain 'me' bootstrapping strategy for server-0")
 				}
 
 				return nil
@@ -203,8 +201,8 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 		})
 	})
 
-	Context("V2_ONLY Discovery Configuration (Critical Fix)", func() {
-		It("should use tcp-discovery port for Neo4j 2025.x cluster", func() {
+	Context("LIST Discovery Configuration (Split-Brain Fix)", func() {
+		It("should use LIST discovery with static pod FQDNs for Neo4j 2025.x cluster", func() {
 			clusterName = "v2only-2025-test"
 			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -250,19 +248,21 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 					return fmt.Errorf("startup script is empty")
 				}
 
-				// Check for 2025.x specific discovery configuration
-				if !containsString(startupScript, "dbms.kubernetes.discovery.service_port_name=tcp-discovery") {
-					return fmt.Errorf("startup script does not contain 2025.x discovery configuration")
+				// Verify LIST discovery is used (not K8S ClusterIP, which causes split-brain)
+				if !containsString(startupScript, "dbms.cluster.discovery.resolver_type=LIST") {
+					return fmt.Errorf("startup script does not use LIST discovery")
 				}
 
-				// V2_ONLY should NOT be set explicitly for 2025.x (it's default)
-				if containsString(startupScript, "dbms.cluster.discovery.version=V2_ONLY") {
-					return fmt.Errorf("startup script incorrectly sets V2_ONLY for 2025.x (should be default)")
+				// Verify static pod FQDNs are present in endpoints list
+				expectedFQDN := fmt.Sprintf("%s-server-0.%s-headless.%s.svc.cluster.local:6000",
+					clusterName, clusterName, namespace.Name)
+				if !containsString(startupScript, expectedFQDN) {
+					return fmt.Errorf("startup script does not contain pod FQDN: %s", expectedFQDN)
 				}
 
-				// Verify that the wrong port configuration is NOT used
-				if containsString(startupScript, "service_port_name=tcp-tx") {
-					return fmt.Errorf("startup script incorrectly uses tcp-tx port (should use tcp-discovery)")
+				// Verify K8S ClusterIP discovery is NOT used
+				if containsString(startupScript, "dbms.cluster.discovery.resolver_type=K8S") {
+					return fmt.Errorf("startup script uses K8S discovery (causes split-brain)")
 				}
 
 				return nil

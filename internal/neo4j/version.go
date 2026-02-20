@@ -89,19 +89,17 @@ func ParseVersion(versionString string) (*Version, error) {
 	return v, nil
 }
 
-// IsSupported checks if the version meets minimum requirements
+// IsSupported checks if the version meets minimum requirements.
+// Neo4j 5.26.x is the final semver LTS release; the project moved to CalVer
+// (2025.x.x+) after that — no 5.27+ semver versions exist or will exist.
 func (v *Version) IsSupported() bool {
-	// CalVer versions (2025.x.x) are all supported
+	// CalVer versions (2025.x.x and later) are all supported
 	if v.IsCalver {
 		return true
 	}
 
-	// SemVer versions must be 5.26+
-	if v.Major == 5 {
-		return v.Minor >= 26
-	}
-
-	return false
+	// SemVer: only 5.26.x is supported — the last LTS semver release
+	return v.Major == 5 && v.Minor == 26
 }
 
 // Compare compares two versions

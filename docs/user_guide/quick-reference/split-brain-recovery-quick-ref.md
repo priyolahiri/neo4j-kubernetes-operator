@@ -123,8 +123,7 @@ spec:
 ```yaml
 spec:
   config:
-    # Optimize discovery timeouts
-    dbms.kubernetes.discovery.v2.refresh_rate: "10s"
+    # RAFT tuning (LIST discovery — no K8S API polling refresh needed)
     dbms.cluster.raft.election_timeout: "7s"  # Neo4j 5.26+
 ```
 

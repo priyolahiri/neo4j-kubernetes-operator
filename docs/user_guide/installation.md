@@ -447,7 +447,7 @@ gh release list --repo priyolahiri/neo4j-kubernetes-operator
 ### Installation Requirements
 
 - **Kubernetes**: Version 1.21 or higher
-- **Neo4j**: Version 5.26+ (supports both SemVer 5.x and CalVer 2025.x formats)
+- **Neo4j**: Version 5.26.x (last semver LTS) or 2025.x.x+ (CalVer — the successor versioning scheme)
 - **cert-manager**: Version 1.5+ (optional, only required for TLS-enabled Neo4j deployments)
 - **Permissions**: Cluster-admin access for CRD and RBAC installation
 

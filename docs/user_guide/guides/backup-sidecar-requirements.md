@@ -56,10 +56,10 @@ Backup sidecar is automatically added to the standalone pod and handles backup r
 - ✅ Proper environment variable sharing
 - ✅ Automatic backup path creation (required by Neo4j 5.26+)
 
-### Neo4j 2025.x+ (CalVer)
-- ✅ Future-ready version detection
-- ✅ Automatic parameter selection (`dbms.kubernetes.discovery.service_port_name`)
-- ✅ V2_ONLY discovery (default in 2025.x+)
+### Neo4j 2025.x+ / 2026.x+ (CalVer)
+- ✅ Future-ready version detection via `ParseVersion()` → `IsCalver` (`major >= 2025`)
+- ✅ LIST discovery with `dbms.cluster.endpoints` (renamed from `dbms.cluster.discovery.v2.endpoints`)
+- ✅ No `dbms.cluster.discovery.version` flag (V2 is the only protocol in CalVer)
 - ✅ Automatic backup path creation (required by Neo4j 2025.x+)
 
 ## Configuration

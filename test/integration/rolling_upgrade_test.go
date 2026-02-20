@@ -28,9 +28,11 @@ var _ = Describe("Rolling Upgrade Integration", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 
-		// 3-node rolling upgrade is resource-heavy; skip in CI where we downscale clusters
-		if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
-			Skip("Rolling upgrade test with 3 servers is skipped in CI to avoid resource pressure")
+		// Skip unless the caller has specified a target upgrade version.
+		// This avoids wasting CI resources when upgrade images are not pre-loaded.
+		// Set NEO4J_UPGRADE_TARGET_VERSION=<enterprise-tag> to enable this test.
+		if os.Getenv("NEO4J_UPGRADE_TARGET_VERSION") == "" {
+			Skip("Rolling upgrade test skipped: set NEO4J_UPGRADE_TARGET_VERSION to enable")
 		}
 
 		namespaceName := createTestNamespace("rolling-upgrade")
@@ -74,13 +76,15 @@ var _ = Describe("Rolling Upgrade Integration", func() {
 	})
 
 	Context("Leader-aware rolling upgrade on single StatefulSet", func() {
-		It("performs a rolling upgrade from 5.26.14 to 5.26.18", SpecTimeout(30*time.Minute), func(ctx SpecContext) {
+		It("performs a rolling upgrade to the target version", SpecTimeout(30*time.Minute), func(ctx SpecContext) {
 			if !isOperatorRunning() {
 				Skip("Operator must be running in the cluster for integration tests")
 			}
 
-			const initialTag = "5.26.14-enterprise"
-			const targetTag = "5.26.18-enterprise"
+			initialTag := getNeo4jImageTag()
+			targetTag := os.Getenv("NEO4J_UPGRADE_TARGET_VERSION")
+
+			serverCount := getCIAppropriateClusterSize(3)
 
 			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -97,7 +101,7 @@ var _ = Describe("Rolling Upgrade Integration", func() {
 						AdminSecret: "neo4j-admin-secret",
 					},
 					Topology: neo4jv1alpha1.TopologyConfiguration{
-						Servers: 3,
+						Servers: serverCount,
 					},
 					Storage: neo4jv1alpha1.StorageSpec{
 						ClassName: "standard",
@@ -129,8 +133,8 @@ var _ = Describe("Rolling Upgrade Integration", func() {
 				serverSts := &appsv1.StatefulSet{}
 				g.Expect(k8sClient.Get(ctx, serverKey, serverSts)).To(Succeed())
 				g.Expect(serverSts.Spec.Replicas).NotTo(BeNil())
-				g.Expect(*serverSts.Spec.Replicas).To(Equal(int32(3)))
-				g.Expect(serverSts.Status.ReadyReplicas).To(Equal(int32(3)))
+				g.Expect(*serverSts.Spec.Replicas).To(Equal(serverCount))
+				g.Expect(serverSts.Status.ReadyReplicas).To(Equal(serverCount))
 				g.Expect(serverSts.Spec.Template.Spec.Containers).NotTo(BeEmpty())
 				g.Expect(strings.Contains(serverSts.Spec.Template.Spec.Containers[0].Image, initialTag)).To(BeTrue())
 			}, clusterTimeout, interval).Should(Succeed())
@@ -171,8 +175,8 @@ var _ = Describe("Rolling Upgrade Integration", func() {
 				}
 				image := serverSts.Spec.Template.Spec.Containers[0].Image
 				return strings.Contains(image, targetTag) &&
-					serverSts.Status.ReadyReplicas == int32(3) &&
-					serverSts.Status.UpdatedReplicas == int32(3)
+					serverSts.Status.ReadyReplicas == serverCount &&
+					serverSts.Status.UpdatedReplicas == serverCount
 			}, 2*clusterTimeout, interval).Should(BeTrue())
 
 			By("Waiting for upgrade status to complete")

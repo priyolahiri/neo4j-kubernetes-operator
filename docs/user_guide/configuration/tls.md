@@ -14,7 +14,7 @@ The operator supports automatic TLS certificate management through cert-manager,
 
 - cert-manager installed in your cluster (v1.0+)
 - A cert-manager-compatible issuer configured (`ClusterIssuer`, `Issuer`, or a third-party external issuer)
-- Neo4j Enterprise 5.26+ or 2025.x+
+- Neo4j Enterprise 5.26.x (last semver LTS) or 2025.x.x+ (CalVer)
 
 ## Basic TLS Configuration
 

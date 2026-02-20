@@ -9,7 +9,7 @@ The operator supports rolling upgrades to minimize downtime. To upgrade your clu
 ```bash
 kubectl patch neo4jenterprisecluster <name> \
   --type=merge \
-  -p '{"spec":{"image":{"tag":"5.27.0-enterprise"}}}'
+  -p '{"spec":{"image":{"tag":"2025.01.0-enterprise"}}}'
 ```
 
 The operator performs a safe, ordered rolling upgrade:
@@ -60,7 +60,7 @@ For the full field reference see the [API Reference](../../api_reference/neo4jen
 
 | From | To | Supported |
 |---|---|---|
-| SemVer 5.x | SemVer 5.y (y > x) | ✅ |
+| SemVer 5.26.x | SemVer 5.26.y (patch only) | ✅ |
 | SemVer 5.x | CalVer 2025.y | ✅ |
 | CalVer 2025.x | CalVer 2025.y (y > x) | ✅ |
 | CalVer 2025.x | SemVer 5.y | ❌ (downgrade) |

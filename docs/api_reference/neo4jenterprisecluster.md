@@ -6,14 +6,14 @@ The `Neo4jEnterpriseCluster` Custom Resource Definition (CRD) manages Neo4j Ente
 
 - **API Version**: `neo4j.neo4j.com/v1alpha1`
 - **Kind**: `Neo4jEnterpriseCluster`
-- **Supported Neo4j Versions**: 5.26.0+ (semver) and 2025.01.0+ (calver)
+- **Supported Neo4j Versions**: 5.26.x (last semver LTS) and 2025.01.0+ (CalVer)
 - **Architecture**: Server-based deployment with unified StatefulSet
 - **Minimum Servers**: 2 (required for clustering)
 - **Maximum Servers**: 20 (validated limit)
 
 ## Architecture
 
-**Server-Based Architecture**: `Neo4jEnterpriseCluster` uses a unified server-based architecture introduced in Neo4j 5.26+:
+**Server-Based Architecture**: `Neo4jEnterpriseCluster` uses a unified server-based architecture introduced in Neo4j 5.26.x:
 
 - **Single StatefulSet**: `{cluster-name}-server` with configurable replica count
 - **Server Pods**: Named `{cluster-name}-server-0`, `{cluster-name}-server-1`, etc.
@@ -958,7 +958,7 @@ kubectl port-forward svc/my-cluster-client 7474:7474 7687:7687
 kubectl patch neo4jenterprisecluster my-cluster -p '{"spec":{"topology":{"servers":5}}}'
 
 # Update Neo4j version
-kubectl patch neo4jenterprisecluster my-cluster -p '{"spec":{"image":{"tag":"5.27.0-enterprise"}}}'
+kubectl patch neo4jenterprisecluster my-cluster -p '{"spec":{"image":{"tag":"2025.01.0-enterprise"}}}'
 
 # Check cluster health
 kubectl exec my-cluster-server-0 -- cypher-shell -u neo4j -p password "SHOW SERVERS"

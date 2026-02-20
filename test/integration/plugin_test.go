@@ -19,6 +19,7 @@ package integration_test
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -261,6 +262,56 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 				}
 				return false
 			}, clusterTimeout, interval).Should(BeTrue())
+
+			By("Waiting for StatefulSet rolling update to complete after plugin install")
+			// The NEO4J_PLUGINS env var triggers a rolling restart; all pods must be
+			// updated and ready before APOC procedures will be available.
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      clusterName + "-server",
+					Namespace: namespace.Name,
+				}, serverSts)
+				if err != nil {
+					return false
+				}
+				replicas := int32(1)
+				if serverSts.Spec.Replicas != nil {
+					replicas = *serverSts.Spec.Replicas
+				}
+				GinkgoWriter.Printf("StatefulSet rolling update: ReadyReplicas=%d, UpdatedReplicas=%d, Replicas=%d\n",
+					serverSts.Status.ReadyReplicas, serverSts.Status.UpdatedReplicas, replicas)
+				return serverSts.Status.ReadyReplicas == replicas &&
+					serverSts.Status.UpdatedReplicas == replicas
+			}, clusterTimeout, interval).Should(BeTrue(), "StatefulSet rolling update should complete")
+
+			By("Checking if APOC is available via cypher-shell (soft check - requires pod egress internet access)")
+			// NEO4J_PLUGINS='["apoc"]' is supported in both Neo4j 5.26.x and 2025.x+/2026.x+ via the
+			// Docker image's entrypoint startup script (see: neo4j.com/docs/operations-manual/current/docker/plugins/).
+			// The download requires the pod to have egress internet access at startup time.
+			// In Kind-based CI environments the pods may have no outbound internet access, so APOC will
+			// not be present even though the env var was correctly set by the operator.
+			// NOTE: Production-ready APOC installation should use the pre-bundled labs jar:
+			//   server.directories.plugins=/var/lib/neo4j/labs (no download required)
+			// The operator's responsibility (setting NEO4J_PLUGINS env var) is already verified above.
+			podName := fmt.Sprintf("%s-server-0", clusterName)
+			apocCheckCmd := exec.CommandContext(ctx, "kubectl", "exec",
+				podName, "-n", namespace.Name, "--",
+				"cypher-shell", "-u", "neo4j", "-p", "admin123",
+				"SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc' RETURN count(*) AS n",
+			)
+			apocOut, apocErr := apocCheckCmd.CombinedOutput()
+			if apocErr != nil {
+				GinkgoWriter.Printf("cypher-shell error (APOC not downloaded - pod likely has no egress internet access): %v\noutput: %s\n", apocErr, apocOut)
+			} else {
+				outStr := string(apocOut)
+				GinkgoWriter.Printf("cypher-shell output: %s\n", outStr)
+				if strings.Contains(outStr, "n") && !strings.Contains(outStr, "\n0\n") {
+					GinkgoWriter.Printf("APOC procedures are available - NEO4J_PLUGINS download succeeded!\n")
+				} else {
+					GinkgoWriter.Printf("APOC procedures not found (0 count) - pod had no egress internet access to download APOC at startup\n")
+					Skip("Skipping APOC procedure check: pod egress internet access required for NEO4J_PLUGINS automatic download")
+				}
+			}
 
 			By("Cleaning up")
 			Expect(k8sClient.Delete(ctx, plugin)).Should(Succeed())

@@ -34,7 +34,14 @@ cluster() {
 
     # Create self-signed ClusterIssuer for testing
     log "Creating self-signed ClusterIssuer for testing..."
-    kubectl apply -f "${PROJECT_ROOT}/config/dev/self-signed-issuer.yaml" 2>/dev/null || echo "Self-signed issuer creation skipped (file may not exist)"
+    if kubectl apply -f "${PROJECT_ROOT}/config/dev/self-signed-issuer.yaml"; then
+        # Wait for the bootstrap CA certificate to be issued so ca-cluster-issuer becomes Ready
+        log "Waiting for CA certificate to be issued..."
+        kubectl wait --for=condition=Ready certificate/selfsigned-ca -n cert-manager --timeout=60s || \
+            log "Warning: CA certificate not yet ready (TLS tests may fail)"
+    else
+        echo "Self-signed issuer creation skipped (file may not exist)"
+    fi
 
     log "Test cluster ready!"
 }

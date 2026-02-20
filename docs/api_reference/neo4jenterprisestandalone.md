@@ -6,7 +6,7 @@ The `Neo4jEnterpriseStandalone` custom resource manages single-node Neo4j Enterp
 
 - **API Version**: `neo4j.neo4j.com/v1alpha1`
 - **Kind**: `Neo4jEnterpriseStandalone`
-- **Supported Neo4j Versions**: 5.26.0+ (semver) and 2025.01.0+ (calver)
+- **Supported Neo4j Versions**: 5.26.x (last semver LTS) and 2025.01.0+ (CalVer)
 - **Architecture**: Single StatefulSet with unified clustering infrastructure
 - **Database Support**: Compatible with Neo4jDatabase CRD for automated database creation
 - **Plugin Support**: Full compatibility with Neo4jPlugin CRD
@@ -50,14 +50,14 @@ Specifies the Neo4j Docker image to use.
 | Field | Type | Description |
 |---|---|---|
 | `repo` | `string` | **Required**. Docker repository (default: `"neo4j"`) |
-| `tag` | `string` | **Required**. Neo4j version tag (5.26+ required) |
+| `tag` | `string` | **Required**. Neo4j version tag (5.26.x last semver LTS, or 2025.x.x CalVer required) |
 | `pullPolicy` | `string` | Image pull policy: `"Always"`, `"IfNotPresent"` (default), `"Never"` |
 | `pullSecrets` | `[]string` | Image pull secrets for private registries |
 
 ```yaml
 image:
   repo: neo4j                    # Docker repository
-  tag: "5.26.0-enterprise"       # Neo4j version (5.26+ required)
+  tag: "5.26.0-enterprise"       # Neo4j version (5.26.x last semver LTS or 2025.x.x CalVer required)
   pullPolicy: IfNotPresent       # Image pull policy
   pullSecrets: []                # Image pull secrets
 ```
@@ -120,9 +120,9 @@ config:
   server.discovery.advertised_address: "$(hostname -f)"
 ```
 
-**Automatically Managed**: The following configurations are managed by the operator:
-- `dbms.cluster.*` - Clustering settings (uses unified infrastructure)
-- `dbms.kubernetes.*` - Kubernetes discovery settings
+**Automatically Managed**: The following configurations are managed by the operator and must not be set in `spec.config`:
+- `dbms.cluster.discovery.*` - Discovery settings (LIST resolver with pod FQDNs, injected by startup script)
+- `dbms.cluster.endpoints` - CalVer endpoint list (injected by startup script)
 - `server.bolt.listen_address` - Network listeners
 - `server.http.listen_address` - HTTP endpoints
 - `NEO4J_AUTH` - Authentication setup (when using adminSecret)
@@ -616,7 +616,7 @@ kubectl port-forward svc/dev-neo4j-service 7474:7474 7687:7687
 kubectl edit neo4jenterprisestandalone dev-neo4j
 
 # Update Neo4j version
-kubectl patch neo4jenterprisestandalone dev-neo4j -p '{"spec":{"image":{"tag":"5.27-enterprise"}}}'
+kubectl patch neo4jenterprisestandalone dev-neo4j -p '{"spec":{"image":{"tag":"2025.01.0-enterprise"}}}'
 
 # Check status
 kubectl get neo4jenterprisestandalone dev-neo4j -o yaml
@@ -752,7 +752,7 @@ kubectl describe pvc neo4j-data-<standalone-name>-0
 kubectl describe neo4jenterprisestandalone <name>
 
 # Common validation issues:
-# - Invalid Neo4j version (must be 5.26+)
+# - Invalid Neo4j version (must be 5.26.x last semver LTS or 2025.x.x CalVer)
 # - Clustering configurations in spec.config
 # - Invalid storage size format
 ```

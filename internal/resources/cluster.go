@@ -1519,8 +1519,10 @@ db.format=block
 
 # Enterprise clustering configuration for Neo4j 5.x
 # Note: advertised addresses will be set dynamically by startup script
-server.cluster.listen_address=0.0.0.0:5000
-# server.discovery.listen_address=0.0.0.0:6000 - ignored in V2_ONLY mode
+# Port 5000: V2 discovery protocol (tcp-discovery)
+# Port 6000: Cluster catchup/transaction protocol (tcp-tx)
+# Port 7000: RAFT consensus (raft)
+server.cluster.listen_address=0.0.0.0:6000
 server.routing.listen_address=0.0.0.0:7688
 server.cluster.raft.listen_address=0.0.0.0:7000
 
@@ -1676,18 +1678,11 @@ func BuildQueryMonitoringConfig(queryMonitoring *neo4jv1alpha1.QueryMonitoringSp
 	return strings.Join(lines, "\n")
 }
 
-// isNeo4jVersion526OrHigher checks if the Neo4j version is 5.26 or higher
+// isNeo4jVersion526OrHigher checks if the Neo4j image is the 5.26.x semver LTS release.
+// Neo4j moved to CalVer (2025.x.x) after 5.26 — no 5.27+ semver versions exist.
+// CalVer images are handled separately via version.IsCalver checks.
 func isNeo4jVersion526OrHigher(imageTag string) bool {
-	// Support for various 5.26+ versions
-	supportedVersions := []string{"5.26", "5.27", "5.28", "5.29", "5.30", "5.31", "5.32", "5.33", "5.34", "5.35"}
-
-	for _, version := range supportedVersions {
-		if strings.Contains(imageTag, version) {
-			return true
-		}
-	}
-
-	return false
+	return strings.Contains(imageTag, "5.26")
 }
 
 // IsNeo4jVersion202510OrHigher checks if the Neo4j version supports property sharding
@@ -1726,56 +1721,7 @@ func buildPropertyShardingConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) 
 	return config
 }
 
-// getKubernetesDiscoveryParameter returns the correct Kubernetes discovery parameter based on Neo4j version
-//
-// CRITICAL: This function implements the fix for Neo4j V2_ONLY discovery configuration.
-// V2_ONLY mode disables the discovery port (6000) and only uses the cluster port (5000).
-// Therefore, we must use 'tcp-discovery' port name, not 'tcp-tx'.
-//
-// Version-specific behavior:
-// - Neo4j 5.26.x: Uses dbms.kubernetes.discovery.v2.service_port_name=tcp-discovery + V2_ONLY
-// - Neo4j 2025.x: Uses dbms.kubernetes.discovery.service_port_name=tcp-discovery (V2_ONLY is default)
-// - Both versions: Must use tcp-discovery port (5000) for cluster formation
-func getKubernetesDiscoveryParameter(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
-	// Extract version from image tag
-	imageTag := cluster.Spec.Image.Tag
-
-	// For Neo4j 5.x (semver): Always use V2_ONLY discovery for 5.26+
-	// For Neo4j 2025.x+ (calver): use dbms.kubernetes.discovery.service_port_name
-	if imageTag != "" {
-		version, err := neo4j.ParseVersion(imageTag)
-		if err == nil {
-			if version.IsCalver {
-				return `dbms.kubernetes.discovery.service_port_name=tcp-discovery
-dbms.kubernetes.cluster_domain=cluster.local`
-			}
-			if version.Major == 5 {
-				// For Neo4j 5.26+, always use V2_ONLY discovery
-				// CRITICAL: Must use tcp-discovery (port 5000) not tcp-tx (port 6000)
-				// because V2_ONLY mode disables the discovery port (6000)
-				if version.Minor >= 26 {
-					return `dbms.kubernetes.discovery.v2.service_port_name=tcp-discovery
-dbms.cluster.discovery.version=V2_ONLY
-dbms.kubernetes.cluster_domain=cluster.local`
-				}
-				// For other 5.x versions (pre-5.26) - not supported by this operator
-				return `dbms.kubernetes.service_port_name=discovery
-dbms.cluster.discovery.version=V2_ONLY
-dbms.kubernetes.cluster_domain=cluster.local`
-			}
-		}
-	}
-
-	// Default to 5.26+ configuration for maximum compatibility
-	return `dbms.kubernetes.discovery.v2.service_port_name=tcp-discovery
-dbms.cluster.discovery.version=V2_ONLY
-dbms.kubernetes.cluster_domain=cluster.local`
-}
-
 func buildStartupScriptForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
-	// Get discovery parameters for Neo4j version
-	kubernetesDiscoveryParam := getKubernetesDiscoveryParameter(cluster)
-
 	// Unified startup script for all deployments
 	return `#!/bin/bash
 set -e
@@ -1785,8 +1731,11 @@ echo "Starting Neo4j Enterprise in cluster mode..."
 # Set proper NEO4J_AUTH format (username/password)
 export NEO4J_AUTH="${DB_USERNAME}/${DB_PASSWORD}"
 
-# Extract server index from NEO4J_SERVER_NAME (format: server-N)
-SERVER_INDEX="${NEO4J_SERVER_NAME##*-}"
+# Extract server index from pod hostname BEFORE overriding HOSTNAME.
+# StatefulSet pod hostnames follow the pattern: {cluster-name}-server-{ordinal}
+# e.g. "my-cluster-server-0" -> SERVER_INDEX="0"
+# NEO4J_SERVER_NAME is a static value ("server") and cannot be used for index extraction.
+SERVER_INDEX="${HOSTNAME##*-}"
 
 # Set fully qualified domain name for clustering
 export HOSTNAME_FQDN="${HOSTNAME}.` + cluster.Name + `-headless.` + cluster.Namespace + `.svc.cluster.local"
@@ -1805,12 +1754,15 @@ mkdir -p /tmp/neo4j-config
 cp /conf/neo4j.conf /tmp/neo4j-config/neo4j.conf
 
 # Add FQDN-based advertised addresses
+# Port assignment (same for 5.26.x and all CalVer releases):
+#   5000 = tcp-discovery: legacy V1 discovery port (DEPRECATED, not used by this operator)
+#   6000 = tcp-tx: V2 discovery + cluster catchup traffic (server.cluster.advertised_address)
+#   7000 = raft: RAFT consensus (server.cluster.raft.advertised_address)
 cat >> /tmp/neo4j-config/neo4j.conf << EOF
 
-# Neo4j 5.x advertised addresses with FQDN
+# Advertised addresses using pod FQDN (applies to all supported versions)
 server.default_advertised_address=${HOSTNAME_FQDN}
-server.cluster.advertised_address=${HOSTNAME_FQDN}:5000
-# server.discovery.advertised_address=${HOSTNAME_FQDN}:6000 - ignored in V2_ONLY mode
+server.cluster.advertised_address=${HOSTNAME_FQDN}:6000
 server.routing.advertised_address=${HOSTNAME_FQDN}:7688
 server.cluster.raft.advertised_address=${HOSTNAME_FQDN}:7000
 EOF
@@ -1823,87 +1775,40 @@ echo "Server index: ${SERVER_INDEX}"
 
 # Neo4jEnterpriseCluster uses server-based clustering
 # Minimum: 2 servers (servers self-organize for database hosting)
-echo "Multi-server cluster: using Kubernetes discovery"
+echo "Multi-server cluster: using LIST discovery with static pod FQDNs"
 
-# Use Kubernetes service discovery with label selectors
-echo "Configuring Kubernetes service discovery with label selectors"
-
-# Wait for discovery service to be ready before starting Neo4j
-echo "Waiting for discovery service to be ready..."
-DISCOVERY_SERVICE="` + cluster.Name + `-discovery.` + cluster.Namespace + `.svc.cluster.local"
-MAX_WAIT=60
-WAIT_SECONDS=0
-while [ $WAIT_SECONDS -lt $MAX_WAIT ]; do
-    if getent hosts $DISCOVERY_SERVICE >/dev/null 2>&1; then
-        echo "Discovery service $DISCOVERY_SERVICE is ready"
-        break
-    fi
-    echo "Discovery service not ready yet, waiting... (${WAIT_SECONDS}s/${MAX_WAIT}s)"
-    sleep 2
-    WAIT_SECONDS=$((WAIT_SECONDS + 2))
-done
-
-if [ $WAIT_SECONDS -ge $MAX_WAIT ]; then
-    echo "Warning: Discovery service not ready after ${MAX_WAIT}s, proceeding anyway"
-fi
-
-# Wait for service to be reachable
-echo "Checking discovery service readiness..."
-ENDPOINT_CHECK_COUNT=0
-MAX_ENDPOINT_CHECKS=10
-while [ $ENDPOINT_CHECK_COUNT -lt $MAX_ENDPOINT_CHECKS ]; do
-    # Check if the service DNS resolves (indicates service exists)
-    if getent hosts $DISCOVERY_SERVICE >/dev/null 2>&1; then
-        echo "Discovery service is reachable, proceeding"
-        break
-    fi
-    echo "Discovery service not reachable, waiting... (${ENDPOINT_CHECK_COUNT}/${MAX_ENDPOINT_CHECKS})"
-    sleep 3
-    ENDPOINT_CHECK_COUNT=$((ENDPOINT_CHECK_COUNT + 1))
-done
-
-# Use parallel bootstrap discovery with coordination for cluster formation
-echo "Starting parallel cluster formation - all servers coordinate bootstrap"
-
-# Set minimum servers for proper cluster formation
-# With Parallel pod management, all server pods start simultaneously (with small stagger)
-# All servers coordinate to establish primary/secondary roles automatically
-# This works reliably even with TLS enabled due to trust_all=true in cluster SSL policy
-# Servers self-organize, use fixed minimum of 1 for bootstrap
-
-# Configure bootstrapping strategy based on server index
+# ME/OTHER bootstrap strategy: server-0 bootstraps, all others join.
+# With Parallel pod management all pods start simultaneously. Using LIST discovery
+# with static pod FQDNs (via the headless service DNS) and minimum_initial_system_primaries_count
+# set to TOTAL_SERVERS ensures all servers discover each other before RAFT election.
+# Server-0 (me) is preferred bootstrapper; all others (other) join when ready.
 if [ "$SERVER_INDEX" = "0" ]; then
-    echo "Server 0: Using bootstrapping strategy 'me' (first server)"
+    echo "Server 0: Using bootstrapping strategy 'me' (preferred cluster bootstrapper)"
     BOOTSTRAP_STRATEGY="me"
 else
-    echo "Server $SERVER_INDEX: Using bootstrapping strategy 'other' (joining existing cluster)"
+    echo "Server ${SERVER_INDEX}: Using bootstrapping strategy 'other' (joining cluster)"
     BOOTSTRAP_STRATEGY="other"
 fi
+echo "Configuring cluster with bootstrap strategy: ${BOOTSTRAP_STRATEGY}"
 
-# Configure cluster discovery and bootstrapping
 cat >> /tmp/neo4j-config/neo4j.conf << EOF
 
-# Multi-node cluster using Kubernetes service discovery (Neo4j 5.26+ standard pattern)
-dbms.cluster.discovery.resolver_type=K8S
-dbms.kubernetes.label_selector=neo4j.com/cluster=` + cluster.Name + `,neo4j.com/clustering=true
-` + kubernetesDiscoveryParam + `
-
-# Bootstrapping strategy for this server
-internal.dbms.cluster.discovery.system_bootstrapping_strategy=$BOOTSTRAP_STRATEGY
-
-# Cluster formation - minimum servers always 1 for bootstrap
-# Servers self-organize into primary/secondary roles, don't pre-assign roles
-dbms.cluster.minimum_initial_system_primaries_count=1
-initial.dbms.automatically_enable_free_servers=true
-
-# Cluster formation optimization
-dbms.cluster.raft.binding_timeout=1d
-dbms.cluster.raft.membership.join_timeout=10m
-dbms.routing.default_router=SERVER
-
-# Discovery resolution timeout to handle service propagation delays
-internal.dbms.cluster.discovery.resolution_timeout=1d
+# Multi-node cluster using LIST discovery with static pod FQDNs via headless service.
+# LIST discovery provides deterministic peer addresses (one per pod) unlike K8S ClusterIP
+# which returns a single VIP. This ensures all TOTAL_SERVERS members are discovered
+# before RAFT elects the bootstrap server, preventing split-brain formation.
+` + buildVersionSpecificDiscoveryConfig(cluster) + `
 EOF
+
+# Only set minimum_initial_system_primaries_count on INITIAL cluster formation.
+# On pod restarts (data already exists), skip this so the server rejoins immediately
+# without waiting for all peers to be visible (avoids blocking StatefulSet rolling updates).
+if [ ! -d "/data/databases/system" ]; then
+    echo "Initial formation: setting ` + getMinInitialPrimariesSetting(cluster) + `=${TOTAL_SERVERS}"
+    echo "` + getMinInitialPrimariesSetting(cluster) + `=${TOTAL_SERVERS}" >> /tmp/neo4j-config/neo4j.conf
+else
+    echo "Restart detected (/data/databases/system exists) - skipping minimum primaries count"
+fi
 
 # Add server mode constraint if specified
 ` + buildServerModeConstraintConfig(cluster) + `
@@ -1958,6 +1863,91 @@ EOF
 	}
 
 	return config
+}
+
+// isCalverImage returns true when the image tag is a CalVer release (2025.x+).
+// Uses proper version parsing rather than a simple string prefix so it remains
+// correct for future CalVer years (2026.x, 2027.x, …).
+func isCalverImage(tag string) bool {
+	v, err := neo4j.ParseVersion(tag)
+	if err != nil {
+		return false
+	}
+	return v.IsCalver
+}
+
+// buildVersionSpecificDiscoveryConfig generates the full discovery block for neo4j.conf.
+//
+// Source: Neo4j Ops Manual — Cluster Server Discovery
+//
+//	5.26.x docs: https://neo4j.com/docs/operations-manual/5/clustering/setup/discovery/
+//	2025.x+ docs: https://neo4j.com/docs/operations-manual/current/clustering/setup/discovery/
+//
+// Port 6000 (tcp-tx) is the V2 cluster communication port used by both versions.
+// Port 5000 (tcp-discovery) was the V1 discovery port — deprecated, never used here.
+//
+// 5.26.x (SemVer) — V2 is opt-in, V1 is the default:
+//   - dbms.cluster.discovery.resolver_type=LIST
+//   - dbms.cluster.discovery.version=V2_ONLY  ← must be set explicitly
+//   - dbms.cluster.discovery.v2.endpoints=<pod-fqdns>:6000
+//   - internal.dbms.cluster.discovery.system_bootstrapping_strategy (server-0=me, rest=other)
+//
+// 2025.x+ (CalVer, including 2026.x+) — V2 is the only supported protocol:
+//   - dbms.cluster.discovery.resolver_type=LIST  ← still required
+//   - dbms.cluster.endpoints=<pod-fqdns>:6000    ← renamed from dbms.cluster.discovery.v2.endpoints
+//   - NO dbms.cluster.discovery.version flag     ← not recognised; V2 is always active
+func buildVersionSpecificDiscoveryConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+	calver := isCalverImage(cluster.Spec.Image.Tag)
+
+	addrs := make([]string, cluster.Spec.Topology.Servers)
+	for i := int32(0); i < cluster.Spec.Topology.Servers; i++ {
+		addrs[i] = fmt.Sprintf("%s-server-%d.%s-headless.%s.svc.cluster.local:6000",
+			cluster.Name, i, cluster.Name, cluster.Namespace)
+	}
+	endpointList := strings.Join(addrs, ",")
+
+	if calver {
+		// CalVer 2025.x+: per the official Neo4j clustering docs, LIST discovery requires
+		// BOTH resolver_type=LIST AND dbms.cluster.endpoints (the renamed v2.endpoints).
+		// V2 is the only supported protocol; dbms.cluster.discovery.version is not needed.
+		// See: https://neo4j.com/docs/operations-manual/current/clustering/setup/discovery/
+		return `# CalVer (2025.x+): LIST discovery — resolver_type + dbms.cluster.endpoints
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.endpoints=` + endpointList + `
+dbms.routing.default_router=SERVER
+initial.dbms.automatically_enable_free_servers=true`
+	}
+
+	// SemVer 5.26.x: must explicitly enable V2_ONLY and use the v2.endpoints key.
+	// The internal bootstrapping_strategy hint steers server-0 to bootstrap first,
+	// avoiding a race where two nodes simultaneously attempt to form a cluster.
+	return `# SemVer 5.26.x: LIST discovery with explicit V2_ONLY mode
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.discovery.version=V2_ONLY
+dbms.cluster.discovery.v2.endpoints=` + endpointList + `
+
+# Bootstrapping strategy: server-0 (me) bootstraps; all others (other) join.
+internal.dbms.cluster.discovery.system_bootstrapping_strategy=${BOOTSTRAP_STRATEGY}
+
+initial.dbms.automatically_enable_free_servers=true
+
+# Cluster formation optimization
+dbms.cluster.raft.binding_timeout=1d
+dbms.cluster.raft.membership.join_timeout=10m
+dbms.routing.default_router=SERVER
+
+# Discovery resolution timeout
+internal.dbms.cluster.discovery.resolution_timeout=1d`
+}
+
+// getMinInitialPrimariesSetting returns the correct config key for the
+// "minimum primaries before bootstrap" guard, which differs between versions.
+func getMinInitialPrimariesSetting(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+	if isCalverImage(cluster.Spec.Image.Tag) {
+		// 2025.x renamed the setting (same semantics, new namespace)
+		return "dbms.cluster.minimum_initial_system_primaries_count"
+	}
+	return "dbms.cluster.minimum_initial_system_primaries_count"
 }
 
 // ValidateServerRoleHints validates server role hints configuration

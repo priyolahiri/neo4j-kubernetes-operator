@@ -87,6 +87,22 @@ func (d *SplitBrainDetector) DetectSplitBrain(ctx context.Context, cluster *neo4
 		}, nil
 	}
 
+	// Split-brain can only occur in a cluster that was previously healthy.
+	// During initial formation the cluster has never been Ready, so divergent
+	// server views are expected — skip detection and return None so the caller
+	// proceeds with its normal server-count health check.
+	if cluster.Status.Phase != "Ready" {
+		logger.Info("Cluster not yet Ready, skipping split-brain detection to allow initial formation",
+			"cluster", cluster.Name,
+			"phase", cluster.Status.Phase)
+		return &SplitBrainAnalysis{
+			IsSplitBrain:    false,
+			ExpectedServers: expectedServers,
+			RepairAction:    RepairActionNone,
+			ErrorMessage:    "",
+		}, nil
+	}
+
 	logger.Info("Starting split-brain detection",
 		"cluster", cluster.Name,
 		"expectedServers", expectedServers)
@@ -287,22 +303,46 @@ func (d *SplitBrainDetector) analyzeClusterViews(views []ClusterView, expectedSe
 
 	// Determine if this is a split-brain scenario
 	if len(clusterGroups) > 1 {
-		analysis.IsSplitBrain = true
+		// Build the set of server addresses visible to the majority (largest) group
+		majorityAddresses := make(map[string]bool)
+		for _, view := range largestGroup {
+			for _, addr := range d.getVisibleServerAddresses(view.Servers) {
+				majorityAddresses[addr] = true
+			}
+		}
 
-		// Find orphaned pods (pods not in the largest cluster group)
+		// Determine which minority pods see servers NOT in the majority view.
+		// If a pod only sees a subset (or nothing), it is still joining — not a real split-brain.
 		orphanedPods := []string{}
 		for _, group := range clusterGroups {
-			if !d.isSameGroup(group, largestGroup) {
-				for _, view := range group {
+			if d.isSameGroup(group, largestGroup) {
+				continue
+			}
+			for _, view := range group {
+				hasConflict := false
+				for _, addr := range d.getVisibleServerAddresses(view.Servers) {
+					if !majorityAddresses[addr] {
+						hasConflict = true
+						break
+					}
+				}
+				if hasConflict {
 					orphanedPods = append(orphanedPods, view.ServerPodName)
 				}
 			}
 		}
 
-		analysis.OrphanedPods = orphanedPods
-		analysis.RepairAction = RepairActionRestartPods
-		analysis.ErrorMessage = fmt.Sprintf("Split-brain detected: %d cluster groups found, %d orphaned pods",
-			len(clusterGroups), len(orphanedPods))
+		if len(orphanedPods) == 0 {
+			// All minority pods see only a subset of the majority's servers — normal formation
+			analysis.RepairAction = RepairActionWaitForming
+			analysis.ErrorMessage = fmt.Sprintf("Cluster formation in progress: %d/%d servers have full view", maxSize, expectedServers)
+		} else {
+			analysis.IsSplitBrain = true
+			analysis.OrphanedPods = orphanedPods
+			analysis.RepairAction = RepairActionRestartPods
+			analysis.ErrorMessage = fmt.Sprintf("Split-brain detected: %d cluster groups found, %d orphaned pods",
+				len(clusterGroups), len(orphanedPods))
+		}
 	} else {
 		// Single cluster group - check if it has the right number of servers
 		uniqueServers := d.countUniqueServersInGroup(workingViews)

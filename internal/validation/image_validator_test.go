@@ -49,7 +49,7 @@ func TestImageValidator_Validate(t *testing.T) {
 			expectedErrs: 0,
 		},
 		{
-			name: "valid 5.27.0 version",
+			name: "invalid 5.27.0 version (does not exist)",
 			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 					Image: neo4jv1alpha1.ImageSpec{
@@ -59,7 +59,7 @@ func TestImageValidator_Validate(t *testing.T) {
 					},
 				},
 			},
-			expectedErrs: 0,
+			expectedErrs: 1,
 		},
 		{
 			name: "valid 2025.01.0 CalVer version",
@@ -86,7 +86,7 @@ func TestImageValidator_Validate(t *testing.T) {
 				},
 			},
 			expectedErrs:  1,
-			expectedError: "Neo4j version must be 5.26+ (Semver) or 2025.01.0+ (Calver)",
+			expectedError: "Neo4j version must be 5.26.x (last semver LTS) or 2025.01.0+ (CalVer) for enterprise operator",
 		},
 		{
 			name: "invalid 4.4.12 version (unsupported major)",
@@ -100,7 +100,7 @@ func TestImageValidator_Validate(t *testing.T) {
 				},
 			},
 			expectedErrs:  1,
-			expectedError: "Neo4j version must be 5.26+ (Semver) or 2025.01.0+ (Calver)",
+			expectedError: "Neo4j version must be 5.26.x (last semver LTS) or 2025.01.0+ (CalVer) for enterprise operator",
 		},
 		{
 			name: "invalid 5.15.0 version (too old)",
@@ -114,7 +114,7 @@ func TestImageValidator_Validate(t *testing.T) {
 				},
 			},
 			expectedErrs:  1,
-			expectedError: "Neo4j version must be 5.26+ (Semver) or 2025.01.0+ (Calver)",
+			expectedError: "Neo4j version must be 5.26.x (last semver LTS) or 2025.01.0+ (CalVer) for enterprise operator",
 		},
 		{
 			name: "missing repo",
@@ -184,8 +184,8 @@ func TestImageValidator_isVersionSupported(t *testing.T) {
 	}{
 		// Supported SemVer versions
 		{"5.26.0", true},
-		{"5.27.0", true},
-		{"5.30.1", true},
+		{"5.27.0", false},
+		{"5.30.1", false}, // 5.27+ semver versions do not exist
 		{"5.26.0-enterprise", true},
 		{"v5.26.0", true},
 

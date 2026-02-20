@@ -30,7 +30,7 @@ func TestValidateVersionCompatibility(t *testing.T) {
 	}{
 		{
 			name:    "empty current version is allowed (first upgrade)",
-			current: "", target: "5.27.0-enterprise",
+			current: "", target: "2025.01.0-enterprise",
 			wantErr: false,
 		},
 		{
@@ -39,8 +39,8 @@ func TestValidateVersionCompatibility(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "valid SemVer minor upgrade",
-			current: "5.26.0-enterprise", target: "5.27.0-enterprise",
+			name:    "valid SemVer to CalVer upgrade",
+			current: "5.26.0-enterprise", target: "2025.01.0-enterprise",
 			wantErr: false,
 		},
 		{
@@ -55,13 +55,13 @@ func TestValidateVersionCompatibility(t *testing.T) {
 		},
 		{
 			name:    "SemVer downgrade is rejected",
-			current: "5.27.0-enterprise", target: "5.26.0-enterprise",
+			current: "2025.01.0-enterprise", target: "5.26.0-enterprise",
 			wantErr:     true,
 			errContains: "downgrade",
 		},
 		{
 			name:    "CalVer to SemVer downgrade is rejected",
-			current: "2025.01.0-enterprise", target: "5.27.0-enterprise",
+			current: "2025.01.0-enterprise", target: "5.26.0-enterprise",
 			wantErr:     true,
 			errContains: "downgrade",
 		},
@@ -137,7 +137,7 @@ func TestIsUpgradeRequiredSingleStatefulSet(t *testing.T) {
 		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 			Image: neo4jv1alpha1.ImageSpec{
 				Repo: "neo4j",
-				Tag:  "5.27.0-enterprise",
+				Tag:  "2025.01.0-enterprise",
 			},
 			Topology: neo4jv1alpha1.TopologyConfiguration{
 				Servers: 3,
@@ -189,7 +189,7 @@ func TestIsUpgradeRequiredSingleStatefulSet(t *testing.T) {
 	}, existing); err != nil {
 		t.Fatalf("failed to fetch StatefulSet: %v", err)
 	}
-	existing.Spec.Template.Spec.Containers[0].Image = "neo4j:5.27.0-enterprise"
+	existing.Spec.Template.Spec.Containers[0].Image = "neo4j:2025.01.0-enterprise"
 	if err := fakeClient.Update(context.Background(), existing); err != nil {
 		t.Fatalf("failed to update StatefulSet: %v", err)
 	}

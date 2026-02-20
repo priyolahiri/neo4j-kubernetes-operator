@@ -73,7 +73,7 @@ kubectl describe neo4jbackup <backup-name>
    ```
 
 2. **Verify Supported Versions:**
-   - **Semver**: 5.26.0, 5.26.1, 5.27.0, 6.0.0+
+   - **Semver**: 5.26.0, 5.26.1 (5.26.x is the last semver LTS — no 5.27+ exists)
    - **Calver**: 2025.01.0, 2025.06.1, 2026.01.0+
 
 #### Problem: Invalid Version Format

@@ -607,29 +607,29 @@ func (r *RollingUpgradeOrchestrator) validateSemVerUpgrade(current, target *Vers
 		return fmt.Errorf("major version upgrades are not supported")
 	}
 
-	// Allow minor and patch upgrades within supported range
+	// Only patch upgrades within 5.26.x are supported (last semver LTS; no 5.27+ exists)
 	if current.Major == 5 && target.Major == 5 {
-		if current.Minor >= 26 && target.Minor >= 26 {
-			return nil // Allow upgrades within 5.26+
+		if current.Minor == 26 && target.Minor == 26 {
+			return nil // Allow patch upgrades within 5.26.x
 		}
-		return fmt.Errorf("only Neo4j 5.26+ versions are supported")
+		return fmt.Errorf("only Neo4j 5.26.x (last semver LTS) or 2025.x.x (CalVer) versions are supported")
 	}
 
-	// Neo4j 4.x is no longer supported - only 5.26+ versions are supported
+	// Neo4j 4.x is no longer supported
 	if current.Major == 4 || target.Major == 4 {
-		return fmt.Errorf("Neo4j 4.x versions are not supported - only 5.26+ versions are supported")
+		return fmt.Errorf("Neo4j 4.x versions are not supported - only 5.26.x (last semver LTS) or 2025.x.x (CalVer) versions are supported")
 	}
 
 	return fmt.Errorf("unsupported SemVer upgrade path from %s to %s", currentStr, targetStr)
 }
 
 func (r *RollingUpgradeOrchestrator) validateSemVerToCalVerUpgrade(current, _ *VersionInfo, currentStr, targetStr string) error {
-	// Only allow upgrades from Neo4j 5.26+ to CalVer
-	if current.Major == 5 && current.Minor >= 26 {
-		return nil // 5.26+ -> 2025.x.x is allowed
+	// Only 5.26.x (last semver LTS) may upgrade to CalVer 2025.x.x
+	if current.Major == 5 && current.Minor == 26 {
+		return nil // 5.26.x -> 2025.x.x is the only supported semver-to-calver path
 	}
 
-	return fmt.Errorf("upgrade from %s to CalVer %s requires Neo4j 5.26 or higher", currentStr, targetStr)
+	return fmt.Errorf("upgrade from %s to CalVer %s requires Neo4j 5.26.x (last semver LTS)", currentStr, targetStr)
 }
 
 // VersionInfo represents parsed version information

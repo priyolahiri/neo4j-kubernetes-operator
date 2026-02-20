@@ -547,17 +547,28 @@ func dumpJobLogs(namespace, jobName string) {
 
 func mcpRuntimeImageSpec() *neo4jv1alpha1.ImageSpec {
 	image := os.Getenv("MCP_TEST_IMAGE")
-	if image == "" {
+	if image != "" {
+		repo, tag := splitImageTag(image)
+		return &neo4jv1alpha1.ImageSpec{
+			Repo:       repo,
+			Tag:        tag,
+			PullPolicy: "IfNotPresent",
+		}
+	}
+
+	// In CI use the pre-built GHCR image; locally use the integration-test image
+	// already loaded into Kind by the test setup scripts.
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		return &neo4jv1alpha1.ImageSpec{
 			Repo: "ghcr.io/priyolahiri/neo4j-kubernetes-operator-mcp",
 			Tag:  "latest",
 		}
 	}
 
-	repo, tag := splitImageTag(image)
 	return &neo4jv1alpha1.ImageSpec{
-		Repo: repo,
-		Tag:  tag,
+		Repo:       "neo4j-operator-mcp",
+		Tag:        "integration-test",
+		PullPolicy: "IfNotPresent",
 	}
 }
 

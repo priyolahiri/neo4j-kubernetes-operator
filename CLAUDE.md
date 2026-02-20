@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Neo4j Enterprise Operator for Kubernetes - manages Neo4j Enterprise deployments (v5.26+) using Kubebuilder framework.
 
-**Supported Neo4j Versions**: Only 5.26+ (Semver: 5.26.0+, Calver: 2025.01.0+)
+**Supported Neo4j Versions**: 5.26.x (last semver LTS) and 2025.x.x+ (CalVer). Neo4j moved from semver to CalVer after 5.26 — no 5.27+ semver releases exist or will exist.
 **CRITICAL: KIND IS MANDATORY**: This project exclusively uses Kind (Kubernetes in Docker) for ALL development, testing, and CI workflows. No alternatives (minikube, k3s) are supported.
 
 **CRITICAL: ENTERPRISE IMAGES ONLY**: Never use Neo4j community images (neo4j:5.26), only enterprise ones (neo4j:5.26-enterprise, neo4j:2025.01.0-enterprise)
@@ -362,7 +362,9 @@ kubectl patch -n neo4j-operator-dev deployment/neo4j-operator-controller-manager
 ## Key Features
 
 ### Plugin Installation Testing
-- **Environment Variable Only Plugins**: APOC configuration uses environment variables (no longer supported in neo4j.conf in Neo4j 5.26+)
+- **APOC Core is pre-bundled**: Every Neo4j enterprise image ships APOC Core at `/var/lib/neo4j/labs/`. The operator uses `server.directories.plugins=/var/lib/neo4j/labs` — no internet download required.
+- **`NEO4J_PLUGINS` download**: Works in both 5.26.x and all CalVer releases but requires pod egress internet access at startup. Tests soft-skip when APOC is absent (pod had no egress) — this is correct CI behavior, not a version incompatibility.
+- **APOC runtime config**: Behavioral settings (`apoc.export.file.enabled`, etc.) use env vars (`NEO4J_APOC_*`), not `neo4j.conf`, in Neo4j 5.26+
 - **Neo4j Config Plugins**: Graph Data Science, Bloom require neo4j.conf configuration with automatic security settings
 - **Dual Deployment Support**: Plugin tests verify both cluster and standalone deployment architectures
 - **ConfigMap Validation**: Standalone plugin tests check ConfigMap content, not StatefulSet environment variables
@@ -386,10 +388,25 @@ kubectl patch -n neo4j-operator-dev deployment/neo4j-operator-controller-manager
 - Fixed single node (no scaling)
 - Uses clustering infrastructure (no `dbms.mode=SINGLE`)
 
-**Version-Specific Discovery**:
-- **5.x**: `dbms.kubernetes.discovery.v2.service_port_name=tcp-discovery`
-- **2025.x**: `dbms.kubernetes.discovery.service_port_name=tcp-discovery`
-- Auto-detected via `getKubernetesDiscoveryParameter()`
+**Version-Specific Discovery** (LIST resolver via static pod FQDNs — all versions use port 6000):
+
+| Setting | 5.26.x (SemVer) | 2025.x+ / 2026.x+ (CalVer) |
+|---|---|---|
+| `dbms.cluster.discovery.resolver_type` | `LIST` | `LIST` |
+| `dbms.cluster.discovery.version` | `V2_ONLY` (must be explicit) | *(not used — V2 is the only protocol)* |
+| Endpoints setting | `dbms.cluster.discovery.v2.endpoints=<fqdns>:6000` | `dbms.cluster.endpoints=<fqdns>:6000` |
+| Bootstrap hint | `internal.dbms.cluster.discovery.system_bootstrapping_strategy=me/other` | *(not applicable — RAFT handles it)* |
+
+**Port mapping** (same for all versions):
+- Port **5000** (`tcp-discovery`): V1 discovery — **deprecated, never used by this operator**
+- Port **6000** (`tcp-tx`): V2 discovery embedded in cluster traffic — **always use this**
+- Port **7000** (`raft`): RAFT consensus
+
+CalVer detection uses `ParseVersion()` → `IsCalver` (`major >= 2025`), so 2026.x, 2027.x etc. are handled automatically.
+
+**Docs references**:
+- 5.26.x: https://neo4j.com/docs/operations-manual/5/clustering/setup/discovery/
+- 2025.x+: https://neo4j.com/docs/operations-manual/current/clustering/setup/discovery/
 
 ### Configuration Guidelines
 
@@ -402,7 +419,7 @@ kubectl patch -n neo4j-operator-dev deployment/neo4j-operator-controller-manager
 - `causal_clustering.leader_election_timeout` - Use `causal_clustering.leader_failure_detection_window`
 
 **Always Use** (Neo4j 5.26+ and 2025.x):
-- `dbms.cluster.discovery.version=V2_ONLY` (5.x) / default in 2025.x
+- `dbms.cluster.discovery.version=V2_ONLY` (5.26.x only) / not used in 2025.x+ (V2 is the only protocol)
 - `server.*` instead of `dbms.connector.*`
 - `dbms.ssl.policy.{scope}.*` for TLS
 - Environment variables over config files
@@ -433,10 +450,29 @@ spec:
 
 ### Plugin Types and Configuration
 
-**Environment Variable Only Plugins** (Neo4j 5.26+):
-- **APOC**: `apoc.export.file.enabled` → `NEO4J_APOC_EXPORT_FILE_ENABLED`
-- **APOC Extended**: Similar environment variable mapping
-- **Reason**: APOC settings no longer supported in `neo4j.conf` in Neo4j 5.26+
+**APOC Installation Methods** (both 5.26.x and 2025.x+/2026.x+):
+
+There are two ways to get APOC into the pods — the second is strongly preferred for Kubernetes:
+
+1. **`NEO4J_PLUGINS` automatic download** (development only):
+   - The Docker image entrypoint downloads APOC from the internet at pod startup when `NEO4J_PLUGINS='["apoc"]'` is set
+   - Works identically in 5.26.x and all CalVer releases (2025.x+, 2026.x+)
+   - **Requires pod egress internet access** — pods without outbound internet will start with no APOC
+   - Not recommended for production (download may fail, adds startup latency)
+
+2. **Pre-bundled labs jar** ✅ **Recommended for Kubernetes**:
+   - APOC Core ships pre-bundled inside every Neo4j enterprise image at `/var/lib/neo4j/labs/apoc-*.jar`
+   - No internet required, no download — already present in the image
+   - Enable by pointing the plugins directory at the labs folder:
+     ```
+     server.directories.plugins=/var/lib/neo4j/labs
+     dbms.security.procedures.unrestricted=apoc.*
+     ```
+   - Works identically in 5.26.x and all CalVer releases
+
+**APOC runtime configuration** (all versions 5.26+):
+- APOC behavioral settings (`apoc.export.file.enabled`, etc.) go via **environment variables** (`NEO4J_APOC_EXPORT_FILE_ENABLED`), NOT `neo4j.conf`
+- Procedure security allowlisting (`dbms.security.procedures.unrestricted`) still goes in `neo4j.conf`
 
 **Neo4j Config Plugins**:
 - **Graph Data Science**: Requires `dbms.security.procedures.unrestricted=gds.*`
@@ -447,7 +483,7 @@ spec:
 
 ### Plugin Usage Examples
 
-**APOC Plugin** (Environment Variables):
+**APOC Plugin** (recommended: uses pre-bundled labs jar, no download):
 ```yaml
 apiVersion: neo4j.com/v1alpha1
 kind: Neo4jPlugin
@@ -458,9 +494,11 @@ spec:
   name: apoc
   version: "5.26.0"
   config:
-    # These become NEO4J_APOC_* environment variables
+    # APOC behavioral settings become NEO4J_APOC_* environment variables
     apoc.export.file.enabled: "true"
     apoc.import.file.enabled: "true"
+    # server.directories.plugins=/var/lib/neo4j/labs is set automatically
+    # dbms.security.procedures.unrestricted=apoc.* is set automatically
 ```
 
 **Graph Data Science Plugin** (Neo4j Config):
@@ -845,7 +883,7 @@ AfterEach(func() {
 6. **Server Architecture**: Always use `servers` field for clusters, preserve `primaries`/`secondaries` for databases
 7. **Pod Naming**: Expect `<cluster>-server-*` naming, not `<cluster>-primary-*` or `<cluster>-secondary-*`
 8. **Certificate DNS**: Include all server pod DNS names in certificates
-9. **Discovery Port**: Always use `tcp-discovery` (5000), never `tcp-tx` (6000) for V2_ONLY mode
+9. **Discovery Port**: Always use port **6000** (`tcp-tx`) for V2 discovery endpoints — port 5000 (`tcp-discovery`) was the deprecated V1 discovery port and is **never** used by this operator
 10. **CRD Separation**: Never allow cross-CRD configuration overrides
 11. **Enterprise Image Validation**: Always validate Neo4j Enterprise images only (`neo4j:X.Y-enterprise`, `neo4j:2025.X.Y-enterprise`) - never allow community images (`neo4j:X.Y`) as they cause licensing and feature failures
 12. **Integration Test Cleanup**: MANDATORY AfterEach blocks with finalizer removal and `cleanupCustomResourcesInNamespace()` - prevents CI resource exhaustion and test failures from resource leaks

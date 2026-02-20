@@ -19,10 +19,10 @@ patches:
       value:
         requests:
           cpu: 100m
-          memory: 64Mi
+          memory: 256Mi
         limits:
-          cpu: 500m
-          memory: 128Mi
+          cpu: 1000m
+          memory: 1Gi
   target:
     kind: Deployment
     name: controller-manager

@@ -70,8 +70,8 @@ func TestBuildConfigMapForEnterprise_TLSConfiguration(t *testing.T) {
 
 	// Test startup script for parallel pod management compatibility
 	startupScript := configMap.Data["startup.sh"]
-	assert.Contains(t, startupScript, "dbms.cluster.minimum_initial_system_primaries_count=1", "should use fixed minimum of 1 for server bootstrap")
-	assert.Contains(t, startupScript, "This works reliably even with TLS enabled", "should have TLS cluster formation comment")
+	assert.Contains(t, startupScript, "dbms.cluster.minimum_initial_system_primaries_count=${TOTAL_SERVERS}", "should use TOTAL_SERVERS as minimum to prevent split-brain")
+	assert.Contains(t, startupScript, `BOOTSTRAP_STRATEGY="me"`, "should have me/other bootstrap strategy")
 }
 
 func TestBuildStatefulSetForEnterprise_TLSClusterFormation(t *testing.T) {

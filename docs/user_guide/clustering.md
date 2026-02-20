@@ -4,7 +4,7 @@ This document describes how to configure and manage Neo4j Enterprise clusters us
 
 ## Overview
 
-The Neo4j Kubernetes Operator supports Neo4j 5.26+ Enterprise clustering with multiple discovery mechanisms and advanced features like read replicas and multi-zone deployments.
+The Neo4j Kubernetes Operator supports Neo4j 5.26.x (last semver LTS) and 2025.x.x+ (CalVer) Enterprise clustering with multiple discovery mechanisms and advanced features like read replicas and multi-zone deployments.
 
 ## Cluster Architecture
 
@@ -22,106 +22,65 @@ The operator automatically uses **Kubernetes Discovery** (recommended) for all c
 
 ### How Neo4j Kubernetes Discovery Works
 
-The operator implements Neo4j's Kubernetes discovery mechanism with the following architecture:
+The operator uses **LIST discovery** with static pod FQDNs via the StatefulSet headless service. Each pod's DNS name is known upfront (`{cluster}-server-{n}.{cluster}-headless.{ns}.svc.cluster.local`), so the operator pre-populates a fixed peer list at startup — no Kubernetes API calls required for discovery.
 
-1. **Discovery Service**: A dedicated ClusterIP service labeled with `neo4j.com/clustering=true`
-2. **Service Discovery**: Neo4j queries the Kubernetes API to find services matching the label selector
-3. **Endpoint Resolution**: Neo4j uses the discovered service to query endpoints and find individual pod IPs
-4. **Cluster Formation**: Pods connect directly to each other using their resolved IPs
+**Discovery ports**:
+- Port **6000** (`tcp-tx`): V2 cluster communication — used by this operator for discovery endpoints
+- Port **5000** (`tcp-discovery`): V1 discovery — deprecated, **never used by this operator**
 
-**Important**: When checking logs, you'll see Neo4j report discovering a service hostname like:
+### Kubernetes Services Created
+
+The operator automatically creates:
+- `{cluster-name}-headless` — StatefulSet headless service (pod FQDNs)
+- `{cluster-name}-internals` — cluster-internal routing
+- `{cluster-name}-client` — external Bolt/HTTP access
+
+### Discovery Configuration (Injected Automatically)
+
+The operator injects version-specific discovery settings into every pod's startup script. **Do not set these in `spec.config`** — the operator manages them.
+
+**Neo4j 5.26.x (SemVer)**:
+```properties
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.discovery.version=V2_ONLY
+dbms.cluster.discovery.v2.endpoints=<cluster>-server-0.<cluster>-headless.<ns>.svc.cluster.local:6000,...
+internal.dbms.cluster.discovery.system_bootstrapping_strategy=me   # server-0 only
 ```
-Resolved endpoints... to '[my-cluster-discovery.default.svc.cluster.local:5000]'
+
+**Neo4j 2025.x+ / 2026.x+ (CalVer)**:
+```properties
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.endpoints=<cluster>-server-0.<cluster>-headless.<ns>.svc.cluster.local:6000,...
+# No dbms.cluster.discovery.version — V2 is the only supported protocol
 ```
-This is **expected behavior**. Neo4j discovers the service first, then internally queries its endpoints to get pod IPs.
 
-### RBAC Requirements
-
-The discovery mechanism requires specific permissions:
-- **Services**: To discover the labeled service
-- **Endpoints**: To resolve individual pod IPs from the service
-
-The operator automatically creates these permissions in the discovery role.
-
-### Kubernetes Discovery (Automatic)
-
-**The operator automatically configures Kubernetes API-based discovery for all clusters.** This provides:
-
-- **Dynamic service discovery** via Kubernetes API
-- **Automatic adaptation** to cluster topology changes
-- **Native cloud-native integration**
-- **Reduced operator complexity**
-
-**No manual configuration required** - the operator automatically:
-
-1. **Creates RBAC resources**:
-   - ServiceAccount: `{cluster-name}-discovery`
-   - Role: `{cluster-name}-discovery` (with permissions to list services and endpoints)
-   - RoleBinding: `{cluster-name}-discovery`
-
-2. **Creates server services**:
-   - Server headless service: `{cluster-name}-headless` (StatefulSet identity)
-   - Internals service: `{cluster-name}-internals` (cluster-internal routing)
-   - Discovery service: `{cluster-name}-discovery` (K8s discovery)
-   - Client service: `{cluster-name}-client` (external access)
-
-3. **Configures Neo4j automatically** with version-specific settings:
-
-   **For Neo4j 5.26+ (SemVer) - CRITICAL V2_ONLY Configuration**:
-   ```properties
-   dbms.cluster.discovery.resolver_type=K8S
-   dbms.kubernetes.label_selector=neo4j.com/cluster={cluster-name},neo4j.com/clustering=true
-   dbms.kubernetes.discovery.v2.service_port_name=tcp-discovery
-   dbms.cluster.discovery.version=V2_ONLY
-   ```
-
-   **For Neo4j 2025.x+ (CalVer)**:
-   ```properties
-   dbms.cluster.discovery.resolver_type=K8S
-   dbms.kubernetes.label_selector=neo4j.com/cluster={cluster-name},neo4j.com/clustering=true
-   dbms.kubernetes.discovery.service_port_name=tcp-discovery
-   # V2_ONLY is default in 2025.x, no explicit setting needed
-   ```
-
-   > **⚠️ CRITICAL**: The operator uses `tcp-discovery` port (5000) for V2_ONLY discovery mode, not `tcp-tx` port (6000).
-   > V2_ONLY mode disables the discovery port (6000) and only uses the cluster communication port (5000).
-   > This is essential for proper cluster formation in Neo4j 5.26+ and 2025.x.
-
-### Discovery Method Enforcement
-
-**The operator enforces Kubernetes discovery for all clusters.** Any manual discovery configuration in `spec.config` is automatically overridden during cluster startup to ensure:
-
-- ✅ **Consistent behavior** across all deployments
-- ✅ **Cloud-native integration** with Kubernetes API
-- ✅ **Dynamic cluster management** without manual endpoint management
-- ✅ **Simplified operations** with zero discovery configuration
-
-**Note**: While you can specify discovery settings in `spec.config`, the operator will always override them with Kubernetes discovery during pod startup to maintain operational consistency.
+Ref: [5.26.x discovery docs](https://neo4j.com/docs/operations-manual/5/clustering/setup/discovery/) · [2025.x+ discovery docs](https://neo4j.com/docs/operations-manual/current/clustering/setup/discovery/)
 
 ## Cluster Formation
 
-The operator uses an **optimized parallel cluster formation approach** that enables fast and reliable cluster startup:
+The operator uses a **ME/OTHER bootstrap strategy** with `Parallel` pod management for fast, split-brain-free cluster formation.
 
 ### Key Configuration
 
-- **Minimum Initial Primaries**: Always set to 1, allowing flexible cluster formation
-- **Pod Management**: Parallel startup for all server pods
-- **Discovery**: All server pods start simultaneously and discover each other via Kubernetes endpoints
-- **Server Self-Organization**: Servers automatically organize into primary and secondary roles based on database needs
+- **Bootstrap strategy**: server-0 uses `me` (preferred bootstrapper); all other servers use `other` (join when ready)
+- **Minimum primaries**: Set to `TOTAL_SERVERS` on initial formation — all servers must mutually discover each other before RAFT elects a leader, preventing premature solo bootstrap
+- **On restart** (data already exists): minimum primaries check is skipped so servers rejoin immediately without blocking StatefulSet rolling updates
+- **Pod Management**: `Parallel` — all pods start simultaneously
 
 ### How It Works
 
-1. **All server pods start in parallel** - Single server StatefulSet deploys all pods simultaneously
-2. **First server forms initial cluster** - With minimum_primaries=1, the first server to start can form the cluster
-3. **Other servers join existing cluster** - Remaining servers discover and join the already-formed cluster
-4. **Servers self-organize** - Neo4j automatically assigns primary and secondary roles as needed
-5. **100% cluster formation success** - This approach achieves reliable single-cluster formation
+1. **All server pods start in parallel** — Single StatefulSet with `Parallel` pod management
+2. **Servers discover each other** — Via static pod FQDNs in the LIST endpoint list (port 6000)
+3. **RAFT coordination** — server-0's `me` hint makes it the preferred bootstrapper; others wait with `other` hint
+4. **All N servers must see each other** — `dbms.cluster.minimum_initial_system_primaries_count=N` prevents any single node from forming a solo cluster (split-brain)
+5. **Cluster forms once quorum reached** — RAFT elects server-0 as bootstrap leader; others join
+6. **Servers self-organize** — Neo4j automatically assigns primary and secondary roles per database
 
 ### Benefits
 
-- **Fastest possible startup** - No artificial delays between primaries and secondaries
-- **Reliable cluster formation** - Eliminates split-brain scenarios common with other approaches
-- **Simplified operations** - No complex sequencing or timing dependencies
+- **Split-brain prevention** — All servers must be mutually visible before formation completes
+- **Reliable formation** — Deterministic peer addresses (one FQDN per pod) unlike K8S ClusterIP which returns a single VIP
+- **Fast restarts** — Minimum primaries check skipped on pod restarts so rolling updates aren't blocked
 
 ### TLS-Enabled Clusters
 
@@ -259,22 +218,22 @@ spec:
 
 The operator uses the following default ports:
 
-- **Bolt**: 7687 (client connections)
-- **HTTP**: 7474 (HTTP API)
-- **HTTPS**: 7473 (HTTPS API)
-- **Cluster**: 5000 (cluster communication and V2_ONLY discovery)
-- **Discovery (legacy tcp-tx)**: 6000 (unused in V2_ONLY mode)
-- **Routing**: 7688 (routing service)
-- **Raft**: 7000 (consensus protocol)
-
-You can customize these ports in the cluster configuration:
+| Port | Name | Purpose |
+|------|------|---------|
+| 7687 | bolt | Client Bolt connections |
+| 7474 | http | HTTP API |
+| 7473 | https | HTTPS API |
+| **6000** | **tcp-tx** | **V2 cluster traffic + discovery endpoints (always used)** |
+| 5000 | tcp-discovery | V1 discovery — **deprecated, not used by this operator** |
+| 7688 | routing | Routing service |
+| 7000 | raft | RAFT consensus |
 
 ```yaml
 spec:
   config:
-    server.cluster.listen_address: 0.0.0.0:5000
-    server.discovery.listen_address: 0.0.0.0:6000  # Ignored in V2_ONLY mode
+    server.cluster.listen_address: 0.0.0.0:6000   # V2 cluster + discovery
     server.routing.listen_address: 0.0.0.0:7688
+    server.cluster.raft.listen_address: 0.0.0.0:7000
 ```
 
 ## Health Monitoring
@@ -331,13 +290,10 @@ spec:
 2. **Discovery Service**
    - Verify discovery service exists: `kubectl get service {cluster-name}-discovery`
    - Check endpoints include all pods: `kubectl describe endpoints {cluster-name}-discovery`
-   - Confirm clustering label: Service should have `neo4j.com/clustering=true`
-   - Check discovery service has clustering label: `kubectl get service {cluster-name}-discovery -o jsonpath='{.metadata.labels.neo4j\.com/clustering}'`
-   - Verify discovery role has endpoints permission: `kubectl get role {cluster-name}-discovery -o yaml | grep endpoints`
-   - Check discovery logs show service hostname (this is EXPECTED): `kubectl logs {cluster-name}-server-0 | grep "Resolved endpoints"`
+   - Verify the headless service exists: `kubectl get service {cluster-name}-headless`
+   - Check that pod FQDNs resolve: `kubectl exec {cluster-name}-server-0 -- nslookup {cluster-name}-server-0.{cluster-name}-headless.{ns}.svc.cluster.local`
+   - Inspect the startup script for correct LIST endpoints: `kubectl get configmap {cluster-name}-config -o yaml | grep -A2 resolver_type`
    - Verify pod has correct ServiceAccount: `kubectl get pod {cluster-name}-server-0 -o jsonpath='{.spec.serviceAccountName}'`
-
-   **Note**: Neo4j's K8s discovery returns service hostnames (e.g., `{cluster-name}-discovery.default.svc.cluster.local:5000`) in logs. This is expected behavior - Neo4j internally queries the service endpoints to discover individual pods.
 
 3. **Quorum Loss**
    - Check primary node health

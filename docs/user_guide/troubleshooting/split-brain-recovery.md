@@ -210,8 +210,7 @@ spec:
 ```yaml
 spec:
   config:
-    # Optimize discovery timeouts
-    dbms.kubernetes.discovery.v2.refresh_rate: "10s"
+    # Optimize discovery resolution timeout (operator uses LIST discovery with static pod FQDNs)
     dbms.cluster.discovery.resolution_timeout: "30s"
 
     # Cluster communication resilience (Neo4j 5.26+)

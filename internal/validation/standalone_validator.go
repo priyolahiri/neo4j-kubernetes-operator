@@ -131,7 +131,7 @@ func (v *StandaloneValidator) validateImage(standalone *neo4jv1alpha1.Neo4jEnter
 		))
 	}
 
-	// Validate Neo4j version (5.26+)
+	// Validate Neo4j version (5.26.x last semver LTS or 2025.x.x CalVer)
 	if errs := v.validateNeo4jVersion(standalone.Spec.Image.Tag); len(errs) > 0 {
 		for _, err := range errs {
 			allErrs = append(allErrs, field.Invalid(
@@ -323,7 +323,7 @@ func (v *StandaloneValidator) validateNeo4jVersion(tag string) []error {
 
 	version, err := neo4j.ParseVersion(tag)
 	if err != nil || !version.IsSupported() {
-		errs = append(errs, fmt.Errorf("Neo4j version must be 5.26+ (semver) or 2025.01+ (calver), got: %s", tag))
+		errs = append(errs, fmt.Errorf("Neo4j version must be 5.26.x (last semver LTS) or 2025.01+ (CalVer), got: %s", tag))
 	}
 
 	return errs

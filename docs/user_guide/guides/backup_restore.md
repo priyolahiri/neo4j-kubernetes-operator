@@ -52,7 +52,7 @@ kubectl logs job/simple-backup-backup
 The backup and restore functionality requires Neo4j Enterprise version 5.26.0 or later, or calver versions 2025.01.0 and later. The operator will automatically validate the Neo4j version before performing backup or restore operations.
 
 **Supported Versions:**
-- **Semver**: 5.26.0, 5.26.1, 5.27.0, 6.0.0, etc.
+- **Semver**: 5.26.0, 5.26.1 (5.26.x is the last semver LTS — no 5.27+ exists)
 - **Calver**: 2025.01.0, 2025.06.1, 2026.01.0, etc.
 - **Enterprise Tags**: 5.26.0-enterprise, 2025.01.0-enterprise, etc.
 

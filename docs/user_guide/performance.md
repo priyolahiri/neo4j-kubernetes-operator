@@ -138,8 +138,7 @@ spec:
     dbms.cluster.raft.election_timeout: "7s"
     dbms.cluster.raft.leader_failure_detection_window: "30s"
 
-    # Discovery performance
-    dbms.kubernetes.discovery.v2.refresh_rate: "5s"
+    # Discovery resolution timeout (operator uses LIST discovery; no K8S API polling)
     dbms.cluster.discovery.resolution_timeout: "30s"
 
     # Network buffer sizes

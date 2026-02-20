@@ -60,7 +60,7 @@ The operator defines six core CRDs located in `api/v1alpha1/`:
 - **Minimum Topology**: 2+ servers (enforced by validation)
 - **Server Organization**: Servers self-organize into primary/secondary roles for databases
 - **Scaling**: Horizontal scaling supported with topology validation
-- **Discovery**: V2_ONLY mode exclusively for Neo4j 5.26+ and 2025.x
+- **Discovery**: LIST resolver with static pod FQDNs; V2_ONLY explicitly set for 5.26.x, implicit for 2025.x+
 - **Resource Pattern**: Single StatefulSet replaces complex multi-StatefulSet architecture
 
 **Key Fields**:
@@ -208,21 +208,29 @@ type Neo4jDatabaseSpec struct {
 ## Neo4j Version Compatibility
 
 ### Supported Versions
-- **Neo4j 5.26+**: Semver format (5.26.0, 5.27.1, etc.)
+- **Neo4j 5.26.x**: Last semver LTS release (5.26.0, 5.26.1, etc.) — no 5.27+ semver versions exist
 - **Neo4j 2025.x+**: Calver format (2025.01.0, 2025.02.0, etc.)
 
 ### Version-Specific Configuration
 
-#### Discovery Configuration:
-- **Neo4j 5.26.x**: `dbms.kubernetes.discovery.v2.service_port_name=tcp-discovery`
-- **Neo4j 2025.x**: `dbms.kubernetes.discovery.service_port_name=tcp-discovery`
-- **Auto-Detection**: `getKubernetesDiscoveryParameter()` in `cluster.go`
+#### Discovery Configuration (LIST resolver, injected by startup script):
+
+| Setting | 5.26.x (SemVer) | 2025.x+ / 2026.x+ (CalVer) |
+|---|---|---|
+| `dbms.cluster.discovery.resolver_type` | `LIST` | `LIST` |
+| `dbms.cluster.discovery.version` | `V2_ONLY` (explicit) | *(omitted — V2 is only protocol)* |
+| Endpoints key | `dbms.cluster.discovery.v2.endpoints` | `dbms.cluster.endpoints` |
+| Endpoint port | **6000** (tcp-tx) | **6000** (tcp-tx) |
+| Bootstrap hint | `internal.dbms.cluster.discovery.system_bootstrapping_strategy=me/other` | *(not used)* |
+
+Port 5000 (`tcp-discovery`) is the **deprecated V1 discovery port — never used by this operator**.
+CalVer detection: `ParseVersion()` → `IsCalver` (`major >= 2025`) covers 2026.x+ automatically.
 
 #### Modern Configuration Standards:
 - **Memory**: `server.memory.*` (not deprecated `dbms.memory.*`)
 - **TLS/SSL**: `server.https.*` and `server.bolt.*` (not `dbms.connector.*`)
 - **Database Format**: `db.format: "block"` (not deprecated formats)
-- **Discovery**: `dbms.cluster.discovery.resolver_type: "K8S"`
+- **Discovery**: managed entirely by operator startup script — do not set in `spec.config`
 
 ### Database Creation Syntax
 

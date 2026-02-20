@@ -219,8 +219,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// (minimum 1 primary + 1 secondary OR 2+ primaries)
 	// No need for single-node to multi-node transition logic
 
-	// Only set to "Initializing" if cluster is not already Ready
-	if cluster.Status.Phase != "Ready" {
+	// Set phase to "Initializing" only on the very first reconcile (no phase set yet).
+	// Never regress an established phase (Forming, Ready, etc.) back to Initializing.
+	if cluster.Status.Phase == "" {
 		_ = r.updateClusterStatus(ctx, cluster, "Initializing", "Starting cluster reconciliation")
 	}
 

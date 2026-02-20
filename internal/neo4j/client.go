@@ -651,11 +651,13 @@ func (c *Client) CreateDatabase(ctx context.Context, databaseName string, option
 	// Use timeout protection for WAIT operations
 	err := c.executeWithWaitTimeout(ctx, session, query, nil, wait, 300)
 	if err != nil {
-		// Check if database was created despite timeout
-		if wait && errors.Is(err, context.DeadlineExceeded) {
+		// Check if database was created despite connection drop or timeout.
+		// With WAIT, Neo4j holds the Bolt connection open until the database is fully online.
+		// For multi-server clusters this can exceed TCP idle timeouts (~5 min), causing EOF.
+		if wait && (errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "ConnectivityError")) {
 			exists, checkErr := c.DatabaseExists(ctx, databaseName)
 			if checkErr == nil && exists {
-				return nil // Database created, just took too long to be ready
+				return nil // Database created, connection dropped before WAIT completed
 			}
 		}
 		return fmt.Errorf("failed to create database %s: %w", databaseName, err)
@@ -727,11 +729,11 @@ func (c *Client) CreateDatabaseWithTopology(ctx context.Context, databaseName st
 	// Use timeout protection for WAIT operations
 	err := c.executeWithWaitTimeout(ctx, session, query, nil, wait, 300)
 	if err != nil {
-		// Check if database was created despite timeout
-		if wait && errors.Is(err, context.DeadlineExceeded) {
+		// Check if database was created despite connection drop or timeout.
+		if wait && (errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "ConnectivityError")) {
 			exists, checkErr := c.DatabaseExists(ctx, databaseName)
 			if checkErr == nil && exists {
-				return nil // Database created, just took too long to be ready
+				return nil // Database created, connection dropped before WAIT completed
 			}
 		}
 		return fmt.Errorf("failed to create database %s with topology: %w", databaseName, err)
@@ -1913,9 +1915,9 @@ func isVersionSupported(version string) bool {
 		return true // All CalVer versions are supported
 	}
 
-	// SemVer support (5.x.x)
+	// SemVer support: only 5.26.x — the last semver LTS release (no 5.27+ exists)
 	if major == 5 {
-		return minor >= 26 // Must be version 5.26 or higher
+		return minor == 26
 	}
 
 	// Legacy support for 4.x (if needed)

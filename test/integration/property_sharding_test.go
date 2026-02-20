@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 )
 
 // isRunningInCI checks if tests are running in CI environment
@@ -37,22 +38,39 @@ func isRunningInCI() bool {
 	return os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != ""
 }
 
+// isPropertyShardingCompatible returns true when the current Neo4j image tag supports
+// property sharding (requires CalVer 2025.10+).
+func isPropertyShardingCompatible() bool {
+	tag := getNeo4jImageTag()
+	v, err := neo4j.ParseVersion(tag)
+	if err != nil {
+		return false
+	}
+	if !v.IsCalver {
+		return false
+	}
+	// 2025.10+ required for property sharding engine
+	if v.Major > 2025 {
+		return true
+	}
+	return v.Major == 2025 && v.Minor >= 10
+}
+
 // Property Sharding Integration Tests
 // These tests are skipped in CI environments due to large resource requirements:
-// - Neo4j 2025.12 images are larger than standard versions
 // - Property sharding requires at least 1 server (3+ recommended for HA)
 // - Each server needs 4Gi+ memory minimum for property sharding workloads (8Gi recommended)
 // - Total cluster resource requirements: 12Gi minimum (24Gi recommended)
+// - Requires Neo4j CalVer 2025.10+ (set NEO4J_VERSION=2025.x-enterprise to enable)
 //
 // To run these tests locally:
 //
-//	make test-integration FOCUS="Property Sharding"
+//	NEO4J_VERSION=2025.12-enterprise make test-integration FOCUS="Property Sharding"
 //
 // Or:
 //
-//	ginkgo run -focus "Property Sharding" ./test/integration
+//	NEO4J_VERSION=2025.12-enterprise ginkgo run -focus "Property Sharding" ./test/integration
 var _ = Describe("Property Sharding Integration Tests", Serial, func() {
-	const propertyShardingImageTag = "2025.12-enterprise"
 	const shardedDBReadyTimeout = 10 * time.Minute
 	const shardedDBPollInterval = 5 * time.Second
 
@@ -66,6 +84,11 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 		// Skip property sharding tests in CI due to resource requirements
 		if isRunningInCI() {
 			Skip("Skipping property sharding tests in CI - resource requirements too large")
+		}
+
+		// Skip if the current Neo4j image does not support property sharding (requires 2025.10+)
+		if !isPropertyShardingCompatible() {
+			Skip("Skipping property sharding tests: requires Neo4j CalVer 2025.10+, set NEO4J_VERSION=2025.x-enterprise")
 		}
 
 		testNamespace = createTestNamespace("property-sharding")
@@ -132,7 +155,7 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 						Image: neo4jv1alpha1.ImageSpec{
 							Repo: "neo4j",
-							Tag:  propertyShardingImageTag, // Property sharding requires 2025.10+ (using 2025.12)
+							Tag:  getNeo4jImageTag(), // Property sharding requires CalVer 2025.10+ (guarded by isPropertyShardingCompatible)
 						},
 						Auth: &neo4jv1alpha1.AuthSpec{
 							AdminSecret: "neo4j-admin-secret",
@@ -198,7 +221,7 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 						Image: neo4jv1alpha1.ImageSpec{
 							Repo: "neo4j",
-							Tag:  propertyShardingImageTag,
+							Tag:  getNeo4jImageTag(),
 						},
 						Auth: &neo4jv1alpha1.AuthSpec{
 							AdminSecret: "neo4j-admin-secret",
@@ -232,7 +255,7 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 						Image: neo4jv1alpha1.ImageSpec{
 							Repo: "neo4j",
-							Tag:  propertyShardingImageTag,
+							Tag:  getNeo4jImageTag(),
 						},
 						Auth: &neo4jv1alpha1.AuthSpec{
 							AdminSecret: "neo4j-admin-secret",
@@ -282,7 +305,7 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
-						Tag:  propertyShardingImageTag,
+						Tag:  getNeo4jImageTag(),
 					},
 					Auth: &neo4jv1alpha1.AuthSpec{
 						AdminSecret: "neo4j-admin-secret",
@@ -428,7 +451,7 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 						Image: neo4jv1alpha1.ImageSpec{
 							Repo: "neo4j",
-							Tag:  propertyShardingImageTag,
+							Tag:  getNeo4jImageTag(),
 						},
 						Auth: &neo4jv1alpha1.AuthSpec{
 							AdminSecret: "neo4j-admin-secret",

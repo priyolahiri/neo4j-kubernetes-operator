@@ -534,7 +534,7 @@ func (v *DatabaseValidator) addSeedURIWarnings(database *neo4jv1alpha1.Neo4jData
 }
 
 func (v *DatabaseValidator) validateDatabaseOptions(database *neo4jv1alpha1.Neo4jDatabase, result *DatabaseValidationResult) {
-	if database.Spec.Options == nil || len(database.Spec.Options) == 0 {
+	if len(database.Spec.Options) == 0 {
 		return
 	}
 

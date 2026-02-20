@@ -134,6 +134,14 @@ deploy_to_cluster() {
     log "Loading image to cluster: ${cluster_name}"
     kind load docker-image "${operator_image}" --name "${cluster_name}"
 
+    # Build and load MCP image for integration tests
+    if [[ "${cluster_name}" == "${TEST_CLUSTER}" ]]; then
+        log "Building MCP server image for integration tests..."
+        make mcp-docker-build MCP_IMAGE=neo4j-operator-mcp:integration-test || log_warning "MCP image build failed (MCP tests will be skipped)"
+        log "Loading MCP image to cluster: ${cluster_name}"
+        kind load docker-image neo4j-operator-mcp:integration-test --name "${cluster_name}" || log_warning "MCP image load failed"
+    fi
+
     # Deploy operator
     log "Deploying operator to ${cluster_name}..."
     if [[ "${image_tag}" == "dev" ]]; then

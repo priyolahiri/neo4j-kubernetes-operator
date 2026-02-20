@@ -36,8 +36,8 @@ jobs:
             echo "has_ocp_secrets=false" >> "$GITHUB_OUTPUT"
           fi
         env:
-          OCP_API: ${{ secrets.OCP_API }}
-          OCP_TOKEN: ${{ secrets.OCP_TOKEN }}
+          OCP_API: ${{ secrets.OCP_API || '' }}
+          OCP_TOKEN: ${{ secrets.OCP_TOKEN || '' }}
 
   bundle-and-catalog:
     name: Build & Push OLM Bundle

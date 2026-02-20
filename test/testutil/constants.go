@@ -22,7 +22,7 @@ import "time"
 const (
 	// Neo4j configuration
 	TestNeo4jVersion        = "5.26-enterprise"
-	TestNeo4jUpgradeVersion = "5.27-enterprise"
+	TestNeo4jUpgradeVersion = "2025.01.0-enterprise"
 	TestNeo4jImage          = "neo4j"
 
 	// Storage configuration

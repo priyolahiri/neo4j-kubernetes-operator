@@ -50,14 +50,14 @@ func (v *ImageValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster)
 		))
 	}
 
-	// Validate Neo4j version (must be 5.26+)
+	// Validate Neo4j version (must be 5.26.x last semver LTS, or 2025.x.x+ CalVer)
 	if cluster.Spec.Image.Tag != "" {
 		version, err := neo4j.ParseVersion(cluster.Spec.Image.Tag)
 		if err != nil || !version.IsSupported() {
 			allErrs = append(allErrs, field.Invalid(
 				imagePath.Child("tag"),
 				cluster.Spec.Image.Tag,
-				"Neo4j version must be 5.26+ (Semver) or 2025.01.0+ (Calver) for enterprise operator",
+				"Neo4j version must be 5.26.x (last semver LTS) or 2025.01.0+ (CalVer) for enterprise operator",
 			))
 		}
 	}

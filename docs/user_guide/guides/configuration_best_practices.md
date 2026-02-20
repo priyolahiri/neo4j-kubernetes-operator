@@ -53,44 +53,43 @@ config:
 
 ## Clustering Configuration
 
-### 🔧 CRITICAL: V2_ONLY Discovery Configuration
+### Discovery Configuration (Operator-Managed)
 
-**Neo4j 5.26+ and 2025.x use V2_ONLY discovery mode which requires specific port configuration.**
+The operator automatically injects all discovery settings into each pod's startup script. **Do not set discovery keys in `spec.config`** — the validator will reject them.
 
-### ✅ Correct (Automatically configured by operator)
+### ✅ What the operator injects (do not override)
 
-**Neo4j 5.26+ (Semver)**:
-```yaml
-# The operator automatically configures these settings:
-dbms.cluster.discovery.resolver_type: "K8S"
-dbms.kubernetes.discovery.v2.service_port_name: "tcp-discovery"  # Port 5000
-dbms.cluster.discovery.version: "V2_ONLY"
+**Neo4j 5.26.x (SemVer)**:
+```properties
+# Injected into /tmp/neo4j-config/neo4j.conf at pod startup:
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.discovery.version=V2_ONLY
+dbms.cluster.discovery.v2.endpoints=<pod-0-fqdn>:6000,<pod-1-fqdn>:6000,...
 ```
 
-**Neo4j 2025.x+ (Calver)**:
-```yaml
-# The operator automatically configures these settings:
-dbms.cluster.discovery.resolver_type: "K8S"
-dbms.kubernetes.discovery.service_port_name: "tcp-discovery"     # Port 5000
-# V2_ONLY is default in 2025.x, no explicit setting needed
+**Neo4j 2025.x+ / 2026.x+ (CalVer)**:
+```properties
+# Injected into /tmp/neo4j-config/neo4j.conf at pod startup:
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.endpoints=<pod-0-fqdn>:6000,<pod-1-fqdn>:6000,...
+# No version flag — V2 is the only protocol in CalVer releases
 ```
 
-### ❌ Deprecated/Incorrect
+**Port used**: **6000** (`tcp-tx`) — V2 cluster traffic + discovery. Port 5000 (`tcp-discovery`) was the V1 discovery port and is **not used** by this operator.
+
+### ❌ Forbidden in `spec.config` (validator will reject)
 ```yaml
 config:
-  # These settings will cause cluster formation to fail:
-  dbms.kubernetes.discovery.v2.service_port_name: "tcp-tx"      # Wrong port!
-  dbms.kubernetes.discovery.service_port_name: "discovery"      # Legacy name
-  dbms.cluster.discovery.type: "K8S"                           # Deprecated
+  dbms.cluster.discovery.resolver_type: "..."   # Managed by operator
+  dbms.cluster.discovery.v2.endpoints: "..."    # Managed by operator (5.26.x)
+  dbms.cluster.endpoints: "..."                  # Managed by operator (2025.x+)
+  dbms.kubernetes.label_selector: "..."         # K8S discovery not used
 
-  # Database format
-  db.format: "standard"                                        # Deprecated since 5.23
-  db.format: "high_limit"                                     # Deprecated since 5.23
-  server.groups: "group1"                                     # Deprecated - use initial.server.tags
+  # Database format (deprecated)
+  db.format: "standard"     # Deprecated since 5.23 — use block format
+  db.format: "high_limit"   # Deprecated since 5.23 — use block format
+  server.groups: "group1"   # Deprecated — use initial.server.tags
 ```
-
-> **⚠️ IMPORTANT**: V2_ONLY mode disables the discovery port (6000) and only uses the cluster port (5000).
-> Using `tcp-tx` instead of `tcp-discovery` will cause cluster formation to fail.
 
 ## Common Configuration Patterns
 
@@ -148,27 +147,24 @@ spec:
 ### Do's ✅
 - Use `server.memory.*` for memory settings
 - Use `server.https.*` and `server.bolt.*` for protocol settings
-- Use `dbms.cluster.discovery.resolver_type` instead of `type`
 - Use `db.format: "block"` for new databases
-- Let the operator manage Discovery V2 settings
+- Let the operator manage all discovery settings (LIST resolver, endpoints, V2_ONLY)
 
 ### Don'ts ❌
 - Don't use `dbms.mode=SINGLE` (removed in 5.x)
 - Don't use `dbms.memory.*` settings (use `server.memory.*`)
 - Don't use `dbms.connector.*` settings (use `server.*`)
 - Don't use `causal_clustering.*` settings (use `dbms.cluster.*`)
-- Don't manually configure Kubernetes discovery endpoints
+- Don't set `dbms.cluster.discovery.*` or `dbms.cluster.endpoints` in `spec.config` — operator manages these
 
 ## Automatic Configuration by Operator
 
-The operator automatically configures many settings for optimal Kubernetes operation:
-
 ### Cluster Deployments
-- `dbms.cluster.discovery.resolver_type: "K8S"`
-- `dbms.cluster.discovery.version: "V2_ONLY"` (for Neo4j 5.26+)
-- Kubernetes service discovery endpoints
-- Network advertised addresses
-- Raft and clustering ports
+- LIST discovery with static pod FQDNs via headless service (`{cluster}-server-{n}.{cluster}-headless.{ns}.svc.cluster.local:6000`)
+- Version-specific endpoint settings (`dbms.cluster.discovery.v2.endpoints` for 5.26.x, `dbms.cluster.endpoints` for 2025.x+)
+- `dbms.cluster.discovery.version=V2_ONLY` for 5.26.x (not needed for CalVer)
+- ME/OTHER bootstrap strategy (server-0 = preferred bootstrapper)
+- Network advertised addresses and RAFT/routing ports
 
 ### Standalone Deployments
 - Unified clustering infrastructure (no `dbms.mode=SINGLE`)
@@ -308,15 +304,14 @@ spec:
 
 ## Version-Specific Considerations
 
-### Neo4j 5.26+ (Semver)
-- Discovery parameter: `dbms.kubernetes.service_port_name`
-- Discovery V2 parameter: `dbms.kubernetes.discovery.v2.service_port_name`
+### Neo4j 5.26.x (SemVer)
+- Discovery: LIST resolver — `dbms.cluster.discovery.v2.endpoints=<pod-fqdns>:6000` + `V2_ONLY` (operator-managed)
 - Seed URI support with CloudSeedProvider
 - No point-in-time recovery for seed URIs
 
-### Neo4j 2025.x+ (Calver)
-- Discovery parameter: `dbms.kubernetes.discovery.service_port_name`
-- Same memory and server settings as 5.26+
+### Neo4j 2025.x+ / 2026.x+ (CalVer)
+- Discovery: LIST resolver — `dbms.cluster.endpoints=<pod-fqdns>:6000` (operator-managed, no version flag)
+- Same memory and server settings as 5.26.x
 - Enhanced seed URI support with point-in-time recovery
 - `defaultCypherLanguage` field support
 - `restoreUntil` field support in `seedConfig`

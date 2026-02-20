@@ -37,8 +37,8 @@ var _ = Describe("Version Detection Integration Tests", func() {
 			}{
 				{"neo4j:5.26.0", 5, 26, 0, false},
 				{"neo4j:5.26.0-enterprise", 5, 26, 0, false},
-				{"neo4j:5.27.1", 5, 27, 1, false},
-				{"neo4j:5.28.0-community", 5, 28, 0, false},
+				{"neo4j:5.27.1", 5, 27, 1, false},           // 5.27.x does not exist - parsing still works but IsSupported() returns false
+				{"neo4j:5.28.0-community", 5, 28, 0, false}, // 5.28.x does not exist
 			}
 
 			for _, tc := range testCases {
@@ -120,8 +120,9 @@ var _ = Describe("Version Detection Integration Tests", func() {
 			version526, _ := neo4j.GetImageVersion("neo4j:5.26.0")
 			Expect(version526.IsSupported()).To(BeTrue())
 
+			// 5.27 is not supported (does not exist)
 			version527, _ := neo4j.GetImageVersion("neo4j:5.27.0")
-			Expect(version527.IsSupported()).To(BeTrue())
+			Expect(version527.IsSupported()).To(BeFalse())
 
 			version2025, _ := neo4j.GetImageVersion("neo4j:2025.01.0")
 			Expect(version2025.IsSupported()).To(BeTrue())

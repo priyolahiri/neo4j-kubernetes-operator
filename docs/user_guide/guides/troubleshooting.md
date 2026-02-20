@@ -209,7 +209,7 @@ spec:
 ```
 
 **Supported versions:**
-- **Semver**: 5.26.0, 5.26.1, 5.27.0, 6.0.0+
+- **Semver**: 5.26.0, 5.26.1 (5.26.x is the last semver LTS — no 5.27+ exists)
 - **Calver**: 2025.01.0, 2025.06.1, 2026.01.0+
 
 ### 2. Pod Startup Issues
@@ -325,25 +325,23 @@ kubectl logs <cluster-name>-server-1
 
 **Solutions:**
 
-1. **🔧 CRITICAL FIX: V2_ONLY Discovery Configuration**
+1. **🔧 Verify LIST Discovery Configuration**
 
-   **Issue**: Neo4j 5.26+ and 2025.x use V2_ONLY discovery mode which disables the discovery port (6000) and only uses the cluster port (5000).
-
-   **Verification**: Check that the operator is using the correct configuration:
+   The operator uses LIST discovery with static pod FQDNs (port 6000). Check the startup script in the cluster ConfigMap:
    ```bash
-   # Check ConfigMap for correct discovery configuration
-   kubectl get configmap <cluster-name>-config -o yaml | grep -A 5 -B 5 "tcp-discovery"
+   kubectl get configmap <cluster-name>-config -o yaml | grep -A 3 "resolver_type"
 
-   # Should show (Neo4j 5.26+):
-   # dbms.kubernetes.discovery.v2.service_port_name=tcp-discovery
+   # Neo4j 5.26.x should show:
+   # dbms.cluster.discovery.resolver_type=LIST
    # dbms.cluster.discovery.version=V2_ONLY
+   # dbms.cluster.discovery.v2.endpoints=<cluster>-server-0.<cluster>-headless.<ns>.svc.cluster.local:6000,...
 
-   # Should show (Neo4j 2025.x):
-   # dbms.kubernetes.discovery.service_port_name=tcp-discovery
-   # (V2_ONLY is default, not explicitly set)
+   # Neo4j 2025.x+ should show:
+   # dbms.cluster.discovery.resolver_type=LIST
+   # dbms.cluster.endpoints=<cluster>-server-0.<cluster>-headless.<ns>.svc.cluster.local:6000,...
    ```
 
-   **Fix**: Ensure operator version includes the V2_ONLY discovery fix. If using older version, upgrade to latest.
+   **If K8S or wrong ports appear**: upgrade to the latest operator version — this was fixed in favour of LIST discovery.
 
 2. **Verify Cluster Topology:**
    ```bash
@@ -356,8 +354,8 @@ kubectl logs <cluster-name>-server-1
    # Test DNS resolution to headless service
    kubectl exec -it <pod-name> -- nslookup <cluster-name>-headless
 
-   # Test cluster port connectivity (5000)
-   kubectl exec -it <pod-name> -- timeout 2 bash -c "</dev/tcp/localhost/5000"
+   # Test cluster port connectivity (6000 = V2 tcp-tx)
+   kubectl exec -it <pod-name> -- timeout 2 bash -c "</dev/tcp/localhost/6000"
    ```
 
 4. **Verify Discovery Labels:**

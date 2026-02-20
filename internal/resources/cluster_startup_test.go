@@ -2,7 +2,6 @@ package resources_test
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -63,7 +62,7 @@ func TestBuildConfigMapForEnterprise_ClusterFormation(t *testing.T) {
 				},
 			},
 			expectedBootstrap: "TOTAL_SERVERS=2",
-			expectedJoining:   "dbms.cluster.minimum_initial_system_primaries_count=1",
+			expectedJoining:   "dbms.cluster.minimum_initial_system_primaries_count=${TOTAL_SERVERS}",
 		},
 		{
 			name: "three_node_cluster",
@@ -83,10 +82,10 @@ func TestBuildConfigMapForEnterprise_ClusterFormation(t *testing.T) {
 				},
 			},
 			expectedBootstrap: "TOTAL_SERVERS=3",
-			expectedJoining:   "dbms.cluster.minimum_initial_system_primaries_count=1",
+			expectedJoining:   "dbms.cluster.minimum_initial_system_primaries_count=${TOTAL_SERVERS}",
 		},
 		{
-			name: "version_specific_discovery_5x",
+			name: "list_discovery_5x",
 			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-5x",
@@ -95,18 +94,18 @@ func TestBuildConfigMapForEnterprise_ClusterFormation(t *testing.T) {
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
-						Tag:  "5.26-enterprise", // Neo4j 5.x should use specific parameters
+						Tag:  "5.26-enterprise",
 					},
 					Topology: neo4jv1alpha1.TopologyConfiguration{
 						Servers: 2,
 					},
 				},
 			},
-			expectedBootstrap: "dbms.cluster.discovery.version=V2_ONLY",
-			expectedJoining:   "dbms.kubernetes.discovery.v2.service_port_name=tcp-discovery",
+			expectedBootstrap: "dbms.cluster.discovery.resolver_type=LIST",
+			expectedJoining:   "test-5x-server-0.test-5x-headless.default.svc.cluster.local:6000",
 		},
 		{
-			name: "version_specific_discovery_2025",
+			name: "list_discovery_2025",
 			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-2025",
@@ -115,18 +114,19 @@ func TestBuildConfigMapForEnterprise_ClusterFormation(t *testing.T) {
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
-						Tag:  "2025.01-enterprise", // Neo4j 2025.x should use different parameters
+						Tag:  "2025.01-enterprise",
 					},
 					Topology: neo4jv1alpha1.TopologyConfiguration{
 						Servers: 2,
 					},
 				},
 			},
-			expectedBootstrap: "dbms.kubernetes.discovery.service_port_name=tcp-discovery",
-			expectedJoining:   "dbms.kubernetes.discovery.service_port_name=tcp-discovery",
+			// 2025.x: still needs resolver_type=LIST, but uses dbms.cluster.endpoints (renamed)
+			expectedBootstrap: "dbms.cluster.discovery.resolver_type=LIST",
+			expectedJoining:   "test-2025-server-0.test-2025-headless.default.svc.cluster.local:6000",
 		},
 		{
-			name: "critical_v2_only_discovery_fix",
+			name: "list_discovery_no_k8s_clusterip",
 			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "v2-only-test",
@@ -135,15 +135,16 @@ func TestBuildConfigMapForEnterprise_ClusterFormation(t *testing.T) {
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 					Image: neo4jv1alpha1.ImageSpec{
 						Repo: "neo4j",
-						Tag:  "5.26-enterprise", // Must use V2_ONLY mode
+						Tag:  "5.26-enterprise",
 					},
 					Topology: neo4jv1alpha1.TopologyConfiguration{
 						Servers: 2,
 					},
 				},
 			},
-			expectedBootstrap: "dbms.kubernetes.discovery.v2.service_port_name=tcp-discovery",
-			expectedJoining:   "dbms.cluster.discovery.version=V2_ONLY",
+			// LIST discovery is used; K8S ClusterIP discovery is NOT used
+			expectedBootstrap: "dbms.cluster.discovery.resolver_type=LIST",
+			expectedJoining:   "dbms.cluster.discovery.v2.endpoints=",
 		},
 	}
 
@@ -175,78 +176,86 @@ func TestBuildConfigMapForEnterprise_ClusterFormation(t *testing.T) {
 			_, configExists := configMap.Data["neo4j.conf"]
 			assert.True(t, configExists, "neo4j.conf should exist in ConfigMap")
 
-			// For multi-server clusters, verify unified bootstrap approach
+			// For multi-server clusters, verify version-specific discovery configuration
 			if tt.cluster.Spec.Topology.Servers > 1 {
-				// Verify parallel cluster formation approach
-				assert.Contains(t, startupScript, "Starting parallel cluster formation - all servers coordinate bootstrap",
-					"multi-server clusters should use parallel cluster formation approach")
+				tag := tt.cluster.Spec.Image.Tag
+				isCalver := len(tag) >= 4 && tag[:4] == "2025"
 
-				// Verify minimum servers logic - always 1 for cluster formation
-				assert.Contains(t, startupScript, "dbms.cluster.minimum_initial_system_primaries_count=1",
-					"should use fixed minimum of 1 for server bootstrap")
-
-				// Verify Kubernetes discovery configuration
-				expectedK8sDiscoveryConfig := []string{
-					"dbms.cluster.discovery.resolver_type=K8S",
-					fmt.Sprintf("dbms.kubernetes.label_selector=neo4j.com/cluster=%s", tt.cluster.Name),
+				// All versions: pod FQDNs must appear in the endpoints list
+				for i := int32(0); i < tt.cluster.Spec.Topology.Servers; i++ {
+					expectedFQDN := fmt.Sprintf("%s-server-%d.%s-headless.%s.svc.cluster.local:6000",
+						tt.cluster.Name, i, tt.cluster.Name, tt.cluster.Namespace)
+					assert.Contains(t, startupScript, expectedFQDN,
+						"startup script should contain FQDN for pod %d", i)
 				}
 
-				// Add version-specific service port name
-				// CRITICAL: Must use tcp-discovery for V2_ONLY mode (both 5.26.x and 2025.x)
-				if tt.cluster.Spec.Image.Tag != "" && strings.HasPrefix(tt.cluster.Spec.Image.Tag, "2025") {
-					expectedK8sDiscoveryConfig = append(expectedK8sDiscoveryConfig, "dbms.kubernetes.discovery.service_port_name=tcp-discovery")
-				} else {
-					expectedK8sDiscoveryConfig = append(expectedK8sDiscoveryConfig, "dbms.kubernetes.discovery.v2.service_port_name=tcp-discovery")
-				}
-
-				for _, config := range expectedK8sDiscoveryConfig {
-					assert.Contains(t, startupScript, config,
-						"startup script should contain Kubernetes discovery configuration")
-				}
-
-				// Verify automatic server enabling is configured
+				// All versions: auto-enable free servers so all nodes join automatically
 				assert.Contains(t, startupScript, "initial.dbms.automatically_enable_free_servers=true",
 					"multi-node clusters should enable automatic server joining")
 
-				// Verify that old static endpoint configuration is NOT present
-				assert.NotContains(t, startupScript, "dbms.cluster.discovery.v2.endpoints=",
-					"startup script should not contain static endpoint configuration")
+				// All versions: K8S ClusterIP discovery must NOT be used (causes split-brain)
+				assert.NotContains(t, startupScript, "dbms.cluster.discovery.resolver_type=K8S",
+					"startup script must NOT use K8S ClusterIP discovery (causes split-brain)")
+
+				// All versions: resolver_type=LIST is required per Neo4j docs for both 5.x and 2025.x
+				// https://neo4j.com/docs/operations-manual/current/clustering/setup/discovery/
+				assert.Contains(t, startupScript, "dbms.cluster.discovery.resolver_type=LIST",
+					"startup script should use LIST resolver type (required in both 5.x and 2025.x)")
+
+				if isCalver {
+					// CalVer 2025.x+: uses dbms.cluster.endpoints (renamed from v2.endpoints).
+					// No V2_ONLY flag needed (V2 is the only protocol in 2025.x).
+					assert.Contains(t, startupScript, "dbms.cluster.endpoints=",
+						"2025.x startup script should set dbms.cluster.endpoints for LIST discovery")
+					assert.NotContains(t, startupScript, "dbms.cluster.discovery.version=V2_ONLY",
+						"2025.x startup script should NOT set V2_ONLY (it is the only/default protocol)")
+					assert.NotContains(t, startupScript, "dbms.cluster.discovery.v2.endpoints=",
+						"2025.x startup script should NOT use the renamed 5.x endpoint setting")
+				} else {
+					// SemVer 5.26.x: must explicitly enable V2_ONLY and use v2.endpoints
+					assert.Contains(t, startupScript, "dbms.cluster.discovery.version=V2_ONLY",
+						"5.x startup script must explicitly set V2_ONLY discovery mode")
+					assert.Contains(t, startupScript, "dbms.cluster.discovery.v2.endpoints=",
+						"5.x startup script should use dbms.cluster.discovery.v2.endpoints")
+
+					// 5.x: ME/OTHER bootstrap strategy hint prevents race during simultaneous start
+					assert.Contains(t, startupScript, `BOOTSTRAP_STRATEGY="me"`,
+						"startup script should set 'me' for server-0")
+					assert.Contains(t, startupScript, `BOOTSTRAP_STRATEGY="other"`,
+						"startup script should set 'other' for non-zero servers")
+					assert.Contains(t, startupScript, `internal.dbms.cluster.discovery.system_bootstrapping_strategy=${BOOTSTRAP_STRATEGY}`,
+						"5.x startup script should use internal bootstrapping strategy hint")
+				}
+
+				// All versions: minimum_initial_system_primaries_count prevents premature solo bootstrap
+				assert.Contains(t, startupScript, "dbms.cluster.minimum_initial_system_primaries_count=${TOTAL_SERVERS}",
+					"should use TOTAL_SERVERS shell variable to prevent premature solo bootstrapping")
+				assert.NotContains(t, startupScript, "dbms.cluster.minimum_initial_system_primaries_count=1",
+					"must NOT hardcode 1 as minimum - that causes split-brain")
 			}
 		})
 	}
 }
 
-// TestV2OnlyDiscoveryConfiguration tests the critical fix for Neo4j V2_ONLY discovery configuration
-// This test ensures that the discovery configuration uses tcp-discovery port (5000) instead of tcp-tx port (6000)
-// for V2_ONLY mode, which is essential for cluster formation in Neo4j 5.26+ and 2025.x
-func TestV2OnlyDiscoveryConfiguration(t *testing.T) {
+// TestListDiscoveryConfiguration tests that LIST discovery is used with static pod FQDNs.
+// LIST discovery provides one address per pod (via the headless service DNS) so that
+// minimum_initial_system_primaries_count=N can be satisfied without relying on a ClusterIP VIP
+// that resolves to a single address, which would cause split-brain.
+func TestListDiscoveryConfiguration(t *testing.T) {
 	tests := []struct {
-		name                  string
-		imageTag              string
-		expectedPortName      string
-		expectedV2OnlyPresent bool
-		expectedParameterName string
+		name     string
+		imageTag string
+		servers  int32
 	}{
 		{
-			name:                  "neo4j_5_26_uses_tcp_discovery",
-			imageTag:              "5.26-enterprise",
-			expectedPortName:      "tcp-discovery",
-			expectedV2OnlyPresent: true,
-			expectedParameterName: "dbms.kubernetes.discovery.v2.service_port_name",
+			name:     "neo4j_5_26_list_discovery",
+			imageTag: "5.26-enterprise",
+			servers:  2,
 		},
 		{
-			name:                  "neo4j_5_27_uses_tcp_discovery",
-			imageTag:              "5.27-enterprise",
-			expectedPortName:      "tcp-discovery",
-			expectedV2OnlyPresent: true,
-			expectedParameterName: "dbms.kubernetes.discovery.v2.service_port_name",
-		},
-		{
-			name:                  "neo4j_2025_uses_tcp_discovery",
-			imageTag:              "2025.02.0-enterprise",
-			expectedPortName:      "tcp-discovery",
-			expectedV2OnlyPresent: false, // V2_ONLY is default in 2025.x
-			expectedParameterName: "dbms.kubernetes.discovery.service_port_name",
+			name:     "neo4j_2025_01_0_list_discovery",
+			imageTag: "2025.01.0-enterprise",
+			servers:  3,
 		},
 	}
 
@@ -263,7 +272,7 @@ func TestV2OnlyDiscoveryConfiguration(t *testing.T) {
 						Tag:  tt.imageTag,
 					},
 					Topology: neo4jv1alpha1.TopologyConfiguration{
-						Servers: 2,
+						Servers: tt.servers,
 					},
 				},
 			}
@@ -271,29 +280,43 @@ func TestV2OnlyDiscoveryConfiguration(t *testing.T) {
 			configMap := resources.BuildConfigMapForEnterprise(cluster)
 			startupScript := configMap.Data["startup.sh"]
 
-			// Verify the correct service port name is used
-			expectedConfig := fmt.Sprintf("%s=%s", tt.expectedParameterName, tt.expectedPortName)
-			assert.Contains(t, startupScript, expectedConfig,
-				"startup script should use tcp-discovery port for V2_ONLY mode")
+			isCalver := len(tt.imageTag) >= 4 && tt.imageTag[:4] == "2025"
 
-			// Verify V2_ONLY setting is correct
-			if tt.expectedV2OnlyPresent {
-				assert.Contains(t, startupScript, "dbms.cluster.discovery.version=V2_ONLY",
-					"5.26+ should explicitly set V2_ONLY mode")
-			} else {
-				assert.NotContains(t, startupScript, "dbms.cluster.discovery.version=V2_ONLY",
-					"2025.x should not set V2_ONLY (it's default)")
+			// All versions: each pod FQDN must appear in the endpoints list
+			for i := int32(0); i < tt.servers; i++ {
+				expectedFQDN := fmt.Sprintf("test-cluster-server-%d.test-cluster-headless.default.svc.cluster.local:6000", i)
+				assert.Contains(t, startupScript, expectedFQDN,
+					"startup script should contain FQDN for pod %d", i)
 			}
 
-			// Verify tcp-tx port is NOT used (the bug we fixed)
-			assert.NotContains(t, startupScript, "service_port_name=tcp-tx",
-				"should not use tcp-tx port for V2_ONLY mode")
-			assert.NotContains(t, startupScript, "service_port_name=discovery",
-				"should not use legacy discovery port name")
+			// All versions: K8S ClusterIP discovery must NOT be used (split-brain risk)
+			assert.NotContains(t, startupScript, "dbms.cluster.discovery.resolver_type=K8S",
+				"startup script must NOT use K8S ClusterIP discovery")
 
-			// Verify cluster port is correctly referenced in advertised address
-			assert.Contains(t, startupScript, "server.cluster.advertised_address=${HOSTNAME_FQDN}:5000",
-				"cluster communication should use port 5000")
+			// All versions: cluster communication port 6000 (tcp-tx) for advertised address
+			assert.Contains(t, startupScript, "server.cluster.advertised_address=${HOSTNAME_FQDN}:6000",
+				"cluster catchup communication should use port 6000")
+
+			// All versions: resolver_type=LIST required (docs show it for both 5.x and 2025.x)
+			// https://neo4j.com/docs/operations-manual/current/clustering/setup/discovery/
+			assert.Contains(t, startupScript, "dbms.cluster.discovery.resolver_type=LIST",
+				"startup script should use LIST resolver type (required for both 5.x and 2025.x)")
+
+			if isCalver {
+				// CalVer 2025.x+: dbms.cluster.endpoints (renamed from v2.endpoints), no V2_ONLY flag
+				assert.Contains(t, startupScript, "dbms.cluster.endpoints=",
+					"2025.x should use dbms.cluster.endpoints for LIST discovery")
+				assert.NotContains(t, startupScript, "dbms.cluster.discovery.version=V2_ONLY",
+					"2025.x should NOT set V2_ONLY (V2 is the only protocol)")
+				assert.NotContains(t, startupScript, "dbms.cluster.discovery.v2.endpoints=",
+					"2025.x should NOT use the old v2.endpoints setting name")
+			} else {
+				// SemVer 5.26.x: explicit V2_ONLY and v2.endpoints required
+				assert.Contains(t, startupScript, "dbms.cluster.discovery.version=V2_ONLY",
+					"5.x startup script must explicitly set V2_ONLY discovery mode")
+				assert.Contains(t, startupScript, "dbms.cluster.discovery.v2.endpoints=",
+					"5.x startup script should use dbms.cluster.discovery.v2.endpoints")
+			}
 		})
 	}
 }

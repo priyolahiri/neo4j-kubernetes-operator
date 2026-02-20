@@ -49,19 +49,29 @@ func (v *ConfigValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
 		"dbms.integrations.cloud_storage.s3.region": "replaced by new cloud storage integration settings",
 	}
 
-	// Check for unsupported manual discovery configuration
+	// Check for unsupported manual discovery configuration.
+	// The operator injects all discovery settings (resolver_type, endpoints, …) through
+	// the startup script into /tmp/neo4j-config/neo4j.conf. User-supplied values in
+	// Spec.Config would conflict with or override that managed configuration.
+	//
+	// Discovery mechanism used by this operator:
+	//   5.26.x  — LIST resolver, dbms.cluster.discovery.v2.endpoints, V2_ONLY
+	//   2025.x+ — LIST resolver, dbms.cluster.endpoints (renamed), no version flag
+	//   Both    — port 6000 (tcp-tx), pod FQDNs via headless service
 	unsupportedDiscoverySettings := map[string]string{
-		"dbms.cluster.discovery.resolver_type":        "manual discovery configuration is not supported - operator enforces Kubernetes discovery",
-		"dbms.cluster.discovery.v2.endpoints":         "static endpoint configuration is not supported - operator uses automatic Kubernetes discovery",
-		"dbms.cluster.endpoints":                      "static endpoint configuration is not supported - operator uses automatic Kubernetes discovery",
-		"dbms.kubernetes.label_selector":              "Kubernetes discovery is automatically configured by the operator",
-		"dbms.kubernetes.discovery.service_port_name": "Kubernetes discovery is automatically configured by the operator",
+		"dbms.cluster.discovery.resolver_type":        "discovery resolver is managed by the operator (LIST with static pod FQDNs) — do not override",
+		"dbms.cluster.discovery.v2.endpoints":         "discovery endpoints are managed by the operator — do not override (5.26.x setting)",
+		"dbms.cluster.endpoints":                      "discovery endpoints are managed by the operator — do not override (2025.x+ setting)",
+		"dbms.kubernetes.label_selector":              "Kubernetes service-list discovery is not used; operator uses LIST discovery with pod FQDNs",
+		"dbms.kubernetes.discovery.service_port_name": "Kubernetes service-list discovery is not used; operator uses LIST discovery with pod FQDNs",
 	}
 
 	for configKey, configValue := range cluster.Spec.Config {
-		// Special handling for dbms.cluster.discovery.version
+		// Special handling for dbms.cluster.discovery.version.
+		// In 5.26.x this setting controls the discovery protocol (V1 vs V2); the operator
+		// requires V2_ONLY. In 2025.x+ the setting does not exist (V2 is the only protocol).
+		// Allow V2_ONLY for 5.x compatibility; any other value is rejected.
 		if configKey == "dbms.cluster.discovery.version" {
-			// V2_ONLY is required for Neo4j 5.26+ and should be allowed
 			if configValue != "V2_ONLY" {
 				validValues := []string{"V2_ONLY"}
 				allErrs = append(allErrs, field.NotSupported(
@@ -70,7 +80,7 @@ func (v *ConfigValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
 					validValues,
 				))
 			}
-			continue // Skip regular deprecated settings check for this key
+			continue // Skip regular deprecated/unsupported checks for this key
 		}
 
 		// Check for deprecated settings
@@ -116,9 +126,10 @@ func (v *ConfigValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
 	return allErrs
 }
 
-// isValidDiscoveryVersion checks if the discovery version is valid for 5.26+
+// isValidDiscoveryVersion checks if the discovery version is valid.
+// Only V2_ONLY is accepted; in 2025.x+ the setting is not used at all
+// (V2 is the only supported protocol), but V2_ONLY is harmless if set.
 func (v *ConfigValidator) isValidDiscoveryVersion(version string) bool {
-	// For Neo4j 5.26+, only V2_ONLY is recommended
 	validVersions := []string{"V2_ONLY"}
 	for _, valid := range validVersions {
 		if version == valid {
