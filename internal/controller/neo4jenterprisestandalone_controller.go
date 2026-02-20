@@ -143,11 +143,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	// Validate the standalone configuration
 	if validationErrs := r.Validator.ValidateCreate(standalone); len(validationErrs) > 0 {
 		logger.Error(fmt.Errorf("validation failed: %v", validationErrs), "Validation failed")
-		r.Recorder.Event(standalone, corev1.EventTypeWarning, "ValidationFailed",
+		r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonValidationFailed,
 			fmt.Sprintf("Validation failed: %v", validationErrs))
 
 		// Update status to reflect validation failure
-		standalone.Status.Phase = "ValidationFailed"
+		standalone.Status.Phase = EventReasonValidationFailed
 		standalone.Status.Message = fmt.Sprintf("Validation failed: %v", validationErrs)
 		standalone.Status.Ready = false
 		if err := r.Status().Update(ctx, standalone); err != nil {
@@ -160,7 +160,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	result, err := r.reconcileStandalone(ctx, standalone)
 	if err != nil {
 		logger.Error(err, "Failed to reconcile standalone deployment")
-		r.Recorder.Event(standalone, corev1.EventTypeWarning, "ReconcileFailed",
+		r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonReconcileFailed,
 			fmt.Sprintf("Failed to reconcile: %v", err))
 
 		// Update status to reflect failure
@@ -261,7 +261,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		if err := r.reconcileAuraFleetManagement(ctx, standalone); err != nil {
 			logger.Error(err, "Failed to reconcile Aura Fleet Management registration")
 			if r.Recorder != nil {
-				r.Recorder.Eventf(standalone, corev1.EventTypeWarning, "AuraFleetManagementFailed",
+				r.Recorder.Eventf(standalone, corev1.EventTypeWarning, EventReasonAuraFleetFailed,
 					"Aura Fleet Management registration failed: %v", err)
 			}
 		}
@@ -423,7 +423,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileRoute(ctx context.Context
 		if meta.IsNoMatchError(err) {
 			logger.Info("Route API not available; skipping Route reconciliation")
 			if r.Recorder != nil {
-				r.Recorder.Event(standalone, corev1.EventTypeWarning, "RouteAPINotFound", "route.openshift.io/v1 not available; skipping Route reconciliation")
+				r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonRouteAPINotFound, "route.openshift.io/v1 not available; skipping Route reconciliation")
 			}
 			return nil
 		}
@@ -492,7 +492,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileMCPRoute(ctx context.Cont
 		if meta.IsNoMatchError(err) {
 			logger.Info("Route API not available; skipping MCP Route reconciliation")
 			if r.Recorder != nil {
-				r.Recorder.Event(standalone, corev1.EventTypeWarning, "RouteAPINotFound", "route.openshift.io/v1 not available; skipping MCP Route reconciliation")
+				r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonRouteAPINotFound, "route.openshift.io/v1 not available; skipping MCP Route reconciliation")
 			}
 			return nil
 		}
@@ -536,7 +536,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) warnIfMCPMissingAPOC(ctx context.C
 		}
 	}
 
-	r.Recorder.Event(standalone, corev1.EventTypeWarning, "MCPApocMissing",
+	r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonMCPApocMissing,
 		"MCP is enabled but APOC is not configured via Neo4jPlugin; MCP may fail in stdio mode and some tools may be unavailable.")
 }
 
@@ -1361,7 +1361,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 	if err := r.mergeFleetManagementPlugin(ctx, standalone.Name, standalone.Namespace); err != nil {
 		logger.Error(err, "Failed to patch StatefulSet NEO4J_PLUGINS for fleet-management")
 		if r.Recorder != nil {
-			r.Recorder.Eventf(standalone, corev1.EventTypeWarning, "AuraFleetManagementPluginPatchFailed",
+			r.Recorder.Eventf(standalone, corev1.EventTypeWarning, EventReasonAuraFleetPluginPatchFailed,
 				"Failed to add fleet-management to NEO4J_PLUGINS: %v", err)
 		}
 		return nil
@@ -1422,7 +1422,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 
 	logger.Info("Aura Fleet Management token registered successfully")
 	if r.Recorder != nil {
-		r.Recorder.Event(standalone, corev1.EventTypeNormal, "AuraFleetManagementRegistered",
+		r.Recorder.Event(standalone, corev1.EventTypeNormal, EventReasonAuraFleetRegistered,
 			"Successfully registered with Aura Fleet Management")
 	}
 	return r.setFleetManagementStatus(ctx, standalone, true, "Registered with Aura Fleet Management")

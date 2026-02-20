@@ -140,6 +140,8 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.installPluginViaEnvironment(ctx, plugin, deployment); err != nil {
 		logger.Error(err, "Failed to install plugin")
 		r.updatePluginStatus(ctx, plugin, "Failed", fmt.Sprintf("Plugin installation failed: %v", err))
+		r.Recorder.Eventf(plugin, corev1.EventTypeWarning, EventReasonPluginInstallFailed,
+			"Plugin %s installation failed: %v", plugin.Spec.Name, err)
 		return ctrl.Result{}, nil // Don't return error - status is set correctly
 	}
 
@@ -154,11 +156,15 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.configurePlugin(ctx, plugin, deployment); err != nil {
 		logger.Error(err, "Failed to configure plugin")
 		r.updatePluginStatus(ctx, plugin, "Failed", fmt.Sprintf("Plugin configuration failed: %v", err))
+		r.Recorder.Eventf(plugin, corev1.EventTypeWarning, EventReasonPluginInstallFailed,
+			"Plugin %s configuration failed: %v", plugin.Spec.Name, err)
 		return ctrl.Result{}, nil // Don't return error - status is set correctly
 	}
 
 	// Update status to "Ready"
 	r.updatePluginStatus(ctx, plugin, "Ready", "Plugin installed and configured successfully")
+	r.Recorder.Eventf(plugin, corev1.EventTypeNormal, EventReasonPluginInstalled,
+		"Plugin %s version %s installed successfully", plugin.Spec.Name, plugin.Spec.Version)
 
 	logger.Info("Plugin reconciliation completed")
 	return ctrl.Result{}, nil

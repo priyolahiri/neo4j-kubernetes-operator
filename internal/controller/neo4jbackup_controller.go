@@ -195,7 +195,7 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 
 	// Update status
 	r.updateBackupStatus(ctx, backup, "Scheduled", "Backup scheduled with CronJob "+cronJob.Name)
-	r.Recorder.Event(backup, "Normal", "BackupScheduled", "Backup scheduled with CronJob "+cronJob.Name)
+	r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupScheduled, "Backup scheduled with CronJob "+cronJob.Name)
 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
@@ -234,7 +234,7 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 
 	// Update status
 	r.updateBackupStatus(ctx, backup, "Running", fmt.Sprintf("Backup job %s created", job.Name))
-	r.Recorder.Event(backup, "Normal", "BackupStarted", fmt.Sprintf("Backup job %s started", job.Name))
+	r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupStarted, fmt.Sprintf("Backup job %s started", job.Name))
 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
@@ -244,7 +244,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 	if job.Status.Succeeded > 0 {
 		// Backup completed successfully
 		r.updateBackupStatus(ctx, backup, "Completed", "Backup completed successfully")
-		r.Recorder.Event(backup, "Normal", "BackupCompleted", "Backup completed successfully")
+		r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupCompleted, "Backup completed successfully")
 
 		// Update backup statistics
 		r.updateBackupStats(ctx, backup, job)
@@ -255,7 +255,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 	if job.Status.Failed > 0 {
 		// Backup failed
 		r.updateBackupStatus(ctx, backup, "Failed", "Backup job failed")
-		r.Recorder.Event(backup, "Warning", "BackupFailed", "Backup job failed")
+		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, "Backup job failed")
 		return ctrl.Result{}, nil
 	}
 

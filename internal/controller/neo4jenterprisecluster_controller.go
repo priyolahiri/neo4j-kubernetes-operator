@@ -143,14 +143,14 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 
 				// Emit warnings as events
 				for _, warning := range result.Warnings {
-					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, "TopologyWarning", warning)
+					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonTopologyWarning, warning)
 				}
 
 				// Check for validation errors
 				if len(result.Errors) > 0 {
 					err := fmt.Errorf("validation failed: %s", result.Errors.ToAggregate().Error())
 					logger.Error(err, "Cluster update validation failed")
-					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, "ValidationFailed", "Cluster update validation failed: %v", err)
+					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "Cluster update validation failed: %v", err)
 					_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Update validation failed: %v", err))
 					return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 				}
@@ -163,14 +163,14 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 
 			// Emit warnings as events
 			for _, warning := range result.Warnings {
-				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, "TopologyWarning", warning)
+				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonTopologyWarning, warning)
 			}
 
 			// Check for validation errors
 			if len(result.Errors) > 0 {
 				err := fmt.Errorf("validation failed: %s", result.Errors.ToAggregate().Error())
 				logger.Error(err, "Cluster validation failed")
-				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, "ValidationFailed", "Cluster validation failed: %v", err)
+				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "Cluster validation failed: %v", err)
 				_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Validation failed: %v", err))
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 			}
@@ -181,7 +181,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		if len(roleHintErrors) > 0 {
 			for _, roleError := range roleHintErrors {
 				logger.Error(fmt.Errorf("server role validation error"), roleError)
-				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, "ServerRoleValidationFailed", "Server role hint validation failed: %s", roleError)
+				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonServerRoleFailed, "Server role hint validation failed: %s", roleError)
 			}
 			err := fmt.Errorf("server role validation failed: %v", roleHintErrors)
 			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Server role validation failed: %v", roleHintErrors))
@@ -193,7 +193,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	if cluster.Spec.PropertySharding != nil && cluster.Spec.PropertySharding.Enabled {
 		if err := r.validatePropertyShardingConfiguration(ctx, cluster); err != nil {
 			logger.Error(err, "Property sharding validation failed")
-			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, "PropertyShardingValidationFailed", "Property sharding validation failed: %v", err)
+			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonPropertyShardingFailed, "Property sharding validation failed: %v", err)
 			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Property sharding validation failed: %v", err))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 		}
@@ -340,7 +340,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			// Fleet management registration failures are non-fatal: the cluster is operational,
 			// only the Aura monitoring registration failed. Log and surface via status.
 			logger.Error(err, "Failed to reconcile Aura Fleet Management registration")
-			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, "AuraFleetManagementFailed",
+			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonAuraFleetFailed,
 				"Aura Fleet Management registration failed: %v", err)
 		}
 	}
@@ -352,7 +352,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		if err != nil {
 			logger.Error(err, "Failed to calculate topology placement")
 			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to calculate topology placement: %v", err))
-			r.Recorder.Event(cluster, "Warning", "TopologyPlacementFailed", fmt.Sprintf("Failed to calculate topology placement: %v", err))
+			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonTopologyPlacementFailed, fmt.Sprintf("Failed to calculate topology placement: %v", err))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 		}
 		topologyPlacement = placement
@@ -363,7 +363,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			"enforceDistribution", placement.EnforceDistribution)
 
 		if len(placement.AvailabilityZones) > 0 {
-			r.Recorder.Event(cluster, "Normal", "TopologyPlacementCalculated",
+			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonTopologyPlacementCalc,
 				fmt.Sprintf("Calculated topology placement across %d zones", len(placement.AvailabilityZones)))
 		}
 	}
@@ -414,11 +414,17 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	clusterFormed, formationMessage, err := r.verifyNeo4jClusterFormation(ctx, cluster)
 	if err != nil {
 		logger.Error(err, "Failed to verify cluster formation")
+		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonClusterFormationFailed,
+			"Cluster formation check failed: %v", err)
 		_ = r.updateClusterStatus(ctx, cluster, "Forming", fmt.Sprintf("Verifying cluster formation: %v", err))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
 	if !clusterFormed {
+		if cluster.Status.Phase != "Forming" {
+			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonClusterFormationStarted,
+				"Neo4j cluster formation started")
+		}
 		_ = r.updateClusterStatus(ctx, cluster, "Forming", formationMessage)
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
@@ -437,7 +443,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 
 	// Only create event if status actually changed
 	if statusChanged {
-		r.Recorder.Event(cluster, "Normal", "ClusterReady", "Neo4j Enterprise cluster is ready")
+		r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonClusterReady, "Neo4j Enterprise cluster is ready")
 	}
 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -1083,6 +1089,9 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 	// Create rolling upgrade orchestrator
 	upgrader := NewRollingUpgradeOrchestrator(r.Client, cluster.Name, cluster.Namespace)
 
+	r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeStarted,
+		"Rolling upgrade started: %s -> %s", cluster.Status.Version, cluster.Spec.Image.Tag)
+
 	// Execute rolling upgrade
 	if err := upgrader.ExecuteRollingUpgrade(ctx, cluster, neo4jClient); err != nil {
 		logger.Error(err, "Rolling upgrade failed")
@@ -1090,10 +1099,12 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 		// Check if auto-pause is enabled
 		if cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.AutoPauseOnFailure {
 			_ = r.updateClusterStatus(ctx, cluster, "Paused", "Upgrade paused due to failure - manual intervention required")
-			r.Recorder.Event(cluster, "Warning", "UpgradePaused", fmt.Sprintf("Upgrade paused: %v", err))
+			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonUpgradePaused, fmt.Sprintf("Upgrade paused: %v", err))
 			return ctrl.Result{}, nil // Don't requeue automatically
 		}
 
+		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonUpgradeFailed,
+			"Rolling upgrade failed: %v", err)
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Rolling upgrade failed: %v", err))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 	}
@@ -1105,7 +1116,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 		logger.Error(err, "Failed to update cluster status")
 	}
 
-	r.Recorder.Event(cluster, "Normal", "UpgradeCompleted", "Rolling upgrade completed successfully")
+	r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonUpgradeCompleted, "Rolling upgrade completed successfully")
 	logger.Info("Rolling upgrade completed successfully")
 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -1195,7 +1206,7 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 			"repairAction", analysis.RepairAction)
 
 		// Record event about split-brain detection
-		r.Recorder.Eventf(cluster, "Warning", "SplitBrainDetected",
+		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonSplitBrainDetected,
 			"Split-brain detected: %s", analysis.ErrorMessage)
 
 		// Attempt automatic repair if configured
@@ -1206,12 +1217,12 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 			repairErr := splitBrainDetector.RepairSplitBrain(ctx, cluster, analysis)
 			if repairErr != nil {
 				logger.Error(repairErr, "Failed to repair split-brain automatically")
-				r.Recorder.Eventf(cluster, "Warning", "SplitBrainRepairFailed",
+				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonSplitBrainRepairFailed,
 					"Automatic split-brain repair failed: %v", repairErr)
 				return false, fmt.Sprintf("Split-brain repair failed: %v", repairErr), nil
 			}
 
-			r.Recorder.Event(cluster, "Normal", "SplitBrainRepaired",
+			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonSplitBrainRepaired,
 				"Split-brain automatically repaired by restarting orphaned pods")
 
 			// After repair, cluster needs time to reform
@@ -1620,7 +1631,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRoute(ctx context.Context, c
 		if meta.IsNoMatchError(err) {
 			logger.Info("Route API not available; skipping Route reconciliation")
 			if r.Recorder != nil {
-				r.Recorder.Event(cluster, corev1.EventTypeWarning, "RouteAPINotFound", "route.openshift.io/v1 not available; skipping Route reconciliation")
+				r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonRouteAPINotFound, "route.openshift.io/v1 not available; skipping Route reconciliation")
 			}
 			return nil
 		}
@@ -1689,7 +1700,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMCPRoute(ctx context.Context
 		if meta.IsNoMatchError(err) {
 			logger.Info("Route API not available; skipping MCP Route reconciliation")
 			if r.Recorder != nil {
-				r.Recorder.Event(cluster, corev1.EventTypeWarning, "RouteAPINotFound", "route.openshift.io/v1 not available; skipping MCP Route reconciliation")
+				r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonRouteAPINotFound, "route.openshift.io/v1 not available; skipping MCP Route reconciliation")
 			}
 			return nil
 		}
@@ -1720,7 +1731,7 @@ func (r *Neo4jEnterpriseClusterReconciler) warnIfMCPMissingAPOC(ctx context.Cont
 		}
 	}
 
-	r.Recorder.Event(cluster, corev1.EventTypeWarning, "MCPApocMissing",
+	r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonMCPApocMissing,
 		"MCP is enabled but APOC is not configured via Neo4jPlugin; MCP may fail in stdio mode and some tools may be unavailable.")
 }
 
@@ -1754,7 +1765,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileAuraFleetManagement(ctx cont
 	if err := r.mergeFleetManagementPlugin(ctx, stsName, cluster.Namespace); err != nil {
 		// Non-fatal for the reconcile: the cluster is functional, plugin patching failed.
 		logger.Error(err, "Failed to patch StatefulSet NEO4J_PLUGINS for fleet-management")
-		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, "AuraFleetManagementPluginPatchFailed",
+		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonAuraFleetPluginPatchFailed,
 			"Failed to add fleet-management to NEO4J_PLUGINS: %v", err)
 		return nil
 	}
@@ -1814,7 +1825,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileAuraFleetManagement(ctx cont
 	}
 
 	logger.Info("Aura Fleet Management token registered successfully")
-	r.Recorder.Event(cluster, corev1.EventTypeNormal, "AuraFleetManagementRegistered",
+	r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonAuraFleetRegistered,
 		"Successfully registered with Aura Fleet Management")
 	return r.setFleetManagementStatus(ctx, cluster, true, "Registered with Aura Fleet Management")
 }
