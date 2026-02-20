@@ -2,7 +2,9 @@
 
 This guide explains how to connect MCP clients (VSCode, Claude Desktop, curl) to a Neo4j MCP server deployed by the operator.
 
-The operator uses the **official `mcp/neo4j-cypher` image** from Docker Hub (Verified Publisher by Neo4j). No custom image build is required.
+The operator uses the **`mcp/neo4j-cypher` image** from Docker Hub, which is published by the [Priyo Lahiri](https://neo4j.com/labs/) team (`neo4j-contrib/mcp-neo4j`).
+
+> **Note:** `mcp/neo4j-cypher` is a **Priyo Lahiri** project. It is actively developed and maintained by the Neo4j Field GenAI team, but Neo4j does not provide SLAs or backwards-compatibility guarantees for it. If you are looking for the official supported product MCP server, see [github.com/neo4j/mcp](https://github.com/neo4j/mcp).
 
 - **Image**: [`mcp/neo4j-cypher`](https://hub.docker.com/r/mcp/neo4j-cypher)
 - **Default port**: `8000`
@@ -48,7 +50,18 @@ curl -X POST http://<name>-mcp.<namespace>.svc.cluster.local:8000/mcp/ \
   -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 ```
 
-The official image does not enforce HTTP-level client authentication (credentials are used by the MCP server to connect to Neo4j, not to authenticate API callers). Apply authentication at the Ingress or network policy layer if needed.
+**Host validation:** The `mcp/neo4j-cypher` image validates the HTTP `Host` header against `NEO4J_MCP_SERVER_ALLOWED_HOSTS`. The server's own built-in default is `localhost,127.0.0.1`, which blocks all in-cluster Kubernetes requests (the `Host` header carries the service DNS name, not `localhost`). The operator overrides this to `*` by default, so in-cluster requests work out of the box.
+
+When exposing the service externally (Ingress, LoadBalancer), set `spec.mcp.http.allowedHosts` to your domain to restrict access:
+
+```yaml
+spec:
+  mcp:
+    http:
+      allowedHosts: "neo4j-mcp.example.com"
+```
+
+**Client authentication:** The image does not enforce HTTP-level client authentication. The `NEO4J_USERNAME` / `NEO4J_PASSWORD` credentials are used only to authenticate the MCP server's own connection *to Neo4j*, not to authenticate callers. Apply client authentication at the Ingress or via Kubernetes Network Policies.
 
 ## HTTP Mode: Expose via Ingress
 
@@ -111,6 +124,9 @@ spec:
       port: 9000
       path: /neo4j-mcp/
       allowedOrigins: "https://myapp.example.com"
+      # When set, restricts which Host headers the server accepts.
+      # The operator's default is "*" (allow any) for in-cluster access.
+      # Tighten this when exposing externally:
       allowedHosts: "myapp.example.com,localhost"
       readTimeout: 60    # seconds
 ```

@@ -126,7 +126,8 @@ func TestBuildMCPDeploymentForStandalone_STDIOAuth(t *testing.T) {
 }
 
 // TestBuildMCPDeploymentForCluster_NamespaceAndReadTimeout verifies new optional
-// fields added for the official image (Namespace, ReadTimeout).
+// fields added for the official image (Namespace, ReadTimeout), and also checks that
+// NEO4J_MCP_SERVER_ALLOWED_HOSTS defaults to "*" when not explicitly set.
 func TestBuildMCPDeploymentForCluster_NamespaceAndReadTimeout(t *testing.T) {
 	cluster := baseCluster("graph-cluster")
 	timeout := int32(60)
@@ -144,6 +145,43 @@ func TestBuildMCPDeploymentForCluster_NamespaceAndReadTimeout(t *testing.T) {
 	container := deployment.Spec.Template.Spec.Containers[0]
 	assertEnvValue(t, container.Env, "NEO4J_NAMESPACE", "movies")
 	assertEnvValue(t, container.Env, "NEO4J_READ_TIMEOUT", "60")
+	// When allowedHosts is not set the operator must override the server default
+	// (localhost,127.0.0.1) with "*" so in-cluster K8s requests are accepted.
+	assertEnvValue(t, container.Env, "NEO4J_MCP_SERVER_ALLOWED_HOSTS", "*")
+}
+
+// TestBuildMCPDeploymentForCluster_ReadinessProbe verifies that the HTTP deployment
+// includes a TCP socket readiness probe on the MCP container port.
+func TestBuildMCPDeploymentForCluster_ReadinessProbe(t *testing.T) {
+	cluster := baseCluster("graph-cluster")
+	cluster.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
+		Enabled:   true,
+		Transport: "http",
+	}
+
+	deployment := resources.BuildMCPDeploymentForCluster(cluster)
+	require.NotNil(t, deployment)
+
+	container := deployment.Spec.Template.Spec.Containers[0]
+	require.NotNil(t, container.ReadinessProbe, "HTTP deployment should have a readiness probe")
+	require.NotNil(t, container.ReadinessProbe.TCPSocket, "readiness probe should use TCPSocket")
+	assert.Equal(t, int32(8000), container.ReadinessProbe.TCPSocket.Port.IntVal)
+}
+
+// TestBuildMCPDeploymentForStandalone_NoReadinessProbeForSTDIO verifies that the
+// STDIO deployment does NOT get a readiness probe (no port is exposed).
+func TestBuildMCPDeploymentForStandalone_NoReadinessProbeForSTDIO(t *testing.T) {
+	standalone := baseStandalone("graph-standalone")
+	standalone.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
+		Enabled:   true,
+		Transport: "stdio",
+	}
+
+	deployment := resources.BuildMCPDeploymentForStandalone(standalone)
+	require.NotNil(t, deployment)
+
+	container := deployment.Spec.Template.Spec.Containers[0]
+	assert.Nil(t, container.ReadinessProbe, "STDIO deployment should not have a readiness probe")
 }
 
 func TestBuildMCPServiceForCluster_PortOverrides(t *testing.T) {

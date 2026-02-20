@@ -78,12 +78,23 @@ func BuildMCPDeploymentForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster)
 	}
 
 	if mcpTransport(mcp) == "http" {
+		httpPort := mcpHTTPPort(mcp)
 		container.Ports = []corev1.ContainerPort{
 			{
 				Name:          "mcp",
-				ContainerPort: mcpHTTPPort(mcp),
+				ContainerPort: httpPort,
 				Protocol:      corev1.ProtocolTCP,
 			},
+		}
+		container.ReadinessProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				TCPSocket: &corev1.TCPSocketAction{
+					Port: intstr.FromInt32(httpPort),
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       10,
+			FailureThreshold:    3,
 		}
 	}
 
@@ -147,12 +158,23 @@ func BuildMCPDeploymentForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseSt
 	}
 
 	if mcpTransport(mcp) == "http" {
+		httpPort := mcpHTTPPort(mcp)
 		container.Ports = []corev1.ContainerPort{
 			{
 				Name:          "mcp",
-				ContainerPort: mcpHTTPPort(mcp),
+				ContainerPort: httpPort,
 				Protocol:      corev1.ProtocolTCP,
 			},
+		}
+		container.ReadinessProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				TCPSocket: &corev1.TCPSocketAction{
+					Port: intstr.FromInt32(httpPort),
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       10,
+			FailureThreshold:    3,
 		}
 	}
 
@@ -574,18 +596,25 @@ func buildMCPEnv(spec *neo4jv1alpha1.MCPServerSpec, neo4jURI string, secretName,
 
 	switch mcpTransport(spec) {
 	case "http":
+		// The server's built-in default for NEO4J_MCP_SERVER_ALLOWED_HOSTS is
+		// "localhost,127.0.0.1", which blocks all in-cluster Kubernetes requests
+		// (the Host header carries the service DNS name, not "localhost").
+		// Always set it explicitly; default to "*" so the server is reachable from
+		// within the cluster out of the box.
+		allowedHosts := "*"
+		if spec.HTTP != nil && spec.HTTP.AllowedHosts != "" {
+			allowedHosts = spec.HTTP.AllowedHosts
+		}
 		env = append(env,
 			corev1.EnvVar{Name: "NEO4J_TRANSPORT", Value: "http"},
 			corev1.EnvVar{Name: "NEO4J_MCP_SERVER_HOST", Value: mcpHTTPHost(spec)},
 			corev1.EnvVar{Name: "NEO4J_MCP_SERVER_PORT", Value: strconv.Itoa(int(mcpHTTPPort(spec)))},
 			corev1.EnvVar{Name: "NEO4J_MCP_SERVER_PATH", Value: mcpHTTPPath(spec)},
+			corev1.EnvVar{Name: "NEO4J_MCP_SERVER_ALLOWED_HOSTS", Value: allowedHosts},
 		)
 		if spec.HTTP != nil {
 			if spec.HTTP.AllowedOrigins != "" {
 				env = append(env, corev1.EnvVar{Name: "NEO4J_MCP_SERVER_ALLOW_ORIGINS", Value: spec.HTTP.AllowedOrigins})
-			}
-			if spec.HTTP.AllowedHosts != "" {
-				env = append(env, corev1.EnvVar{Name: "NEO4J_MCP_SERVER_ALLOWED_HOSTS", Value: spec.HTTP.AllowedHosts})
 			}
 			if spec.HTTP.ReadTimeout != nil {
 				env = append(env, corev1.EnvVar{Name: "NEO4J_READ_TIMEOUT", Value: strconv.Itoa(int(*spec.HTTP.ReadTimeout))})

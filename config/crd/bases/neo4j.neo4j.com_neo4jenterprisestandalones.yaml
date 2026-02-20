@@ -1611,7 +1611,12 @@ spec:
                       allowedHosts:
                         description: |-
                           AllowedHosts restricts which hostnames may connect to the MCP endpoint
-                          (comma-separated). Defaults to localhost,127.0.0.1.
+                          (comma-separated, or "*" to allow any).
+                          The operator sets this to "*" by default so the server is reachable from
+                          within the cluster. The mcp/neo4j-cypher image's own default
+                          (localhost,127.0.0.1) would block all in-cluster Kubernetes traffic.
+                          Set a specific list when exposing the server externally via LoadBalancer
+                          or Ingress, e.g. "myapp.example.com".
                         type: string
                       allowedOrigins:
                         description: AllowedOrigins restricts CORS origins (comma-separated
