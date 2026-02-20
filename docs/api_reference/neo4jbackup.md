@@ -89,12 +89,15 @@ Cloud provider configuration. This type appears both on `StorageLocation` (for p
 | `provider` | `string` | ❌ | Cloud provider: `"aws"`, `"gcp"`, `"azure"` |
 | `credentialsSecretRef` | `string` | ❌ | Name of a Kubernetes Secret containing cloud provider credentials as environment variables. When absent, ambient workload identity (IRSA / GKE WI / Azure WI) is used instead. |
 | `identity` | [`*CloudIdentity`](#cloudidentity) | ❌ | Cloud identity configuration (for workload identity ServiceAccount annotations) |
+| `endpointURL` | `string` | ❌ | Override the S3 API endpoint. Use for S3-compatible stores such as **MinIO**, Ceph RGW, or Cloudflare R2 (e.g. `"http://minio.minio.svc:9000"`). Only applies when `provider: aws`. |
+| `forcePathStyle` | `bool` | ❌ | Force S3 path-style addressing (`endpoint/bucket/key` instead of `bucket.endpoint/key`). **Required for MinIO** and most self-hosted S3-compatible stores. Only effective when `endpointURL` is set. |
 
 **Secret key requirements by provider** (when `credentialsSecretRef` is set):
 
 | Provider | Required secret keys | Notes |
 |----------|---------------------|-------|
 | AWS | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` | Standard AWS SDK env vars |
+| MinIO / S3-compatible | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` | Same keys as AWS; set `endpointURL` and `forcePathStyle: true` on `CloudBlock` |
 | GCS | `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Full service-account key JSON as a string value — **not** a filename path |
 | Azure | `AZURE_STORAGE_ACCOUNT`, `AZURE_STORAGE_KEY` | Storage account credentials |
 
@@ -107,6 +110,12 @@ kubectl create secret generic aws-backup-credentials \
   --from-literal=AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
   --from-literal=AWS_DEFAULT_REGION=us-east-1
 
+# MinIO (uses the same keys; region value is arbitrary — MinIO ignores it)
+kubectl create secret generic minio-backup-credentials \
+  --from-literal=AWS_ACCESS_KEY_ID=minioadmin \
+  --from-literal=AWS_SECRET_ACCESS_KEY=minioadmin \
+  --from-literal=AWS_DEFAULT_REGION=us-east-1
+
 # GCS — pass the JSON content directly as a string value
 kubectl create secret generic gcs-backup-credentials \
   --from-literal=GOOGLE_APPLICATION_CREDENTIALS_JSON="$(cat service-account.json)"
@@ -116,6 +125,22 @@ kubectl create secret generic azure-backup-credentials \
   --from-literal=AZURE_STORAGE_ACCOUNT=myaccount \
   --from-literal=AZURE_STORAGE_KEY=base64key==
 ```
+
+**MinIO / S3-compatible example:**
+
+```yaml
+storage:
+  type: s3
+  bucket: neo4j-backups
+  path: cluster/full
+  cloud:
+    provider: aws
+    credentialsSecretRef: minio-backup-credentials
+    endpointURL: http://minio.minio.svc:9000   # in-cluster MinIO service
+    forcePathStyle: true                        # required for MinIO
+```
+
+> **How it works**: `endpointURL` is injected as `AWS_ENDPOINT_URL_S3` (AWS SDK v2 standard). `forcePathStyle: true` injects `-Daws.s3.forcePathStyle=true` via `JAVA_TOOL_OPTIONS`, which the neo4j-admin JVM process reads at startup.
 
 ### CloudIdentity
 

@@ -107,6 +107,7 @@ Differential backups are significantly smaller and faster for large databases. T
 |---------|------|----------|
 | **PVC** | `pvc` | Development, testing, air-gapped environments |
 | **AWS S3** | `s3` | Production on AWS |
+| **MinIO / S3-compatible** | `s3` + `endpointURL` | On-premises, air-gapped, or self-hosted object storage |
 | **Google Cloud Storage** | `gcs` | Production on GCP |
 | **Azure Blob Storage** | `azure` | Production on Azure |
 
@@ -199,6 +200,77 @@ The IAM role must allow these actions on your bucket:
 ```
 
 The IAM role must also have a trust relationship with the EKS OIDC provider for the `neo4j-backup-sa` ServiceAccount in your namespace.
+
+---
+
+### MinIO and S3-Compatible Storage
+
+MinIO is a high-performance, S3-compatible object store popular for on-premises and air-gapped Kubernetes environments. The operator supports MinIO (and other S3-compatible stores such as Ceph RGW and Cloudflare R2) using two additional fields on `CloudBlock`:
+
+| Field | Purpose |
+|-------|---------|
+| `endpointURL` | Custom S3 API endpoint (injected as `AWS_ENDPOINT_URL_S3`) |
+| `forcePathStyle` | Path-style addressing required by MinIO (injects `-Daws.s3.forcePathStyle=true` into the JVM) |
+
+#### Step 1: Create the credentials Secret
+
+MinIO uses the same secret key names as AWS. The `AWS_DEFAULT_REGION` value is required by the SDK but ignored by MinIO — any value works.
+
+```bash
+kubectl create secret generic minio-backup-credentials \
+  --from-literal=AWS_ACCESS_KEY_ID=minioadmin \
+  --from-literal=AWS_SECRET_ACCESS_KEY=minioadmin \
+  --from-literal=AWS_DEFAULT_REGION=us-east-1
+```
+
+#### Step 2: Create the backup resource
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jBackup
+metadata:
+  name: minio-backup
+spec:
+  target:
+    kind: Cluster
+    name: my-cluster
+  storage:
+    type: s3
+    bucket: neo4j-backups        # bucket must already exist in MinIO
+    path: cluster/full
+    cloud:
+      provider: aws
+      credentialsSecretRef: minio-backup-credentials
+      endpointURL: http://minio.minio.svc:9000  # adjust namespace/port
+      forcePathStyle: true                       # required for MinIO
+  options:
+    backupType: FULL
+    compress: true
+    tempPath: /tmp/neo4j-backup-staging
+```
+
+> **External MinIO over TLS**: Change `endpointURL` to `https://minio.example.com`. Ensure your MinIO TLS certificate is trusted by the container (or use a properly signed cert). Self-signed certs require mounting the CA into the pod — use `additionalArgs` to pass `--ssl-certificate-authorities` if needed.
+
+#### Verify the backup reached MinIO
+
+```bash
+kubectl run minio-client --rm -it --restart=Never \
+  --image=minio/mc -- /bin/sh -c "
+    mc alias set local http://minio.minio.svc:9000 minioadmin minioadmin
+    mc ls local/neo4j-backups/cluster/"
+```
+
+#### Troubleshooting MinIO
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `NoSuchBucket` | Bucket not created | `mc mb local/neo4j-backups` |
+| `connection refused` | Wrong endpoint URL | Verify `endpointURL` and MinIO pod readiness |
+| `SignatureDoesNotMatch` | Wrong credentials | Check secret key values |
+| Path-style not working | `forcePathStyle` missing | Confirm `forcePathStyle: true` in spec |
+| `SSL handshake failed` | TLS mismatch | Use `http://` for in-cluster; mount CA for self-signed certs |
+
+Full examples with scheduled incremental backups: [`examples/backup-restore/backup-minio.yaml`](../../../examples/backup-restore/backup-minio.yaml).
 
 ---
 
