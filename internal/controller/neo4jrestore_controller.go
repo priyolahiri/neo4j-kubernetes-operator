@@ -695,10 +695,10 @@ func (r *Neo4jRestoreReconciler) stopCluster(ctx context.Context, cluster *neo4j
 	logger := log.FromContext(ctx)
 	logger.Info("Stopping cluster for restore", "cluster", cluster.Name)
 
-	// Get the StatefulSet for the cluster
+	// Get the StatefulSet for the cluster (named {cluster-name}-server in server-based architecture)
 	sts := &appsv1.StatefulSet{}
 	stsKey := types.NamespacedName{
-		Name:      cluster.Name,
+		Name:      cluster.Name + "-server",
 		Namespace: cluster.Namespace,
 	}
 
@@ -732,8 +732,7 @@ func (r *Neo4jRestoreReconciler) stopCluster(ctx context.Context, cluster *neo4j
 		case <-ticker.C:
 			pods := &corev1.PodList{}
 			if err := r.List(ctx, pods, client.InNamespace(cluster.Namespace), client.MatchingLabels{
-				"app.kubernetes.io/name":     "neo4j",
-				"app.kubernetes.io/instance": cluster.Name,
+				"app.kubernetes.io/instance": cluster.Name + "-server",
 			}); err != nil {
 				logger.Error(err, "Failed to list pods")
 				continue
@@ -753,10 +752,10 @@ func (r *Neo4jRestoreReconciler) startCluster(ctx context.Context, cluster *neo4
 	logger := log.FromContext(ctx)
 	logger.Info("Starting cluster after restore", "cluster", cluster.Name)
 
-	// Get the StatefulSet for the cluster
+	// Get the StatefulSet for the cluster (named {cluster-name}-server in server-based architecture)
 	sts := &appsv1.StatefulSet{}
 	stsKey := types.NamespacedName{
-		Name:      cluster.Name,
+		Name:      cluster.Name + "-server",
 		Namespace: cluster.Namespace,
 	}
 
@@ -805,8 +804,7 @@ func (r *Neo4jRestoreReconciler) waitForClusterReady(ctx context.Context, cluste
 			// Check if all pods are ready
 			pods := &corev1.PodList{}
 			if err := r.List(ctx, pods, client.InNamespace(cluster.Namespace), client.MatchingLabels{
-				"app.kubernetes.io/name":     "neo4j",
-				"app.kubernetes.io/instance": cluster.Name,
+				"app.kubernetes.io/instance": cluster.Name + "-server",
 			}); err != nil {
 				logger.Error(err, "Failed to list pods")
 				continue
