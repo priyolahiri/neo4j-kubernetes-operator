@@ -9,7 +9,7 @@ resources:
 - ../../default
 
 images:
-- name: ghcr.io/priyolahiri/neo4j-kubernetes-operator
+- name: controller
   newName: neo4j-operator
   newTag: integration-test
 
