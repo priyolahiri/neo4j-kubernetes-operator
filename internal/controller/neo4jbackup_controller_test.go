@@ -25,7 +25,6 @@ import (
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -166,12 +165,11 @@ var _ = Describe("Neo4jBackup Controller", func() {
 	})
 
 	Context("When creating a PVC backup", func() {
-		It("Should create backup RBAC resources automatically", func() {
+		It("Should create the backup ServiceAccount automatically", func() {
 			By("Creating the backup resource")
 			Expect(k8sClient.Create(ctx, backup)).Should(Succeed())
 
-			By("Verifying backup RBAC resources were created")
-			// Check service account
+			By("Verifying neo4j-backup-sa ServiceAccount is created")
 			sa := &corev1.ServiceAccount{}
 			Eventually(func() error {
 				return k8sClient.Get(ctx, types.NamespacedName{
@@ -179,35 +177,8 @@ var _ = Describe("Neo4jBackup Controller", func() {
 					Namespace: namespaceName,
 				}, sa)
 			}, timeout, interval).Should(Succeed())
-
-			// Check role
-			role := &rbacv1.Role{}
-			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{
-					Name:      "neo4j-backup-role",
-					Namespace: namespaceName,
-				}, role)
-			}, timeout, interval).Should(Succeed())
-
-			// Verify role has correct permissions
-			Expect(role.Rules).To(HaveLen(3))
-			Expect(role.Rules[0].APIGroups).To(Equal([]string{""}))
-			Expect(role.Rules[0].Resources).To(Equal([]string{"pods"}))
-			Expect(role.Rules[0].Verbs).To(ConsistOf("get", "list"))
-
-			// Check role binding
-			rb := &rbacv1.RoleBinding{}
-			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{
-					Name:      "neo4j-backup-rolebinding",
-					Namespace: namespaceName,
-				}, rb)
-			}, timeout, interval).Should(Succeed())
-
-			// Verify role binding references correct resources
-			Expect(rb.RoleRef.Name).To(Equal("neo4j-backup-role"))
-			Expect(rb.Subjects).To(HaveLen(1))
-			Expect(rb.Subjects[0].Name).To(Equal("neo4j-backup-sa"))
+			// No Role or RoleBinding: the backup Job runs neo4j-admin directly
+			// and requires no Kubernetes API access.
 		})
 
 		It("Should create backup job successfully", func() {

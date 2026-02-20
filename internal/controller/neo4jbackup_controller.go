@@ -25,7 +25,6 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -174,9 +173,9 @@ func (r *Neo4jBackupReconciler) handleDeletion(ctx context.Context, backup *neo4
 func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	// Ensure backup RBAC resources exist in the namespace
-	if err := r.ensureBackupRBAC(ctx, backup.Namespace); err != nil {
-		logger.Error(err, "Failed to ensure backup RBAC")
+	// Ensure backup ServiceAccount exists (and carries workload-identity annotations).
+	if err := r.ensureBackupServiceAccount(ctx, backup); err != nil {
+		logger.Error(err, "Failed to ensure backup ServiceAccount")
 		return ctrl.Result{}, err
 	}
 
@@ -204,9 +203,9 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	// Ensure backup RBAC resources exist in the namespace
-	if err := r.ensureBackupRBAC(ctx, backup.Namespace); err != nil {
-		logger.Error(err, "Failed to ensure backup RBAC")
+	// Ensure backup ServiceAccount exists (and carries workload-identity annotations).
+	if err := r.ensureBackupServiceAccount(ctx, backup); err != nil {
+		logger.Error(err, "Failed to ensure backup ServiceAccount")
 		return ctrl.Result{}, err
 	}
 
@@ -293,7 +292,8 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 			BackoffLimit: &backoffLimit,
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
+					RestartPolicy:      corev1.RestartPolicyNever,
+					ServiceAccountName: backupServiceAccountName,
 					Containers: []corev1.Container{
 						{
 							Name:         "backup",
@@ -350,7 +350,8 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 				BackoffLimit: &backoffLimit,
 				Template: corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{
-						RestartPolicy: corev1.RestartPolicyNever,
+						RestartPolicy:      corev1.RestartPolicyNever,
+						ServiceAccountName: backupServiceAccountName,
 						Containers: []corev1.Container{
 							{
 								Name:         "backup",
@@ -465,15 +466,20 @@ func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1alpha1.Neo4jBackup) s
 	}
 }
 
+// cloudBlockForBackup returns the CloudBlock from whichever spec field is populated.
+func cloudBlockForBackup(backup *neo4jv1alpha1.Neo4jBackup) *neo4jv1alpha1.CloudBlock {
+	if backup.Spec.Storage.Cloud != nil {
+		return backup.Spec.Storage.Cloud
+	}
+	return backup.Spec.Cloud
+}
+
 // buildCloudEnvVars injects cloud provider credentials from a Kubernetes Secret
 // into the backup job container as environment variables.
+// When CredentialsSecretRef is empty the function returns nil, which means the
+// Job relies on ambient cloud identity (IRSA, GKE Workload Identity, etc.).
 func (r *Neo4jBackupReconciler) buildCloudEnvVars(backup *neo4jv1alpha1.Neo4jBackup) []corev1.EnvVar {
-	var cloud *neo4jv1alpha1.CloudBlock
-	if backup.Spec.Storage.Cloud != nil {
-		cloud = backup.Spec.Storage.Cloud
-	} else if backup.Spec.Cloud != nil {
-		cloud = backup.Spec.Cloud
-	}
+	cloud := cloudBlockForBackup(backup)
 	if cloud == nil || cloud.CredentialsSecretRef == "" {
 		return nil
 	}
@@ -496,6 +502,7 @@ func (r *Neo4jBackupReconciler) buildCloudEnvVars(backup *neo4jv1alpha1.Neo4jBac
 			{Name: "AZURE_STORAGE_KEY", ValueFrom: fromSecret("AZURE_STORAGE_KEY")},
 		}
 	case "gcp":
+		// The credentials JSON is mounted as a file; point the SDK at it.
 		return []corev1.EnvVar{
 			{Name: "GOOGLE_APPLICATION_CREDENTIALS", Value: "/var/secrets/gcp/credentials.json"},
 		}
@@ -503,12 +510,19 @@ func (r *Neo4jBackupReconciler) buildCloudEnvVars(backup *neo4jv1alpha1.Neo4jBac
 	return nil
 }
 
-func (r *Neo4jBackupReconciler) buildVolumeMounts(_ *neo4jv1alpha1.Neo4jBackup) []corev1.VolumeMount {
+func (r *Neo4jBackupReconciler) buildVolumeMounts(backup *neo4jv1alpha1.Neo4jBackup) []corev1.VolumeMount {
 	mounts := []corev1.VolumeMount{
-		{
-			Name:      "backup-storage",
-			MountPath: "/backup",
-		},
+		{Name: "backup-storage", MountPath: "/backup"},
+	}
+
+	// GCP explicit credentials: mount the Secret containing the service-account JSON.
+	cloud := cloudBlockForBackup(backup)
+	if cloud != nil && cloud.Provider == "gcp" && cloud.CredentialsSecretRef != "" {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      "gcp-credentials",
+			MountPath: "/var/secrets/gcp",
+			ReadOnly:  true,
+		})
 	}
 
 	return mounts
@@ -517,30 +531,39 @@ func (r *Neo4jBackupReconciler) buildVolumeMounts(_ *neo4jv1alpha1.Neo4jBackup) 
 func (r *Neo4jBackupReconciler) buildVolumes(backup *neo4jv1alpha1.Neo4jBackup) []corev1.Volume {
 	volumes := []corev1.Volume{}
 
-	// Add storage volume based on storage type
-	if backup.Spec.Storage.Type == "pvc" && backup.Spec.Storage.PVC != nil {
-		if backup.Spec.Storage.PVC.Name != "" {
-			volumes = append(volumes, corev1.Volume{
-				Name: "backup-storage",
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: backup.Spec.Storage.PVC.Name,
-					},
-				},
-			})
-		} else {
-			volumes = append(volumes, corev1.Volume{
-				Name: "backup-storage",
-				VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
-			})
-		}
-	} else {
+	// Backup storage volume.
+	if backup.Spec.Storage.Type == "pvc" && backup.Spec.Storage.PVC != nil && backup.Spec.Storage.PVC.Name != "" {
 		volumes = append(volumes, corev1.Volume{
 			Name: "backup-storage",
 			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{},
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: backup.Spec.Storage.PVC.Name,
+				},
+			},
+		})
+	} else {
+		volumes = append(volumes, corev1.Volume{
+			Name:         "backup-storage",
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
+
+	// GCP explicit credentials: project the JSON key from the Secret onto a known path.
+	// The key inside the Secret must be named GOOGLE_APPLICATION_CREDENTIALS_JSON.
+	cloud := cloudBlockForBackup(backup)
+	if cloud != nil && cloud.Provider == "gcp" && cloud.CredentialsSecretRef != "" {
+		volumes = append(volumes, corev1.Volume{
+			Name: "gcp-credentials",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: cloud.CredentialsSecretRef,
+					Items: []corev1.KeyToPath{
+						{
+							Key:  "GOOGLE_APPLICATION_CREDENTIALS_JSON",
+							Path: "credentials.json",
+						},
+					},
+				},
 			},
 		})
 	}
@@ -831,92 +854,45 @@ func (r *Neo4jBackupReconciler) validateNeo4jVersion(cluster *neo4jv1alpha1.Neo4
 	return validation.ValidateNeo4jVersion(cluster.Spec.Image.Tag)
 }
 
-// ensureBackupRBAC ensures that the backup service account and RBAC resources exist in the namespace
-func (r *Neo4jBackupReconciler) ensureBackupRBAC(ctx context.Context, namespace string) error {
-	// Create service account if it doesn't exist
+// backupServiceAccountName is the ServiceAccount used by all backup Job pods.
+// Operators can annotate it for IRSA / GKE Workload Identity / Azure Workload Identity
+// via CloudBlock.Identity.AutoCreate.Annotations.
+const backupServiceAccountName = "neo4j-backup-sa"
+
+// ensureBackupServiceAccount creates (or updates) the neo4j-backup-sa ServiceAccount
+// and applies any workload-identity annotations declared in the backup spec.
+// No Role or RoleBinding is created: the backup Job runs neo4j-admin directly and
+// does not need any Kubernetes API access.
+func (r *Neo4jBackupReconciler) ensureBackupServiceAccount(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup) error {
+	namespace := backup.Namespace
+
+	// Collect workload-identity annotations from the spec (if any).
+	wiAnnotations := map[string]string{}
+	cloud := cloudBlockForBackup(backup)
+	if cloud != nil && cloud.Identity != nil && cloud.Identity.AutoCreate != nil {
+		for k, v := range cloud.Identity.AutoCreate.Annotations {
+			wiAnnotations[k] = v
+		}
+	}
+
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "neo4j-backup-sa",
+			Name:      backupServiceAccountName,
 			Namespace: namespace,
 		},
 	}
-
-	if err := r.Get(ctx, types.NamespacedName{Name: sa.Name, Namespace: namespace}, sa); err != nil {
-		if errors.IsNotFound(err) {
-			if err := r.Create(ctx, sa); err != nil {
-				return fmt.Errorf("failed to create backup service account: %w", err)
-			}
-		} else {
-			return err
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error {
+		// Apply workload-identity annotations; preserve any other annotations
+		// already present (e.g. set by cloud-controller or the user directly).
+		if sa.Annotations == nil {
+			sa.Annotations = map[string]string{}
 		}
-	}
-
-	// Create role if it doesn't exist
-	role := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "neo4j-backup-role",
-			Namespace: namespace,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{""},
-				Resources: []string{"pods"},
-				Verbs:     []string{"get", "list"},
-			},
-			{
-				APIGroups: []string{""},
-				Resources: []string{"pods/exec"},
-				Verbs:     []string{"create"},
-			},
-			{
-				APIGroups: []string{""},
-				Resources: []string{"pods/log"},
-				Verbs:     []string{"get"},
-			},
-		},
-	}
-
-	if err := r.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: namespace}, role); err != nil {
-		if errors.IsNotFound(err) {
-			if err := r.Create(ctx, role); err != nil {
-				return fmt.Errorf("failed to create backup role: %w", err)
-			}
-		} else {
-			return err
+		for k, v := range wiAnnotations {
+			sa.Annotations[k] = v
 		}
-	}
-
-	// Create role binding if it doesn't exist
-	roleBinding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "neo4j-backup-rolebinding",
-			Namespace: namespace,
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     role.Name,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      sa.Name,
-				Namespace: namespace,
-			},
-		},
-	}
-
-	if err := r.Get(ctx, types.NamespacedName{Name: roleBinding.Name, Namespace: namespace}, roleBinding); err != nil {
-		if errors.IsNotFound(err) {
-			if err := r.Create(ctx, roleBinding); err != nil {
-				return fmt.Errorf("failed to create backup role binding: %w", err)
-			}
-		} else {
-			return err
-		}
-	}
-
-	return nil
+		return nil
+	})
+	return err
 }
 
 // SetupWithManager sets up the controller with the Manager.
