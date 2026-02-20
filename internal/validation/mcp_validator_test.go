@@ -58,7 +58,29 @@ func TestValidateMCPConfig(t *testing.T) {
 			errorTypes:     []field.ErrorType{field.ErrorTypeNotSupported},
 		},
 		{
-			name: "http auth with secretName — valid override",
+			name: "http with TLS secret — valid",
+			spec: &neo4jv1alpha1.MCPServerSpec{
+				Enabled:   true,
+				Transport: "http",
+				HTTP: &neo4jv1alpha1.MCPHTTPConfig{
+					TLS: &neo4jv1alpha1.MCPTLSSpec{SecretName: "my-tls"},
+				},
+			},
+		},
+		{
+			name: "http with TLS but no secretName — error",
+			spec: &neo4jv1alpha1.MCPServerSpec{
+				Enabled:   true,
+				Transport: "http",
+				HTTP: &neo4jv1alpha1.MCPHTTPConfig{
+					TLS: &neo4jv1alpha1.MCPTLSSpec{},
+				},
+			},
+			expectedErrors: 1,
+			errorTypes:     []field.ErrorType{field.ErrorTypeRequired},
+		},
+		{
+			name: "http auth with secretName — valid (allowed but ignored in HTTP mode)",
 			spec: &neo4jv1alpha1.MCPServerSpec{
 				Enabled:   true,
 				Transport: "http",
@@ -139,7 +161,7 @@ func TestValidateMCPConfig(t *testing.T) {
 
 func validMCPImage() *neo4jv1alpha1.ImageSpec {
 	return &neo4jv1alpha1.ImageSpec{
-		Repo: "mcp/neo4j-cypher",
+		Repo: "mcp/neo4j",
 		Tag:  "latest",
 	}
 }

@@ -1459,8 +1459,12 @@ spec:
                   auth:
                     description: |-
                       Auth allows overriding the Neo4j credentials used by the MCP server.
-                      When not set the operator uses the cluster/standalone admin secret.
-                      Applies to both http and stdio transport.
+                      Only effective for stdio transport: in STDIO mode the operator injects
+                      NEO4J_USERNAME and NEO4J_PASSWORD from this secret. When not set, the
+                      cluster/standalone admin secret is used.
+
+                      In HTTP mode credentials come from each client request (Basic Auth or
+                      Bearer token) and this field is ignored.
                     properties:
                       passwordKey:
                         default: password
@@ -1474,7 +1478,8 @@ spec:
                         type: string
                     type: object
                   database:
-                    description: Default Neo4j database for MCP queries.
+                    description: Database is the default Neo4j database name for MCP
+                      queries.
                     type: string
                   enabled:
                     default: false
@@ -1482,12 +1487,13 @@ spec:
                     type: boolean
                   env:
                     description: |-
-                      Environment variables for MCP pods.
-                      Reserved operator-managed variables (NEO4J_URL, NEO4J_USERNAME, NEO4J_PASSWORD,
-                      NEO4J_DATABASE, NEO4J_NAMESPACE, NEO4J_READ_ONLY, NEO4J_SCHEMA_SAMPLE_SIZE,
-                      NEO4J_RESPONSE_TOKEN_LIMIT, NEO4J_TRANSPORT, NEO4J_MCP_SERVER_HOST,
-                      NEO4J_MCP_SERVER_PORT, NEO4J_MCP_SERVER_PATH, NEO4J_MCP_SERVER_ALLOW_ORIGINS,
-                      NEO4J_MCP_SERVER_ALLOWED_HOSTS, NEO4J_READ_TIMEOUT) are silently ignored.
+                      Environment variables injected into MCP pods.
+                      The following operator-managed variables are silently ignored if present:
+                      NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_DATABASE, NEO4J_READ_ONLY,
+                      NEO4J_SCHEMA_SAMPLE_SIZE, NEO4J_TELEMETRY, NEO4J_LOG_LEVEL, NEO4J_LOG_FORMAT,
+                      NEO4J_TRANSPORT_MODE, NEO4J_MCP_HTTP_HOST, NEO4J_MCP_HTTP_PORT,
+                      NEO4J_MCP_HTTP_TLS_ENABLED, NEO4J_MCP_HTTP_TLS_CERT_FILE,
+                      NEO4J_MCP_HTTP_TLS_KEY_FILE, NEO4J_AUTH_HEADER_NAME.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -1607,40 +1613,24 @@ spec:
                       type: object
                     type: array
                   http:
-                    description: HTTP settings (only used for HTTP transport).
+                    description: HTTP settings (only used when transport=http).
                     properties:
-                      allowedHosts:
+                      authHeaderName:
                         description: |-
-                          AllowedHosts restricts which hostnames may connect to the MCP endpoint
-                          (comma-separated, or "*" to allow any).
-                          The operator sets this to "*" by default so the server is reachable from
-                          within the cluster. The mcp/neo4j-cypher image's own default
-                          (localhost,127.0.0.1) would block all in-cluster Kubernetes traffic.
-                          Set a specific list when exposing the server externally via LoadBalancer
-                          or Ingress, e.g. "myapp.example.com".
-                        type: string
-                      allowedOrigins:
-                        description: AllowedOrigins restricts CORS origins (comma-separated
-                          or "*").
+                          AuthHeaderName is the name of the HTTP header to read credentials from.
+                          Defaults to "Authorization" (standard Basic Auth / Bearer token header).
+                          Override when a reverse-proxy rewrites the Authorization header to a custom name.
                         type: string
                       host:
                         description: Host to bind the HTTP server to (defaults to
                           0.0.0.0).
                         type: string
-                      path:
-                        description: Path at which the MCP endpoint is served (defaults
-                          to /mcp/).
-                        type: string
                       port:
-                        description: Port to bind the HTTP server to (defaults to
-                          8000).
+                        description: |-
+                          Port to bind the HTTP server to.
+                          Defaults to 8080 (no TLS) or 8443 (TLS) to avoid privileged ports in containers.
+                          The mcp/neo4j image's own default is 80/443; we override to Kubernetes-friendly ports.
                         format: int32
-                        type: integer
-                      readTimeout:
-                        description: ReadTimeout is the maximum number of seconds
-                          to wait for a Neo4j query response.
-                        format: int32
-                        minimum: 1
                         type: integer
                       service:
                         description: Service exposure settings for HTTP transport.
@@ -1736,11 +1726,36 @@ spec:
                             - LoadBalancer
                             type: string
                         type: object
+                      tls:
+                        description: |-
+                          TLS enables HTTPS using the official image's built-in TLS termination.
+                          When set, the referenced Kubernetes TLS secret is mounted and
+                          NEO4J_MCP_HTTP_TLS_ENABLED=true is injected with the cert/key paths.
+                          When not set, TLS should be handled at the Ingress or LoadBalancer level instead.
+                        properties:
+                          certKey:
+                            default: tls.crt
+                            description: CertKey is the key in the secret that contains
+                              the certificate file.
+                            type: string
+                          keyKey:
+                            default: tls.key
+                            description: KeyKey is the key in the secret that contains
+                              the private key file.
+                            type: string
+                          secretName:
+                            description: |-
+                              SecretName is a Kubernetes TLS secret (type kubernetes.io/tls) containing the
+                              certificate and private key. Required when TLS is enabled.
+                            type: string
+                        required:
+                        - secretName
+                        type: object
                     type: object
                   image:
                     description: |-
                       Image configuration for the MCP server.
-                      Defaults to mcp/neo4j-cypher:latest (the official Docker Hub image).
+                      Defaults to mcp/neo4j:latest (the official Docker Hub image by Neo4j).
                     properties:
                       pullPolicy:
                         default: IfNotPresent
@@ -1757,16 +1772,32 @@ spec:
                     - repo
                     - tag
                     type: object
-                  namespace:
-                    description: Namespace restricts the MCP server to a specific
-                      Neo4j namespace (label prefix).
+                  logFormat:
+                    description: LogFormat controls log output format.
+                    enum:
+                    - text
+                    - json
+                    type: string
+                  logLevel:
+                    description: LogLevel sets the server log verbosity.
+                    enum:
+                    - debug
+                    - info
+                    - notice
+                    - warning
+                    - error
+                    - critical
+                    - alert
+                    - emergency
                     type: string
                   readOnly:
                     default: true
-                    description: ReadOnly disables write tools when true.
+                    description: ReadOnly disables the write_neo4j_cypher tool when
+                      true.
                     type: boolean
                   replicas:
-                    description: Replicas controls the number of MCP server pods.
+                    description: Replicas controls the number of MCP server pods (for
+                      HTTP mode).
                     format: int32
                     type: integer
                   resources:
@@ -1828,15 +1859,9 @@ spec:
                           More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                         type: object
                     type: object
-                  responseTokenLimit:
-                    description: ResponseTokenLimit limits the maximum number of tokens
-                      in a response.
-                    format: int32
-                    minimum: 1
-                    type: integer
                   schemaSampleSize:
                     description: |-
-                      SchemaSampleSize controls the schema sampling size used by get_neo4j_schema.
+                      SchemaSampleSize controls the sample size used by get-schema.
                       Lower values are faster; use -1 to sample the entire graph.
                     format: int32
                     minimum: -1
@@ -2272,9 +2297,15 @@ spec:
                             type: object
                         type: object
                     type: object
+                  telemetry:
+                    description: |-
+                      Telemetry controls anonymous usage telemetry sent to Neo4j.
+                      Defaults to the server's own default (true).
+                      Set to false to disable telemetry.
+                    type: boolean
                   transport:
                     default: http
-                    description: 'Transport mode for MCP: http or stdio.'
+                    description: 'Transport mode for the MCP server: http or stdio.'
                     enum:
                     - http
                     - stdio

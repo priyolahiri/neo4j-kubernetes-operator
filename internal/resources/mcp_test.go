@@ -14,27 +14,24 @@ import (
 )
 
 // TestBuildMCPDeploymentForCluster_HTTPDefaults verifies that an HTTP MCP deployment
-// uses the official mcp/neo4j-cypher image, port 8000, /mcp/ path, and injects
-// both username and password secret refs (required by the official image).
+// uses the official mcp/neo4j image, port 8080, and the correct env vars.
+// In HTTP mode credentials are NOT injected — they come per-request from the MCP client.
 func TestBuildMCPDeploymentForCluster_HTTPDefaults(t *testing.T) {
 	cluster := baseCluster("graph-cluster")
 	sampleSize := int32(200)
-	tokenLimit := int32(10000)
+	telemetryOff := false
 	cluster.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
-		Enabled:            true,
-		Transport:          "http",
-		ReadOnly:           true,
-		Database:           "neo4j",
-		SchemaSampleSize:   &sampleSize,
-		ResponseTokenLimit: &tokenLimit,
-		HTTP: &neo4jv1alpha1.MCPHTTPConfig{
-			Host:           "0.0.0.0",
-			AllowedOrigins: "*",
-			AllowedHosts:   "localhost,myapp.example.com",
-		},
+		Enabled:          true,
+		Transport:        "http",
+		ReadOnly:         true,
+		Database:         "neo4j",
+		SchemaSampleSize: &sampleSize,
+		Telemetry:        &telemetryOff,
+		LogLevel:         "debug",
+		LogFormat:        "json",
 		Env: []corev1.EnvVar{
 			{Name: "CUSTOM", Value: "1"},
-			{Name: "NEO4J_URL", Value: "override"}, // reserved — should be dropped
+			{Name: "NEO4J_URI", Value: "override"}, // reserved — must be dropped
 		},
 	}
 
@@ -43,47 +40,57 @@ func TestBuildMCPDeploymentForCluster_HTTPDefaults(t *testing.T) {
 	assert.Equal(t, "graph-cluster-mcp", deployment.Name)
 
 	container := deployment.Spec.Template.Spec.Containers[0]
-	// Official image is the default.
-	assert.Equal(t, "mcp/neo4j-cypher:latest", container.Image)
+	// Official image.
+	assert.Equal(t, "mcp/neo4j:latest", container.Image)
 
+	// Port 8080 (K8s-friendly default; official image default is 80).
 	require.Len(t, container.Ports, 1)
-	assert.Equal(t, int32(8000), container.Ports[0].ContainerPort)
+	assert.Equal(t, int32(8080), container.Ports[0].ContainerPort)
 
-	// Official image env vars.
-	assertEnvValue(t, container.Env, "NEO4J_URL", "neo4j://graph-cluster-client.default.svc.cluster.local:7687")
-	assertEnvValue(t, container.Env, "NEO4J_TRANSPORT", "http")
-	assertEnvValue(t, container.Env, "NEO4J_MCP_SERVER_HOST", "0.0.0.0")
-	assertEnvValue(t, container.Env, "NEO4J_MCP_SERVER_PORT", "8000")
-	assertEnvValue(t, container.Env, "NEO4J_MCP_SERVER_PATH", "/mcp/")
-	assertEnvValue(t, container.Env, "NEO4J_MCP_SERVER_ALLOW_ORIGINS", "*")
-	assertEnvValue(t, container.Env, "NEO4J_MCP_SERVER_ALLOWED_HOSTS", "localhost,myapp.example.com")
-	assertEnvValue(t, container.Env, "NEO4J_SCHEMA_SAMPLE_SIZE", "200")
-	assertEnvValue(t, container.Env, "NEO4J_RESPONSE_TOKEN_LIMIT", "10000")
+	// Connection URI.
+	assertEnvValue(t, container.Env, "NEO4J_URI", "neo4j://graph-cluster-client.default.svc.cluster.local:7687")
+
+	// Transport mode.
+	assertEnvValue(t, container.Env, "NEO4J_TRANSPORT_MODE", "http")
+	assertEnvValue(t, container.Env, "NEO4J_MCP_HTTP_HOST", "0.0.0.0")
+	assertEnvValue(t, container.Env, "NEO4J_MCP_HTTP_PORT", "8080")
+
+	// Optional fields.
 	assertEnvValue(t, container.Env, "NEO4J_READ_ONLY", "true")
+	assertEnvValue(t, container.Env, "NEO4J_SCHEMA_SAMPLE_SIZE", "200")
+	assertEnvValue(t, container.Env, "NEO4J_TELEMETRY", "false")
+	assertEnvValue(t, container.Env, "NEO4J_LOG_LEVEL", "debug")
+	assertEnvValue(t, container.Env, "NEO4J_LOG_FORMAT", "json")
 
-	// Credentials must be injected for HTTP transport too (official image requires them).
-	assertEnvSecretRef(t, container.Env, "NEO4J_USERNAME", "neo4j-admin-secret", "username")
-	assertEnvSecretRef(t, container.Env, "NEO4J_PASSWORD", "neo4j-admin-secret", "password")
+	// HTTP mode: credentials must NOT be injected (per-request auth from client).
+	assertEnvMissing(t, container.Env, "NEO4J_USERNAME")
+	assertEnvMissing(t, container.Env, "NEO4J_PASSWORD")
 
 	// Custom env passthrough (reserved keys are dropped).
 	assertEnvValue(t, container.Env, "CUSTOM", "1")
-	assertEnvMissing(t, container.Env, "NEO4J_TELEMETRY") // removed field
 
-	// No TLS volume mounts — official image does not terminate TLS.
-	assert.Len(t, deployment.Spec.Template.Spec.Volumes, 0)
-	assert.Len(t, container.VolumeMounts, 0)
+	// No TLS volumes (TLS not configured).
+	assert.Empty(t, deployment.Spec.Template.Spec.Volumes)
+	assert.Empty(t, container.VolumeMounts)
+
+	// Readiness probe on the MCP port.
+	require.NotNil(t, container.ReadinessProbe)
+	require.NotNil(t, container.ReadinessProbe.TCPSocket)
+	assert.Equal(t, int32(8080), container.ReadinessProbe.TCPSocket.Port.IntVal)
 }
 
-// TestBuildMCPDeploymentForCluster_CustomPort verifies that a user-specified port
-// is propagated correctly.
-func TestBuildMCPDeploymentForCluster_CustomPort(t *testing.T) {
+// TestBuildMCPDeploymentForCluster_HTTPWithTLS verifies TLS configuration:
+// the cert/key are mounted from a K8s secret and env vars point to the mount paths.
+func TestBuildMCPDeploymentForCluster_HTTPWithTLS(t *testing.T) {
 	cluster := baseCluster("graph-cluster")
 	cluster.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
 		Enabled:   true,
 		Transport: "http",
 		HTTP: &neo4jv1alpha1.MCPHTTPConfig{
-			Port: 9000,
-			Path: "/custom-mcp/",
+			TLS: &neo4jv1alpha1.MCPTLSSpec{
+				SecretName: "my-mcp-tls",
+				// CertKey/KeyKey left empty → defaults to tls.crt / tls.key
+			},
 		},
 	}
 
@@ -91,14 +98,71 @@ func TestBuildMCPDeploymentForCluster_CustomPort(t *testing.T) {
 	require.NotNil(t, deployment)
 
 	container := deployment.Spec.Template.Spec.Containers[0]
+
+	// With TLS the default port changes to 8443.
 	require.Len(t, container.Ports, 1)
-	assert.Equal(t, int32(9000), container.Ports[0].ContainerPort)
-	assertEnvValue(t, container.Env, "NEO4J_MCP_SERVER_PORT", "9000")
-	assertEnvValue(t, container.Env, "NEO4J_MCP_SERVER_PATH", "/custom-mcp/")
+	assert.Equal(t, int32(8443), container.Ports[0].ContainerPort)
+
+	assertEnvValue(t, container.Env, "NEO4J_MCP_HTTP_TLS_ENABLED", "true")
+	assertEnvValue(t, container.Env, "NEO4J_MCP_HTTP_TLS_CERT_FILE", "/var/run/secrets/mcp-tls/tls.crt")
+	assertEnvValue(t, container.Env, "NEO4J_MCP_HTTP_TLS_KEY_FILE", "/var/run/secrets/mcp-tls/tls.key")
+
+	// TLS volume should be present.
+	require.Len(t, deployment.Spec.Template.Spec.Volumes, 1)
+	assert.Equal(t, "my-mcp-tls", deployment.Spec.Template.Spec.Volumes[0].VolumeSource.Secret.SecretName)
+
+	// VolumeMount inside the container.
+	require.Len(t, container.VolumeMounts, 1)
+	assert.Equal(t, "/var/run/secrets/mcp-tls", container.VolumeMounts[0].MountPath)
+	assert.True(t, container.VolumeMounts[0].ReadOnly)
 }
 
-// TestBuildMCPDeploymentForStandalone_STDIOAuth verifies STDIO transport injects
-// credentials from the specified auth secret, not the default admin secret.
+// TestBuildMCPDeploymentForCluster_HTTPWithTLS_CustomKeys verifies that custom
+// cert/key field names in the TLS secret are respected.
+func TestBuildMCPDeploymentForCluster_HTTPWithTLS_CustomKeys(t *testing.T) {
+	cluster := baseCluster("graph-cluster")
+	cluster.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
+		Enabled:   true,
+		Transport: "http",
+		HTTP: &neo4jv1alpha1.MCPHTTPConfig{
+			Port: 9443,
+			TLS: &neo4jv1alpha1.MCPTLSSpec{
+				SecretName: "custom-tls",
+				CertKey:    "cert.pem",
+				KeyKey:     "key.pem",
+			},
+		},
+	}
+
+	deployment := resources.BuildMCPDeploymentForCluster(cluster)
+	require.NotNil(t, deployment)
+
+	container := deployment.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, int32(9443), container.Ports[0].ContainerPort)
+	assertEnvValue(t, container.Env, "NEO4J_MCP_HTTP_TLS_CERT_FILE", "/var/run/secrets/mcp-tls/cert.pem")
+	assertEnvValue(t, container.Env, "NEO4J_MCP_HTTP_TLS_KEY_FILE", "/var/run/secrets/mcp-tls/key.pem")
+}
+
+// TestBuildMCPDeploymentForCluster_HTTPWithAuthHeader verifies the custom auth header name.
+func TestBuildMCPDeploymentForCluster_HTTPWithAuthHeader(t *testing.T) {
+	cluster := baseCluster("graph-cluster")
+	cluster.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
+		Enabled:   true,
+		Transport: "http",
+		HTTP: &neo4jv1alpha1.MCPHTTPConfig{
+			AuthHeaderName: "X-Neo4j-Auth",
+		},
+	}
+
+	deployment := resources.BuildMCPDeploymentForCluster(cluster)
+	require.NotNil(t, deployment)
+
+	container := deployment.Spec.Template.Spec.Containers[0]
+	assertEnvValue(t, container.Env, "NEO4J_AUTH_HEADER_NAME", "X-Neo4j-Auth")
+}
+
+// TestBuildMCPDeploymentForStandalone_STDIOAuth verifies that STDIO transport injects
+// credentials (username + password) from the specified auth secret.
 func TestBuildMCPDeploymentForStandalone_STDIOAuth(t *testing.T) {
 	standalone := baseStandalone("graph-standalone")
 	standalone.Spec.TLS = &neo4jv1alpha1.TLSSpec{Mode: resources.CertManagerMode}
@@ -116,42 +180,41 @@ func TestBuildMCPDeploymentForStandalone_STDIOAuth(t *testing.T) {
 	require.NotNil(t, deployment)
 
 	container := deployment.Spec.Template.Spec.Containers[0]
-	assert.Len(t, container.Ports, 0)
-	assertEnvValue(t, container.Env, "NEO4J_TRANSPORT", "stdio")
-	assertEnvValue(t, container.Env, "NEO4J_URL", "bolt+ssc://graph-standalone-service.default.svc.cluster.local:7687")
+	// STDIO: no port exposed.
+	assert.Empty(t, container.Ports)
+
+	// STDIO: credentials MUST be injected.
+	assertEnvValue(t, container.Env, "NEO4J_URI", "bolt+ssc://graph-standalone-service.default.svc.cluster.local:7687")
+	assertEnvValue(t, container.Env, "NEO4J_TRANSPORT_MODE", "stdio")
 	assertEnvSecretRef(t, container.Env, "NEO4J_USERNAME", "mcp-auth", "user")
 	assertEnvSecretRef(t, container.Env, "NEO4J_PASSWORD", "mcp-auth", "pass")
-	assertEnvMissing(t, container.Env, "NEO4J_MCP_SERVER_PORT")
-	assert.Len(t, deployment.Spec.Template.Spec.Volumes, 0)
+
+	// No HTTP-specific vars.
+	assertEnvMissing(t, container.Env, "NEO4J_MCP_HTTP_PORT")
+
+	// No TLS volumes (TLS not configured for MCP container).
+	assert.Empty(t, deployment.Spec.Template.Spec.Volumes)
 }
 
-// TestBuildMCPDeploymentForCluster_NamespaceAndReadTimeout verifies new optional
-// fields added for the official image (Namespace, ReadTimeout), and also checks that
-// NEO4J_MCP_SERVER_ALLOWED_HOSTS defaults to "*" when not explicitly set.
-func TestBuildMCPDeploymentForCluster_NamespaceAndReadTimeout(t *testing.T) {
+// TestBuildMCPDeploymentForCluster_STDIOUsesAdminSecret verifies that when no MCP auth
+// override is set, STDIO mode uses the cluster admin secret.
+func TestBuildMCPDeploymentForCluster_STDIOUsesAdminSecret(t *testing.T) {
 	cluster := baseCluster("graph-cluster")
-	timeout := int32(60)
 	cluster.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
 		Enabled:   true,
-		Namespace: "movies",
-		HTTP: &neo4jv1alpha1.MCPHTTPConfig{
-			ReadTimeout: &timeout,
-		},
+		Transport: "stdio",
 	}
 
 	deployment := resources.BuildMCPDeploymentForCluster(cluster)
 	require.NotNil(t, deployment)
 
 	container := deployment.Spec.Template.Spec.Containers[0]
-	assertEnvValue(t, container.Env, "NEO4J_NAMESPACE", "movies")
-	assertEnvValue(t, container.Env, "NEO4J_READ_TIMEOUT", "60")
-	// When allowedHosts is not set the operator must override the server default
-	// (localhost,127.0.0.1) with "*" so in-cluster K8s requests are accepted.
-	assertEnvValue(t, container.Env, "NEO4J_MCP_SERVER_ALLOWED_HOSTS", "*")
+	assertEnvSecretRef(t, container.Env, "NEO4J_USERNAME", "neo4j-admin-secret", "username")
+	assertEnvSecretRef(t, container.Env, "NEO4J_PASSWORD", "neo4j-admin-secret", "password")
 }
 
-// TestBuildMCPDeploymentForCluster_ReadinessProbe verifies that the HTTP deployment
-// includes a TCP socket readiness probe on the MCP container port.
+// TestBuildMCPDeploymentForCluster_ReadinessProbe verifies the readiness probe exists
+// for HTTP and is absent for STDIO.
 func TestBuildMCPDeploymentForCluster_ReadinessProbe(t *testing.T) {
 	cluster := baseCluster("graph-cluster")
 	cluster.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
@@ -163,13 +226,12 @@ func TestBuildMCPDeploymentForCluster_ReadinessProbe(t *testing.T) {
 	require.NotNil(t, deployment)
 
 	container := deployment.Spec.Template.Spec.Containers[0]
-	require.NotNil(t, container.ReadinessProbe, "HTTP deployment should have a readiness probe")
-	require.NotNil(t, container.ReadinessProbe.TCPSocket, "readiness probe should use TCPSocket")
-	assert.Equal(t, int32(8000), container.ReadinessProbe.TCPSocket.Port.IntVal)
+	require.NotNil(t, container.ReadinessProbe)
+	require.NotNil(t, container.ReadinessProbe.TCPSocket)
+	assert.Equal(t, int32(8080), container.ReadinessProbe.TCPSocket.Port.IntVal)
 }
 
-// TestBuildMCPDeploymentForStandalone_NoReadinessProbeForSTDIO verifies that the
-// STDIO deployment does NOT get a readiness probe (no port is exposed).
+// TestBuildMCPDeploymentForStandalone_NoReadinessProbeForSTDIO verifies no probe for STDIO.
 func TestBuildMCPDeploymentForStandalone_NoReadinessProbeForSTDIO(t *testing.T) {
 	standalone := baseStandalone("graph-standalone")
 	standalone.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
@@ -181,7 +243,7 @@ func TestBuildMCPDeploymentForStandalone_NoReadinessProbeForSTDIO(t *testing.T) 
 	require.NotNil(t, deployment)
 
 	container := deployment.Spec.Template.Spec.Containers[0]
-	assert.Nil(t, container.ReadinessProbe, "STDIO deployment should not have a readiness probe")
+	assert.Nil(t, container.ReadinessProbe)
 }
 
 func TestBuildMCPServiceForCluster_PortOverrides(t *testing.T) {
@@ -210,7 +272,7 @@ func TestBuildMCPServiceForCluster_PortOverrides(t *testing.T) {
 	assert.Equal(t, "nlb", service.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"])
 }
 
-func TestBuildMCPIngressForCluster_HTTP(t *testing.T) {
+func TestBuildMCPIngressForCluster_UsesFixedMCPPath(t *testing.T) {
 	cluster := baseCluster("graph-cluster")
 	cluster.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
 		Enabled:   true,
@@ -238,8 +300,8 @@ func TestBuildMCPIngressForCluster_HTTP(t *testing.T) {
 	require.Len(t, ingress.Spec.Rules, 1)
 	paths := ingress.Spec.Rules[0].HTTP.Paths
 	require.Len(t, paths, 1)
-	// Default path is /mcp/ (official image).
-	assert.Equal(t, "/mcp/", paths[0].Path)
+	// Fixed path /mcp (official image; not configurable via env var).
+	assert.Equal(t, "/mcp", paths[0].Path)
 	assert.Equal(t, "graph-cluster-mcp", paths[0].Backend.Service.Name)
 	assert.Equal(t, int32(9000), paths[0].Backend.Service.Port.Number)
 	assert.Equal(t, "mcp-tls", ingress.Spec.TLS[0].SecretName)
@@ -280,8 +342,8 @@ func TestBuildMCPRouteForCluster_DefaultPath(t *testing.T) {
 
 	path, _, err := unstructured.NestedString(route.Object, "spec", "path")
 	require.NoError(t, err)
-	// Default path is /mcp/ (official image).
-	assert.Equal(t, "/mcp/", path)
+	// Fixed path /mcp (official image).
+	assert.Equal(t, "/mcp", path)
 
 	targetPort, _, err := unstructured.NestedFieldNoCopy(route.Object, "spec", "port", "targetPort")
 	require.NoError(t, err)

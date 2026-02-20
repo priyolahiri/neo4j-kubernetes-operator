@@ -33,12 +33,15 @@ import (
 )
 
 const (
-	mcpContainerName   = "neo4j-mcp"
-	mcpHTTPPortDefault = 8000
-	mcpHTTPPathDefault = "/mcp/"
-	// Official image: https://hub.docker.com/r/mcp/neo4j-cypher
-	mcpImageRepoDefault = "mcp/neo4j-cypher"
+	mcpContainerName    = "neo4j-mcp"
+	mcpHTTPPortDefault  = 8080
+	mcpHTTPSPortDefault = 8443
+	// Official Neo4j MCP image: https://hub.docker.com/r/mcp/neo4j (github.com/neo4j/mcp)
+	mcpImageRepoDefault = "mcp/neo4j"
 	mcpImageTagDefault  = "latest"
+
+	mcpTLSVolumeName = "mcp-tls"
+	mcpTLSMountPath  = "/var/run/secrets/mcp-tls"
 )
 
 var (
@@ -77,6 +80,7 @@ func BuildMCPDeploymentForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster)
 		SecurityContext: containerSecurityContext,
 	}
 
+	var volumes []corev1.Volume
 	if mcpTransport(mcp) == "http" {
 		httpPort := mcpHTTPPort(mcp)
 		container.Ports = []corev1.ContainerPort{
@@ -96,12 +100,17 @@ func BuildMCPDeploymentForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster)
 			PeriodSeconds:       10,
 			FailureThreshold:    3,
 		}
+		if mcp.HTTP != nil && mcp.HTTP.TLS != nil {
+			volumes = append(volumes, mcpTLSVolume(mcp.HTTP.TLS))
+			container.VolumeMounts = append(container.VolumeMounts, mcpTLSVolumeMount())
+		}
 	}
 
 	podSpec := corev1.PodSpec{
 		SecurityContext:  podSecurityContext,
 		Containers:       []corev1.Container{container},
 		ImagePullSecrets: imagePullSecrets(mcp),
+		Volumes:          volumes,
 	}
 
 	return &appsv1.Deployment{
@@ -157,6 +166,7 @@ func BuildMCPDeploymentForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseSt
 		SecurityContext: containerSecurityContext,
 	}
 
+	var volumes []corev1.Volume
 	if mcpTransport(mcp) == "http" {
 		httpPort := mcpHTTPPort(mcp)
 		container.Ports = []corev1.ContainerPort{
@@ -176,12 +186,17 @@ func BuildMCPDeploymentForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseSt
 			PeriodSeconds:       10,
 			FailureThreshold:    3,
 		}
+		if mcp.HTTP != nil && mcp.HTTP.TLS != nil {
+			volumes = append(volumes, mcpTLSVolume(mcp.HTTP.TLS))
+			container.VolumeMounts = append(container.VolumeMounts, mcpTLSVolumeMount())
+		}
 	}
 
 	podSpec := corev1.PodSpec{
 		SecurityContext:  podSecurityContext,
 		Containers:       []corev1.Container{container},
 		ImagePullSecrets: imagePullSecrets(mcp),
+		Volumes:          volumes,
 	}
 
 	return &appsv1.Deployment{
@@ -349,7 +364,8 @@ func buildMCPIngress(namespace, name string, labels map[string]string, mcp *neo4
 		servicePort = mcp.HTTP.Service.Port
 	}
 
-	mcpPath := mcpHTTPPath(mcp)
+	// The official mcp/neo4j image serves at the fixed path /mcp (not configurable).
+	const mcpPath = "/mcp"
 
 	var tls []networkingv1.IngressTLS
 	if ingressSpec.TLSSecretName != "" {
@@ -428,9 +444,10 @@ func buildMCPRoute(namespace, name string, labels map[string]string, mcp *neo4jv
 		targetPort = servicePort
 	}
 
+	// The official mcp/neo4j image serves at the fixed path /mcp (not configurable).
 	path := routeSpec.Path
 	if path == "" {
-		path = mcpHTTPPath(mcp)
+		path = "/mcp"
 	}
 
 	return buildRoute(
@@ -447,7 +464,7 @@ func buildMCPRoute(namespace, name string, labels map[string]string, mcp *neo4jv
 }
 
 func mcpLabelsForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, mcp *neo4jv1alpha1.MCPServerSpec) map[string]string {
-	labels := map[string]string{
+	return map[string]string{
 		"app.kubernetes.io/name":       "neo4j",
 		"app.kubernetes.io/instance":   cluster.Name,
 		"app.kubernetes.io/version":    mcpImageTag(mcp),
@@ -457,12 +474,10 @@ func mcpLabelsForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, mcp *neo
 		"neo4j.com/cluster":            cluster.Name,
 		"neo4j.com/component":          "mcp",
 	}
-
-	return labels
 }
 
 func mcpLabelsForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone, mcp *neo4jv1alpha1.MCPServerSpec) map[string]string {
-	labels := map[string]string{
+	return map[string]string{
 		"app.kubernetes.io/name":       "neo4j",
 		"app.kubernetes.io/instance":   standalone.Name,
 		"app.kubernetes.io/version":    mcpImageTag(mcp),
@@ -472,8 +487,6 @@ func mcpLabelsForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone,
 		"neo4j.com/cluster":            standalone.Name,
 		"neo4j.com/component":          "mcp",
 	}
-
-	return labels
 }
 
 func mcpSelectorLabels(name string) map[string]string {
@@ -520,6 +533,11 @@ func mcpHTTPPort(spec *neo4jv1alpha1.MCPServerSpec) int32 {
 	if spec != nil && spec.HTTP != nil && spec.HTTP.Port > 0 {
 		return spec.HTTP.Port
 	}
+	// Default to 8443 when TLS is configured, 8080 otherwise.
+	// The mcp/neo4j image's own defaults are 443/80; we use non-privileged ports for K8s.
+	if spec != nil && spec.HTTP != nil && spec.HTTP.TLS != nil {
+		return mcpHTTPSPortDefault
+	}
 	return mcpHTTPPortDefault
 }
 
@@ -528,13 +546,6 @@ func mcpHTTPHost(spec *neo4jv1alpha1.MCPServerSpec) string {
 		return spec.HTTP.Host
 	}
 	return "0.0.0.0"
-}
-
-func mcpHTTPPath(spec *neo4jv1alpha1.MCPServerSpec) string {
-	if spec != nil && spec.HTTP != nil && spec.HTTP.Path != "" {
-		return spec.HTTP.Path
-	}
-	return mcpHTTPPathDefault
 }
 
 func mcpNeo4jURIForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
@@ -553,79 +564,102 @@ func mcpNeo4jURIForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalon
 	return fmt.Sprintf("bolt://%s.%s.svc.cluster.local:7687", serviceName, standalone.Namespace)
 }
 
-// buildMCPEnv constructs the environment variables for the official mcp/neo4j-cypher image.
-// Variable naming follows the official image specification:
-// https://hub.docker.com/r/mcp/neo4j-cypher
+// buildMCPEnv constructs the environment variables for the official mcp/neo4j image.
+//
+// Authentication model:
+//   - STDIO mode: NEO4J_URI + NEO4J_USERNAME + NEO4J_PASSWORD are injected from the
+//     admin secret (or spec.mcp.auth override). The server connects at startup and
+//     verifies APOC/connectivity.
+//   - HTTP mode: Only NEO4J_URI is injected. Credentials are NOT stored in env vars —
+//     each HTTP request must carry a Basic Auth or Bearer token Authorization header.
+//     The server starts immediately without connecting to Neo4j at startup.
+//
+// See: https://github.com/neo4j/mcp#transport-modes
 func buildMCPEnv(spec *neo4jv1alpha1.MCPServerSpec, neo4jURI string, secretName, usernameKey, passwordKey string) []corev1.EnvVar {
-	// NEO4J_URL and credentials are required by the official image for all transports.
+	transport := mcpTransport(spec)
+
 	env := []corev1.EnvVar{
-		{Name: "NEO4J_URL", Value: neo4jURI},
-		{
-			Name: "NEO4J_USERNAME",
-			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef: &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
-					Key:                  usernameKey,
-				},
-			},
-		},
-		{
-			Name: "NEO4J_PASSWORD",
-			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef: &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
-					Key:                  passwordKey,
-				},
-			},
-		},
+		{Name: "NEO4J_URI", Value: neo4jURI},
 		{Name: "NEO4J_READ_ONLY", Value: strconv.FormatBool(spec.ReadOnly)},
+	}
+
+	// In STDIO mode the server connects using env-var credentials at startup.
+	// In HTTP mode credentials come from each request's Authorization header.
+	if transport == "stdio" {
+		env = append(env,
+			corev1.EnvVar{
+				Name: "NEO4J_USERNAME",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+						Key:                  usernameKey,
+					},
+				},
+			},
+			corev1.EnvVar{
+				Name: "NEO4J_PASSWORD",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+						Key:                  passwordKey,
+					},
+				},
+			},
+		)
 	}
 
 	if spec.Database != "" {
 		env = append(env, corev1.EnvVar{Name: "NEO4J_DATABASE", Value: spec.Database})
 	}
-	if spec.Namespace != "" {
-		env = append(env, corev1.EnvVar{Name: "NEO4J_NAMESPACE", Value: spec.Namespace})
-	}
 	if spec.SchemaSampleSize != nil {
 		env = append(env, corev1.EnvVar{Name: "NEO4J_SCHEMA_SAMPLE_SIZE", Value: strconv.Itoa(int(*spec.SchemaSampleSize))})
 	}
-	if spec.ResponseTokenLimit != nil {
-		env = append(env, corev1.EnvVar{Name: "NEO4J_RESPONSE_TOKEN_LIMIT", Value: strconv.Itoa(int(*spec.ResponseTokenLimit))})
+	if spec.Telemetry != nil {
+		env = append(env, corev1.EnvVar{Name: "NEO4J_TELEMETRY", Value: strconv.FormatBool(*spec.Telemetry)})
+	}
+	if spec.LogLevel != "" {
+		env = append(env, corev1.EnvVar{Name: "NEO4J_LOG_LEVEL", Value: spec.LogLevel})
+	}
+	if spec.LogFormat != "" {
+		env = append(env, corev1.EnvVar{Name: "NEO4J_LOG_FORMAT", Value: spec.LogFormat})
 	}
 
-	switch mcpTransport(spec) {
+	switch transport {
 	case "http":
-		// The server's built-in default for NEO4J_MCP_SERVER_ALLOWED_HOSTS is
-		// "localhost,127.0.0.1", which blocks all in-cluster Kubernetes requests
-		// (the Host header carries the service DNS name, not "localhost").
-		// Always set it explicitly; default to "*" so the server is reachable from
-		// within the cluster out of the box.
-		allowedHosts := "*"
-		if spec.HTTP != nil && spec.HTTP.AllowedHosts != "" {
-			allowedHosts = spec.HTTP.AllowedHosts
-		}
 		env = append(env,
-			corev1.EnvVar{Name: "NEO4J_TRANSPORT", Value: "http"},
-			corev1.EnvVar{Name: "NEO4J_MCP_SERVER_HOST", Value: mcpHTTPHost(spec)},
-			corev1.EnvVar{Name: "NEO4J_MCP_SERVER_PORT", Value: strconv.Itoa(int(mcpHTTPPort(spec)))},
-			corev1.EnvVar{Name: "NEO4J_MCP_SERVER_PATH", Value: mcpHTTPPath(spec)},
-			corev1.EnvVar{Name: "NEO4J_MCP_SERVER_ALLOWED_HOSTS", Value: allowedHosts},
+			corev1.EnvVar{Name: "NEO4J_TRANSPORT_MODE", Value: "http"},
+			corev1.EnvVar{Name: "NEO4J_MCP_HTTP_HOST", Value: mcpHTTPHost(spec)},
+			corev1.EnvVar{Name: "NEO4J_MCP_HTTP_PORT", Value: strconv.Itoa(int(mcpHTTPPort(spec)))},
 		)
 		if spec.HTTP != nil {
-			if spec.HTTP.AllowedOrigins != "" {
-				env = append(env, corev1.EnvVar{Name: "NEO4J_MCP_SERVER_ALLOW_ORIGINS", Value: spec.HTTP.AllowedOrigins})
+			if spec.HTTP.TLS != nil {
+				certPath := fmt.Sprintf("%s/%s", mcpTLSMountPath, tlsSecretKeyOrDefault(spec.HTTP.TLS.CertKey, "tls.crt"))
+				keyPath := fmt.Sprintf("%s/%s", mcpTLSMountPath, tlsSecretKeyOrDefault(spec.HTTP.TLS.KeyKey, "tls.key"))
+				env = append(env,
+					corev1.EnvVar{Name: "NEO4J_MCP_HTTP_TLS_ENABLED", Value: "true"},
+					corev1.EnvVar{Name: "NEO4J_MCP_HTTP_TLS_CERT_FILE", Value: certPath},
+					corev1.EnvVar{Name: "NEO4J_MCP_HTTP_TLS_KEY_FILE", Value: keyPath},
+				)
 			}
-			if spec.HTTP.ReadTimeout != nil {
-				env = append(env, corev1.EnvVar{Name: "NEO4J_READ_TIMEOUT", Value: strconv.Itoa(int(*spec.HTTP.ReadTimeout))})
+			if spec.HTTP.AuthHeaderName != "" {
+				env = append(env, corev1.EnvVar{Name: "NEO4J_AUTH_HEADER_NAME", Value: spec.HTTP.AuthHeaderName})
 			}
 		}
 	case "stdio":
-		env = append(env, corev1.EnvVar{Name: "NEO4J_TRANSPORT", Value: "stdio"})
+		// STDIO is the server's default transport; no env var needed to set it.
+		// Set it explicitly anyway for clarity.
+		env = append(env, corev1.EnvVar{Name: "NEO4J_TRANSPORT_MODE", Value: "stdio"})
 	}
 
 	env = append(env, filterMCPEnv(spec.Env)...)
 	return env
+}
+
+func tlsSecretKeyOrDefault(key, defaultKey string) string {
+	if key != "" {
+		return key
+	}
+	return defaultKey
 }
 
 func filterMCPEnv(env []corev1.EnvVar) []corev1.EnvVar {
@@ -635,21 +669,22 @@ func filterMCPEnv(env []corev1.EnvVar) []corev1.EnvVar {
 
 	// These are set by the operator and must not be overridden by spec.env.
 	reserved := map[string]struct{}{
-		"NEO4J_URL":                      {},
-		"NEO4J_USERNAME":                 {},
-		"NEO4J_PASSWORD":                 {},
-		"NEO4J_DATABASE":                 {},
-		"NEO4J_NAMESPACE":                {},
-		"NEO4J_READ_ONLY":                {},
-		"NEO4J_SCHEMA_SAMPLE_SIZE":       {},
-		"NEO4J_RESPONSE_TOKEN_LIMIT":     {},
-		"NEO4J_TRANSPORT":                {},
-		"NEO4J_MCP_SERVER_HOST":          {},
-		"NEO4J_MCP_SERVER_PORT":          {},
-		"NEO4J_MCP_SERVER_PATH":          {},
-		"NEO4J_MCP_SERVER_ALLOW_ORIGINS": {},
-		"NEO4J_MCP_SERVER_ALLOWED_HOSTS": {},
-		"NEO4J_READ_TIMEOUT":             {},
+		"NEO4J_URI":                    {},
+		"NEO4J_USERNAME":               {},
+		"NEO4J_PASSWORD":               {},
+		"NEO4J_DATABASE":               {},
+		"NEO4J_READ_ONLY":              {},
+		"NEO4J_SCHEMA_SAMPLE_SIZE":     {},
+		"NEO4J_TELEMETRY":              {},
+		"NEO4J_LOG_LEVEL":              {},
+		"NEO4J_LOG_FORMAT":             {},
+		"NEO4J_TRANSPORT_MODE":         {},
+		"NEO4J_MCP_HTTP_HOST":          {},
+		"NEO4J_MCP_HTTP_PORT":          {},
+		"NEO4J_MCP_HTTP_TLS_ENABLED":   {},
+		"NEO4J_MCP_HTTP_TLS_CERT_FILE": {},
+		"NEO4J_MCP_HTTP_TLS_KEY_FILE":  {},
+		"NEO4J_AUTH_HEADER_NAME":       {},
 	}
 
 	filtered := make([]corev1.EnvVar, 0, len(env))
@@ -660,6 +695,25 @@ func filterMCPEnv(env []corev1.EnvVar) []corev1.EnvVar {
 		filtered = append(filtered, e)
 	}
 	return filtered
+}
+
+func mcpTLSVolume(tls *neo4jv1alpha1.MCPTLSSpec) corev1.Volume {
+	return corev1.Volume{
+		Name: mcpTLSVolumeName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: tls.SecretName,
+			},
+		},
+	}
+}
+
+func mcpTLSVolumeMount() corev1.VolumeMount {
+	return corev1.VolumeMount{
+		Name:      mcpTLSVolumeName,
+		MountPath: mcpTLSMountPath,
+		ReadOnly:  true,
+	}
 }
 
 func imagePullPolicy(spec *neo4jv1alpha1.MCPServerSpec) corev1.PullPolicy {

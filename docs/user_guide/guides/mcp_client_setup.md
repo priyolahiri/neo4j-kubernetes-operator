@@ -2,68 +2,94 @@
 
 This guide explains how to connect MCP clients (VSCode, Claude Desktop, curl) to a Neo4j MCP server deployed by the operator.
 
-The operator uses the **`mcp/neo4j-cypher` image** from Docker Hub, which is published by the [Priyo Lahiri](https://neo4j.com/labs/) team (`neo4j-contrib/mcp-neo4j`).
+The operator uses the **official `mcp/neo4j` image** — the supported Neo4j product MCP server published by Neo4j, Inc.
 
-> **Note:** `mcp/neo4j-cypher` is a **Priyo Lahiri** project. It is actively developed and maintained by the Neo4j Field GenAI team, but Neo4j does not provide SLAs or backwards-compatibility guarantees for it. If you are looking for the official supported product MCP server, see [github.com/neo4j/mcp](https://github.com/neo4j/mcp).
+| Attribute | Detail |
+|---|---|
+| **Image** | [`mcp/neo4j`](https://hub.docker.com/r/mcp/neo4j) |
+| **Source** | [github.com/neo4j/mcp](https://github.com/neo4j/mcp) |
+| **Default port** | `8080` (K8s-friendly; the image's own default is 80/443) |
+| **MCP endpoint path** | `/mcp` (fixed, not configurable) |
+| **Transports** | `http` (default) or `stdio` |
+| **Documentation** | [neo4j.com/docs/mcp](https://neo4j.com/docs/mcp/current/) |
 
-- **Image**: [`mcp/neo4j-cypher`](https://hub.docker.com/r/mcp/neo4j-cypher)
-- **Default port**: `8000`
-- **Default endpoint path**: `/mcp/`
-- **Transports**: `http` (default) or `stdio`
+> **Prerequisite**: APOC must be installed in your Neo4j deployment. The `get-schema` tool uses APOC for schema introspection. Install it via the `Neo4jPlugin` CRD.
 
 ## Before You Start
 
 1. Deploy MCP using `spec.mcp` on either `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone`.
-2. Install APOC with the `Neo4jPlugin` CRD (`get_neo4j_schema` requires APOC's schema inspection procedures).
+2. Install APOC with the `Neo4jPlugin` CRD (required by the `get-schema` tool).
 3. Ensure the MCP Service is reachable from your client.
 
-See [Configuration: MCP Server](../configuration.md#mcp-server) for deployment setup details.
+See [Configuration: MCP Server](../configuration.md#mcp-server) for the full `spec.mcp` reference.
 
-## Minimal cluster example
+## Minimal example
 
 ```yaml
 spec:
   mcp:
     enabled: true
-    # image defaults to mcp/neo4j-cypher:latest — no need to specify
-    readOnly: true   # disable write tools
+    readOnly: true   # disable write-cypher tool
 ```
 
-The operator automatically injects `NEO4J_URL`, `NEO4J_USERNAME`, and `NEO4J_PASSWORD` from the cluster admin secret.
+The operator injects `NEO4J_URI` automatically. In HTTP mode (the default) no credentials are stored in the pod — they travel with each client request.
+
+## Authentication Model
+
+The `mcp/neo4j` image uses **different authentication for each transport**:
+
+| Transport | How credentials reach Neo4j |
+|---|---|
+| **HTTP** | Per-request `Authorization` header (Basic Auth `username:password` or Bearer token). The operator does NOT inject `NEO4J_USERNAME`/`NEO4J_PASSWORD`. Configure your MCP client with Neo4j credentials. |
+| **STDIO** | `NEO4J_USERNAME` and `NEO4J_PASSWORD` env vars injected by the operator from the admin secret (or a custom secret via `spec.mcp.auth`). |
+
+This means:
+- **HTTP mode**: each client request carries its own credentials — ideal for multi-user or shared deployments.
+- **STDIO mode**: the operator manages a single set of credentials — ideal for in-cluster automation.
+
+## Available Tools
+
+| Tool | Read-only | Description |
+|---|---|---|
+| `get-schema` | Yes | Introspect labels, relationship types, and property keys (requires APOC) |
+| `read-cypher` | Yes | Execute read-only Cypher queries |
+| `write-cypher` | No | Execute write/admin Cypher queries — disabled when `readOnly: true` |
+| `list-gds-procedures` | Yes | List available GDS procedures; auto-disabled if GDS is not installed |
 
 ## Choose a Transport
 
-### HTTP (default)
+### HTTP (default — recommended)
 
-Deploys a `Deployment` + `ClusterIP Service` (`<name>-mcp:8000`). Expose the service via Ingress, Route, or LoadBalancer. The MCP endpoint path is `/mcp/` (trailing slash required by the official image).
+The operator creates a `Deployment` + `ClusterIP Service` (`<name>-mcp:8080`). Expose the service via Ingress, Route, or LoadBalancer for external access. The MCP endpoint is always at `/mcp`.
+
+**In HTTP mode the server starts immediately without connecting to Neo4j at startup.** Connections are made per-request using the credentials from the request's `Authorization` header.
 
 ### STDIO (in-cluster only)
 
-No Service is created. Use STDIO only when the MCP client runs inside the cluster (for example, a sidecar or Kubernetes Job) and can exec into the pod.
+No Service is created. The operator injects Neo4j credentials from the admin secret. Use STDIO only when the MCP client runs inside the cluster and can exec into the pod, or for in-cluster automation jobs.
 
-## HTTP Mode: Test with curl
+## Test with curl (HTTP mode)
 
 ```bash
-# Inside-cluster test (works from any pod in the same namespace)
-curl -X POST http://<name>-mcp.<namespace>.svc.cluster.local:8000/mcp/ \
+# From inside the cluster (any pod in the same namespace):
+curl -X POST http://<name>-mcp.<namespace>.svc.cluster.local:8080/mcp \
+  -H "Authorization: Basic $(echo -n 'neo4j:your-password' | base64)" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 ```
 
-**Host validation:** The `mcp/neo4j-cypher` image validates the HTTP `Host` header against `NEO4J_MCP_SERVER_ALLOWED_HOSTS`. The server's own built-in default is `localhost,127.0.0.1`, which blocks all in-cluster Kubernetes requests (the `Host` header carries the service DNS name, not `localhost`). The operator overrides this to `*` by default, so in-cluster requests work out of the box.
+Replace `neo4j:your-password` with your Neo4j username and password. The credentials are passed per-request and used to connect to Neo4j for that request.
 
-When exposing the service externally (Ingress, LoadBalancer), set `spec.mcp.http.allowedHosts` to your domain to restrict access:
-
-```yaml
-spec:
-  mcp:
-    http:
-      allowedHosts: "neo4j-mcp.example.com"
+```bash
+# Port-forward to test locally:
+kubectl port-forward svc/<name>-mcp 8080:8080 &
+curl -X POST http://localhost:8080/mcp \
+  -H "Authorization: Basic $(echo -n 'neo4j:your-password' | base64)" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 ```
 
-**Client authentication:** The image does not enforce HTTP-level client authentication. The `NEO4J_USERNAME` / `NEO4J_PASSWORD` credentials are used only to authenticate the MCP server's own connection *to Neo4j*, not to authenticate callers. Apply client authentication at the Ingress or via Kubernetes Network Policies.
-
-## HTTP Mode: Expose via Ingress
+## Expose via Ingress (HTTP mode)
 
 ```yaml
 spec:
@@ -76,11 +102,30 @@ spec:
           enabled: true
           host: neo4j-mcp.example.com
           className: nginx
-          # TLS at the ingress level (official image does not terminate TLS):
+          # TLS at the Ingress level (recommended over container TLS):
           tlsSecretName: neo4j-mcp-tls
 ```
 
-With an Ingress, reach the endpoint at `https://neo4j-mcp.example.com/mcp/`.
+With an Ingress, the endpoint is `https://neo4j-mcp.example.com/mcp`.
+
+## Container-level TLS (HTTP mode)
+
+The `mcp/neo4j` image supports built-in TLS when you provide a certificate. This is an alternative to Ingress TLS termination.
+
+```yaml
+spec:
+  mcp:
+    enabled: true
+    http:
+      tls:
+        secretName: my-mcp-tls-secret   # kubernetes.io/tls secret
+        # certKey: tls.crt (default)
+        # keyKey: tls.key (default)
+```
+
+The secret is mounted read-only. The operator injects `NEO4J_MCP_HTTP_TLS_ENABLED=true` and the cert/key file paths. The default port becomes `8443` when TLS is configured.
+
+> **Recommendation**: For most Kubernetes deployments, terminate TLS at the Ingress layer and leave `spec.mcp.http.tls` unset.
 
 ## VSCode
 
@@ -91,13 +136,13 @@ Create or edit `.vscode/mcp.json`:
   "servers": {
     "neo4j": {
       "type": "http",
-      "url": "http://<mcp-host>:8000/mcp/"
+      "url": "http://<mcp-host>:8080/mcp"
     }
   }
 }
 ```
 
-Replace `<mcp-host>` with the Ingress host or `kubectl port-forward` address.
+VSCode will prompt for credentials or use the `Authorization` header you configure. Replace `<mcp-host>` with the Ingress hostname or `kubectl port-forward` address.
 
 ## Claude Desktop
 
@@ -108,36 +153,51 @@ Edit `claude_desktop_config.json`:
   "mcpServers": {
     "neo4j": {
       "type": "http",
-      "url": "http://<mcp-host>:8000/mcp/"
+      "url": "http://<mcp-host>:8080/mcp"
     }
   }
 }
 ```
 
-## Advanced: custom port and path
+Configure Basic Auth with your Neo4j username and password in the MCP client settings or via the `Authorization` header.
+
+## STDIO Mode: In-Cluster Usage
+
+```yaml
+spec:
+  mcp:
+    enabled: true
+    transport: stdio
+    # Optional: use a different secret for Neo4j credentials.
+    # Defaults to the cluster/standalone admin secret.
+    auth:
+      secretName: my-readonly-user
+      usernameKey: username
+      passwordKey: password
+```
+
+Because no Service is created, STDIO is for clients running inside the cluster. For desktop clients, use HTTP instead.
+
+## Advanced: custom port
 
 ```yaml
 spec:
   mcp:
     enabled: true
     http:
-      port: 9000
-      path: /neo4j-mcp/
-      allowedOrigins: "https://myapp.example.com"
-      # When set, restricts which Host headers the server accepts.
-      # The operator's default is "*" (allow any) for in-cluster access.
-      # Tighten this when exposing externally:
-      allowedHosts: "myapp.example.com,localhost"
-      readTimeout: 60    # seconds
+      port: 9080
+      # Optional: override the HTTP Authorization header name
+      # (useful when a proxy rewrites it to a custom header)
+      authHeaderName: "X-Neo4j-Authorization"
 ```
 
-## Advanced: restrict to read-only queries
+## Advanced: read-only mode
 
 ```yaml
 spec:
   mcp:
     enabled: true
-    readOnly: true   # disables write_neo4j_cypher tool
+    readOnly: true   # disables write-cypher tool
 ```
 
 ## Advanced: target a specific database
@@ -146,33 +206,17 @@ spec:
 spec:
   mcp:
     enabled: true
-    database: movies    # default database for all queries
+    database: movies
     schemaSampleSize: 500
-    responseTokenLimit: 20000
 ```
 
-## STDIO Mode: In-Cluster Usage
-
-Configure STDIO and provide a secret with Neo4j credentials (defaults to the admin secret if `auth` is omitted):
+## Advanced: logging and telemetry
 
 ```yaml
 spec:
   mcp:
     enabled: true
-    transport: stdio
-    # Optional: override credentials (defaults to cluster admin secret)
-    auth:
-      secretName: my-readonly-user
-      usernameKey: username
-      passwordKey: password
+    telemetry: false          # disable anonymous usage data
+    logLevel: debug           # debug|info|notice|warning|error
+    logFormat: json           # text|json (useful for log aggregators)
 ```
-
-Because no Service is created, STDIO is best for clients running inside the cluster. For desktop clients, use HTTP instead.
-
-## Available Tools
-
-| Tool | Description | Read-Only Safe |
-|---|---|---|
-| `get_neo4j_schema` | Returns nodes, properties, and relationships (uses APOC) | Yes |
-| `read_neo4j_cypher` | Executes a read Cypher query | Yes |
-| `write_neo4j_cypher` | Executes a write Cypher query | No (disabled when `readOnly: true`) |

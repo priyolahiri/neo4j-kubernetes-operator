@@ -50,6 +50,16 @@ func validateMCPConfig(spec *neo4jv1alpha1.MCPServerSpec, path *field.Path) fiel
 			))
 		}
 
+		// Validate TLS configuration for HTTP transport.
+		if spec.HTTP.TLS != nil {
+			if spec.HTTP.TLS.SecretName == "" {
+				allErrs = append(allErrs, field.Required(
+					path.Child("http", "tls", "secretName"),
+					"secretName is required when tls is configured",
+				))
+			}
+		}
+
 		if spec.HTTP.Service != nil {
 			if spec.HTTP.Service.Port < 0 || spec.HTTP.Service.Port > 65535 {
 				allErrs = append(allErrs, field.Invalid(
@@ -61,12 +71,12 @@ func validateMCPConfig(spec *neo4jv1alpha1.MCPServerSpec, path *field.Path) fiel
 		}
 	}
 
-	// spec.auth is optional for both transports:
-	//   - HTTP:  defaults to the cluster/standalone admin secret when omitted.
-	//   - STDIO: same default; explicit secretName/keys allow using a separate secret.
+	// spec.auth applies to STDIO transport only.
+	// In HTTP mode credentials come per-request from the client's Authorization header
+	// (Basic Auth or Bearer token); the operator does not inject credentials for HTTP.
+	// Providing auth with HTTP transport is allowed but has no effect; we emit a warning
+	// by validating only that secretName is present when auth is set.
 	if spec.Auth != nil && spec.Auth.SecretName == "" {
-		// If auth is provided it must at least specify the secret name.
-		// When auth is nil the operator uses the cluster admin secret automatically.
 		allErrs = append(allErrs, field.Required(
 			path.Child("auth", "secretName"),
 			"secretName is required when auth is set",
