@@ -1531,6 +1531,8 @@ db.format=block
 server.cluster.listen_address=0.0.0.0:6000
 server.routing.listen_address=0.0.0.0:7688
 server.cluster.raft.listen_address=0.0.0.0:7000
+server.backup.enabled=true
+server.backup.listen_address=0.0.0.0:6362
 
 # Note: Single RAFT and cluster discovery settings are dynamically added by startup script
 `, memoryConfig.HeapInitialSize, memoryConfig.HeapMaxSize, memoryConfig.PageCacheSize)

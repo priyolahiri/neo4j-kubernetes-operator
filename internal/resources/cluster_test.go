@@ -945,3 +945,18 @@ func TestBuildServerStatefulSet_CustomAdminSecret(t *testing.T) {
 		assertSecretName(t, sts, resources.DefaultAdminSecret)
 	})
 }
+
+func TestClusterConfigContainsBackupListenAddress(t *testing.T) {
+	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "backup-listen-test", Namespace: "default"},
+		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
+			Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
+			Storage:  neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+		},
+	}
+	neo4jConf := resources.BuildConfigMapForEnterprise(cluster).Data["neo4j.conf"]
+	assert.Contains(t, neo4jConf, "server.backup.listen_address=0.0.0.0:6362",
+		"backup service must listen on all interfaces so backup Jobs can connect")
+	assert.Contains(t, neo4jConf, "server.backup.enabled=true")
+}
