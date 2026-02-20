@@ -80,7 +80,7 @@ type Neo4jEnterpriseClusterSpec struct {
 	// MCP server configuration for this cluster
 	MCP *MCPServerSpec `json:"mcp,omitempty"`
 
-	// Property Sharding configuration for Neo4j 2025.10+
+	// Property Sharding configuration for Neo4j 2025.12+ (Infinigraph)
 	// Enables support for creating sharded databases that separate
 	// graph topology from node/relationship properties
 	PropertySharding *PropertyShardingSpec `json:"propertySharding,omitempty"`
@@ -564,7 +564,7 @@ type Neo4jEnterpriseClusterStatus struct {
 	// that separate graph topology from node/relationship properties.
 	//
 	// Prerequisites for PropertyShardingReady=true:
-	// - Neo4j version >= 2025.10.0
+	// - Neo4j version >= 2025.12.0
 	// - Cluster phase = Ready
 	// - Property sharding configuration applied successfully
 	// - All required Neo4j configuration settings validated
@@ -906,7 +906,7 @@ type QueryMetricsExportConfig struct {
 }
 
 // PropertyShardingSpec defines property sharding configuration
-// for Neo4j 2025.10+ to enable separated storage of graph topology and properties
+// for Neo4j 2025.12+ (Infinigraph) to enable separated storage of graph topology and properties
 type PropertyShardingSpec struct {
 	// Enable property sharding support on this cluster
 	// +kubebuilder:default=false

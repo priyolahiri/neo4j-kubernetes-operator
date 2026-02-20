@@ -254,11 +254,11 @@ func (v *ClusterValidator) validatePropertySharding(cluster *neo4jv1alpha1.Neo4j
 	specPath := field.NewPath("spec")
 
 	// Validate minimum version requirement for property sharding
-	if !resources.IsNeo4jVersion202510OrHigher(cluster.Spec.Image.Tag) {
+	if !resources.IsNeo4jVersion202512OrHigher(cluster.Spec.Image.Tag) {
 		allErrs = append(allErrs, field.Invalid(
 			specPath.Child("image", "tag"),
 			cluster.Spec.Image.Tag,
-			"property sharding requires Neo4j version 2025.10+ Enterprise"))
+			"property sharding requires Neo4j version 2025.12+ Enterprise"))
 	}
 
 	return allErrs

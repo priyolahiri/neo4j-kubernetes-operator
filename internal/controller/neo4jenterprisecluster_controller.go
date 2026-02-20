@@ -1456,7 +1456,7 @@ func (qm *QueryMonitor) setupAlertingRules(ctx context.Context, cluster *neo4jv1
 func (r *Neo4jEnterpriseClusterReconciler) validatePropertyShardingConfiguration(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 
-	// Validate Neo4j version supports property sharding (2025.10+)
+	// Validate Neo4j version supports property sharding (2025.12+)
 	if err := validatePropertyShardingVersion(cluster.Spec.Image.Tag); err != nil {
 		return fmt.Errorf("property sharding version validation failed: %w", err)
 	}
@@ -1524,11 +1524,11 @@ func validatePropertyShardingVersion(imageTag string) error {
 		return fmt.Errorf("image tag is required for property sharding")
 	}
 
-	if resources.IsNeo4jVersion202510OrHigher(imageTag) {
+	if resources.IsNeo4jVersion202512OrHigher(imageTag) {
 		return nil
 	}
 
-	return fmt.Errorf("property sharding requires Neo4j 2025.10+ Enterprise, got %s", imageTag)
+	return fmt.Errorf("property sharding requires Neo4j 2025.12+ Enterprise, got %s", imageTag)
 }
 
 // updatePropertyShardingStatus updates the property sharding ready status

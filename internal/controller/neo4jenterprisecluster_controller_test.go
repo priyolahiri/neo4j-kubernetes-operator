@@ -76,10 +76,10 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 				// Validate property sharding configuration
 				err := reconciler.validatePropertyShardingConfiguration(ctx, cluster)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("requires Neo4j 2025.10"))
+				Expect(err.Error()).To(ContainSubstring("requires Neo4j 2025.12"))
 			})
 
-			It("should accept valid Neo4j 2025.10+ version", func() {
+			It("should accept valid Neo4j 2025.12+ version", func() {
 				cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-cluster",
@@ -396,14 +396,14 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 
 			err := validatePropertyShardingVersion(cluster.Spec.Image.Tag)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("requires Neo4j 2025.10"))
+			Expect(err.Error()).To(ContainSubstring("requires Neo4j 2025.12"))
 		})
 
 		It("should correctly parse calver versions", func() {
 			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 					Image: neo4jv1alpha1.ImageSpec{
-						Tag: "2025.10.0-enterprise",
+						Tag: "2025.12.0-enterprise", // 2025.12 is the minimum for property sharding
 					},
 				},
 			}
@@ -433,7 +433,7 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 					Image: neo4jv1alpha1.ImageSpec{
-						Tag: "2025.09.0-enterprise",
+						Tag: "2025.11.0-enterprise", // 2025.11 < 2025.12 minimum
 					},
 				},
 			}
@@ -442,7 +442,7 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 
 			err := validatePropertyShardingVersion(cluster.Spec.Image.Tag)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("requires Neo4j 2025.10"))
+			Expect(err.Error()).To(ContainSubstring("requires Neo4j 2025.12"))
 		})
 	})
 })

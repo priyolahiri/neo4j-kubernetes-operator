@@ -39,7 +39,8 @@ func isRunningInCI() bool {
 }
 
 // isPropertyShardingCompatible returns true when the current Neo4j image tag supports
-// property sharding (requires CalVer 2025.10+).
+// property sharding. Property sharding (Infinigraph) was introduced in 2025.12.
+// See: https://neo4j.com/docs/operations-manual/current/scalability/sharded-property-databases/overview/
 func isPropertyShardingCompatible() bool {
 	tag := getNeo4jImageTag()
 	v, err := neo4j.ParseVersion(tag)
@@ -49,11 +50,11 @@ func isPropertyShardingCompatible() bool {
 	if !v.IsCalver {
 		return false
 	}
-	// 2025.10+ required for property sharding engine
+	// Property sharding introduced in 2025.12 (not 2025.10)
 	if v.Major > 2025 {
 		return true
 	}
-	return v.Major == 2025 && v.Minor >= 10
+	return v.Major == 2025 && v.Minor >= 12
 }
 
 // Property Sharding Integration Tests
@@ -61,7 +62,7 @@ func isPropertyShardingCompatible() bool {
 // - Property sharding requires at least 1 server (3+ recommended for HA)
 // - Each server needs 4Gi+ memory minimum for property sharding workloads (8Gi recommended)
 // - Total cluster resource requirements: 12Gi minimum (24Gi recommended)
-// - Requires Neo4j CalVer 2025.10+ (set NEO4J_VERSION=2025.x-enterprise to enable)
+// - Requires Neo4j 2025.12+ (Infinigraph introduced in 2025.12, not 2025.10)
 //
 // To run these tests locally:
 //
@@ -86,9 +87,9 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 			Skip("Skipping property sharding tests in CI - resource requirements too large")
 		}
 
-		// Skip if the current Neo4j image does not support property sharding (requires 2025.10+)
+		// Skip if the current Neo4j image does not support property sharding (requires 2025.12+)
 		if !isPropertyShardingCompatible() {
-			Skip("Skipping property sharding tests: requires Neo4j CalVer 2025.10+, set NEO4J_VERSION=2025.x-enterprise")
+			Skip("Skipping property sharding tests: requires Neo4j 2025.12+ (Infinigraph), set NEO4J_VERSION=2025.12-enterprise or later")
 		}
 
 		testNamespace = createTestNamespace("property-sharding")
@@ -155,7 +156,7 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 						Image: neo4jv1alpha1.ImageSpec{
 							Repo: "neo4j",
-							Tag:  getNeo4jImageTag(), // Property sharding requires CalVer 2025.10+ (guarded by isPropertyShardingCompatible)
+							Tag:  getNeo4jImageTag(), // Property sharding requires 2025.12+ (guarded by isPropertyShardingCompatible)
 						},
 						Auth: &neo4jv1alpha1.AuthSpec{
 							AdminSecret: "neo4j-admin-secret",

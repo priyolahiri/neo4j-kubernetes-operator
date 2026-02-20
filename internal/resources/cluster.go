@@ -1685,9 +1685,10 @@ func isNeo4jVersion526OrHigher(imageTag string) bool {
 	return strings.Contains(imageTag, "5.26")
 }
 
-// IsNeo4jVersion202510OrHigher checks if the Neo4j version supports property sharding
-// Property sharding requires Neo4j 2025.10+ (calver only - no semver versions support it)
-func IsNeo4jVersion202510OrHigher(imageTag string) bool {
+// IsNeo4jVersion202512OrHigher checks if the Neo4j version supports property sharding.
+// Property sharding (Infinigraph) was introduced in 2025.12; calver only — no semver version supports it.
+// See: https://neo4j.com/docs/operations-manual/current/scalability/sharded-property-databases/overview/
+func IsNeo4jVersion202512OrHigher(imageTag string) bool {
 	if imageTag == "" {
 		return false
 	}
@@ -1701,7 +1702,15 @@ func IsNeo4jVersion202510OrHigher(imageTag string) bool {
 		return true
 	}
 
-	return version.Major == 2025 && version.Minor >= 10
+	return version.Major == 2025 && version.Minor >= 12
+}
+
+// IsNeo4jVersion202510OrHigher is a backwards-compat alias kept for callers that have not
+// been updated yet. Use IsNeo4jVersion202512OrHigher for property sharding checks.
+//
+// Deprecated: property sharding requires 2025.12+, not 2025.10+.
+func IsNeo4jVersion202510OrHigher(imageTag string) bool {
+	return IsNeo4jVersion202512OrHigher(imageTag)
 }
 
 // buildPropertyShardingConfig merges required property sharding settings with user overrides
