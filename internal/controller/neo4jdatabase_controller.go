@@ -169,7 +169,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if !clusterReady {
-		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, "ClusterNotReady",
+		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonClusterNotReady,
 			"Referenced cluster is not ready")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
@@ -191,7 +191,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	if err != nil {
 		logger.Error(err, "Failed to create Neo4j client after retries")
-		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, "ConnectionFailed",
+		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonConnectionFailed,
 			"Failed to connect to Neo4j cluster")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 	}
@@ -530,9 +530,9 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, data
 			switch reason {
 			case EventReasonValidationFailed:
 				latest.Status.Phase = EventReasonValidationFailed
-			case EventReasonClusterNotFound, "ClusterNotReady":
+			case EventReasonClusterNotFound, EventReasonClusterNotReady:
 				latest.Status.Phase = "Pending"
-			case "ConnectionFailed", EventReasonCreationFailed, EventReasonDataImportFailed:
+			case EventReasonConnectionFailed, EventReasonCreationFailed, EventReasonDataImportFailed:
 				latest.Status.Phase = "Failed"
 			default:
 				latest.Status.Phase = "Unknown"

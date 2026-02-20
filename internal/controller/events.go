@@ -49,6 +49,7 @@ const (
 	EventReasonDataImportFailed    = "DataImportFailed"
 	EventReasonDataSeeded          = "DataSeeded"
 	EventReasonValidationWarning   = "ValidationWarning"
+	EventReasonConnectionFailed    = "ConnectionFailed"
 )
 
 // Plugin events
