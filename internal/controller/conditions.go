@@ -12,6 +12,13 @@ const (
 	ConditionTypeProgressing = "Progressing"
 	ConditionTypeDegraded    = "Degraded"
 	ConditionTypeReady       = "Ready"
+
+	// ConditionTypeServersHealthy indicates all Neo4j servers in the cluster
+	// are in Enabled state and Available health.
+	ConditionTypeServersHealthy = "ServersHealthy"
+
+	// ConditionTypeDatabasesHealthy indicates all expected user databases are online.
+	ConditionTypeDatabasesHealthy = "DatabasesHealthy"
 )
 
 // Reason constants for the Ready condition across all CRDs.
@@ -29,6 +36,12 @@ const (
 	ConditionReasonRestoreFailed   = "RestoreFailed"
 	ConditionReasonPluginInstalled = "PluginInstalled"
 	ConditionReasonPluginFailed    = "PluginInstallFailed"
+
+	ConditionReasonAllServersHealthy      = "AllServersHealthy"
+	ConditionReasonServerDegraded         = "ServerDegraded"
+	ConditionReasonAllDatabasesOnline     = "AllDatabasesOnline"
+	ConditionReasonDatabaseOffline        = "DatabaseOffline"
+	ConditionReasonDiagnosticsUnavailable = "DiagnosticsUnavailable"
 )
 
 // SetReadyCondition sets the standard "Ready" condition on a conditions slice.
@@ -44,6 +57,28 @@ func SetReadyCondition(conditions *[]metav1.Condition, generation int64, status 
 	}
 	newCond := metav1.Condition{
 		Type:               ConditionTypeReady,
+		Status:             status,
+		ObservedGeneration: generation,
+		LastTransitionTime: metav1.Now(),
+		Reason:             reason,
+		Message:            message,
+	}
+	*conditions = upsertCondition(*conditions, newCond)
+	return true
+}
+
+// SetNamedCondition upserts any named condition type on a conditions slice.
+// It preserves LastTransitionTime when status and reason are unchanged.
+// Returns true if the condition changed.
+func SetNamedCondition(conditions *[]metav1.Condition, condType string, generation int64, status metav1.ConditionStatus, reason, message string) bool {
+	existing := findCondition(*conditions, condType)
+	if existing != nil && existing.Status == status && existing.Reason == reason {
+		existing.ObservedGeneration = generation
+		existing.Message = message
+		return false
+	}
+	newCond := metav1.Condition{
+		Type:               condType,
 		Status:             status,
 		ObservedGeneration: generation,
 		LastTransitionTime: metav1.Now(),
