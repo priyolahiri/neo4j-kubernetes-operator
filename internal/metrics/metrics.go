@@ -263,6 +263,7 @@ func init() {
 		primaryCount,
 		secondaryCount,
 		scalingValidationTotal,
+		serverHealth,
 	)
 }
 
@@ -640,6 +641,15 @@ var (
 		},
 		[]string{LabelClusterName, LabelNamespace, "validation_type", LabelResult},
 	)
+
+	serverHealth = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: subsystem,
+			Name:      "server_health",
+			Help:      "Health of individual Neo4j servers: 1=Enabled+Available, 0=degraded",
+		},
+		[]string{LabelClusterName, LabelNamespace, "server_name", "server_address"},
+	)
 )
 
 // DisasterRecoveryMetrics provides methods for recording disaster recovery metrics
@@ -736,4 +746,23 @@ func (m *ConflictMetrics) RecordConflict(resourceType, namespace string) {
 func (m *ConflictMetrics) RecordConflictRetry(resourceType, namespace string, attempts int, duration time.Duration) {
 	conflictRetryAttempts.WithLabelValues(resourceType, namespace).Observe(float64(attempts))
 	conflictRetryDuration.WithLabelValues(resourceType, namespace).Observe(duration.Seconds())
+}
+
+// ServerHealth is a lightweight struct carrying per-server health info for metric recording.
+type ServerHealth struct {
+	Name      string
+	Address   string
+	Enabled   bool
+	Available bool
+}
+
+// RecordServerHealth records per-server health gauges from SHOW SERVERS results.
+func (m *ClusterMetrics) RecordServerHealth(servers []ServerHealth) {
+	for _, s := range servers {
+		value := 0.0
+		if s.Enabled && s.Available {
+			value = 1.0
+		}
+		serverHealth.WithLabelValues(m.clusterName, m.namespace, s.Name, s.Address).Set(value)
+	}
 }

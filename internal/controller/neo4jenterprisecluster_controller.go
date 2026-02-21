@@ -1539,6 +1539,18 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 				HostingDatabases: len(s.Hosting),
 			})
 		}
+		// Record per-server health metrics
+		clusterM := metrics.NewClusterMetrics(cluster.Name, cluster.Namespace)
+		serverHealthData := make([]metrics.ServerHealth, 0, len(servers))
+		for _, s := range servers {
+			serverHealthData = append(serverHealthData, metrics.ServerHealth{
+				Name:      s.Name,
+				Address:   s.Address,
+				Enabled:   s.State == "Enabled",
+				Available: s.Health == "Available",
+			})
+		}
+		clusterM.RecordServerHealth(serverHealthData)
 	}
 
 	// Collect database list
