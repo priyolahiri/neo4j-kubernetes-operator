@@ -70,6 +70,81 @@ For a hosted monitoring experience, you can register your deployment with [Neo4j
 
 The operator handles plugin installation and token registration automatically. See the [Aura Fleet Management Guide](../aura_fleet_management.md) for setup instructions.
 
+## Complete Metrics Reference
+
+The operator registers the following Prometheus metrics. All metrics use the prefix `neo4j_operator_` (composed from the `neo4j_operator` subsystem in `internal/metrics/metrics.go`).
+
+### Cluster metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_cluster_healthy` | Gauge | `cluster_name`, `namespace` | `1` when cluster is healthy, `0` otherwise |
+| `neo4j_operator_cluster_replicas_total` | Gauge | `cluster_name`, `namespace`, `role` (`primary`/`secondary`) | Current replica counts by role |
+| `neo4j_operator_cluster_phase` | Gauge | `cluster_name`, `namespace`, `phase` | `1` for the current phase, `0` for all others (phases: `Pending`, `Forming`, `Ready`, `Failed`, `Degraded`, `Upgrading`) |
+| `neo4j_operator_split_brain_detected_total` | Counter | `cluster_name`, `namespace` | Total split-brain detection events |
+| `neo4j_operator_server_health` | Gauge | `cluster_name`, `namespace`, `server_name`, `server_address` | `1` = Enabled+Available; `0` = degraded |
+
+### Reconcile metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_reconcile_total` | Counter | `cluster_name`, `namespace`, `operation`, `result` (`success`/`failure`) | Total reconciliation attempts |
+| `neo4j_operator_reconcile_duration_seconds` | Histogram | `cluster_name`, `namespace`, `operation` | Reconciliation loop duration |
+
+### Upgrade metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_upgrade_total` | Counter | `cluster_name`, `namespace`, `result` (`success`/`failure`) | Total upgrade attempts |
+| `neo4j_operator_upgrade_duration_seconds` | Histogram | `cluster_name`, `namespace`, `phase` | Duration per upgrade phase |
+
+### Backup metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_backup_total` | Counter | `cluster_name`, `namespace`, `result` (`success`/`failure`) | Total backup attempts |
+| `neo4j_operator_backup_duration_seconds` | Histogram | `cluster_name`, `namespace` | Backup job duration |
+| `neo4j_operator_backup_size_bytes` | Gauge | `cluster_name`, `namespace` | Size of the last successful backup in bytes |
+
+### Cypher execution metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_cypher_executions_total` | Counter | `cluster_name`, `namespace`, `operation`, `result` (`success`/`failure`) | Total Cypher statement executions by the operator |
+| `neo4j_operator_cypher_execution_duration_seconds` | Histogram | `cluster_name`, `namespace`, `operation` | Duration of operator-issued Cypher statements |
+
+### Security operation metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_security_operations_total` | Counter | `cluster_name`, `namespace`, `operation`, `result` (`success`/`failure`) | Total security operations (user, role, grant) |
+
+### Resource conflict metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_resource_version_conflicts_total` | Counter | `resource_type`, `namespace` | Total Kubernetes resource version conflicts encountered |
+| `neo4j_operator_conflict_retry_attempts` | Histogram | `resource_type`, `namespace` | Retry attempts needed to resolve each conflict |
+| `neo4j_operator_conflict_retry_duration_seconds` | Histogram | `resource_type`, `namespace` | Time spent retrying due to resource version conflicts |
+
+### Disaster recovery metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_disaster_recovery_status` | Gauge | `cluster_name`, `namespace`, `primary_region`, `secondary_region` | `1` = DR ready, `0` = not ready |
+| `neo4j_operator_failover_total` | Counter | `cluster_name`, `namespace`, `result` (`success`/`failure`) | Total failovers performed |
+| `neo4j_operator_replication_lag_seconds` | Gauge | `cluster_name`, `namespace`, `primary_region`, `secondary_region` | Replication lag in seconds |
+
+### Scaling metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_manual_scaler_enabled` | Gauge | `cluster_name`, `namespace` | `1` = manual scaling enabled, `0` = disabled |
+| `neo4j_operator_scale_events_total` | Counter | `cluster_name`, `namespace`, `node_type`, `direction` (`up`/`down`) | Total manual scale events |
+| `neo4j_operator_primary_count` | Gauge | `cluster_name`, `namespace` | Current number of primary nodes |
+| `neo4j_operator_secondary_count` | Gauge | `cluster_name`, `namespace` | Current number of secondary nodes |
+| `neo4j_operator_scaling_validation_total` | Counter | `cluster_name`, `namespace`, `validation_type`, `result` (`success`/`failure`) | Total scaling validation attempts |
+
 ## Live Cluster Diagnostics
 
 When `spec.queryMonitoring.enabled: true` and the cluster is in `Ready` phase, the

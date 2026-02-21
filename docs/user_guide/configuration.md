@@ -12,7 +12,32 @@ The full CRD specifications, which detail every possible configuration field, ca
 
 Below are some of the most important fields you will use to configure your cluster. For a complete list, please consult the API reference.
 
-*   `spec.image`: The Neo4j Docker image to use. Requires Neo4j Enterprise 5.26+ or 2025.x. You can specify the repository (e.g., `neo4j`), tag (e.g., `5.26-enterprise`), and pull policy.
+*   `spec.image`: The Neo4j Docker image to use. Requires Neo4j Enterprise 5.26+ or 2025.x. You can specify the repository (e.g., `neo4j`), tag (e.g., `5.26-enterprise`), pull policy, and pull secrets for private registries.
+
+#### Private Registry / Image Pull Secrets
+
+To pull Neo4j images from a private registry (ECR, GCR, ACR, or a private Docker Hub account), create a Kubernetes image pull secret and reference it in your cluster spec:
+
+```bash
+# Create the pull secret
+kubectl create secret docker-registry my-registry-secret \
+  --docker-server=<registry-url> \
+  --docker-username=<username> \
+  --docker-password=<password>
+```
+
+```yaml
+spec:
+  image:
+    repo: my-private-registry.example.com/neo4j
+    tag: "2025.01.0-enterprise"
+    pullSecrets:
+      - my-registry-secret
+```
+
+The `pullSecrets` field accepts a list of secret names. Secrets must exist in the same namespace as the cluster. The operator automatically propagates the secrets to the StatefulSet's `imagePullSecrets` field.
+
+**Cloud-managed registries**: For ECR (AWS), GCR (Google Cloud), or ACR (Azure), use workload identity / IRSA to avoid long-lived credentials where possible. The `pullSecrets` field supports any Kubernetes `kubernetes.io/dockerconfigjson` secret.
 *   `spec.topology`: (Cluster only) Defines the architecture of your cluster. Specify the total number of servers (minimum 2) that will self-organize into primary and secondary roles based on database requirements. You can optionally configure server role constraints.
 *   `spec.storage`: Configures the persistent storage for the cluster, including storage class and size.
 *   `spec.auth`: Manages authentication, allowing you to specify the provider (native, LDAP, etc.) and the secret containing credentials.
