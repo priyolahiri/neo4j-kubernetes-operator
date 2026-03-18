@@ -1021,13 +1021,14 @@ The integration test suite provides end-to-end validation against real Kubernete
 2. **Cluster with Query Monitoring Configuration**:
    - **Cluster Name**: "monitoring-cluster"
    - **Base Configuration**: Same enterprise setup as plugin cluster
-   - **Query Monitoring Spec**:
+   - **Monitoring Spec**:
      ```yaml
-     queryMonitoring:
+     monitoring:
        enabled: true
        slowQueryThreshold: "2s"
        explainPlan: true
-       indexRecommendations: true
+       queryLogLevel: "VERBOSE"
+       obfuscateLiterals: true
        sampling:
          rate: "0.1"
          maxQueriesPerSecond: 100
@@ -1036,14 +1037,15 @@ The integration test suite provides end-to-end validation against real Kubernete
          interval: "30s"
      ```
 
-3. **Query Monitoring Validation Process** (2-minute timeout):
+3. **Monitoring Validation Process** (2-minute timeout):
    - **Configuration Acceptance**: Cluster configuration accepted by operator
    - **Resource Existence**: Cluster resource successfully created
    - **Configuration Preservation**:
-     - `queryMonitoring.enabled == true`
+     - `monitoring.enabled == true`
      - `slowQueryThreshold == "2s"`
      - `explainPlan == true`
-     - `indexRecommendations == true`
+     - `queryLogLevel == "VERBOSE"`
+     - `obfuscateLiterals == true`
 
 4. **Cleanup**: Explicit cluster deletion after validation
 
