@@ -239,6 +239,16 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile MCP resources: %w", err)
 	}
 
+	// Pre-upgrade health check if image tag is changing
+	if r.isStandaloneUpgradeRequired(standalone) {
+		if blocked := r.preUpgradeHealthCheck(ctx, standalone); blocked {
+			logger.Info("Upgrade blocked by pre-upgrade health check, requeueing")
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
+		r.Recorder.Event(standalone, corev1.EventTypeNormal, EventReasonUpgradeStarted,
+			fmt.Sprintf("Upgrading Neo4j from %s to %s", standalone.Status.Version, standalone.Spec.Image.Tag))
+	}
+
 	// Check if PVC storage expansion is needed before creating/updating the StatefulSet.
 	if requeue, err := r.reconcileStandaloneStorageExpansion(ctx, standalone); err != nil {
 		logger.Error(err, "Failed to reconcile storage expansion")
@@ -290,6 +300,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 	// Update status once at the end
 	if err := r.updateStatus(ctx, standalone); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+	}
+
+	// Collect live diagnostics when monitoring enabled and standalone is Ready (non-fatal)
+	if standalone.Spec.Monitoring != nil && standalone.Spec.Monitoring.Enabled && standalone.Status.Phase == "Ready" {
+		if diagErr := r.collectStandaloneDiagnostics(ctx, standalone); diagErr != nil {
+			logger.Error(diagErr, "Failed to collect standalone diagnostics (non-fatal)")
+		}
 	}
 
 	// Reconcile Aura Fleet Management registration if enabled (non-fatal if it fails)
@@ -783,13 +800,22 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(standalone *neo4
 		})
 	}
 
+	// Determine StatefulSet update strategy from spec
+	updateStrategy := appsv1.StatefulSetUpdateStrategy{
+		Type: appsv1.RollingUpdateStatefulSetStrategyType,
+	}
+	if standalone.Spec.UpgradeStrategy != nil && standalone.Spec.UpgradeStrategy.Strategy == "Recreate" {
+		updateStrategy.Type = appsv1.OnDeleteStatefulSetStrategyType
+	}
+
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      standalone.Name,
 			Namespace: standalone.Namespace,
 		},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas: &replicas,
+			Replicas:       &replicas,
+			UpdateStrategy: updateStrategy,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app": standalone.Name,
@@ -885,6 +911,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 		latestStandalone.Status.Message == message &&
 		latestStandalone.Status.Ready == ready &&
 		latestStandalone.Status.Version == standalone.Spec.Image.Tag &&
+		latestStandalone.Status.ObservedGeneration == latestStandalone.Generation &&
 		latestStandalone.Status.Endpoints != nil {
 		logger.V(1).Info("Status unchanged, skipping update")
 		return nil
@@ -895,6 +922,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 	latestStandalone.Status.Message = message
 	latestStandalone.Status.Ready = ready
 	latestStandalone.Status.Version = standalone.Spec.Image.Tag
+	latestStandalone.Status.ObservedGeneration = latestStandalone.Generation
 
 	// Update Ready condition using standard helper
 	condStatus, condReason := PhaseToConditionStatus(phase)
@@ -915,6 +943,101 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 
 	logger.V(1).Info("Status updated successfully", "phase", phase, "ready", ready)
 	return nil
+}
+
+// collectStandaloneDiagnostics runs SHOW DATABASES against the standalone instance
+// and writes results into status.diagnostics. Non-fatal: errors are surfaced in status only.
+func (r *Neo4jEnterpriseStandaloneReconciler) collectStandaloneDiagnostics(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+	logger := log.FromContext(ctx)
+	logger.V(1).Info("Collecting standalone diagnostics", "standalone", standalone.Name)
+
+	diagnostics := &neo4jv1alpha1.StandaloneDiagnosticsStatus{}
+
+	neo4jClient, err := neo4jclient.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
+	if err != nil {
+		diagnostics.CollectionError = fmt.Sprintf("cannot connect to Neo4j: %v", err)
+		return r.updateStandaloneDiagnostics(ctx, standalone, diagnostics)
+	}
+	defer neo4jClient.Close()
+
+	databases, dbErr := neo4jClient.GetDatabases(ctx)
+	if dbErr != nil {
+		logger.Error(dbErr, "Failed to collect SHOW DATABASES")
+		diagnostics.CollectionError = fmt.Sprintf("SHOW DATABASES failed: %v", dbErr)
+	} else {
+		for _, d := range databases {
+			diagnostics.Databases = append(diagnostics.Databases, neo4jv1alpha1.DatabaseDiagnosticInfo{
+				Name:            d.Name,
+				Status:          d.Status,
+				RequestedStatus: d.RequestedStatus,
+				Role:            d.Role,
+				Default:         d.Default,
+			})
+		}
+	}
+
+	now := metav1.Now()
+	diagnostics.LastCollected = &now
+
+	return r.updateStandaloneDiagnostics(ctx, standalone, diagnostics)
+}
+
+// updateStandaloneDiagnostics persists diagnostics into standalone status with retry.
+func (r *Neo4jEnterpriseStandaloneReconciler) updateStandaloneDiagnostics(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone, diagnostics *neo4jv1alpha1.StandaloneDiagnosticsStatus) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(standalone), latest); err != nil {
+			return err
+		}
+		latest.Status.Diagnostics = diagnostics
+		return r.Status().Update(ctx, latest)
+	})
+}
+
+// isStandaloneUpgradeRequired returns true if the Neo4j image tag is changing.
+func (r *Neo4jEnterpriseStandaloneReconciler) isStandaloneUpgradeRequired(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) bool {
+	return standalone.Status.Version != "" && standalone.Status.Version != standalone.Spec.Image.Tag
+}
+
+// preUpgradeHealthCheck runs a health check before allowing an image upgrade.
+// Returns true if the upgrade should be blocked (health check failed and autoPause enabled).
+func (r *Neo4jEnterpriseStandaloneReconciler) preUpgradeHealthCheck(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) bool {
+	logger := log.FromContext(ctx)
+
+	// Skip if no upgrade strategy or health check disabled
+	if standalone.Spec.UpgradeStrategy == nil || !standalone.Spec.UpgradeStrategy.PreUpgradeHealthCheck {
+		return false
+	}
+
+	// Only check if standalone is currently Ready
+	if standalone.Status.Phase != "Ready" {
+		return false
+	}
+
+	neo4jClient, err := neo4jclient.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
+	if err != nil {
+		logger.Error(err, "Pre-upgrade health check: cannot connect to Neo4j")
+		if standalone.Spec.UpgradeStrategy.AutoPauseOnFailure {
+			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonUpgradeFailed,
+				fmt.Sprintf("Pre-upgrade health check failed (cannot connect): %v", err))
+			return true
+		}
+		return false
+	}
+	defer neo4jClient.Close()
+
+	// Simple connectivity check
+	if err := neo4jClient.VerifyConnectivity(ctx); err != nil {
+		logger.Error(err, "Pre-upgrade health check failed")
+		if standalone.Spec.UpgradeStrategy.AutoPauseOnFailure {
+			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonUpgradeFailed,
+				fmt.Sprintf("Pre-upgrade health check failed: %v", err))
+			return true
+		}
+	}
+
+	logger.Info("Pre-upgrade health check passed")
+	return false
 }
 
 // cleanupResources cleans up resources during deletion

@@ -240,6 +240,31 @@ spec:
 
 The `kind` field is intentionally unrestricted — the operator passes it through directly to cert-manager's `Certificate` resource, which supports any registered external issuer CRD.
 
+### CA Certificate Verification
+
+By default, the operator automatically loads the CA certificate from the cert-manager-generated TLS Secret (`{cluster-name}-tls-secret`) to verify Neo4j connections. This means TLS verification works out of the box when cert-manager includes `ca.crt` in the Secret.
+
+If the CA certificate cannot be loaded (e.g., during initial startup before cert-manager issues the cert, or when using an issuer that doesn't provide `ca.crt`), the operator falls back to skipping TLS verification with a warning.
+
+To use a custom CA certificate (e.g., from an external PKI), specify `trustedCASecret`:
+
+```yaml
+spec:
+  tls:
+    mode: cert-manager
+    issuerRef:
+      name: my-issuer
+      kind: ClusterIssuer
+    trustedCASecret: my-ca-bundle  # Secret must contain key "ca.crt"
+```
+
+Create the CA Secret:
+```bash
+kubectl create secret generic my-ca-bundle --from-file=ca.crt=/path/to/ca-certificate.pem
+```
+
+When `trustedCASecret` is set, it takes priority over the auto-discovered cert-manager CA.
+
 ### Custom Certificate Duration
 
 ```yaml

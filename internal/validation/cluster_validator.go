@@ -136,11 +136,24 @@ func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1al
 }
 
 // validateCluster performs comprehensive validation of the cluster
+// maxClusterNameLength is the max name length for clusters.
+// Generated resources append "-server" (7 chars), and DNS labels max at 63.
+const maxClusterNameLength = 56
+
 func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Preallocate slice with estimated capacity to reduce allocations
 	allErrs = make(field.ErrorList, 0, 10)
+
+	// Validate resource name length (generated services add suffixes like "-server")
+	if len(cluster.Name) > maxClusterNameLength {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("metadata", "name"),
+			cluster.Name,
+			fmt.Sprintf("must be no more than %d characters (generated resources append suffixes up to 7 chars, and DNS labels max at 63)", maxClusterNameLength),
+		))
+	}
 
 	// Edition validation removed - operator only supports enterprise edition
 

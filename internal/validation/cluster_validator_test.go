@@ -18,8 +18,10 @@ package validation
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -154,5 +156,61 @@ func TestClusterValidator_ApplyDefaults(t *testing.T) {
 
 	if cluster.Spec.Auth == nil || cluster.Spec.Auth.Provider != "native" {
 		t.Errorf("Expected auth provider to be defaulted to 'native'")
+	}
+}
+
+func TestClusterValidator_NameLength(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = neo4jv1alpha1.AddToScheme(scheme)
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	validator := NewClusterValidator(fakeClient)
+
+	tests := []struct {
+		name    string
+		cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid short name",
+			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster"},
+				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Image:    neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26.0", PullPolicy: "IfNotPresent"},
+					Storage:  neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+					Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "name too long for DNS label",
+			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.Repeat("a", 57)},
+				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Image:    neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26.0", PullPolicy: "IfNotPresent"},
+					Storage:  neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+					Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
+				},
+			},
+			wantErr: true,
+			errMsg:  "no more than 56 characters",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validator.ValidateCreate(context.Background(), tt.cluster)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateCreate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && err != nil && tt.errMsg != "" {
+				if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("Expected error containing '%s', got: %v", tt.errMsg, err)
+				}
+			}
+		})
 	}
 }

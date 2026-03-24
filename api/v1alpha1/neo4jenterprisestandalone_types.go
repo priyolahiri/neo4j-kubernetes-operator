@@ -82,6 +82,9 @@ type Neo4jEnterpriseStandaloneSpec struct {
 	// See: https://neo4j.com/docs/aura/fleet-management/
 	// +optional
 	AuraFleetManagement *AuraFleetManagementSpec `json:"auraFleetManagement,omitempty"`
+
+	// UpgradeStrategy specifies how to handle rolling upgrades
+	UpgradeStrategy *UpgradeStrategySpec `json:"upgradeStrategy,omitempty"`
 }
 
 // PersistenceSpec defines persistence configuration for standalone deployments
@@ -131,6 +134,14 @@ type Neo4jEnterpriseStandaloneStatus struct {
 
 	// AuraFleetManagementStatus reports the current state of the Aura Fleet Management integration.
 	AuraFleetManagement *AuraFleetManagementStatus `json:"auraFleetManagement,omitempty"`
+
+	// Diagnostics holds the most recently collected live diagnostics from the standalone instance.
+	// Populated when spec.monitoring.enabled=true and the standalone is Ready.
+	// +optional
+	Diagnostics *StandaloneDiagnosticsStatus `json:"diagnostics,omitempty"`
+
+	// ObservedGeneration reflects the generation most recently observed by the controller
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 // StandalonePodStatus provides information about the Neo4j pod
@@ -179,6 +190,22 @@ type StandaloneDatabaseStatus struct {
 
 	// HealthStatus shows the current health status of the database
 	HealthStatus string `json:"healthStatus,omitempty"`
+}
+
+// StandaloneDiagnosticsStatus holds live diagnostics collected from the Neo4j standalone instance.
+type StandaloneDiagnosticsStatus struct {
+	// Databases lists the most recently observed state of each database.
+	// +optional
+	Databases []DatabaseDiagnosticInfo `json:"databases,omitempty"`
+
+	// LastCollected is the timestamp of the most recent successful diagnostics collection.
+	// +optional
+	LastCollected *metav1.Time `json:"lastCollected,omitempty"`
+
+	// CollectionError holds the last error message if diagnostics collection failed.
+	// Empty when collection succeeds.
+	// +optional
+	CollectionError string `json:"collectionError,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -297,6 +297,8 @@ func (r *Neo4jPluginReconciler) waitForPluginReady(ctx context.Context, plugin *
 
 	for {
 		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while waiting for plugin %s: %w", plugin.Name, ctx.Err())
 		case <-timeout:
 			return fmt.Errorf("timeout waiting for plugin %s to be ready", plugin.Name)
 		case <-ticker.C:
@@ -398,6 +400,8 @@ func (r *Neo4jPluginReconciler) waitForDeploymentReady(ctx context.Context, depl
 
 	for {
 		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while waiting for deployment: %w", ctx.Err())
 		case <-timeout:
 			return fmt.Errorf("timeout waiting for cluster to be ready")
 		case <-ticker.C:

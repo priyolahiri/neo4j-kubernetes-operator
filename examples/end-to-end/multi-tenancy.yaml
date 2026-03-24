@@ -89,23 +89,19 @@ spec:
     provider: native
 
   # Multi-tenant configuration
-  configMap:
-    data:
-      # Memory allocation
-      server.memory.heap.initial_size: "8G"
-      server.memory.heap.max_size: "8G"
-      server.memory.pagecache.size: "16G"
-
-      # Transaction isolation
-      db.transaction.timeout: "120s"
-      db.transaction.concurrent.maximum: "1000"
-
-      # Query management
-      db.query.timeout: "300s"
-      dbms.routing_ttl: "300s"
-
-      # Enable database management
-      dbms.max_databases: "50"
+  config:
+    # Memory allocation
+    server.memory.heap.initial_size: "8G"
+    server.memory.heap.max_size: "8G"
+    server.memory.pagecache.size: "16G"
+    # Transaction isolation
+    db.transaction.timeout: "120s"
+    db.transaction.concurrent.maximum: "1000"
+    # Query management
+    db.query.timeout: "300s"
+    dbms.routing_ttl: "300s"
+    # Enable database management
+    dbms.max_databases: "50"
 ---
 # TENANT A: E-commerce Platform
 ---

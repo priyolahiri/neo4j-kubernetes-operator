@@ -135,6 +135,101 @@ func TestTopologyValidator_ValidateDefaults(t *testing.T) {
 	}
 }
 
+func TestTopologyValidator_ValidateServerRoles(t *testing.T) {
+	validator := NewTopologyValidator()
+
+	tests := []struct {
+		name          string
+		cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
+		wantErrorsLen int
+		wantErrorMsg  string
+	}{
+		{
+			name: "valid serverRoles within range",
+			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1alpha1.TopologyConfiguration{
+						Servers: 3,
+						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+							{ServerIndex: 0, ModeConstraint: "PRIMARY"},
+							{ServerIndex: 1, ModeConstraint: "SECONDARY"},
+						},
+					},
+				},
+			},
+			wantErrorsLen: 0,
+		},
+		{
+			name: "serverIndex out of range",
+			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1alpha1.TopologyConfiguration{
+						Servers: 3,
+						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+							{ServerIndex: 5, ModeConstraint: "PRIMARY"},
+						},
+					},
+				},
+			},
+			wantErrorsLen: 1,
+			wantErrorMsg:  "must be in range [0, 2]",
+		},
+		{
+			name: "duplicate serverIndex",
+			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1alpha1.TopologyConfiguration{
+						Servers: 3,
+						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+							{ServerIndex: 0, ModeConstraint: "PRIMARY"},
+							{ServerIndex: 0, ModeConstraint: "SECONDARY"},
+						},
+					},
+				},
+			},
+			wantErrorsLen: 1,
+			wantErrorMsg:  "Duplicate",
+		},
+		{
+			name: "all servers SECONDARY rejected",
+			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1alpha1.TopologyConfiguration{
+						Servers: 2,
+						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+							{ServerIndex: 0, ModeConstraint: "SECONDARY"},
+							{ServerIndex: 1, ModeConstraint: "SECONDARY"},
+						},
+					},
+				},
+			},
+			wantErrorsLen: 1,
+			wantErrorMsg:  "cannot set ALL servers to SECONDARY",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errors := validator.Validate(tt.cluster)
+			if len(errors) != tt.wantErrorsLen {
+				t.Errorf("Expected %d errors, got %d: %v", tt.wantErrorsLen, len(errors), errors)
+			}
+			if tt.wantErrorMsg != "" && len(errors) > 0 {
+				found := false
+				for _, err := range errors {
+					if contains(err.Error(), tt.wantErrorMsg) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("Expected error containing '%s', got: %v", tt.wantErrorMsg, errors)
+				}
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || (len(s) > len(substr) &&
 		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||

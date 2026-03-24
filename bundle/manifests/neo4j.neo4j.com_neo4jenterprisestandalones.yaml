@@ -1004,8 +1004,6 @@ spec:
                     required:
                     - name
                     type: object
-                required:
-                - enabled
                 type: object
               auth:
                 description: AuthSpec defines authentication configuration
@@ -3325,6 +3323,12 @@ spec:
                           type: string
                         type: array
                     type: object
+                  trustedCASecret:
+                    description: |-
+                      TrustedCASecret references a Secret containing a trusted CA certificate (key: "ca.crt")
+                      for verifying Neo4j TLS connections. When omitted with cert-manager mode, TLS verification
+                      is skipped (suitable for self-signed development certificates).
+                    type: string
                   usages:
                     description: Certificate usage settings
                     items:
@@ -3452,6 +3456,52 @@ spec:
                         type: object
                     type: object
                 type: object
+              upgradeStrategy:
+                description: UpgradeStrategy specifies how to handle rolling upgrades
+                properties:
+                  autoPauseOnFailure:
+                    default: true
+                    description: AutoPauseOnFailure pauses upgrade on failure for
+                      manual intervention
+                    type: boolean
+                  healthCheckTimeout:
+                    default: 5m
+                    description: HealthCheckTimeout specifies timeout for health checks
+                    type: string
+                  maxUnavailableDuringUpgrade:
+                    default: 1
+                    description: MaxUnavailableDuringUpgrade specifies max unavailable
+                      replicas during upgrade
+                    format: int32
+                    type: integer
+                  postUpgradeHealthCheck:
+                    default: true
+                    description: PostUpgradeHealthCheck enables cluster health validation
+                      after upgrade
+                    type: boolean
+                  preUpgradeHealthCheck:
+                    default: true
+                    description: PreUpgradeHealthCheck enables cluster health validation
+                      before upgrade
+                    type: boolean
+                  stabilizationTimeout:
+                    default: 3m
+                    description: StabilizationTimeout specifies how long to wait for
+                      cluster stabilization
+                    type: string
+                  strategy:
+                    default: RollingUpgrade
+                    description: Strategy specifies the upgrade strategy
+                    enum:
+                    - RollingUpgrade
+                    - Recreate
+                    type: string
+                  upgradeTimeout:
+                    default: 30m
+                    description: UpgradeTimeout specifies timeout for the entire upgrade
+                      process
+                    type: string
+                type: object
             required:
             - image
             - storage
@@ -3571,6 +3621,55 @@ spec:
                     description: StorageSize shows the current storage usage
                     type: string
                 type: object
+              diagnostics:
+                description: |-
+                  Diagnostics holds the most recently collected live diagnostics from the standalone instance.
+                  Populated when spec.monitoring.enabled=true and the standalone is Ready.
+                properties:
+                  collectionError:
+                    description: |-
+                      CollectionError holds the last error message if diagnostics collection failed.
+                      Empty when collection succeeds.
+                    type: string
+                  databases:
+                    description: Databases lists the most recently observed state
+                      of each database.
+                    items:
+                      description: DatabaseDiagnosticInfo holds the observed state
+                        of a single Neo4j database.
+                      properties:
+                        default:
+                          description: Default indicates whether this is the default
+                            database.
+                          type: boolean
+                        name:
+                          description: Name is the database name.
+                          type: string
+                        requestedStatus:
+                          description: RequestedStatus is the desired operational
+                            status.
+                          type: string
+                        role:
+                          description: Role is the database role on the most recently
+                            contacted server (e.g. "primary", "secondary").
+                          type: string
+                        status:
+                          description: Status is the current operational status (e.g.
+                            "online", "offline", "quarantined").
+                          type: string
+                      required:
+                      - name
+                      - requestedStatus
+                      - role
+                      - status
+                      type: object
+                    type: array
+                  lastCollected:
+                    description: LastCollected is the timestamp of the most recent
+                      successful diagnostics collection.
+                    format: date-time
+                    type: string
+                type: object
               endpoints:
                 description: Endpoints provides connection information
                 properties:
@@ -3622,6 +3721,11 @@ spec:
                 description: Message provides additional information about the current
                   state
                 type: string
+              observedGeneration:
+                description: ObservedGeneration reflects the generation most recently
+                  observed by the controller
+                format: int64
+                type: integer
               phase:
                 description: Phase represents the current phase of the standalone
                   deployment
