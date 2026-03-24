@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Setup Go environment
       uses: ./.github/actions/setup-go
@@ -64,7 +64,7 @@ jobs:
     # exactly, guaranteeing the released manifests are identical to what was
     # validated here without re-running controller-gen a second time.
     - name: Upload generated manifests
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: generated-manifests
         path: config/crd/bases/
@@ -80,7 +80,7 @@ jobs:
       id-token: write  # Required for Cosign keyless OIDC signing
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -172,7 +172,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Setup Go environment
       uses: ./.github/actions/setup-go
@@ -183,7 +183,7 @@ jobs:
     # This ensures the released manifests are byte-for-byte identical to what
     # was validated, without running controller-gen a second time.
     - name: Download generated manifests
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5
       with:
         name: generated-manifests
         path: config/crd/bases/
