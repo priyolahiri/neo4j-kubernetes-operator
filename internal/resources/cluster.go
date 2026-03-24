@@ -47,8 +47,8 @@ const (
 	HTTPPort = 7474
 	// HTTPSPort is the default port for Neo4j HTTPS API
 	HTTPSPort = 7473
-	// ClusterPort is the default port for Neo4j cluster communication
-	ClusterPort = 5000
+	// LegacyClusterPort is the Neo4j V1 cluster port (deprecated). Active discovery uses DiscoveryPort (6000).
+	LegacyClusterPort = 5000
 	// DiscoveryPort is the default port for Neo4j cluster discovery
 	DiscoveryPort = 6000
 	// RoutingPort is the default port for Neo4j routing service
@@ -291,8 +291,8 @@ func BuildHeadlessServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseClu
 				},
 				{
 					Name:       "tcp-discovery",
-					Port:       ClusterPort,
-					TargetPort: intstr.FromInt(ClusterPort),
+					Port:       LegacyClusterPort,
+					TargetPort: intstr.FromInt(LegacyClusterPort),
 					Protocol:   corev1.ProtocolTCP,
 				},
 				{
@@ -364,8 +364,8 @@ func BuildDiscoveryServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCl
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "tcp-discovery",
-					Port:       ClusterPort,
-					TargetPort: intstr.FromInt(ClusterPort),
+					Port:       LegacyClusterPort,
+					TargetPort: intstr.FromInt(LegacyClusterPort),
 					Protocol:   corev1.ProtocolTCP,
 				},
 			},
@@ -413,8 +413,8 @@ func BuildInternalsServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCl
 				},
 				{
 					Name:       "tcp-discovery",
-					Port:       ClusterPort,
-					TargetPort: intstr.FromInt(ClusterPort),
+					Port:       LegacyClusterPort,
+					TargetPort: intstr.FromInt(LegacyClusterPort),
 					Protocol:   corev1.ProtocolTCP,
 				},
 				{
@@ -1331,7 +1331,7 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, se
 			},
 			{
 				Name:          "tcp-discovery",
-				ContainerPort: ClusterPort,
+				ContainerPort: LegacyClusterPort,
 				Protocol:      corev1.ProtocolTCP,
 			},
 			{

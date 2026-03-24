@@ -18,9 +18,9 @@ spec:
     - jsonPath: .spec.topology.servers
       name: Servers
       type: integer
-    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+    - jsonPath: .status.ready
       name: Ready
-      type: string
+      type: boolean
     - jsonPath: .status.phase
       name: Phase
       type: string
@@ -1005,8 +1005,6 @@ spec:
                     required:
                     - name
                     type: object
-                required:
-                - enabled
                 type: object
               auth:
                 description: AuthSpec defines authentication configuration
@@ -3280,6 +3278,12 @@ spec:
                           type: string
                         type: array
                     type: object
+                  trustedCASecret:
+                    description: |-
+                      TrustedCASecret references a Secret containing a trusted CA certificate (key: "ca.crt")
+                      for verifying Neo4j TLS connections. When omitted with cert-manager mode, TLS verification
+                      is skipped (suitable for self-signed development certificates).
+                    type: string
                   usages:
                     description: Certificate usage settings
                     items:
@@ -3795,6 +3799,11 @@ spec:
                 description: Message provides additional information about the current
                   state
                 type: string
+              observedGeneration:
+                description: ObservedGeneration reflects the generation most recently
+                  observed by the controller
+                format: int64
+                type: integer
               phase:
                 description: Phase represents the current phase of the cluster
                 type: string
@@ -3811,6 +3820,9 @@ spec:
                   - Cluster phase = Ready
                   - Property sharding configuration applied successfully
                   - All required Neo4j configuration settings validated
+                type: boolean
+              ready:
+                description: Ready indicates if the cluster is ready for connections
                 type: boolean
               replicas:
                 description: Replicas shows the current number of replicas

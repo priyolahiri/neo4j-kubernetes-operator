@@ -142,6 +142,12 @@ type TLSSpec struct {
 	// Manual certificate configuration
 	CertificateSecret string `json:"certificateSecret,omitempty"`
 
+	// TrustedCASecret references a Secret containing a trusted CA certificate (key: "ca.crt")
+	// for verifying Neo4j TLS connections. When omitted with cert-manager mode, TLS verification
+	// is skipped (suitable for self-signed development certificates).
+	// +optional
+	TrustedCASecret string `json:"trustedCASecret,omitempty"`
+
 	// External Secrets configuration for TLS certificates
 	ExternalSecrets *ExternalSecretsConfig `json:"externalSecrets,omitempty"`
 
@@ -571,6 +577,9 @@ type Neo4jEnterpriseClusterStatus struct {
 	// Phase represents the current phase of the cluster
 	Phase string `json:"phase,omitempty"`
 
+	// Ready indicates if the cluster is ready for connections
+	Ready bool `json:"ready,omitempty"`
+
 	// Message provides additional information about the current state
 	Message string `json:"message,omitempty"`
 
@@ -606,6 +615,9 @@ type Neo4jEnterpriseClusterStatus struct {
 	// Populated when spec.monitoring.enabled=true and the cluster is Ready.
 	// +optional
 	Diagnostics *ClusterDiagnosticsStatus `json:"diagnostics,omitempty"`
+
+	// ObservedGeneration reflects the generation most recently observed by the controller
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 // AuraFleetManagementStatus reports the registration state of the Aura Fleet Management plugin.
@@ -803,7 +815,7 @@ type ConnectionExamples struct {
 type UpgradeStrategySpec struct {
 	// Strategy specifies the upgrade strategy
 	// +kubebuilder:validation:Enum=RollingUpgrade;Recreate
-	// +kubebuilder:default:=RollingUpgrade
+	// +kubebuilder:default=RollingUpgrade
 	Strategy string `json:"strategy,omitempty"`
 
 	// PreUpgradeHealthCheck enables cluster health validation before upgrade
@@ -946,7 +958,7 @@ type ServerRoleHint struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Servers",type=integer,JSONPath=`.spec.topology.servers`
-// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
@@ -1053,7 +1065,7 @@ type AuraFleetManagementSpec struct {
 	// (from the pre-bundled jar in the Neo4j Enterprise image) and the
 	// registration token is applied after the cluster becomes ready.
 	// +kubebuilder:default=false
-	Enabled bool `json:"enabled"`
+	Enabled bool `json:"enabled,omitempty"`
 
 	// TokenSecretRef references a Kubernetes Secret containing the Aura
 	// Fleet Management registration token obtained from the Aura console wizard.

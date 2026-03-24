@@ -65,6 +65,37 @@ func (v *TopologyValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseClust
 		}
 	}
 
+	// Validate serverRoles indices: must be in range [0, servers-1] with no duplicates
+	if len(cluster.Spec.Topology.ServerRoles) > 0 {
+		seen := make(map[int32]bool)
+		allSecondary := len(cluster.Spec.Topology.ServerRoles) == int(cluster.Spec.Topology.Servers)
+		for i, role := range cluster.Spec.Topology.ServerRoles {
+			rolePath := topologyPath.Child("serverRoles").Index(i)
+			if role.ServerIndex >= cluster.Spec.Topology.Servers {
+				allErrs = append(allErrs, field.Invalid(
+					rolePath.Child("serverIndex"), role.ServerIndex,
+					fmt.Sprintf("must be in range [0, %d]", cluster.Spec.Topology.Servers-1),
+				))
+			}
+			if seen[role.ServerIndex] {
+				allErrs = append(allErrs, field.Duplicate(
+					rolePath.Child("serverIndex"), role.ServerIndex,
+				))
+			}
+			seen[role.ServerIndex] = true
+			if role.ModeConstraint != "SECONDARY" {
+				allSecondary = false
+			}
+		}
+		if allSecondary && cluster.Spec.Topology.Servers > 0 {
+			allErrs = append(allErrs, field.Invalid(
+				topologyPath.Child("serverRoles"),
+				"all SECONDARY",
+				"cannot set ALL servers to SECONDARY mode; at least one server must be able to host primaries",
+			))
+		}
+	}
+
 	return allErrs
 }
 

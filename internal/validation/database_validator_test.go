@@ -18,12 +18,14 @@ package validation
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -940,6 +942,90 @@ func TestDatabaseValidator_ValidateClusterAndStandaloneFallback(t *testing.T) {
 
 			assert.Equal(t, tt.expectErrors, len(result.Errors),
 				"Test: %s. Expected %d errors, got %d. Errors: %v", tt.description, tt.expectErrors, len(result.Errors), result.Errors)
+		})
+	}
+}
+
+func TestValidateDatabaseName(t *testing.T) {
+	tests := []struct {
+		name         string
+		dbName       string
+		wantErrors   int
+		wantWarnings int
+		wantMsg      string
+	}{
+		{
+			name:       "valid name",
+			dbName:     "mydb",
+			wantErrors: 0,
+		},
+		{
+			name:       "valid name with underscore prefix",
+			dbName:     "_internal",
+			wantErrors: 0,
+		},
+		{
+			name:       "valid name with dots",
+			dbName:     "my.database.v2",
+			wantErrors: 0,
+		},
+		{
+			name:       "empty name",
+			dbName:     "",
+			wantErrors: 1,
+			wantMsg:    "Required",
+		},
+		{
+			name:       "starts with number",
+			dbName:     "1badname",
+			wantErrors: 1,
+			wantMsg:    "must start with a letter or underscore",
+		},
+		{
+			name:       "contains hyphen",
+			dbName:     "bad-name",
+			wantErrors: 1,
+			wantMsg:    "must start with a letter or underscore",
+		},
+		{
+			name:       "reserved name system",
+			dbName:     "system",
+			wantErrors: 1,
+			wantMsg:    "reserved",
+		},
+		{
+			name:         "default name neo4j warns",
+			dbName:       "neo4j",
+			wantErrors:   0,
+			wantWarnings: 1,
+		},
+		{
+			name:       "too long name",
+			dbName:     "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmn",
+			wantErrors: 1,
+			wantMsg:    "no more than 65",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs, warnings := validateDatabaseName(tt.dbName, field.NewPath("spec", "name"))
+			assert.Equal(t, tt.wantErrors, len(errs), "errors: %v", errs)
+			if tt.wantWarnings > 0 {
+				assert.Equal(t, tt.wantWarnings, len(warnings), "warnings: %v", warnings)
+			}
+			if tt.wantMsg != "" && len(errs) > 0 {
+				found := false
+				for _, e := range errs {
+					if strings.Contains(e.Error(), tt.wantMsg) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("Expected error containing '%s', got: %v", tt.wantMsg, errs)
+				}
+			}
 		})
 	}
 }

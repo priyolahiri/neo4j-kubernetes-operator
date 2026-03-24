@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -49,11 +50,54 @@ type DatabaseValidationResult struct {
 	Warnings []string
 }
 
+// neo4jDatabaseNamePattern matches valid Neo4j database names: starts with letter or underscore,
+// followed by alphanumeric characters, underscores, or dots.
+var neo4jDatabaseNamePattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.]*$`)
+
+const maxDatabaseNameLength = 65
+
+// validateDatabaseName checks that the database name follows Neo4j naming rules.
+func validateDatabaseName(name string, fldPath *field.Path) (field.ErrorList, []string) {
+	var allErrs field.ErrorList
+	var warnings []string
+
+	if name == "" {
+		allErrs = append(allErrs, field.Required(fldPath, "database name is required"))
+		return allErrs, warnings
+	}
+
+	if len(name) > maxDatabaseNameLength {
+		allErrs = append(allErrs, field.Invalid(fldPath, name,
+			fmt.Sprintf("must be no more than %d characters", maxDatabaseNameLength)))
+	}
+
+	if !neo4jDatabaseNamePattern.MatchString(name) {
+		allErrs = append(allErrs, field.Invalid(fldPath, name,
+			"must start with a letter or underscore and contain only alphanumeric characters, underscores, or dots"))
+	}
+
+	if strings.EqualFold(name, "system") {
+		allErrs = append(allErrs, field.Forbidden(fldPath, "'system' is a reserved database name"))
+	}
+
+	if strings.EqualFold(name, "neo4j") {
+		warnings = append(warnings, "'neo4j' is the default database name; creating a database with this name will shadow the default database")
+	}
+
+	return allErrs, warnings
+}
+
 // Validate validates a Neo4jDatabase resource
 func (v *DatabaseValidator) Validate(ctx context.Context, database *neo4jv1alpha1.Neo4jDatabase) *DatabaseValidationResult {
 	result := &DatabaseValidationResult{
 		Errors:   field.ErrorList{},
 		Warnings: []string{},
+	}
+
+	// Validate database name follows Neo4j naming rules
+	if nameErrs, nameWarnings := validateDatabaseName(database.Spec.Name, field.NewPath("spec", "name")); len(nameErrs) > 0 || len(nameWarnings) > 0 {
+		result.Errors = append(result.Errors, nameErrs...)
+		result.Warnings = append(result.Warnings, nameWarnings...)
 	}
 
 	// Try to get referenced cluster first

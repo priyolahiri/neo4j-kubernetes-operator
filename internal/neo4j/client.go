@@ -20,6 +20,7 @@ package neo4j
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"strconv"
@@ -151,7 +152,7 @@ func NewClientForPod(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, k8sClient cl
 
 	// Configure driver with optimized settings for split-brain detection
 	auth := neo4j.BasicAuth(credentials.Username, credentials.Password, "")
-	config := func(c *config.Config) {
+	driverConfig := func(c *config.Config) {
 		// Shorter timeouts for split-brain detection
 		c.MaxConnectionLifetime = 5 * time.Minute
 		c.MaxConnectionPoolSize = 5                       // Small pool for detection queries
@@ -159,10 +160,15 @@ func NewClientForPod(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, k8sClient cl
 		c.SocketConnectTimeout = 5 * time.Second          // Quick connection for health checks
 		c.SocketKeepalive = true
 		c.ConnectionLivenessCheckTimeout = 5 * time.Second
+
+		// Configure TLS if enabled
+		if tlsCfg := buildTLSConfig(context.Background(), k8sClient, cluster.Namespace, cluster.Name, cluster.Spec.TLS); tlsCfg != nil {
+			c.TlsConfig = tlsCfg
+		}
 	}
 
 	// Create driver with pod-specific URL
-	driver, err := neo4j.NewDriverWithContext(podURL, auth, config)
+	driver, err := neo4j.NewDriverWithContext(podURL, auth, driverConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Neo4j driver: %w", err)
 	}
@@ -176,7 +182,57 @@ func NewClientForPod(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, k8sClient cl
 	}, nil
 }
 
-// NewClientForEnterprise creates a new optimized Neo4j client for enterprise clusters
+// buildTLSConfig creates a TLS configuration for Neo4j connections.
+//
+// Resolution order:
+//  1. If tlsSpec.TrustedCASecret is set, load CA cert from that Secret (user override).
+//  2. Auto-discover CA cert from the cert-manager-generated Secret ("{resourceName}-tls-secret").
+//  3. Fall back to InsecureSkipVerify: true only if no CA cert can be loaded.
+//
+// This ensures proper TLS verification by default when cert-manager provides a CA,
+// while remaining compatible with development setups where CA certs may not be available.
+func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, resourceName string, tlsSpec *neo4jv1alpha1.TLSSpec) *tls.Config {
+	if tlsSpec == nil || tlsSpec.Mode != "cert-manager" {
+		return nil
+	}
+
+	// Try loading CA cert from secrets in priority order:
+	// 1. User-specified TrustedCASecret (explicit override)
+	// 2. Auto-discovered cert-manager Secret ({name}-tls-secret)
+	secretNames := []string{}
+	if tlsSpec.TrustedCASecret != "" {
+		secretNames = append(secretNames, tlsSpec.TrustedCASecret)
+	}
+	secretNames = append(secretNames, fmt.Sprintf("%s-tls-secret", resourceName))
+
+	for _, secretName := range secretNames {
+		secret := &corev1.Secret{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      secretName,
+			Namespace: namespace,
+		}, secret)
+		if err != nil {
+			continue
+		}
+		if caCert, ok := secret.Data["ca.crt"]; ok && len(caCert) > 0 {
+			pool := x509.NewCertPool()
+			if pool.AppendCertsFromPEM(caCert) {
+				return &tls.Config{
+					RootCAs: pool,
+				}
+			}
+		}
+	}
+
+	// Fallback: no CA cert available — skip verification for self-signed certificates.
+	// This path is reached during initial startup (before cert-manager issues the cert)
+	// or when the issuer doesn't provide ca.crt in the Secret.
+	return &tls.Config{
+		InsecureSkipVerify: true, //nolint:gosec // Fallback when CA cert unavailable
+	}
+}
+
+// NewClientForEnterpriseStandalone creates a new optimized Neo4j client for standalone deployments
 func NewClientForEnterpriseStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone, k8sClient client.Client, adminSecretName string) (*Client, error) {
 	// Get credentials from secret
 	credentials, err := getCredentials(context.Background(), k8sClient, standalone.Namespace, adminSecretName)
@@ -203,16 +259,9 @@ func NewClientForEnterpriseStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseS
 		c.MaxTransactionRetryTime = 30 * time.Second
 		c.FetchSize = 1000 // Optimized fetch size for memory efficiency
 
-		// Configure TLS if enabled for cert-manager mode
-		// For self-signed certificates in development/demo, skip verification
-		// In production, proper CA certificates should be used
-		if standalone.Spec.TLS != nil && standalone.Spec.TLS.Mode == "cert-manager" {
-			// Skip TLS verification for self-signed certificates
-			// This is needed for demo environments with cert-manager self-signed issuers
-			tlsConfig := &tls.Config{
-				InsecureSkipVerify: true,
-			}
-			c.TlsConfig = tlsConfig
+		// Configure TLS if enabled
+		if tlsCfg := buildTLSConfig(context.Background(), k8sClient, standalone.Namespace, standalone.Name, standalone.Spec.TLS); tlsCfg != nil {
+			c.TlsConfig = tlsCfg
 		}
 	}
 
@@ -282,16 +331,9 @@ func NewClientForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, k8sCl
 		c.MaxTransactionRetryTime = 30 * time.Second
 		c.FetchSize = 1000 // Optimized fetch size for memory efficiency
 
-		// Configure TLS if needed for cert-manager enabled clusters
-		// For self-signed certificates in development/demo, skip verification
-		// In production, proper CA certificates should be used
-		if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" {
-			// Skip TLS verification for self-signed certificates
-			// This is needed for demo environments with cert-manager self-signed issuers
-			tlsConfig := &tls.Config{
-				InsecureSkipVerify: true,
-			}
-			c.TlsConfig = tlsConfig
+		// Configure TLS if enabled
+		if tlsCfg := buildTLSConfig(context.Background(), k8sClient, cluster.Namespace, cluster.Name, cluster.Spec.TLS); tlsCfg != nil {
+			c.TlsConfig = tlsCfg
 		}
 
 		// Add custom resolver for better connection management

@@ -46,9 +46,21 @@ func NewStandaloneValidator() *StandaloneValidator {
 	}
 }
 
+// maxStandaloneNameLength is the max name length for standalone deployments (DNS label limit).
+const maxStandaloneNameLength = 63
+
 // ValidateCreate validates a new standalone deployment
 func (v *StandaloneValidator) ValidateCreate(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
 	var allErrs field.ErrorList
+
+	// Validate resource name length
+	if len(standalone.Name) > maxStandaloneNameLength {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("metadata", "name"),
+			standalone.Name,
+			fmt.Sprintf("must be no more than %d characters", maxStandaloneNameLength),
+		))
+	}
 
 	// Edition validation removed - operator only supports enterprise edition
 

@@ -224,9 +224,13 @@ func (d *SplitBrainDetector) getClusterViewFromPod(ctx context.Context, cluster 
 // createPodSpecificNeo4jClient creates a client that connects to a specific pod
 func (d *SplitBrainDetector) createPodSpecificNeo4jClient(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, podName string) (*neo4jclient.Client, error) {
 	// Create a temporary connection URL that targets the specific pod
-	// Format: bolt://pod-name.headless-service.namespace.svc.cluster.local:7687
-	podURL := fmt.Sprintf("bolt://%s.%s-headless.%s.svc.cluster.local:7687",
-		podName, cluster.Name, cluster.Namespace)
+	// Use bolt+s:// when TLS is enabled, bolt:// otherwise
+	scheme := "bolt"
+	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" {
+		scheme = "bolt+s"
+	}
+	podURL := fmt.Sprintf("%s://%s.%s-headless.%s.svc.cluster.local:7687",
+		scheme, podName, cluster.Name, cluster.Namespace)
 
 	// Defensive check for auth configuration
 	if cluster.Spec.Auth == nil || cluster.Spec.Auth.AdminSecret == "" {
@@ -544,7 +548,11 @@ func (d *SplitBrainDetector) repairByRestartingPods(ctx context.Context, cluster
 		logger.Info("Successfully deleted orphaned pod", "pod", podName)
 
 		// Wait a moment between deletions to avoid overwhelming the system
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
 	}
 
 	return nil
@@ -571,7 +579,11 @@ func (d *SplitBrainDetector) repairByRestartingAllPods(ctx context.Context, clus
 		}
 
 		logger.Info("Successfully deleted pod", "pod", pod.Name)
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
 	}
 
 	return nil

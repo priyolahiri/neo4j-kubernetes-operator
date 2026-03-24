@@ -31,7 +31,11 @@ logLevel: info  # debug, info, warn, error
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
-  # Annotations to add to the service account
+  # Annotations to add to the service account.
+  # For cloud provider integration (backup to S3/GCS/Azure), add the appropriate annotation:
+  #   AWS EKS (IRSA):                eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT:role/ROLE"
+  #   GCP GKE (Workload Identity):   iam.gke.io/gcp-service-account: "SA@PROJECT.iam.gserviceaccount.com"
+  #   Azure AKS (Workload Identity): azure.workload.identity/client-id: "CLIENT-ID"
   annotations: {}
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
@@ -111,9 +115,11 @@ leaderElection:
   enabled: true
   namespace: ""  # Uses Release.Namespace if not specified
 
-# Webhook configuration (future support)
+# WARNING: This project does NOT use admission webhooks. All validation is
+# performed inline during reconciliation in internal/validation/.
+# This section MUST remain disabled. Do not enable it.
 webhook:
-  enabled: false
+  enabled: false  # DO NOT enable — webhooks are not implemented
   port: 9443
   certManager:
     enabled: false
@@ -159,7 +165,8 @@ volumeMounts: []
 # - name: extra-volume
 #   mountPath: /etc/extra
 
-# Operator configuration
+# Operator configuration (informational — these values are not consumed at runtime;
+# operator behavior is configured via CRD specs and controller flags)
 config:
   # Maximum number of concurrent reconciles
   maxConcurrentReconciles: 1

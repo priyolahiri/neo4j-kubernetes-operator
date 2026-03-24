@@ -88,20 +88,17 @@ spec:
       memory: "16Gi"
 
   # JVM and Neo4j configuration
-  configMap:
-    data:
-      # JVM settings
-      server.memory.heap.initial_size: "4G"
-      server.memory.heap.max_size: "4G"
-      server.memory.pagecache.size: "8G"
-
-      # Query performance
-      db.query.timeout: "300s"
-      db.transaction.timeout: "300s"
-
-      # Clustering settings
-      dbms.cluster.minimum_initial_system_primaries_count: "2"
-      dbms.cluster.discovery.log_level: "INFO"
+  config:
+    # JVM settings
+    server.memory.heap.initial_size: "4G"
+    server.memory.heap.max_size: "4G"
+    server.memory.pagecache.size: "8G"
+    # Query performance
+    db.query.timeout: "300s"
+    db.transaction.timeout: "300s"
+    # Clustering settings
+    dbms.cluster.minimum_initial_system_primaries_count: "2"
+    dbms.cluster.discovery.log_level: "INFO"
 
   # Monitoring
   monitoring:

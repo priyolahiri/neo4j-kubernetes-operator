@@ -939,7 +939,9 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Conte
 		}
 
 		// Check if status is already exactly what we want
-		statusNeedsUpdate := latest.Status.Phase != phase || latest.Status.Message != message
+		readyBool := (phase == "Ready")
+		statusNeedsUpdate := latest.Status.Phase != phase || latest.Status.Message != message ||
+			latest.Status.Ready != readyBool || latest.Status.ObservedGeneration != latest.Generation
 
 		// Determine standard condition status and reason
 		condStatus, condReason := PhaseToConditionStatus(phase)
@@ -972,6 +974,8 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Conte
 		// Update status fields
 		latest.Status.Phase = phase
 		latest.Status.Message = message
+		latest.Status.Ready = readyBool
+		latest.Status.ObservedGeneration = latest.Generation
 
 		// Update Ready condition using standard helper
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
