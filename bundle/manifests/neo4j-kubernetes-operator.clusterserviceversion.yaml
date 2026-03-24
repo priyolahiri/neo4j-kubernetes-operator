@@ -51,7 +51,25 @@ spec:
       kind: Neo4jShardedDatabase
       name: neo4jshardeddatabases.neo4j.neo4j.com
       version: v1alpha1
-  description: Neo4j Kubernetes Operator description. TODO.
+  description: |
+    The Neo4j Enterprise Operator for Kubernetes automates deployment, scaling, backup, restore,
+    and lifecycle management of Neo4j Enterprise graph databases (v5.26.x LTS and 2025.x+ CalVer).
+
+    **Managed Resources:**
+    - Neo4jEnterpriseCluster — High availability clusters with automatic discovery and split-brain detection
+    - Neo4jEnterpriseStandalone — Single-node deployments for development and testing
+    - Neo4jDatabase / Neo4jShardedDatabase — Database lifecycle and property sharding
+    - Neo4jBackup / Neo4jRestore — Scheduled and on-demand backup to PVC, S3, GCS, or Azure
+    - Neo4jPlugin — Plugin management (APOC, GDS, Bloom, GenAI)
+
+    **Key Features:**
+    - Automatic TLS via cert-manager with CA certificate auto-discovery
+    - Live cluster diagnostics from SHOW SERVERS and SHOW DATABASES
+    - Rolling upgrades with pre-upgrade health checks
+    - Automated PVC volume expansion with zero downtime
+    - Prometheus metrics and ServiceMonitor integration
+    - Aura Fleet Management integration
+    - MCP (Model Context Protocol) server support
   displayName: Neo4j Kubernetes Operator
   icon:
   - base64data: ""

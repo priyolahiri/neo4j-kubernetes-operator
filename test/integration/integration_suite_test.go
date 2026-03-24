@@ -568,8 +568,8 @@ func getCIAppropriateResourceRequirements() *corev1.ResourceRequirements {
 		// Multiple tests may run concurrently, so keep requests very low
 		return &corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("10m"),   // Minimal CPU for scheduling
-				corev1.ResourceMemory: resource.MustParse("200Mi"), // Reduced memory request for CI
+				corev1.ResourceCPU:    resource.MustParse("10m"), // Minimal CPU for scheduling
+				corev1.ResourceMemory: resource.MustParse("1Gi"), // Closer to limit reduces OOMKill risk from overcommit
 			},
 			Limits: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("100m"),  // Reduced CPU limit for CI

@@ -471,15 +471,6 @@ func (cm *ConfigMapManager) HasMemoryConfigChanged(oldCluster, newCluster *neo4j
 	return oldHeap != newHeap || oldPageCache != newPageCache
 }
 
-// hasTopologyChanged checks if cluster topology has changed
-func (cm *ConfigMapManager) hasTopologyChanged(oldCluster, newCluster *neo4jv1alpha1.Neo4jEnterpriseCluster) bool {
-	if oldCluster == nil || newCluster == nil {
-		return true
-	}
-
-	return oldCluster.Spec.Topology.Servers != newCluster.Spec.Topology.Servers
-}
-
 // setOwnerReference sets the owner reference for the ConfigMap
 func setOwnerReference(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, configMap *corev1.ConfigMap) error {
 	// Set owner reference to ensure garbage collection

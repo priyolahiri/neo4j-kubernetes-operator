@@ -218,3 +218,8 @@ extraManifests: []
 #     name: extra-configmap
 #   data:
 #     key: value
+
+# Pre-install checks — validates prerequisites before deploying the operator
+preInstallChecks:
+  enabled: true
+  image: bitnami/kubectl:latest

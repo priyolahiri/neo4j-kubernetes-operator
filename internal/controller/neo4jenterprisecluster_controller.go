@@ -596,22 +596,6 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResource(ctx context.Co
 	return err
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateUnstructured(ctx context.Context, obj *unstructured.Unstructured) error {
-	existing := &unstructured.Unstructured{}
-	existing.SetGroupVersionKind(obj.GroupVersionKind())
-
-	err := r.Get(ctx, client.ObjectKeyFromObject(obj), existing)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return r.Create(ctx, obj)
-		}
-		return err
-	}
-
-	obj.SetResourceVersion(existing.GetResourceVersion())
-	return r.Update(ctx, obj)
-}
-
 // createOrUpdateResourceInternal performs the actual create or update operation with resource conflict handling
 //
 // This function implements critical resource version conflict resolution that eliminates the Pod-2 restart
@@ -1424,15 +1408,15 @@ func (qm *QueryMonitor) setupMetricsCollection(ctx context.Context, cluster *neo
 	})
 
 	// Set ServiceMonitor spec
-	serviceMonitor.Object["spec"] = map[string]interface{}{
-		"selector": map[string]interface{}{
-			"matchLabels": map[string]interface{}{
+	serviceMonitor.Object["spec"] = map[string]any{
+		"selector": map[string]any{
+			"matchLabels": map[string]any{
 				"app.kubernetes.io/name": "neo4j",
 				"neo4j.com/cluster":      cluster.Name,
 				"neo4j.com/role":         "metrics",
 			},
 		},
-		"endpoints": []map[string]interface{}{
+		"endpoints": []map[string]any{
 			{
 				"port":     "metrics",
 				"interval": "30s",
@@ -1480,15 +1464,15 @@ func (qm *QueryMonitor) setupAlertingRules(ctx context.Context, cluster *neo4jv1
 
 	// Generate alerting rules using actual Neo4j Prometheus metric names.
 	// Neo4j exposes query latency as a histogram in milliseconds and heap as gauges in bytes.
-	rules := []map[string]interface{}{
+	rules := []map[string]any{
 		{
 			"alert": "Neo4jSlowQueries",
 			"expr":  "histogram_quantile(0.99, rate(neo4j_db_query_execution_latency_millis_bucket[5m])) > 5000",
 			"for":   "5m",
-			"labels": map[string]interface{}{
+			"labels": map[string]any{
 				"severity": "warning",
 			},
-			"annotations": map[string]interface{}{
+			"annotations": map[string]any{
 				"summary":     "Neo4j slow queries detected",
 				"description": "Neo4j cluster {{ $labels.namespace }}/{{ $labels.job }} p99 query latency exceeds 5 seconds",
 			},
@@ -1497,18 +1481,18 @@ func (qm *QueryMonitor) setupAlertingRules(ctx context.Context, cluster *neo4jv1
 			"alert": "Neo4jHighHeapUsage",
 			"expr":  "neo4j_vm_heap_used / neo4j_vm_heap_max > 0.8",
 			"for":   "5m",
-			"labels": map[string]interface{}{
+			"labels": map[string]any{
 				"severity": "warning",
 			},
-			"annotations": map[string]interface{}{
+			"annotations": map[string]any{
 				"summary":     "Neo4j high heap usage",
 				"description": "Neo4j cluster {{ $labels.namespace }}/{{ $labels.job }} JVM heap usage is above 80%",
 			},
 		},
 	}
 
-	prometheusRule.Object["spec"] = map[string]interface{}{
-		"groups": []map[string]interface{}{
+	prometheusRule.Object["spec"] = map[string]any{
+		"groups": []map[string]any{
 			{
 				"name":  "neo4j-monitoring",
 				"rules": rules,

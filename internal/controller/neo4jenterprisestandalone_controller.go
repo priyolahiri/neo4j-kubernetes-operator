@@ -1479,14 +1479,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileServiceMonitor(ctx contex
 		"app.kubernetes.io/instance": standalone.Name,
 	})
 
-	serviceMonitor.Object["spec"] = map[string]interface{}{
-		"selector": map[string]interface{}{
-			"matchLabels": map[string]interface{}{
+	serviceMonitor.Object["spec"] = map[string]any{
+		"selector": map[string]any{
+			"matchLabels": map[string]any{
 				"app.kubernetes.io/name":     "neo4j",
 				"app.kubernetes.io/instance": standalone.Name,
 			},
 		},
-		"endpoints": []map[string]interface{}{
+		"endpoints": []map[string]any{
 			{
 				"port":     "metrics",
 				"interval": "30s",

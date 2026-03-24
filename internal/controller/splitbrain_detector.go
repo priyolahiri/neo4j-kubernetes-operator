@@ -461,23 +461,6 @@ func (d *SplitBrainDetector) getVisibleServerAddresses(servers []neo4jclient.Ser
 	return addresses
 }
 
-// getPodExpectedAddress returns the expected FQDN address for a pod
-func (d *SplitBrainDetector) getPodExpectedAddress(podName string) string {
-	// This would need to be filled with the actual cluster namespace and service name
-	// For now, return a pattern that can be matched
-	return podName + ".headless.svc.cluster.local:7687"
-}
-
-// isAddressVisible checks if an address is in the visible list
-func (d *SplitBrainDetector) isAddressVisible(address string, visibleAddresses []string) bool {
-	for _, visible := range visibleAddresses {
-		if visible == address {
-			return true
-		}
-	}
-	return false
-}
-
 // countCommonAddresses counts addresses that appear in both lists
 func (d *SplitBrainDetector) countCommonAddresses(addresses1, addresses2 []string) int {
 	common := 0
