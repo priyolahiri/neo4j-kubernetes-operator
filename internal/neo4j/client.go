@@ -799,7 +799,7 @@ func (c *Client) AlterDatabaseTopology(ctx context.Context, databaseName string,
 }
 
 // executeWithWaitTimeout executes a Neo4j query with timeout protection for WAIT operations
-func (c *Client) executeWithWaitTimeout(ctx context.Context, session neo4j.SessionWithContext, query string, params map[string]interface{}, wait bool, timeoutSeconds int) error {
+func (c *Client) executeWithWaitTimeout(ctx context.Context, session neo4j.SessionWithContext, query string, params map[string]any, wait bool, timeoutSeconds int) error {
 	if wait && strings.Contains(query, " WAIT") {
 		// Create a context with timeout for WAIT operations
 		waitCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
@@ -938,7 +938,7 @@ func (c *Client) GetDatabaseServers(ctx context.Context, databaseName string) ([
 	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	result, err := session.Run(timeoutCtx, query, map[string]interface{}{
+	result, err := session.Run(timeoutCtx, query, map[string]any{
 		"databaseName": databaseName,
 	})
 	if err != nil {
@@ -948,7 +948,7 @@ func (c *Client) GetDatabaseServers(ctx context.Context, databaseName string) ([
 	if result.Next(timeoutCtx) {
 		record := result.Record()
 		if servers, found := record.Get("servers"); found {
-			if serverList, ok := servers.([]interface{}); ok {
+			if serverList, ok := servers.([]any); ok {
 				var serverAddresses []string
 				for _, addr := range serverList {
 					if addrStr, ok := addr.(string); ok {
@@ -1015,7 +1015,7 @@ func (c *Client) CreateUser(ctx context.Context, username, password string, must
 		query += " CHANGE NOT REQUIRED"
 	}
 
-	params := map[string]interface{}{
+	params := map[string]any{
 		"password": password,
 	}
 
@@ -1219,8 +1219,8 @@ func (c *Client) IsClusterReplicationHealthy(ctx context.Context) (bool, error) 
 			       memberStatus, recognisedLeader, recognisedLeaderTerm, requester, error
 			 RETURN database, serverId, serverName, address, replicationSuccessful,
 			        memberStatus, recognisedLeader, recognisedLeaderTerm, requester, error`,
-			map[string]interface{}{
-				"databases": []interface{}{"system"},
+			map[string]any{
+				"databases": []any{"system"},
 				"timeoutMs": int64(2000),
 			})
 		if err != nil {
@@ -1736,7 +1736,7 @@ func (c *Client) GetUserRoles(ctx context.Context, username string) ([]string, e
 	defer session.Close(ctx)
 
 	query := "SHOW USER PRIVILEGES WHERE user = $username YIELD role"
-	result, err := session.Run(ctx, query, map[string]interface{}{
+	result, err := session.Run(ctx, query, map[string]any{
 		"username": username,
 	})
 	if err != nil {
@@ -1765,7 +1765,7 @@ func (c *Client) SetUserProperty(ctx context.Context, username, key, value strin
 	defer session.Close(ctx)
 
 	query := fmt.Sprintf("ALTER USER `%s` SET %s = $value", username, key)
-	_, err := session.Run(ctx, query, map[string]interface{}{
+	_, err := session.Run(ctx, query, map[string]any{
 		"value": value,
 	})
 	if err != nil {
@@ -1826,7 +1826,7 @@ func (c *Client) GetServerList(ctx context.Context) ([]ServerInfo, error) {
 
 			// Parse hosting databases (array of strings)
 			if hostingValue := record.Values[4]; hostingValue != nil {
-				if hostingList, ok := hostingValue.([]interface{}); ok {
+				if hostingList, ok := hostingValue.([]any); ok {
 					for _, db := range hostingList {
 						server.Hosting = append(server.Hosting, fmt.Sprintf("%v", db))
 					}
@@ -2629,7 +2629,7 @@ func (c *Client) RegisterFleetManagementToken(ctx context.Context, token string)
 	})
 	defer session.Close(ctx)
 
-	_, err := session.Run(ctx, "CALL fleetManagement.registerToken($token)", map[string]interface{}{
+	_, err := session.Run(ctx, "CALL fleetManagement.registerToken($token)", map[string]any{
 		"token": token,
 	})
 	if err != nil {

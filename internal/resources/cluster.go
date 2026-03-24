@@ -176,7 +176,7 @@ func BuildServerStatefulSetsForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterprise
 func BuildBackupFromAddresses(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
 	servers := int(cluster.Spec.Topology.Servers)
 	addrs := make([]string, servers)
-	for i := 0; i < servers; i++ {
+	for i := range servers {
 		addrs[i] = fmt.Sprintf("%s-server-%d.%s-headless.%s.svc.cluster.local:%d",
 			cluster.Name, i, cluster.Name, cluster.Namespace, BackupPort)
 	}
@@ -690,7 +690,7 @@ func BuildCertificateForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
 }
 
 // BuildExternalSecretForTLS creates an ExternalSecret for TLS certificates
-func BuildExternalSecretForTLS(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) map[string]interface{} {
+func BuildExternalSecretForTLS(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) map[string]any {
 	if cluster.Spec.TLS == nil || cluster.Spec.TLS.ExternalSecrets == nil || !cluster.Spec.TLS.ExternalSecrets.Enabled {
 		return nil
 	}
@@ -698,7 +698,7 @@ func BuildExternalSecretForTLS(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) ma
 }
 
 // BuildExternalSecretForAuth creates an ExternalSecret for authentication secrets
-func BuildExternalSecretForAuth(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) map[string]interface{} {
+func BuildExternalSecretForAuth(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) map[string]any {
 	if cluster.Spec.Auth == nil || cluster.Spec.Auth.ExternalSecrets == nil || !cluster.Spec.Auth.ExternalSecrets.Enabled {
 		return nil
 	}
@@ -706,16 +706,16 @@ func BuildExternalSecretForAuth(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) m
 }
 
 // buildExternalSecret is a helper function to create ExternalSecrets for both TLS and Auth
-func buildExternalSecret(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, esConfig *neo4jv1alpha1.ExternalSecretsConfig, secretType string) map[string]interface{} {
+func buildExternalSecret(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, esConfig *neo4jv1alpha1.ExternalSecretsConfig, secretType string) map[string]any {
 	// Build data array
-	var data []map[string]interface{}
+	var data []map[string]any
 	for _, item := range esConfig.Data {
-		secretData := map[string]interface{}{
+		secretData := map[string]any{
 			"secretKey": item.SecretKey,
 		}
 
 		if item.RemoteRef != nil {
-			remoteRef := map[string]interface{}{
+			remoteRef := map[string]any{
 				"key": item.RemoteRef.Key,
 			}
 
@@ -739,20 +739,20 @@ func buildExternalSecret(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, esConfig
 		refreshInterval = "1h"
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"apiVersion": "external-secrets.io/v1beta1",
 		"kind":       "ExternalSecret",
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"name":      fmt.Sprintf("%s-%s-external-secret", cluster.Name, secretType),
 			"namespace": cluster.Namespace,
 			"labels":    getLabelsForEnterprise(cluster, "external-secret"),
 		},
-		"spec": map[string]interface{}{
-			"secretStoreRef": map[string]interface{}{
+		"spec": map[string]any{
+			"secretStoreRef": map[string]any{
 				"name": esConfig.SecretStoreRef.Name,
 				"kind": esConfig.SecretStoreRef.Kind,
 			},
-			"target": map[string]interface{}{
+			"target": map[string]any{
 				"name":           fmt.Sprintf("%s-%s-secret", cluster.Name, secretType),
 				"creationPolicy": "Owner",
 			},

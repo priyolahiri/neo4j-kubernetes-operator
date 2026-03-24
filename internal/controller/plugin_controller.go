@@ -235,58 +235,6 @@ func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin 
 	return nil, fmt.Errorf("target deployment %s not found (tried both Neo4jEnterpriseCluster and Neo4jEnterpriseStandalone)", plugin.Spec.ClusterRef)
 }
 
-// getTargetCluster is deprecated but kept for backward compatibility
-func (r *Neo4jPluginReconciler) getTargetCluster(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin) (*neo4jv1alpha1.Neo4jEnterpriseCluster, error) {
-	deployment, err := r.getTargetDeployment(ctx, plugin)
-	if err != nil {
-		return nil, err
-	}
-
-	if deployment.Type != "cluster" {
-		return nil, fmt.Errorf("target deployment %s is not a cluster", plugin.Spec.ClusterRef)
-	}
-
-	if !deployment.IsReady {
-		return nil, fmt.Errorf("cluster %s is not ready", deployment.Name)
-	}
-
-	return deployment.Object.(*neo4jv1alpha1.Neo4jEnterpriseCluster), nil
-}
-
-func (r *Neo4jPluginReconciler) installDependency(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin, _ *DeploymentInfo, dep neo4jv1alpha1.PluginDependency) error {
-	logger := log.FromContext(ctx)
-
-	logger.Info("Installing plugin dependency", "dependency", dep.Name, "constraint", dep.VersionConstraint)
-
-	// Create dependency plugin resource
-	depPlugin := &neo4jv1alpha1.Neo4jPlugin{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s-dep", plugin.Name, dep.Name),
-			Namespace: plugin.Namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/name":      "neo4j-plugin",
-				"app.kubernetes.io/instance":  plugin.Spec.ClusterRef,
-				"app.kubernetes.io/component": "dependency",
-				"neo4j.plugin/parent":         plugin.Name,
-			},
-		},
-		Spec: neo4jv1alpha1.Neo4jPluginSpec{
-			ClusterRef: plugin.Spec.ClusterRef,
-			Name:       dep.Name,
-			Version:    dep.VersionConstraint,
-			Enabled:    true,
-		},
-	}
-
-	// Create or update dependency plugin
-	if err := r.Create(ctx, depPlugin); err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create dependency plugin: %w", err)
-	}
-
-	// Wait for dependency to be ready
-	return r.waitForPluginReady(ctx, depPlugin)
-}
-
 func (r *Neo4jPluginReconciler) waitForPluginReady(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin) error {
 	logger := log.FromContext(ctx)
 
@@ -320,35 +268,6 @@ func (r *Neo4jPluginReconciler) waitForPluginReady(ctx context.Context, plugin *
 			logger.Info("Waiting for plugin to be ready", "plugin", plugin.Name, "phase", current.Status.Phase)
 		}
 	}
-}
-
-func (r *Neo4jPluginReconciler) restartNeo4jInstances(ctx context.Context, deployment *DeploymentInfo) error {
-	logger := log.FromContext(ctx)
-	logger.Info("Restarting Neo4j instances to load plugin", "type", deployment.Type)
-
-	// Get the StatefulSet for the deployment
-	sts := &appsv1.StatefulSet{}
-	stsKey := types.NamespacedName{
-		Name:      r.getStatefulSetName(deployment),
-		Namespace: deployment.Namespace,
-	}
-
-	if err := r.Get(ctx, stsKey, sts); err != nil {
-		return fmt.Errorf("failed to get StatefulSet: %w", err)
-	}
-
-	// Trigger rolling restart by updating an annotation
-	if sts.Spec.Template.Annotations == nil {
-		sts.Spec.Template.Annotations = make(map[string]string)
-	}
-	sts.Spec.Template.Annotations["neo4j.neo4j.com/plugin-restart"] = time.Now().Format(time.RFC3339)
-
-	if err := r.Update(ctx, sts); err != nil {
-		return fmt.Errorf("failed to trigger StatefulSet restart: %w", err)
-	}
-
-	logger.Info("Triggered rolling restart of Neo4j instances")
-	return nil
 }
 
 // arePodsReady checks if all pods are ready without blocking
@@ -445,22 +364,6 @@ func (r *Neo4jPluginReconciler) waitForDeploymentReady(ctx context.Context, depl
 			logger.Info("Waiting for pods to be ready")
 		}
 	}
-}
-
-func (r *Neo4jPluginReconciler) verifyPluginLoaded(ctx context.Context, neo4jClient *neo4jclient.Client, plugin *neo4jv1alpha1.Neo4jPlugin) error {
-	// Verify plugin is loaded by calling CALL dbms.components() or similar
-	components, err := neo4jClient.GetLoadedComponents(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get loaded components: %w", err)
-	}
-
-	for _, component := range components {
-		if component.Name == plugin.Spec.Name {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("plugin %s not found in loaded components", plugin.Spec.Name)
 }
 
 func (r *Neo4jPluginReconciler) configurePlugin(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin, deployment *DeploymentInfo) error {
@@ -1243,15 +1146,6 @@ func (r *Neo4jPluginReconciler) getStatefulSetName(deployment *DeploymentInfo) s
 	return deployment.Name
 }
 
-// getPluginsPVCName returns the correct PVC name for plugins based on deployment type
-// Since plugins currently use EmptyDir, plugin installation will copy to running pods directly
-func (r *Neo4jPluginReconciler) getPluginsPVCName(deployment *DeploymentInfo) string {
-	// Since plugins use EmptyDir volumes, we'll need to copy plugins directly to pods
-	// This is a placeholder - actual implementation should copy to running pod containers
-	// For now, return a shared volume name that can be used by init containers
-	return "plugin-downloads"
-}
-
 // getPodLabels returns the appropriate pod labels for the deployment type
 func (r *Neo4jPluginReconciler) getPodLabels(deployment *DeploymentInfo) map[string]string {
 	if deployment.Type == "cluster" {
@@ -1274,38 +1168,6 @@ func (r *Neo4jPluginReconciler) getExpectedReplicas(deployment *DeploymentInfo) 
 	}
 	// Standalone always has 1 replica
 	return 1
-}
-
-func (r *Neo4jPluginReconciler) buildRegistryEnvVars(registry *neo4jv1alpha1.PluginRegistry) []corev1.EnvVar {
-	var envVars []corev1.EnvVar
-
-	if registry.AuthSecret != "" {
-		envVars = append(envVars, corev1.EnvVar{
-			Name: "REPO_USERNAME",
-			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef: &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: registry.AuthSecret,
-					},
-					Key: "username",
-				},
-			},
-		})
-
-		envVars = append(envVars, corev1.EnvVar{
-			Name: "REPO_PASSWORD",
-			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef: &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: registry.AuthSecret,
-					},
-					Key: "password",
-				},
-			},
-		})
-	}
-
-	return envVars
 }
 
 func (r *Neo4jPluginReconciler) waitForJobCompletion(ctx context.Context, job *batchv1.Job) error {

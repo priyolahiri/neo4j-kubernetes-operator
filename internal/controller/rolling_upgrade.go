@@ -696,40 +696,6 @@ func (r *RollingUpgradeOrchestrator) validateStatefulSetsReady(
 	return nil
 }
 
-func (r *RollingUpgradeOrchestrator) waitForStatefulSetRollout(
-	ctx context.Context,
-	sts *appsv1.StatefulSet,
-	timeout time.Duration,
-) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for StatefulSet rollout")
-		case <-ticker.C:
-			current := &appsv1.StatefulSet{}
-			if err := r.Get(ctx, types.NamespacedName{
-				Name:      sts.Name,
-				Namespace: sts.Namespace,
-			}, current); err != nil {
-				continue
-			}
-
-			// Check if rollout is complete
-			if current.Status.ObservedGeneration >= current.Generation &&
-				current.Status.ReadyReplicas == *current.Spec.Replicas &&
-				current.Status.UpdatedReplicas == *current.Spec.Replicas {
-				return nil
-			}
-		}
-	}
-}
-
 func (r *RollingUpgradeOrchestrator) waitForPartialStatefulSetRollout(
 	ctx context.Context,
 	sts *appsv1.StatefulSet,
@@ -768,43 +734,6 @@ func (r *RollingUpgradeOrchestrator) waitForPartialStatefulSetRollout(
 				current.Status.ReadyReplicas == *current.Spec.Replicas &&
 				current.Status.UpdatedReplicas >= expectedUpdated {
 				return nil
-			}
-		}
-	}
-}
-
-func (r *RollingUpgradeOrchestrator) waitForLeaderElection(
-	ctx context.Context,
-	neo4jClient *neo4jclient.Client,
-	_ string,
-	timeout time.Duration,
-) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for leader election")
-		case <-ticker.C:
-			// Check if we have a leader (could be same or different)
-			leader, err := neo4jClient.GetLeader(ctx)
-			if err != nil {
-				continue // Keep waiting
-			}
-
-			if leader != nil {
-				// Leader election completed, verify cluster health
-				healthy, err := neo4jClient.IsClusterHealthy(ctx)
-				if err != nil {
-					continue
-				}
-				if healthy {
-					return nil
-				}
 			}
 		}
 	}
