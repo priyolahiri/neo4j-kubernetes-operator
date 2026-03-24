@@ -203,29 +203,11 @@ jobs:
 
         mkdir -p release-artifacts
 
-        # CRD-only manifest (already downloaded from artifact)
-        cp config/crd/bases/*.yaml release-artifacts/
+        # CRD-only manifest (concatenated from all CRD bases)
         cat config/crd/bases/*.yaml > release-artifacts/neo4j-kubernetes-operator.yaml
 
-        # OperatorHub bundle
-        cp bundle/manifests/*.yaml release-artifacts/
-        cp bundle/metadata/annotations.yaml release-artifacts/
+        # OperatorHub bundle (single tarball, not individual files)
         tar -czf "release-artifacts/operatorhub-bundle-${CLEAN_TAG}.tar.gz" bundle/
-
-        # Source tarball — fall back to HEAD if the tag does not exist in git
-        # history (happens with workflow_dispatch when the tag was not pushed first).
-        GIT_REF="${TAG_NAME}"
-        if ! git rev-parse --verify "${GIT_REF}^{}" > /dev/null 2>&1; then
-          echo "Warning: ${TAG_NAME} not found in git history; using HEAD for source tarball"
-          GIT_REF="HEAD"
-        fi
-        git archive --format=tar.gz \
-          --prefix=neo4j-kubernetes-operator-${CLEAN_TAG}/ \
-          "${GIT_REF}" \
-          > release-artifacts/neo4j-kubernetes-operator-${CLEAN_TAG}.tar.gz
-
-        # Examples archive
-        tar -czf release-artifacts/examples-${CLEAN_TAG}.tar.gz examples/
 
         # Complete operator manifest (CRDs + RBAC + Deployment) with OPERATOR_VERSION
         # stamped to the release tag via a kustomize strategic merge patch overlay.
@@ -317,8 +299,6 @@ jobs:
         | \`neo4j-kubernetes-operator-complete.yaml\` | Complete operator install (CRDs + RBAC + Deployment) |
         | \`neo4j-kubernetes-operator.yaml\` | CRDs only |
         | \`operatorhub-bundle-${CLEAN_TAG}.tar.gz\` | OperatorHub bundle |
-        | \`neo4j-kubernetes-operator-${CLEAN_TAG}.tar.gz\` | Source code tarball |
-        | \`examples-${CLEAN_TAG}.tar.gz\` | Example configurations |
 
         ## 📚 Documentation
 
