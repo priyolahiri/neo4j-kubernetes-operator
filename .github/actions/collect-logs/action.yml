@@ -28,7 +28,7 @@ runs:
         kubectl get events -A --sort-by='.lastTimestamp' >> cluster-debug.log 2>&1 || true
 
     - name: Archive cluster logs
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       if: failure()
       with:
         name: ${{ inputs.artifact-name }}

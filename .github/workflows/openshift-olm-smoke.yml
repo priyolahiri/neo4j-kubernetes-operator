@@ -47,7 +47,7 @@ jobs:
       catalog_image: ${{ steps.out.outputs.catalog_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
         uses: ./.github/actions/setup-go
@@ -95,7 +95,7 @@ jobs:
       CATALOG_NAMESPACE: openshift-marketplace
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install oc CLI
         run: |
