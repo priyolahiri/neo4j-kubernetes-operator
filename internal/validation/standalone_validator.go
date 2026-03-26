@@ -18,7 +18,6 @@ package validation
 
 import (
 	"fmt"
-	"strings"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -221,34 +220,9 @@ func (v *StandaloneValidator) validateTLS(standalone *neo4jv1alpha1.Neo4jEnterpr
 
 // validateAuth validates the auth configuration
 func (v *StandaloneValidator) validateAuth(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
-	var allErrs field.ErrorList
-
-	if standalone.Spec.Auth == nil {
-		return allErrs
-	}
-
-	authPath := field.NewPath("spec", "auth")
-
-	// Validate auth provider
-	validProviders := []string{"native", "ldap", "kerberos", "jwt"}
-	if standalone.Spec.Auth.Provider != "" {
-		found := false
-		for _, provider := range validProviders {
-			if standalone.Spec.Auth.Provider == provider {
-				found = true
-				break
-			}
-		}
-		if !found {
-			allErrs = append(allErrs, field.Invalid(
-				authPath.Child("provider"),
-				standalone.Spec.Auth.Provider,
-				fmt.Sprintf("auth provider must be one of: %s", strings.Join(validProviders, ", ")),
-			))
-		}
-	}
-
-	return allErrs
+	// Delegate to AuthValidator which handles both old Provider field and new provider lists
+	authValidator := NewAuthValidator()
+	return authValidator.ValidateAuthSpec(standalone.Spec.Auth, field.NewPath("spec", "auth"))
 }
 
 // validateConfig validates the custom configuration for single mode

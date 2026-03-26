@@ -4,14 +4,21 @@ This guide explains how to secure your Neo4j Enterprise clusters using the featu
 
 ## Authentication
 
-The operator supports a variety of authentication providers, allowing you to integrate with your existing identity management systems.
+The operator provides first-class, typed configuration for external identity providers. You define providers via `spec.auth` and the operator generates the correct `neo4j.conf` entries automatically — no manual `dbms.security.*` keys required.
+
+**Supported providers:**
 
 *   **Native Neo4j authentication**: The default, managed via Kubernetes secrets.
-*   **LDAP**: Integrate with your corporate LDAP or Active Directory.
+*   **LDAP / Active Directory**: Full typed support — host, DN templates, group-to-role mapping, system account credentials (injected securely via env vars, never in ConfigMap).
+*   **OIDC / SSO**: Multiple named providers (e.g., Okta + Azure AD simultaneously) with discovery URI, claims mapping, and group-to-role mapping.
 *   **Kerberos**: For enterprise environments with Kerberos infrastructure.
 *   **JWT**: Use JSON Web Tokens for authentication.
 
-To configure authentication, you can use the `spec.auth` field in the `Neo4jEnterpriseCluster` resource. See the [API Reference](../../api_reference/neo4jenterprisecluster.md) for more details.
+**Multi-provider support**: Neo4j evaluates providers in order, so you can configure `authenticationProviders: [ldap, native]` to try LDAP first with native as fallback.
+
+**JVM TrustStore**: For LDAPS or OIDC with internal CAs, configure `spec.auth.trustStore` and the operator automatically creates an init container that builds a JKS truststore from your CA certificate.
+
+For full configuration details and examples, see the [Security Best Practices](../security.md#authentication-configuration) guide and the [auth examples](../../../examples/clusters/auth-example.yaml).
 
 ## TLS
 

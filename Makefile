@@ -322,6 +322,12 @@ docker-push: ## Push docker image with the manager.
 
 ##@ Helm Chart (Recommended Installation Method)
 
+.PHONY: helm-sync-crds
+helm-sync-crds: manifests ## Sync generated CRDs into Helm chart crds/ directory
+	@echo "Syncing CRDs to Helm chart..."
+	cp config/crd/bases/*.yaml charts/neo4j-operator/crds/
+	@echo "Helm chart CRDs synced."
+
 .PHONY: helm-lint
 helm-lint: ## Lint the Helm chart
 	helm lint charts/neo4j-operator
@@ -351,7 +357,7 @@ helm-uninstall: ## Uninstall the operator using Helm chart
 	helm uninstall neo4j-operator --namespace neo4j-operator-system
 
 .PHONY: helm-package
-helm-package: ## Package the Helm chart
+helm-package: helm-sync-crds ## Package the Helm chart (syncs CRDs first)
 	helm package charts/neo4j-operator
 
 .PHONY: helm-docs

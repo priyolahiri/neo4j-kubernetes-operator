@@ -1,0 +1,67 @@
+# Neo4j Enterprise Standalone with LDAP Authentication
+# Demonstrates LDAP + native auth on a standalone deployment
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: neo4j-admin-secret
+  namespace: default
+type: Opaque
+data:
+  username: bmVvNGo=        # neo4j
+  password: Y2hhbmdlbWUxMjM= # changeme123
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ldap-bind-secret
+  namespace: default
+type: Opaque
+data:
+  username: Y249c3ZjLGRjPWV4YW1wbGUsZGM9Y29t # cn=svc,dc=example,dc=com
+  password: c2VjcmV0MTIz                       # secret123
+---
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseStandalone
+metadata:
+  name: ldap-standalone
+  namespace: default
+spec:
+  image:
+    repo: neo4j
+    tag: "5.26.0-enterprise"
+  storage:
+    className: standard
+    size: "10Gi"
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "1"
+  auth:
+    authenticationProviders:
+      - ldap
+      - native
+    authorizationProviders:
+      - ldap
+      - native
+    adminSecret: neo4j-admin-secret
+    ldap:
+      host: "ldap://ldap.example.com:389"
+      useStartTLS: true
+      authentication:
+        userDNTemplate: "uid={0},ou=users,dc=example,dc=com"
+      authorization:
+        userSearchBase: "ou=users,dc=example,dc=com"
+        userSearchFilter: "(&(objectClass=*)(uid={0}))"
+        groupMembershipAttributes:
+          - memberOf
+        groupToRoleMapping:
+          "cn=admins,ou=groups,dc=example,dc=com": "admin"
+          "cn=readers,ou=groups,dc=example,dc=com": "reader"
+        useSystemAccount: true
+        systemAccountSecretRef: ldap-bind-secret
+  tls:
+    mode: disabled

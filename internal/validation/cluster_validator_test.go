@@ -154,8 +154,10 @@ func TestClusterValidator_ApplyDefaults(t *testing.T) {
 		t.Errorf("Expected TLS mode to be defaulted to 'disabled'")
 	}
 
-	if cluster.Spec.Auth == nil || cluster.Spec.Auth.Provider != "native" {
-		t.Errorf("Expected auth provider to be defaulted to 'native'")
+	if cluster.Spec.Auth == nil {
+		t.Errorf("Expected auth to be defaulted")
+	} else if len(cluster.Spec.Auth.AuthenticationProviders) == 0 || cluster.Spec.Auth.AuthenticationProviders[0] != "native" {
+		t.Errorf("Expected auth authenticationProviders to be defaulted to ['native'], got %v", cluster.Spec.Auth.AuthenticationProviders)
 	}
 }
 

@@ -113,10 +113,12 @@ func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1al
 	// Default auth configuration
 	if cluster.Spec.Auth == nil {
 		cluster.Spec.Auth = &neo4jv1alpha1.AuthSpec{
-			Provider: "native",
+			AuthenticationProviders: []string{"native"},
+			AuthorizationProviders:  []string{"native"},
 		}
-	} else if cluster.Spec.Auth.Provider == "" {
-		cluster.Spec.Auth.Provider = "native"
+	} else if len(cluster.Spec.Auth.AuthenticationProviders) == 0 && cluster.Spec.Auth.Provider == "" {
+		cluster.Spec.Auth.AuthenticationProviders = []string{"native"}
+		cluster.Spec.Auth.AuthorizationProviders = []string{"native"}
 	}
 
 	// Default service configuration

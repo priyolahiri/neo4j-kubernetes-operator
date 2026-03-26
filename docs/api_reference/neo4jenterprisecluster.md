@@ -160,14 +160,86 @@ Specifies role constraints for individual servers.
 
 | Field | Type | Description |
 |---|---|---|
-| `provider` | `string` | Auth provider: `"native"`, `"ldap"`, `"jwt"`, `"kerberos"` (default: `"native"`) |
-| `adminSecret` | `string` | Secret containing admin username and password |
-| `secretRef` | `string` | Secret containing provider-specific configuration |
+| `authenticationProviders` | `[]string` | Ordered list of authentication providers (e.g., `["ldap", "native"]`). Default: `["native"]` |
+| `authorizationProviders` | `[]string` | Ordered list of authorization providers. Default: `["native"]` |
+| `provider` | `string` | *Deprecated.* Single auth provider. Use `authenticationProviders` instead. |
+| `adminSecret` | `string` | Secret containing admin username and password (keys: `username`, `password`) |
+| `secretRef` | `string` | *Deprecated.* Use provider-specific typed fields instead. |
 | `externalSecrets` | [`*ExternalSecretsConfig`](#externalsecretsconfig) | External secrets configuration |
 | `passwordPolicy` | [`*PasswordPolicySpec`](#passwordpolicyspec) | Password policy configuration |
+| `ldap` | [`*Neo4jLDAPSpec`](#neo4jldapspec) | LDAP authentication and authorization configuration |
+| `oidc` | `map[string]`[`Neo4jOIDCProviderSpec`](#neo4joidcproviderspec) | OIDC/SSO providers. Map key = provider name (used in `authenticationProviders` as `oidc-<key>`) |
 | `jwt` | [`*JWTAuthSpec`](#jwtauthspec) | JWT authentication configuration |
-| `ldap` | [`*LDAPAuthSpec`](#ldapauthspec) | LDAP authentication configuration |
 | `kerberos` | [`*KerberosAuthSpec`](#kerberosauthspec) | Kerberos authentication configuration |
+| `authCacheTTL` | `string` | Auth cache TTL (e.g., `"10m"`, `"600s"`). Maps to `dbms.security.auth_cache_ttl` |
+| `trustStore` | [`*TrustStoreSpec`](#truststorespec) | Custom JVM truststore for LDAPS or OIDC with internal CAs |
+
+### Neo4jLDAPSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `host` | `string` | **Required.** LDAP server URL (e.g., `ldap://host:389` or `ldaps://host:636`) |
+| `useStartTLS` | `*bool` | Enable STARTTLS (use with `ldap://`, not `ldaps://`) |
+| `authentication` | [`*LDAPAuthenticationSpec`](#ldapauthenticationspec) | User authentication settings |
+| `authorization` | [`*LDAPAuthorizationSpec`](#ldapauthorizationspec) | Group/role authorization settings |
+| `debugGroupLogging` | `*bool` | Debug-level LDAP group logging (disable in production) |
+
+### LDAPAuthenticationSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `userDNTemplate` | `string` | DN template for binding. `{0}` = username. Example: `"{0}@example.com"` |
+| `searchForAttribute` | `*bool` | Use attribute-based user lookup instead of DN template |
+| `attribute` | `string` | LDAP attribute to search (e.g., `"samaccountname"`) |
+| `cacheEnabled` | `*bool` | Cache authentication results |
+
+### LDAPAuthorizationSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `userSearchBase` | `string` | Base DN for user search (e.g., `"dc=example,dc=com"`) |
+| `userSearchFilter` | `string` | LDAP filter for user search. `{0}` = username |
+| `groupMembershipAttributes` | `[]string` | User attributes containing group membership (e.g., `["memberOf"]`) |
+| `groupToRoleMapping` | `map[string]string` | Map of LDAP group DNs to comma-separated Neo4j roles |
+| `accessPermittedGroup` | `string` | Restrict access to members of this group |
+| `useSystemAccount` | `*bool` | Use a system account for authorization queries |
+| `systemAccountSecretRef` | `string` | Secret name with `username` and `password` keys for the system account |
+| `nestedGroupsEnabled` | `*bool` | Enable recursive group resolution |
+| `nestedGroupsSearchFilter` | `string` | Filter for nested group lookups. `{0}` = user DN |
+
+### Neo4jOIDCProviderSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `displayName` | `string` | Display name on login screen |
+| `wellKnownDiscoveryURI` | `string` | OIDC discovery endpoint (auto-configures other endpoints) |
+| `authEndpoint` | `string` | Authorization endpoint (manual override) |
+| `tokenEndpoint` | `string` | Token endpoint (manual override) |
+| `jwksURI` | `string` | JWKS endpoint (manual override) |
+| `userInfoURI` | `string` | UserInfo endpoint (manual override) |
+| `issuer` | `string` | Issuer identifier (manual override) |
+| `audience` | `string` | **Required.** Expected JWT `aud` claim |
+| `authFlow` | `string` | `"pkce"` (default) or `"implicit"` |
+| `claims` | [`*OIDCClaimsSpec`](#oidcclaimsspec) | JWT claim mapping |
+| `getGroupsFromUserInfo` | `*bool` | Fetch groups from UserInfo endpoint |
+| `getUsernameFromUserInfo` | `*bool` | Fetch username from UserInfo endpoint |
+| `groupToRoleMapping` | `map[string]string` | Map of IdP groups to comma-separated Neo4j roles |
+| `authParams` | `string` | Extra authorization endpoint params (semicolon-separated) |
+| `tokenParams` | `string` | Extra token endpoint params (semicolon-separated) |
+
+### OIDCClaimsSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `username` | `string` | JWT claim for Neo4j username (default: `"sub"`) |
+| `groups` | `string` | JWT claim for groups/roles |
+
+### TrustStoreSpec
+
+| Field | Type | Description |
+|---|---|---|
+| `secretRef` | `string` | **Required.** Name of Secret containing CA certificate (PEM format) |
+| `key` | `string` | Key in the Secret containing the CA cert (default: `"ca.crt"`) |
 
 ### JWTAuthSpec
 
@@ -183,30 +255,6 @@ Specifies role constraints for individual servers.
 | `jwksUrl` | `string` | JWKS endpoint URL |
 | `issuer` | `string` | JWT issuer |
 | `audience` | `[]string` | JWT audience |
-
-### LDAPAuthSpec
-
-| Field | Type | Description |
-|---|---|---|
-| `server` | [`*LDAPServerSpec`](#ldapserverspec) | LDAP server settings |
-| `userSearch` | [`*LDAPSearchSpec`](#ldapsearchspec) | User search settings |
-| `groupSearch` | [`*LDAPSearchSpec`](#ldapsearchspec) | Group search settings |
-
-### LDAPServerSpec
-
-| Field | Type | Description |
-|---|---|---|
-| `urls` | `[]string` | LDAP server URLs |
-| `tls` | `bool` | Enable TLS for LDAP connection |
-| `insecureSkipVerify` | `bool` | Skip TLS certificate verification |
-
-### LDAPSearchSpec
-
-| Field | Type | Description |
-|---|---|---|
-| `baseDN` | `string` | Search base DN |
-| `filter` | `string` | Search filter |
-| `scope` | `string` | Search scope: `"base"`, `"one"`, `"sub"` |
 
 ### KerberosAuthSpec
 

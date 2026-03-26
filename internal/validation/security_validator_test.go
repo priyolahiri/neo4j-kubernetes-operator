@@ -162,11 +162,11 @@ func TestSecurityValidator_Validate(t *testing.T) {
 					},
 				},
 			},
-			expectError: true,
-			errorCount:  2, // Invalid provider + missing secret
+			expectError: false,
+			errorCount:  0, // SecurityValidator no longer validates provider names or secretRef (moved to AuthValidator)
 		},
 		{
-			name: "external auth without secret",
+			name: "external auth without secret (validated by AuthValidator now)",
 			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
@@ -174,12 +174,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
 					Auth: &neo4jv1alpha1.AuthSpec{
 						Provider: "ldap",
-						// Missing SecretRef
+						// Missing SecretRef - now validated by AuthValidator, not SecurityValidator
 					},
 				},
 			},
-			expectError: true,
-			errorCount:  1,
+			expectError: false,
+			errorCount:  0,
 		},
 		{
 			name: "invalid LDAP configuration",

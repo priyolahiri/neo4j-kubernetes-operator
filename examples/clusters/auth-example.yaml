@@ -1,6 +1,9 @@
-# Neo4j Enterprise Cluster with Authentication Configuration
-# This example demonstrates the correct authentication setup
+# Neo4j Enterprise Cluster - Authentication Examples
+# Demonstrates native, LDAP, and OIDC/SSO configurations
 
+# ============================================================
+# Prerequisites: Admin secret (required for all configurations)
+# ============================================================
 apiVersion: v1
 kind: Secret
 metadata:
@@ -8,37 +11,28 @@ metadata:
   namespace: default
 type: Opaque
 data:
-  # Base64 encoded values - these decode to:
-  # username: neo4j
-  # password: changeme123
+  # username: neo4j, password: changeme123
   username: bmVvNGo=
   password: Y2hhbmdlbWUxMjM=
 
 ---
+# ============================================================
+# Example 1: Native authentication (default)
+# ============================================================
 apiVersion: neo4j.neo4j.com/v1alpha1
 kind: Neo4jEnterpriseCluster
 metadata:
-  name: auth-example-cluster
+  name: native-auth-cluster
   namespace: default
 spec:
-  # Neo4j Enterprise Edition
-
-  # Neo4j Docker image
   image:
     repo: neo4j
     tag: "5.26.0-enterprise"
-    pullPolicy: IfNotPresent
-
-  # Cluster topology
   topology:
-    servers: 3  # 3 servers for production fault tolerance
-
-  # Storage configuration
+    servers: 3
   storage:
     className: standard
     size: "10Gi"
-
-  # Resource allocation
   resources:
     requests:
       memory: "2Gi"
@@ -46,53 +40,187 @@ spec:
     limits:
       memory: "4Gi"
       cpu: "2"
-
-  # Authentication configuration
-  # The operator manages authentication through Kubernetes secrets
   auth:
-    provider: native  # Options: native, ldap, kerberos, jwt
-    adminSecret: neo4j-admin-secret  # Reference to the secret created above
-
-  # Environment variables
-  # IMPORTANT: Do not set NEO4J_AUTH or NEO4J_ACCEPT_LICENSE_AGREEMENT here
-  # These are automatically managed by the operator
-  env:
-    # You can add other Neo4j configuration here
-    - name: NEO4J_dbms_memory_heap_max__size
-      value: "2G"
-    - name: NEO4J_dbms_memory_heap_initial__size
-      value: "1G"
-    # DO NOT add these (operator manages them):
-    # - NEO4J_AUTH
-    # - NEO4J_ACCEPT_LICENSE_AGREEMENT
-
-  # TLS configuration (optional)
+    # When authenticationProviders is omitted, defaults to ["native"]
+    adminSecret: neo4j-admin-secret
   tls:
     mode: disabled
 
 ---
-# Notes on Authentication:
-#
-# 1. The operator automatically:
-#    - Sets NEO4J_ACCEPT_LICENSE_AGREEMENT=yes for Enterprise edition
-#    - Configures NEO4J_AUTH from the provided secret
-#    - Filters out any user-provided NEO4J_AUTH or NEO4J_ACCEPT_LICENSE_AGREEMENT
-#
-# 2. Secret format:
-#    The secret must contain 'username' and 'password' keys
-#    The operator will combine them as username/password for NEO4J_AUTH
-#
-# 3. Changing passwords:
-#    To change the password after cluster creation:
-#    a. Update the secret: kubectl edit secret neo4j-admin-secret
-#    b. Restart the StatefulSet: kubectl rollout restart statefulset auth-example-cluster-server
-#
-# 4. External secrets:
-#    For production, consider using external secret operators like:
-#    - External Secrets Operator
-#    - Sealed Secrets
-#    - HashiCorp Vault
-#
-# 5. LDAP/Kerberos/JWT:
-#    For advanced authentication providers, set auth.provider and provide
-#    appropriate configuration through auth.secretRef
+# ============================================================
+# Example 2: LDAP + native (Active Directory)
+# ============================================================
+# LDAP system account secret (for authorization lookups)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ldap-system-account
+  namespace: default
+type: Opaque
+data:
+  # username: cn=neo4j-svc,cn=Users,dc=corp,dc=example,dc=com
+  username: Y249bmVvNGotc3ZjLGNuPVVzZXJzLGRjPWNvcnAsZGM9ZXhhbXBsZSxkYz1jb20=
+  # password: LdapServicePassword123
+  password: TGRhcFNlcnZpY2VQYXNzd29yZDEyMw==
+---
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: ldap-cluster
+  namespace: default
+spec:
+  image:
+    repo: neo4j
+    tag: "5.26.0-enterprise"
+  topology:
+    servers: 3
+  storage:
+    className: standard
+    size: "10Gi"
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2"
+  auth:
+    # LDAP is tried first, then native as fallback for the initial admin user
+    authenticationProviders:
+      - ldap
+      - native
+    authorizationProviders:
+      - ldap
+      - native
+    adminSecret: neo4j-admin-secret
+    ldap:
+      host: "ldaps://ad.corp.example.com:636"
+      authentication:
+        userDNTemplate: "{0}@corp.example.com"
+        cacheEnabled: true
+      authorization:
+        userSearchBase: "dc=corp,dc=example,dc=com"
+        userSearchFilter: "(&(objectClass=user)(sAMAccountName={0}))"
+        groupMembershipAttributes:
+          - memberOf
+        groupToRoleMapping:
+          "cn=Neo4j Admins,ou=Groups,dc=corp,dc=example,dc=com": "admin"
+          "cn=Neo4j Developers,ou=Groups,dc=corp,dc=example,dc=com": "editor,publisher"
+          "cn=Neo4j Readers,ou=Groups,dc=corp,dc=example,dc=com": "reader"
+        accessPermittedGroup: "cn=Neo4j Users,ou=Groups,dc=corp,dc=example,dc=com"
+        useSystemAccount: true
+        systemAccountSecretRef: ldap-system-account
+    # TrustStore for LDAPS with internal CA
+    trustStore:
+      secretRef: corp-ca-cert  # Secret with key "ca.crt" containing the corporate CA
+  tls:
+    mode: disabled
+
+---
+# ============================================================
+# Example 3: OIDC/SSO with Okta
+# ============================================================
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: oidc-cluster
+  namespace: default
+spec:
+  image:
+    repo: neo4j
+    tag: "5.26.0-enterprise"
+  topology:
+    servers: 3
+  storage:
+    className: standard
+    size: "10Gi"
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2"
+  auth:
+    authenticationProviders:
+      - oidc-okta
+      - native
+    authorizationProviders:
+      - oidc-okta
+      - native
+    adminSecret: neo4j-admin-secret
+    oidc:
+      okta:
+        displayName: "Okta SSO"
+        wellKnownDiscoveryURI: "https://dev-123456.okta.com/.well-known/openid-configuration"
+        audience: "0oaXXXXXXXXXXXXXX"
+        authFlow: pkce
+        claims:
+          username: email
+          groups: groups
+        groupToRoleMapping:
+          "neo4j-admins": "admin,architect"
+          "neo4j-developers": "editor,publisher"
+          "neo4j-readers": "reader"
+  tls:
+    mode: disabled
+
+---
+# ============================================================
+# Example 4: Multiple OIDC providers (Okta + Azure AD)
+# ============================================================
+apiVersion: neo4j.neo4j.com/v1alpha1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: multi-oidc-cluster
+  namespace: default
+spec:
+  image:
+    repo: neo4j
+    tag: "5.26.0-enterprise"
+  topology:
+    servers: 3
+  storage:
+    className: standard
+    size: "10Gi"
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2"
+  auth:
+    authenticationProviders:
+      - oidc-okta
+      - oidc-azure
+      - native
+    authorizationProviders:
+      - oidc-okta
+      - oidc-azure
+      - native
+    adminSecret: neo4j-admin-secret
+    authCacheTTL: "5m"
+    oidc:
+      okta:
+        displayName: "Okta SSO"
+        wellKnownDiscoveryURI: "https://dev-123456.okta.com/.well-known/openid-configuration"
+        audience: "0oaXXXXXXXXXXXXXX"
+        claims:
+          username: email
+          groups: groups
+        groupToRoleMapping:
+          "neo4j-admins": "admin"
+      azure:
+        displayName: "Azure AD"
+        wellKnownDiscoveryURI: "https://login.microsoftonline.com/TENANT_ID/v2.0/.well-known/openid-configuration"
+        audience: "api://neo4j-app"
+        claims:
+          username: preferred_username
+          groups: roles
+        getGroupsFromUserInfo: true
+        groupToRoleMapping:
+          "neo4j-admins": "admin"
+          "neo4j-users": "reader"
+  tls:
+    mode: disabled

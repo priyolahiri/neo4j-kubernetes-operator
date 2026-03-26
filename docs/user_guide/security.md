@@ -86,6 +86,34 @@ spec:
 
 ## Authentication Configuration
 
+The operator provides first-class, typed configuration for external authentication providers. When you use the typed fields (described below), the operator automatically generates the correct `neo4j.conf` entries — you do not need to manually place `dbms.security.*` keys in `spec.config`.
+
+### Multi-Provider Support
+
+Neo4j evaluates authentication providers in order. You can combine providers for fallback (e.g., LDAP first, then native for the initial admin user):
+
+```yaml
+spec:
+  auth:
+    authenticationProviders:    # Ordered list — tried in sequence
+      - ldap
+      - native
+    authorizationProviders:     # Can differ from authentication
+      - ldap
+      - native
+    adminSecret: neo4j-admin-secret
+```
+
+For OIDC providers, reference them as `oidc-<name>` where `<name>` matches a key in the `oidc` map:
+
+```yaml
+    authenticationProviders:
+      - oidc-okta
+      - native
+```
+
+If you omit `authenticationProviders`, the operator defaults to `["native"]`.
+
 ### Native Authentication
 
 ```yaml
@@ -95,108 +123,309 @@ metadata:
   name: secure-cluster
 spec:
   auth:
-    provider: native
+    # When authenticationProviders is omitted, defaults to ["native"]
     adminSecret: neo4j-admin-secret
+    authCacheTTL: "10m"
+```
 
-    # Password policy configuration
-    passwordPolicy:
-      minimumLength: 12
-      requireNumbers: true
-      requireSpecialCharacters: true
+The admin secret must contain `username` and `password` keys:
 
-  config:
-    # Authentication settings
-    dbms.security.auth_enabled: "true"
-    dbms.security.auth_minimum_password_length: "12"
-
-    # Session timeout
-    dbms.security.auth_cache_ttl: "10m"
-    dbms.security.auth_cache_max_capacity: "10000"
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: neo4j-admin-secret
+type: Opaque
+stringData:
+  username: neo4j
+  password: "MySecurePassword123!"
 ```
 
 ### LDAP Integration
 
-```yaml
-spec:
-  auth:
-    provider: ldap
-    adminSecret: neo4j-admin-secret
-    secretRef: ldap-config-secret  # Secret containing LDAP configuration
+The `spec.auth.ldap` block provides typed fields that map directly to Neo4j's `dbms.security.ldap.*` configuration keys. The operator generates the correct config automatically.
 
-  config:
-    # LDAP authentication settings
-    dbms.security.realms: "ldap"
-    dbms.security.ldap.authentication.enabled: "true"
-    dbms.security.ldap.authorization.enabled: "true"
-
-    # LDAP connection settings
-    dbms.security.ldap.host: "ldaps://ldap.company.com:636"
-    dbms.security.ldap.connection.timeout: "30s"
-    dbms.security.ldap.authentication.cache.enabled: "true"
-```
-
-**LDAP Secret Configuration:**
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ldap-config-secret
-type: Opaque
-stringData:
-  bindDN: "cn=neo4j-service,ou=services,dc=company,dc=com"
-  bindPassword: "ldap-bind-password"
-  userSearchBase: "ou=users,dc=company,dc=com"
-  userSearchFilter: "(&(objectClass=person)(uid={0}))"
-  groupSearchBase: "ou=groups,dc=company,dc=com"
-  groupSearchFilter: "(&(objectClass=groupOfNames)(member={0}))"
-```
-
-### JWT Authentication
+#### Active Directory Example
 
 ```yaml
 spec:
   auth:
-    provider: jwt
+    authenticationProviders: [ldap, native]
+    authorizationProviders: [ldap, native]
     adminSecret: neo4j-admin-secret
-    secretRef: jwt-config-secret  # Secret containing JWT configuration
-
-  config:
-    # JWT authentication settings
-    dbms.security.auth.jwt.enabled: "true"
-    dbms.security.auth.jwt.jwks_uri: "https://auth.company.com/.well-known/jwks.json"
-    dbms.security.auth.jwt.audience: "neo4j-kubernetes"
+    ldap:
+      host: "ldaps://ad.corp.example.com:636"
+      authentication:
+        userDNTemplate: "{0}@corp.example.com"       # UPN-style for AD
+        cacheEnabled: true
+      authorization:
+        userSearchBase: "dc=corp,dc=example,dc=com"
+        userSearchFilter: "(&(objectClass=user)(sAMAccountName={0}))"
+        groupMembershipAttributes: [memberOf]
+        groupToRoleMapping:
+          "cn=Neo4j Admins,ou=Groups,dc=corp,dc=example,dc=com": "admin"
+          "cn=Neo4j Devs,ou=Groups,dc=corp,dc=example,dc=com": "editor,publisher"
+          "cn=Neo4j Readers,ou=Groups,dc=corp,dc=example,dc=com": "reader"
+        accessPermittedGroup: "cn=Neo4j Users,ou=Groups,dc=corp,dc=example,dc=com"
+        useSystemAccount: true
+        systemAccountSecretRef: ldap-system-account   # Secret with username + password keys
 ```
 
-**JWT Secret Configuration:**
+#### OpenLDAP Example
+
+```yaml
+    ldap:
+      host: "ldap://ldap.example.com:389"
+      useStartTLS: true                               # STARTTLS with ldap:// scheme
+      authentication:
+        userDNTemplate: "uid={0},ou=users,dc=example,dc=com"
+      authorization:
+        userSearchBase: "ou=users,dc=example,dc=com"
+        userSearchFilter: "(&(objectClass=*)(uid={0}))"
+        groupMembershipAttributes: [gidNumber]
+        groupToRoleMapping:
+          "501": "admin"
+          "502": "reader"
+```
+
+#### Nested Groups (Active Directory)
+
+```yaml
+    ldap:
+      host: "ldaps://ad.corp.example.com:636"
+      authentication:
+        userDNTemplate: "cn={0},cn=Users,dc=example,dc=com"
+      authorization:
+        userSearchBase: "dc=example,dc=com"
+        userSearchFilter: "(&(objectClass=*)(uid={0}))"
+        nestedGroupsEnabled: true
+        nestedGroupsSearchFilter: "(&(objectclass=group)(member:1.2.840.113556.1.4.1941:={0}))"
+        groupToRoleMapping:
+          "cn=Neo4j Admins,dc=example,dc=com": "admin"
+```
+
+#### LDAP System Account Secret
+
+When `useSystemAccount: true`, you must create a Secret with the bind credentials. The operator injects these as environment variables — they never appear in the ConfigMap.
+
 ```yaml
 apiVersion: v1
 kind: Secret
 metadata:
-  name: jwt-config-secret
+  name: ldap-system-account
 type: Opaque
 stringData:
-  issuer: "https://auth.company.com"
-  audience: "neo4j-kubernetes"
-  claimsMapping: |
-    {
-      "username": "preferred_username",
-      "roles": "groups"
-    }
+  username: "cn=neo4j-svc,cn=Users,dc=corp,dc=example,dc=com"   # Full DN
+  password: "LdapServicePassword123"
 ```
+
+#### LDAP Field Reference
+
+| Field | Neo4j Config Key | Description |
+|-------|-----------------|-------------|
+| `ldap.host` | `dbms.security.ldap.host` | LDAP server URL (`ldap://` or `ldaps://`) |
+| `ldap.useStartTLS` | `dbms.security.ldap.use_starttls` | Enable STARTTLS (use with `ldap://`, not `ldaps://`) |
+| `ldap.authentication.userDNTemplate` | `dbms.security.ldap.authentication.user_dn_template` | DN template, `{0}` = username |
+| `ldap.authentication.searchForAttribute` | `dbms.security.ldap.authentication.search_for_attribute` | Use attribute search instead of DN template |
+| `ldap.authentication.attribute` | `dbms.security.ldap.authentication.attribute` | Attribute to search (e.g., `samaccountname`) |
+| `ldap.authentication.cacheEnabled` | `dbms.security.ldap.authentication.cache_enabled` | Cache auth results |
+| `ldap.authorization.userSearchBase` | `dbms.security.ldap.authorization.user_search_base` | Base DN for user search |
+| `ldap.authorization.userSearchFilter` | `dbms.security.ldap.authorization.user_search_filter` | LDAP filter, `{0}` = username |
+| `ldap.authorization.groupMembershipAttributes` | `dbms.security.ldap.authorization.group_membership_attributes` | Attributes with group membership |
+| `ldap.authorization.groupToRoleMapping` | `dbms.security.ldap.authorization.group_to_role_mapping` | Map of LDAP groups to Neo4j roles |
+| `ldap.authorization.accessPermittedGroup` | `dbms.security.ldap.authorization.access_permitted_group` | Restrict access to this group |
+| `ldap.authorization.useSystemAccount` | `dbms.security.ldap.authorization.use_system_account` | Use system account for lookups |
+| `ldap.authorization.systemAccountSecretRef` | *(env var injection)* | Secret with system account credentials |
+| `ldap.authorization.nestedGroupsEnabled` | `dbms.security.ldap.authorization.nested_groups_enabled` | Recursive group resolution |
+| `ldap.authorization.nestedGroupsSearchFilter` | `dbms.security.ldap.authorization.nested_groups_search_filter` | Filter for nested groups |
+| `ldap.debugGroupLogging` | `dbms.security.logs.ldap.groups_at_debug_level_enabled` | Debug logging (disable in production) |
+
+### OIDC / SSO Integration
+
+The operator supports one or more OIDC providers via the `spec.auth.oidc` map. Each key becomes the provider name in Neo4j's config (`dbms.security.oidc.<name>.*`).
+
+#### Single Provider (Okta)
+
+```yaml
+spec:
+  auth:
+    authenticationProviders: [oidc-okta, native]
+    authorizationProviders: [oidc-okta, native]
+    adminSecret: neo4j-admin-secret
+    oidc:
+      okta:                                            # → dbms.security.oidc.okta.*
+        displayName: "Okta SSO"
+        wellKnownDiscoveryURI: "https://dev-123456.okta.com/.well-known/openid-configuration"
+        audience: "0oaXXXXXXXXXXXXXX"                 # Your OIDC client ID
+        authFlow: pkce                                 # Recommended (default)
+        claims:
+          username: email                              # JWT claim → Neo4j username
+          groups: groups                               # JWT claim → role mapping
+        groupToRoleMapping:
+          "neo4j-admins": "admin,architect"
+          "neo4j-developers": "editor,publisher"
+          "neo4j-readers": "reader"
+```
+
+#### Multiple Providers (Okta + Azure AD)
+
+```yaml
+    oidc:
+      okta:
+        displayName: "Okta SSO"
+        wellKnownDiscoveryURI: "https://dev-123456.okta.com/.well-known/openid-configuration"
+        audience: "0oaXXXXXXXXXXXXXX"
+        claims:
+          username: email
+          groups: groups
+        groupToRoleMapping:
+          "neo4j-admins": "admin"
+      azure:
+        displayName: "Azure AD"
+        wellKnownDiscoveryURI: "https://login.microsoftonline.com/TENANT_ID/v2.0/.well-known/openid-configuration"
+        audience: "api://neo4j-app"
+        claims:
+          username: preferred_username
+          groups: roles
+        getGroupsFromUserInfo: true                    # Fetch groups from UserInfo endpoint
+        groupToRoleMapping:
+          "neo4j-admins": "admin"
+          "neo4j-users": "reader"
+```
+
+Reference both in the provider list:
+
+```yaml
+    authenticationProviders: [oidc-okta, oidc-azure, native]
+    authorizationProviders: [oidc-okta, oidc-azure, native]
+```
+
+#### Manual Endpoints (No Discovery)
+
+If your IdP does not support OIDC Discovery, specify endpoints manually:
+
+```yaml
+    oidc:
+      custom-idp:
+        displayName: "Internal IdP"
+        authEndpoint: "https://idp.internal.com/authorize"
+        tokenEndpoint: "https://idp.internal.com/token"
+        jwksURI: "https://idp.internal.com/.well-known/jwks.json"
+        userInfoURI: "https://idp.internal.com/userinfo"
+        issuer: "https://idp.internal.com/"
+        audience: "neo4j-app"
+        claims:
+          username: sub
+          groups: roles
+```
+
+#### OIDC Field Reference
+
+| Field | Neo4j Config Key | Description |
+|-------|-----------------|-------------|
+| `displayName` | `dbms.security.oidc.<name>.display_name` | Shown on login screen |
+| `wellKnownDiscoveryURI` | `dbms.security.oidc.<name>.well_known_discovery_uri` | Auto-configures endpoints |
+| `authEndpoint` | `dbms.security.oidc.<name>.auth_endpoint` | Authorization endpoint (manual) |
+| `tokenEndpoint` | `dbms.security.oidc.<name>.token_endpoint` | Token endpoint (manual) |
+| `jwksURI` | `dbms.security.oidc.<name>.jwks_uri` | JWKS endpoint (manual) |
+| `userInfoURI` | `dbms.security.oidc.<name>.user_info_uri` | UserInfo endpoint (manual) |
+| `issuer` | `dbms.security.oidc.<name>.issuer` | Issuer identifier (manual) |
+| `audience` | `dbms.security.oidc.<name>.audience` | Expected JWT `aud` claim (**required**) |
+| `authFlow` | `dbms.security.oidc.<name>.auth_flow` | `pkce` (default) or `implicit` |
+| `claims.username` | `dbms.security.oidc.<name>.claims.username` | JWT claim for username (default: `sub`) |
+| `claims.groups` | `dbms.security.oidc.<name>.claims.groups` | JWT claim for groups |
+| `getGroupsFromUserInfo` | `dbms.security.oidc.<name>.get_groups_from_user_info` | Fetch groups from UserInfo |
+| `getUsernameFromUserInfo` | `dbms.security.oidc.<name>.get_username_from_user_info` | Fetch username from UserInfo |
+| `groupToRoleMapping` | `dbms.security.oidc.<name>.authorization.group_to_role_mapping` | Map IdP groups to Neo4j roles |
+| `authParams` | `dbms.security.oidc.<name>.auth_params` | Extra auth endpoint params |
+| `tokenParams` | `dbms.security.oidc.<name>.token_params` | Extra token endpoint params |
+
+### JVM TrustStore for Internal CAs
+
+When connecting to LDAPS servers or OIDC providers that use certificates signed by an internal CA (not publicly trusted), configure a custom JVM truststore:
+
+```yaml
+spec:
+  auth:
+    authenticationProviders: [ldap, native]
+    ldap:
+      host: "ldaps://ldap.internal.corp:636"
+      # ... other LDAP config
+    trustStore:
+      secretRef: corp-ca-cert       # Secret containing the CA certificate
+      key: ca.crt                   # Key in the Secret (default: ca.crt)
+```
+
+Create the Secret with your CA certificate in PEM format:
+
+```bash
+kubectl create secret generic corp-ca-cert --from-file=ca.crt=/path/to/corporate-ca.pem
+```
+
+The operator automatically:
+1. Mounts the CA certificate into the pod
+2. Runs an init container that converts the PEM to a JKS truststore using `keytool`
+3. Adds JVM flags (`-Djavax.net.ssl.trustStore=...`) so Neo4j trusts the internal CA
+
+This works for both LDAPS connections and OIDC providers behind internal CAs.
+
+### Group-to-Role Mapping
+
+Both LDAP and OIDC support mapping external groups to Neo4j built-in roles:
+
+| Neo4j Role | Permissions |
+|-----------|-------------|
+| `admin` | Full administrative access |
+| `architect` | Schema management + all data access |
+| `publisher` | Read + write data |
+| `editor` | Read + write (no schema changes) |
+| `reader` | Read-only access |
+
+Custom roles must be pre-created in Neo4j via `CREATE ROLE` before they can be used in mappings.
+
+For LDAP, the mapping key is the full group DN:
+
+```yaml
+groupToRoleMapping:
+  "cn=DBA Team,ou=Groups,dc=corp,dc=com": "admin"
+```
+
+For OIDC, the mapping key is the group name as it appears in the JWT claim:
+
+```yaml
+groupToRoleMapping:
+  "neo4j-admins": "admin,architect"
+  "neo4j-readers": "reader"
+```
+
+Multiple Neo4j roles can be assigned to a single group (comma-separated).
+
+### Auth Cache TTL
+
+Control how long authentication results are cached:
+
+```yaml
+spec:
+  auth:
+    authCacheTTL: "5m"    # Maps to dbms.security.auth_cache_ttl
+```
+
+Short TTL = changes propagate faster. Long TTL = better performance. Setting to `"0"` disables caching.
 
 ### Kerberos Authentication
 
 ```yaml
 spec:
   auth:
-    provider: kerberos
+    authenticationProviders: [kerberos, native]
+    authorizationProviders: [kerberos, native]
     adminSecret: neo4j-admin-secret
-    secretRef: kerberos-config-secret  # Secret containing Kerberos configuration
-
-  config:
-    # Kerberos authentication settings
-    dbms.security.auth.kerberos.enabled: "true"
-    dbms.security.auth.kerberos.realm: "COMPANY.COM"
+    kerberos:
+      realm: "CORP.EXAMPLE.COM"
+      servicePrincipal: "neo4j/neo4j-server.corp.example.com@CORP.EXAMPLE.COM"
+      keytab:
+        secretRef: neo4j-keytab-secret
+        key: keytab
 ```
 
 ## Authorization and RBAC
