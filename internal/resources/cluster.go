@@ -1272,6 +1272,11 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, se
 
 	// NOTE: Property sharding config is handled via neo4j.conf, not environment variables
 
+	// Add LDAP system account credentials from Secret (never in ConfigMap)
+	if authEnvVars := BuildAuthEnvVars(cluster.Spec.Auth); len(authEnvVars) > 0 {
+		env = append(env, authEnvVars...)
+	}
+
 	// Add custom environment variables (can override JVM settings if needed)
 	// Filter out NEO4J_AUTH and NEO4J_ACCEPT_LICENSE_AGREEMENT as they are managed by the operator
 	if cluster.Spec.Env != nil {
@@ -1316,6 +1321,11 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, se
 			MountPath: "/ssl",
 			ReadOnly:  true,
 		})
+	}
+
+	// Add truststore volume mount for LDAPS/OIDC with internal CAs
+	if cluster.Spec.Auth != nil && cluster.Spec.Auth.TrustStore != nil {
+		volumeMounts = append(volumeMounts, TrustStoreVolumeMount)
 	}
 
 	// Build container
@@ -1446,10 +1456,23 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, se
 		})
 	}
 
+	// Add truststore volumes for LDAPS/OIDC with internal CAs
+	if cluster.Spec.Auth != nil && cluster.Spec.Auth.TrustStore != nil {
+		volumes = append(volumes, BuildTrustStoreVolumes(cluster.Spec.Auth.TrustStore)...)
+	}
+
+	// Build init containers
+	var initContainers []corev1.Container
+	if cluster.Spec.Auth != nil && cluster.Spec.Auth.TrustStore != nil {
+		image := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
+		initContainers = append(initContainers, BuildTrustStoreInitContainer(image, cluster.Spec.Auth.TrustStore))
+	}
+
 	// Build pod spec - backup is now handled by centralized StatefulSet, not sidecars
 	podSpec := corev1.PodSpec{
 		ServiceAccountName: getDiscoveryServiceAccountNameForEnterprise(cluster),
 		SecurityContext:    podSecurityContextForCluster(cluster),
+		InitContainers:     initContainers,
 		Containers:         []corev1.Container{neo4jContainer}, // Only Neo4j container, no backup sidecar
 		Volumes:            volumes,
 	}
@@ -1654,13 +1677,28 @@ server.bolt.tls_level=OPTIONAL
 		config += BuildMonitoringConfig(cluster.Spec.Monitoring)
 	}
 
-	// Add custom configuration (excluding memory settings already added above)
+	// Authentication/Authorization configuration from typed auth fields
+	// Generated keys are tracked so they are excluded from custom config merge below
+	var authGeneratedKeys []string
+	if cluster.Spec.Auth != nil {
+		authResult := BuildAuthConfig(cluster.Spec.Auth)
+		if authResult.Config != "" {
+			config += "\n# Authentication/Authorization Configuration\n"
+			config += authResult.Config
+			authGeneratedKeys = authResult.GeneratedKeys
+		}
+	}
+
+	// Add custom configuration (excluding memory settings and auth-generated keys)
 	if cluster.Spec.Config != nil {
-		// Memory settings that are already set by memoryConfig
+		// Keys already set by the operator — user's spec.config values are skipped for these
 		excludeKeys := map[string]bool{
 			"server.memory.heap.initial_size": true,
 			"server.memory.heap.max_size":     true,
 			"server.memory.pagecache.size":    true,
+		}
+		for _, key := range authGeneratedKeys {
+			excludeKeys[key] = true
 		}
 
 		// Sort keys to ensure deterministic order and prevent hash oscillation
@@ -2211,6 +2249,14 @@ func buildJVMSettings(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
 	// Exit on OOM for better container behavior
 	jvmFlags = append(jvmFlags, "-XX:+ExitOnOutOfMemoryError")
 
+	// Add JVM truststore flags for LDAPS/OIDC with internal CAs
+	if cluster.Spec.Auth != nil && cluster.Spec.Auth.TrustStore != nil {
+		jvmFlags = append(jvmFlags,
+			"-Djavax.net.ssl.trustStore=/truststore/truststore.jks",
+			"-Djavax.net.ssl.trustStorePassword=changeit",
+		)
+	}
+
 	// Optional: Enable GC logging for debugging (commented out by default)
 	// jvmFlags = append(jvmFlags, "-Xlog:gc*:file=/logs/gc.log:time,uptime,level,tags:filecount=5,filesize=10m")
 
@@ -2369,4 +2415,323 @@ func getDiscoveryRoleNameForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseClu
 
 func getDiscoveryRoleBindingNameForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
 	return fmt.Sprintf("%s-discovery", cluster.Name)
+}
+
+// AuthConfigResult holds the generated neo4j.conf auth config and the list of keys it produced.
+type AuthConfigResult struct {
+	// Config is the generated neo4j.conf lines for authentication/authorization
+	Config string
+	// GeneratedKeys lists all config keys that were generated (for dedup with spec.config)
+	GeneratedKeys []string
+}
+
+// BuildAuthConfig converts typed AuthSpec fields into neo4j.conf configuration lines.
+// Sensitive values (LDAP system password) are NOT included — they are injected via env vars.
+func BuildAuthConfig(auth *neo4jv1alpha1.AuthSpec) AuthConfigResult {
+	if auth == nil {
+		return AuthConfigResult{}
+	}
+
+	var lines []string
+	var keys []string
+
+	// Resolve provider lists with backward compatibility
+	authnProviders := auth.AuthenticationProviders
+	if len(authnProviders) == 0 && auth.Provider != "" && auth.Provider != "native" {
+		authnProviders = []string{auth.Provider}
+	}
+	authzProviders := auth.AuthorizationProviders
+	if len(authzProviders) == 0 && auth.Provider != "" && auth.Provider != "native" {
+		authzProviders = []string{auth.Provider}
+	}
+
+	if len(authnProviders) > 0 {
+		lines = append(lines, fmt.Sprintf("dbms.security.authentication_providers=%s", strings.Join(authnProviders, ",")))
+		keys = append(keys, "dbms.security.authentication_providers")
+	}
+	if len(authzProviders) > 0 {
+		lines = append(lines, fmt.Sprintf("dbms.security.authorization_providers=%s", strings.Join(authzProviders, ",")))
+		keys = append(keys, "dbms.security.authorization_providers")
+	}
+
+	// LDAP configuration
+	if auth.LDAP != nil {
+		ldapLines, ldapKeys := buildLDAPConfig(auth.LDAP)
+		lines = append(lines, ldapLines...)
+		keys = append(keys, ldapKeys...)
+	}
+
+	// OIDC multi-provider configuration
+	if len(auth.OIDC) > 0 {
+		// Sort provider names for deterministic output
+		var names []string
+		for name := range auth.OIDC {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			provider := auth.OIDC[name]
+			oidcLines, oidcKeys := buildOIDCProviderConfig(name, &provider)
+			lines = append(lines, oidcLines...)
+			keys = append(keys, oidcKeys...)
+		}
+	}
+
+	// Auth cache TTL
+	if auth.AuthCacheTTL != "" {
+		lines = append(lines, fmt.Sprintf("dbms.security.auth_cache_ttl=%s", auth.AuthCacheTTL))
+		keys = append(keys, "dbms.security.auth_cache_ttl")
+	}
+
+	if len(lines) == 0 {
+		return AuthConfigResult{}
+	}
+
+	return AuthConfigResult{
+		Config:        strings.Join(lines, "\n") + "\n",
+		GeneratedKeys: keys,
+	}
+}
+
+// buildLDAPConfig generates neo4j.conf lines for LDAP configuration.
+// System account credentials are excluded — they are injected via env vars.
+func buildLDAPConfig(ldap *neo4jv1alpha1.Neo4jLDAPSpec) ([]string, []string) {
+	var lines []string
+	var keys []string
+
+	addLine := func(key, value string) {
+		lines = append(lines, fmt.Sprintf("%s=%s", key, value))
+		keys = append(keys, key)
+	}
+
+	addLine("dbms.security.ldap.host", ldap.Host)
+
+	if ldap.UseStartTLS != nil {
+		addLine("dbms.security.ldap.use_starttls", fmt.Sprintf("%t", *ldap.UseStartTLS))
+	}
+
+	// Authentication settings
+	if ldap.Authentication != nil {
+		auth := ldap.Authentication
+		if auth.UserDNTemplate != "" {
+			addLine("dbms.security.ldap.authentication.user_dn_template", auth.UserDNTemplate)
+		}
+		if auth.SearchForAttribute != nil {
+			addLine("dbms.security.ldap.authentication.search_for_attribute", fmt.Sprintf("%t", *auth.SearchForAttribute))
+		}
+		if auth.Attribute != "" {
+			addLine("dbms.security.ldap.authentication.attribute", auth.Attribute)
+		}
+		if auth.CacheEnabled != nil {
+			addLine("dbms.security.ldap.authentication.cache_enabled", fmt.Sprintf("%t", *auth.CacheEnabled))
+		}
+	}
+
+	// Authorization settings
+	if ldap.Authorization != nil {
+		authz := ldap.Authorization
+		if authz.UserSearchBase != "" {
+			addLine("dbms.security.ldap.authorization.user_search_base", authz.UserSearchBase)
+		}
+		if authz.UserSearchFilter != "" {
+			addLine("dbms.security.ldap.authorization.user_search_filter", authz.UserSearchFilter)
+		}
+		if len(authz.GroupMembershipAttributes) > 0 {
+			addLine("dbms.security.ldap.authorization.group_membership_attributes", strings.Join(authz.GroupMembershipAttributes, ","))
+		}
+		if len(authz.GroupToRoleMapping) > 0 {
+			addLine("dbms.security.ldap.authorization.group_to_role_mapping", serializeGroupToRoleMapping(authz.GroupToRoleMapping))
+		}
+		if authz.AccessPermittedGroup != "" {
+			addLine("dbms.security.ldap.authorization.access_permitted_group", authz.AccessPermittedGroup)
+		}
+		if authz.UseSystemAccount != nil && *authz.UseSystemAccount {
+			addLine("dbms.security.ldap.authorization.use_system_account", "true")
+			// NOTE: system_username and system_password are injected via env vars, not here
+		}
+		if authz.NestedGroupsEnabled != nil {
+			addLine("dbms.security.ldap.authorization.nested_groups_enabled", fmt.Sprintf("%t", *authz.NestedGroupsEnabled))
+		}
+		if authz.NestedGroupsSearchFilter != "" {
+			addLine("dbms.security.ldap.authorization.nested_groups_search_filter", authz.NestedGroupsSearchFilter)
+		}
+	}
+
+	// Debug logging
+	if ldap.DebugGroupLogging != nil {
+		addLine("dbms.security.logs.ldap.groups_at_debug_level_enabled", fmt.Sprintf("%t", *ldap.DebugGroupLogging))
+	}
+
+	return lines, keys
+}
+
+// buildOIDCProviderConfig generates neo4j.conf lines for a single OIDC provider.
+func buildOIDCProviderConfig(name string, provider *neo4jv1alpha1.Neo4jOIDCProviderSpec) ([]string, []string) {
+	var lines []string
+	var keys []string
+	prefix := fmt.Sprintf("dbms.security.oidc.%s", name)
+
+	addLine := func(suffix, value string) {
+		key := fmt.Sprintf("%s.%s", prefix, suffix)
+		lines = append(lines, fmt.Sprintf("%s=%s", key, value))
+		keys = append(keys, key)
+	}
+
+	if provider.DisplayName != "" {
+		addLine("display_name", provider.DisplayName)
+	}
+	if provider.WellKnownDiscoveryURI != "" {
+		addLine("well_known_discovery_uri", provider.WellKnownDiscoveryURI)
+	}
+	if provider.AuthEndpoint != "" {
+		addLine("auth_endpoint", provider.AuthEndpoint)
+	}
+	if provider.TokenEndpoint != "" {
+		addLine("token_endpoint", provider.TokenEndpoint)
+	}
+	if provider.JWKSURI != "" {
+		addLine("jwks_uri", provider.JWKSURI)
+	}
+	if provider.UserInfoURI != "" {
+		addLine("user_info_uri", provider.UserInfoURI)
+	}
+	if provider.Issuer != "" {
+		addLine("issuer", provider.Issuer)
+	}
+	addLine("audience", provider.Audience)
+	if provider.AuthFlow != "" {
+		addLine("auth_flow", provider.AuthFlow)
+	}
+
+	// Claims
+	if provider.Claims != nil {
+		if provider.Claims.Username != "" {
+			addLine("claims.username", provider.Claims.Username)
+		}
+		if provider.Claims.Groups != "" {
+			addLine("claims.groups", provider.Claims.Groups)
+		}
+	}
+
+	if provider.GetGroupsFromUserInfo != nil {
+		addLine("get_groups_from_user_info", fmt.Sprintf("%t", *provider.GetGroupsFromUserInfo))
+	}
+	if provider.GetUsernameFromUserInfo != nil {
+		addLine("get_username_from_user_info", fmt.Sprintf("%t", *provider.GetUsernameFromUserInfo))
+	}
+
+	if len(provider.GroupToRoleMapping) > 0 {
+		addLine("authorization.group_to_role_mapping", serializeGroupToRoleMapping(provider.GroupToRoleMapping))
+	}
+
+	if provider.AuthParams != "" {
+		addLine("auth_params", provider.AuthParams)
+	}
+	if provider.TokenParams != "" {
+		addLine("token_params", provider.TokenParams)
+	}
+
+	return lines, keys
+}
+
+// serializeGroupToRoleMapping converts a map[string]string to Neo4j's semicolon-separated format:
+// "group1"=role1,role2;"group2"=role3
+func serializeGroupToRoleMapping(mapping map[string]string) string {
+	// Sort keys for deterministic output
+	var groupDNs []string
+	for dn := range mapping {
+		groupDNs = append(groupDNs, dn)
+	}
+	sort.Strings(groupDNs)
+
+	var parts []string
+	for _, dn := range groupDNs {
+		roles := mapping[dn]
+		parts = append(parts, fmt.Sprintf(`"%s"=%s`, dn, roles))
+	}
+	return strings.Join(parts, ";")
+}
+
+// BuildAuthEnvVars returns env vars for secret injection (LDAP system account credentials).
+// These are injected as env vars so sensitive values never appear in the ConfigMap.
+func BuildAuthEnvVars(auth *neo4jv1alpha1.AuthSpec) []corev1.EnvVar {
+	if auth == nil || auth.LDAP == nil || auth.LDAP.Authorization == nil {
+		return nil
+	}
+	authz := auth.LDAP.Authorization
+	if authz.UseSystemAccount == nil || !*authz.UseSystemAccount || authz.SystemAccountSecretRef == "" {
+		return nil
+	}
+
+	return []corev1.EnvVar{
+		{
+			Name: "NEO4J_dbms_security_ldap_authorization_system__username",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: authz.SystemAccountSecretRef,
+					},
+					Key: "username",
+				},
+			},
+		},
+		{
+			Name: "NEO4J_dbms_security_ldap_authorization_system__password",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: authz.SystemAccountSecretRef,
+					},
+					Key: "password",
+				},
+			},
+		},
+	}
+}
+
+// BuildTrustStoreInitContainer creates an init container that converts a PEM CA cert into a JKS truststore.
+func BuildTrustStoreInitContainer(image string, trustStore *neo4jv1alpha1.TrustStoreSpec) corev1.Container {
+	caKey := trustStore.Key
+	if caKey == "" {
+		caKey = "ca.crt"
+	}
+	return corev1.Container{
+		Name:  "truststore-init",
+		Image: image,
+		Command: []string{
+			"/bin/bash", "-c",
+			fmt.Sprintf("keytool -import -trustcacerts -keystore /truststore/truststore.jks -storepass changeit -noprompt -alias custom-ca -file /truststore-ca/%s", caKey),
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "truststore-ca", MountPath: "/truststore-ca", ReadOnly: true},
+			{Name: "truststore", MountPath: "/truststore"},
+		},
+	}
+}
+
+// BuildTrustStoreVolumes returns the volumes needed for JVM truststore support.
+func BuildTrustStoreVolumes(trustStore *neo4jv1alpha1.TrustStoreSpec) []corev1.Volume {
+	return []corev1.Volume{
+		{
+			Name: "truststore-ca",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: trustStore.SecretRef,
+				},
+			},
+		},
+		{
+			Name: "truststore",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		},
+	}
+}
+
+// TrustStoreVolumeMount is the volume mount for the truststore in the main container
+var TrustStoreVolumeMount = corev1.VolumeMount{
+	Name:      "truststore",
+	MountPath: "/truststore",
+	ReadOnly:  true,
 }

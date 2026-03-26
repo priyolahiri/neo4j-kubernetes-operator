@@ -62,43 +62,26 @@ func (v *SecurityValidator) validateAuthenticationConfig(cluster *neo4jv1alpha1.
 		return allErrs
 	}
 
-	authPath := field.NewPath("spec", "auth")
+	// Determine the effective provider for config-map validation.
+	// When typed fields are present, skip raw config-map validation for those providers.
+	hasTypedLDAP := cluster.Spec.Auth.LDAP != nil
+	hasTypedOIDC := len(cluster.Spec.Auth.OIDC) > 0
 
-	// Neo4j 5.26+ supported authentication providers
-	validProviders := []string{
-		"native",   // Native Neo4j authentication
-		"ldap",     // LDAP authentication
-		"kerberos", // Kerberos authentication
-		"jwt",      // JWT authentication
-		"oidc",     // OpenID Connect (enhanced in 5.26+)
-		"saml",     // SAML authentication (enhanced in 5.26+)
-		"custom",   // Custom authentication plugin
-	}
-
-	if cluster.Spec.Auth.Provider != "" {
-		valid := false
-		for _, provider := range validProviders {
-			if cluster.Spec.Auth.Provider == provider {
-				valid = true
-				break
-			}
-		}
-		if !valid {
-			allErrs = append(allErrs, field.NotSupported(
-				authPath.Child("provider"),
-				cluster.Spec.Auth.Provider,
-				validProviders,
-			))
-		}
-
-		// Validate provider-specific requirements
-		switch cluster.Spec.Auth.Provider {
+	// Validate provider-specific requirements from raw spec.config
+	// (fallback for users not using typed fields)
+	provider := cluster.Spec.Auth.Provider
+	if provider != "" {
+		switch provider {
 		case "ldap":
-			allErrs = append(allErrs, v.validateLDAPConfig(cluster)...)
+			if !hasTypedLDAP {
+				allErrs = append(allErrs, v.validateLDAPConfig(cluster)...)
+			}
 		case "jwt":
 			allErrs = append(allErrs, v.validateJWTConfig(cluster)...)
 		case "oidc":
-			allErrs = append(allErrs, v.validateOIDCConfig(cluster)...)
+			if !hasTypedOIDC {
+				allErrs = append(allErrs, v.validateOIDCConfig(cluster)...)
+			}
 		case "saml":
 			allErrs = append(allErrs, v.validateSAMLConfig(cluster)...)
 		case "kerberos":
@@ -106,13 +89,19 @@ func (v *SecurityValidator) validateAuthenticationConfig(cluster *neo4jv1alpha1.
 		}
 	}
 
-	// Validate that external auth providers have secretRef
-	if cluster.Spec.Auth.Provider != "" && cluster.Spec.Auth.Provider != "native" {
-		if cluster.Spec.Auth.SecretRef == "" {
-			allErrs = append(allErrs, field.Required(
-				authPath.Child("secretRef"),
-				fmt.Sprintf("secretRef is required for %s auth provider", cluster.Spec.Auth.Provider),
-			))
+	// Also check provider lists for raw config validation
+	for _, p := range cluster.Spec.Auth.AuthenticationProviders {
+		switch {
+		case p == "ldap" && !hasTypedLDAP:
+			allErrs = append(allErrs, v.validateLDAPConfig(cluster)...)
+		case p == "jwt":
+			allErrs = append(allErrs, v.validateJWTConfig(cluster)...)
+		case strings.HasPrefix(p, "oidc") && !hasTypedOIDC:
+			allErrs = append(allErrs, v.validateOIDCConfig(cluster)...)
+		case p == "saml":
+			allErrs = append(allErrs, v.validateSAMLConfig(cluster)...)
+		case p == "kerberos":
+			allErrs = append(allErrs, v.validateKerberosConfig(cluster)...)
 		}
 	}
 

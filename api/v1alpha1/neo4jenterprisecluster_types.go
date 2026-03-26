@@ -250,32 +250,71 @@ type IssuerRef struct {
 	Group string `json:"group,omitempty"`
 }
 
-// AuthSpec defines authentication configuration
+// AuthSpec defines authentication and authorization configuration.
+// Supports multi-provider setups (e.g., ldap+native) and typed configuration
+// for LDAP, OIDC/SSO, JWT, and Kerberos that generates correct neo4j.conf entries.
 type AuthSpec struct {
-	// +kubebuilder:validation:Enum=native;ldap;kerberos;jwt
-	// +kubebuilder:default=native
+	// AuthenticationProviders is an ordered list of authentication providers.
+	// Neo4j evaluates them in order during login. Valid values: native, ldap, oidc-<name>, jwt, kerberos.
+	// For OIDC providers, use the format "oidc-<name>" where <name> matches a key in the OIDC map.
+	// Defaults to ["native"] if both this and Provider are empty.
+	// +optional
+	AuthenticationProviders []string `json:"authenticationProviders,omitempty"`
+
+	// AuthorizationProviders is an ordered list of authorization providers.
+	// Valid values: native, ldap, oidc-<name>, jwt, kerberos.
+	// Defaults to ["native"] if both this and Provider are empty.
+	// +optional
+	AuthorizationProviders []string `json:"authorizationProviders,omitempty"`
+
+	// DEPRECATED: Provider selects a single auth provider. Use AuthenticationProviders/AuthorizationProviders instead.
+	// If set and the new list fields are empty, the operator treats it as AuthenticationProviders: [<provider>].
+	// +kubebuilder:validation:Enum=native;ldap;kerberos;jwt;oidc;saml;custom
+	// +optional
 	Provider string `json:"provider,omitempty"`
 
-	// Secret containing authentication provider configuration
+	// DEPRECATED: Secret containing auth provider configuration. Use provider-specific secretRefs instead.
+	// +optional
 	SecretRef string `json:"secretRef,omitempty"`
 
-	// Admin secret for initial setup
+	// AdminSecret is the name of the Secret containing initial admin credentials (keys: username, password)
+	// +optional
 	AdminSecret string `json:"adminSecret,omitempty"`
 
 	// External Secrets configuration for auth secrets
+	// +optional
 	ExternalSecrets *ExternalSecretsConfig `json:"externalSecrets,omitempty"`
 
-	// Password policy configuration
+	// PasswordPolicy configures Neo4j password policy requirements
+	// +optional
 	PasswordPolicy *PasswordPolicySpec `json:"passwordPolicy,omitempty"`
 
+	// LDAP configures LDAP authentication and authorization
+	// +optional
+	LDAP *Neo4jLDAPSpec `json:"ldap,omitempty"`
+
+	// OIDC configures one or more OIDC/SSO providers. Map keys become the provider name
+	// in Neo4j config (dbms.security.oidc.<name>.*) and in the authentication_providers list (oidc-<name>).
+	// +optional
+	OIDC map[string]Neo4jOIDCProviderSpec `json:"oidc,omitempty"`
+
 	// JWT configuration for JWT auth provider
+	// +optional
 	JWT *JWTAuthSpec `json:"jwt,omitempty"`
 
-	// LDAP configuration for LDAP auth provider
-	LDAP *LDAPAuthSpec `json:"ldap,omitempty"`
-
 	// Kerberos configuration for Kerberos auth provider
+	// +optional
 	Kerberos *KerberosAuthSpec `json:"kerberos,omitempty"`
+
+	// AuthCacheTTL sets dbms.security.auth_cache_ttl (e.g., "10m", "600s").
+	// Controls how long authentication/authorization results are cached.
+	// +optional
+	AuthCacheTTL string `json:"authCacheTTL,omitempty"`
+
+	// TrustStore configures a custom JVM truststore for LDAPS or OIDC with internal CAs.
+	// The operator mounts the CA certificate and creates a JKS truststore via an init container.
+	// +optional
+	TrustStore *TrustStoreSpec `json:"trustStore,omitempty"`
 }
 
 // PasswordPolicySpec defines Neo4j password policy
@@ -323,44 +362,221 @@ type JWTValidationSpec struct {
 	Audience []string `json:"audience,omitempty"`
 }
 
-// LDAPAuthSpec defines LDAP authentication configuration
-type LDAPAuthSpec struct {
-	// LDAP server settings
-	Server *LDAPServerSpec `json:"server,omitempty"`
+// Neo4jLDAPSpec configures LDAP authentication and authorization.
+// Fields map directly to Neo4j's dbms.security.ldap.* configuration keys.
+type Neo4jLDAPSpec struct {
+	// Host is the LDAP server URL (e.g., "ldap://ldap.example.com:389" or "ldaps://ldap.example.com:636")
+	// Maps to: dbms.security.ldap.host
+	// +kubebuilder:validation:Required
+	Host string `json:"host"`
 
-	// User search settings
-	UserSearch *LDAPSearchSpec `json:"userSearch,omitempty"`
+	// UseStartTLS enables STARTTLS on the LDAP connection (use with ldap:// scheme, not ldaps://)
+	// Maps to: dbms.security.ldap.use_starttls
+	// +optional
+	UseStartTLS *bool `json:"useStartTLS,omitempty"`
 
-	// Group search settings
-	GroupSearch *LDAPSearchSpec `json:"groupSearch,omitempty"`
+	// Authentication configures how users authenticate against LDAP
+	// +optional
+	Authentication *LDAPAuthenticationSpec `json:"authentication,omitempty"`
+
+	// Authorization configures how Neo4j resolves roles/groups from LDAP
+	// +optional
+	Authorization *LDAPAuthorizationSpec `json:"authorization,omitempty"`
+
+	// DebugGroupLogging enables debug-level logging for LDAP group lookups.
+	// WARNING: Disable in production as it logs sensitive group information.
+	// Maps to: dbms.security.logs.ldap.groups_at_debug_level_enabled
+	// +optional
+	DebugGroupLogging *bool `json:"debugGroupLogging,omitempty"`
 }
 
-// LDAPServerSpec defines LDAP server configuration
-type LDAPServerSpec struct {
-	// LDAP server URLs
-	URLs []string `json:"urls,omitempty"`
+// LDAPAuthenticationSpec configures LDAP authentication settings.
+type LDAPAuthenticationSpec struct {
+	// UserDNTemplate is the DN template for binding users. Use {0} as the username placeholder.
+	// Examples: "uid={0},ou=users,dc=example,dc=com" or "{0}@example.com" (Active Directory UPN)
+	// Maps to: dbms.security.ldap.authentication.user_dn_template
+	// +optional
+	UserDNTemplate string `json:"userDNTemplate,omitempty"`
 
-	// Enable TLS for LDAP connection
-	// +kubebuilder:default=true
-	TLS bool `json:"tls,omitempty"`
+	// SearchForAttribute enables attribute-based user lookup instead of DN template binding.
+	// When true, the operator uses Attribute to find the user before binding.
+	// Maps to: dbms.security.ldap.authentication.search_for_attribute
+	// +optional
+	SearchForAttribute *bool `json:"searchForAttribute,omitempty"`
 
-	// Skip TLS certificate verification
-	// +kubebuilder:default=false
-	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+	// Attribute is the LDAP attribute to search when SearchForAttribute is true (e.g., "samaccountname")
+	// Maps to: dbms.security.ldap.authentication.attribute
+	// +optional
+	Attribute string `json:"attribute,omitempty"`
+
+	// CacheEnabled enables caching of LDAP authentication results
+	// Maps to: dbms.security.ldap.authentication.cache_enabled
+	// +optional
+	CacheEnabled *bool `json:"cacheEnabled,omitempty"`
 }
 
-// LDAPSearchSpec defines LDAP search configuration
-type LDAPSearchSpec struct {
-	// Search base DN
-	BaseDN string `json:"baseDN,omitempty"`
+// LDAPAuthorizationSpec configures LDAP authorization (group/role lookup) settings.
+type LDAPAuthorizationSpec struct {
+	// UserSearchBase is the base DN for searching user objects (e.g., "ou=users,dc=example,dc=com")
+	// Maps to: dbms.security.ldap.authorization.user_search_base
+	// +optional
+	UserSearchBase string `json:"userSearchBase,omitempty"`
 
-	// Search filter
-	Filter string `json:"filter,omitempty"`
+	// UserSearchFilter is the LDAP filter for finding user objects. {0} is replaced by the username.
+	// Example: "(&(objectClass=user)(sAMAccountName={0}))"
+	// Maps to: dbms.security.ldap.authorization.user_search_filter
+	// +optional
+	UserSearchFilter string `json:"userSearchFilter,omitempty"`
 
-	// Search scope
-	// +kubebuilder:validation:Enum=base;one;sub
-	// +kubebuilder:default=sub
-	Scope string `json:"scope,omitempty"`
+	// GroupMembershipAttributes are the user object attributes containing group membership (e.g., ["memberOf"])
+	// Maps to: dbms.security.ldap.authorization.group_membership_attributes (comma-separated)
+	// +optional
+	GroupMembershipAttributes []string `json:"groupMembershipAttributes,omitempty"`
+
+	// GroupToRoleMapping maps LDAP group DNs to Neo4j roles.
+	// Key: LDAP group DN, Value: comma-separated Neo4j roles (e.g., "admin,architect").
+	// Built-in roles: admin, architect, publisher, editor, reader.
+	// Maps to: dbms.security.ldap.authorization.group_to_role_mapping (semicolon-separated)
+	// +optional
+	GroupToRoleMapping map[string]string `json:"groupToRoleMapping,omitempty"`
+
+	// AccessPermittedGroup restricts LDAP authentication to members of this group only.
+	// Users with valid LDAP credentials but not in this group are denied access.
+	// Maps to: dbms.security.ldap.authorization.access_permitted_group
+	// +optional
+	AccessPermittedGroup string `json:"accessPermittedGroup,omitempty"`
+
+	// UseSystemAccount enables using a dedicated system account for LDAP authorization queries
+	// instead of the authenticating user's own credentials.
+	// Maps to: dbms.security.ldap.authorization.use_system_account
+	// +optional
+	UseSystemAccount *bool `json:"useSystemAccount,omitempty"`
+
+	// SystemAccountSecretRef is the name of a Secret containing the LDAP system account credentials.
+	// The Secret must have keys "username" (full DN) and "password".
+	// These are injected as env vars, never stored in the ConfigMap.
+	// Required when UseSystemAccount is true.
+	// +optional
+	SystemAccountSecretRef string `json:"systemAccountSecretRef,omitempty"`
+
+	// NestedGroupsEnabled enables recursive group membership resolution.
+	// Maps to: dbms.security.ldap.authorization.nested_groups_enabled
+	// +optional
+	NestedGroupsEnabled *bool `json:"nestedGroupsEnabled,omitempty"`
+
+	// NestedGroupsSearchFilter is the LDAP filter for resolving nested groups. {0} is replaced by the user DN.
+	// For Active Directory, use: "(&(objectclass=group)(member:1.2.840.113556.1.4.1941:={0}))"
+	// Maps to: dbms.security.ldap.authorization.nested_groups_search_filter
+	// +optional
+	NestedGroupsSearchFilter string `json:"nestedGroupsSearchFilter,omitempty"`
+}
+
+// Neo4jOIDCProviderSpec configures a single OIDC/SSO provider.
+// The map key in AuthSpec.OIDC becomes the <provider> in dbms.security.oidc.<provider>.*.
+type Neo4jOIDCProviderSpec struct {
+	// DisplayName shown on the Neo4j Browser/Bloom login screen
+	// Maps to: dbms.security.oidc.<name>.display_name
+	// +optional
+	DisplayName string `json:"displayName,omitempty"`
+
+	// WellKnownDiscoveryURI is the OIDC discovery endpoint that auto-configures other endpoints.
+	// Either this or manual endpoints (AuthEndpoint, TokenEndpoint, JWKSURI, Issuer) must be set.
+	// Maps to: dbms.security.oidc.<name>.well_known_discovery_uri
+	// +optional
+	WellKnownDiscoveryURI string `json:"wellKnownDiscoveryURI,omitempty"`
+
+	// AuthEndpoint is the authorization endpoint (manual override, auto-populated from discovery)
+	// Maps to: dbms.security.oidc.<name>.auth_endpoint
+	// +optional
+	AuthEndpoint string `json:"authEndpoint,omitempty"`
+
+	// TokenEndpoint is the token endpoint (manual override)
+	// Maps to: dbms.security.oidc.<name>.token_endpoint
+	// +optional
+	TokenEndpoint string `json:"tokenEndpoint,omitempty"`
+
+	// JWKSURI is the JSON Web Key Set endpoint for JWT signature verification (manual override)
+	// Maps to: dbms.security.oidc.<name>.jwks_uri
+	// +optional
+	JWKSURI string `json:"jwksURI,omitempty"`
+
+	// UserInfoURI is the UserInfo endpoint (manual override)
+	// Maps to: dbms.security.oidc.<name>.user_info_uri
+	// +optional
+	UserInfoURI string `json:"userInfoURI,omitempty"`
+
+	// Issuer identifier, validated against the JWT "iss" claim (manual override)
+	// Maps to: dbms.security.oidc.<name>.issuer
+	// +optional
+	Issuer string `json:"issuer,omitempty"`
+
+	// Audience is the expected JWT "aud" claim value (typically your OIDC client ID)
+	// Maps to: dbms.security.oidc.<name>.audience
+	// +kubebuilder:validation:Required
+	Audience string `json:"audience"`
+
+	// AuthFlow selects the OAuth2 flow: "pkce" (recommended) or "implicit"
+	// Maps to: dbms.security.oidc.<name>.auth_flow
+	// +kubebuilder:validation:Enum=pkce;implicit
+	// +kubebuilder:default=pkce
+	// +optional
+	AuthFlow string `json:"authFlow,omitempty"`
+
+	// Claims configures JWT claim mapping for username and group extraction
+	// +optional
+	Claims *OIDCClaimsSpec `json:"claims,omitempty"`
+
+	// GetGroupsFromUserInfo fetches the groups claim from the UserInfo endpoint instead of the JWT
+	// Maps to: dbms.security.oidc.<name>.get_groups_from_user_info
+	// +optional
+	GetGroupsFromUserInfo *bool `json:"getGroupsFromUserInfo,omitempty"`
+
+	// GetUsernameFromUserInfo fetches the username claim from the UserInfo endpoint instead of the JWT
+	// Maps to: dbms.security.oidc.<name>.get_username_from_user_info
+	// +optional
+	GetUsernameFromUserInfo *bool `json:"getUsernameFromUserInfo,omitempty"`
+
+	// GroupToRoleMapping maps OIDC groups/roles to Neo4j roles.
+	// Key: IdP group name, Value: comma-separated Neo4j roles.
+	// Maps to: dbms.security.oidc.<name>.authorization.group_to_role_mapping
+	// +optional
+	GroupToRoleMapping map[string]string `json:"groupToRoleMapping,omitempty"`
+
+	// AuthParams are additional parameters sent to the authorization endpoint (semicolon-separated key=value)
+	// Maps to: dbms.security.oidc.<name>.auth_params
+	// +optional
+	AuthParams string `json:"authParams,omitempty"`
+
+	// TokenParams are additional parameters sent to the token endpoint (semicolon-separated key=value)
+	// Maps to: dbms.security.oidc.<name>.token_params
+	// +optional
+	TokenParams string `json:"tokenParams,omitempty"`
+}
+
+// OIDCClaimsSpec configures which JWT claims are used for username and group extraction
+type OIDCClaimsSpec struct {
+	// Username is the JWT claim used as the Neo4j database username (default: "sub")
+	// Maps to: dbms.security.oidc.<name>.claims.username
+	// +optional
+	Username string `json:"username,omitempty"`
+
+	// Groups is the JWT claim containing roles/groups for authorization mapping
+	// Maps to: dbms.security.oidc.<name>.claims.groups
+	// +optional
+	Groups string `json:"groups,omitempty"`
+}
+
+// TrustStoreSpec configures a custom JVM truststore for LDAPS or OIDC with internal CAs.
+// The operator creates an init container that converts the PEM CA certificate into a JKS truststore.
+type TrustStoreSpec struct {
+	// SecretRef is the name of a Secret containing the CA certificate in PEM format
+	// +kubebuilder:validation:Required
+	SecretRef string `json:"secretRef"`
+
+	// Key is the key in the Secret containing the CA certificate. Defaults to "ca.crt".
+	// +kubebuilder:default="ca.crt"
+	// +optional
+	Key string `json:"key,omitempty"`
 }
 
 // KerberosAuthSpec defines Kerberos authentication configuration
