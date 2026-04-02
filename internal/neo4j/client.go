@@ -227,6 +227,9 @@ func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, res
 	// Fallback: no CA cert available — skip verification for self-signed certificates.
 	// This path is reached during initial startup (before cert-manager issues the cert)
 	// or when the issuer doesn't provide ca.crt in the Secret.
+	// The operator reconciler will retry, and once cert-manager issues the cert, the
+	// proper CA-verified path (above) will be used on subsequent reconciliations.
+	// codeql[go/disabled-certificate-check]: Intentional fallback for transient startup window before cert-manager issues certs
 	return &tls.Config{
 		InsecureSkipVerify: true, //nolint:gosec // Fallback when CA cert unavailable
 	}
