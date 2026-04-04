@@ -449,7 +449,7 @@ kubectl create secret generic neo4j-admin-secret \
 # Reference in your cluster specification
 spec:
   auth:
-    provider: native  # Options: native, ldap, kerberos, jwt
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret
 ```
 

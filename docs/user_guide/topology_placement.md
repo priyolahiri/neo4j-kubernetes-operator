@@ -332,7 +332,7 @@ spec:
 
   # Authentication
   auth:
-    provider: native
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret
 
   # TLS for production

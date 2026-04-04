@@ -235,7 +235,7 @@ Backup encryption configuration.
 |-------|------|----------|-------------|
 | `enabled` | `bool` | ❌ | Enable backup encryption |
 | `keySecret` | `string` | ❌ | Name of a Kubernetes Secret containing the encryption key |
-| `algorithm` | `string` | ❌ | Encryption algorithm: `"AES256"` (default) or `"ChaCha20"` |
+| `algorithm` | `string` | ❌ | Encryption algorithm: `"AES256"` (default) or `"ChaCha20Poly1305"` |
 
 ## Status
 

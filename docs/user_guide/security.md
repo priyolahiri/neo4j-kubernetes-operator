@@ -352,7 +352,7 @@ spec:
       host: "ldaps://ldap.internal.corp:636"
       # ... other LDAP config
     trustStore:
-      secretRef: corp-ca-cert       # Secret containing the CA certificate
+      name: corp-ca-cert             # Secret containing the CA certificate
       key: ca.crt                   # Key in the Secret (default: ca.crt)
 ```
 
@@ -424,7 +424,7 @@ spec:
       realm: "CORP.EXAMPLE.COM"
       servicePrincipal: "neo4j/neo4j-server.corp.example.com@CORP.EXAMPLE.COM"
       keytab:
-        secretRef: neo4j-keytab-secret
+        name: neo4j-keytab-secret
         key: keytab
 ```
 

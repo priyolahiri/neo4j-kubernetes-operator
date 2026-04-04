@@ -110,7 +110,7 @@ source:
       path: production/logs/
       cloud:
         provider: aws
-    logRetention: "7d"
+    logRetention: "168h"
     validateLogIntegrity: true
 ```
 
@@ -122,7 +122,7 @@ Point-in-time recovery configuration for advanced restore scenarios.
 |-------|------|----------|-------------|
 | `baseBackup` | [`BaseBackupSource`](#basebackupsource) | ❌ | Base backup to restore before applying transaction logs |
 | `logStorage` | [`StorageLocation`](#storagelocation) | ❌ | Storage location for transaction logs |
-| `logRetention` | `string` | ❌ | Transaction log retention period (default: `"7d"`) |
+| `logRetention` | `string` | ❌ | Transaction log retention period (default: `"168h"`) |
 | `recoveryPointObjective` | `string` | ❌ | Recovery point objective (default: `"1m"`) |
 | `validateLogIntegrity` | `bool` | ❌ | Validate transaction log integrity before restore (default: `true`) |
 | `compression` | [`CompressionConfig`](#compressionconfig) | ❌ | Compression settings for transaction logs |
@@ -489,7 +489,7 @@ spec:
         cloud:
           provider: aws
           credentialsSecretRef: aws-restore-credentials
-      logRetention: "7d"
+      logRetention: "168h"
       recoveryPointObjective: "5m"
       validateLogIntegrity: true
       compression:
