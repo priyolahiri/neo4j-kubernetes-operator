@@ -145,7 +145,7 @@ Authentication configuration.
 
 ```yaml
 auth:
-  provider: native              # native, ldap, kerberos, jwt
+  authenticationProviders: ["native"]
   adminSecret: neo4j-admin-secret
   passwordPolicy:
     minLength: 8
@@ -515,7 +515,7 @@ spec:
         nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
 
   auth:
-    provider: native
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret
 
   env:

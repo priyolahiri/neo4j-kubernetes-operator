@@ -39,7 +39,7 @@ spec:
 
   # Authentication configuration
   auth:
-    provider: native
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret  # Reference to admin credentials secret
 
   # Service configuration

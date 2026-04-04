@@ -25,7 +25,7 @@ spec:
       name: ca-cluster-issuer
       kind: ClusterIssuer
   auth:
-    provider: native
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret
   env:
   config:

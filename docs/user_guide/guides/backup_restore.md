@@ -659,7 +659,7 @@ spec:
     verify: true
     tempPath: /tmp/neo4j-backup-temp
   retention:
-    maxAge: "7d"
+    maxAge: "168h"
     maxCount: 7
     deletePolicy: Delete
 ```
@@ -854,7 +854,7 @@ spec:
         cloud:
           provider: aws
           credentialsSecretRef: aws-backup-creds
-      logRetention: "7d"
+      logRetention: "168h"
       recoveryPointObjective: "5m"
       validateLogIntegrity: true
       compression:

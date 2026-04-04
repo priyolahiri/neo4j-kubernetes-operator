@@ -225,7 +225,7 @@ backupConfig:
   enabled: boolean           # Optional: true
   schedule: string          # Optional: Cron expression
   storage: StorageLocation  # Optional
-  retention: string         # Optional: "7d"
+  retention: string         # Optional: "168h"
   consistencyMode: string   # Optional: "strict"|"eventual"
   timeout: string          # Optional: "30m"
 ```
@@ -235,7 +235,7 @@ backupConfig:
 | `enabled` | `boolean` | true | Enable coordinated backups |
 | `schedule` | `string` | - | Cron schedule for backups |
 | `storage` | `StorageLocation` | - | Backup storage configuration |
-| `retention` | `string` | "7d" | Backup retention policy |
+| `retention` | `string` | "168h" | Backup retention policy |
 | `consistencyMode` | `string` | "strict" | "strict" or "eventual" consistency |
 | `timeout` | `string` | "30m" | Maximum backup operation timeout |
 

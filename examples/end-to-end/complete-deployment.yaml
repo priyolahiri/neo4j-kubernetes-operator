@@ -67,7 +67,7 @@ spec:
   # Authentication
   auth:
     adminSecret: neo4j-admin-secret
-    provider: native
+    authenticationProviders: ["native"]
     passwordPolicy:
       minLength: 12
       requireDigit: true

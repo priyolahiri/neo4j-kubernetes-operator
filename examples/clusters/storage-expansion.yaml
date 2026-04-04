@@ -65,5 +65,5 @@ spec:
     mode: disabled
 
   auth:
-    provider: native
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret
