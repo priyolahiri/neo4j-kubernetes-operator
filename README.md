@@ -449,7 +449,7 @@ kubectl create secret generic neo4j-admin-secret \
 # Reference in your cluster specification
 spec:
   auth:
-    provider: native  # Options: native, ldap, kerberos, jwt
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret
 ```
 
@@ -566,6 +566,12 @@ kubectl logs -l app.kubernetes.io/name=neo4j-operator
 Note: "Compliance-ready logging and auditing" means the operator exposes Neo4j logging/audit controls via `spec.config` and emits Kubernetes Events for key actions; you still need to enable the desired Neo4j log settings and ship/retain logs per your compliance requirements.
 
 ## 🎯 Recent Improvements
+
+### v1.6.0-alpha: API Stabilization (Breaking Changes)
+
+> **⚠️ Upgrading from v1.5.0-alpha or earlier requires manifest changes.** See the [Migration Guide](docs/user_guide/migration_guide.md#upgrading-to-v160-alpha-api-stabilization) for details.
+
+Key changes: `targetCluster` renamed to `clusterRef` in Neo4jRestore, deprecated `auth.provider`/`auth.secretRef` removed in favor of `authenticationProviders`/`authorizationProviders` lists, standalone `spec.route` and `spec.persistence` consolidated into existing fields, secret reference types unified into `SecretKeyRef`.
 
 ### Latest Version Enhancements
 - **Property Sharding Support (GA)**: Neo4j property sharding (Infinigraph, introduced in 2025.12)

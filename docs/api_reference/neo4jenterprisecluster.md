@@ -162,9 +162,7 @@ Specifies role constraints for individual servers.
 |---|---|---|
 | `authenticationProviders` | `[]string` | Ordered list of authentication providers (e.g., `["ldap", "native"]`). Default: `["native"]` |
 | `authorizationProviders` | `[]string` | Ordered list of authorization providers. Default: `["native"]` |
-| `provider` | `string` | *Deprecated.* Single auth provider. Use `authenticationProviders` instead. |
 | `adminSecret` | `string` | Secret containing admin username and password (keys: `username`, `password`) |
-| `secretRef` | `string` | *Deprecated.* Use provider-specific typed fields instead. |
 | `externalSecrets` | [`*ExternalSecretsConfig`](#externalsecretsconfig) | External secrets configuration |
 | `passwordPolicy` | [`*PasswordPolicySpec`](#passwordpolicyspec) | Password policy configuration |
 | `ldap` | [`*Neo4jLDAPSpec`](#neo4jldapspec) | LDAP authentication and authorization configuration |
@@ -172,7 +170,7 @@ Specifies role constraints for individual servers.
 | `jwt` | [`*JWTAuthSpec`](#jwtauthspec) | JWT authentication configuration |
 | `kerberos` | [`*KerberosAuthSpec`](#kerberosauthspec) | Kerberos authentication configuration |
 | `authCacheTTL` | `string` | Auth cache TTL (e.g., `"10m"`, `"600s"`). Maps to `dbms.security.auth_cache_ttl` |
-| `trustStore` | [`*TrustStoreSpec`](#truststorespec) | Custom JVM truststore for LDAPS or OIDC with internal CAs |
+| `trustStore` | [`*SecretKeyRef`](#secretkeyref) | Custom JVM truststore for LDAPS or OIDC with internal CAs |
 
 ### Neo4jLDAPSpec
 
@@ -234,11 +232,11 @@ Specifies role constraints for individual servers.
 | `username` | `string` | JWT claim for Neo4j username (default: `"sub"`) |
 | `groups` | `string` | JWT claim for groups/roles |
 
-### TrustStoreSpec
+### SecretKeyRef
 
 | Field | Type | Description |
 |---|---|---|
-| `secretRef` | `string` | **Required.** Name of Secret containing CA certificate (PEM format) |
+| `name` | `string` | **Required.** Name of Secret containing CA certificate (PEM format) |
 | `key` | `string` | Key in the Secret containing the CA cert (default: `"ca.crt"`) |
 
 ### JWTAuthSpec
@@ -262,13 +260,13 @@ Specifies role constraints for individual servers.
 |---|---|---|
 | `realm` | `string` | Kerberos realm |
 | `servicePrincipal` | `string` | Service principal |
-| `keytab` | [`*KerberosKeytabSpec`](#kerberoskeytabspec) | Keytab configuration |
+| `keytab` | [`*SecretKeyRef`](#secretkeyref-1) | Keytab configuration |
 
-### KerberosKeytabSpec
+### SecretKeyRef
 
 | Field | Type | Description |
 |---|---|---|
-| `secretRef` | `string` | Secret containing keytab file |
+| `name` | `string` | Secret containing keytab file |
 | `key` | `string` | Key in secret containing keytab (default: `"keytab"`) |
 
 ### SecurityContextSpec
@@ -374,7 +372,7 @@ Enables integration with [Neo4j Aura Fleet Management](https://neo4j.com/docs/au
 | Field | Type | Description |
 |---|---|---|
 | `enabled` | `bool` | Enable Aura Fleet Management integration (default: `false`) |
-| `tokenSecretRef` | [`*AuraTokenSecretRef`](#auratokensecretref) | Reference to the Kubernetes Secret holding the Aura registration token (optional; registration deferred if omitted) |
+| `tokenSecretRef` | [`*SecretKeyRef`](#secretkeyref-2) | Reference to the Kubernetes Secret holding the Aura registration token (optional; registration deferred if omitted) |
 
 **Status fields** (read-only, set by the operator):
 
@@ -398,7 +396,7 @@ See [Aura Fleet Management Guide](../user_guide/aura_fleet_management.md) for fu
 
 ---
 
-### AuraTokenSecretRef
+### SecretKeyRef
 
 | Field | Type | Description |
 |---|---|---|

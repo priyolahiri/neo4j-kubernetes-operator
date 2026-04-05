@@ -86,7 +86,7 @@ spec:
 
   auth:
     adminSecret: cluster-admin-secret
-    provider: native
+    authenticationProviders: ["native"]
 
   # Multi-tenant configuration
   config:

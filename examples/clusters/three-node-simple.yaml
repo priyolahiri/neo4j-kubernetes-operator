@@ -46,7 +46,7 @@ spec:
   # Authentication configuration
   # The operator manages NEO4J_ACCEPT_LICENSE_AGREEMENT automatically
   auth:
-    provider: native
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret
 
   # Custom Neo4j configuration

@@ -55,7 +55,7 @@ spec:
   #     --from-literal=username=neo4j \
   #     --from-literal=password=your-secure-password
   auth:
-    provider: native  # Default authentication provider
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret
 
   # Additional environment variables (optional)
