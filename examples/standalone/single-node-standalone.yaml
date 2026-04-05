@@ -24,13 +24,6 @@ spec:
     className: standard  # Use your cluster's default storage class
     size: "10Gi"        # Adjust based on your data needs
 
-  # Persistence configuration
-  persistence:
-    enabled: true
-    retentionPolicy: Delete  # Delete PVCs when standalone is deleted
-    accessModes:
-      - ReadWriteOnce
-
   # Resource allocation
   resources:
     requests:
@@ -46,7 +39,7 @@ spec:
 
   # Authentication configuration
   auth:
-    provider: native
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret  # Reference to admin credentials secret
 
   # Service configuration

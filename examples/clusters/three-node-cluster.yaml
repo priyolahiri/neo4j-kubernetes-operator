@@ -49,7 +49,7 @@ spec:
   # Authentication configuration
   # The operator manages authentication automatically
   auth:
-    provider: native
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret
 
   # Custom Neo4j configuration for production

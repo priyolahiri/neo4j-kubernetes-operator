@@ -53,7 +53,7 @@ kubectl logs job/simple-backup-backup
 
 ## Supported Deployment Types
 
-Both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone` are fully supported as backup and restore targets. The `targetCluster` field (on restore) and `target.name` / `target.clusterRef` fields (on backup) can reference either type — the operator detects the deployment type automatically.
+Both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone` are fully supported as backup and restore targets. The `clusterRef` field (on restore) and `target.name` / `target.clusterRef` fields (on backup) can reference either type — the operator detects the deployment type automatically.
 
 ## Neo4j Version Requirements
 
@@ -659,7 +659,7 @@ spec:
     verify: true
     tempPath: /tmp/neo4j-backup-temp
   retention:
-    maxAge: "7d"
+    maxAge: "168h"
     maxCount: 7
     deletePolicy: Delete
 ```
@@ -758,7 +758,7 @@ kind: Neo4jRestore
 metadata:
   name: restore-from-backup
 spec:
-  targetCluster: my-neo4j-cluster
+  clusterRef: my-neo4j-cluster
   databaseName: neo4j
   source:
     type: backup
@@ -782,7 +782,7 @@ kind: Neo4jRestore
 metadata:
   name: restore-from-s3
 spec:
-  targetCluster: recovery-cluster
+  clusterRef: recovery-cluster
   databaseName: myapp-db
   source:
     type: storage
@@ -805,7 +805,7 @@ spec:
 
 #### Restore to a Standalone Instance
 
-`targetCluster` can reference a `Neo4jEnterpriseStandalone` as well as a `Neo4jEnterpriseCluster`:
+`clusterRef` can reference a `Neo4jEnterpriseStandalone` as well as a `Neo4jEnterpriseCluster`:
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1alpha1
@@ -813,7 +813,7 @@ kind: Neo4jRestore
 metadata:
   name: restore-to-standalone
 spec:
-  targetCluster: my-standalone   # References Neo4jEnterpriseStandalone
+  clusterRef: my-standalone   # References Neo4jEnterpriseStandalone
   databaseName: neo4j
   source:
     type: backup
@@ -838,7 +838,7 @@ kind: Neo4jRestore
 metadata:
   name: pitr-restore
 spec:
-  targetCluster: recovery-cluster
+  clusterRef: recovery-cluster
   databaseName: production-db
   source:
     type: pitr
@@ -854,7 +854,7 @@ spec:
         cloud:
           provider: aws
           credentialsSecretRef: aws-backup-creds
-      logRetention: "7d"
+      logRetention: "168h"
       recoveryPointObjective: "5m"
       validateLogIntegrity: true
       compression:
@@ -883,7 +883,7 @@ kind: Neo4jRestore
 metadata:
   name: pitr-storage-restore
 spec:
-  targetCluster: disaster-recovery
+  clusterRef: disaster-recovery
   databaseName: critical-app
   source:
     type: pitr
@@ -927,7 +927,7 @@ kind: Neo4jRestore
 metadata:
   name: restore-with-hooks
 spec:
-  targetCluster: my-cluster
+  clusterRef: my-cluster
   databaseName: myapp
   source:
     type: backup
@@ -956,7 +956,7 @@ kind: Neo4jRestore
 metadata:
   name: restore-with-job-hooks
 spec:
-  targetCluster: staging-cluster
+  clusterRef: staging-cluster
   databaseName: app-data
   source:
     type: backup

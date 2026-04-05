@@ -145,7 +145,7 @@ Authentication configuration.
 
 ```yaml
 auth:
-  provider: native              # native, ldap, kerberos, jwt
+  authenticationProviders: ["native"]
   adminSecret: neo4j-admin-secret
   passwordPolicy:
     minLength: 8
@@ -221,17 +221,6 @@ upgradeStrategy:
 ```
 
 For the full type definition see [`UpgradeStrategySpec`](neo4jenterprisecluster.md#upgradestrategyspec).
-
-#### `persistence` (PersistenceSpec)
-Persistence configuration for standalone deployments.
-
-```yaml
-persistence:
-  enabled: true                 # Enable persistent storage
-  retentionPolicy: Delete       # Delete or Retain PVCs on deletion
-  accessModes:
-    - ReadWriteOnce
-```
 
 #### `backups` (BackupsSpec)
 Default backup configuration.
@@ -526,7 +515,7 @@ spec:
         nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
 
   auth:
-    provider: native
+    authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret
 
   env:
@@ -576,10 +565,6 @@ spec:
     type: LoadBalancer
     annotations:
       service.beta.kubernetes.io/aws-load-balancer-type: nlb
-
-  persistence:
-    enabled: true
-    retentionPolicy: Retain
 
   monitoring:
     enabled: true
@@ -726,7 +711,7 @@ kind: Neo4jRestore
 metadata:
   name: restore-dev-neo4j
 spec:
-  targetCluster: dev-neo4j        # Target standalone instance
+  clusterRef: dev-neo4j            # Target standalone instance
   databaseName: neo4j
   source:
     type: backup

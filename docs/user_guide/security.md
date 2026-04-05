@@ -88,6 +88,12 @@ spec:
 
 The operator provides first-class, typed configuration for external authentication providers. When you use the typed fields (described below), the operator automatically generates the correct `neo4j.conf` entries — you do not need to manually place `dbms.security.*` keys in `spec.config`.
 
+**Where to start:**
+- **Most deployments**: [Native Authentication](#native-authentication) — just create an admin secret and go.
+- **Corporate SSO**: [OIDC / SSO Integration](#oidc--sso-integration) — Okta, Azure AD, Google, or any OIDC provider.
+- **Active Directory / LDAP**: [LDAP Integration](#ldap-integration) — bind templates, group mapping, nested groups.
+- **Internal CAs**: [JVM TrustStore](#jvm-truststore-for-internal-cas) — if your LDAP/OIDC endpoints use certificates signed by a private CA.
+
 ### Multi-Provider Support
 
 Neo4j evaluates authentication providers in order. You can combine providers for fallback (e.g., LDAP first, then native for the initial admin user):
@@ -352,7 +358,7 @@ spec:
       host: "ldaps://ldap.internal.corp:636"
       # ... other LDAP config
     trustStore:
-      secretRef: corp-ca-cert       # Secret containing the CA certificate
+      name: corp-ca-cert             # Secret containing the CA certificate
       key: ca.crt                   # Key in the Secret (default: ca.crt)
 ```
 
@@ -424,7 +430,7 @@ spec:
       realm: "CORP.EXAMPLE.COM"
       servicePrincipal: "neo4j/neo4j-server.corp.example.com@CORP.EXAMPLE.COM"
       keytab:
-        secretRef: neo4j-keytab-secret
+        name: neo4j-keytab-secret
         key: keytab
 ```
 
@@ -535,9 +541,7 @@ spec:
           app.kubernetes.io/name: neo4j
     ports:
     - protocol: TCP
-      port: 5000  # Discovery
-    - protocol: TCP
-      port: 6000  # Transaction
+      port: 6000  # Discovery (V2)
     - protocol: TCP
       port: 7000  # RAFT
 
