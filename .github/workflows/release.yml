@@ -276,6 +276,20 @@ jobs:
           --create-namespace
         \`\`\`
 
+        ## ⚠️ Breaking Changes (v1.6.0-alpha)
+
+        This release includes API field changes in preparation for v1beta1 promotion.
+        **Manifests from v1.5.0-alpha and earlier require updates before upgrading.**
+
+        Key changes:
+        - \`Neo4jRestore\`: \`spec.targetCluster\` renamed to \`spec.clusterRef\`
+        - \`AuthSpec\`: \`provider\` and \`secretRef\` fields removed — use \`authenticationProviders\`/\`authorizationProviders\` lists
+        - Standalone: \`spec.route\` moved to \`spec.service.route\`; \`spec.persistence\` removed — use \`spec.storage.retentionPolicy\`
+        - TrustStore/Kerberos: \`secretRef\` field renamed to \`name\`
+        - Backup encryption: \`ChaCha20\` algorithm renamed to \`ChaCha20Poly1305\`
+
+        **[Full Migration Guide →](./docs/user_guide/migration_guide.md#upgrading-to-v160-alpha-api-stabilization)**
+
         ## 📋 Requirements
 
         - Kubernetes 1.28+
