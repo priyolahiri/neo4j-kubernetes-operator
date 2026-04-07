@@ -23,7 +23,9 @@ jobs:
     name: Extended Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: ${{ fromJson(github.event.inputs.timeout-minutes || '90') }}
-    permissions: write-all
+    permissions:
+      contents: read
+      packages: read
 
     steps:
     - name: Checkout code
@@ -162,6 +164,7 @@ jobs:
   extended-integration-test-summary:
     name: Extended Integration Test Summary
     runs-on: ubuntu-latest
+    permissions: {}
     needs: [extended-integration-tests]
     if: always()
 
