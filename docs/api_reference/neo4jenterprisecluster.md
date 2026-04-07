@@ -146,7 +146,7 @@ Specifies role constraints for individual servers.
 |---|---|---|
 | `className` | `string` | Storage class name (immutable after creation) |
 | `size` | `string` | Storage size (e.g., `"10Gi"`). Can be increased after creation — the operator automatically expands PVCs and recreates the StatefulSet with zero downtime. **Cannot be decreased** (PVC shrink is not supported by Kubernetes). Requires the StorageClass to have `allowVolumeExpansion: true`. |
-| `retentionPolicy` | `string` | PVC retention policy: `"Delete"` (default) or `"Retain"` |
+| `retentionPolicy` | `string` | PVC retention policy: `"Delete"` (default) permanently removes PVCs on deletion; `"Retain"` preserves them. **Use `Retain` for production to prevent data loss.** See [Storage and PVC Retention](../user_guide/configuration.md#storage-and-pvc-retention). |
 | `backupStorage` | [`*BackupStorageSpec`](#backupstoragespec) | Additional storage for backups |
 
 ### BackupStorageSpec

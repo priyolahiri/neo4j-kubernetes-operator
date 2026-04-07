@@ -39,7 +39,7 @@ The `pullSecrets` field accepts a list of secret names. Secrets must exist in th
 
 **Cloud-managed registries**: For ECR (AWS), GCR (Google Cloud), or ACR (Azure), use workload identity / IRSA to avoid long-lived credentials where possible. The `pullSecrets` field supports any Kubernetes `kubernetes.io/dockerconfigjson` secret.
 *   `spec.topology`: (Cluster only) Defines the architecture of your cluster. Specify the total number of servers (minimum 2) that will self-organize into primary and secondary roles based on database requirements. You can optionally configure server role constraints.
-*   `spec.storage`: Configures the persistent storage for the cluster, including storage class and size.
+*   `spec.storage`: Configures the persistent storage for the cluster, including storage class, size, and [retention policy](#storage-and-pvc-retention).
 *   `spec.auth`: Manages authentication, allowing you to specify the provider (native, LDAP, etc.) and the secret containing credentials.
 *   `spec.resources`: Allows you to set specific CPU and memory requests and limits for the Neo4j pods, which is crucial for performance tuning.
 *   `spec.backups`: (Deprecated) Use the separate Neo4jBackup CRD for backup management. The operator now uses a centralized backup StatefulSet for resource efficiency.
@@ -58,6 +58,66 @@ The `pullSecrets` field accepts a list of secret names. Secrets must exist in th
 *   `spec.env`: Add environment variables to Neo4j pods. Note that NEO4J_AUTH and NEO4J_ACCEPT_LICENSE_AGREEMENT are managed by the operator.
 *   `spec.service`: Configure service type (ClusterIP, NodePort, LoadBalancer), annotations, and external access settings (Ingress; OpenShift Route).
 *   `spec.propertySharding`: (Neo4j 2025.12+) Enable property sharding for horizontal scaling of large datasets. See the [Property Sharding Guide](property_sharding.md) for detailed configuration options.
+
+## Storage and PVC Retention
+
+The `spec.storage` section configures persistent volumes for Neo4j data. The most important field users overlook is `retentionPolicy`, which controls what happens to your data when a cluster or standalone is deleted.
+
+### Retention Policy
+
+| Value | Behavior | Use When |
+|-------|----------|----------|
+| `Delete` (default) | PVCs are **permanently deleted** when the cluster/standalone is removed | Development, testing, temporary deployments |
+| `Retain` | PVCs are **preserved** after deletion and can be manually recovered or reused | Production, valuable data, compliance requirements |
+
+> **Data loss warning:** The default is `Delete`. If you delete a `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` resource without changing this default, **all data on the associated PVCs will be permanently lost**. There is no undo. For production deployments, always set `retentionPolicy: Retain`.
+
+### Configuration
+
+```yaml
+spec:
+  storage:
+    className: premium-rwo        # Your StorageClass
+    size: "100Gi"
+    retentionPolicy: Retain       # Keep PVCs on deletion (recommended for production)
+```
+
+This applies identically to both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone`.
+
+### What happens with each policy
+
+**With `Delete` (default):**
+1. You run `kubectl delete neo4jenterprisecluster my-cluster`
+2. The operator deletes the StatefulSet and all associated PVCs
+3. The underlying PersistentVolumes are released and reclaimed per the StorageClass `reclaimPolicy`
+4. Data is gone
+
+**With `Retain`:**
+1. You run `kubectl delete neo4jenterprisecluster my-cluster`
+2. The operator deletes the StatefulSet but **leaves PVCs intact**
+3. PVCs remain in the namespace with their data
+4. You can inspect the data, attach it to a new deployment, or manually delete when ready
+
+### Checking current policy
+
+```bash
+# Check the retention policy of a running cluster
+kubectl get neo4jenterprisecluster my-cluster -o jsonpath='{.spec.storage.retentionPolicy}'
+
+# List PVCs that would be affected
+kubectl get pvc -l app=my-cluster
+```
+
+### Recovering retained PVCs
+
+If you deleted a cluster with `Retain` and want to redeploy using the same data, create a new cluster with the same name and storage configuration. The StatefulSet will reattach to the existing PVCs (matched by name).
+
+### Best practices
+
+- **Production**: Always set `retentionPolicy: Retain` and rely on backups (via `Neo4jBackup` CRD) for disaster recovery
+- **Development**: `Delete` is fine for ephemeral environments — keeps namespaces clean
+- **CI/CD**: Use `Delete` in test pipelines to avoid PVC accumulation
+- **Before deletion**: Always verify the retention policy before deleting a cluster: `kubectl get neo4jenterprisecluster <name> -o jsonpath='{.spec.storage.retentionPolicy}'`
 
 ## MCP Server
 
