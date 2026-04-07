@@ -118,7 +118,7 @@ jobs:
 
     - name: Build and push operator image
       id: build-operator
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7
       with:
         context: .
         push: true
