@@ -25,6 +25,7 @@ jobs:
   preflight:
     name: Preflight secrets check
     runs-on: ubuntu-latest
+    permissions: {}
     outputs:
       has_ocp_secrets: ${{ steps.check.outputs.has_ocp_secrets }}
     steps:
@@ -42,6 +43,9 @@ jobs:
   bundle-and-catalog:
     name: Build & Push OLM Bundle
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     outputs:
       bundle_image: ${{ steps.out.outputs.bundle_image }}
       catalog_image: ${{ steps.out.outputs.catalog_image }}
@@ -85,6 +89,8 @@ jobs:
     name: OpenShift SNO OLM Smoke
     needs: [bundle-and-catalog, preflight]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     if: ${{ needs.preflight.outputs.has_ocp_secrets == 'true' }}
     env:
       OCP_API: ${{ secrets.OCP_API }}
@@ -142,6 +148,7 @@ jobs:
   openshift-sno-olm-smoke-skip:
     name: OpenShift SNO OLM Smoke (Skipped - missing OCP_API/OCP_TOKEN)
     runs-on: ubuntu-latest
+    permissions: {}
     needs: preflight
     if: ${{ needs.preflight.outputs.has_ocp_secrets != 'true' }}
     steps:
