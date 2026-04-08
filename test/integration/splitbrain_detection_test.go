@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Split-Brain Detection Integration Tests", func() {
@@ -47,7 +47,7 @@ var _ = Describe("Split-Brain Detection Integration Tests", func() {
 	}
 
 	var testNamespace string
-	var cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
+	var cluster *neo4jv1beta1.Neo4jEnterpriseCluster
 
 	BeforeEach(func() {
 		By("Creating test namespace")
@@ -89,28 +89,28 @@ var _ = Describe("Split-Brain Detection Integration Tests", func() {
 	Context("When cluster experiences split-brain during startup", func() {
 		It("should form a healthy cluster (with or without split-brain detection)", func() {
 			By("Creating a 3-server cluster")
-			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "splitbrain-cluster",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "500Mi",
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: "neo4j-admin-secret",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -230,28 +230,28 @@ var _ = Describe("Split-Brain Detection Integration Tests", func() {
 	Context("When testing split-brain prevention", func() {
 		It("should maintain cluster health during pod restarts", func() {
 			By("Creating a stable 3-server cluster")
-			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "stable-cluster",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "500Mi",
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: "neo4j-admin-secret",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{

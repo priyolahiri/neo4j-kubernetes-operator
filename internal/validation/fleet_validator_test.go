@@ -21,7 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestValidateAuraFleetManagement(t *testing.T) {
@@ -29,7 +29,7 @@ func TestValidateAuraFleetManagement(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		spec      *neo4jv1alpha1.AuraFleetManagementSpec
+		spec      *neo4jv1beta1.AuraFleetManagementSpec
 		wantErrs  int
 		errDetail string
 	}{
@@ -40,19 +40,19 @@ func TestValidateAuraFleetManagement(t *testing.T) {
 		},
 		{
 			name:     "disabled — no errors even without tokenSecretRef",
-			spec:     &neo4jv1alpha1.AuraFleetManagementSpec{Enabled: false},
+			spec:     &neo4jv1beta1.AuraFleetManagementSpec{Enabled: false},
 			wantErrs: 0,
 		},
 		{
 			name:     "enabled without tokenSecretRef — valid (deferred registration)",
-			spec:     &neo4jv1alpha1.AuraFleetManagementSpec{Enabled: true},
+			spec:     &neo4jv1beta1.AuraFleetManagementSpec{Enabled: true},
 			wantErrs: 0,
 		},
 		{
 			name: "enabled with valid tokenSecretRef — valid",
-			spec: &neo4jv1alpha1.AuraFleetManagementSpec{
+			spec: &neo4jv1beta1.AuraFleetManagementSpec{
 				Enabled: true,
-				TokenSecretRef: &neo4jv1alpha1.SecretKeyRef{
+				TokenSecretRef: &neo4jv1beta1.SecretKeyRef{
 					Name: "aura-fleet-token",
 					Key:  "token",
 				},
@@ -61,9 +61,9 @@ func TestValidateAuraFleetManagement(t *testing.T) {
 		},
 		{
 			name: "enabled with tokenSecretRef but empty name — error",
-			spec: &neo4jv1alpha1.AuraFleetManagementSpec{
+			spec: &neo4jv1beta1.AuraFleetManagementSpec{
 				Enabled: true,
-				TokenSecretRef: &neo4jv1alpha1.SecretKeyRef{
+				TokenSecretRef: &neo4jv1beta1.SecretKeyRef{
 					Name: "",
 					Key:  "token",
 				},
@@ -73,9 +73,9 @@ func TestValidateAuraFleetManagement(t *testing.T) {
 		},
 		{
 			name: "enabled with tokenSecretRef and default key — valid",
-			spec: &neo4jv1alpha1.AuraFleetManagementSpec{
+			spec: &neo4jv1beta1.AuraFleetManagementSpec{
 				Enabled: true,
-				TokenSecretRef: &neo4jv1alpha1.SecretKeyRef{
+				TokenSecretRef: &neo4jv1beta1.SecretKeyRef{
 					Name: "aura-fleet-token",
 					// Key omitted — defaults to "token"
 				},

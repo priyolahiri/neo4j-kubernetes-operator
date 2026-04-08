@@ -85,7 +85,7 @@ make all     # Explicit call
 **Example**:
 ```bash
 make manifests
-# Generates CRDs from api/v1alpha1/*_types.go files
+# Generates CRDs from api/v1beta1/*_types.go files
 # Updates RBAC from controller annotations
 ```
 

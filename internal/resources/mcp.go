@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 const (
@@ -49,7 +49,7 @@ var (
 )
 
 // BuildMCPDeploymentForCluster builds the MCP Deployment for a cluster.
-func BuildMCPDeploymentForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *appsv1.Deployment {
+func BuildMCPDeploymentForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *appsv1.Deployment {
 	if cluster.Spec.MCP == nil || !cluster.Spec.MCP.Enabled {
 		return nil
 	}
@@ -135,7 +135,7 @@ func BuildMCPDeploymentForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster)
 }
 
 // BuildMCPDeploymentForStandalone builds the MCP Deployment for a standalone deployment.
-func BuildMCPDeploymentForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *appsv1.Deployment {
+func BuildMCPDeploymentForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *appsv1.Deployment {
 	if standalone.Spec.MCP == nil || !standalone.Spec.MCP.Enabled {
 		return nil
 	}
@@ -221,7 +221,7 @@ func BuildMCPDeploymentForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseSt
 }
 
 // BuildMCPServiceForCluster builds the MCP Service for a cluster.
-func BuildMCPServiceForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Service {
+func BuildMCPServiceForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Service {
 	if cluster.Spec.MCP == nil || !cluster.Spec.MCP.Enabled {
 		return nil
 	}
@@ -234,7 +234,7 @@ func BuildMCPServiceForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *c
 }
 
 // BuildMCPServiceForStandalone builds the MCP Service for a standalone deployment.
-func BuildMCPServiceForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *corev1.Service {
+func BuildMCPServiceForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.Service {
 	if standalone.Spec.MCP == nil || !standalone.Spec.MCP.Enabled {
 		return nil
 	}
@@ -247,7 +247,7 @@ func BuildMCPServiceForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStand
 }
 
 // BuildMCPIngressForCluster builds an MCP Ingress for a cluster.
-func BuildMCPIngressForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *networkingv1.Ingress {
+func BuildMCPIngressForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *networkingv1.Ingress {
 	if cluster.Spec.MCP == nil || !cluster.Spec.MCP.Enabled {
 		return nil
 	}
@@ -260,7 +260,7 @@ func BuildMCPIngressForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *n
 }
 
 // BuildMCPIngressForStandalone builds an MCP Ingress for a standalone deployment.
-func BuildMCPIngressForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *networkingv1.Ingress {
+func BuildMCPIngressForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *networkingv1.Ingress {
 	if standalone.Spec.MCP == nil || !standalone.Spec.MCP.Enabled {
 		return nil
 	}
@@ -273,7 +273,7 @@ func BuildMCPIngressForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStand
 }
 
 // BuildMCPRouteForCluster builds an MCP Route for a cluster.
-func BuildMCPRouteForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *unstructured.Unstructured {
+func BuildMCPRouteForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *unstructured.Unstructured {
 	if cluster.Spec.MCP == nil || !cluster.Spec.MCP.Enabled {
 		return nil
 	}
@@ -286,7 +286,7 @@ func BuildMCPRouteForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *uns
 }
 
 // BuildMCPRouteForStandalone builds an MCP Route for a standalone deployment.
-func BuildMCPRouteForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *unstructured.Unstructured {
+func BuildMCPRouteForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *unstructured.Unstructured {
 	if standalone.Spec.MCP == nil || !standalone.Spec.MCP.Enabled {
 		return nil
 	}
@@ -298,7 +298,7 @@ func BuildMCPRouteForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandal
 	return buildMCPRoute(standalone.Namespace, standalone.Name, mcpLabelsForStandalone(standalone, standalone.Spec.MCP), standalone.Spec.MCP)
 }
 
-func buildMCPService(namespace, name string, labels map[string]string, mcp *neo4jv1alpha1.MCPServerSpec) *corev1.Service {
+func buildMCPService(namespace, name string, labels map[string]string, mcp *neo4jv1beta1.MCPServerSpec) *corev1.Service {
 	serviceType := corev1.ServiceTypeClusterIP
 	annotations := map[string]string{}
 
@@ -353,7 +353,7 @@ func buildMCPService(namespace, name string, labels map[string]string, mcp *neo4
 	return svc
 }
 
-func buildMCPIngress(namespace, name string, labels map[string]string, mcp *neo4jv1alpha1.MCPServerSpec) *networkingv1.Ingress {
+func buildMCPIngress(namespace, name string, labels map[string]string, mcp *neo4jv1beta1.MCPServerSpec) *networkingv1.Ingress {
 	if mcp.HTTP == nil || mcp.HTTP.Service == nil || mcp.HTTP.Service.Ingress == nil || !mcp.HTTP.Service.Ingress.Enabled {
 		return nil
 	}
@@ -416,7 +416,7 @@ func buildMCPIngress(namespace, name string, labels map[string]string, mcp *neo4
 	}
 }
 
-func buildMCPRoute(namespace, name string, labels map[string]string, mcp *neo4jv1alpha1.MCPServerSpec) *unstructured.Unstructured {
+func buildMCPRoute(namespace, name string, labels map[string]string, mcp *neo4jv1beta1.MCPServerSpec) *unstructured.Unstructured {
 	if mcp.HTTP == nil || mcp.HTTP.Service == nil || mcp.HTTP.Service.Route == nil || !mcp.HTTP.Service.Route.Enabled {
 		return nil
 	}
@@ -463,7 +463,7 @@ func buildMCPRoute(namespace, name string, labels map[string]string, mcp *neo4jv
 	)
 }
 
-func mcpLabelsForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, mcp *neo4jv1alpha1.MCPServerSpec) map[string]string {
+func mcpLabelsForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, mcp *neo4jv1beta1.MCPServerSpec) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       "neo4j",
 		"app.kubernetes.io/instance":   cluster.Name,
@@ -476,7 +476,7 @@ func mcpLabelsForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, mcp *neo
 	}
 }
 
-func mcpLabelsForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone, mcp *neo4jv1alpha1.MCPServerSpec) map[string]string {
+func mcpLabelsForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, mcp *neo4jv1beta1.MCPServerSpec) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       "neo4j",
 		"app.kubernetes.io/instance":   standalone.Name,
@@ -496,7 +496,7 @@ func mcpSelectorLabels(name string) map[string]string {
 	}
 }
 
-func mcpImage(spec *neo4jv1alpha1.MCPServerSpec) string {
+func mcpImage(spec *neo4jv1beta1.MCPServerSpec) string {
 	repo := mcpImageRepo(spec)
 	tag := mcpImageTag(spec)
 	if repo == "" || tag == "" {
@@ -505,7 +505,7 @@ func mcpImage(spec *neo4jv1alpha1.MCPServerSpec) string {
 	return fmt.Sprintf("%s:%s", repo, tag)
 }
 
-func mcpImageTag(spec *neo4jv1alpha1.MCPServerSpec) string {
+func mcpImageTag(spec *neo4jv1beta1.MCPServerSpec) string {
 	if spec != nil && spec.Image != nil && spec.Image.Tag != "" {
 		return spec.Image.Tag
 	}
@@ -515,21 +515,21 @@ func mcpImageTag(spec *neo4jv1alpha1.MCPServerSpec) string {
 	return mcpImageTagDefault
 }
 
-func mcpImageRepo(spec *neo4jv1alpha1.MCPServerSpec) string {
+func mcpImageRepo(spec *neo4jv1beta1.MCPServerSpec) string {
 	if spec != nil && spec.Image != nil && spec.Image.Repo != "" {
 		return spec.Image.Repo
 	}
 	return mcpImageRepoDefault
 }
 
-func mcpTransport(spec *neo4jv1alpha1.MCPServerSpec) string {
+func mcpTransport(spec *neo4jv1beta1.MCPServerSpec) string {
 	if spec == nil || spec.Transport == "" {
 		return "http"
 	}
 	return spec.Transport
 }
 
-func mcpHTTPPort(spec *neo4jv1alpha1.MCPServerSpec) int32 {
+func mcpHTTPPort(spec *neo4jv1beta1.MCPServerSpec) int32 {
 	if spec != nil && spec.HTTP != nil && spec.HTTP.Port > 0 {
 		return spec.HTTP.Port
 	}
@@ -541,14 +541,14 @@ func mcpHTTPPort(spec *neo4jv1alpha1.MCPServerSpec) int32 {
 	return mcpHTTPPortDefault
 }
 
-func mcpHTTPHost(spec *neo4jv1alpha1.MCPServerSpec) string {
+func mcpHTTPHost(spec *neo4jv1beta1.MCPServerSpec) string {
 	if spec != nil && spec.HTTP != nil && spec.HTTP.Host != "" {
 		return spec.HTTP.Host
 	}
 	return "0.0.0.0"
 }
 
-func mcpNeo4jURIForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func mcpNeo4jURIForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	serviceName := fmt.Sprintf("%s-client", cluster.Name)
 	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == CertManagerMode {
 		return fmt.Sprintf("neo4j+ssc://%s.%s.svc.cluster.local:7687", serviceName, cluster.Namespace)
@@ -556,7 +556,7 @@ func mcpNeo4jURIForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string
 	return fmt.Sprintf("neo4j://%s.%s.svc.cluster.local:7687", serviceName, cluster.Namespace)
 }
 
-func mcpNeo4jURIForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) string {
+func mcpNeo4jURIForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) string {
 	serviceName := fmt.Sprintf("%s-service", standalone.Name)
 	if standalone.Spec.TLS != nil && standalone.Spec.TLS.Mode == CertManagerMode {
 		return fmt.Sprintf("bolt+ssc://%s.%s.svc.cluster.local:7687", serviceName, standalone.Namespace)
@@ -575,7 +575,7 @@ func mcpNeo4jURIForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalon
 //     The server starts immediately without connecting to Neo4j at startup.
 //
 // See: https://github.com/neo4j/mcp#transport-modes
-func buildMCPEnv(spec *neo4jv1alpha1.MCPServerSpec, neo4jURI string, secretName, usernameKey, passwordKey string) []corev1.EnvVar {
+func buildMCPEnv(spec *neo4jv1beta1.MCPServerSpec, neo4jURI string, secretName, usernameKey, passwordKey string) []corev1.EnvVar {
 	transport := mcpTransport(spec)
 
 	env := []corev1.EnvVar{
@@ -697,7 +697,7 @@ func filterMCPEnv(env []corev1.EnvVar) []corev1.EnvVar {
 	return filtered
 }
 
-func mcpTLSVolume(tls *neo4jv1alpha1.MCPTLSSpec) corev1.Volume {
+func mcpTLSVolume(tls *neo4jv1beta1.MCPTLSSpec) corev1.Volume {
 	return corev1.Volume{
 		Name: mcpTLSVolumeName,
 		VolumeSource: corev1.VolumeSource{
@@ -716,14 +716,14 @@ func mcpTLSVolumeMount() corev1.VolumeMount {
 	}
 }
 
-func imagePullPolicy(spec *neo4jv1alpha1.MCPServerSpec) corev1.PullPolicy {
+func imagePullPolicy(spec *neo4jv1beta1.MCPServerSpec) corev1.PullPolicy {
 	if spec != nil && spec.Image != nil && spec.Image.PullPolicy != "" {
 		return corev1.PullPolicy(spec.Image.PullPolicy)
 	}
 	return corev1.PullIfNotPresent
 }
 
-func imagePullSecrets(spec *neo4jv1alpha1.MCPServerSpec) []corev1.LocalObjectReference {
+func imagePullSecrets(spec *neo4jv1beta1.MCPServerSpec) []corev1.LocalObjectReference {
 	if spec == nil || spec.Image == nil || len(spec.Image.PullSecrets) == 0 {
 		return nil
 	}
@@ -737,14 +737,14 @@ func imagePullSecrets(spec *neo4jv1alpha1.MCPServerSpec) []corev1.LocalObjectRef
 	return secrets
 }
 
-func resourceRequirements(spec *neo4jv1alpha1.MCPServerSpec) corev1.ResourceRequirements {
+func resourceRequirements(spec *neo4jv1beta1.MCPServerSpec) corev1.ResourceRequirements {
 	if spec != nil && spec.Resources != nil {
 		return *spec.Resources
 	}
 	return corev1.ResourceRequirements{}
 }
 
-func mcpAuthSecretName(auth *neo4jv1alpha1.AuthSpec, mcp *neo4jv1alpha1.MCPServerSpec) (name, usernameKey, passwordKey string) {
+func mcpAuthSecretName(auth *neo4jv1beta1.AuthSpec, mcp *neo4jv1beta1.MCPServerSpec) (name, usernameKey, passwordKey string) {
 	name = DefaultAdminSecret
 	if auth != nil && auth.AdminSecret != "" {
 		name = auth.AdminSecret
@@ -768,7 +768,7 @@ func mcpAuthSecretName(auth *neo4jv1alpha1.AuthSpec, mcp *neo4jv1alpha1.MCPServe
 	return name, usernameKey, passwordKey
 }
 
-func mcpSecurityContext(spec *neo4jv1alpha1.MCPServerSpec) (*corev1.PodSecurityContext, *corev1.SecurityContext) {
+func mcpSecurityContext(spec *neo4jv1beta1.MCPServerSpec) (*corev1.PodSecurityContext, *corev1.SecurityContext) {
 	podContext := &corev1.PodSecurityContext{
 		RunAsUser:    ptr.To(defaultMCPUID),
 		RunAsGroup:   ptr.To(defaultMCPUID),

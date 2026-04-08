@@ -4,7 +4,7 @@ The `Neo4jPlugin` Custom Resource Definition (CRD) provides automated plugin ins
 
 ## Overview
 
-- **API Version**: `neo4j.neo4j.com/v1alpha1`
+- **API Version**: `neo4j.neo4j.com/v1beta1`
 - **Kind**: `Neo4jPlugin`
 - **Target Deployments**: Both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone`
 - **Installation Method**: Neo4j's `NEO4J_PLUGINS` environment variable approach
@@ -73,7 +73,7 @@ env:
 ## API Version
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 ```
 
@@ -171,7 +171,7 @@ Plugin usage analytics.
 Install APOC plugin on a Neo4jEnterpriseCluster:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: cluster-apoc-plugin
@@ -214,7 +214,7 @@ spec:
 Install GDS plugin with dependencies on a Neo4jEnterpriseStandalone:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: standalone-gds-plugin
@@ -275,7 +275,7 @@ spec:
 Install a plugin from a custom registry:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: custom-plugin
@@ -304,7 +304,7 @@ spec:
 Install a plugin directly from a URL:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: url-plugin
@@ -363,7 +363,7 @@ spec:
 
 **Bloom Plugin (Zero Configuration)**:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: bloom-plugin
@@ -377,7 +377,7 @@ spec:
 
 **GDS Plugin with Custom Security**:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: gds-plugin
@@ -580,7 +580,7 @@ env:
 ### Custom Plugin from URL
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: custom-plugin
@@ -621,7 +621,7 @@ data:
   username: <base64-encoded-username>
   password: <base64-encoded-password>
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: private-plugin
@@ -643,7 +643,7 @@ spec:
 ### Production Plugin Setup with Monitoring
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: production-apoc
@@ -684,7 +684,7 @@ spec:
 
 ```yaml
 # APOC Foundation
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: analytics-apoc
@@ -699,7 +699,7 @@ spec:
 
 ---
 # Graph Data Science for Analytics
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: analytics-gds
@@ -725,7 +725,7 @@ spec:
 
 ---
 # Neo4j Streams for Real-time Data
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: analytics-streams

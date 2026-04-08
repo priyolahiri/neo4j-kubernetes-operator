@@ -39,7 +39,7 @@ resources:
 ### Resource Fields Explained
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 spec:
   resources:
@@ -85,7 +85,7 @@ The operator provides intelligent recommendations based on your cluster topology
 **Goal**: Minimize resource usage for local development
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: dev-cluster
@@ -109,7 +109,7 @@ spec:
 **Goal**: Reliable performance with cost efficiency
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: small-prod
@@ -133,7 +133,7 @@ spec:
 **Goal**: Balance performance and availability
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: medium-prod
@@ -161,7 +161,7 @@ spec:
 **Goal**: Maximum performance and availability
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: large-prod
@@ -195,7 +195,7 @@ spec:
 Override automatic memory calculations when you need precise control:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: tuned-cluster
@@ -232,7 +232,7 @@ spec:
 Configure JVM settings for optimal performance:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: jvm-tuned-cluster
@@ -281,7 +281,7 @@ spec:
 Optimize for complex analytical queries:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: analytics-cluster
@@ -317,7 +317,7 @@ spec:
 Optimize for high-throughput data ingestion:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: ingestion-cluster
@@ -353,7 +353,7 @@ spec:
 Optimize for semantic search and vector operations:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: vector-search-cluster
@@ -399,7 +399,7 @@ spec:
 Balance reads and writes with dedicated topology:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: mixed-workload
@@ -425,7 +425,7 @@ spec:
     dbms.routing.default_router: "SERVER"
 ---
 # Database with read-heavy topology
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: app-database

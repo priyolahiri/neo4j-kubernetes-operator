@@ -22,34 +22,34 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestValidateMCPConfig(t *testing.T) {
 	tests := []struct {
 		name           string
-		spec           *neo4jv1alpha1.MCPServerSpec
+		spec           *neo4jv1beta1.MCPServerSpec
 		expectedErrors int
 		errorTypes     []field.ErrorType
 	}{
 		{
 			name: "disabled MCP — no errors",
-			spec: &neo4jv1alpha1.MCPServerSpec{Enabled: false},
+			spec: &neo4jv1beta1.MCPServerSpec{Enabled: false},
 		},
 		{
 			name: "enabled with no image — uses official default, no error",
-			spec: &neo4jv1alpha1.MCPServerSpec{Enabled: true},
+			spec: &neo4jv1beta1.MCPServerSpec{Enabled: true},
 		},
 		{
 			name: "enabled with explicit image — valid",
-			spec: &neo4jv1alpha1.MCPServerSpec{
+			spec: &neo4jv1beta1.MCPServerSpec{
 				Enabled: true,
 				Image:   validMCPImage(),
 			},
 		},
 		{
 			name: "invalid transport",
-			spec: &neo4jv1alpha1.MCPServerSpec{
+			spec: &neo4jv1beta1.MCPServerSpec{
 				Enabled:   true,
 				Transport: "grpc",
 				Image:     validMCPImage(),
@@ -59,21 +59,21 @@ func TestValidateMCPConfig(t *testing.T) {
 		},
 		{
 			name: "http with TLS secret — valid",
-			spec: &neo4jv1alpha1.MCPServerSpec{
+			spec: &neo4jv1beta1.MCPServerSpec{
 				Enabled:   true,
 				Transport: "http",
-				HTTP: &neo4jv1alpha1.MCPHTTPConfig{
-					TLS: &neo4jv1alpha1.MCPTLSSpec{SecretName: "my-tls"},
+				HTTP: &neo4jv1beta1.MCPHTTPConfig{
+					TLS: &neo4jv1beta1.MCPTLSSpec{SecretName: "my-tls"},
 				},
 			},
 		},
 		{
 			name: "http with TLS but no secretName — error",
-			spec: &neo4jv1alpha1.MCPServerSpec{
+			spec: &neo4jv1beta1.MCPServerSpec{
 				Enabled:   true,
 				Transport: "http",
-				HTTP: &neo4jv1alpha1.MCPHTTPConfig{
-					TLS: &neo4jv1alpha1.MCPTLSSpec{},
+				HTTP: &neo4jv1beta1.MCPHTTPConfig{
+					TLS: &neo4jv1beta1.MCPTLSSpec{},
 				},
 			},
 			expectedErrors: 1,
@@ -81,40 +81,40 @@ func TestValidateMCPConfig(t *testing.T) {
 		},
 		{
 			name: "http auth with secretName — valid (allowed but ignored in HTTP mode)",
-			spec: &neo4jv1alpha1.MCPServerSpec{
+			spec: &neo4jv1beta1.MCPServerSpec{
 				Enabled:   true,
 				Transport: "http",
-				Auth: &neo4jv1alpha1.MCPAuthSpec{
+				Auth: &neo4jv1beta1.MCPAuthSpec{
 					SecretName: "custom-secret",
 				},
 			},
 		},
 		{
 			name: "auth set without secretName — error",
-			spec: &neo4jv1alpha1.MCPServerSpec{
+			spec: &neo4jv1beta1.MCPServerSpec{
 				Enabled: true,
-				Auth:    &neo4jv1alpha1.MCPAuthSpec{},
+				Auth:    &neo4jv1beta1.MCPAuthSpec{},
 			},
 			expectedErrors: 1,
 			errorTypes:     []field.ErrorType{field.ErrorTypeRequired},
 		},
 		{
 			name: "http port out of range",
-			spec: &neo4jv1alpha1.MCPServerSpec{
+			spec: &neo4jv1beta1.MCPServerSpec{
 				Enabled:   true,
 				Transport: "http",
-				HTTP:      &neo4jv1alpha1.MCPHTTPConfig{Port: 70000},
+				HTTP:      &neo4jv1beta1.MCPHTTPConfig{Port: 70000},
 			},
 			expectedErrors: 1,
 			errorTypes:     []field.ErrorType{field.ErrorTypeInvalid},
 		},
 		{
 			name: "http service port out of range",
-			spec: &neo4jv1alpha1.MCPServerSpec{
+			spec: &neo4jv1beta1.MCPServerSpec{
 				Enabled:   true,
 				Transport: "http",
-				HTTP: &neo4jv1alpha1.MCPHTTPConfig{
-					Service: &neo4jv1alpha1.MCPServiceSpec{Port: 70000},
+				HTTP: &neo4jv1beta1.MCPHTTPConfig{
+					Service: &neo4jv1beta1.MCPServiceSpec{Port: 70000},
 				},
 			},
 			expectedErrors: 1,
@@ -122,17 +122,17 @@ func TestValidateMCPConfig(t *testing.T) {
 		},
 		{
 			name: "stdio without auth — uses cluster admin secret automatically",
-			spec: &neo4jv1alpha1.MCPServerSpec{
+			spec: &neo4jv1beta1.MCPServerSpec{
 				Enabled:   true,
 				Transport: "stdio",
 			},
 		},
 		{
 			name: "stdio with auth override — valid",
-			spec: &neo4jv1alpha1.MCPServerSpec{
+			spec: &neo4jv1beta1.MCPServerSpec{
 				Enabled:   true,
 				Transport: "stdio",
-				Auth: &neo4jv1alpha1.MCPAuthSpec{
+				Auth: &neo4jv1beta1.MCPAuthSpec{
 					SecretName:  "custom-auth",
 					UsernameKey: "user",
 					PasswordKey: "pass",
@@ -159,8 +159,8 @@ func TestValidateMCPConfig(t *testing.T) {
 	}
 }
 
-func validMCPImage() *neo4jv1alpha1.ImageSpec {
-	return &neo4jv1alpha1.ImageSpec{
+func validMCPImage() *neo4jv1beta1.ImageSpec {
+	return &neo4jv1beta1.ImageSpec{
 		Repo: "mcp/neo4j",
 		Tag:  "latest",
 	}

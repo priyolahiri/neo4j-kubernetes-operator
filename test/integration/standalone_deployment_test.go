@@ -31,14 +31,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 	var (
 		ctx            context.Context
 		namespace      *corev1.Namespace
-		standalone     *neo4jv1alpha1.Neo4jEnterpriseStandalone
+		standalone     *neo4jv1beta1.Neo4jEnterpriseStandalone
 		standaloneName string
 	)
 
@@ -83,18 +83,18 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 	Context("Basic Standalone Deployment", func() {
 		It("should create a standalone Neo4j instance successfully", func() {
 			By("Creating a basic standalone specification")
-			standalone = &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+			standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      standaloneName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        getNeo4jImageTag(), // Use environment-specified version
 						PullPolicy: "IfNotPresent",
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "500Mi",
 					},
@@ -267,7 +267,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 
 			By("Verifying standalone status is properly reported")
 			Eventually(func() bool {
-				updatedStandalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+				updatedStandalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      standaloneName,
 					Namespace: namespace.Name,
@@ -292,18 +292,18 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 	Context("Standalone with Custom Configuration", func() {
 		It("should merge custom configuration with single mode", func() {
 			By("Creating a standalone with custom configuration")
-			standalone = &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+			standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      standaloneName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        getNeo4jImageTag(), // Use environment-specified version
 						PullPolicy: "IfNotPresent",
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "500Mi",
 					},
@@ -383,23 +383,23 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 	Context("Standalone with TLS Disabled", func() {
 		It("should configure TLS disabled settings properly", func() {
 			By("Creating a standalone with TLS disabled")
-			standalone = &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+			standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      standaloneName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        getNeo4jImageTag(), // Use environment-specified version
 						PullPolicy: "IfNotPresent",
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "500Mi",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -481,23 +481,23 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 			}
 			Expect(k8sClient.Create(ctx, adminSecret)).To(Succeed())
 
-			standalone = &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+			standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      standaloneName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        getNeo4jImageTag(), // Use environment-specified version
 						PullPolicy: "IfNotPresent",
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "500Mi",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: "standalone-admin-secret",
 					},
 					Env: []corev1.EnvVar{
@@ -514,7 +514,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 
 			By("Waiting for standalone to become ready")
 			Eventually(func() bool {
-				updatedStandalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+				updatedStandalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      standaloneName,
 					Namespace: namespace.Name,
@@ -535,12 +535,12 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			By("Creating a database resource that references the standalone")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-database-standalone",
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef:  standaloneName, // References standalone resource
 					Name:        "teststandalonedb",
 					Wait:        true,
@@ -551,7 +551,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 
 			By("Database should be accepted and validated for standalone")
 			Eventually(func() error {
-				updatedDatabase := &neo4jv1alpha1.Neo4jDatabase{}
+				updatedDatabase := &neo4jv1beta1.Neo4jDatabase{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      database.Name,
 					Namespace: database.Namespace,
@@ -571,25 +571,25 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", func() {
 	Context("Standalone with TLS Enabled", func() {
 		It("should configure TLS enabled settings properly", func() {
 			By("Creating a standalone with TLS enabled")
-			standalone = &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+			standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      standaloneName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        getNeo4jImageTag(), // Use environment-specified version
 						PullPolicy: "IfNotPresent",
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "500Mi",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name: "ca-cluster-issuer",
 							Kind: "ClusterIssuer",
 						},

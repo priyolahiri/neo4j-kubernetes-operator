@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/utils/ptr"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
@@ -20,14 +20,14 @@ func TestBuildAuthConfig_NilAuth(t *testing.T) {
 
 func TestBuildAuthConfig_NativeOnly(t *testing.T) {
 	// Empty auth spec (default native) doesn't generate provider lines
-	auth := &neo4jv1alpha1.AuthSpec{}
+	auth := &neo4jv1beta1.AuthSpec{}
 	result := resources.BuildAuthConfig(auth)
 	assert.Empty(t, result.Config)
 }
 
 func TestBuildAuthConfig_ExplicitNative(t *testing.T) {
 	// Explicitly setting native generates the config line
-	auth := &neo4jv1alpha1.AuthSpec{
+	auth := &neo4jv1beta1.AuthSpec{
 		AuthenticationProviders: []string{"native"},
 	}
 	result := resources.BuildAuthConfig(auth)
@@ -35,10 +35,10 @@ func TestBuildAuthConfig_ExplicitNative(t *testing.T) {
 }
 
 func TestBuildAuthConfig_BackwardCompat_SingleProvider(t *testing.T) {
-	auth := &neo4jv1alpha1.AuthSpec{
+	auth := &neo4jv1beta1.AuthSpec{
 		AuthenticationProviders: []string{"ldap"},
 		AuthorizationProviders:  []string{"ldap"},
-		LDAP: &neo4jv1alpha1.Neo4jLDAPSpec{
+		LDAP: &neo4jv1beta1.Neo4jLDAPSpec{
 			Host: "ldap://ldap.example.com",
 		},
 	}
@@ -49,10 +49,10 @@ func TestBuildAuthConfig_BackwardCompat_SingleProvider(t *testing.T) {
 }
 
 func TestBuildAuthConfig_MultiProvider(t *testing.T) {
-	auth := &neo4jv1alpha1.AuthSpec{
+	auth := &neo4jv1beta1.AuthSpec{
 		AuthenticationProviders: []string{"ldap", "native"},
 		AuthorizationProviders:  []string{"ldap", "native"},
-		LDAP: &neo4jv1alpha1.Neo4jLDAPSpec{
+		LDAP: &neo4jv1beta1.Neo4jLDAPSpec{
 			Host: "ldaps://ad.corp.example.com:636",
 		},
 	}
@@ -63,18 +63,18 @@ func TestBuildAuthConfig_MultiProvider(t *testing.T) {
 }
 
 func TestBuildAuthConfig_LDAPFullConfig(t *testing.T) {
-	auth := &neo4jv1alpha1.AuthSpec{
+	auth := &neo4jv1beta1.AuthSpec{
 		AuthenticationProviders: []string{"ldap", "native"},
 		AuthorizationProviders:  []string{"ldap", "native"},
-		LDAP: &neo4jv1alpha1.Neo4jLDAPSpec{
+		LDAP: &neo4jv1beta1.Neo4jLDAPSpec{
 			Host:        "ldap://ldap.example.com",
 			UseStartTLS: ptr.To(true),
-			Authentication: &neo4jv1alpha1.LDAPAuthenticationSpec{
+			Authentication: &neo4jv1beta1.LDAPAuthenticationSpec{
 				UserDNTemplate:     "{0}@example.com",
 				SearchForAttribute: ptr.To(false),
 				CacheEnabled:       ptr.To(true),
 			},
-			Authorization: &neo4jv1alpha1.LDAPAuthorizationSpec{
+			Authorization: &neo4jv1beta1.LDAPAuthorizationSpec{
 				UserSearchBase:            "dc=example,dc=com",
 				UserSearchFilter:          "(&(objectClass=user)(sAMAccountName={0}))",
 				GroupMembershipAttributes: []string{"memberOf"},
@@ -146,16 +146,16 @@ func TestBuildAuthConfig_LDAPFullConfig(t *testing.T) {
 }
 
 func TestBuildAuthConfig_OIDCSingleProvider(t *testing.T) {
-	auth := &neo4jv1alpha1.AuthSpec{
+	auth := &neo4jv1beta1.AuthSpec{
 		AuthenticationProviders: []string{"oidc-okta", "native"},
 		AuthorizationProviders:  []string{"oidc-okta", "native"},
-		OIDC: map[string]neo4jv1alpha1.Neo4jOIDCProviderSpec{
+		OIDC: map[string]neo4jv1beta1.Neo4jOIDCProviderSpec{
 			"okta": {
 				DisplayName:           "Okta SSO",
 				WellKnownDiscoveryURI: "https://dev-123.okta.com/.well-known/openid-configuration",
 				Audience:              "0oa1234567",
 				AuthFlow:              "pkce",
-				Claims: &neo4jv1alpha1.OIDCClaimsSpec{
+				Claims: &neo4jv1beta1.OIDCClaimsSpec{
 					Username: "email",
 					Groups:   "groups",
 				},
@@ -183,10 +183,10 @@ func TestBuildAuthConfig_OIDCSingleProvider(t *testing.T) {
 }
 
 func TestBuildAuthConfig_OIDCMultipleProviders(t *testing.T) {
-	auth := &neo4jv1alpha1.AuthSpec{
+	auth := &neo4jv1beta1.AuthSpec{
 		AuthenticationProviders: []string{"oidc-okta", "oidc-azure", "native"},
 		AuthorizationProviders:  []string{"oidc-okta", "oidc-azure", "native"},
-		OIDC: map[string]neo4jv1alpha1.Neo4jOIDCProviderSpec{
+		OIDC: map[string]neo4jv1beta1.Neo4jOIDCProviderSpec{
 			"okta": {
 				WellKnownDiscoveryURI: "https://dev-123.okta.com/.well-known/openid-configuration",
 				Audience:              "okta-client-id",
@@ -194,7 +194,7 @@ func TestBuildAuthConfig_OIDCMultipleProviders(t *testing.T) {
 			"azure": {
 				WellKnownDiscoveryURI: "https://login.microsoftonline.com/tenant/v2.0/.well-known/openid-configuration",
 				Audience:              "azure-client-id",
-				Claims: &neo4jv1alpha1.OIDCClaimsSpec{
+				Claims: &neo4jv1beta1.OIDCClaimsSpec{
 					Username: "preferred_username",
 					Groups:   "roles",
 				},
@@ -214,10 +214,10 @@ func TestBuildAuthConfig_OIDCMultipleProviders(t *testing.T) {
 }
 
 func TestBuildAuthConfig_OIDCManualEndpoints(t *testing.T) {
-	auth := &neo4jv1alpha1.AuthSpec{
+	auth := &neo4jv1beta1.AuthSpec{
 		AuthenticationProviders: []string{"oidc-custom", "native"},
 		AuthorizationProviders:  []string{"oidc-custom", "native"},
-		OIDC: map[string]neo4jv1alpha1.Neo4jOIDCProviderSpec{
+		OIDC: map[string]neo4jv1beta1.Neo4jOIDCProviderSpec{
 			"custom": {
 				AuthEndpoint:  "https://idp.example.com/authorize",
 				TokenEndpoint: "https://idp.example.com/token",
@@ -244,7 +244,7 @@ func TestBuildAuthConfig_OIDCManualEndpoints(t *testing.T) {
 }
 
 func TestBuildAuthEnvVars_NoLDAP(t *testing.T) {
-	auth := &neo4jv1alpha1.AuthSpec{
+	auth := &neo4jv1beta1.AuthSpec{
 		AuthenticationProviders: []string{"native"},
 	}
 	envVars := resources.BuildAuthEnvVars(auth)
@@ -252,10 +252,10 @@ func TestBuildAuthEnvVars_NoLDAP(t *testing.T) {
 }
 
 func TestBuildAuthEnvVars_LDAPSystemAccount(t *testing.T) {
-	auth := &neo4jv1alpha1.AuthSpec{
-		LDAP: &neo4jv1alpha1.Neo4jLDAPSpec{
+	auth := &neo4jv1beta1.AuthSpec{
+		LDAP: &neo4jv1beta1.Neo4jLDAPSpec{
 			Host: "ldap://ldap.example.com",
-			Authorization: &neo4jv1alpha1.LDAPAuthorizationSpec{
+			Authorization: &neo4jv1beta1.LDAPAuthorizationSpec{
 				UseSystemAccount:       ptr.To(true),
 				SystemAccountSecretRef: "ldap-bind-secret",
 			},
@@ -275,10 +275,10 @@ func TestBuildAuthEnvVars_LDAPSystemAccount(t *testing.T) {
 }
 
 func TestBuildAuthEnvVars_LDAPNoSystemAccount(t *testing.T) {
-	auth := &neo4jv1alpha1.AuthSpec{
-		LDAP: &neo4jv1alpha1.Neo4jLDAPSpec{
+	auth := &neo4jv1beta1.AuthSpec{
+		LDAP: &neo4jv1beta1.Neo4jLDAPSpec{
 			Host: "ldap://ldap.example.com",
-			Authorization: &neo4jv1alpha1.LDAPAuthorizationSpec{
+			Authorization: &neo4jv1beta1.LDAPAuthorizationSpec{
 				UseSystemAccount: ptr.To(false),
 			},
 		},
@@ -288,7 +288,7 @@ func TestBuildAuthEnvVars_LDAPNoSystemAccount(t *testing.T) {
 }
 
 func TestBuildTrustStoreInitContainer(t *testing.T) {
-	trustStore := &neo4jv1alpha1.SecretKeyRef{
+	trustStore := &neo4jv1beta1.SecretKeyRef{
 		Name: "my-ca-secret",
 		Key:  "custom-ca.pem",
 	}
@@ -303,7 +303,7 @@ func TestBuildTrustStoreInitContainer(t *testing.T) {
 }
 
 func TestBuildTrustStoreVolumes(t *testing.T) {
-	trustStore := &neo4jv1alpha1.SecretKeyRef{
+	trustStore := &neo4jv1beta1.SecretKeyRef{
 		Name: "my-ca-secret",
 	}
 

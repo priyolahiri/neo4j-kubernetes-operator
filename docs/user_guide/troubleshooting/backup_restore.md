@@ -555,7 +555,7 @@ validate_backup
 ```bash
 # 1. Create new cluster for restoration
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: recovery-cluster
@@ -573,7 +573,7 @@ kubectl wait --for=condition=Ready neo4jenterprisecluster/recovery-cluster --tim
 
 # 3. Restore from latest backup
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: emergency-restore
@@ -599,7 +599,7 @@ kubectl exec recovery-cluster-server-0 -- cypher-shell -u neo4j -p password \
 ```bash
 # Restore to specific point before corruption
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: pitr-emergency-restore

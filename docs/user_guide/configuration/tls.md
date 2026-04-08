@@ -21,7 +21,7 @@ The operator supports automatic TLS certificate management through cert-manager,
 ### Enable TLS with cert-manager
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: secure-cluster
@@ -81,7 +81,7 @@ The operator uses parallel pod management for faster cluster formation:
 For optimal TLS cluster formation, consider these settings:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: tls-optimized-cluster

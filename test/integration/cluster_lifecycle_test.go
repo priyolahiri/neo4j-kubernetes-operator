@@ -30,13 +30,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Cluster Lifecycle Integration Tests", func() {
 	var (
 		namespace   *corev1.Namespace
-		cluster     *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster     *neo4jv1beta1.Neo4jEnterpriseCluster
 		clusterName string
 	)
 
@@ -103,29 +103,29 @@ var _ = Describe("Cluster Lifecycle Integration Tests", func() {
 			}
 			By("Starting end-to-end cluster lifecycle test")
 			By("Creating a basic cluster")
-			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      clusterName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"native"},
 						AdminSecret:             "neo4j-admin-secret",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "1Gi",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Add CI resource constraints
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -330,29 +330,29 @@ var _ = Describe("Cluster Lifecycle Integration Tests", func() {
 			if !isOperatorRunning() {
 				Skip("Multi-cluster deployment test requires operator to be running")
 			}
-			cluster1 := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster1 := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      clusterName + "-1",
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"native"},
 						AdminSecret:             "neo4j-admin-secret",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "1Gi",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Add CI resource constraints
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -364,29 +364,29 @@ var _ = Describe("Cluster Lifecycle Integration Tests", func() {
 				},
 			}
 
-			cluster2 := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster2 := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      clusterName + "-2",
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"native"},
 						AdminSecret:             "neo4j-admin-secret",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "1Gi",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Add CI resource constraints
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{

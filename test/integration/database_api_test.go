@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Database API Integration Tests", func() {
@@ -43,17 +43,17 @@ var _ = Describe("Database API Integration Tests", func() {
 
 		It("Should create a database resource with all new fields", func() {
 			By("Creating a database with all features")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-database-full",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef:  "test-cluster",
 					Name:        "testdb",
 					Wait:        true,
 					IfNotExists: true,
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   2,
 						Secondaries: 1,
 					},
@@ -82,12 +82,12 @@ var _ = Describe("Database API Integration Tests", func() {
 
 		It("Should create database with standalone reference", func() {
 			By("Creating a database that references a Neo4jEnterpriseStandalone")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-database-standalone",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef:  "test-standalone", // References standalone resource
 					Name:        "teststandalonedb",
 					Wait:        true,
@@ -111,12 +111,12 @@ var _ = Describe("Database API Integration Tests", func() {
 
 		It("Should create a database with minimal configuration", func() {
 			By("Creating a simple database")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-database-minimal",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "simpledb",
 				},
@@ -139,12 +139,12 @@ var _ = Describe("Database API Integration Tests", func() {
 
 		It("Should validate Cypher language version enum", func() {
 			By("Creating database with valid Cypher version")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-database-cypher5",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef:            "test-cluster",
 					Name:                  "cypher5db",
 					DefaultCypherLanguage: "5",

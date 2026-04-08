@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
@@ -41,7 +41,7 @@ func NewMemoryValidator() *MemoryValidator {
 }
 
 // Validate validates memory configuration consistency
-func (v *MemoryValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *MemoryValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if cluster.Spec.Resources == nil {
@@ -73,7 +73,7 @@ func (v *MemoryValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
 }
 
 // validateNeo4jMemorySettings validates explicit Neo4j memory configuration
-func (v *MemoryValidator) validateNeo4jMemorySettings(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, containerMemoryBytes int64, neo4jHeap, neo4jPageCache, transactionMem string) field.ErrorList {
+func (v *MemoryValidator) validateNeo4jMemorySettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, containerMemoryBytes int64, neo4jHeap, neo4jPageCache, transactionMem string) field.ErrorList {
 	var allErrs field.ErrorList
 
 	var totalNeo4jMemory int64
@@ -174,7 +174,7 @@ func (v *MemoryValidator) validateNeo4jMemorySettings(cluster *neo4jv1alpha1.Neo
 }
 
 // validateMemoryAllocation validates overall memory allocation strategy
-func (v *MemoryValidator) validateMemoryAllocation(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, containerMemoryBytes int64) field.ErrorList {
+func (v *MemoryValidator) validateMemoryAllocation(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, containerMemoryBytes int64) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Validate minimum container memory for Neo4j Enterprise
@@ -223,7 +223,7 @@ func (v *MemoryValidator) validateMemoryAllocation(cluster *neo4jv1alpha1.Neo4jE
 }
 
 // GetOptimizationTips returns optimization tips for the cluster configuration
-func (v *MemoryValidator) GetOptimizationTips(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) []string {
+func (v *MemoryValidator) GetOptimizationTips(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []string {
 	recommendation := v.recommender.RecommendResourcesForTopology(cluster.Spec.Topology, cluster.Spec.Resources)
 	return recommendation.OptimizationTips
 }

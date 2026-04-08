@@ -3,13 +3,13 @@ package controller
 import (
 	"fmt"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 )
 
 // GenerateConnectionExamples creates connection string examples based on service configuration
-func GenerateConnectionExamples(name, namespace string, serviceType corev1.ServiceType, externalIP string, hasTLS bool) *neo4jv1alpha1.ConnectionExamples {
-	examples := &neo4jv1alpha1.ConnectionExamples{}
+func GenerateConnectionExamples(name, namespace string, serviceType corev1.ServiceType, externalIP string, hasTLS bool) *neo4jv1beta1.ConnectionExamples {
+	examples := &neo4jv1beta1.ConnectionExamples{}
 
 	// Port forwarding example (always available)
 	serviceName := fmt.Sprintf("%s-client", name)
@@ -64,8 +64,8 @@ Driver driver = GraphDatabase.driver("%s", AuthTokens.basic("neo4j", "<password>
 }
 
 // GenerateStandaloneConnectionExamples creates connection examples for standalone deployments
-func GenerateStandaloneConnectionExamples(name, namespace string, serviceType corev1.ServiceType, externalIP string, hasTLS bool) *neo4jv1alpha1.ConnectionExamples {
-	examples := &neo4jv1alpha1.ConnectionExamples{}
+func GenerateStandaloneConnectionExamples(name, namespace string, serviceType corev1.ServiceType, externalIP string, hasTLS bool) *neo4jv1beta1.ConnectionExamples {
+	examples := &neo4jv1beta1.ConnectionExamples{}
 
 	// Port forwarding example (always available)
 	serviceName := fmt.Sprintf("%s-service", name)

@@ -34,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/controller"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 
@@ -119,7 +119,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(neo4jv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(neo4jv1beta1.AddToScheme(scheme))
 	utilruntime.Must(certv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
@@ -737,12 +737,12 @@ func configureSelectiveCache(base cache.Options) cache.Options {
 func configureOnDemandCache(base cache.Options) cache.Options {
 	// Always include ALL Neo4j CRDs - essential for operator functionality
 	base.ByObject = map[client.Object]cache.ByObject{
-		&neo4jv1alpha1.Neo4jEnterpriseCluster{}:    {},
-		&neo4jv1alpha1.Neo4jEnterpriseStandalone{}: {},
-		&neo4jv1alpha1.Neo4jDatabase{}:             {},
-		&neo4jv1alpha1.Neo4jBackup{}:               {},
-		&neo4jv1alpha1.Neo4jRestore{}:              {},
-		&neo4jv1alpha1.Neo4jPlugin{}:               {},
+		&neo4jv1beta1.Neo4jEnterpriseCluster{}:    {},
+		&neo4jv1beta1.Neo4jEnterpriseStandalone{}: {},
+		&neo4jv1beta1.Neo4jDatabase{}:             {},
+		&neo4jv1beta1.Neo4jBackup{}:               {},
+		&neo4jv1beta1.Neo4jRestore{}:              {},
+		&neo4jv1beta1.Neo4jPlugin{}:               {},
 	}
 
 	return base
@@ -752,12 +752,12 @@ func configureOnDemandCache(base cache.Options) cache.Options {
 func getEssentialResourceCache() map[client.Object]cache.ByObject {
 	return map[client.Object]cache.ByObject{
 		// Neo4j CRDs - always essential
-		&neo4jv1alpha1.Neo4jEnterpriseCluster{}:    {},
-		&neo4jv1alpha1.Neo4jEnterpriseStandalone{}: {},
-		&neo4jv1alpha1.Neo4jDatabase{}:             {},
-		&neo4jv1alpha1.Neo4jBackup{}:               {},
-		&neo4jv1alpha1.Neo4jRestore{}:              {},
-		&neo4jv1alpha1.Neo4jPlugin{}:               {},
+		&neo4jv1beta1.Neo4jEnterpriseCluster{}:    {},
+		&neo4jv1beta1.Neo4jEnterpriseStandalone{}: {},
+		&neo4jv1beta1.Neo4jDatabase{}:             {},
+		&neo4jv1beta1.Neo4jBackup{}:               {},
+		&neo4jv1beta1.Neo4jRestore{}:              {},
+		&neo4jv1beta1.Neo4jPlugin{}:               {},
 	}
 }
 
@@ -765,11 +765,11 @@ func getEssentialResourceCache() map[client.Object]cache.ByObject {
 func getSelectiveResourceCache() map[client.Object]cache.ByObject {
 	return map[client.Object]cache.ByObject{
 		// Neo4j CRDs
-		&neo4jv1alpha1.Neo4jEnterpriseCluster{}:    {},
-		&neo4jv1alpha1.Neo4jEnterpriseStandalone{}: {},
-		&neo4jv1alpha1.Neo4jDatabase{}:             {},
-		&neo4jv1alpha1.Neo4jBackup{}:               {},
-		&neo4jv1alpha1.Neo4jRestore{}:              {},
+		&neo4jv1beta1.Neo4jEnterpriseCluster{}:    {},
+		&neo4jv1beta1.Neo4jEnterpriseStandalone{}: {},
+		&neo4jv1beta1.Neo4jDatabase{}:             {},
+		&neo4jv1beta1.Neo4jBackup{}:               {},
+		&neo4jv1beta1.Neo4jRestore{}:              {},
 	}
 }
 

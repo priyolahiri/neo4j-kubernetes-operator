@@ -17,7 +17,7 @@
 
 ---
 # Neo4j Enterprise Cluster: 5-Server Infrastructure
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: multi-db-cluster
@@ -56,7 +56,7 @@ spec:
 # Database 1: Primary Application Database
 # Uses 3 servers: 2 primaries + 1 secondary
 # Optimized for balanced read/write performance
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: application-db
@@ -88,7 +88,7 @@ spec:
 # Database 2: Analytics Database
 # Uses 4 servers: 1 primary + 3 secondaries
 # Optimized for read-heavy analytical workloads
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: analytics-db
@@ -120,7 +120,7 @@ spec:
 # Database 3: Cache Database
 # Uses 2 servers: 2 primaries + 0 secondaries
 # Optimized for high-performance caching with write distribution
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: cache-db
@@ -146,7 +146,7 @@ spec:
 # Database 4: Session Store
 # Uses 1 server: 1 primary + 0 secondaries
 # Minimal topology for simple session storage
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: session-db

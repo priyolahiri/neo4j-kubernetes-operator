@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Backup RBAC Automatic Creation", func() {
@@ -39,7 +39,7 @@ var _ = Describe("Backup RBAC Automatic Creation", func() {
 	Context("When creating a backup resource", func() {
 		var (
 			testNamespace string
-			cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
+			cluster       *neo4jv1beta1.Neo4jEnterpriseCluster
 			adminSecret   *corev1.Secret
 		)
 
@@ -61,28 +61,28 @@ var _ = Describe("Backup RBAC Automatic Creation", func() {
 			Expect(k8sClient.Create(ctx, adminSecret)).Should(Succeed())
 
 			By("Creating Neo4j cluster")
-			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rbac-test-cluster",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(),
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2,
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						Size:      "1Gi",
 						ClassName: "standard",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: adminSecret.Name,
 					},
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -101,7 +101,7 @@ var _ = Describe("Backup RBAC Automatic Creation", func() {
 
 			By("Waiting for cluster to be ready")
 			Eventually(func() bool {
-				var clusterStatus neo4jv1alpha1.Neo4jEnterpriseCluster
+				var clusterStatus neo4jv1beta1.Neo4jEnterpriseCluster
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      cluster.Name,
 					Namespace: testNamespace,
@@ -146,19 +146,19 @@ var _ = Describe("Backup RBAC Automatic Creation", func() {
 			Expect(k8sClient.Create(ctx, pvc)).Should(Succeed())
 
 			By("Creating a backup resource")
-			backup := &neo4jv1alpha1.Neo4jBackup{
+			backup := &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-backup",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: cluster.Name,
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type: "pvc",
-						PVC: &neo4jv1alpha1.PVCSpec{
+						PVC: &neo4jv1beta1.PVCSpec{
 							Name: "backup-pvc",
 							Size: "5Gi",
 						},
@@ -182,20 +182,20 @@ var _ = Describe("Backup RBAC Automatic Creation", func() {
 
 		It("should handle RBAC creation for scheduled backups", func() {
 			By("Creating a scheduled backup resource")
-			backup := &neo4jv1alpha1.Neo4jBackup{
+			backup := &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "scheduled-backup",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: cluster.Name,
 					},
 					Schedule: "*/5 * * * *", // Every 5 minutes
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type: "pvc",
-						PVC: &neo4jv1alpha1.PVCSpec{
+						PVC: &neo4jv1beta1.PVCSpec{
 							Name: "backup-pvc",
 							Size: "5Gi",
 						},
@@ -216,19 +216,19 @@ var _ = Describe("Backup RBAC Automatic Creation", func() {
 
 		It("should reuse existing RBAC resources", func() {
 			By("Creating first backup")
-			backup1 := &neo4jv1alpha1.Neo4jBackup{
+			backup1 := &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "backup-1",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: cluster.Name,
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type: "pvc",
-						PVC: &neo4jv1alpha1.PVCSpec{
+						PVC: &neo4jv1beta1.PVCSpec{
 							Name: "backup-pvc",
 							Size: "5Gi",
 						},
@@ -255,19 +255,19 @@ var _ = Describe("Backup RBAC Automatic Creation", func() {
 			originalUID := sa.UID
 
 			By("Creating second backup in same namespace")
-			backup2 := &neo4jv1alpha1.Neo4jBackup{
+			backup2 := &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "backup-2",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: cluster.Name,
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type: "pvc",
-						PVC: &neo4jv1alpha1.PVCSpec{
+						PVC: &neo4jv1beta1.PVCSpec{
 							Name: "backup-pvc-2",
 							Size: "5Gi",
 						},
@@ -290,7 +290,7 @@ var _ = Describe("Backup RBAC Automatic Creation", func() {
 		AfterEach(func() {
 			By("Cleaning up resources")
 			// Delete backups with finalizer removal
-			backupList := &neo4jv1alpha1.Neo4jBackupList{}
+			backupList := &neo4jv1beta1.Neo4jBackupList{}
 			if err := k8sClient.List(ctx, backupList, client.InNamespace(testNamespace)); err == nil {
 				for i := range backupList.Items {
 					backup := &backupList.Items[i]

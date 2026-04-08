@@ -21,7 +21,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestBackupValidator_ValidateFixed(t *testing.T) {
@@ -29,26 +29,26 @@ func TestBackupValidator_ValidateFixed(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		backup      *neo4jv1alpha1.Neo4jBackup
+		backup      *neo4jv1beta1.Neo4jBackup
 		expectError bool
 		errorCount  int
 	}{
 		{
 			name: "valid cluster backup to S3",
-			backup: &neo4jv1alpha1.Neo4jBackup{
+			backup: &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-backup",
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: "test-cluster",
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type:   "s3",
 						Bucket: "backup-bucket",
 						Path:   "neo4j-backups",
-						Cloud: &neo4jv1alpha1.CloudBlock{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "aws",
 						},
 					},
@@ -60,20 +60,20 @@ func TestBackupValidator_ValidateFixed(t *testing.T) {
 		},
 		{
 			name: "valid database backup to GCS",
-			backup: &neo4jv1alpha1.Neo4jBackup{
+			backup: &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-backup",
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Database",
 						Name: "test-database",
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type:   "gcs",
 						Bucket: "backup-bucket",
 						Path:   "neo4j-backups",
-						Cloud: &neo4jv1alpha1.CloudBlock{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "gcp",
 						},
 					},
@@ -84,16 +84,16 @@ func TestBackupValidator_ValidateFixed(t *testing.T) {
 		},
 		{
 			name: "invalid target kind",
-			backup: &neo4jv1alpha1.Neo4jBackup{
+			backup: &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-backup",
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "InvalidKind",
 						Name: "test-target",
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type:   "s3",
 						Bucket: "backup-bucket",
 					},
@@ -104,18 +104,18 @@ func TestBackupValidator_ValidateFixed(t *testing.T) {
 		},
 		{
 			name: "missing target name",
-			backup: &neo4jv1alpha1.Neo4jBackup{
+			backup: &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-backup",
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						// Missing name
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type: "pvc",
-						PVC: &neo4jv1alpha1.PVCSpec{
+						PVC: &neo4jv1beta1.PVCSpec{
 							Name: "backup-pvc",
 						},
 					},
@@ -126,16 +126,16 @@ func TestBackupValidator_ValidateFixed(t *testing.T) {
 		},
 		{
 			name: "invalid storage type",
-			backup: &neo4jv1alpha1.Neo4jBackup{
+			backup: &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-backup",
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: "test-cluster",
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type: "invalid-type",
 					},
 				},
@@ -145,16 +145,16 @@ func TestBackupValidator_ValidateFixed(t *testing.T) {
 		},
 		{
 			name: "S3 without cloud provider",
-			backup: &neo4jv1alpha1.Neo4jBackup{
+			backup: &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-backup",
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: "test-cluster",
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type:   "s3",
 						Bucket: "backup-bucket",
 						// Missing Cloud configuration
@@ -166,19 +166,19 @@ func TestBackupValidator_ValidateFixed(t *testing.T) {
 		},
 		{
 			name: "invalid cron schedule",
-			backup: &neo4jv1alpha1.Neo4jBackup{
+			backup: &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-backup",
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: "test-cluster",
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type:   "s3",
 						Bucket: "backup-bucket",
-						Cloud: &neo4jv1alpha1.CloudBlock{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "aws",
 						},
 					},
@@ -190,26 +190,26 @@ func TestBackupValidator_ValidateFixed(t *testing.T) {
 		},
 		{
 			name: "valid backup with encryption",
-			backup: &neo4jv1alpha1.Neo4jBackup{
+			backup: &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-backup",
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: "test-cluster",
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type:   "s3",
 						Bucket: "backup-bucket",
-						Cloud: &neo4jv1alpha1.CloudBlock{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "aws",
 						},
 					},
-					Options: &neo4jv1alpha1.BackupOptions{
+					Options: &neo4jv1beta1.BackupOptions{
 						Compress: true,
 						Verify:   true,
-						Encryption: &neo4jv1alpha1.EncryptionSpec{
+						Encryption: &neo4jv1beta1.EncryptionSpec{
 							Enabled:   true,
 							KeySecret: "encryption-key",
 							Algorithm: "AES256",
@@ -222,18 +222,18 @@ func TestBackupValidator_ValidateFixed(t *testing.T) {
 		},
 		{
 			name: "valid PVC backup",
-			backup: &neo4jv1alpha1.Neo4jBackup{
+			backup: &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-backup",
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: "test-cluster",
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type: "pvc",
-						PVC: &neo4jv1alpha1.PVCSpec{
+						PVC: &neo4jv1beta1.PVCSpec{
 							Name: "backup-pvc",
 						},
 					},

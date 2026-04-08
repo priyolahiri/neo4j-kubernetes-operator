@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 const (
@@ -85,7 +85,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	ginkgo.By("Cleaning up Neo4j custom resources")
 
 	// Delete all Neo4jEnterpriseClusters
-	clusters := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
+	clusters := &neo4jv1beta1.Neo4jEnterpriseClusterList{}
 	if err := k8sClient.List(ctx, clusters); err == nil {
 		for _, cluster := range clusters.Items {
 			ginkgo.By(fmt.Sprintf("Deleting Neo4jEnterpriseCluster: %s/%s", cluster.Namespace, cluster.Name))
@@ -96,7 +96,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	}
 
 	// Delete all Neo4jEnterpriseStandalones
-	standalones := &neo4jv1alpha1.Neo4jEnterpriseStandaloneList{}
+	standalones := &neo4jv1beta1.Neo4jEnterpriseStandaloneList{}
 	if err := k8sClient.List(ctx, standalones); err == nil {
 		for _, standalone := range standalones.Items {
 			ginkgo.By(fmt.Sprintf("Deleting Neo4jEnterpriseStandalone: %s/%s", standalone.Namespace, standalone.Name))
@@ -107,7 +107,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	}
 
 	// Delete all Neo4jBackups
-	backups := &neo4jv1alpha1.Neo4jBackupList{}
+	backups := &neo4jv1beta1.Neo4jBackupList{}
 	if err := k8sClient.List(ctx, backups); err == nil {
 		for _, backup := range backups.Items {
 			ginkgo.By(fmt.Sprintf("Deleting Neo4jBackup: %s/%s", backup.Namespace, backup.Name))
@@ -118,7 +118,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	}
 
 	// Delete all Neo4jRestores
-	restores := &neo4jv1alpha1.Neo4jRestoreList{}
+	restores := &neo4jv1beta1.Neo4jRestoreList{}
 	if err := k8sClient.List(ctx, restores); err == nil {
 		for _, restore := range restores.Items {
 			ginkgo.By(fmt.Sprintf("Deleting Neo4jRestore: %s/%s", restore.Namespace, restore.Name))
@@ -129,7 +129,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	}
 
 	// Delete all Neo4jDatabases
-	databases := &neo4jv1alpha1.Neo4jDatabaseList{}
+	databases := &neo4jv1beta1.Neo4jDatabaseList{}
 	if err := k8sClient.List(ctx, databases); err == nil {
 		for _, db := range databases.Items {
 			ginkgo.By(fmt.Sprintf("Deleting Neo4jDatabase: %s/%s", db.Namespace, db.Name))
@@ -140,7 +140,7 @@ func cleanupNeo4jResources(ctx context.Context, k8sClient client.Client, options
 	}
 
 	// Delete all Neo4jPlugins
-	plugins := &neo4jv1alpha1.Neo4jPluginList{}
+	plugins := &neo4jv1beta1.Neo4jPluginList{}
 	if err := k8sClient.List(ctx, plugins); err == nil {
 		for _, plugin := range plugins.Items {
 			ginkgo.By(fmt.Sprintf("Deleting Neo4jPlugin: %s/%s", plugin.Namespace, plugin.Name))
@@ -256,17 +256,17 @@ func verifyCleanup(ctx context.Context, k8sClient client.Client, options Cleanup
 	// Wait for resources to be fully deleted
 	gomega.Eventually(func() bool {
 		// Check for remaining Neo4j resources
-		clusters := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
+		clusters := &neo4jv1beta1.Neo4jEnterpriseClusterList{}
 		if err := k8sClient.List(ctx, clusters); err == nil && len(clusters.Items) > 0 {
 			return false
 		}
 
-		standalones := &neo4jv1alpha1.Neo4jEnterpriseStandaloneList{}
+		standalones := &neo4jv1beta1.Neo4jEnterpriseStandaloneList{}
 		if err := k8sClient.List(ctx, standalones); err == nil && len(standalones.Items) > 0 {
 			return false
 		}
 
-		backups := &neo4jv1alpha1.Neo4jBackupList{}
+		backups := &neo4jv1beta1.Neo4jBackupList{}
 		if err := k8sClient.List(ctx, backups); err == nil && len(backups.Items) > 0 {
 			return false
 		}
@@ -325,22 +325,22 @@ func checkCRDs(ctx context.Context, k8sClient client.Client) {
 			// Try to list the CR to verify CRD exists
 			switch crdName {
 			case "neo4jenterpriseclusters.neo4j.neo4j.com":
-				clusters := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
+				clusters := &neo4jv1beta1.Neo4jEnterpriseClusterList{}
 				return k8sClient.List(ctx, clusters)
 			case "neo4jenterprisestandalones.neo4j.neo4j.com":
-				standalones := &neo4jv1alpha1.Neo4jEnterpriseStandaloneList{}
+				standalones := &neo4jv1beta1.Neo4jEnterpriseStandaloneList{}
 				return k8sClient.List(ctx, standalones)
 			case "neo4jbackups.neo4j.neo4j.com":
-				backups := &neo4jv1alpha1.Neo4jBackupList{}
+				backups := &neo4jv1beta1.Neo4jBackupList{}
 				return k8sClient.List(ctx, backups)
 			case "neo4jrestores.neo4j.neo4j.com":
-				restores := &neo4jv1alpha1.Neo4jRestoreList{}
+				restores := &neo4jv1beta1.Neo4jRestoreList{}
 				return k8sClient.List(ctx, restores)
 			case "neo4jdatabases.neo4j.neo4j.com":
-				databases := &neo4jv1alpha1.Neo4jDatabaseList{}
+				databases := &neo4jv1beta1.Neo4jDatabaseList{}
 				return k8sClient.List(ctx, databases)
 			case "neo4jplugins.neo4j.neo4j.com":
-				plugins := &neo4jv1alpha1.Neo4jPluginList{}
+				plugins := &neo4jv1beta1.Neo4jPluginList{}
 				return k8sClient.List(ctx, plugins)
 			}
 			return nil
@@ -396,7 +396,7 @@ func checkConflictingResources(ctx context.Context, k8sClient client.Client) {
 	ginkgo.By("Checking for conflicting resources")
 
 	// Check for existing Neo4j resources that might conflict
-	clusters := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
+	clusters := &neo4jv1beta1.Neo4jEnterpriseClusterList{}
 	if err := k8sClient.List(ctx, clusters); err == nil && len(clusters.Items) > 0 {
 		fmt.Printf("Warning: Found %d existing Neo4jEnterpriseClusters that might conflict with tests\n", len(clusters.Items))
 		for _, cluster := range clusters.Items {
@@ -404,7 +404,7 @@ func checkConflictingResources(ctx context.Context, k8sClient client.Client) {
 		}
 	}
 
-	standalones := &neo4jv1alpha1.Neo4jEnterpriseStandaloneList{}
+	standalones := &neo4jv1beta1.Neo4jEnterpriseStandaloneList{}
 	if err := k8sClient.List(ctx, standalones); err == nil && len(standalones.Items) > 0 {
 		fmt.Printf("Warning: Found %d existing Neo4jEnterpriseStandalones that might conflict with tests\n", len(standalones.Items))
 		for _, standalone := range standalones.Items {

@@ -45,7 +45,7 @@ The Neo4jPlugin controller has been updated to work with the current server-base
 ### APOC Plugin (Environment Variables Only)
 ```yaml
 # apoc-plugin-example.yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: apoc-plugin
@@ -66,7 +66,7 @@ spec:
 ### Graph Data Science Plugin (Neo4j Config)
 ```yaml
 # gds-plugin-example.yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: gds-plugin
@@ -87,7 +87,7 @@ spec:
 ### Bloom Plugin (Complex Neo4j Config)
 ```yaml
 # bloom-plugin-example.yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: bloom-plugin
@@ -111,7 +111,7 @@ spec:
 ### Plugin with Dependencies
 ```yaml
 # gds-with-apoc-example.yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: gds-with-apoc

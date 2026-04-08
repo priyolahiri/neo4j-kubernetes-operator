@@ -19,7 +19,7 @@
 11. **CRD scope separation**: Cluster/Standalone manage infra/config; Database manages database lifecycle only—no cross-CRD overrides.
 
 ## Architecture Anchors
-- **CRDs (`api/v1alpha1`)**: Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jDatabase, Neo4jPlugin, Neo4jBackup, Neo4jRestore, Neo4jShardedDatabase.
+- **CRDs (`api/v1beta1`)**: Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jDatabase, Neo4jPlugin, Neo4jBackup, Neo4jRestore, Neo4jShardedDatabase.
 - **Controllers (`internal/controller/`)**:
   - Cluster/Standalone reconcilers build ConfigMaps/Services/StatefulSets, manage status phases, TLS, auth, placement, and cache/configmap managers.
   - Database controller auto-detects cluster vs standalone, uses appropriate Bolt client, and supports wait/ifNotExists/topology/seed flows.
@@ -34,7 +34,7 @@
 | Area | Purpose |
 | --- | --- |
 | `cmd/main.go` | Manager entrypoint wiring controllers/webhooks. |
-| `api/v1alpha1/` | CRD schemas listed above. |
+| `api/v1beta1/` | CRD schemas listed above. |
 | `internal/controller/` | Reconcilers, split-brain detector, topology scheduler, rolling upgrade, cache/configmap managers. |
 | `internal/resources/` | Builders for StatefulSets/Services/ConfigMaps, memory sizing, TLS/discovery helpers. |
 | `internal/neo4j/` | Bolt client + version helpers used by controllers/tests. |

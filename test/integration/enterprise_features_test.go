@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Enterprise Features Integration Tests", func() {
@@ -68,28 +68,28 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 				Skip("Plugin management test requires operator to be running")
 			}
 			// First create a cluster
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "plugin-cluster",
 					Namespace: namespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "1Gi",
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: "neo4j-admin-secret",
 					},
 					Resources: getCIAppropriateResourceRequirements(),
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -107,17 +107,17 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 			// Create a plugin
-			plugin := &neo4jv1alpha1.Neo4jPlugin{
+			plugin := &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "apoc-plugin",
 					Namespace: namespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "plugin-cluster",
 					Name:       "apoc",
 					Version:    "5.26.0",
 					Enabled:    true,
-					Source: &neo4jv1alpha1.PluginSource{
+					Source: &neo4jv1beta1.PluginSource{
 						Type: "official",
 					},
 					Config: map[string]string{
@@ -133,7 +133,7 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 			By("Verifying plugin is created (skip status check in CI to prevent timeout)")
 			if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
 				// In CI, just verify the plugin resource exists - don't wait for processing
-				updated := &neo4jv1alpha1.Neo4jPlugin{}
+				updated := &neo4jv1beta1.Neo4jPlugin{}
 				Expect(k8sClient.Get(ctx, types.NamespacedName{
 					Name:      "apoc-plugin",
 					Namespace: namespace,
@@ -142,7 +142,7 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 			} else {
 				// In local environment, wait for full processing
 				Eventually(func() error {
-					updated := &neo4jv1alpha1.Neo4jPlugin{}
+					updated := &neo4jv1beta1.Neo4jPlugin{}
 					return k8sClient.Get(ctx, types.NamespacedName{
 						Name:      "apoc-plugin",
 						Namespace: namespace,
@@ -158,25 +158,25 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 			if !isOperatorRunning() {
 				Skip("Query monitoring test requires operator to be running")
 			}
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "monitoring-cluster",
 					Namespace: namespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "1Gi",
 					},
 					Resources: getCIAppropriateResourceRequirements(),
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -185,22 +185,22 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 							Value: "eval",
 						},
 					},
-					Monitoring: &neo4jv1alpha1.MonitoringSpec{
+					Monitoring: &neo4jv1beta1.MonitoringSpec{
 						Enabled:            true,
 						SlowQueryThreshold: "2s",
 						ExplainPlan:        true,
 						QueryLogLevel:      "VERBOSE",
 						ObfuscateLiterals:  true,
-						Sampling: &neo4jv1alpha1.QuerySamplingConfig{
+						Sampling: &neo4jv1beta1.QuerySamplingConfig{
 							Rate:                "0.1",
 							MaxQueriesPerSecond: 100,
 						},
-						MetricsExport: &neo4jv1alpha1.QueryMetricsExportConfig{
+						MetricsExport: &neo4jv1beta1.QueryMetricsExportConfig{
 							Prometheus: true,
 							Interval:   "30s",
 						},
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: "neo4j-admin-secret",
 					},
 				},
@@ -214,7 +214,7 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 
 			By("Verifying cluster configuration is accepted")
 			Eventually(func() error {
-				updated := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+				updated := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 				return k8sClient.Get(ctx, types.NamespacedName{
 					Name:      "monitoring-cluster",
 					Namespace: namespace,
@@ -222,7 +222,7 @@ var _ = Describe("Enterprise Features Integration Tests", func() {
 			}, timeout, interval).Should(Succeed())
 
 			By("Checking query monitoring configuration")
-			updated := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+			updated := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "monitoring-cluster",
 				Namespace: namespace,

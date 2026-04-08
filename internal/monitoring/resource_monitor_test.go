@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestNewResourceMonitor(t *testing.T) {
@@ -298,7 +298,7 @@ func TestResourceMonitor_canScaleUp(t *testing.T) {
 	tests := []struct {
 		name           string
 		utilization    *ResourceUtilization
-		cluster        *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster        *neo4jv1beta1.Neo4jEnterpriseCluster
 		expectCanScale bool
 	}{
 		{
@@ -308,8 +308,8 @@ func TestResourceMonitor_canScaleUp(t *testing.T) {
 				CPUPercentage:    50.0,
 				AvailableMemory:  resource.MustParse("4Gi"),
 			},
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					Resources: &corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse("2Gi"),
@@ -326,7 +326,7 @@ func TestResourceMonitor_canScaleUp(t *testing.T) {
 				CPUPercentage:    50.0,
 				AvailableMemory:  resource.MustParse("4Gi"),
 			},
-			cluster:        &neo4jv1alpha1.Neo4jEnterpriseCluster{},
+			cluster:        &neo4jv1beta1.Neo4jEnterpriseCluster{},
 			expectCanScale: false,
 		},
 		{
@@ -336,7 +336,7 @@ func TestResourceMonitor_canScaleUp(t *testing.T) {
 				CPUPercentage:    85.0,
 				AvailableMemory:  resource.MustParse("4Gi"),
 			},
-			cluster:        &neo4jv1alpha1.Neo4jEnterpriseCluster{},
+			cluster:        &neo4jv1beta1.Neo4jEnterpriseCluster{},
 			expectCanScale: false,
 		},
 		{
@@ -346,7 +346,7 @@ func TestResourceMonitor_canScaleUp(t *testing.T) {
 				CPUPercentage:    50.0,
 				AvailableMemory:  resource.MustParse("1Gi"),
 			},
-			cluster:        &neo4jv1alpha1.Neo4jEnterpriseCluster{},
+			cluster:        &neo4jv1beta1.Neo4jEnterpriseCluster{},
 			expectCanScale: false,
 		},
 	}
@@ -364,7 +364,7 @@ func TestResourceMonitor_generateScalingRecommendation(t *testing.T) {
 	tests := []struct {
 		name           string
 		utilization    *ResourceUtilization
-		cluster        *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster        *neo4jv1beta1.Neo4jEnterpriseCluster
 		expectContains string
 	}{
 		{
@@ -374,7 +374,7 @@ func TestResourceMonitor_generateScalingRecommendation(t *testing.T) {
 				CPUPercentage:    50.0,
 				CanScale:         false,
 			},
-			cluster:        &neo4jv1alpha1.Neo4jEnterpriseCluster{},
+			cluster:        &neo4jv1beta1.Neo4jEnterpriseCluster{},
 			expectContains: "memory utilization too high",
 		},
 		{
@@ -384,7 +384,7 @@ func TestResourceMonitor_generateScalingRecommendation(t *testing.T) {
 				CPUPercentage:    90.0,
 				CanScale:         false,
 			},
-			cluster:        &neo4jv1alpha1.Neo4jEnterpriseCluster{},
+			cluster:        &neo4jv1beta1.Neo4jEnterpriseCluster{},
 			expectContains: "CPU utilization too high",
 		},
 		{
@@ -394,7 +394,7 @@ func TestResourceMonitor_generateScalingRecommendation(t *testing.T) {
 				CPUPercentage:    30.0,
 				CanScale:         true,
 			},
-			cluster:        &neo4jv1alpha1.Neo4jEnterpriseCluster{},
+			cluster:        &neo4jv1beta1.Neo4jEnterpriseCluster{},
 			expectContains: "good resource headroom",
 		},
 		{
@@ -404,7 +404,7 @@ func TestResourceMonitor_generateScalingRecommendation(t *testing.T) {
 				CPUPercentage:    60.0,
 				CanScale:         true,
 			},
-			cluster:        &neo4jv1alpha1.Neo4jEnterpriseCluster{},
+			cluster:        &neo4jv1beta1.Neo4jEnterpriseCluster{},
 			expectContains: "high resource utilization",
 		},
 	}
@@ -421,26 +421,26 @@ func TestResourceMonitor_generateScalingRecommendation(t *testing.T) {
 func TestResourceMonitor_ValidateScalingCapacity(t *testing.T) {
 	tests := []struct {
 		name           string
-		cluster        *neo4jv1alpha1.Neo4jEnterpriseCluster
-		targetTopology neo4jv1alpha1.TopologyConfiguration
+		cluster        *neo4jv1beta1.Neo4jEnterpriseCluster
+		targetTopology neo4jv1beta1.TopologyConfiguration
 		nodes          []corev1.Node
 		expectCanScale bool
 		expectMessage  string
 	}{
 		{
 			name: "scaling down should succeed",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
 				},
 			},
-			targetTopology: neo4jv1alpha1.TopologyConfiguration{
+			targetTopology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
 			nodes: []corev1.Node{
@@ -463,13 +463,13 @@ func TestResourceMonitor_ValidateScalingCapacity(t *testing.T) {
 		},
 		{
 			name: "scaling up with insufficient resources",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
 					Resources: &corev1.ResourceRequirements{
@@ -480,7 +480,7 @@ func TestResourceMonitor_ValidateScalingCapacity(t *testing.T) {
 					},
 				},
 			},
-			targetTopology: neo4jv1alpha1.TopologyConfiguration{
+			targetTopology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 5, // Scale up from 3 to 5 servers
 			},
 			nodes: []corev1.Node{
@@ -605,7 +605,7 @@ func TestResourceMonitor_MonitorClusterResources(t *testing.T) {
 			recorder := record.NewFakeRecorder(10)
 			monitor := NewResourceMonitor(fakeClient, recorder)
 
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
@@ -635,7 +635,7 @@ func TestResourceMonitor_checkResourceThresholds(t *testing.T) {
 	recorder := record.NewFakeRecorder(10)
 	monitor := &ResourceMonitor{recorder: recorder}
 
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "test-namespace",

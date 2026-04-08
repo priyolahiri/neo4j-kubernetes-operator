@@ -33,7 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // generateSelfSignedCAPEM creates a self-signed CA certificate PEM for testing.
@@ -65,13 +65,13 @@ func generateSelfSignedCAPEM(t *testing.T) []byte {
 func TestBuildTLSConfig(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 
 	caPEM := generateSelfSignedCAPEM(t)
 
 	tests := []struct {
 		name             string
-		tlsSpec          *neo4jv1alpha1.TLSSpec
+		tlsSpec          *neo4jv1beta1.TLSSpec
 		resourceName     string
 		namespace        string
 		secrets          []corev1.Secret
@@ -86,12 +86,12 @@ func TestBuildTLSConfig(t *testing.T) {
 		},
 		{
 			name:    "disabled mode returns nil",
-			tlsSpec: &neo4jv1alpha1.TLSSpec{Mode: "disabled"},
+			tlsSpec: &neo4jv1beta1.TLSSpec{Mode: "disabled"},
 			wantNil: true,
 		},
 		{
 			name:             "cert-manager with no secrets falls back to insecure",
-			tlsSpec:          &neo4jv1alpha1.TLSSpec{Mode: "cert-manager"},
+			tlsSpec:          &neo4jv1beta1.TLSSpec{Mode: "cert-manager"},
 			resourceName:     "my-cluster",
 			namespace:        "default",
 			secrets:          []corev1.Secret{},
@@ -99,7 +99,7 @@ func TestBuildTLSConfig(t *testing.T) {
 		},
 		{
 			name:         "auto-discovers CA from cert-manager secret",
-			tlsSpec:      &neo4jv1alpha1.TLSSpec{Mode: "cert-manager"},
+			tlsSpec:      &neo4jv1beta1.TLSSpec{Mode: "cert-manager"},
 			resourceName: "my-cluster",
 			namespace:    "default",
 			secrets: []corev1.Secret{
@@ -112,7 +112,7 @@ func TestBuildTLSConfig(t *testing.T) {
 		},
 		{
 			name: "TrustedCASecret takes priority over auto-discover",
-			tlsSpec: &neo4jv1alpha1.TLSSpec{
+			tlsSpec: &neo4jv1beta1.TLSSpec{
 				Mode:            "cert-manager",
 				TrustedCASecret: "custom-ca",
 			},
@@ -132,7 +132,7 @@ func TestBuildTLSConfig(t *testing.T) {
 		},
 		{
 			name: "TrustedCASecret missing falls back to insecure",
-			tlsSpec: &neo4jv1alpha1.TLSSpec{
+			tlsSpec: &neo4jv1beta1.TLSSpec{
 				Mode:            "cert-manager",
 				TrustedCASecret: "nonexistent",
 			},
@@ -143,7 +143,7 @@ func TestBuildTLSConfig(t *testing.T) {
 		},
 		{
 			name:         "secret exists but no ca.crt key falls back to insecure",
-			tlsSpec:      &neo4jv1alpha1.TLSSpec{Mode: "cert-manager"},
+			tlsSpec:      &neo4jv1beta1.TLSSpec{Mode: "cert-manager"},
 			resourceName: "my-cluster",
 			namespace:    "default",
 			secrets: []corev1.Secret{

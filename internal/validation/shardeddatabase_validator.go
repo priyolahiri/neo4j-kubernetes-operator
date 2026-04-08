@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // ShardedDatabaseValidator validates Neo4jShardedDatabase resources
@@ -48,7 +48,7 @@ type ShardedDatabaseValidationResult struct {
 }
 
 // ValidateShardedDatabase performs comprehensive validation of a Neo4jShardedDatabase
-func (v *ShardedDatabaseValidator) ValidateShardedDatabase(ctx context.Context, shardedDB *neo4jv1alpha1.Neo4jShardedDatabase) error {
+func (v *ShardedDatabaseValidator) ValidateShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase) error {
 	result := &ShardedDatabaseValidationResult{
 		Errors:   field.ErrorList{},
 		Warnings: []string{},
@@ -82,7 +82,7 @@ func (v *ShardedDatabaseValidator) ValidateShardedDatabase(ctx context.Context, 
 }
 
 // validateBasicFields validates required basic fields
-func (v *ShardedDatabaseValidator) validateBasicFields(shardedDB *neo4jv1alpha1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
+func (v *ShardedDatabaseValidator) validateBasicFields(shardedDB *neo4jv1beta1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
 	specPath := field.NewPath("spec")
 
 	if shardedDB.Spec.ClusterRef == "" {
@@ -100,11 +100,11 @@ func (v *ShardedDatabaseValidator) validateBasicFields(shardedDB *neo4jv1alpha1.
 }
 
 // validateClusterReference validates that the referenced cluster exists and supports property sharding
-func (v *ShardedDatabaseValidator) validateClusterReference(ctx context.Context, shardedDB *neo4jv1alpha1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) error {
+func (v *ShardedDatabaseValidator) validateClusterReference(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) error {
 	specPath := field.NewPath("spec")
 
 	// Get the referenced cluster
-	var cluster neo4jv1alpha1.Neo4jEnterpriseCluster
+	var cluster neo4jv1beta1.Neo4jEnterpriseCluster
 	clusterKey := types.NamespacedName{
 		Name:      shardedDB.Spec.ClusterRef,
 		Namespace: shardedDB.Namespace,
@@ -144,7 +144,7 @@ func (v *ShardedDatabaseValidator) validateClusterReference(ctx context.Context,
 }
 
 // validatePropertyShardingConfig validates property sharding configuration
-func (v *ShardedDatabaseValidator) validatePropertyShardingConfig(shardedDB *neo4jv1alpha1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
+func (v *ShardedDatabaseValidator) validatePropertyShardingConfig(shardedDB *neo4jv1beta1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
 	shardingPath := field.NewPath("spec", "propertySharding")
 	config := &shardedDB.Spec.PropertySharding
 
@@ -210,7 +210,7 @@ func (v *ShardedDatabaseValidator) validatePropertyShardingConfig(shardedDB *neo
 }
 
 // validateTopologyConfig validates database topology configuration
-func (v *ShardedDatabaseValidator) validateTopologyConfig(shardedDB *neo4jv1alpha1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
+func (v *ShardedDatabaseValidator) validateTopologyConfig(shardedDB *neo4jv1beta1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
 	shardingPath := field.NewPath("spec", "propertySharding")
 
 	// Validate graph shard topology
@@ -230,7 +230,7 @@ func (v *ShardedDatabaseValidator) validateTopologyConfig(shardedDB *neo4jv1alph
 }
 
 // validateDatabaseTopology validates a database topology configuration
-func (v *ShardedDatabaseValidator) validateDatabaseTopology(topology *neo4jv1alpha1.DatabaseTopology, path *field.Path, result *ShardedDatabaseValidationResult) error {
+func (v *ShardedDatabaseValidator) validateDatabaseTopology(topology *neo4jv1beta1.DatabaseTopology, path *field.Path, result *ShardedDatabaseValidationResult) error {
 	if topology.Primaries < 1 {
 		result.Errors = append(result.Errors, field.Invalid(
 			path.Child("primaries"),
@@ -249,7 +249,7 @@ func (v *ShardedDatabaseValidator) validateDatabaseTopology(topology *neo4jv1alp
 }
 
 // validateClusterCapacity validates that the cluster has sufficient capacity for all shards
-func (v *ShardedDatabaseValidator) validateClusterCapacity(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, shardedDB *neo4jv1alpha1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) error {
+func (v *ShardedDatabaseValidator) validateClusterCapacity(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) error {
 	clusterServers := cluster.Spec.Topology.Servers
 	shardingPath := field.NewPath("spec", "propertySharding")
 
@@ -286,7 +286,7 @@ func (v *ShardedDatabaseValidator) validateClusterCapacity(cluster *neo4jv1alpha
 }
 
 // validateBackupConfig validates backup configuration
-func (v *ShardedDatabaseValidator) validateBackupConfig(shardedDB *neo4jv1alpha1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
+func (v *ShardedDatabaseValidator) validateBackupConfig(shardedDB *neo4jv1beta1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
 	if shardedDB.Spec.BackupConfig == nil {
 		return // Backup is optional
 	}
@@ -320,7 +320,7 @@ func (v *ShardedDatabaseValidator) validateBackupConfig(shardedDB *neo4jv1alpha1
 }
 
 // validateCypherLanguage validates Cypher language version
-func (v *ShardedDatabaseValidator) validateCypherLanguage(shardedDB *neo4jv1alpha1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
+func (v *ShardedDatabaseValidator) validateCypherLanguage(shardedDB *neo4jv1beta1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
 	specPath := field.NewPath("spec")
 
 	if shardedDB.Spec.DefaultCypherLanguage != "25" {

@@ -30,7 +30,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v1alpha1
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: Neo4jBackup is the Schema for the neo4jbackups API

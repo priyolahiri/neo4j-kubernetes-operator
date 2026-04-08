@@ -95,7 +95,7 @@ config:
 
 ### Production Cluster Configuration
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: production-cluster
@@ -124,7 +124,7 @@ spec:
 
 ### Development Standalone Configuration
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: dev-instance
@@ -178,7 +178,7 @@ The operator supports two main approaches for populating databases with initial 
 
 #### Standard Database with Initial Data
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: my-app-database
@@ -205,7 +205,7 @@ spec:
 
 #### Database from Seed URI (Recommended for Migrations)
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: migrated-database
@@ -278,7 +278,7 @@ metadata:
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/Neo4jBackupReader
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: production-cluster
@@ -291,7 +291,7 @@ spec:
         serviceAccount: neo4j-backup-reader  # Uses IAM role
   # ... other cluster configuration
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: restored-database

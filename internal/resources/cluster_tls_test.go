@@ -8,32 +8,32 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
 func TestBuildConfigMapForEnterprise_TLSConfiguration(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "tls-cluster",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  "5.26.0-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 5, // 3 + 2 total servers
 			},
-			TLS: &neo4jv1alpha1.TLSSpec{
+			TLS: &neo4jv1beta1.TLSSpec{
 				Mode: "cert-manager",
-				IssuerRef: &neo4jv1alpha1.IssuerRef{
+				IssuerRef: &neo4jv1beta1.IssuerRef{
 					Name: "ca-cluster-issuer",
 					Kind: "ClusterIssuer",
 				},
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "standard",
 				Size:      "10Gi",
 			},
@@ -75,27 +75,27 @@ func TestBuildConfigMapForEnterprise_TLSConfiguration(t *testing.T) {
 }
 
 func TestBuildStatefulSetForEnterprise_TLSClusterFormation(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "tls-parallel-test",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  "5.26.0-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 5, // 3 + 2 total servers
 			},
-			TLS: &neo4jv1alpha1.TLSSpec{
+			TLS: &neo4jv1beta1.TLSSpec{
 				Mode: "cert-manager",
-				IssuerRef: &neo4jv1alpha1.IssuerRef{
+				IssuerRef: &neo4jv1beta1.IssuerRef{
 					Name: "ca-cluster-issuer",
 					Kind: "ClusterIssuer",
 				},
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "standard",
 				Size:      "10Gi",
 			},

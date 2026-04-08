@@ -19,7 +19,7 @@ package validation
 import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // CloudValidator validates Neo4j cloud identity configuration
@@ -31,7 +31,7 @@ func NewCloudValidator() *CloudValidator {
 }
 
 // Validate validates the cloud identity configuration
-func (v *CloudValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *CloudValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if cluster.Spec.Backups == nil || cluster.Spec.Backups.Cloud == nil {

@@ -21,16 +21,16 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // validStandalone returns a minimal standalone that should pass all validations.
-func validStandalone() *neo4jv1alpha1.Neo4jEnterpriseStandalone {
-	return &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+func validStandalone() *neo4jv1beta1.Neo4jEnterpriseStandalone {
+	return &neo4jv1beta1.Neo4jEnterpriseStandalone{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-standalone", Namespace: "default"},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-			Image:   neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26.0-enterprise"},
-			Storage: neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "1Gi"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+			Image:   neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.0-enterprise"},
+			Storage: neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "1Gi"},
 		},
 	}
 }
@@ -44,68 +44,68 @@ func TestStandaloneValidator_ValidateCreate(t *testing.T) {
 
 	cases := []struct {
 		name     string
-		mutate   func(*neo4jv1alpha1.Neo4jEnterpriseStandalone)
+		mutate   func(*neo4jv1beta1.Neo4jEnterpriseStandalone)
 		wantErrs int
 		errField string
 	}{
 		{
 			name:     "valid standalone - no errors",
-			mutate:   func(_ *neo4jv1alpha1.Neo4jEnterpriseStandalone) {},
+			mutate:   func(_ *neo4jv1beta1.Neo4jEnterpriseStandalone) {},
 			wantErrs: 0,
 		},
 		{
 			name:     "missing image.repo",
-			mutate:   func(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) { s.Spec.Image.Repo = "" },
+			mutate:   func(s *neo4jv1beta1.Neo4jEnterpriseStandalone) { s.Spec.Image.Repo = "" },
 			wantErrs: 1,
 			errField: "spec.image.repo",
 		},
 		{
 			// When tag is empty, two errors are raised: Required + version-invalid
 			name:     "missing image.tag",
-			mutate:   func(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) { s.Spec.Image.Tag = "" },
+			mutate:   func(s *neo4jv1beta1.Neo4jEnterpriseStandalone) { s.Spec.Image.Tag = "" },
 			wantErrs: 2,
 			errField: "spec.image.tag",
 		},
 		{
 			name:     "unsupported Neo4j 4.x version",
-			mutate:   func(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) { s.Spec.Image.Tag = "4.4.0-enterprise" },
+			mutate:   func(s *neo4jv1beta1.Neo4jEnterpriseStandalone) { s.Spec.Image.Tag = "4.4.0-enterprise" },
 			wantErrs: 1,
 			errField: "spec.image.tag",
 		},
 		{
 			name:     "missing storage.className",
-			mutate:   func(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) { s.Spec.Storage.ClassName = "" },
+			mutate:   func(s *neo4jv1beta1.Neo4jEnterpriseStandalone) { s.Spec.Storage.ClassName = "" },
 			wantErrs: 1,
 			errField: "spec.storage.className",
 		},
 		{
 			name:     "missing storage.size",
-			mutate:   func(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) { s.Spec.Storage.Size = "" },
+			mutate:   func(s *neo4jv1beta1.Neo4jEnterpriseStandalone) { s.Spec.Storage.Size = "" },
 			wantErrs: 1,
 			errField: "spec.storage.size",
 		},
 		{
 			name: "TLS mode mutual-tls is invalid",
-			mutate: func(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) {
-				s.Spec.TLS = &neo4jv1alpha1.TLSSpec{Mode: "mutual-tls"}
+			mutate: func(s *neo4jv1beta1.Neo4jEnterpriseStandalone) {
+				s.Spec.TLS = &neo4jv1beta1.TLSSpec{Mode: "mutual-tls"}
 			},
 			wantErrs: 1,
 			errField: "spec.tls.mode",
 		},
 		{
 			name: "TLS mode cert-manager without issuerRef",
-			mutate: func(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) {
-				s.Spec.TLS = &neo4jv1alpha1.TLSSpec{Mode: "cert-manager"}
+			mutate: func(s *neo4jv1beta1.Neo4jEnterpriseStandalone) {
+				s.Spec.TLS = &neo4jv1beta1.TLSSpec{Mode: "cert-manager"}
 			},
 			wantErrs: 1,
 			errField: "spec.tls.issuerRef",
 		},
 		{
 			name: "TLS mode cert-manager without issuerRef.name",
-			mutate: func(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) {
-				s.Spec.TLS = &neo4jv1alpha1.TLSSpec{
+			mutate: func(s *neo4jv1beta1.Neo4jEnterpriseStandalone) {
+				s.Spec.TLS = &neo4jv1beta1.TLSSpec{
 					Mode:      "cert-manager",
-					IssuerRef: &neo4jv1alpha1.IssuerRef{Name: ""},
+					IssuerRef: &neo4jv1beta1.IssuerRef{Name: ""},
 				}
 			},
 			wantErrs: 1,
@@ -113,7 +113,7 @@ func TestStandaloneValidator_ValidateCreate(t *testing.T) {
 		},
 		{
 			name: "clustering key in spec.config is rejected",
-			mutate: func(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) {
+			mutate: func(s *neo4jv1beta1.Neo4jEnterpriseStandalone) {
 				s.Spec.Config = map[string]string{
 					"dbms.cluster.discovery.version": "V2_ONLY",
 				}
@@ -122,15 +122,15 @@ func TestStandaloneValidator_ValidateCreate(t *testing.T) {
 		},
 		{
 			name: "dbms.mode in spec.config is rejected",
-			mutate: func(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) {
+			mutate: func(s *neo4jv1beta1.Neo4jEnterpriseStandalone) {
 				s.Spec.Config = map[string]string{"dbms.mode": "SINGLE"}
 			},
 			wantErrs: 1,
 		},
 		{
 			name: "invalid auth provider",
-			mutate: func(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) {
-				s.Spec.Auth = &neo4jv1alpha1.AuthSpec{AuthenticationProviders: []string{"bogus-auth"}}
+			mutate: func(s *neo4jv1beta1.Neo4jEnterpriseStandalone) {
+				s.Spec.Auth = &neo4jv1beta1.AuthSpec{AuthenticationProviders: []string{"bogus-auth"}}
 			},
 			wantErrs: 1, // invalid provider name
 		},

@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Neo4jRestore Controller", func() {
@@ -24,9 +24,9 @@ var _ = Describe("Neo4jRestore Controller", func() {
 
 	var (
 		ctx           context.Context
-		restore       *neo4jv1alpha1.Neo4jRestore
-		cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
-		backup        *neo4jv1alpha1.Neo4jBackup
+		restore       *neo4jv1beta1.Neo4jRestore
+		cluster       *neo4jv1beta1.Neo4jEnterpriseCluster
+		backup        *neo4jv1beta1.Neo4jBackup
 		restoreName   string
 		clusterName   string
 		backupName    string
@@ -45,24 +45,24 @@ var _ = Describe("Neo4jRestore Controller", func() {
 		namespaceName = "default"
 
 		// Create cluster first
-		cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+		cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterName,
 				Namespace: namespaceName,
 			},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-				Image: neo4jv1alpha1.ImageSpec{
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				Image: neo4jv1beta1.ImageSpec{
 					Repo: "neo4j",
 					Tag:  "5.26-enterprise",
 				},
-				Topology: neo4jv1alpha1.TopologyConfiguration{
+				Topology: neo4jv1beta1.TopologyConfiguration{
 					Servers: 5, // 3 + 2 total servers
 				},
-				Storage: neo4jv1alpha1.StorageSpec{
+				Storage: neo4jv1beta1.StorageSpec{
 					ClassName: "standard",
 					Size:      "10Gi",
 				},
-				Auth: &neo4jv1alpha1.AuthSpec{
+				Auth: &neo4jv1beta1.AuthSpec{
 					AdminSecret: "neo4j-admin-secret",
 				},
 			},
@@ -95,19 +95,19 @@ var _ = Describe("Neo4jRestore Controller", func() {
 		Expect(k8sClient.Status().Patch(ctx, cluster, patch)).To(Succeed())
 
 		// Create backup for successful restore test
-		backup = &neo4jv1alpha1.Neo4jBackup{
+		backup = &neo4jv1beta1.Neo4jBackup{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      backupName,
 				Namespace: namespaceName,
 			},
-			Spec: neo4jv1alpha1.Neo4jBackupSpec{
-				Target: neo4jv1alpha1.BackupTarget{
+			Spec: neo4jv1beta1.Neo4jBackupSpec{
+				Target: neo4jv1beta1.BackupTarget{
 					Kind: "Cluster",
 					Name: clusterName,
 				},
-				Storage: neo4jv1alpha1.StorageLocation{
+				Storage: neo4jv1beta1.StorageLocation{
 					Type: "pvc",
-					PVC: &neo4jv1alpha1.PVCSpec{
+					PVC: &neo4jv1beta1.PVCSpec{
 						Name:             "backup-storage",
 						StorageClassName: "standard",
 						Size:             "10Gi",
@@ -129,15 +129,15 @@ var _ = Describe("Neo4jRestore Controller", func() {
 		Expect(k8sClient.Status().Patch(ctx, backup, backupPatch)).To(Succeed())
 
 		// Create basic restore spec
-		restore = &neo4jv1alpha1.Neo4jRestore{
+		restore = &neo4jv1beta1.Neo4jRestore{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      restoreName,
 				Namespace: namespaceName,
 			},
-			Spec: neo4jv1alpha1.Neo4jRestoreSpec{
+			Spec: neo4jv1beta1.Neo4jRestoreSpec{
 				ClusterRef:   clusterName,
 				DatabaseName: "neo4j",
-				Source: neo4jv1alpha1.RestoreSource{
+				Source: neo4jv1beta1.RestoreSource{
 					Type:      "backup",
 					BackupRef: backupName, // Use the created backup
 				},
@@ -187,7 +187,7 @@ var _ = Describe("Neo4jRestore Controller", func() {
 				Name:      restore.Name,
 				Namespace: restore.Namespace,
 			}
-			createdRestore := &neo4jv1alpha1.Neo4jRestore{}
+			createdRestore := &neo4jv1beta1.Neo4jRestore{}
 
 			// We'll need to wait and give the controller time to get the updated object.
 			// The first reconciliation may add the finalizer.
@@ -211,15 +211,15 @@ var _ = Describe("Neo4jRestore Controller", func() {
 
 		It("Should fail when cluster doesn't exist", func() {
 			By("Creating a Neo4jRestore with non-existent cluster")
-			restoreWithNoCluster := &neo4jv1alpha1.Neo4jRestore{
+			restoreWithNoCluster := &neo4jv1beta1.Neo4jRestore{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-restore-no-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jRestoreSpec{
+				Spec: neo4jv1beta1.Neo4jRestoreSpec{
 					ClusterRef:   "non-existent-cluster",
 					DatabaseName: "neo4j",
-					Source: neo4jv1alpha1.RestoreSource{
+					Source: neo4jv1beta1.RestoreSource{
 						Type:      "backup",
 						BackupRef: backupName, // Use existing backup
 					},
@@ -231,7 +231,7 @@ var _ = Describe("Neo4jRestore Controller", func() {
 				Name:      restoreWithNoCluster.Name,
 				Namespace: restoreWithNoCluster.Namespace,
 			}
-			createdRestore := &neo4jv1alpha1.Neo4jRestore{}
+			createdRestore := &neo4jv1beta1.Neo4jRestore{}
 
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, restoreLookupKey, createdRestore)
@@ -255,15 +255,15 @@ var _ = Describe("Neo4jRestore Controller", func() {
 
 		It("Should fail when backup doesn't exist", func() {
 			By("Creating a Neo4jRestore with non-existent backup")
-			restoreWithNoBackup := &neo4jv1alpha1.Neo4jRestore{
+			restoreWithNoBackup := &neo4jv1beta1.Neo4jRestore{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-restore-no-backup",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jRestoreSpec{
+				Spec: neo4jv1beta1.Neo4jRestoreSpec{
 					ClusterRef:   clusterName, // Use existing cluster
 					DatabaseName: "neo4j",
-					Source: neo4jv1alpha1.RestoreSource{
+					Source: neo4jv1beta1.RestoreSource{
 						Type:      "backup",
 						BackupRef: "non-existent-backup",
 					},
@@ -275,7 +275,7 @@ var _ = Describe("Neo4jRestore Controller", func() {
 				Name:      restoreWithNoBackup.Name,
 				Namespace: restoreWithNoBackup.Namespace,
 			}
-			createdRestore := &neo4jv1alpha1.Neo4jRestore{}
+			createdRestore := &neo4jv1beta1.Neo4jRestore{}
 
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, restoreLookupKey, createdRestore)
@@ -299,21 +299,21 @@ var _ = Describe("Neo4jRestore Controller", func() {
 
 		It("Should handle storage-based restore", func() {
 			By("Creating a Neo4jRestore with storage source")
-			restoreWithStorage := &neo4jv1alpha1.Neo4jRestore{
+			restoreWithStorage := &neo4jv1beta1.Neo4jRestore{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-restore-storage",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jRestoreSpec{
+				Spec: neo4jv1beta1.Neo4jRestoreSpec{
 					ClusterRef:   clusterName, // Use existing cluster
 					DatabaseName: "neo4j",
-					Source: neo4jv1alpha1.RestoreSource{
+					Source: neo4jv1beta1.RestoreSource{
 						Type: "storage",
-						Storage: &neo4jv1alpha1.StorageLocation{
+						Storage: &neo4jv1beta1.StorageLocation{
 							Type:   "pvc",
 							Path:   "/backups",
 							Bucket: "backup-bucket",
-							PVC: &neo4jv1alpha1.PVCSpec{
+							PVC: &neo4jv1beta1.PVCSpec{
 								Name:             "backup-storage",
 								StorageClassName: "standard",
 								Size:             "10Gi",
@@ -329,7 +329,7 @@ var _ = Describe("Neo4jRestore Controller", func() {
 				Name:      restoreWithStorage.Name,
 				Namespace: restoreWithStorage.Namespace,
 			}
-			createdRestore := &neo4jv1alpha1.Neo4jRestore{}
+			createdRestore := &neo4jv1beta1.Neo4jRestore{}
 
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, restoreLookupKey, createdRestore)
@@ -353,7 +353,7 @@ var _ = Describe("Neo4jRestore Controller", func() {
 				Name:      restore.Name,
 				Namespace: restore.Namespace,
 			}
-			createdRestore := &neo4jv1alpha1.Neo4jRestore{}
+			createdRestore := &neo4jv1beta1.Neo4jRestore{}
 
 			// Wait for the restore to be created and potentially reconciled
 			Eventually(func() bool {
@@ -375,7 +375,7 @@ var _ = Describe("Neo4jRestore Controller", func() {
 				Name:      restore.Name,
 				Namespace: restore.Namespace,
 			}
-			createdRestore := &neo4jv1alpha1.Neo4jRestore{}
+			createdRestore := &neo4jv1beta1.Neo4jRestore{}
 
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, restoreLookupKey, createdRestore)

@@ -4,7 +4,7 @@ The `Neo4jEnterpriseCluster` Custom Resource Definition (CRD) manages Neo4j Ente
 
 ## Overview
 
-- **API Version**: `neo4j.neo4j.com/v1alpha1`
+- **API Version**: `neo4j.neo4j.com/v1beta1`
 - **Kind**: `Neo4jEnterpriseCluster`
 - **Supported Neo4j Versions**: 5.26.x (last semver LTS) and 2025.01.0+ (CalVer)
 - **Architecture**: Server-based deployment with unified StatefulSet
@@ -875,7 +875,7 @@ The operator maintains the following condition types on `status.conditions` (sta
 ### Basic Cluster
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: basic-cluster
@@ -902,7 +902,7 @@ spec:
 ### Cluster with Server Role Constraints
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: role-constrained-cluster
@@ -952,7 +952,7 @@ spec:
 ### Cluster with Centralized Backup
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: monitored-cluster
@@ -996,7 +996,7 @@ spec:
 
 ```yaml
 # Note: Backups are now managed via Neo4jBackup CRD
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: daily-cluster-backup
@@ -1020,7 +1020,7 @@ spec:
 ### Cluster with LoadBalancer Service
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: public-cluster
@@ -1051,7 +1051,7 @@ spec:
 ### Cluster with Ingress
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: ingress-cluster
@@ -1128,7 +1128,7 @@ kubectl logs my-cluster-server-0 -c neo4j
 
 ```yaml
 # 1. Create cluster with role-optimized servers
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: multi-db-cluster
@@ -1152,7 +1152,7 @@ spec:
 
 ---
 # 2. Create databases with specific topologies
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: user-database
@@ -1164,7 +1164,7 @@ spec:
     secondaries: 2  # Uses servers 2-3 (SECONDARY constraint)
 
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: analytics-database
@@ -1180,7 +1180,7 @@ spec:
 
 ```yaml
 # Development cluster (minimal resources)
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: dev-cluster
@@ -1202,7 +1202,7 @@ spec:
 
 ---
 # Property Sharding cluster (Neo4j 2025.12+)
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: sharding-cluster
@@ -1237,7 +1237,7 @@ spec:
 
 ---
 # Production cluster (high availability)
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: prod-cluster

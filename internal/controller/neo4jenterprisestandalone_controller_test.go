@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
@@ -42,7 +42,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 
 	var (
 		ctx            context.Context
-		standalone     *neo4jv1alpha1.Neo4jEnterpriseStandalone
+		standalone     *neo4jv1beta1.Neo4jEnterpriseStandalone
 		standaloneName string
 		namespaceName  string
 	)
@@ -70,17 +70,17 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 		}
 
 		// Create basic standalone spec
-		standalone = &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+		standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      standaloneName,
 				Namespace: namespaceName,
 			},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-				Image: neo4jv1alpha1.ImageSpec{
+			Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+				Image: neo4jv1beta1.ImageSpec{
 					Repo: "neo4j",
 					Tag:  "5.26-enterprise",
 				},
-				Storage: neo4jv1alpha1.StorageSpec{
+				Storage: neo4jv1beta1.StorageSpec{
 					ClassName: "standard",
 					Size:      "10Gi",
 				},
@@ -90,7 +90,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 						Value: "eval",
 					},
 				},
-				Auth: &neo4jv1alpha1.AuthSpec{
+				Auth: &neo4jv1beta1.AuthSpec{
 					AdminSecret: "neo4j-admin-secret",
 				},
 			},
@@ -243,7 +243,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 	Context("When creating a standalone with TLS configuration", func() {
 		It("Should handle TLS configuration properly", func() {
 			By("Adding TLS configuration")
-			standalone.Spec.TLS = &neo4jv1alpha1.TLSSpec{
+			standalone.Spec.TLS = &neo4jv1beta1.TLSSpec{
 				Mode: "disabled",
 			}
 
@@ -288,7 +288,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 			Expect(k8sClient.Create(ctx, adminSecret)).Should(Succeed())
 
 			By("Adding authentication configuration")
-			standalone.Spec.Auth = &neo4jv1alpha1.AuthSpec{
+			standalone.Spec.Auth = &neo4jv1beta1.AuthSpec{
 				AdminSecret:             "admin-secret-test",
 				AuthenticationProviders: []string{"native"},
 			}
@@ -425,7 +425,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 	Context("When creating a standalone with external access configuration", func() {
 		It("Should create service with LoadBalancer type", func() {
 			By("Adding LoadBalancer service configuration")
-			standalone.Spec.Service = &neo4jv1alpha1.ServiceSpec{
+			standalone.Spec.Service = &neo4jv1beta1.ServiceSpec{
 				Type: "LoadBalancer",
 			}
 
@@ -450,7 +450,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 
 		It("Should create service with NodePort type", func() {
 			By("Adding NodePort service configuration")
-			standalone.Spec.Service = &neo4jv1alpha1.ServiceSpec{
+			standalone.Spec.Service = &neo4jv1beta1.ServiceSpec{
 				Type: "NodePort",
 			}
 
@@ -475,7 +475,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 
 		It("Should create service with LoadBalancer IP and external traffic policy", func() {
 			By("Adding advanced LoadBalancer configuration")
-			standalone.Spec.Service = &neo4jv1alpha1.ServiceSpec{
+			standalone.Spec.Service = &neo4jv1beta1.ServiceSpec{
 				Type:                  "LoadBalancer",
 				LoadBalancerIP:        "10.0.0.100",
 				ExternalTrafficPolicy: "Local",
@@ -630,7 +630,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 	Context("When creating a standalone with TLS and checking bolt endpoint scheme", func() {
 		It("Should use bolt:// in endpoints when TLS is disabled", func() {
 			By("Setting TLS to disabled")
-			standalone.Spec.TLS = &neo4jv1alpha1.TLSSpec{
+			standalone.Spec.TLS = &neo4jv1beta1.TLSSpec{
 				Mode: "disabled",
 			}
 
@@ -689,7 +689,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 				}
 
 				// Update service spec
-				standalone.Spec.Service = &neo4jv1alpha1.ServiceSpec{
+				standalone.Spec.Service = &neo4jv1beta1.ServiceSpec{
 					Type: "LoadBalancer",
 				}
 

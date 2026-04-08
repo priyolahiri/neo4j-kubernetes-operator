@@ -21,7 +21,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ func TestValidateUpgradeStrategy(t *testing.T) {
 
 	cases := []struct {
 		name     string
-		strategy *neo4jv1alpha1.UpgradeStrategySpec
+		strategy *neo4jv1beta1.UpgradeStrategySpec
 		wantErrs int
 	}{
 		{
@@ -85,7 +85,7 @@ func TestValidateUpgradeStrategy(t *testing.T) {
 		},
 		{
 			name: "valid RollingUpgrade strategy",
-			strategy: &neo4jv1alpha1.UpgradeStrategySpec{
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{
 				Strategy:                    "RollingUpgrade",
 				UpgradeTimeout:              "30m",
 				HealthCheckTimeout:          "5m",
@@ -96,27 +96,27 @@ func TestValidateUpgradeStrategy(t *testing.T) {
 		},
 		{
 			name:     "valid Recreate strategy",
-			strategy: &neo4jv1alpha1.UpgradeStrategySpec{Strategy: "Recreate"}, wantErrs: 0,
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{Strategy: "Recreate"}, wantErrs: 0,
 		},
 		{
 			name:     "unknown strategy Blue-Green",
-			strategy: &neo4jv1alpha1.UpgradeStrategySpec{Strategy: "Blue-Green"}, wantErrs: 1,
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{Strategy: "Blue-Green"}, wantErrs: 1,
 		},
 		{
 			name:     "invalid upgradeTimeout",
-			strategy: &neo4jv1alpha1.UpgradeStrategySpec{UpgradeTimeout: "not-a-duration"}, wantErrs: 1,
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{UpgradeTimeout: "not-a-duration"}, wantErrs: 1,
 		},
 		{
 			name:     "invalid healthCheckTimeout",
-			strategy: &neo4jv1alpha1.UpgradeStrategySpec{HealthCheckTimeout: "not-a-duration"}, wantErrs: 1,
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{HealthCheckTimeout: "not-a-duration"}, wantErrs: 1,
 		},
 		{
 			name:     "invalid stabilizationTimeout",
-			strategy: &neo4jv1alpha1.UpgradeStrategySpec{StabilizationTimeout: "not-a-duration"}, wantErrs: 1,
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{StabilizationTimeout: "not-a-duration"}, wantErrs: 1,
 		},
 		{
 			name: "maxUnavailableDuringUpgrade = -1",
-			strategy: &neo4jv1alpha1.UpgradeStrategySpec{
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{
 				MaxUnavailableDuringUpgrade: &negOne,
 			},
 			wantErrs: 1,
@@ -126,9 +126,9 @@ func TestValidateUpgradeStrategy(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					UpgradeStrategy: tc.strategy,
 				},
 			}

@@ -228,7 +228,7 @@ Once your cluster is running, you can create and manage databases using the Neo4
 ```bash
 # Create a simple database
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: my-database
@@ -247,7 +247,7 @@ If you have existing Neo4j backups in cloud storage, you can create databases di
 ```bash
 # Create database from S3 backup
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: restored-database
@@ -273,7 +273,7 @@ kubectl apply -f examples/property_sharding/basic-property-sharding.yaml
 
 # Create a sharded database with property distribution
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jShardedDatabase
 metadata:
   name: large-dataset-db

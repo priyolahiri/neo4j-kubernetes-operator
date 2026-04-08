@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 )
 
@@ -77,8 +77,8 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 
 	var (
 		testNamespace string
-		cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
-		shardedDB     *neo4jv1alpha1.Neo4jShardedDatabase
+		cluster       *neo4jv1beta1.Neo4jEnterpriseCluster
+		shardedDB     *neo4jv1beta1.Neo4jShardedDatabase
 	)
 
 	BeforeEach(func() {
@@ -148,23 +148,23 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 	Describe("Property Sharding Cluster Configuration", func() {
 		Context("when creating a cluster with property sharding enabled", func() {
 			It("should validate property sharding configuration", func() {
-				cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "property-sharding-cluster",
 						Namespace: testNamespace,
 					},
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Image: neo4jv1alpha1.ImageSpec{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Image: neo4jv1beta1.ImageSpec{
 							Repo: "neo4j",
 							Tag:  getNeo4jImageTag(), // Property sharding requires 2025.12+ (guarded by isPropertyShardingCompatible)
 						},
-						Auth: &neo4jv1alpha1.AuthSpec{
+						Auth: &neo4jv1beta1.AuthSpec{
 							AdminSecret: "neo4j-admin-secret",
 						},
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: 3, // Property sharding test configuration
 						},
-						Storage: neo4jv1alpha1.StorageSpec{
+						Storage: neo4jv1beta1.StorageSpec{
 							Size:      "1Gi",
 							ClassName: "standard",
 						},
@@ -178,7 +178,7 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 								corev1.ResourceCPU:    resource.MustParse("2000m"), // 2 cores per server
 							},
 						},
-						PropertySharding: &neo4jv1alpha1.PropertyShardingSpec{
+						PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
 							Enabled: true,
 							Config: map[string]string{
 								"internal.dbms.sharded_property_database.enabled":                     "true",
@@ -214,27 +214,27 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 
 		Context("when property sharding configuration is invalid", func() {
 			It("should fail validation for invalid server count", func() {
-				cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "invalid-sharding-cluster",
 						Namespace: testNamespace,
 					},
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Image: neo4jv1alpha1.ImageSpec{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Image: neo4jv1beta1.ImageSpec{
 							Repo: "neo4j",
 							Tag:  getNeo4jImageTag(),
 						},
-						Auth: &neo4jv1alpha1.AuthSpec{
+						Auth: &neo4jv1beta1.AuthSpec{
 							AdminSecret: "neo4j-admin-secret",
 						},
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: 0, // Invalid for property sharding
 						},
-						Storage: neo4jv1alpha1.StorageSpec{
+						Storage: neo4jv1beta1.StorageSpec{
 							Size:      "1Gi",
 							ClassName: "standard",
 						},
-						PropertySharding: &neo4jv1alpha1.PropertyShardingSpec{
+						PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
 							Enabled: true,
 						},
 					},
@@ -248,27 +248,27 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 			})
 
 			It("should fail validation for invalid property sharding config", func() {
-				cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "invalid-config-cluster",
 						Namespace: testNamespace,
 					},
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Image: neo4jv1alpha1.ImageSpec{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Image: neo4jv1beta1.ImageSpec{
 							Repo: "neo4j",
 							Tag:  getNeo4jImageTag(),
 						},
-						Auth: &neo4jv1alpha1.AuthSpec{
+						Auth: &neo4jv1beta1.AuthSpec{
 							AdminSecret: "neo4j-admin-secret",
 						},
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: 3,
 						},
-						Storage: neo4jv1alpha1.StorageSpec{
+						Storage: neo4jv1beta1.StorageSpec{
 							Size:      "1Gi",
 							ClassName: "standard",
 						},
-						PropertySharding: &neo4jv1alpha1.PropertyShardingSpec{
+						PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
 							Enabled: true,
 							Config: map[string]string{
 								"internal.dbms.sharded_property_database.allow_external_shard_access": "true",
@@ -298,23 +298,23 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 	Describe("Neo4jShardedDatabase Lifecycle", func() {
 		BeforeEach(func() {
 			// Create a property sharding enabled cluster first
-			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "sharding-host-cluster",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(),
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: "neo4j-admin-secret",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3, // Property sharding test configuration
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						Size:      "1Gi",
 						ClassName: "standard",
 					},
@@ -328,7 +328,7 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 							corev1.ResourceCPU:    resource.MustParse("2000m"), // 2 cores per server
 						},
 					},
-					PropertySharding: &neo4jv1alpha1.PropertyShardingSpec{
+					PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
 						Enabled: true,
 						Config: map[string]string{
 							"internal.dbms.sharded_property_database.enabled":                     "true",
@@ -363,22 +363,22 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 
 		Context("when creating a sharded database", func() {
 			It("should successfully create and configure sharded database", func() {
-				shardedDB = &neo4jv1alpha1.Neo4jShardedDatabase{
+				shardedDB = &neo4jv1beta1.Neo4jShardedDatabase{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-sharded-database",
 						Namespace: testNamespace,
 					},
-					Spec: neo4jv1alpha1.Neo4jShardedDatabaseSpec{
+					Spec: neo4jv1beta1.Neo4jShardedDatabaseSpec{
 						ClusterRef:            cluster.Name,
 						Name:                  "products",
 						DefaultCypherLanguage: "25",
-						PropertySharding: neo4jv1alpha1.PropertyShardingConfiguration{
+						PropertySharding: neo4jv1beta1.PropertyShardingConfiguration{
 							PropertyShards: 3,
-							GraphShard: neo4jv1alpha1.DatabaseTopology{
+							GraphShard: neo4jv1beta1.DatabaseTopology{
 								Primaries:   1,
 								Secondaries: 1,
 							},
-							PropertyShardTopology: neo4jv1alpha1.PropertyShardTopology{
+							PropertyShardTopology: neo4jv1beta1.PropertyShardTopology{
 								Replicas: 1,
 							},
 						},
@@ -410,22 +410,22 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 			})
 
 			It("should validate sharded database configuration", func() {
-				shardedDB = &neo4jv1alpha1.Neo4jShardedDatabase{
+				shardedDB = &neo4jv1beta1.Neo4jShardedDatabase{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "invalid-sharded-database",
 						Namespace: testNamespace,
 					},
-					Spec: neo4jv1alpha1.Neo4jShardedDatabaseSpec{
+					Spec: neo4jv1beta1.Neo4jShardedDatabaseSpec{
 						ClusterRef:            cluster.Name,
 						Name:                  "invalid-db",
 						DefaultCypherLanguage: "5", // Invalid for property sharding
-						PropertySharding: neo4jv1alpha1.PropertyShardingConfiguration{
+						PropertySharding: neo4jv1beta1.PropertyShardingConfiguration{
 							PropertyShards: 0, // Invalid
-							GraphShard: neo4jv1alpha1.DatabaseTopology{
+							GraphShard: neo4jv1beta1.DatabaseTopology{
 								Primaries:   1,
 								Secondaries: 0,
 							},
-							PropertyShardTopology: neo4jv1alpha1.PropertyShardTopology{
+							PropertyShardTopology: neo4jv1beta1.PropertyShardTopology{
 								Replicas: 0,
 							},
 						},
@@ -441,26 +441,26 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 		})
 
 		Context("when cluster doesn't support property sharding", func() {
-			var nonShardingCluster *neo4jv1alpha1.Neo4jEnterpriseCluster
+			var nonShardingCluster *neo4jv1beta1.Neo4jEnterpriseCluster
 
 			BeforeEach(func() {
-				nonShardingCluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				nonShardingCluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "non-sharding-cluster",
 						Namespace: testNamespace,
 					},
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Image: neo4jv1alpha1.ImageSpec{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Image: neo4jv1beta1.ImageSpec{
 							Repo: "neo4j",
 							Tag:  getNeo4jImageTag(),
 						},
-						Auth: &neo4jv1alpha1.AuthSpec{
+						Auth: &neo4jv1beta1.AuthSpec{
 							AdminSecret: "neo4j-admin-secret",
 						},
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: 3,
 						},
-						Storage: neo4jv1alpha1.StorageSpec{
+						Storage: neo4jv1beta1.StorageSpec{
 							Size:      "1Gi",
 							ClassName: "standard",
 						},
@@ -502,22 +502,22 @@ var _ = Describe("Property Sharding Integration Tests", Serial, func() {
 			})
 
 			It("should fail when targeting non-sharding cluster", func() {
-				shardedDB = &neo4jv1alpha1.Neo4jShardedDatabase{
+				shardedDB = &neo4jv1beta1.Neo4jShardedDatabase{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "failed-sharded-database",
 						Namespace: testNamespace,
 					},
-					Spec: neo4jv1alpha1.Neo4jShardedDatabaseSpec{
+					Spec: neo4jv1beta1.Neo4jShardedDatabaseSpec{
 						ClusterRef:            nonShardingCluster.Name,
 						Name:                  "products",
 						DefaultCypherLanguage: "25",
-						PropertySharding: neo4jv1alpha1.PropertyShardingConfiguration{
+						PropertySharding: neo4jv1beta1.PropertyShardingConfiguration{
 							PropertyShards: 3,
-							GraphShard: neo4jv1alpha1.DatabaseTopology{
+							GraphShard: neo4jv1beta1.DatabaseTopology{
 								Primaries:   1,
 								Secondaries: 1,
 							},
-							PropertyShardTopology: neo4jv1alpha1.PropertyShardTopology{
+							PropertyShardTopology: neo4jv1beta1.PropertyShardTopology{
 								Replicas: 1,
 							},
 						},
@@ -592,7 +592,7 @@ func dumpNamespaceDiagnostics(namespace string) {
 		}
 	}
 
-	clusterList := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
+	clusterList := &neo4jv1beta1.Neo4jEnterpriseClusterList{}
 	if err := k8sClient.List(ctx, clusterList, client.InNamespace(namespace)); err == nil {
 		for _, item := range clusterList.Items {
 			ready := "nil"
@@ -609,7 +609,7 @@ func dumpNamespaceDiagnostics(namespace string) {
 		}
 	}
 
-	shardedDBList := &neo4jv1alpha1.Neo4jShardedDatabaseList{}
+	shardedDBList := &neo4jv1beta1.Neo4jShardedDatabaseList{}
 	if err := k8sClient.List(ctx, shardedDBList, client.InNamespace(namespace)); err == nil {
 		for _, item := range shardedDBList.Items {
 			ready := "nil"

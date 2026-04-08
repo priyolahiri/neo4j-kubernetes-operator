@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,7 +32,7 @@ func NewTopologyScheduler(client client.Client) *TopologyScheduler {
 }
 
 // CalculateTopologyPlacement determines optimal pod placement based on topology configuration
-func (ts *TopologyScheduler) CalculateTopologyPlacement(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*TopologyPlacement, error) {
+func (ts *TopologyScheduler) CalculateTopologyPlacement(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*TopologyPlacement, error) {
 	logger := log.FromContext(ctx)
 
 	if cluster.Spec.Topology.Placement == nil {
@@ -86,7 +86,7 @@ type TopologyPlacement struct {
 }
 
 // ApplyTopologyConstraints applies topology constraints to a StatefulSet
-func (ts *TopologyScheduler) ApplyTopologyConstraints(ctx context.Context, sts *appsv1.StatefulSet, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, placement *TopologyPlacement) error {
+func (ts *TopologyScheduler) ApplyTopologyConstraints(ctx context.Context, sts *appsv1.StatefulSet, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, placement *TopologyPlacement) error {
 	logger := log.FromContext(ctx)
 
 	if !placement.UseTopologySpread && !placement.UseAntiAffinity {
@@ -121,7 +121,7 @@ func (ts *TopologyScheduler) ApplyTopologyConstraints(ctx context.Context, sts *
 }
 
 // buildTopologySpreadConstraints creates topology spread constraints for the cluster
-func (ts *TopologyScheduler) buildTopologySpreadConstraints(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, _ *TopologyPlacement) []corev1.TopologySpreadConstraint {
+func (ts *TopologyScheduler) buildTopologySpreadConstraints(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, _ *TopologyPlacement) []corev1.TopologySpreadConstraint {
 	config := cluster.Spec.Topology.Placement.TopologySpread
 	constraints := []corev1.TopologySpreadConstraint{}
 
@@ -186,7 +186,7 @@ func (ts *TopologyScheduler) buildTopologySpreadConstraints(cluster *neo4jv1alph
 }
 
 // buildPodAntiAffinity creates pod anti-affinity rules for the cluster
-func (ts *TopologyScheduler) buildPodAntiAffinity(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, placement *TopologyPlacement) *corev1.PodAntiAffinity {
+func (ts *TopologyScheduler) buildPodAntiAffinity(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, placement *TopologyPlacement) *corev1.PodAntiAffinity {
 	config := cluster.Spec.Topology.Placement.AntiAffinity
 
 	// Default topology key is zone
@@ -250,7 +250,7 @@ func (ts *TopologyScheduler) discoverAvailabilityZones(ctx context.Context) ([]s
 }
 
 // validateTopologyConfiguration validates the topology configuration against cluster constraints
-func (ts *TopologyScheduler) validateTopologyConfiguration(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, placement *TopologyPlacement) error {
+func (ts *TopologyScheduler) validateTopologyConfiguration(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, placement *TopologyPlacement) error {
 	if cluster == nil {
 		return fmt.Errorf("cluster cannot be nil")
 	}
@@ -296,7 +296,7 @@ func (ts *TopologyScheduler) validateTopologyConfiguration(cluster *neo4jv1alpha
 }
 
 // GetTopologyDistribution returns the current topology distribution of cluster pods
-func (ts *TopologyScheduler) GetTopologyDistribution(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*TopologyDistribution, error) {
+func (ts *TopologyScheduler) GetTopologyDistribution(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*TopologyDistribution, error) {
 	pods := &corev1.PodList{}
 	listOpts := []client.ListOption{
 		client.InNamespace(cluster.Namespace),

@@ -55,7 +55,7 @@ kubectl create secret generic aura-fleet-token \
 Add the `auraFleetManagement` field to your `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone`:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: my-cluster
@@ -101,7 +101,7 @@ After a few minutes you should see the deployment appear in the Aura console und
 Works identically for `Neo4jEnterpriseStandalone`:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: my-standalone

@@ -54,7 +54,7 @@ echo "Creating test resources..."
 
 # Test 1: Valid resource (should succeed)
 cat <<EOF | kubectl apply -f - --dry-run=server &>/dev/null && echo "✅ Valid resource accepted" || echo "❌ Valid resource rejected"
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: test-valid-cluster
@@ -71,7 +71,7 @@ EOF
 
 # Test 2: Invalid resource (should fail)
 cat <<EOF | kubectl apply -f - --dry-run=server &>/dev/null && echo "❌ Invalid resource accepted (should have been rejected)" || echo "✅ Invalid resource rejected"
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: test-invalid-cluster

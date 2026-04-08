@@ -22,7 +22,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // ConfigValidator validates Neo4j configuration settings
@@ -34,7 +34,7 @@ func NewConfigValidator() *ConfigValidator {
 }
 
 // Validate validates the configuration settings
-func (v *ConfigValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *ConfigValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 	configPath := field.NewPath("spec", "config")
 

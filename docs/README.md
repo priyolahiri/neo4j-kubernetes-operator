@@ -87,7 +87,7 @@ Create Neo4j databases directly from existing backups stored in cloud storage - 
 ### Quick Example
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: migrated-production-db

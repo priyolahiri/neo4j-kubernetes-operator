@@ -12,7 +12,7 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // TestValidateVersionCompatibility covers the version-check logic in the rolling
@@ -125,25 +125,25 @@ func containsIgnoreCase(s, sub string) bool {
 
 func TestIsUpgradeRequiredSingleStatefulSet(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 	_ = appsv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "demo",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  "2025.01.0-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
 		},
-		Status: neo4jv1alpha1.Neo4jEnterpriseClusterStatus{
+		Status: neo4jv1beta1.Neo4jEnterpriseClusterStatus{
 			Phase: "Ready",
 		},
 	}
