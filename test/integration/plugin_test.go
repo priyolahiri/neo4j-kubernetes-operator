@@ -31,7 +31,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Neo4jPlugin Integration Tests", func() {
@@ -53,7 +53,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 		By("Cleaning up plugin test resources")
 
 		// Clean up any clusters created by plugin tests
-		clusterList := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
+		clusterList := &neo4jv1beta1.Neo4jEnterpriseClusterList{}
 		if err := k8sClient.List(ctx, clusterList); err == nil {
 			for i := range clusterList.Items {
 				cluster := &clusterList.Items[i]
@@ -68,7 +68,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 		}
 
 		// Clean up any standalones created by plugin tests
-		standaloneList := &neo4jv1alpha1.Neo4jEnterpriseStandaloneList{}
+		standaloneList := &neo4jv1beta1.Neo4jEnterpriseStandaloneList{}
 		if err := k8sClient.List(ctx, standaloneList); err == nil {
 			for i := range standaloneList.Items {
 				standalone := &standaloneList.Items[i]
@@ -83,7 +83,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 		}
 
 		// Clean up any plugins
-		pluginList := &neo4jv1alpha1.Neo4jPluginList{}
+		pluginList := &neo4jv1beta1.Neo4jPluginList{}
 		if err := k8sClient.List(ctx, pluginList); err == nil {
 			for i := range pluginList.Items {
 				plugin := &pluginList.Items[i]
@@ -119,29 +119,29 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
 			By("Creating Neo4jEnterpriseCluster")
 			clusterName := "plugin-test-cluster"
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      clusterName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(),
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: getCIAppropriateClusterSize(2),
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						Size:      "1Gi",
 						ClassName: "standard",
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"native"},
 						AdminSecret:             "neo4j-admin-secret",
 					},
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -160,7 +160,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
 			By("Waiting for cluster to be ready")
 			Eventually(func() string {
-				currentCluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+				currentCluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      clusterName,
 					Namespace: namespace.Name,
@@ -182,17 +182,17 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 			Expect(*serverSts.Spec.Replicas).To(Equal(int32(2)))
 
 			By("Creating APOC plugin for cluster")
-			plugin := &neo4jv1alpha1.Neo4jPlugin{
+			plugin := &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "apoc-plugin",
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: clusterName,
 					Name:       "apoc",
 					Version:    "5.26.0",
 					Enabled:    true,
-					Source: &neo4jv1alpha1.PluginSource{
+					Source: &neo4jv1beta1.PluginSource{
 						Type: "official",
 					},
 					// APOC configuration in Neo4j 5.26+ is handled via environment variables only
@@ -210,7 +210,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 			// a rolling restart of all pods (NEO4J_PLUGINS env change) which takes 4-8 min on top of
 			// the cluster formation time already consumed above.
 			Eventually(func() string {
-				currentPlugin := &neo4jv1alpha1.Neo4jPlugin{}
+				currentPlugin := &neo4jv1beta1.Neo4jPlugin{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      "apoc-plugin",
 					Namespace: namespace.Name,
@@ -358,25 +358,25 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
 			By("Creating Neo4jEnterpriseStandalone")
 			standaloneName := "plugin-test-standalone"
-			standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+			standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      standaloneName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(),
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						Size:      "1Gi",
 						ClassName: "standard",
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: "neo4j-admin-secret",
 					},
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -391,7 +391,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
 			By("Waiting for standalone to be ready")
 			Eventually(func() string {
-				currentStandalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+				currentStandalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      standaloneName,
 					Namespace: namespace.Name,
@@ -413,20 +413,20 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 			Expect(*standaloneSts.Spec.Replicas).To(Equal(int32(1)))
 
 			By("Creating GDS plugin for standalone with dependency")
-			plugin := &neo4jv1alpha1.Neo4jPlugin{
+			plugin := &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "gds-plugin",
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: standaloneName,
 					Name:       "graph-data-science",
 					Version:    "2.10.0",
 					Enabled:    true,
-					Source: &neo4jv1alpha1.PluginSource{
+					Source: &neo4jv1beta1.PluginSource{
 						Type: "community",
 					},
-					Dependencies: []neo4jv1alpha1.PluginDependency{
+					Dependencies: []neo4jv1beta1.PluginDependency{
 						{
 							Name:              "apoc",
 							VersionConstraint: ">=5.26.0",
@@ -438,7 +438,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 					Config: map[string]string{
 						// Test basic GDS configuration without requiring license file
 					},
-					Security: &neo4jv1alpha1.PluginSecurity{
+					Security: &neo4jv1beta1.PluginSecurity{
 						AllowedProcedures: []string{"gds.*", "apoc.load.*"},
 						Sandbox:           true,
 					},
@@ -448,7 +448,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
 			By("Waiting for plugin status to be Installing or Ready")
 			Eventually(func() string {
-				currentPlugin := &neo4jv1alpha1.Neo4jPlugin{}
+				currentPlugin := &neo4jv1beta1.Neo4jPlugin{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      "gds-plugin",
 					Namespace: namespace.Name,
@@ -543,25 +543,25 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
 			By("Creating Neo4jEnterpriseStandalone for Bloom test")
 			standaloneName := "bloom-test-standalone"
-			standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+			standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      standaloneName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(),
 					},
 					Resources: getCIAppropriateResourceRequirements(),
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						Size:      "1Gi",
 						ClassName: "standard",
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: "neo4j-admin-secret",
 					},
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -576,7 +576,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
 			By("Waiting for standalone to be ready")
 			Eventually(func() string {
-				currentStandalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+				currentStandalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      standaloneName,
 					Namespace: namespace.Name,
@@ -588,17 +588,17 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 			}, clusterTimeout, interval).Should(Equal("Ready"))
 
 			By("Creating Bloom plugin with neo4j.conf configuration")
-			plugin := &neo4jv1alpha1.Neo4jPlugin{
+			plugin := &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "bloom-plugin",
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: standaloneName,
 					Name:       "bloom",
 					Version:    "2.15.0",
 					Enabled:    true,
-					Source: &neo4jv1alpha1.PluginSource{
+					Source: &neo4jv1beta1.PluginSource{
 						Type: "official",
 					},
 					// Bloom configuration goes through neo4j.conf (unlike APOC)
@@ -663,16 +663,16 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 			Expect(k8sClient.Create(ctx, namespace)).Should(Succeed())
 
 			By("Creating plugin with non-existent clusterRef")
-			plugin := &neo4jv1alpha1.Neo4jPlugin{
+			plugin := &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "orphan-plugin",
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "non-existent-deployment",
 					Name:       "apoc",
 					Version:    "5.26.0",
-					Source: &neo4jv1alpha1.PluginSource{
+					Source: &neo4jv1beta1.PluginSource{
 						Type: "official",
 					},
 				},
@@ -681,7 +681,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
 			By("Verifying plugin status shows Failed")
 			Eventually(func() string {
-				currentPlugin := &neo4jv1alpha1.Neo4jPlugin{}
+				currentPlugin := &neo4jv1beta1.Neo4jPlugin{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      "orphan-plugin",
 					Namespace: namespace.Name,
@@ -693,7 +693,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 			}, clusterTimeout, interval).Should(Equal("Failed"))
 
 			By("Verifying error message mentions deployment not found")
-			currentPlugin := &neo4jv1alpha1.Neo4jPlugin{}
+			currentPlugin := &neo4jv1beta1.Neo4jPlugin{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "orphan-plugin",
 				Namespace: namespace.Name,
@@ -727,25 +727,25 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
 			By("Creating Neo4jEnterpriseCluster in Pending state")
 			clusterName := "pending-cluster"
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      clusterName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(),
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: getCIAppropriateClusterSize(2),
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						Size:      "1Gi",
 						ClassName: "standard",
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"native"},
 						AdminSecret:             "neo4j-admin-secret",
 					},
@@ -756,16 +756,16 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 			// Don't wait for it to be ready, leave it in Pending
 
 			By("Creating plugin for pending cluster")
-			plugin := &neo4jv1alpha1.Neo4jPlugin{
+			plugin := &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "waiting-plugin",
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: clusterName,
 					Name:       "apoc",
 					Version:    "5.26.0",
-					Source: &neo4jv1alpha1.PluginSource{
+					Source: &neo4jv1beta1.PluginSource{
 						Type: "official",
 					},
 				},
@@ -774,7 +774,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
 			By("Verifying plugin status shows Waiting")
 			Eventually(func() string {
-				currentPlugin := &neo4jv1alpha1.Neo4jPlugin{}
+				currentPlugin := &neo4jv1beta1.Neo4jPlugin{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      "waiting-plugin",
 					Namespace: namespace.Name,
@@ -786,7 +786,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 			}, clusterTimeout, interval).Should(Equal("Waiting"))
 
 			By("Verifying status message mentions waiting for deployment")
-			currentPlugin := &neo4jv1alpha1.Neo4jPlugin{}
+			currentPlugin := &neo4jv1beta1.Neo4jPlugin{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "waiting-plugin",
 				Namespace: namespace.Name,

@@ -17,7 +17,7 @@
 # - 1 server will host secondary replica (read-only)
 # - Remaining cluster servers can be used by other databases
 
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: orders-database

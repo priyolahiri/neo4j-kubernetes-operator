@@ -232,7 +232,7 @@ kubectl get neo4jenterprisecluster
 
 ```
 neo4j-kubernetes-operator/
-├── api/v1alpha1/                    # CRD type definitions
+├── api/v1beta1/                    # CRD type definitions
 │   ├── neo4jenterprisecluster_types.go
 │   ├── neo4jenterprisestandalone_types.go
 │   ├── neo4jdatabase_types.go
@@ -414,7 +414,7 @@ make fmt vet
 ```
 
 ### Generated Files
-- `api/v1alpha1/zz_generated.deepcopy.go`: DeepCopy methods for CRDs
+- `api/v1beta1/zz_generated.deepcopy.go`: DeepCopy methods for CRDs
 - `config/crd/bases/*.yaml`: Kubernetes CRD manifests
 - `config/rbac/*.yaml`: RBAC resources
 
@@ -509,7 +509,7 @@ kubectl logs -l app.kubernetes.io/name=neo4j-operator | grep -i "reconcile"
 
 When adding new CRDs:
 
-1. **Define types** in `api/v1alpha1/`
+1. **Define types** in `api/v1beta1/`
 2. **Create controller** in `internal/controller/`
 3. **Add validation** in `internal/validation/`
 4. **Update RBAC** in `config/rbac/`

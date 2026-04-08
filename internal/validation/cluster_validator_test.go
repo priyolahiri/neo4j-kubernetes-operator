@@ -26,36 +26,36 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestClusterValidator_ValidateCreate(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	validator := NewClusterValidator(fakeClient)
 
 	tests := []struct {
 		name    string
-		cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster *neo4jv1beta1.Neo4jEnterpriseCluster
 		wantErr bool
 	}{
 		{
 			name: "valid cluster",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        "5.26.0",
 						PullPolicy: "IfNotPresent",
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "fast-ssd",
 						Size:      "100Gi",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 4,
 					},
 				},
@@ -64,18 +64,18 @@ func TestClusterValidator_ValidateCreate(t *testing.T) {
 		},
 		{
 			name: "invalid image version",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        "4.4.0",
 						PullPolicy: "IfNotPresent",
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "fast-ssd",
 						Size:      "100Gi",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 4,
 					},
 				},
@@ -84,18 +84,18 @@ func TestClusterValidator_ValidateCreate(t *testing.T) {
 		},
 		{
 			name: "valid topology with even servers (warnings only)",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        "5.26.0",
 						PullPolicy: "IfNotPresent",
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "fast-ssd",
 						Size:      "100Gi",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 5, // 4 + 1 total servers
 					},
 				},
@@ -117,22 +117,22 @@ func TestClusterValidator_ValidateCreate(t *testing.T) {
 func TestClusterValidator_ApplyDefaults(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	validator := NewClusterValidator(fakeClient)
 
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  "5.26.0",
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "fast-ssd",
 				Size:      "100Gi",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 2, // 2 servers
 			},
 		},
@@ -164,37 +164,37 @@ func TestClusterValidator_ApplyDefaults(t *testing.T) {
 func TestClusterValidator_NameLength(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	validator := NewClusterValidator(fakeClient)
 
 	tests := []struct {
 		name    string
-		cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster *neo4jv1beta1.Neo4jEnterpriseCluster
 		wantErr bool
 		errMsg  string
 	}{
 		{
 			name: "valid short name",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster"},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image:    neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26.0", PullPolicy: "IfNotPresent"},
-					Storage:  neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "10Gi"},
-					Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.0", PullPolicy: "IfNotPresent"},
+					Storage:  neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+					Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
 				},
 			},
 			wantErr: false,
 		},
 		{
 			name: "name too long for DNS label",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.Repeat("a", 57)},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image:    neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26.0", PullPolicy: "IfNotPresent"},
-					Storage:  neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "10Gi"},
-					Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.0", PullPolicy: "IfNotPresent"},
+					Storage:  neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+					Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
 				},
 			},
 			wantErr: true,

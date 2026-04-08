@@ -33,12 +33,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // reconcileStandaloneStorageExpansion checks whether PVC expansion is needed for a standalone
 // deployment and performs it. Returns (requeue, error).
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandaloneStorageExpansion(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) (bool, error) {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandaloneStorageExpansion(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (bool, error) {
 	logger := log.FromContext(ctx)
 
 	desiredSize := resource.MustParse(standalone.Spec.Storage.Size)
@@ -160,7 +160,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) findStandalonePVCs(ctx context.Con
 }
 
 // expandStandaloneVolumes patches PVCs and orphan-deletes the StatefulSet for a standalone deployment.
-func (r *Neo4jEnterpriseStandaloneReconciler) expandStandaloneVolumes(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone, stsName, volumeName string, desiredSize resource.Quantity) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) expandStandaloneVolumes(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, stsName, volumeName string, desiredSize resource.Quantity) error {
 	logger := log.FromContext(ctx)
 
 	pvcs, err := r.findStandalonePVCs(ctx, standalone.Namespace, stsName, volumeName)

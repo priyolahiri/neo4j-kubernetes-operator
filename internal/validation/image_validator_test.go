@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestImageValidator_Validate(t *testing.T) {
@@ -31,15 +31,15 @@ func TestImageValidator_Validate(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster       *neo4jv1beta1.Neo4jEnterpriseCluster
 		expectedErrs  int
 		expectedError string
 	}{
 		{
 			name: "valid 5.26.0 version",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        "5.26.0-enterprise",
 						PullPolicy: "IfNotPresent",
@@ -50,9 +50,9 @@ func TestImageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid 5.27.0 version (does not exist)",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        "5.27.0",
 						PullPolicy: "IfNotPresent",
@@ -63,9 +63,9 @@ func TestImageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid 2025.01.0 CalVer version",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        "2025.01.0-enterprise",
 						PullPolicy: "IfNotPresent",
@@ -76,9 +76,9 @@ func TestImageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid 5.25.0 version (too old)",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        "5.25.0-enterprise",
 						PullPolicy: "IfNotPresent",
@@ -90,9 +90,9 @@ func TestImageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid 4.4.12 version (unsupported major)",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        "4.4.12-enterprise",
 						PullPolicy: "IfNotPresent",
@@ -104,9 +104,9 @@ func TestImageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid 5.15.0 version (too old)",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        "5.15.0",
 						PullPolicy: "IfNotPresent",
@@ -118,9 +118,9 @@ func TestImageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "missing repo",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Tag:        "5.26.0",
 						PullPolicy: "IfNotPresent",
 					},
@@ -130,9 +130,9 @@ func TestImageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "missing tag",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						PullPolicy: "IfNotPresent",
 					},
@@ -142,9 +142,9 @@ func TestImageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid pull policy",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo:       "neo4j",
 						Tag:        "5.26.0",
 						PullPolicy: "InvalidPolicy",

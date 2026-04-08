@@ -36,7 +36,7 @@ stringData:
   AWS_REGION: us-east-1
 ---
 # Neo4j Enterprise Cluster
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: production-cluster
@@ -111,7 +111,7 @@ spec:
       interval: 30s
 ---
 # Create main database with topology constraints
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: main-database
@@ -140,7 +140,7 @@ spec:
       - "CREATE INDEX product_name_index IF NOT EXISTS FOR (p:Product) ON (p.name)"
 ---
 # Analytics database (Neo4j 2025.x with Cypher 25)
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: analytics-database
@@ -159,7 +159,7 @@ spec:
     secondaries: 1
 ---
 # Automated daily backups
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: daily-backup
@@ -196,7 +196,7 @@ spec:
     deletePolicy: Delete
 ---
 # Weekly full backup
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: weekly-full-backup
@@ -228,7 +228,7 @@ spec:
     maxCount: 12
 ---
 # Install APOC plugin
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: apoc-plugin

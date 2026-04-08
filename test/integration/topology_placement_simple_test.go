@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -18,7 +18,7 @@ import (
 var _ = Describe("Topology Placement Simple", func() {
 	var (
 		namespace   *corev1.Namespace
-		cluster     *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster     *neo4jv1beta1.Neo4jEnterpriseCluster
 		clusterName string
 	)
 
@@ -68,23 +68,23 @@ var _ = Describe("Topology Placement Simple", func() {
 			}
 			Expect(k8sClient.Create(ctx, adminSecret)).To(Succeed())
 
-			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      clusterName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: "neo4j-admin-secret",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
-						Placement: &neo4jv1alpha1.PlacementConfig{
-							TopologySpread: &neo4jv1alpha1.TopologySpreadConfig{
+						Placement: &neo4jv1beta1.PlacementConfig{
+							TopologySpread: &neo4jv1beta1.TopologySpreadConfig{
 								Enabled:           true,
 								TopologyKey:       "topology.kubernetes.io/zone",
 								MaxSkew:           1,
@@ -92,12 +92,12 @@ var _ = Describe("Topology Placement Simple", func() {
 							},
 						},
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "1Gi",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{

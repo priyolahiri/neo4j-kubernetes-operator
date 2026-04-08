@@ -2,7 +2,7 @@
 # This creates a highly available Neo4j cluster with 3 servers
 # Servers self-organize to host databases with configurable topologies
 
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: three-node-cluster

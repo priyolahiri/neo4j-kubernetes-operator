@@ -23,24 +23,24 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestCalculateOptimalMemorySettings(t *testing.T) {
 	tests := []struct {
 		name           string
-		cluster        *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster        *neo4jv1beta1.Neo4jEnterpriseCluster
 		expectedHeap   string
 		expectedPage   string
 		testMemorySize string
 	}{
 		{
 			name: "default memory limit (2Gi)",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					// No resources specified, should use default
 				},
 			},
@@ -50,11 +50,11 @@ func TestCalculateOptimalMemorySettings(t *testing.T) {
 		},
 		{
 			name: "high memory deployment (8Gi)",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					Resources: &corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse("8Gi"),
@@ -68,11 +68,11 @@ func TestCalculateOptimalMemorySettings(t *testing.T) {
 		},
 		{
 			name: "low memory deployment (1Gi)",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					Resources: &corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse("1Gi"),
@@ -86,11 +86,11 @@ func TestCalculateOptimalMemorySettings(t *testing.T) {
 		},
 		{
 			name: "very high memory deployment (16Gi)",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					Resources: &corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse("16Gi"),
@@ -104,11 +104,11 @@ func TestCalculateOptimalMemorySettings(t *testing.T) {
 		},
 		{
 			name: "custom memory configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					Resources: &corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse("4Gi"),
@@ -176,11 +176,11 @@ func TestCalculateOptimalMemoryForNeo4j526Plus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					Resources: &corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse(tt.memoryLimit),
@@ -329,11 +329,11 @@ func TestParseMemorySize(t *testing.T) {
 
 func TestMemoryConfigConstraints(t *testing.T) {
 	// Test minimum heap size constraint
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-cluster",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 			Resources: &corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
 					corev1.ResourceMemory: resource.MustParse("128Mi"), // Very low memory
@@ -378,12 +378,12 @@ func TestMemoryConfigForDifferentTopologies(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: tt.servers,
 					},
 					Resources: &corev1.ResourceRequirements{

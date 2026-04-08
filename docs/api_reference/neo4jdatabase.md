@@ -4,7 +4,7 @@ The `Neo4jDatabase` Custom Resource Definition (CRD) provides declarative databa
 
 ## Overview
 
-- **API Version**: `neo4j.neo4j.com/v1alpha1`
+- **API Version**: `neo4j.neo4j.com/v1beta1`
 - **Kind**: `Neo4jDatabase`
 - **Supported Neo4j Versions**: 5.26.0+ (semver) and 2025.01.0+ (calver)
 - **Target Deployments**: Both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone`
@@ -185,7 +185,7 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 ### Basic Database in Cluster
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: cluster-database
@@ -202,7 +202,7 @@ spec:
 ### Basic Database in Standalone
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: standalone-database
@@ -217,7 +217,7 @@ spec:
 ### Database with Advanced Topology (Cluster Only)
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: distributed-database
@@ -238,7 +238,7 @@ spec:
 
 ```yaml
 # User-facing database with high availability
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: user-database
@@ -256,7 +256,7 @@ spec:
 
 ---
 # Analytics database optimized for reads
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: analytics-database
@@ -273,7 +273,7 @@ spec:
 ### Database with Schema and Sample Data
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: app-database
@@ -301,7 +301,7 @@ spec:
 ### Neo4j 2025.x Database with Enhanced Features
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: modern-database
@@ -329,7 +329,7 @@ spec:
 ### Database from Seed URI (Production Restore)
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: prod-restore-database
@@ -364,7 +364,7 @@ spec:
 ### Database from Seed URI (Development Copy)
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: dev-copy-database
@@ -405,7 +405,7 @@ data:
   AWS_SECRET_ACCESS_KEY: <base64-encoded-secret-key>
   AWS_REGION: dXMtZWFzdC0x  # us-east-1
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: s3-restore-db
@@ -430,7 +430,7 @@ data:
   GOOGLE_APPLICATION_CREDENTIALS: <base64-encoded-service-account-json>
   GOOGLE_CLOUD_PROJECT: <base64-encoded-project-id>
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: gcs-restore-db
@@ -452,7 +452,7 @@ data:
   AZURE_STORAGE_ACCOUNT: <base64-encoded-account-name>
   AZURE_STORAGE_SAS_TOKEN: <base64-encoded-sas-token>
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: azure-restore-db
@@ -474,7 +474,7 @@ data:
   USERNAME: <base64-encoded-username>
   PASSWORD: <base64-encoded-password>
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: http-restore-db
@@ -490,7 +490,7 @@ spec:
 
 ```yaml
 # Asynchronous database creation
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: async-database
@@ -528,7 +528,7 @@ data:
     MATCH (u:User {id: 1}), (p:Product {sku: 'NEO4J-ENT'})
     CREATE (u)-[:PURCHASED {date: date('2025-01-15')}]->(p);
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: complex-database

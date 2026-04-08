@@ -22,7 +22,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // validAuthProviders is the set of authentication/authorization providers Neo4j supports (5.26+).
@@ -40,12 +40,12 @@ func NewAuthValidator() *AuthValidator {
 }
 
 // Validate validates the authentication configuration
-func (v *AuthValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *AuthValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	return v.ValidateAuthSpec(cluster.Spec.Auth, field.NewPath("spec", "auth"))
 }
 
 // ValidateAuthSpec validates an AuthSpec (shared between cluster and standalone).
-func (v *AuthValidator) ValidateAuthSpec(auth *neo4jv1alpha1.AuthSpec, authPath *field.Path) field.ErrorList {
+func (v *AuthValidator) ValidateAuthSpec(auth *neo4jv1beta1.AuthSpec, authPath *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if auth == nil {
@@ -109,7 +109,7 @@ func (v *AuthValidator) validateProviderName(provider string, fldPath *field.Pat
 }
 
 // validateLDAP validates Neo4jLDAPSpec typed fields.
-func (v *AuthValidator) validateLDAP(ldap *neo4jv1alpha1.Neo4jLDAPSpec, fldPath *field.Path) field.ErrorList {
+func (v *AuthValidator) validateLDAP(ldap *neo4jv1beta1.Neo4jLDAPSpec, fldPath *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if ldap.Host == "" {
@@ -133,7 +133,7 @@ func (v *AuthValidator) validateLDAP(ldap *neo4jv1alpha1.Neo4jLDAPSpec, fldPath 
 }
 
 // validateOIDCProviders validates all OIDC provider specs.
-func (v *AuthValidator) validateOIDCProviders(providers map[string]neo4jv1alpha1.Neo4jOIDCProviderSpec, fldPath *field.Path) field.ErrorList {
+func (v *AuthValidator) validateOIDCProviders(providers map[string]neo4jv1beta1.Neo4jOIDCProviderSpec, fldPath *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 
 	for name, provider := range providers {

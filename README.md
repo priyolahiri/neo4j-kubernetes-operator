@@ -190,7 +190,7 @@ kubectl wait --for=condition=Ready neo4jenterprisecluster/minimal-cluster --time
 ```bash
 # Create a database on your cluster
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: my-cluster-database
@@ -210,7 +210,7 @@ EOF
 ```bash
 # Create a database on your standalone instance
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: my-standalone-database
@@ -257,7 +257,7 @@ kubectl create secret generic neo4j-admin-secret \
 2. **Create a property sharding enabled cluster:**
 
 ```yaml
-apiVersion: neo4j.com/v1alpha1
+apiVersion: neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: sharding-cluster
@@ -290,7 +290,7 @@ spec:
 3. **Create a sharded database:**
 
 ```yaml
-apiVersion: neo4j.com/v1alpha1
+apiVersion: neo4j.com/v1beta1
 kind: Neo4jShardedDatabase
 metadata:
   name: my-sharded-db

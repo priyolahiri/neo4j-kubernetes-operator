@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/controller"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -16,24 +16,24 @@ import (
 func TestTopologyScheduler_CalculateTopologyPlacement(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 
 	tests := []struct {
 		name    string
-		cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster *neo4jv1beta1.Neo4jEnterpriseCluster
 		nodes   []corev1.Node
 		want    *controller.TopologyPlacement
 		wantErr bool
 	}{
 		{
 			name: "basic server cluster without placement config",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
 				},
@@ -66,23 +66,23 @@ func TestTopologyScheduler_CalculateTopologyPlacement(t *testing.T) {
 		},
 		{
 			name: "server cluster with topology spread enabled",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers:             3, // Reduce to match 3 available zones
 						EnforceDistribution: true,
-						Placement: &neo4jv1alpha1.PlacementConfig{
-							TopologySpread: &neo4jv1alpha1.TopologySpreadConfig{
+						Placement: &neo4jv1beta1.PlacementConfig{
+							TopologySpread: &neo4jv1beta1.TopologySpreadConfig{
 								Enabled:           true,
 								TopologyKey:       "topology.kubernetes.io/zone",
 								MaxSkew:           1,
 								WhenUnsatisfiable: "DoNotSchedule",
 							},
-							AntiAffinity: &neo4jv1alpha1.PodAntiAffinityConfig{
+							AntiAffinity: &neo4jv1beta1.PodAntiAffinityConfig{
 								Enabled: true,
 								Type:    "required",
 							},
@@ -164,19 +164,19 @@ func TestTopologyScheduler_CalculateTopologyPlacement(t *testing.T) {
 func TestTopologyScheduler_ApplyTopologyConstraints(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 	_ = appsv1.AddToScheme(scheme)
 
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
-				Placement: &neo4jv1alpha1.PlacementConfig{
-					TopologySpread: &neo4jv1alpha1.TopologySpreadConfig{
+				Placement: &neo4jv1beta1.PlacementConfig{
+					TopologySpread: &neo4jv1beta1.TopologySpreadConfig{
 						Enabled:           true,
 						TopologyKey:       "topology.kubernetes.io/zone",
 						MaxSkew:           1,

@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
@@ -38,7 +38,7 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 		ctx         context.Context
 		namespace   *corev1.Namespace
 		clusterName string
-		cluster     *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster     *neo4jv1beta1.Neo4jEnterpriseCluster
 	)
 
 	BeforeEach(func() {
@@ -93,24 +93,24 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 	Context("Minimal Cluster (1 Primary + 1 Secondary)", func() {
 		It("should create a minimal cluster with proper coordination", func() {
 			By("Creating a minimal cluster specification")
-			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      clusterName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"native"},
 						AdminSecret:             "neo4j-admin-secret",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2, // Minimum cluster topology
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "2Gi",
 					},
@@ -204,24 +204,24 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 	Context("LIST Discovery Configuration (Split-Brain Fix)", func() {
 		It("should use LIST discovery with static pod FQDNs for Neo4j 2025.x cluster", func() {
 			clusterName = "v2only-2025-test"
-			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      clusterName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "2025.02.0-enterprise", // Test 2025.x version
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"native"},
 						AdminSecret:             "neo4j-admin-secret",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2, // 1 + 1 total servers
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "1Gi",
 					},

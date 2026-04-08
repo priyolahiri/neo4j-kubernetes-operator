@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Restore API Integration Tests", func() {
@@ -43,19 +43,19 @@ var _ = Describe("Restore API Integration Tests", func() {
 
 		It("Should create a restore from backup reference", func() {
 			By("Creating restore from backup")
-			restore := &neo4jv1alpha1.Neo4jRestore{
+			restore := &neo4jv1beta1.Neo4jRestore{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-restore-backup",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jRestoreSpec{
+				Spec: neo4jv1beta1.Neo4jRestoreSpec{
 					ClusterRef:   "test-cluster",
 					DatabaseName: "restoreddb",
-					Source: neo4jv1alpha1.RestoreSource{
+					Source: neo4jv1beta1.RestoreSource{
 						Type:      "backup",
 						BackupRef: "daily-backup-20250121",
 					},
-					Options: &neo4jv1alpha1.RestoreOptionsSpec{
+					Options: &neo4jv1beta1.RestoreOptionsSpec{
 						ReplaceExisting: true,
 						VerifyBackup:    true,
 					},
@@ -81,28 +81,28 @@ var _ = Describe("Restore API Integration Tests", func() {
 		It("Should create a restore with PITR", func() {
 			By("Creating PITR restore")
 			now := metav1.Now()
-			restore := &neo4jv1alpha1.Neo4jRestore{
+			restore := &neo4jv1beta1.Neo4jRestore{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pitr-restore",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jRestoreSpec{
+				Spec: neo4jv1beta1.Neo4jRestoreSpec{
 					ClusterRef:   "prod-cluster",
 					DatabaseName: "pitrdb",
-					Source: neo4jv1alpha1.RestoreSource{
+					Source: neo4jv1beta1.RestoreSource{
 						Type: "pitr",
-						PITR: &neo4jv1alpha1.PITRConfig{
-							BaseBackup: &neo4jv1alpha1.BaseBackupSource{
+						PITR: &neo4jv1beta1.PITRConfig{
+							BaseBackup: &neo4jv1beta1.BaseBackupSource{
 								Type:      "backup",
 								BackupRef: "base-backup",
 							},
-							LogStorage: &neo4jv1alpha1.StorageLocation{
+							LogStorage: &neo4jv1beta1.StorageLocation{
 								Type:   "s3",
 								Bucket: "logs-bucket",
 								Path:   "/transaction-logs",
 							},
 							ValidateLogIntegrity: true,
-							Compression: &neo4jv1alpha1.CompressionConfig{
+							Compression: &neo4jv1beta1.CompressionConfig{
 								Enabled:   true,
 								Algorithm: "gzip",
 								Level:     6,
@@ -131,29 +131,29 @@ var _ = Describe("Restore API Integration Tests", func() {
 
 		It("Should create a restore with hooks", func() {
 			By("Creating restore with pre/post hooks")
-			restore := &neo4jv1alpha1.Neo4jRestore{
+			restore := &neo4jv1beta1.Neo4jRestore{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-restore-hooks",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jRestoreSpec{
+				Spec: neo4jv1beta1.Neo4jRestoreSpec{
 					ClusterRef:   "staging-cluster",
 					DatabaseName: "testdb",
-					Source: neo4jv1alpha1.RestoreSource{
+					Source: neo4jv1beta1.RestoreSource{
 						Type: "storage",
-						Storage: &neo4jv1alpha1.StorageLocation{
+						Storage: &neo4jv1beta1.StorageLocation{
 							Type: "pvc",
 							Path: "/backups/latest",
 						},
 					},
-					Options: &neo4jv1alpha1.RestoreOptionsSpec{
-						PreRestore: &neo4jv1alpha1.RestoreHooks{
+					Options: &neo4jv1beta1.RestoreOptionsSpec{
+						PreRestore: &neo4jv1beta1.RestoreHooks{
 							CypherStatements: []string{
 								"STOP DATABASE testdb IF EXISTS",
 								"DROP DATABASE testdb IF EXISTS",
 							},
 						},
-						PostRestore: &neo4jv1alpha1.RestoreHooks{
+						PostRestore: &neo4jv1beta1.RestoreHooks{
 							CypherStatements: []string{
 								"CREATE INDEX idx_user_email IF NOT EXISTS FOR (u:User) ON (u.email)",
 								"CALL db.awaitIndexes()",

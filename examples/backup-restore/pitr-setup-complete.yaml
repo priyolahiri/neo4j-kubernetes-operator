@@ -7,7 +7,7 @@
 
 ---
 # Base backup for PITR
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: pitr-base-backup
@@ -85,7 +85,7 @@ data:
 
 ---
 # Example PITR restore configuration
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: pitr-example-restore

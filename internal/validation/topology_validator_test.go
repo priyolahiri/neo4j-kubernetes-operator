@@ -19,7 +19,7 @@ package validation
 import (
 	"testing"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestTopologyValidator_Validate(t *testing.T) {
@@ -27,15 +27,15 @@ func TestTopologyValidator_Validate(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster       *neo4jv1beta1.Neo4jEnterpriseCluster
 		wantErrorsLen int
 		wantErrorMsg  string
 	}{
 		{
 			name: "valid server configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
 				},
@@ -44,9 +44,9 @@ func TestTopologyValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid minimum server configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2,
 					},
 				},
@@ -55,9 +55,9 @@ func TestTopologyValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid large server configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 7,
 					},
 				},
@@ -66,9 +66,9 @@ func TestTopologyValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid single server configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 1,
 					},
 				},
@@ -78,9 +78,9 @@ func TestTopologyValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid zero server configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 0,
 					},
 				},
@@ -119,9 +119,9 @@ func TestTopologyValidator_Validate(t *testing.T) {
 }
 
 func TestTopologyValidator_ValidateDefaults(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
 		},
@@ -140,17 +140,17 @@ func TestTopologyValidator_ValidateServerRoles(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster       *neo4jv1beta1.Neo4jEnterpriseCluster
 		wantErrorsLen int
 		wantErrorMsg  string
 	}{
 		{
 			name: "valid serverRoles within range",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 0, ModeConstraint: "PRIMARY"},
 							{ServerIndex: 1, ModeConstraint: "SECONDARY"},
 						},
@@ -161,11 +161,11 @@ func TestTopologyValidator_ValidateServerRoles(t *testing.T) {
 		},
 		{
 			name: "serverIndex out of range",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 5, ModeConstraint: "PRIMARY"},
 						},
 					},
@@ -176,11 +176,11 @@ func TestTopologyValidator_ValidateServerRoles(t *testing.T) {
 		},
 		{
 			name: "duplicate serverIndex",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 0, ModeConstraint: "PRIMARY"},
 							{ServerIndex: 0, ModeConstraint: "SECONDARY"},
 						},
@@ -192,11 +192,11 @@ func TestTopologyValidator_ValidateServerRoles(t *testing.T) {
 		},
 		{
 			name: "all servers SECONDARY rejected",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2,
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 0, ModeConstraint: "SECONDARY"},
 							{ServerIndex: 1, ModeConstraint: "SECONDARY"},
 						},

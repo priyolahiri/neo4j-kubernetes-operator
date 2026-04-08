@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Simple Backup Test", func() {
@@ -41,7 +41,7 @@ var _ = Describe("Simple Backup Test", func() {
 	Context("When testing backup functionality", func() {
 		var (
 			testNamespace string
-			cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
+			cluster       *neo4jv1beta1.Neo4jEnterpriseCluster
 			adminSecret   *corev1.Secret
 			backupPVC     *corev1.PersistentVolumeClaim
 		)
@@ -82,28 +82,28 @@ var _ = Describe("Simple Backup Test", func() {
 			Expect(k8sClient.Create(ctx, backupPVC)).To(Succeed())
 
 			By("Creating a test cluster")
-			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-cluster-%d", time.Now().UnixNano()),
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(),
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2, // 1 + 1 total servers
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "1Gi",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Add CI resource constraints
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: adminSecret.Name,
 					},
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -149,7 +149,7 @@ var _ = Describe("Simple Backup Test", func() {
 			By("Cleaning up test resources")
 
 			// Clean up any backups created in the test
-			backupList := &neo4jv1alpha1.Neo4jBackupList{}
+			backupList := &neo4jv1beta1.Neo4jBackupList{}
 			if err := k8sClient.List(ctx, backupList, client.InNamespace(testNamespace)); err == nil {
 				for i := range backupList.Items {
 					backup := &backupList.Items[i]
@@ -184,20 +184,20 @@ var _ = Describe("Simple Backup Test", func() {
 
 		It("Should create a backup", func() {
 			By("Creating a backup resource")
-			backup := &neo4jv1alpha1.Neo4jBackup{
+			backup := &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-backup",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind:      "Cluster",
 						Name:      cluster.Name,
 						Namespace: testNamespace,
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type: "pvc",
-						PVC: &neo4jv1alpha1.PVCSpec{
+						PVC: &neo4jv1beta1.PVCSpec{
 							Name: backupPVC.Name,
 						},
 					},

@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/neo4j-partners/neo4j-kubernetes-operator/internal/neo4j"
 )
 
@@ -73,7 +73,7 @@ func NewSplitBrainDetector(client client.Client) *SplitBrainDetector {
 }
 
 // DetectSplitBrain analyzes the cluster for split-brain scenarios
-func (d *SplitBrainDetector) DetectSplitBrain(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*SplitBrainAnalysis, error) {
+func (d *SplitBrainDetector) DetectSplitBrain(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*SplitBrainAnalysis, error) {
 	logger := log.FromContext(ctx)
 
 	expectedServers := int(cluster.Spec.Topology.Servers)
@@ -171,7 +171,7 @@ func (d *SplitBrainDetector) DetectSplitBrain(ctx context.Context, cluster *neo4
 }
 
 // getServerPods returns all server pods for the cluster
-func (d *SplitBrainDetector) getServerPods(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) ([]corev1.Pod, error) {
+func (d *SplitBrainDetector) getServerPods(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) ([]corev1.Pod, error) {
 	podList := &corev1.PodList{}
 
 	// List pods with the server label selector
@@ -188,7 +188,7 @@ func (d *SplitBrainDetector) getServerPods(ctx context.Context, cluster *neo4jv1
 }
 
 // getClusterViewFromPod connects to a specific pod and gets its view of the cluster
-func (d *SplitBrainDetector) getClusterViewFromPod(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, podName string) ClusterView {
+func (d *SplitBrainDetector) getClusterViewFromPod(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podName string) ClusterView {
 	logger := log.FromContext(ctx)
 	view := ClusterView{
 		ServerPodName: podName,
@@ -222,7 +222,7 @@ func (d *SplitBrainDetector) getClusterViewFromPod(ctx context.Context, cluster 
 }
 
 // createPodSpecificNeo4jClient creates a client that connects to a specific pod
-func (d *SplitBrainDetector) createPodSpecificNeo4jClient(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, podName string) (*neo4jclient.Client, error) {
+func (d *SplitBrainDetector) createPodSpecificNeo4jClient(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podName string) (*neo4jclient.Client, error) {
 	// Create a temporary connection URL that targets the specific pod
 	// Use bolt+s:// when TLS is enabled, bolt:// otherwise
 	scheme := "bolt"
@@ -478,7 +478,7 @@ func (d *SplitBrainDetector) countCommonAddresses(addresses1, addresses2 []strin
 }
 
 // RepairSplitBrain attempts to repair a detected split-brain scenario
-func (d *SplitBrainDetector) RepairSplitBrain(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, analysis *SplitBrainAnalysis) error {
+func (d *SplitBrainDetector) RepairSplitBrain(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, analysis *SplitBrainAnalysis) error {
 	logger := log.FromContext(ctx)
 
 	if !analysis.IsSplitBrain {
@@ -508,7 +508,7 @@ func (d *SplitBrainDetector) RepairSplitBrain(ctx context.Context, cluster *neo4
 }
 
 // repairByRestartingPods repairs split-brain by restarting specific pods
-func (d *SplitBrainDetector) repairByRestartingPods(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, podNames []string) error {
+func (d *SplitBrainDetector) repairByRestartingPods(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podNames []string) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("Restarting orphaned pods to repair split-brain", "pods", podNames)
@@ -542,7 +542,7 @@ func (d *SplitBrainDetector) repairByRestartingPods(ctx context.Context, cluster
 }
 
 // repairByRestartingAllPods repairs split-brain by restarting all pods (nuclear option)
-func (d *SplitBrainDetector) repairByRestartingAllPods(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (d *SplitBrainDetector) repairByRestartingAllPods(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 
 	logger.Info("Nuclear option: restarting all cluster pods to repair split-brain")

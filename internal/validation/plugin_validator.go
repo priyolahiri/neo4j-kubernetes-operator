@@ -22,7 +22,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // PluginValidator validates Neo4j plugin configuration for Neo4j 5.26+ compatibility
@@ -34,7 +34,7 @@ func NewPluginValidator() *PluginValidator {
 }
 
 // Validate validates the plugin configuration for Neo4j 5.26+ compatibility
-func (v *PluginValidator) Validate(plugin *neo4jv1alpha1.Neo4jPlugin) field.ErrorList {
+func (v *PluginValidator) Validate(plugin *neo4jv1beta1.Neo4jPlugin) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Validate plugin name
@@ -129,7 +129,7 @@ func (v *PluginValidator) validatePluginCompatibility(name, version string) erro
 }
 
 // validatePluginSource validates plugin source configuration
-func (v *PluginValidator) validatePluginSource(source *neo4jv1alpha1.PluginSource) field.ErrorList {
+func (v *PluginValidator) validatePluginSource(source *neo4jv1beta1.PluginSource) field.ErrorList {
 	var allErrs field.ErrorList
 	sourcePath := field.NewPath("spec", "source")
 
@@ -171,7 +171,7 @@ func (v *PluginValidator) validatePluginSource(source *neo4jv1alpha1.PluginSourc
 }
 
 // validatePluginDependencies validates plugin dependencies
-func (v *PluginValidator) validatePluginDependencies(dependencies []neo4jv1alpha1.PluginDependency) field.ErrorList {
+func (v *PluginValidator) validatePluginDependencies(dependencies []neo4jv1beta1.PluginDependency) field.ErrorList {
 	var allErrs field.ErrorList
 	dependenciesPath := field.NewPath("spec", "dependencies")
 
@@ -201,7 +201,7 @@ func (v *PluginValidator) validatePluginDependencies(dependencies []neo4jv1alpha
 }
 
 // validatePluginSecurity validates plugin security configuration
-func (v *PluginValidator) validatePluginSecurity(security *neo4jv1alpha1.PluginSecurity) field.ErrorList {
+func (v *PluginValidator) validatePluginSecurity(security *neo4jv1beta1.PluginSecurity) field.ErrorList {
 	var allErrs field.ErrorList
 	securityPath := field.NewPath("spec", "security")
 
@@ -244,7 +244,7 @@ func (v *PluginValidator) validatePluginSecurity(security *neo4jv1alpha1.PluginS
 }
 
 // validatePluginResources validates plugin resource configuration
-func (v *PluginValidator) validatePluginResources(resources *neo4jv1alpha1.PluginResourceRequirements) field.ErrorList {
+func (v *PluginValidator) validatePluginResources(resources *neo4jv1beta1.PluginResourceRequirements) field.ErrorList {
 	var allErrs field.ErrorList
 	resourcesPath := field.NewPath("spec", "resources")
 

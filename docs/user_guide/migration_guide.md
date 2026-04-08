@@ -15,7 +15,7 @@ The Neo4j Kubernetes Operator now separates single-node and clustered deployment
 
 **Previous behavior** (no longer supported):
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: single-node-cluster
@@ -28,7 +28,7 @@ spec:
 
 **Option A: Migrate to Neo4jEnterpriseStandalone** (recommended for development/testing):
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: single-node-standalone
@@ -45,7 +45,7 @@ spec:
 
 **Option B: Migrate to Minimal Cluster** (recommended for production):
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: minimal-cluster
@@ -90,7 +90,7 @@ All Neo4j 5.26+ deployments now use `V2_ONLY` discovery mode automatically. You 
 
 **Before**:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: dev-neo4j
@@ -113,7 +113,7 @@ spec:
 
 **After**:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: dev-neo4j
@@ -137,7 +137,7 @@ spec:
 
 **Before**:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: prod-neo4j
@@ -163,7 +163,7 @@ spec:
 
 **After**:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: prod-neo4j
@@ -192,7 +192,7 @@ spec:
 **No changes required** - existing multi-node clusters will continue to work as before:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: prod-cluster
@@ -223,7 +223,7 @@ Before making any changes, create backups:
 ```bash
 # Create backup for each cluster
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: migration-backup-$(date +%Y%m%d)
@@ -505,7 +505,7 @@ If you encounter issues during migration:
 
 ## Upgrading to v1.6.0-alpha (API Stabilization)
 
-v1.6.0-alpha includes breaking changes to the `v1alpha1` API in preparation for graduating to `v1beta1`. These changes fix field naming inconsistencies, remove deprecated fields, and resolve bugs.
+v1.6.0-alpha includes breaking changes to the `v1beta1` API in preparation for graduating to `v1beta1`. These changes fix field naming inconsistencies, remove deprecated fields, and resolve bugs.
 
 ### Field renames
 
@@ -517,7 +517,7 @@ v1.6.0-alpha includes breaking changes to the `v1alpha1` API in preparation for 
 
 Example — before:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 spec:
   targetCluster: my-cluster
@@ -529,7 +529,7 @@ spec:
 
 After:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 spec:
   clusterRef: my-cluster

@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Backup API Integration Tests", func() {
@@ -43,21 +43,21 @@ var _ = Describe("Backup API Integration Tests", func() {
 
 		It("Should create a backup with backup type options", func() {
 			By("Creating a FULL backup")
-			backup := &neo4jv1alpha1.Neo4jBackup{
+			backup := &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-full-backup",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: "test-cluster",
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type: "pvc",
 						Path: "/backups/full",
 					},
-					Options: &neo4jv1alpha1.BackupOptions{
+					Options: &neo4jv1beta1.BackupOptions{
 						BackupType: "FULL",
 						Compress:   true,
 						PageCache:  "2G",
@@ -83,23 +83,23 @@ var _ = Describe("Backup API Integration Tests", func() {
 
 		It("Should create a scheduled backup with retention", func() {
 			By("Creating a scheduled backup")
-			backup := &neo4jv1alpha1.Neo4jBackup{
+			backup := &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-scheduled-backup",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind:      "Database",
 						Name:      "mydb",
 						Namespace: testNamespace,
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type: "pvc",
 						Path: "/backups/scheduled",
 					},
 					Schedule: "0 2 * * *",
-					Retention: &neo4jv1alpha1.RetentionPolicy{
+					Retention: &neo4jv1beta1.RetentionPolicy{
 						MaxAge:       "7d",
 						MaxCount:     7,
 						DeletePolicy: "Delete",
@@ -123,27 +123,27 @@ var _ = Describe("Backup API Integration Tests", func() {
 
 		It("Should create a backup with cloud storage", func() {
 			By("Creating S3 backup")
-			backup := &neo4jv1alpha1.Neo4jBackup{
+			backup := &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-s3-backup",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jBackupSpec{
-					Target: neo4jv1alpha1.BackupTarget{
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{
 						Kind: "Cluster",
 						Name: "prod-cluster",
 					},
-					Storage: neo4jv1alpha1.StorageLocation{
+					Storage: neo4jv1beta1.StorageLocation{
 						Type:   "s3",
 						Bucket: "my-bucket",
 						Path:   "/neo4j-backups/prod",
 					},
-					Cloud: &neo4jv1alpha1.CloudBlock{
+					Cloud: &neo4jv1beta1.CloudBlock{
 						Provider: "aws",
 					},
-					Options: &neo4jv1alpha1.BackupOptions{
+					Options: &neo4jv1beta1.BackupOptions{
 						BackupType: "AUTO",
-						Encryption: &neo4jv1alpha1.EncryptionSpec{
+						Encryption: &neo4jv1beta1.EncryptionSpec{
 							Enabled:   true,
 							Algorithm: "AES256",
 							KeySecret: "backup-encryption-key",

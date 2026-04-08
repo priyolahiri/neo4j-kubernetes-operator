@@ -34,7 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/resources"
 )
 
@@ -54,7 +54,7 @@ func NewConfigMapManager(client client.Client) *ConfigMapManager {
 }
 
 // ReconcileConfigMap handles immediate ConfigMap updates and pod restarts
-func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 
 	// Generate desired ConfigMap
@@ -168,7 +168,7 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 }
 
 // updateConfigMapImmediate immediately updates the ConfigMap
-func (cm *ConfigMapManager) updateConfigMapImmediate(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, configMap *corev1.ConfigMap) error {
+func (cm *ConfigMapManager) updateConfigMapImmediate(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, configMap *corev1.ConfigMap) error {
 	logger := log.FromContext(ctx)
 
 	// Set owner reference
@@ -212,7 +212,7 @@ func (cm *ConfigMapManager) updateConfigMapImmediate(ctx context.Context, cluste
 // triggerRollingRestartForConfigChange triggers a rolling restart when configuration changes.
 // It stamps a config-hash annotation on the pod template of each server StatefulSet, which
 // causes Kubernetes to perform a rolling restart without any image change.
-func (cm *ConfigMapManager) triggerRollingRestartForConfigChange(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, configHash string) error {
+func (cm *ConfigMapManager) triggerRollingRestartForConfigChange(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, configHash string) error {
 	logger := log.FromContext(ctx)
 
 	// The current architecture uses a single {cluster}-server StatefulSet.
@@ -442,7 +442,7 @@ func (cm *ConfigMapManager) parseNeo4jProperties(content string) map[string]stri
 }
 
 // hasMemoryConfigChanged checks if memory-related configuration has changed
-func (cm *ConfigMapManager) HasMemoryConfigChanged(oldCluster, newCluster *neo4jv1alpha1.Neo4jEnterpriseCluster) bool {
+func (cm *ConfigMapManager) HasMemoryConfigChanged(oldCluster, newCluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	if oldCluster == nil || newCluster == nil {
 		return true
 	}
@@ -472,7 +472,7 @@ func (cm *ConfigMapManager) HasMemoryConfigChanged(oldCluster, newCluster *neo4j
 }
 
 // setOwnerReference sets the owner reference for the ConfigMap
-func setOwnerReference(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, configMap *corev1.ConfigMap) error {
+func setOwnerReference(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, configMap *corev1.ConfigMap) error {
 	// Set owner reference to ensure garbage collection
 	configMap.OwnerReferences = []metav1.OwnerReference{
 		{

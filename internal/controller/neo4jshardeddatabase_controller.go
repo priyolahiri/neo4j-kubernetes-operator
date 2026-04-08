@@ -65,7 +65,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/validation"
 	corev1 "k8s.io/api/core/v1"
@@ -92,7 +92,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	logger.Info("Starting reconciliation of Neo4jShardedDatabase")
 
 	// Fetch the Neo4jShardedDatabase instance
-	var shardedDatabase neo4jv1alpha1.Neo4jShardedDatabase
+	var shardedDatabase neo4jv1beta1.Neo4jShardedDatabase
 	if err := r.Get(ctx, req.NamespacedName, &shardedDatabase); err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("Neo4jShardedDatabase resource not found, likely deleted")
@@ -192,7 +192,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 }
 
 // validateShardedDatabase performs comprehensive validation of the sharded database spec
-func (r *Neo4jShardedDatabaseReconciler) validateShardedDatabase(ctx context.Context, shardedDB *neo4jv1alpha1.Neo4jShardedDatabase) error {
+func (r *Neo4jShardedDatabaseReconciler) validateShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase) error {
 	if r.ShardedDatabaseValidator != nil {
 		return r.ShardedDatabaseValidator.ValidateShardedDatabase(ctx, shardedDB)
 	}
@@ -227,8 +227,8 @@ func (r *Neo4jShardedDatabaseReconciler) validateShardedDatabase(ctx context.Con
 }
 
 // getReferencedCluster retrieves the Neo4jEnterpriseCluster referenced by the sharded database
-func (r *Neo4jShardedDatabaseReconciler) getReferencedCluster(ctx context.Context, shardedDB *neo4jv1alpha1.Neo4jShardedDatabase) (*neo4jv1alpha1.Neo4jEnterpriseCluster, error) {
-	var cluster neo4jv1alpha1.Neo4jEnterpriseCluster
+func (r *Neo4jShardedDatabaseReconciler) getReferencedCluster(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase) (*neo4jv1beta1.Neo4jEnterpriseCluster, error) {
+	var cluster neo4jv1beta1.Neo4jEnterpriseCluster
 	clusterKey := types.NamespacedName{
 		Name:      shardedDB.Spec.ClusterRef,
 		Namespace: shardedDB.Namespace,
@@ -242,7 +242,7 @@ func (r *Neo4jShardedDatabaseReconciler) getReferencedCluster(ctx context.Contex
 }
 
 // clusterSupportsPropertySharding verifies that the cluster supports property sharding
-func (r *Neo4jShardedDatabaseReconciler) clusterSupportsPropertySharding(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) bool {
+func (r *Neo4jShardedDatabaseReconciler) clusterSupportsPropertySharding(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	// Check if property sharding is enabled on the cluster
 	if cluster.Spec.PropertySharding == nil || !cluster.Spec.PropertySharding.Enabled {
 		return false
@@ -261,13 +261,13 @@ func (r *Neo4jShardedDatabaseReconciler) clusterSupportsPropertySharding(cluster
 }
 
 // createNeo4jClient creates a Neo4j client for the specified cluster
-func (r *Neo4jShardedDatabaseReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
+func (r *Neo4jShardedDatabaseReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
 	// Use the same pattern as the database controller
 	return neo4j.NewClientForEnterprise(cluster, r.Client, cluster.Spec.Auth.AdminSecret)
 }
 
 // reconcileShardedDatabase handles the creation and management of sharded databases
-func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Context, shardedDB *neo4jv1alpha1.Neo4jShardedDatabase, client *neo4j.Client) error {
+func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
 	logger := log.FromContext(ctx)
 
 	// Wait for Neo4j to be ready for database operations
@@ -296,7 +296,7 @@ func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Co
 }
 
 // createShardedDatabase creates the sharded database using Cypher 25 syntax
-func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Context, shardedDB *neo4jv1alpha1.Neo4jShardedDatabase, client *neo4j.Client) error {
+func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
 	logger := log.FromContext(ctx).WithValues("database", shardedDB.Spec.Name)
 
 	// Build the Cypher 25 CREATE DATABASE command for property sharding
@@ -407,7 +407,7 @@ func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Conte
 	return fmt.Errorf("failed to create sharded database after %d attempts", maxRetries)
 }
 
-func buildShardedDatabaseOptions(shardedDB *neo4jv1alpha1.Neo4jShardedDatabase) (string, error) {
+func buildShardedDatabaseOptions(shardedDB *neo4jv1beta1.Neo4jShardedDatabase) (string, error) {
 	var options []string
 
 	if shardedDB.Spec.SeedURI != "" && len(shardedDB.Spec.SeedURIs) > 0 {
@@ -479,7 +479,7 @@ func isTransientError(err error) bool {
 }
 
 // updateShardStatus updates the status with current shard information
-func (r *Neo4jShardedDatabaseReconciler) updateShardStatus(ctx context.Context, shardedDB *neo4jv1alpha1.Neo4jShardedDatabase, client *neo4j.Client) error {
+func (r *Neo4jShardedDatabaseReconciler) updateShardStatus(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
 	logger := log.FromContext(ctx).WithValues("database", shardedDB.Spec.Name)
 
 	// Get individual database statuses for each shard
@@ -522,10 +522,10 @@ func (r *Neo4jShardedDatabaseReconciler) updateShardStatus(ctx context.Context, 
 }
 
 // updateStatus updates the sharded database status
-func (r *Neo4jShardedDatabaseReconciler) updateStatus(ctx context.Context, shardedDB *neo4jv1alpha1.Neo4jShardedDatabase, phase, message string, shardingReady *bool) error {
+func (r *Neo4jShardedDatabaseReconciler) updateStatus(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, phase, message string, shardingReady *bool) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Fetch latest version
-		var latest neo4jv1alpha1.Neo4jShardedDatabase
+		var latest neo4jv1beta1.Neo4jShardedDatabase
 		if err := r.Get(ctx, client.ObjectKeyFromObject(shardedDB), &latest); err != nil {
 			return err
 		}
@@ -647,7 +647,7 @@ func (r *Neo4jShardedDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&neo4jv1alpha1.Neo4jShardedDatabase{}).
+		For(&neo4jv1beta1.Neo4jShardedDatabase{}).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: maxConcurrentReconciles,
 		}).

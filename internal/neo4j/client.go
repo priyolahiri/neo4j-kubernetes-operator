@@ -34,13 +34,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // Client represents a Neo4j cluster client with optimized connection management
 type Client struct {
 	driver            neo4j.DriverWithContext
-	enterpriseCluster *neo4jv1alpha1.Neo4jEnterpriseCluster
+	enterpriseCluster *neo4jv1beta1.Neo4jEnterpriseCluster
 	credentials       *Credentials
 
 	// Circuit breaker state
@@ -143,7 +143,7 @@ type ServerInfo struct {
 }
 
 // NewClientForPod creates a Neo4j client that connects to a specific pod
-func NewClientForPod(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, k8sClient client.Client, adminSecretName, podURL string) (*Client, error) {
+func NewClientForPod(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sClient client.Client, adminSecretName, podURL string) (*Client, error) {
 	// Get credentials from secret
 	credentials, err := getCredentials(context.Background(), k8sClient, cluster.Namespace, adminSecretName)
 	if err != nil {
@@ -191,7 +191,7 @@ func NewClientForPod(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, k8sClient cl
 //
 // This ensures proper TLS verification by default when cert-manager provides a CA,
 // while remaining compatible with development setups where CA certs may not be available.
-func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, resourceName string, tlsSpec *neo4jv1alpha1.TLSSpec) *tls.Config {
+func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, resourceName string, tlsSpec *neo4jv1beta1.TLSSpec) *tls.Config {
 	if tlsSpec == nil || tlsSpec.Mode != "cert-manager" {
 		return nil
 	}
@@ -236,7 +236,7 @@ func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, res
 }
 
 // NewClientForEnterpriseStandalone creates a new optimized Neo4j client for standalone deployments
-func NewClientForEnterpriseStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone, k8sClient client.Client, adminSecretName string) (*Client, error) {
+func NewClientForEnterpriseStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, k8sClient client.Client, adminSecretName string) (*Client, error) {
 	// Get credentials from secret
 	credentials, err := getCredentials(context.Background(), k8sClient, standalone.Namespace, adminSecretName)
 	if err != nil {
@@ -308,7 +308,7 @@ func NewClientForEnterpriseStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseS
 	return client, nil
 }
 
-func NewClientForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, k8sClient client.Client, adminSecretName string) (*Client, error) {
+func NewClientForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sClient client.Client, adminSecretName string) (*Client, error) {
 	// Get credentials from secret
 	credentials, err := getCredentials(context.Background(), k8sClient, cluster.Namespace, adminSecretName)
 	if err != nil {
@@ -2088,7 +2088,7 @@ func isVersionSupported(version string) bool {
 	return false
 }
 
-func buildConnectionURIForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) string {
+func buildConnectionURIForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) string {
 	scheme := "bolt"
 	if standalone.Spec.TLS != nil && standalone.Spec.TLS.Mode == "cert-manager" {
 		scheme = "bolt+s"
@@ -2101,7 +2101,7 @@ func buildConnectionURIForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseSt
 	return fmt.Sprintf("%s://%s:%d", scheme, host, port)
 }
 
-func buildConnectionURIForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func buildConnectionURIForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	// Use bolt+s for TLS-enabled clusters, plain bolt for others
 	scheme := "bolt"
 	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" {
@@ -2117,7 +2117,7 @@ func buildConnectionURIForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseClust
 }
 
 // CreateDatabaseFromSeedURI creates a database from a seed URI using Neo4j CloudSeedProvider
-func (c *Client) CreateDatabaseFromSeedURI(ctx context.Context, databaseName, seedURI string, seedConfig *neo4jv1alpha1.SeedConfiguration, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error {
+func (c *Client) CreateDatabaseFromSeedURI(ctx context.Context, databaseName, seedURI string, seedConfig *neo4jv1beta1.SeedConfiguration, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error {
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
 		AccessMode:   neo4j.AccessModeWrite,
 		DatabaseName: "system",
@@ -2172,7 +2172,7 @@ func (c *Client) CreateDatabaseFromSeedURI(ctx context.Context, databaseName, se
 }
 
 // CreateDatabaseFromSeedURIWithTopology creates a database with topology from a seed URI
-func (c *Client) CreateDatabaseFromSeedURIWithTopology(ctx context.Context, databaseName, seedURI string, primaries, secondaries int32, seedConfig *neo4jv1alpha1.SeedConfiguration, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error {
+func (c *Client) CreateDatabaseFromSeedURIWithTopology(ctx context.Context, databaseName, seedURI string, primaries, secondaries int32, seedConfig *neo4jv1beta1.SeedConfiguration, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error {
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
 		AccessMode:   neo4j.AccessModeWrite,
 		DatabaseName: "system",
@@ -2249,7 +2249,7 @@ func (c *Client) CreateDatabaseFromSeedURIWithTopology(ctx context.Context, data
 }
 
 // buildSeedOptions builds the seed configuration options string
-func (c *Client) buildSeedOptions(seedConfig *neo4jv1alpha1.SeedConfiguration) string {
+func (c *Client) buildSeedOptions(seedConfig *neo4jv1beta1.SeedConfiguration) string {
 	var parts []string
 
 	// Add restoreUntil if specified
@@ -2278,7 +2278,7 @@ func (c *Client) buildSeedOptions(seedConfig *neo4jv1alpha1.SeedConfiguration) s
 }
 
 // PrepareCloudCredentials prepares cloud credentials for seed URI access
-func (c *Client) PrepareCloudCredentials(ctx context.Context, k8sClient client.Client, database *neo4jv1alpha1.Neo4jDatabase) error {
+func (c *Client) PrepareCloudCredentials(ctx context.Context, k8sClient client.Client, database *neo4jv1beta1.Neo4jDatabase) error {
 	// This method prepares cloud credentials in the cluster for CloudSeedProvider
 	// It doesn't store credentials directly but ensures the cluster environment is configured
 
@@ -2316,7 +2316,7 @@ func (c *Client) PrepareCloudCredentials(ctx context.Context, k8sClient client.C
 }
 
 // PrepareCloudCredentialsForShardedDatabase prepares cloud credentials for sharded database seed URIs.
-func (c *Client) PrepareCloudCredentialsForShardedDatabase(ctx context.Context, k8sClient client.Client, shardedDB *neo4jv1alpha1.Neo4jShardedDatabase) error {
+func (c *Client) PrepareCloudCredentialsForShardedDatabase(ctx context.Context, k8sClient client.Client, shardedDB *neo4jv1beta1.Neo4jShardedDatabase) error {
 	if shardedDB.Spec.SeedCredentials == nil {
 		return nil
 	}

@@ -24,7 +24,7 @@ Neo4j Enterprise Operator for Kubernetes - manages Neo4j Enterprise deployments 
 - Neo4j Client: Bolt protocol communication
 
 **Directory Structure:**
-- `api/v1alpha1/` - CRD definitions
+- `api/v1beta1/` - CRD definitions
 - `internal/controller/` - Controller logic
 - `internal/resources/` - K8s resource builders
 - `test/` - Unit, integration, e2e tests

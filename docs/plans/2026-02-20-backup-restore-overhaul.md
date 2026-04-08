@@ -214,15 +214,15 @@ git commit -m "fix(backup): fix GetBackupCommand arg order, add per-flag version
 ## Task 2 — API types: add `ClusterRef`, `PreferDiffAsParent`, `TempPath`, `CredentialsSecretRef`
 
 **Files:**
-- Modify: `api/v1alpha1/neo4jbackup_types.go`
-- Modify: `api/v1alpha1/neo4jenterprisecluster_types.go` (StorageLocation / CloudBlock)
+- Modify: `api/v1beta1/neo4jbackup_types.go`
+- Modify: `api/v1beta1/neo4jenterprisecluster_types.go` (StorageLocation / CloudBlock)
 - Run: `make manifests generate`
 
 **Context:** `BackupTarget` has no cluster reference when `Kind="Database"`. `BackupOptions` is missing `PreferDiffAsParent` and `TempPath`. `CloudBlock` has no way to reference a Kubernetes Secret for credentials. These additions are backwards-compatible (all new fields are optional).
 
 **Step 1 — Add `ClusterRef` to `BackupTarget`**
 
-In `api/v1alpha1/neo4jbackup_types.go`, update `BackupTarget`:
+In `api/v1beta1/neo4jbackup_types.go`, update `BackupTarget`:
 
 ```go
 type BackupTarget struct {
@@ -247,7 +247,7 @@ type BackupTarget struct {
 
 **Step 2 — Add `PreferDiffAsParent` and `TempPath` to `BackupOptions`**
 
-In `api/v1alpha1/neo4jbackup_types.go`, add to `BackupOptions`:
+In `api/v1beta1/neo4jbackup_types.go`, add to `BackupOptions`:
 
 ```go
     // PreferDiffAsParent uses the latest differential backup as parent instead of
@@ -263,7 +263,7 @@ In `api/v1alpha1/neo4jbackup_types.go`, add to `BackupOptions`:
 
 **Step 3 — Add `CredentialsSecretRef` to `CloudBlock`**
 
-In `api/v1alpha1/neo4jenterprisecluster_types.go`, add to `CloudBlock`:
+In `api/v1beta1/neo4jenterprisecluster_types.go`, add to `CloudBlock`:
 
 ```go
 type CloudBlock struct {
@@ -300,7 +300,7 @@ Expected: success.
 **Step 6 — Commit**
 
 ```bash
-git add api/v1alpha1/ config/crd/ charts/neo4j-operator/crds/ bundle/manifests/
+git add api/v1beta1/ config/crd/ charts/neo4j-operator/crds/ bundle/manifests/
 git commit -m "feat(api): add ClusterRef, PreferDiffAsParent, TempPath, CredentialsSecretRef to backup types"
 ```
 
@@ -398,7 +398,7 @@ Expected: FAIL — function not defined.
 // BuildBackupFromAddresses returns a comma-separated list of
 // "pod-fqdn:6362" addresses for all server pods, suitable for use as
 // the --from flag of neo4j-admin database backup.
-func BuildBackupFromAddresses(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func BuildBackupFromAddresses(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
     servers := int(cluster.Spec.Topology.Servers)
     addrs := make([]string, servers)
     for i := 0; i < servers; i++ {
@@ -446,15 +446,15 @@ It("should use ClusterRef when Kind=Database", func() {
     cluster := buildTestCluster("my-cluster", testNamespace)
     Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
-    backup := &neo4jv1alpha1.Neo4jBackup{
+    backup := &neo4jv1beta1.Neo4jBackup{
         ObjectMeta: metav1.ObjectMeta{Name: "db-backup", Namespace: testNamespace},
-        Spec: neo4jv1alpha1.Neo4jBackupSpec{
-            Target: neo4jv1alpha1.BackupTarget{
+        Spec: neo4jv1beta1.Neo4jBackupSpec{
+            Target: neo4jv1beta1.BackupTarget{
                 Kind:       "Database",
                 Name:       "neo4j",         // database name
                 ClusterRef: "my-cluster",    // cluster ref
             },
-            Storage: neo4jv1alpha1.StorageLocation{Type: "pvc"},
+            Storage: neo4jv1beta1.StorageLocation{Type: "pvc"},
         },
     }
     Expect(k8sClient.Create(ctx, backup)).To(Succeed())
@@ -477,7 +477,7 @@ go test ./internal/controller/... -run "should use ClusterRef" -v
 **Step 3 — Fix `getClusterRef`**
 
 ```go
-func (r *Neo4jBackupReconciler) getClusterRef(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup) (*neo4jv1alpha1.Neo4jEnterpriseCluster, error) {
+func (r *Neo4jBackupReconciler) getClusterRef(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) (*neo4jv1beta1.Neo4jEnterpriseCluster, error) {
     targetNamespace := backup.Spec.Target.Namespace
     if targetNamespace == "" {
         targetNamespace = backup.Namespace
@@ -493,13 +493,13 @@ func (r *Neo4jBackupReconciler) getClusterRef(ctx context.Context, backup *neo4j
     }
 
     // Try Neo4jEnterpriseCluster first
-    cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+    cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
     if err := r.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: targetNamespace}, cluster); err == nil {
         return cluster, nil
     }
 
     // Fall back: try Neo4jEnterpriseStandalone (wrap it in a synthetic cluster object with same fields)
-    standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+    standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
     if err := r.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: targetNamespace}, standalone); err != nil {
         return nil, fmt.Errorf("target %q not found as Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone: %w", clusterName, err)
     }
@@ -512,7 +512,7 @@ Add the `standaloneToCluster` helper (creates a synthetic `Neo4jEnterpriseCluste
 **Step 4 — Fix `isClusterReady`**
 
 ```go
-func (r *Neo4jBackupReconciler) isClusterReady(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) bool {
+func (r *Neo4jBackupReconciler) isClusterReady(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
     return cluster.Status.Phase == "Ready"
 }
 ```
@@ -594,7 +594,7 @@ go test ./internal/controller/... -run "backup Job" -v
 Replace the entire function body. Key changes:
 
 ```go
-func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
+func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
     jobName := backup.Name + "-backup"
 
     // Build neo4j-admin command (now actually used)
@@ -653,7 +653,7 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 The method now actually builds the command that the Job will run. Connect it to the `GetBackupCommand` helper with a proper `--from` address:
 
 ```go
-func (r *Neo4jBackupReconciler) buildBackupCommand(backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (string, error) {
+func (r *Neo4jBackupReconciler) buildBackupCommand(backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (string, error) {
     imageTag := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
     version, err := neo4j.GetImageVersion(imageTag)
     if err != nil {
@@ -744,7 +744,7 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(backup *neo4jv1alpha1.Neo4jBa
 }
 
 // buildToPath returns the --to-path value (local path or cloud URI).
-func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1alpha1.Neo4jBackup) string {
+func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1beta1.Neo4jBackup) string {
     switch backup.Spec.Storage.Type {
     case "s3":
         path := backup.Spec.Storage.Path
@@ -777,8 +777,8 @@ func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1alpha1.Neo4jBackup) s
 
 ```go
 // buildCloudEnvVars returns env vars for cloud credentials from CredentialsSecretRef.
-func (r *Neo4jBackupReconciler) buildCloudEnvVars(backup *neo4jv1alpha1.Neo4jBackup) []corev1.EnvVar {
-    var cloud *neo4jv1alpha1.CloudBlock
+func (r *Neo4jBackupReconciler) buildCloudEnvVars(backup *neo4jv1beta1.Neo4jBackup) []corev1.EnvVar {
+    var cloud *neo4jv1beta1.CloudBlock
     if backup.Spec.Storage.Cloud != nil {
         cloud = backup.Spec.Storage.Cloud
     } else if backup.Spec.Cloud != nil {
@@ -879,7 +879,7 @@ It("should update CronJob when backup schedule changes", func() {
 Replace the `if err == nil { return existingCronJob, nil }` block with proper update logic using `controllerutil.CreateOrUpdate`:
 
 ```go
-func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*batchv1.CronJob, error) {
+func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.CronJob, error) {
     cronJobName := backup.Name + "-backup-cron"
 
     backupCmd, err := r.buildBackupCommand(backup, cluster)
@@ -976,7 +976,7 @@ It("stopCluster should scale down the server StatefulSet", func() {
 **Step 2 — Fix `stopCluster`**
 
 ```go
-func (r *Neo4jRestoreReconciler) stopCluster(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jRestoreReconciler) stopCluster(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
     stsKey := types.NamespacedName{
         Name:      cluster.Name + "-server",   // Fixed: server-based StatefulSet name
         Namespace: cluster.Namespace,
@@ -1031,8 +1031,8 @@ git commit -m "fix(restore): fix StatefulSet name in stopCluster/startCluster to
 It("should accept pitr source type as valid", func() {
     restore := buildTestRestore("pitr-restore", testNamespace)
     restore.Spec.Source.Type = "pitr"
-    restore.Spec.Source.PITR = &neo4jv1alpha1.PITRConfig{
-        BaseBackup: &neo4jv1alpha1.BaseBackupSource{
+    restore.Spec.Source.PITR = &neo4jv1beta1.PITRConfig{
+        BaseBackup: &neo4jv1beta1.BaseBackupSource{
             Type:       "storage",
             BackupPath: "/backups/neo4j-full.backup",
         },
@@ -1047,13 +1047,13 @@ It("should accept pitr source type as valid", func() {
 **Step 2 — Fix `validateRestore`**
 
 ```go
-func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore) error {
+func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
     switch restore.Spec.Source.Type {
     case "backup":
         if restore.Spec.Source.BackupRef == "" {
             return fmt.Errorf("backupRef is required when source type is 'backup'")
         }
-        backup := &neo4jv1alpha1.Neo4jBackup{}
+        backup := &neo4jv1beta1.Neo4jBackup{}
         if err := r.Get(ctx, types.NamespacedName{Name: restore.Spec.Source.BackupRef, Namespace: restore.Namespace}, backup); err != nil {
             return fmt.Errorf("backup %q not found: %w", restore.Spec.Source.BackupRef, err)
         }
@@ -1115,8 +1115,8 @@ It("PITR restore command should use --restore-until not non-existent commands", 
     restore.Spec.Source.Type = "pitr"
     pitTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
     restore.Spec.Source.PointInTime = &metav1.Time{Time: pitTime}
-    restore.Spec.Source.PITR = &neo4jv1alpha1.PITRConfig{
-        BaseBackup: &neo4jv1alpha1.BaseBackupSource{
+    restore.Spec.Source.PITR = &neo4jv1beta1.PITRConfig{
+        BaseBackup: &neo4jv1beta1.BaseBackupSource{
             Type:       "storage",
             BackupPath: "/backups/neo4j-full.backup",
         },
@@ -1135,14 +1135,14 @@ It("PITR restore command should use --restore-until not non-existent commands", 
 **Step 2 — Rewrite `buildPITRRestoreCommand`**
 
 ```go
-func (r *Neo4jRestoreReconciler) buildPITRRestoreCommand(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore) (string, error) {
+func (r *Neo4jRestoreReconciler) buildPITRRestoreCommand(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) (string, error) {
     pitrConfig := restore.Spec.Source.PITR
     if pitrConfig == nil {
         return "", fmt.Errorf("PITR configuration is required for PITR restore")
     }
 
     clusterKey := types.NamespacedName{Name: restore.Spec.ClusterRef, Namespace: restore.Namespace}
-    cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+    cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
     if err := r.Get(ctx, clusterKey, cluster); err != nil {
         return "", fmt.Errorf("failed to get cluster: %w", err)
     }
@@ -1224,7 +1224,7 @@ It("should run CREATE DATABASE after successful restore Job", func() {
     // Setup: cluster is ready, restore Job succeeded
     // Expect: CREATE DATABASE called on the Bolt client
     mockNeo4jClient := &MockNeo4jClient{}
-    reconciler.Neo4jClientFactory = func(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, ...) (*neo4j.Client, error) {
+    reconciler.Neo4jClientFactory = func(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ...) (*neo4j.Client, error) {
         return mockNeo4jClient, nil
     }
 
@@ -1256,7 +1256,7 @@ if !restore.Spec.Force && (restore.Spec.Options == nil || !restore.Spec.Options.
 Add `createRestoredDatabase`:
 
 ```go
-func (r *Neo4jRestoreReconciler) createRestoredDatabase(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jRestoreReconciler) createRestoredDatabase(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
     neo4jClient, err := r.createNeo4jClient(ctx, cluster)
     if err != nil {
         return fmt.Errorf("failed to create Neo4j client: %w", err)
@@ -1285,7 +1285,7 @@ When the restore source is a `Neo4jBackup` resource (type="backup"), we need to 
 ```go
 case "backup":
     // Resolve backup's storage to get the actual PVC name
-    backup := &neo4jv1alpha1.Neo4jBackup{}
+    backup := &neo4jv1beta1.Neo4jBackup{}
     // (in buildRestoreVolumes, pass backup object or PVC name as parameter)
     // If backup uses PVC storage, mount that PVC:
     if backup.Spec.Storage.Type == "pvc" && backup.Spec.Storage.PVC != nil && backup.Spec.Storage.PVC.Name != "" {
@@ -1330,15 +1330,15 @@ git commit -m "fix(restore): add CREATE DATABASE step after restore, fix PVC vol
 Mirror the pattern from Task 5. Try `Neo4jEnterpriseCluster` first, then fall back to `Neo4jEnterpriseStandalone`:
 
 ```go
-func (r *Neo4jRestoreReconciler) getClusterRef(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore) (*neo4jv1alpha1.Neo4jEnterpriseCluster, error) {
+func (r *Neo4jRestoreReconciler) getClusterRef(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) (*neo4jv1beta1.Neo4jEnterpriseCluster, error) {
     key := types.NamespacedName{Name: restore.Spec.ClusterRef, Namespace: restore.Namespace}
 
-    cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+    cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
     if err := r.Get(ctx, key, cluster); err == nil {
         return cluster, nil
     }
 
-    standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+    standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
     if err := r.Get(ctx, key, standalone); err != nil {
         return nil, fmt.Errorf("target %q not found as cluster or standalone: %w", restore.Spec.ClusterRef, err)
     }
@@ -1371,7 +1371,7 @@ git commit -m "fix(restore): add Neo4jEnterpriseStandalone support to restore co
 ```go
 It("cleanup job for PVC storage should run neo4j-admin inspect then delete old artifacts", func() {
     backup := buildScheduledTestBackup(testNamespace)
-    backup.Spec.Retention = &neo4jv1alpha1.RetentionPolicy{MaxCount: 3}
+    backup.Spec.Retention = &neo4jv1beta1.RetentionPolicy{MaxCount: 3}
 
     err := reconciler.cleanupBackupArtifacts(ctx, backup)
     Expect(err).NotTo(HaveOccurred())
@@ -1399,7 +1399,7 @@ The cleanup Job should:
 Since parsing neo4j-admin output in a shell script is complex, use a pragmatic approach: sort artifacts by modification time and delete the oldest beyond `maxCount`, and delete those older than `maxAge`:
 
 ```go
-func (r *Neo4jBackupReconciler) cleanupBackupArtifacts(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup) error {
+func (r *Neo4jBackupReconciler) cleanupBackupArtifacts(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
     if backup.Spec.Retention == nil {
         return nil
     }
@@ -1448,7 +1448,7 @@ func (r *Neo4jBackupReconciler) cleanupBackupArtifacts(ctx context.Context, back
     return r.Create(ctx, cleanupJob)
 }
 
-func buildRetentionScript(policy *neo4jv1alpha1.RetentionPolicy, backupDir string) string {
+func buildRetentionScript(policy *neo4jv1beta1.RetentionPolicy, backupDir string) string {
     script := fmt.Sprintf(`#!/bin/sh
 set -e
 BACKUP_DIR="%s"
@@ -1516,8 +1516,8 @@ git commit -m "fix(backup): implement actual retention policy cleanup for PVC st
 **Step 1 — Update `updateBackupStats` to remove misleading "unknown" strings**
 
 ```go
-func (r *Neo4jBackupReconciler) updateBackupStats(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, job *batchv1.Job) {
-    stats := &neo4jv1alpha1.BackupStats{}
+func (r *Neo4jBackupReconciler) updateBackupStats(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, job *batchv1.Job) {
+    stats := &neo4jv1beta1.BackupStats{}
 
     if job.Status.CompletionTime != nil && job.Status.StartTime != nil {
         duration := job.Status.CompletionTime.Sub(job.Status.StartTime.Time)
@@ -1527,7 +1527,7 @@ func (r *Neo4jBackupReconciler) updateBackupStats(ctx context.Context, backup *n
     // This is a known limitation — set to empty string (not "unknown") to avoid confusing users.
 
     update := func() error {
-        latest := &neo4jv1alpha1.Neo4jBackup{}
+        latest := &neo4jv1beta1.Neo4jBackup{}
         if err := r.Get(ctx, client.ObjectKeyFromObject(backup), latest); err != nil {
             return err
         }
@@ -1545,18 +1545,18 @@ func (r *Neo4jBackupReconciler) updateBackupStats(ctx context.Context, backup *n
 In `handleExistingBackupJob`, when job succeeds, append to `Status.History`:
 
 ```go
-run := neo4jv1alpha1.BackupRun{
+run := neo4jv1beta1.BackupRun{
     StartTime:  *job.Status.StartTime,
     Status:     "Completed",
 }
 if job.Status.CompletionTime != nil {
     run.CompletionTime = job.Status.CompletionTime
-    run.Stats = &neo4jv1alpha1.BackupStats{
+    run.Stats = &neo4jv1beta1.BackupStats{
         Duration: job.Status.CompletionTime.Sub(job.Status.StartTime.Time).Round(time.Second).String(),
     }
 }
 // Keep last 10 runs in history
-latest.Status.History = append([]neo4jv1alpha1.BackupRun{run}, latest.Status.History...)
+latest.Status.History = append([]neo4jv1beta1.BackupRun{run}, latest.Status.History...)
 if len(latest.Status.History) > 10 {
     latest.Status.History = latest.Status.History[:10]
 }

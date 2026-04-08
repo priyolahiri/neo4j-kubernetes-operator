@@ -16,7 +16,7 @@
 |---|---|
 | `BuildPodSpecForEnterprise` | `internal/resources/cluster.go:1200` |
 | `buildStatefulSetForEnterprise` | `internal/resources/cluster.go:198` |
-| `Neo4jEnterpriseClusterSpec.Image.PullSecrets` | `api/v1alpha1/neo4jenterprisecluster_types.go:108` |
+| `Neo4jEnterpriseClusterSpec.Image.PullSecrets` | `api/v1beta1/neo4jenterprisecluster_types.go:108` |
 | `ClusterMetrics` | `internal/metrics/metrics.go:305` |
 | `BackupMetrics` | `internal/metrics/metrics.go:389` |
 | `ReconcileMetrics` | `internal/metrics/metrics.go:256` |
@@ -758,8 +758,8 @@ git commit -m "feat(conditions): standardize Ready condition type across all CRD
 
 **Files:**
 - Modify: `internal/resources/cluster.go`
-- Modify: `api/v1alpha1/neo4jenterprisestandalone_types.go`
-- Modify: `api/v1alpha1/zz_generated.deepcopy.go` (via `make generate`)
+- Modify: `api/v1beta1/neo4jenterprisestandalone_types.go`
+- Modify: `api/v1beta1/zz_generated.deepcopy.go` (via `make generate`)
 - Test: `internal/resources/cluster_test.go`
 
 ### Step 1: Add `imagePullSecrets` helper to `internal/resources/cluster.go`
@@ -768,7 +768,7 @@ Find the file around line 1463 where `BuildPodSpecForEnterprise` returns `podSpe
 
 ```go
 // clusterImagePullSecrets converts []string pull secret names to []corev1.LocalObjectReference.
-func clusterImagePullSecrets(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) []corev1.LocalObjectReference {
+func clusterImagePullSecrets(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []corev1.LocalObjectReference {
     if cluster.Spec.Image == nil || len(cluster.Spec.Image.PullSecrets) == 0 {
         return nil
     }
@@ -793,7 +793,7 @@ if refs := clusterImagePullSecrets(cluster); len(refs) > 0 {
 
 ### Step 3: Add `PullSecrets` to standalone image spec
 
-In `api/v1alpha1/neo4jenterprisestandalone_types.go`, find the `ImageSpec` or equivalent image fields. Add:
+In `api/v1beta1/neo4jenterprisestandalone_types.go`, find the `ImageSpec` or equivalent image fields. Add:
 
 ```go
 // PullSecrets is a list of Secret names in the same namespace to use for pulling the Neo4j image.
@@ -828,15 +828,15 @@ Add a test case to the existing `TestBuildPodSpecForEnterprise_*` test suite:
 
 ```go
 func TestBuildPodSpecForEnterprise_WithPullSecrets(t *testing.T) {
-    cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-        Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-            Topology: neo4jv1alpha1.TopologySpec{Servers: 3},
-            Image: &neo4jv1alpha1.ImageSpec{
+    cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+        Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+            Topology: neo4jv1beta1.TopologySpec{Servers: 3},
+            Image: &neo4jv1beta1.ImageSpec{
                 Repository: "neo4j",
                 Tag:        "5.26-enterprise",
                 PullSecrets: []string{"my-registry-secret", "another-secret"},
             },
-            Storage: neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+            Storage: neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
         },
     }
     cluster.Name = "test-cluster"
@@ -870,8 +870,8 @@ This updates the CRD YAML in `config/crd/bases/` with the new standalone `pullSe
 
 ```bash
 git add internal/resources/cluster.go \
-    api/v1alpha1/neo4jenterprisestandalone_types.go \
-    api/v1alpha1/zz_generated.deepcopy.go \
+    api/v1beta1/neo4jenterprisestandalone_types.go \
+    api/v1beta1/zz_generated.deepcopy.go \
     internal/resources/cluster_test.go \
     config/crd/bases/
 git commit -m "feat(registry): wire imagePullSecrets into server StatefulSet and add standalone field"

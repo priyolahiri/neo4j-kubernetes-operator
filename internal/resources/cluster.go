@@ -36,7 +36,7 @@ import (
 
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/neo4j"
 )
 
@@ -131,14 +131,14 @@ func OperatorUDCPackagingValue() string {
 	return "k8s-development"
 }
 
-func podSecurityContextForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.PodSecurityContext {
+func podSecurityContextForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.PodSecurityContext {
 	if cluster.Spec.SecurityContext != nil && cluster.Spec.SecurityContext.PodSecurityContext != nil {
 		return cluster.Spec.SecurityContext.PodSecurityContext
 	}
 	return defaultPodSecurityContext
 }
 
-func containerSecurityContextForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.SecurityContext {
+func containerSecurityContextForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.SecurityContext {
 	if cluster.Spec.SecurityContext != nil && cluster.Spec.SecurityContext.ContainerSecurityContext != nil {
 		return cluster.Spec.SecurityContext.ContainerSecurityContext
 	}
@@ -148,7 +148,7 @@ func containerSecurityContextForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCl
 // BuildServerStatefulSetForEnterprise creates a single StatefulSet for all Neo4j servers
 // This StatefulSet has multiple replicas (one per server) that self-organize into roles
 // Replaces the previous individual StatefulSet per server approach for better management
-func BuildServerStatefulSetForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *appsv1.StatefulSet {
+func BuildServerStatefulSetForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *appsv1.StatefulSet {
 	// Create single StatefulSet with replicas equal to number of servers
 	sts := buildStatefulSetForEnterprise(cluster, "server", cluster.Spec.Topology.Servers)
 	return sts
@@ -158,7 +158,7 @@ func BuildServerStatefulSetForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseC
 // DEPRECATED: Use BuildServerStatefulSetForEnterprise for unified StatefulSet approach
 // Each server has its own StatefulSet with a replica count of 1
 // First server uses bootstrapping_strategy=me, others use bootstrapping_strategy=other
-func BuildServerStatefulSetsForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) []*appsv1.StatefulSet {
+func BuildServerStatefulSetsForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []*appsv1.StatefulSet {
 	var statefulSets []*appsv1.StatefulSet
 
 	for i := int32(0); i < cluster.Spec.Topology.Servers; i++ {
@@ -173,7 +173,7 @@ func BuildServerStatefulSetsForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterprise
 // BuildBackupFromAddresses returns a comma-separated list of
 // "pod-fqdn:6362" addresses for all server pods in the cluster.
 // These are used as the --from flag of neo4j-admin database backup.
-func BuildBackupFromAddresses(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func BuildBackupFromAddresses(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	servers := int(cluster.Spec.Topology.Servers)
 	addrs := make([]string, servers)
 	for i := range servers {
@@ -185,7 +185,7 @@ func BuildBackupFromAddresses(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) str
 
 // BuildBackupStatefulSet creates a single, centralized backup StatefulSet for the cluster
 // This is more efficient than having backup sidecars in each server pod
-func BuildBackupStatefulSet(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *appsv1.StatefulSet {
+func BuildBackupStatefulSet(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *appsv1.StatefulSet {
 	// Only create backup StatefulSet if backups are configured
 	if cluster.Spec.Backups == nil {
 		return nil
@@ -195,7 +195,7 @@ func BuildBackupStatefulSet(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *apps
 }
 
 // buildStatefulSetForEnterprise is a helper function to create StatefulSet for individual Neo4j server
-func buildStatefulSetForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, serverName string, replicas int32) *appsv1.StatefulSet {
+func buildStatefulSetForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, serverName string, replicas int32) *appsv1.StatefulSet {
 	adminSecret := DefaultAdminSecret
 	if cluster.Spec.Auth != nil && cluster.Spec.Auth.AdminSecret != "" {
 		adminSecret = cluster.Spec.Auth.AdminSecret
@@ -255,7 +255,7 @@ func buildStatefulSetForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
 }
 
 // BuildHeadlessServiceForEnterprise creates a headless service for StatefulSet pod identity
-func BuildHeadlessServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Service {
+func BuildHeadlessServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Service {
 	labels := getLabelsForEnterprise(cluster, "")
 
 	// Remove clustering label - StatefulSet headless service doesn't need it
@@ -335,7 +335,7 @@ func BuildHeadlessServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseClu
 // it has endpoints that list all pod IPs, which Neo4j's K8s discovery can query.
 // Important: PublishNotReadyAddresses is set to true to ensure pods are discoverable during startup,
 // which is critical for Neo4j cluster formation as pods need to discover each other before they're ready
-func BuildDiscoveryServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Service {
+func BuildDiscoveryServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Service {
 	// Minimal labels - just what's needed for discovery
 	labels := map[string]string{
 		"app.kubernetes.io/name":       "neo4j",
@@ -376,7 +376,7 @@ func BuildDiscoveryServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCl
 // BuildInternalsServiceForEnterprise creates an internals service for cluster discovery
 // This is NOT a headless service as per Neo4j Helm charts best practice
 // "headless services have been seen to introduce latency whenever a cluster member restarts"
-func BuildInternalsServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Service {
+func BuildInternalsServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Service {
 	// Add specific labels for discovery
 	labels := getLabelsForEnterprise(cluster, "")
 	labels["neo4j.com/service-type"] = "internals"
@@ -453,7 +453,7 @@ func BuildInternalsServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCl
 }
 
 // BuildClientServiceForEnterprise creates a service for client connections
-func BuildClientServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Service {
+func BuildClientServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Service {
 	serviceType := corev1.ServiceTypeClusterIP
 	if cluster.Spec.Service != nil && cluster.Spec.Service.Type != "" {
 		serviceType = corev1.ServiceType(cluster.Spec.Service.Type)
@@ -530,7 +530,7 @@ func BuildClientServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseClust
 }
 
 // BuildMetricsServiceForEnterprise creates a service for Prometheus scraping.
-func BuildMetricsServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Service {
+func BuildMetricsServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Service {
 	if cluster.Spec.Monitoring == nil || !cluster.Spec.Monitoring.Enabled {
 		return nil
 	}
@@ -565,7 +565,7 @@ func BuildMetricsServiceForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseClus
 }
 
 // BuildConfigMapForEnterprise creates a ConfigMap with Neo4j configuration
-func BuildConfigMapForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.ConfigMap {
+func BuildConfigMapForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.ConfigMap {
 	config := buildNeo4jConfigForEnterprise(cluster)
 
 	return &corev1.ConfigMap{
@@ -583,7 +583,7 @@ func BuildConfigMapForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) 
 }
 
 // BuildCertificateForEnterprise creates an enhanced Certificate for TLS
-func BuildCertificateForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *certv1.Certificate {
+func BuildCertificateForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *certv1.Certificate {
 	if cluster.Spec.TLS == nil || cluster.Spec.TLS.Mode != CertManagerMode {
 		return nil
 	}
@@ -690,7 +690,7 @@ func BuildCertificateForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster
 }
 
 // BuildExternalSecretForTLS creates an ExternalSecret for TLS certificates
-func BuildExternalSecretForTLS(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) map[string]any {
+func BuildExternalSecretForTLS(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) map[string]any {
 	if cluster.Spec.TLS == nil || cluster.Spec.TLS.ExternalSecrets == nil || !cluster.Spec.TLS.ExternalSecrets.Enabled {
 		return nil
 	}
@@ -698,7 +698,7 @@ func BuildExternalSecretForTLS(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) ma
 }
 
 // BuildExternalSecretForAuth creates an ExternalSecret for authentication secrets
-func BuildExternalSecretForAuth(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) map[string]any {
+func BuildExternalSecretForAuth(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) map[string]any {
 	if cluster.Spec.Auth == nil || cluster.Spec.Auth.ExternalSecrets == nil || !cluster.Spec.Auth.ExternalSecrets.Enabled {
 		return nil
 	}
@@ -706,7 +706,7 @@ func BuildExternalSecretForAuth(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) m
 }
 
 // buildExternalSecret is a helper function to create ExternalSecrets for both TLS and Auth
-func buildExternalSecret(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, esConfig *neo4jv1alpha1.ExternalSecretsConfig, secretType string) map[string]any {
+func buildExternalSecret(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, esConfig *neo4jv1beta1.ExternalSecretsConfig, secretType string) map[string]any {
 	// Build data array
 	var data []map[string]any
 	for _, item := range esConfig.Data {
@@ -763,7 +763,7 @@ func buildExternalSecret(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, esConfig
 }
 
 // BuildDiscoveryServiceAccountForEnterprise creates a ServiceAccount for Kubernetes discovery
-func BuildDiscoveryServiceAccountForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.ServiceAccount {
+func BuildDiscoveryServiceAccountForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      getDiscoveryServiceAccountNameForEnterprise(cluster),
@@ -774,7 +774,7 @@ func BuildDiscoveryServiceAccountForEnterprise(cluster *neo4jv1alpha1.Neo4jEnter
 }
 
 // BuildDiscoveryRoleForEnterprise creates a Role for Kubernetes discovery
-func BuildDiscoveryRoleForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *rbacv1.Role {
+func BuildDiscoveryRoleForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *rbacv1.Role {
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      getDiscoveryRoleNameForEnterprise(cluster),
@@ -792,7 +792,7 @@ func BuildDiscoveryRoleForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseClust
 }
 
 // BuildDiscoveryRoleBindingForEnterprise creates a RoleBinding for Kubernetes discovery
-func BuildDiscoveryRoleBindingForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *rbacv1.RoleBinding {
+func BuildDiscoveryRoleBindingForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      getDiscoveryRoleBindingNameForEnterprise(cluster),
@@ -815,7 +815,7 @@ func BuildDiscoveryRoleBindingForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpri
 }
 
 // BuildServiceAccountForEnterprise creates a ServiceAccount for cloud identity
-func BuildServiceAccountForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.ServiceAccount {
+func BuildServiceAccountForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.ServiceAccount {
 	if cluster.Spec.Backups == nil || cluster.Spec.Backups.Cloud == nil ||
 		cluster.Spec.Backups.Cloud.Identity.AutoCreate == nil ||
 		!cluster.Spec.Backups.Cloud.Identity.AutoCreate.Enabled {
@@ -844,7 +844,7 @@ func BuildServiceAccountForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseClus
 }
 
 // BuildIngressForEnterprise creates an Ingress for external access
-func BuildIngressForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *networkingv1.Ingress {
+func BuildIngressForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *networkingv1.Ingress {
 	if cluster.Spec.Service == nil || cluster.Spec.Service.Ingress == nil || !cluster.Spec.Service.Ingress.Enabled {
 		return nil
 	}
@@ -905,7 +905,7 @@ func BuildIngressForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *n
 // Helper functions
 
 // getLabelsForEnterpriseServer returns labels for individual server pods
-func getLabelsForEnterpriseServer(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, serverName string) map[string]string {
+func getLabelsForEnterpriseServer(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, serverName string) map[string]string {
 	labels := map[string]string{
 		"app.kubernetes.io/name":       "neo4j",
 		"app.kubernetes.io/instance":   cluster.Name,
@@ -936,7 +936,7 @@ func GetLabelsForPVC(instanceName, role string) map[string]string {
 	}
 }
 
-func getLabelsForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, role string) map[string]string {
+func getLabelsForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, role string) map[string]string {
 	labels := map[string]string{
 		"app.kubernetes.io/name":       "neo4j",
 		"app.kubernetes.io/instance":   cluster.Name,
@@ -956,7 +956,7 @@ func getLabelsForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, role 
 	return labels
 }
 
-func buildMetricsAnnotations(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) map[string]string {
+func buildMetricsAnnotations(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) map[string]string {
 	if cluster.Spec.Monitoring == nil || !cluster.Spec.Monitoring.Enabled {
 		return nil
 	}
@@ -970,7 +970,7 @@ func buildMetricsAnnotations(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) map[
 
 // buildBackupSidecarStatefulSet creates a separate StatefulSet for backup sidecar
 // buildCentralizedBackupStatefulSet creates a single backup StatefulSet for the entire cluster
-func buildCentralizedBackupStatefulSet(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *appsv1.StatefulSet {
+func buildCentralizedBackupStatefulSet(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *appsv1.StatefulSet {
 	adminSecret := DefaultAdminSecret
 	if cluster.Spec.Auth != nil && cluster.Spec.Auth.AdminSecret != "" {
 		adminSecret = cluster.Spec.Auth.AdminSecret
@@ -1012,7 +1012,7 @@ func buildCentralizedBackupStatefulSet(cluster *neo4jv1alpha1.Neo4jEnterpriseClu
 }
 
 // buildCentralizedBackupPodSpec creates the pod spec for centralized backup
-func buildCentralizedBackupPodSpec(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, adminSecret string) corev1.PodSpec {
+func buildCentralizedBackupPodSpec(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, adminSecret string) corev1.PodSpec {
 	// Environment variables for centralized backup
 	env := []corev1.EnvVar{
 		{
@@ -1167,7 +1167,7 @@ done`
 }
 
 // buildBackupVolumeClaimTemplates creates PVC templates for backup storage
-func buildBackupVolumeClaimTemplates(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) []corev1.PersistentVolumeClaim {
+func buildBackupVolumeClaimTemplates(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []corev1.PersistentVolumeClaim {
 	if cluster.Spec.Backups == nil {
 		return nil
 	}
@@ -1210,7 +1210,7 @@ func buildBackupVolumeClaimTemplates(cluster *neo4jv1alpha1.Neo4jEnterpriseClust
 	return []corev1.PersistentVolumeClaim{pvc}
 }
 
-func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, serverName, adminSecret string) corev1.PodSpec {
+func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, serverName, adminSecret string) corev1.PodSpec {
 	// Environment variables
 	env := []corev1.EnvVar{
 		{
@@ -1505,7 +1505,7 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, se
 }
 
 // clusterImagePullSecrets converts the cluster's image pull secret names to []corev1.LocalObjectReference.
-func clusterImagePullSecrets(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) []corev1.LocalObjectReference {
+func clusterImagePullSecrets(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []corev1.LocalObjectReference {
 	if len(cluster.Spec.Image.PullSecrets) == 0 {
 		return nil
 	}
@@ -1519,7 +1519,7 @@ func clusterImagePullSecrets(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) []co
 	return refs
 }
 
-func buildVolumeClaimTemplatesForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) []corev1.PersistentVolumeClaim {
+func buildVolumeClaimTemplatesForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []corev1.PersistentVolumeClaim {
 	return []corev1.PersistentVolumeClaim{
 		{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1541,7 +1541,7 @@ func buildVolumeClaimTemplatesForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpri
 	}
 }
 
-func getServiceAccountNameForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func getServiceAccountNameForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	if cluster.Spec.Backups != nil &&
 		cluster.Spec.Backups.Cloud != nil &&
 		cluster.Spec.Backups.Cloud.Identity.ServiceAccount != "" {
@@ -1558,7 +1558,7 @@ func getServiceAccountNameForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCl
 	return "default"
 }
 
-func buildNeo4jConfigForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func buildNeo4jConfigForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	// Calculate optimal memory settings for Neo4j 5.26+
 	memoryConfig := GetMemoryConfigForCluster(cluster)
 
@@ -1747,7 +1747,7 @@ server.bolt.tls_level=REQUIRED
 }
 
 // BuildMonitoringConfig generates Neo4j config lines for monitoring, metrics exposure, and query logging.
-func BuildMonitoringConfig(mon *neo4jv1alpha1.MonitoringSpec) string {
+func BuildMonitoringConfig(mon *neo4jv1beta1.MonitoringSpec) string {
 	slowThreshold := "5s"
 	explainPlan := false
 	queryLogLevel := "INFO"
@@ -1829,7 +1829,7 @@ func IsNeo4jVersion202510OrHigher(imageTag string) bool {
 }
 
 // buildPropertyShardingConfig merges required property sharding settings with user overrides
-func buildPropertyShardingConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) map[string]string {
+func buildPropertyShardingConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) map[string]string {
 	config := map[string]string{
 		"internal.dbms.sharded_property_database.enabled":                     "true",
 		"internal.dbms.sharded_property_database.allow_external_shard_access": "false",
@@ -1845,7 +1845,7 @@ func buildPropertyShardingConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) 
 	return config
 }
 
-func buildStartupScriptForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func buildStartupScriptForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	// Unified startup script for all deployments
 	return `#!/bin/bash
 set -e
@@ -1946,7 +1946,7 @@ exec /startup/docker-entrypoint.sh neo4j
 }
 
 // buildServerModeConstraintConfig generates server mode constraint configuration
-func buildServerModeConstraintConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func buildServerModeConstraintConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	config := ""
 
 	// Check if we have per-server role hints
@@ -2020,7 +2020,7 @@ func isCalverImage(tag string) bool {
 //   - dbms.cluster.discovery.resolver_type=LIST  ← still required
 //   - dbms.cluster.endpoints=<pod-fqdns>:6000    ← renamed from dbms.cluster.discovery.v2.endpoints
 //   - NO dbms.cluster.discovery.version flag     ← not recognised; V2 is always active
-func buildVersionSpecificDiscoveryConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func buildVersionSpecificDiscoveryConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	calver := isCalverImage(cluster.Spec.Image.Tag)
 
 	addrs := make([]string, cluster.Spec.Topology.Servers)
@@ -2067,12 +2067,12 @@ internal.dbms.cluster.discovery.resolution_timeout=1d`
 // getMinInitialPrimariesSetting returns the config key for the
 // "minimum primaries before bootstrap" guard. The key is the same
 // in both Neo4j 5.26.x and 2025.x CalVer.
-func getMinInitialPrimariesSetting(_ *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func getMinInitialPrimariesSetting(_ *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	return "dbms.cluster.minimum_initial_system_primaries_count"
 }
 
 // ValidateServerRoleHints validates server role hints configuration
-func ValidateServerRoleHints(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) []string {
+func ValidateServerRoleHints(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []string {
 	var errors []string
 
 	if len(cluster.Spec.Topology.ServerRoles) == 0 {
@@ -2127,7 +2127,7 @@ func ValidateServerRoleHints(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) []st
 	return errors
 }
 
-func buildHealthScript(_ *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func buildHealthScript(_ *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	// Enhanced health check for cluster deployments
 	return `#!/bin/bash
 # Health check script for Neo4j clustering
@@ -2161,7 +2161,7 @@ exit 1
 }
 
 // buildReadinessProbe creates a readiness probe
-func buildReadinessProbe(_ *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Probe {
+func buildReadinessProbe(_ *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Probe {
 	return &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			Exec: &corev1.ExecAction{
@@ -2180,7 +2180,7 @@ func buildReadinessProbe(_ *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Probe 
 }
 
 // buildLivenessProbe creates a liveness probe
-func buildLivenessProbe(_ *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Probe {
+func buildLivenessProbe(_ *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Probe {
 	return &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			Exec: &corev1.ExecAction{
@@ -2199,7 +2199,7 @@ func buildLivenessProbe(_ *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Probe {
 }
 
 // buildJVMSettings builds optimized JVM settings for Neo4j
-func buildJVMSettings(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func buildJVMSettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	// Check if user has already set JVM settings via environment variable
 	for _, env := range cluster.Spec.Env {
 		if env.Name == "NEO4J_server_jvm_additional" {
@@ -2261,7 +2261,7 @@ func buildJVMSettings(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
 }
 
 // buildStartupProbe creates a startup probe for initial cluster formation
-func buildStartupProbe(_ *neo4jv1alpha1.Neo4jEnterpriseCluster) *corev1.Probe {
+func buildStartupProbe(_ *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Probe {
 	return &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			Exec: &corev1.ExecAction{
@@ -2402,15 +2402,15 @@ func formatMemorySizeForNeo4j(bytes int64) string {
 }
 
 // Helper functions for Kubernetes discovery resources
-func getDiscoveryServiceAccountNameForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func getDiscoveryServiceAccountNameForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	return fmt.Sprintf("%s-discovery", cluster.Name)
 }
 
-func getDiscoveryRoleNameForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func getDiscoveryRoleNameForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	return fmt.Sprintf("%s-discovery", cluster.Name)
 }
 
-func getDiscoveryRoleBindingNameForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func getDiscoveryRoleBindingNameForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	return fmt.Sprintf("%s-discovery", cluster.Name)
 }
 
@@ -2424,7 +2424,7 @@ type AuthConfigResult struct {
 
 // BuildAuthConfig converts typed AuthSpec fields into neo4j.conf configuration lines.
 // Sensitive values (LDAP system password) are NOT included — they are injected via env vars.
-func BuildAuthConfig(auth *neo4jv1alpha1.AuthSpec) AuthConfigResult {
+func BuildAuthConfig(auth *neo4jv1beta1.AuthSpec) AuthConfigResult {
 	if auth == nil {
 		return AuthConfigResult{}
 	}
@@ -2486,7 +2486,7 @@ func BuildAuthConfig(auth *neo4jv1alpha1.AuthSpec) AuthConfigResult {
 
 // buildLDAPConfig generates neo4j.conf lines for LDAP configuration.
 // System account credentials are excluded — they are injected via env vars.
-func buildLDAPConfig(ldap *neo4jv1alpha1.Neo4jLDAPSpec) ([]string, []string) {
+func buildLDAPConfig(ldap *neo4jv1beta1.Neo4jLDAPSpec) ([]string, []string) {
 	var lines []string
 	var keys []string
 
@@ -2557,7 +2557,7 @@ func buildLDAPConfig(ldap *neo4jv1alpha1.Neo4jLDAPSpec) ([]string, []string) {
 }
 
 // buildOIDCProviderConfig generates neo4j.conf lines for a single OIDC provider.
-func buildOIDCProviderConfig(name string, provider *neo4jv1alpha1.Neo4jOIDCProviderSpec) ([]string, []string) {
+func buildOIDCProviderConfig(name string, provider *neo4jv1beta1.Neo4jOIDCProviderSpec) ([]string, []string) {
 	var lines []string
 	var keys []string
 	prefix := fmt.Sprintf("dbms.security.oidc.%s", name)
@@ -2645,7 +2645,7 @@ func serializeGroupToRoleMapping(mapping map[string]string) string {
 
 // BuildAuthEnvVars returns env vars for secret injection (LDAP system account credentials).
 // These are injected as env vars so sensitive values never appear in the ConfigMap.
-func BuildAuthEnvVars(auth *neo4jv1alpha1.AuthSpec) []corev1.EnvVar {
+func BuildAuthEnvVars(auth *neo4jv1beta1.AuthSpec) []corev1.EnvVar {
 	if auth == nil || auth.LDAP == nil || auth.LDAP.Authorization == nil {
 		return nil
 	}
@@ -2681,7 +2681,7 @@ func BuildAuthEnvVars(auth *neo4jv1alpha1.AuthSpec) []corev1.EnvVar {
 }
 
 // BuildTrustStoreInitContainer creates an init container that converts a PEM CA cert into a JKS truststore.
-func BuildTrustStoreInitContainer(image string, trustStore *neo4jv1alpha1.SecretKeyRef) corev1.Container {
+func BuildTrustStoreInitContainer(image string, trustStore *neo4jv1beta1.SecretKeyRef) corev1.Container {
 	caKey := trustStore.Key
 	if caKey == "" {
 		caKey = "ca.crt"
@@ -2701,7 +2701,7 @@ func BuildTrustStoreInitContainer(image string, trustStore *neo4jv1alpha1.Secret
 }
 
 // BuildTrustStoreVolumes returns the volumes needed for JVM truststore support.
-func BuildTrustStoreVolumes(trustStore *neo4jv1alpha1.SecretKeyRef) []corev1.Volume {
+func BuildTrustStoreVolumes(trustStore *neo4jv1beta1.SecretKeyRef) []corev1.Volume {
 	return []corev1.Volume{
 		{
 			Name: "truststore-ca",

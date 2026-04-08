@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/neo4j-partners/neo4j-kubernetes-operator/internal/neo4j"
 )
 
@@ -37,7 +37,7 @@ var _ = Describe("SplitBrainDetector", func() {
 		ctx           context.Context
 		detector      *SplitBrainDetector
 		fakeClient    client.Client
-		cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster       *neo4jv1beta1.Neo4jEnterpriseCluster
 		testNamespace string
 		scheme        *runtime.Scheme
 	)
@@ -49,16 +49,16 @@ var _ = Describe("SplitBrainDetector", func() {
 		// Create scheme
 		scheme = runtime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
-		Expect(neo4jv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(neo4jv1beta1.AddToScheme(scheme)).To(Succeed())
 
 		// Create test cluster
-		cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+		cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-cluster",
 				Namespace: testNamespace,
 			},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-				Topology: neo4jv1alpha1.TopologyConfiguration{
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				Topology: neo4jv1beta1.TopologyConfiguration{
 					Servers: 3,
 				},
 			},

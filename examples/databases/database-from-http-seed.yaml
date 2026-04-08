@@ -16,7 +16,7 @@ data:
   AUTH_HEADER: QmVhcmVyIG15LXRva2Vu   # EXAMPLE ONLY - Replace with real credentials# Bearer my-token
 ---
 # Database from HTTPS URL with authentication
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: test-database-from-https
@@ -49,7 +49,7 @@ spec:
 
 ---
 # Database from HTTP URL without authentication (public backup)
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: demo-database-from-http
@@ -80,7 +80,7 @@ spec:
 
 ---
 # Database from FTP server
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: archive-database-from-ftp

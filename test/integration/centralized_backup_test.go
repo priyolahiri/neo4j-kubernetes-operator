@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Centralized Backup Configuration", func() {
@@ -65,7 +65,7 @@ var _ = Describe("Centralized Backup Configuration", func() {
 			By("Cleaning up test resources")
 
 			// Clean up any standalone resources
-			standaloneList := &neo4jv1alpha1.Neo4jEnterpriseStandaloneList{}
+			standaloneList := &neo4jv1beta1.Neo4jEnterpriseStandaloneList{}
 			if err := k8sClient.List(ctx, standaloneList, client.InNamespace(testNamespace)); err == nil {
 				for i := range standaloneList.Items {
 					standalone := &standaloneList.Items[i]
@@ -78,7 +78,7 @@ var _ = Describe("Centralized Backup Configuration", func() {
 			}
 
 			// Clean up any cluster resources that might have been created in other tests
-			clusterList := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
+			clusterList := &neo4jv1beta1.Neo4jEnterpriseClusterList{}
 			if err := k8sClient.List(ctx, clusterList, client.InNamespace(testNamespace)); err == nil {
 				for i := range clusterList.Items {
 					cluster := &clusterList.Items[i]
@@ -98,28 +98,28 @@ var _ = Describe("Centralized Backup Configuration", func() {
 
 		It("Should verify cluster deployment has centralized backup StatefulSet", func() {
 			By("Creating a cluster with backups enabled")
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-backup-cluster-%d", time.Now().UnixNano()),
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2,
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "500Mi",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: adminSecret.Name,
 					},
-					Backups: &neo4jv1alpha1.BackupsSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
 						// Enable backups (just having the section enables centralized backup)
 					},
 					Env: []corev1.EnvVar{
@@ -149,7 +149,7 @@ var _ = Describe("Centralized Backup Configuration", func() {
 			}
 
 			Eventually(func() bool {
-				var foundCluster neo4jv1alpha1.Neo4jEnterpriseCluster
+				var foundCluster neo4jv1beta1.Neo4jEnterpriseCluster
 				if err := k8sClient.Get(ctx, clusterKey, &foundCluster); err != nil {
 					GinkgoWriter.Printf("Failed to get cluster: %v\n", err)
 					return false
@@ -230,28 +230,28 @@ var _ = Describe("Centralized Backup Configuration", func() {
 
 		It("Should verify 2025.x deployment has centralized backup StatefulSet", func() {
 			By("Creating a 2025.x cluster")
-			cluster2025 := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster2025 := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-2025x-%d", time.Now().UnixNano()),
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use the environment-specified version
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2,
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "500Mi",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: adminSecret.Name,
 					},
-					Backups: &neo4jv1alpha1.BackupsSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
 						// Enable backups for 2025.x
 					},
 					Env: []corev1.EnvVar{
@@ -273,7 +273,7 @@ var _ = Describe("Centralized Backup Configuration", func() {
 			By("Verifying 2025.x centralized backup configuration")
 			// Wait for cluster to be ready first
 			Eventually(func() bool {
-				var foundCluster neo4jv1alpha1.Neo4jEnterpriseCluster
+				var foundCluster neo4jv1beta1.Neo4jEnterpriseCluster
 				if err := k8sClient.Get(ctx, types.NamespacedName{
 					Name: cluster2025.Name, Namespace: testNamespace}, &foundCluster); err != nil {
 					GinkgoWriter.Printf("Failed to get 2025.x cluster: %v\n", err)

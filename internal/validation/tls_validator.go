@@ -21,7 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 const (
@@ -38,7 +38,7 @@ func NewTLSValidator() *TLSValidator {
 }
 
 // Validate validates the TLS configuration
-func (v *TLSValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *TLSValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if cluster.Spec.TLS == nil {

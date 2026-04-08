@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Neo4jBackup Controller", func() {
@@ -41,8 +41,8 @@ var _ = Describe("Neo4jBackup Controller", func() {
 
 	var (
 		ctx           context.Context
-		backup        *neo4jv1alpha1.Neo4jBackup
-		cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
+		backup        *neo4jv1beta1.Neo4jBackup
+		cluster       *neo4jv1beta1.Neo4jEnterpriseCluster
 		adminSecret   *corev1.Secret
 		backupName    string
 		clusterName   string
@@ -77,24 +77,24 @@ var _ = Describe("Neo4jBackup Controller", func() {
 		}
 
 		// Create cluster first
-		cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+		cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterName,
 				Namespace: namespaceName,
 			},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-				Image: neo4jv1alpha1.ImageSpec{
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				Image: neo4jv1beta1.ImageSpec{
 					Repo: "neo4j",
 					Tag:  "5.26-enterprise",
 				},
-				Topology: neo4jv1alpha1.TopologyConfiguration{
+				Topology: neo4jv1beta1.TopologyConfiguration{
 					Servers: 5, // 3 + 2 total servers
 				},
-				Storage: neo4jv1alpha1.StorageSpec{
+				Storage: neo4jv1beta1.StorageSpec{
 					ClassName: "standard",
 					Size:      "10Gi",
 				},
-				Auth: &neo4jv1alpha1.AuthSpec{
+				Auth: &neo4jv1beta1.AuthSpec{
 					AdminSecret: "neo4j-admin-secret",
 				},
 			},
@@ -121,19 +121,19 @@ var _ = Describe("Neo4jBackup Controller", func() {
 		Expect(k8sClient.Status().Patch(ctx, cluster, patch)).To(Succeed())
 
 		// Create basic backup spec
-		backup = &neo4jv1alpha1.Neo4jBackup{
+		backup = &neo4jv1beta1.Neo4jBackup{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      backupName,
 				Namespace: namespaceName,
 			},
-			Spec: neo4jv1alpha1.Neo4jBackupSpec{
-				Target: neo4jv1alpha1.BackupTarget{
+			Spec: neo4jv1beta1.Neo4jBackupSpec{
+				Target: neo4jv1beta1.BackupTarget{
 					Kind: "Cluster",
 					Name: clusterName,
 				},
-				Storage: neo4jv1alpha1.StorageLocation{
+				Storage: neo4jv1beta1.StorageLocation{
 					Type: "pvc",
-					PVC: &neo4jv1alpha1.PVCSpec{
+					PVC: &neo4jv1beta1.PVCSpec{
 						Name: "test-backup-pvc",
 						Size: "10Gi",
 					},
@@ -230,14 +230,14 @@ var _ = Describe("Neo4jBackup Controller", func() {
 	Context("When creating S3 backup", func() {
 		It("Should create backup with S3 configuration", func() {
 			By("Configuring S3 storage")
-			backup.Spec.Storage = neo4jv1alpha1.StorageLocation{
+			backup.Spec.Storage = neo4jv1beta1.StorageLocation{
 				Type:   "s3",
 				Bucket: "test-bucket",
 				Path:   "/backups",
 			}
-			backup.Spec.Cloud = &neo4jv1alpha1.CloudBlock{
+			backup.Spec.Cloud = &neo4jv1beta1.CloudBlock{
 				Provider: "aws",
-				Identity: &neo4jv1alpha1.CloudIdentity{
+				Identity: &neo4jv1beta1.CloudIdentity{
 					Provider:       "aws",
 					ServiceAccount: "backup-sa",
 				},
@@ -265,14 +265,14 @@ var _ = Describe("Neo4jBackup Controller", func() {
 	Context("When creating GCS backup", func() {
 		It("Should create backup with GCS configuration", func() {
 			By("Configuring GCS storage")
-			backup.Spec.Storage = neo4jv1alpha1.StorageLocation{
+			backup.Spec.Storage = neo4jv1beta1.StorageLocation{
 				Type:   "gcs",
 				Bucket: "test-gcs-bucket",
 				Path:   "/gcs-backups",
 			}
-			backup.Spec.Cloud = &neo4jv1alpha1.CloudBlock{
+			backup.Spec.Cloud = &neo4jv1beta1.CloudBlock{
 				Provider: "gcp",
-				Identity: &neo4jv1alpha1.CloudIdentity{
+				Identity: &neo4jv1beta1.CloudIdentity{
 					Provider:       "gcp",
 					ServiceAccount: "gcs-backup-sa",
 				},
@@ -300,14 +300,14 @@ var _ = Describe("Neo4jBackup Controller", func() {
 	Context("When creating Azure backup", func() {
 		It("Should create backup with Azure configuration", func() {
 			By("Configuring Azure storage")
-			backup.Spec.Storage = neo4jv1alpha1.StorageLocation{
+			backup.Spec.Storage = neo4jv1beta1.StorageLocation{
 				Type:   "azure",
 				Bucket: "test-azure-container",
 				Path:   "/azure-backups",
 			}
-			backup.Spec.Cloud = &neo4jv1alpha1.CloudBlock{
+			backup.Spec.Cloud = &neo4jv1beta1.CloudBlock{
 				Provider: "azure",
-				Identity: &neo4jv1alpha1.CloudIdentity{
+				Identity: &neo4jv1beta1.CloudIdentity{
 					Provider:       "azure",
 					ServiceAccount: "azure-backup-sa",
 				},
@@ -339,7 +339,7 @@ var _ = Describe("Neo4jBackup Controller", func() {
 
 			By("Waiting for status conditions to be set by the controller")
 			Eventually(func() bool {
-				updatedBackup := &neo4jv1alpha1.Neo4jBackup{}
+				updatedBackup := &neo4jv1beta1.Neo4jBackup{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      backupName,
 					Namespace: namespaceName,
@@ -355,7 +355,7 @@ var _ = Describe("Neo4jBackup Controller", func() {
 	Context("When handling retention policies", func() {
 		It("Should apply retention policies", func() {
 			By("Configuring retention policy")
-			backup.Spec.Retention = &neo4jv1alpha1.RetentionPolicy{
+			backup.Spec.Retention = &neo4jv1beta1.RetentionPolicy{
 				MaxAge:   "30d",
 				MaxCount: 5,
 			}
@@ -381,7 +381,7 @@ var _ = Describe("Neo4jBackup Controller", func() {
 	Context("When handling database-specific backups", func() {
 		It("Should create backup for specific database", func() {
 			By("Configuring database-specific backup with additional args")
-			backup.Spec.Options = &neo4jv1alpha1.BackupOptions{
+			backup.Spec.Options = &neo4jv1beta1.BackupOptions{
 				AdditionalArgs: []string{"--database=testdb"},
 			}
 			Expect(k8sClient.Create(ctx, backup)).Should(Succeed())

@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // DatabaseValidator validates Neo4jDatabase resources
@@ -89,7 +89,7 @@ func validateDatabaseName(name string, fldPath *field.Path) (field.ErrorList, []
 }
 
 // Validate validates a Neo4jDatabase resource
-func (v *DatabaseValidator) Validate(ctx context.Context, database *neo4jv1alpha1.Neo4jDatabase) *DatabaseValidationResult {
+func (v *DatabaseValidator) Validate(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase) *DatabaseValidationResult {
 	result := &DatabaseValidationResult{
 		Errors:   field.ErrorList{},
 		Warnings: []string{},
@@ -102,7 +102,7 @@ func (v *DatabaseValidator) Validate(ctx context.Context, database *neo4jv1alpha
 	}
 
 	// Try to get referenced cluster first
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	clusterKey := types.NamespacedName{
 		Name:      database.Spec.ClusterRef,
 		Namespace: database.Namespace,
@@ -111,9 +111,9 @@ func (v *DatabaseValidator) Validate(ctx context.Context, database *neo4jv1alpha
 	clusterErr := v.client.Get(ctx, clusterKey, cluster)
 
 	// If cluster not found, try to get standalone
-	var standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone
+	var standalone *neo4jv1beta1.Neo4jEnterpriseStandalone
 	if errors.IsNotFound(clusterErr) {
-		standalone = &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+		standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 		standaloneKey := types.NamespacedName{
 			Name:      database.Spec.ClusterRef,
 			Namespace: database.Namespace,
@@ -160,7 +160,7 @@ func (v *DatabaseValidator) Validate(ctx context.Context, database *neo4jv1alpha
 	return result
 }
 
-func (v *DatabaseValidator) validateDatabaseTopologyForStandalone(database *neo4jv1alpha1.Neo4jDatabase, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone, result *DatabaseValidationResult) {
+func (v *DatabaseValidator) validateDatabaseTopologyForStandalone(database *neo4jv1beta1.Neo4jDatabase, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, result *DatabaseValidationResult) {
 	topologyPath := field.NewPath("spec", "topology")
 	topology := database.Spec.Topology
 
@@ -200,7 +200,7 @@ func (v *DatabaseValidator) validateDatabaseTopologyForStandalone(database *neo4
 	}
 }
 
-func (v *DatabaseValidator) validateDatabaseTopology(database *neo4jv1alpha1.Neo4jDatabase, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, result *DatabaseValidationResult) {
+func (v *DatabaseValidator) validateDatabaseTopology(database *neo4jv1beta1.Neo4jDatabase, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, result *DatabaseValidationResult) {
 	topologyPath := field.NewPath("spec", "topology")
 	topology := database.Spec.Topology
 
@@ -247,7 +247,7 @@ func (v *DatabaseValidator) validateDatabaseTopology(database *neo4jv1alpha1.Neo
 	}
 }
 
-func (v *DatabaseValidator) addTopologyWarnings(database *neo4jv1alpha1.Neo4jDatabase, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, result *DatabaseValidationResult) {
+func (v *DatabaseValidator) addTopologyWarnings(database *neo4jv1beta1.Neo4jDatabase, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, result *DatabaseValidationResult) {
 	topology := database.Spec.Topology
 	totalDatabaseServers := topology.Primaries + topology.Secondaries
 	clusterServers := cluster.Spec.Topology.Servers
@@ -301,7 +301,7 @@ func (v *DatabaseValidator) addTopologyWarnings(database *neo4jv1alpha1.Neo4jDat
 	}
 }
 
-func (v *DatabaseValidator) validateCypherLanguage(database *neo4jv1alpha1.Neo4jDatabase, result *DatabaseValidationResult) {
+func (v *DatabaseValidator) validateCypherLanguage(database *neo4jv1beta1.Neo4jDatabase, result *DatabaseValidationResult) {
 	if database.Spec.DefaultCypherLanguage != "" {
 		cypherPath := field.NewPath("spec", "defaultCypherLanguage")
 		version := database.Spec.DefaultCypherLanguage
@@ -323,7 +323,7 @@ func (v *DatabaseValidator) validateCypherLanguage(database *neo4jv1alpha1.Neo4j
 	}
 }
 
-func (v *DatabaseValidator) validateSeedURI(ctx context.Context, database *neo4jv1alpha1.Neo4jDatabase, result *DatabaseValidationResult) {
+func (v *DatabaseValidator) validateSeedURI(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase, result *DatabaseValidationResult) {
 	seedURIPath := field.NewPath("spec", "seedURI")
 
 	// If no seed URI is specified, skip validation
@@ -383,7 +383,7 @@ func (v *DatabaseValidator) validateSeedURI(ctx context.Context, database *neo4j
 	v.addSeedURIWarnings(database, result)
 }
 
-func (v *DatabaseValidator) validateSeedConfiguration(database *neo4jv1alpha1.Neo4jDatabase, result *DatabaseValidationResult) {
+func (v *DatabaseValidator) validateSeedConfiguration(database *neo4jv1beta1.Neo4jDatabase, result *DatabaseValidationResult) {
 	seedConfigPath := field.NewPath("spec", "seedConfig")
 	seedConfig := database.Spec.SeedConfig
 
@@ -450,7 +450,7 @@ func (v *DatabaseValidator) validateSeedConfiguration(database *neo4jv1alpha1.Ne
 	}
 }
 
-func (v *DatabaseValidator) validateSeedCredentials(ctx context.Context, database *neo4jv1alpha1.Neo4jDatabase, result *DatabaseValidationResult) {
+func (v *DatabaseValidator) validateSeedCredentials(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase, result *DatabaseValidationResult) {
 	credentialsPath := field.NewPath("spec", "seedCredentials")
 	credentials := database.Spec.SeedCredentials
 
@@ -490,7 +490,7 @@ func (v *DatabaseValidator) validateSeedCredentials(ctx context.Context, databas
 	}
 }
 
-func (v *DatabaseValidator) validateSecretKeysForScheme(scheme string, secret *corev1.Secret, credentials *neo4jv1alpha1.SeedCredentials, result *DatabaseValidationResult) {
+func (v *DatabaseValidator) validateSecretKeysForScheme(scheme string, secret *corev1.Secret, credentials *neo4jv1beta1.SeedCredentials, result *DatabaseValidationResult) {
 	credentialsPath := field.NewPath("spec", "seedCredentials", "secretRef")
 
 	switch scheme {
@@ -555,7 +555,7 @@ func (v *DatabaseValidator) validateSecretKeys(secret *corev1.Secret, requiredKe
 	}
 }
 
-func (v *DatabaseValidator) addSeedURIWarnings(database *neo4jv1alpha1.Neo4jDatabase, result *DatabaseValidationResult) {
+func (v *DatabaseValidator) addSeedURIWarnings(database *neo4jv1beta1.Neo4jDatabase, result *DatabaseValidationResult) {
 	// Warn about system-wide authentication vs explicit credentials
 	if database.Spec.SeedCredentials == nil {
 		result.Warnings = append(result.Warnings,
@@ -578,7 +578,7 @@ func (v *DatabaseValidator) addSeedURIWarnings(database *neo4jv1alpha1.Neo4jData
 	}
 }
 
-func (v *DatabaseValidator) validateDatabaseOptions(database *neo4jv1alpha1.Neo4jDatabase, result *DatabaseValidationResult) {
+func (v *DatabaseValidator) validateDatabaseOptions(database *neo4jv1beta1.Neo4jDatabase, result *DatabaseValidationResult) {
 	if len(database.Spec.Options) == 0 {
 		return
 	}
@@ -700,7 +700,7 @@ func (v *DatabaseValidator) isValidDuration(duration string) bool {
 		strings.HasSuffix(duration, "us") || strings.HasSuffix(duration, "ns")
 }
 
-func (v *DatabaseValidator) validateConfigurationConflicts(database *neo4jv1alpha1.Neo4jDatabase, result *DatabaseValidationResult) {
+func (v *DatabaseValidator) validateConfigurationConflicts(database *neo4jv1beta1.Neo4jDatabase, result *DatabaseValidationResult) {
 	// Check for conflicting seed URI and initial data configurations
 	if database.Spec.SeedURI != "" && database.Spec.InitialData != nil {
 		result.Errors = append(result.Errors, field.Invalid(

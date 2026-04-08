@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
@@ -35,7 +35,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 	Context("Seed URI Validation Integration", func() {
 		var (
 			testNamespace string
-			testCluster   *neo4jv1alpha1.Neo4jEnterpriseCluster
+			testCluster   *neo4jv1beta1.Neo4jEnterpriseCluster
 			testSecret    *corev1.Secret
 		)
 
@@ -57,28 +57,28 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 			Expect(k8sClient.Create(context.Background(), adminSecret)).To(Succeed())
 
 			// Create a test cluster
-			testCluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			testCluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3, // Smaller cluster for integration tests (requires less memory)
 					},
-					Image: neo4jv1alpha1.ImageSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(), // Use environment-specified version
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						Size:      "500Mi", // Minimal for integration tests
 						ClassName: "standard",
 					},
 					Resources: getCIAppropriateResourceRequirements(), // Automatically adjusts for CI vs local environments
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AdminSecret: "neo4j-admin-secret",
 					},
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -116,7 +116,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 
 			// Wait for cluster to be ready
 			Eventually(func() bool {
-				var cluster neo4jv1alpha1.Neo4jEnterpriseCluster
+				var cluster neo4jv1beta1.Neo4jEnterpriseCluster
 				err := k8sClient.Get(context.Background(), types.NamespacedName{
 					Name:      testCluster.Name,
 					Namespace: testNamespace,
@@ -163,26 +163,26 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 			ctx := context.Background()
 
 			By("Creating a database with S3 seed URI")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "s3-seeded-database",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "s3db",
 					SeedURI:    "s3://demo-neo4j-backups/test-database.backup",
-					SeedCredentials: &neo4jv1alpha1.SeedCredentials{
+					SeedCredentials: &neo4jv1beta1.SeedCredentials{
 						SecretRef: testSecret.Name,
 					},
-					SeedConfig: &neo4jv1alpha1.SeedConfiguration{
+					SeedConfig: &neo4jv1beta1.SeedConfiguration{
 						Config: map[string]string{
 							"compression": "gzip",
 							"validation":  "strict",
 							"bufferSize":  "64MB",
 						},
 					},
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   2,
 						Secondaries: 2,
 					},
@@ -194,7 +194,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 
 			By("Waiting for database to be created and validated")
 			Eventually(func() bool {
-				var db neo4jv1alpha1.Neo4jDatabase
+				var db neo4jv1beta1.Neo4jDatabase
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      database.Name,
 					Namespace: testNamespace,
@@ -213,7 +213,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 			}, timeout, interval).Should(BeTrue())
 
 			By("Verifying database configuration is accepted by operator")
-			var finalDatabase neo4jv1alpha1.Neo4jDatabase
+			var finalDatabase neo4jv1beta1.Neo4jDatabase
 			Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name:      database.Name,
 				Namespace: testNamespace,
@@ -229,16 +229,16 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 			ctx := context.Background()
 
 			By("Creating a database with both seed URI and initial data")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "conflicting-database",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "conflictdb",
 					SeedURI:    "s3://test-bucket/backup.backup",
-					InitialData: &neo4jv1alpha1.InitialDataSpec{
+					InitialData: &neo4jv1beta1.InitialDataSpec{
 						Source: "cypher",
 						CypherStatements: []string{
 							"CREATE (:TestNode {name: 'test'})",
@@ -250,7 +250,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 
 			By("Verifying database is marked as validation failed")
 			Eventually(func() bool {
-				var db neo4jv1alpha1.Neo4jDatabase
+				var db neo4jv1beta1.Neo4jDatabase
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      database.Name,
 					Namespace: testNamespace,
@@ -275,16 +275,16 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 			ctx := context.Background()
 
 			By("Creating a database with topology exceeding cluster capacity")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "oversized-database",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "oversizeddb",
 					SeedURI:    "s3://test-bucket/backup.backup",
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   3, // Total: 5 servers, but cluster only has 3
 						Secondaries: 2,
 					},
@@ -294,7 +294,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 
 			By("Verifying topology validation fails")
 			Eventually(func() bool {
-				var db neo4jv1alpha1.Neo4jDatabase
+				var db neo4jv1beta1.Neo4jDatabase
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      database.Name,
 					Namespace: testNamespace,
@@ -321,16 +321,16 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 			ctx := context.Background()
 
 			By("Creating a database with non-existent credentials secret")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "missing-secret-database",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "missingsecretdb",
 					SeedURI:    "s3://test-bucket/backup.backup",
-					SeedCredentials: &neo4jv1alpha1.SeedCredentials{
+					SeedCredentials: &neo4jv1beta1.SeedCredentials{
 						SecretRef: "nonexistent-secret",
 					},
 				},
@@ -339,7 +339,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 
 			By("Verifying validation fails for missing secret")
 			Eventually(func() bool {
-				var db neo4jv1alpha1.Neo4jDatabase
+				var db neo4jv1beta1.Neo4jDatabase
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      database.Name,
 					Namespace: testNamespace,
@@ -365,16 +365,16 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 			ctx := context.Background()
 
 			By("Creating a database with invalid seed configuration")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "invalid-config-database",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "invalidconfigdb",
 					SeedURI:    "gs://test-bucket/backup.backup",
-					SeedConfig: &neo4jv1alpha1.SeedConfiguration{
+					SeedConfig: &neo4jv1beta1.SeedConfiguration{
 						RestoreUntil: "not-a-valid-timestamp",
 						Config: map[string]string{
 							"compression": "invalid-compression-type",
@@ -387,7 +387,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 
 			By("Verifying seed configuration validation fails")
 			Eventually(func() bool {
-				var db neo4jv1alpha1.Neo4jDatabase
+				var db neo4jv1beta1.Neo4jDatabase
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      database.Name,
 					Namespace: testNamespace,
@@ -414,23 +414,23 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 			ctx := context.Background()
 
 			By("Creating a database without explicit credentials")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "system-auth-database",
 					Namespace: testNamespace,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "systemauthdb",
 					SeedURI:    "s3://demo-bucket/backup.backup",
 					// No seedCredentials - relies on system-wide auth
-					SeedConfig: &neo4jv1alpha1.SeedConfiguration{
+					SeedConfig: &neo4jv1beta1.SeedConfiguration{
 						Config: map[string]string{
 							"compression": "lz4",
 							"validation":  "lenient",
 						},
 					},
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   1,
 						Secondaries: 1,
 					},
@@ -442,7 +442,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", func() {
 
 			By("Verifying database is accepted with system-wide auth")
 			Eventually(func() bool {
-				var db neo4jv1alpha1.Neo4jDatabase
+				var db neo4jv1beta1.Neo4jDatabase
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      database.Name,
 					Namespace: testNamespace,

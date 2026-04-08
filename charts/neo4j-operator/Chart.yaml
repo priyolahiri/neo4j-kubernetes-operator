@@ -25,19 +25,19 @@ annotations:
   artifacthub.io/license: Apache-2.0
   artifacthub.io/crds: |
     - kind: Neo4jEnterpriseCluster
-      version: v1alpha1
+      version: v1beta1
       description: Manages Neo4j Enterprise cluster deployments
     - kind: Neo4jEnterpriseStandalone
-      version: v1alpha1
+      version: v1beta1
       description: Manages Neo4j Enterprise standalone deployments
     - kind: Neo4jDatabase
-      version: v1alpha1
+      version: v1beta1
       description: Manages Neo4j databases within clusters
     - kind: Neo4jBackup
-      version: v1alpha1
+      version: v1beta1
       description: Manages Neo4j backup operations
     - kind: Neo4jRestore
-      version: v1alpha1
+      version: v1beta1
       description: Manages Neo4j restore operations
   artifacthub.io/recommendations: |
     - url: https://artifacthub.io/packages/helm/cert-manager/cert-manager

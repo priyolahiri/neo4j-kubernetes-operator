@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // storageExpansionResult describes the outcome of a storage expansion check.
@@ -53,7 +53,7 @@ type storageExpansionResult struct {
 // reconcileStorageExpansion checks whether PVC expansion is needed and performs it.
 // It returns (requeue, error). If requeue is true the caller should requeue immediately.
 // This method is non-disruptive: pods keep running throughout the expansion.
-func (r *Neo4jEnterpriseClusterReconciler) reconcileStorageExpansion(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (bool, error) {
+func (r *Neo4jEnterpriseClusterReconciler) reconcileStorageExpansion(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (bool, error) {
 	logger := log.FromContext(ctx)
 
 	result, err := r.checkStorageExpansionNeeded(ctx, cluster)
@@ -121,7 +121,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileStorageExpansion(ctx context
 
 // checkStorageExpansionNeeded compares desired storage sizes against existing PVCs.
 // It also detects shrink attempts (desired < current) and sets shrinkDetected.
-func (r *Neo4jEnterpriseClusterReconciler) checkStorageExpansionNeeded(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (storageExpansionResult, error) {
+func (r *Neo4jEnterpriseClusterReconciler) checkStorageExpansionNeeded(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (storageExpansionResult, error) {
 	result := storageExpansionResult{}
 
 	// Check data volumes
@@ -192,7 +192,7 @@ func (r *Neo4jEnterpriseClusterReconciler) comparePVCSizes(ctx context.Context, 
 }
 
 // expandVolumes performs PVC expansion and orphan-deletes the StatefulSet.
-func (r *Neo4jEnterpriseClusterReconciler) expandVolumes(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, stsName, volumeName string, desiredSize resource.Quantity) error {
+func (r *Neo4jEnterpriseClusterReconciler) expandVolumes(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, stsName, volumeName string, desiredSize resource.Quantity) error {
 	logger := log.FromContext(ctx)
 
 	// 1. Validate the StorageClass supports volume expansion

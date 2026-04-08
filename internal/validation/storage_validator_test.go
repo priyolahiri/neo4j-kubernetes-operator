@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestNewStorageValidator(t *testing.T) {
@@ -17,19 +17,19 @@ func TestNewStorageValidator(t *testing.T) {
 func TestStorageValidator_Validate(t *testing.T) {
 	tests := []struct {
 		name       string
-		cluster    *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster    *neo4jv1beta1.Neo4jEnterpriseCluster
 		wantErrors bool
 		errorCount int
 	}{
 		{
 			name: "valid storage configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Storage: neo4jv1alpha1.StorageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "fast-ssd",
 						Size:      "100Gi",
 					},
@@ -39,13 +39,13 @@ func TestStorageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid storage with different size formats",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Storage: neo4jv1alpha1.StorageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "1Ti",
 					},
@@ -55,13 +55,13 @@ func TestStorageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "missing storage class name",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Storage: neo4jv1alpha1.StorageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						Size: "100Gi",
 					},
 				},
@@ -71,13 +71,13 @@ func TestStorageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "missing storage size",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Storage: neo4jv1alpha1.StorageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 					},
 				},
@@ -87,13 +87,13 @@ func TestStorageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "missing both class name and size",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Storage: neo4jv1alpha1.StorageSpec{},
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Storage: neo4jv1beta1.StorageSpec{},
 				},
 			},
 			wantErrors: true,
@@ -101,13 +101,13 @@ func TestStorageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid storage size format",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Storage: neo4jv1alpha1.StorageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "invalid-size",
 					},
@@ -118,13 +118,13 @@ func TestStorageValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "empty storage size",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Storage: neo4jv1alpha1.StorageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "",
 					},
