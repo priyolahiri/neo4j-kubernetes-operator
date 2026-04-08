@@ -279,19 +279,41 @@ jobs:
           --create-namespace
         \`\`\`
 
-        ## ⚠️ Breaking Changes (since v1.5.0-alpha)
+        ## ⚠️ Breaking Changes
 
-        This release includes API field changes introduced in v1.6.0-alpha for v1beta1 promotion.
-        **Manifests from v1.5.0-alpha and earlier require updates before upgrading.**
+        > **Upgrading from any previous version requires manifest updates.**
+        > See the [Migration Guide](./docs/user_guide/migration_guide.md) for step-by-step instructions.
 
-        Key changes:
-        - \`Neo4jRestore\`: \`spec.targetCluster\` renamed to \`spec.clusterRef\`
-        - \`AuthSpec\`: \`provider\` and \`secretRef\` fields removed — use \`authenticationProviders\`/\`authorizationProviders\` lists
-        - Standalone: \`spec.route\` moved to \`spec.service.route\`; \`spec.persistence\` removed — use \`spec.storage.retentionPolicy\`
-        - TrustStore/Kerberos: \`secretRef\` field renamed to \`name\`
-        - Backup encryption: \`ChaCha20\` algorithm renamed to \`ChaCha20Poly1305\`
+        ### API Version: v1alpha1 → v1beta1
 
-        **[Full Migration Guide →](./docs/user_guide/migration_guide.md#upgrading-to-v160-alpha-api-stabilization)**
+        All CRDs graduated from \`neo4j.neo4j.com/v1alpha1\` to \`neo4j.neo4j.com/v1beta1\`.
+        Every manifest must be updated:
+
+        \`\`\`bash
+        # Batch update all manifests
+        find /path/to/manifests -name '*.yaml' -exec \\
+          sed -i 's|neo4j.neo4j.com/v1alpha1|neo4j.neo4j.com/v1beta1|g' {} +
+        \`\`\`
+
+        ### Bolt TLS Enforcement
+
+        When TLS is enabled, \`server.bolt.tls_level\` is now \`REQUIRED\` (was \`OPTIONAL\`).
+        Plain \`bolt://\` connections are rejected — use \`bolt+s://\` or \`bolt+ssc://\`.
+
+        ### Deprecated Config Key
+
+        \`dbms.logs.query.enabled\` → use \`db.logs.query.enabled\` instead.
+
+        ### Cumulative changes from v1.6.0-alpha
+
+        If upgrading from v1.5.0-alpha or earlier, also apply these v1.6.0-alpha changes:
+        - \`Neo4jRestore\`: \`spec.targetCluster\` → \`spec.clusterRef\`
+        - \`AuthSpec\`: \`provider\`/\`secretRef\` removed — use \`authenticationProviders\`/\`authorizationProviders\`
+        - Standalone: \`spec.route\` → \`spec.service.route\`; \`spec.persistence\` → \`spec.storage.retentionPolicy\`
+        - TrustStore/Kerberos: \`secretRef\` → \`name\`
+        - Backup encryption: \`ChaCha20\` → \`ChaCha20Poly1305\`
+
+        **[Full Migration Guide →](./docs/user_guide/migration_guide.md)**
 
         ## 📋 Requirements
 
@@ -321,7 +343,7 @@ jobs:
 
         - [Getting Started Guide](./docs/README.md)
         - [API Reference](./docs/api_reference/)
-        - [User Guide](./docs/user_guide/)
+        - [Migration Guide](./docs/user_guide/migration_guide.md)
 
         ## 🐛 Bug Reports
 
