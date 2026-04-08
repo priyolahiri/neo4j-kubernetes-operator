@@ -37,7 +37,7 @@ make test-unit
 # Run specific package tests
 go test ./internal/controller -v
 go test ./internal/validation -v
-go test ./api/v1alpha1 -v
+go test ./api/v1beta1 -v
 
 # Run specific test functions
 go test ./internal/controller -run TestGetStatefulSetName -v
@@ -155,17 +155,17 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
             // Create required secrets...
 
             By("Creating Neo4jEnterpriseCluster")
-            cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+            cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
                 ObjectMeta: metav1.ObjectMeta{
                     Name:      "plugin-test-cluster",
                     Namespace: namespace.Name,
                 },
-                Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-                    Image: neo4jv1alpha1.ImageSpec{
+                Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+                    Image: neo4jv1beta1.ImageSpec{
                         Repo: "neo4j",
                         Tag:  "5.26.0-enterprise",
                     },
-                    Topology: neo4jv1alpha1.TopologyConfiguration{
+                    Topology: neo4jv1beta1.TopologyConfiguration{
                         Servers: 2,
                     },
                     // Resource constraints for CI compatibility
@@ -179,7 +179,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
                             corev1.ResourceMemory: resource.MustParse("1.5Gi"),
                         },
                     },
-                    Storage: neo4jv1alpha1.StorageSpec{
+                    Storage: neo4jv1beta1.StorageSpec{
                         Size:      "1Gi",
                         ClassName: "standard",
                     },
@@ -189,7 +189,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
             By("Waiting for cluster to be ready")
             Eventually(func() string {
-                currentCluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+                currentCluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
                 err := k8sClient.Get(ctx, types.NamespacedName{
                     Name:      "plugin-test-cluster",
                     Namespace: namespace.Name,
@@ -248,13 +248,13 @@ Tests verify both cluster and standalone support:
 Context("Plugin Installation on Standalone", func() {
     It("Should install GDS plugin on Neo4jEnterpriseStandalone", func() {
         // Test standalone deployment with plugin installation
-        standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+        standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
             ObjectMeta: metav1.ObjectMeta{
                 Name:      standaloneName,
                 Namespace: namespace.Name,
             },
-            Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-                Image: neo4jv1alpha1.ImageSpec{
+            Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+                Image: neo4jv1beta1.ImageSpec{
                     Repo: "neo4j",
                     Tag:  "5.26.0-enterprise",
                 },
@@ -427,7 +427,7 @@ Resources: &corev1.ResourceRequirements{
 
 ```go
 Eventually(func() string {
-    cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+    cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
     err := k8sClient.Get(ctx, clusterKey, cluster)
     if err != nil {
         return ""
@@ -440,7 +440,7 @@ Eventually(func() string {
 
 ```go
 Eventually(func() bool {
-    standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+    standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
     err := k8sClient.Get(ctx, standaloneKey, standalone)
     if err != nil {
         return false

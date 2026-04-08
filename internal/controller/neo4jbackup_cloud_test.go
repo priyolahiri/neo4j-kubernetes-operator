@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // envVarMap converts a slice of EnvVar to a name→value map for easy assertions.
@@ -53,8 +53,8 @@ func newReconcilerForCloudTest() *Neo4jBackupReconciler {
 	return &Neo4jBackupReconciler{}
 }
 
-func backupWithCloud(cloud *neo4jv1alpha1.CloudBlock) *neo4jv1alpha1.Neo4jBackup {
-	b := &neo4jv1alpha1.Neo4jBackup{}
+func backupWithCloud(cloud *neo4jv1beta1.CloudBlock) *neo4jv1beta1.Neo4jBackup {
+	b := &neo4jv1beta1.Neo4jBackup{}
 	b.Spec.Storage.Cloud = cloud
 	return b
 }
@@ -63,7 +63,7 @@ func backupWithCloud(cloud *neo4jv1alpha1.CloudBlock) *neo4jv1alpha1.Neo4jBackup
 
 func TestBuildCloudEnvVars_AWS_WithCredentials(t *testing.T) {
 	r := newReconcilerForCloudTest()
-	backup := backupWithCloud(&neo4jv1alpha1.CloudBlock{
+	backup := backupWithCloud(&neo4jv1beta1.CloudBlock{
 		Provider:             "aws",
 		CredentialsSecretRef: "my-secret",
 	})
@@ -88,7 +88,7 @@ func TestBuildCloudEnvVars_AWS_WithCredentials(t *testing.T) {
 func TestBuildCloudEnvVars_AWS_WithoutCredentials(t *testing.T) {
 	r := newReconcilerForCloudTest()
 	// No credentialsSecretRef → workload identity; expect nil (no env injection)
-	backup := backupWithCloud(&neo4jv1alpha1.CloudBlock{
+	backup := backupWithCloud(&neo4jv1beta1.CloudBlock{
 		Provider: "aws",
 	})
 
@@ -100,7 +100,7 @@ func TestBuildCloudEnvVars_AWS_WithoutCredentials(t *testing.T) {
 
 func TestBuildCloudEnvVars_MinIO_EndpointOnly(t *testing.T) {
 	r := newReconcilerForCloudTest()
-	backup := backupWithCloud(&neo4jv1alpha1.CloudBlock{
+	backup := backupWithCloud(&neo4jv1beta1.CloudBlock{
 		Provider:             "aws",
 		CredentialsSecretRef: "minio-secret",
 		EndpointURL:          "http://minio.minio.svc:9000",
@@ -126,7 +126,7 @@ func TestBuildCloudEnvVars_MinIO_EndpointOnly(t *testing.T) {
 
 func TestBuildCloudEnvVars_MinIO_EndpointWithForcePathStyle(t *testing.T) {
 	r := newReconcilerForCloudTest()
-	backup := backupWithCloud(&neo4jv1alpha1.CloudBlock{
+	backup := backupWithCloud(&neo4jv1beta1.CloudBlock{
 		Provider:             "aws",
 		CredentialsSecretRef: "minio-secret",
 		EndpointURL:          "http://minio.minio.svc:9000",
@@ -145,7 +145,7 @@ func TestBuildCloudEnvVars_MinIO_EndpointWithForcePathStyle(t *testing.T) {
 
 func TestBuildCloudEnvVars_MinIO_ExternalHTTPS(t *testing.T) {
 	r := newReconcilerForCloudTest()
-	backup := backupWithCloud(&neo4jv1alpha1.CloudBlock{
+	backup := backupWithCloud(&neo4jv1beta1.CloudBlock{
 		Provider:             "aws",
 		CredentialsSecretRef: "minio-secret",
 		EndpointURL:          "https://minio.example.com",
@@ -164,7 +164,7 @@ func TestBuildCloudEnvVars_MinIO_ForcePathStyleWithoutEndpoint(t *testing.T) {
 	// forcePathStyle=true without an endpointURL is unusual but should not panic.
 	// It just sets JAVA_TOOL_OPTIONS; the AWS SDK will use the standard endpoint.
 	r := newReconcilerForCloudTest()
-	backup := backupWithCloud(&neo4jv1alpha1.CloudBlock{
+	backup := backupWithCloud(&neo4jv1beta1.CloudBlock{
 		Provider:             "aws",
 		CredentialsSecretRef: "my-secret",
 		ForcePathStyle:       true,
@@ -181,7 +181,7 @@ func TestBuildCloudEnvVars_MinIO_ForcePathStyleWithoutEndpoint(t *testing.T) {
 
 func TestBuildCloudEnvVars_GCP_WithCredentials(t *testing.T) {
 	r := newReconcilerForCloudTest()
-	backup := backupWithCloud(&neo4jv1alpha1.CloudBlock{
+	backup := backupWithCloud(&neo4jv1beta1.CloudBlock{
 		Provider:             "gcp",
 		CredentialsSecretRef: "gcp-secret",
 	})
@@ -202,7 +202,7 @@ func TestBuildCloudEnvVars_GCP_WithCredentials(t *testing.T) {
 
 func TestBuildCloudEnvVars_Azure_WithCredentials(t *testing.T) {
 	r := newReconcilerForCloudTest()
-	backup := backupWithCloud(&neo4jv1alpha1.CloudBlock{
+	backup := backupWithCloud(&neo4jv1beta1.CloudBlock{
 		Provider:             "azure",
 		CredentialsSecretRef: "azure-secret",
 	})
@@ -222,7 +222,7 @@ func TestBuildCloudEnvVars_Azure_WithCredentials(t *testing.T) {
 
 func TestBuildCloudEnvVars_NoCloudConfig(t *testing.T) {
 	r := newReconcilerForCloudTest()
-	backup := &neo4jv1alpha1.Neo4jBackup{} // no cloud block at all
+	backup := &neo4jv1beta1.Neo4jBackup{} // no cloud block at all
 
 	envs := r.buildCloudEnvVars(backup)
 	assert.Nil(t, envs)
@@ -231,7 +231,7 @@ func TestBuildCloudEnvVars_NoCloudConfig(t *testing.T) {
 func TestBuildCloudEnvVars_NilCredentialsSecretRef(t *testing.T) {
 	r := newReconcilerForCloudTest()
 	// Cloud block present but no credentialsSecretRef → workload identity
-	backup := backupWithCloud(&neo4jv1alpha1.CloudBlock{
+	backup := backupWithCloud(&neo4jv1beta1.CloudBlock{
 		Provider: "aws",
 	})
 

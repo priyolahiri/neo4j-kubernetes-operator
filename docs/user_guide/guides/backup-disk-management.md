@@ -19,7 +19,7 @@ Neo4j backups can consume significant disk space, especially in production envir
 Standalone deployments use a backup sidecar that manages disk space with configurable retention policies. Cluster backups run in a centralized `{cluster}-backup` pod and keep the most recent backups by default.
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: production-standalone
@@ -105,7 +105,7 @@ Example:
 Optimize backup types:
 ```yaml
 # Daily full backups with short retention
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: daily-full
@@ -119,7 +119,7 @@ spec:
     maxCount: 3
 
 # Hourly differential backups
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: hourly-diff
@@ -156,7 +156,7 @@ For production, consider external storage:
 
 #### S3 Storage
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: s3-backup

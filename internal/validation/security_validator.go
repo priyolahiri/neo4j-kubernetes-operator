@@ -23,7 +23,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // SecurityValidator validates Neo4j security configuration for Neo4j 5.26+ compatibility
@@ -35,7 +35,7 @@ func NewSecurityValidator() *SecurityValidator {
 }
 
 // Validate validates the security configuration for Neo4j 5.26+ compatibility
-func (v *SecurityValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *SecurityValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Validate authentication configuration with 5.26+ enhancements
@@ -55,7 +55,7 @@ func (v *SecurityValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseClust
 }
 
 // validateAuthenticationConfig validates authentication configuration for Neo4j 5.26+
-func (v *SecurityValidator) validateAuthenticationConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *SecurityValidator) validateAuthenticationConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if cluster.Spec.Auth == nil {
@@ -87,7 +87,7 @@ func (v *SecurityValidator) validateAuthenticationConfig(cluster *neo4jv1alpha1.
 }
 
 // validateLDAPConfig validates LDAP authentication configuration for Neo4j 5.26+
-func (v *SecurityValidator) validateLDAPConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *SecurityValidator) validateLDAPConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 	authPath := field.NewPath("spec", "auth")
 
@@ -139,7 +139,7 @@ func (v *SecurityValidator) validateLDAPConfig(cluster *neo4jv1alpha1.Neo4jEnter
 }
 
 // validateJWTConfig validates JWT authentication configuration for Neo4j 5.26+
-func (v *SecurityValidator) validateJWTConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *SecurityValidator) validateJWTConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 	authPath := field.NewPath("spec", "auth")
 
@@ -191,7 +191,7 @@ func (v *SecurityValidator) validateJWTConfig(cluster *neo4jv1alpha1.Neo4jEnterp
 }
 
 // validateOIDCConfig validates OpenID Connect configuration for Neo4j 5.26+
-func (v *SecurityValidator) validateOIDCConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *SecurityValidator) validateOIDCConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 	authPath := field.NewPath("spec", "auth")
 
@@ -244,7 +244,7 @@ func (v *SecurityValidator) validateOIDCConfig(cluster *neo4jv1alpha1.Neo4jEnter
 }
 
 // validateSAMLConfig validates SAML authentication configuration for Neo4j 5.26+
-func (v *SecurityValidator) validateSAMLConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *SecurityValidator) validateSAMLConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 	authPath := field.NewPath("spec", "auth")
 
@@ -291,7 +291,7 @@ func (v *SecurityValidator) validateSAMLConfig(cluster *neo4jv1alpha1.Neo4jEnter
 }
 
 // validateKerberosConfig validates Kerberos authentication configuration for Neo4j 5.26+
-func (v *SecurityValidator) validateKerberosConfig(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *SecurityValidator) validateKerberosConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 	authPath := field.NewPath("spec", "auth")
 
@@ -333,7 +333,7 @@ func (v *SecurityValidator) validateKerberosConfig(cluster *neo4jv1alpha1.Neo4jE
 }
 
 // validateTLSConfig validates TLS configuration for Neo4j 5.26+
-func (v *SecurityValidator) validateTLSConfig(tls *neo4jv1alpha1.TLSSpec) field.ErrorList {
+func (v *SecurityValidator) validateTLSConfig(tls *neo4jv1beta1.TLSSpec) field.ErrorList {
 	var allErrs field.ErrorList
 	tlsPath := field.NewPath("spec", "tls")
 

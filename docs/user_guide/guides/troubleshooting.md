@@ -166,7 +166,7 @@ Error: Neo4jEnterpriseCluster requires minimum 2 servers for clustering. For sin
 
 **For development/testing** (single-node):
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: dev-neo4j
@@ -181,7 +181,7 @@ spec:
 
 **For production** (minimum cluster):
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: prod-cluster

@@ -34,7 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 	corev1 "k8s.io/api/core/v1"
@@ -75,7 +75,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}()
 
 	// Fetch the Neo4jDatabase instance
-	database := &neo4jv1alpha1.Neo4jDatabase{}
+	database := &neo4jv1beta1.Neo4jDatabase{}
 	if err := r.Get(ctx, req.NamespacedName, database); err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("Neo4jDatabase resource not found")
@@ -125,19 +125,19 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Get referenced cluster or standalone
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	clusterKey := types.NamespacedName{
 		Name:      database.Spec.ClusterRef,
 		Namespace: database.Namespace,
 	}
 
 	clusterErr := r.Get(ctx, clusterKey, cluster)
-	var standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone
+	var standalone *neo4jv1beta1.Neo4jEnterpriseStandalone
 	var isStandalone bool
 
 	// If cluster not found, try to get standalone
 	if errors.IsNotFound(clusterErr) {
-		standalone = &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+		standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 		standaloneKey := types.NamespacedName{
 			Name:      database.Spec.ClusterRef,
 			Namespace: database.Namespace,
@@ -255,7 +255,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
-func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *neo4jv1alpha1.Neo4jDatabase) (ctrl.Result, error) {
+func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	if !controllerutil.ContainsFinalizer(database, DatabaseFinalizer) {
@@ -266,7 +266,7 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 	logger.Info("Starting deletion handler", "finalizers", database.Finalizers, "deletionTimestamp", database.DeletionTimestamp)
 
 	// Get referenced cluster
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	clusterKey := types.NamespacedName{
 		Name:      database.Spec.ClusterRef,
 		Namespace: database.Namespace,
@@ -324,7 +324,7 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 	return ctrl.Result{}, nil
 }
 
-func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *neo4j.Client, database *neo4jv1alpha1.Neo4jDatabase) error {
+func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *neo4j.Client, database *neo4jv1beta1.Neo4jDatabase) error {
 	logger := log.FromContext(ctx)
 
 	// Check if database exists
@@ -458,7 +458,7 @@ func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *ne
 	return nil
 }
 
-func (r *Neo4jDatabaseReconciler) importInitialData(ctx context.Context, client *neo4j.Client, database *neo4jv1alpha1.Neo4jDatabase) error {
+func (r *Neo4jDatabaseReconciler) importInitialData(ctx context.Context, client *neo4j.Client, database *neo4jv1beta1.Neo4jDatabase) error {
 	for _, statement := range database.Spec.InitialData.CypherStatements {
 		if err := client.ExecuteCypher(ctx, database.Spec.Name, statement); err != nil {
 			return fmt.Errorf("failed to execute cypher statement: %w", err)
@@ -467,17 +467,17 @@ func (r *Neo4jDatabaseReconciler) importInitialData(ctx context.Context, client 
 	return nil
 }
 
-func (r *Neo4jDatabaseReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
+func (r *Neo4jDatabaseReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
 	// Use the enterprise client method
 	return neo4j.NewClientForEnterprise(cluster, r.Client, cluster.Spec.Auth.AdminSecret)
 }
 
-func (r *Neo4jDatabaseReconciler) createNeo4jClientForStandalone(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) (*neo4j.Client, error) {
+func (r *Neo4jDatabaseReconciler) createNeo4jClientForStandalone(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (*neo4j.Client, error) {
 	// Use the enterprise client method for standalone
 	return neo4j.NewClientForEnterpriseStandalone(standalone, r.Client, standalone.Spec.Auth.AdminSecret)
 }
 
-func (r *Neo4jDatabaseReconciler) isClusterReady(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) bool {
+func (r *Neo4jDatabaseReconciler) isClusterReady(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	for _, condition := range cluster.Status.Conditions {
 		if condition.Type == "Ready" && condition.Status == metav1.ConditionTrue {
 			return true
@@ -486,14 +486,14 @@ func (r *Neo4jDatabaseReconciler) isClusterReady(cluster *neo4jv1alpha1.Neo4jEnt
 	return false
 }
 
-func (r *Neo4jDatabaseReconciler) isStandaloneReady(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) bool {
+func (r *Neo4jDatabaseReconciler) isStandaloneReady(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) bool {
 	// Standalone uses a simple ready boolean field, not conditions array
 	return standalone.Status.Ready
 }
 
-func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, database *neo4jv1alpha1.Neo4jDatabase, status metav1.ConditionStatus, reason, message string) {
+func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase, status metav1.ConditionStatus, reason, message string) {
 	update := func() error {
-		latest := &neo4jv1alpha1.Neo4jDatabase{}
+		latest := &neo4jv1beta1.Neo4jDatabase{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(database), latest); err != nil {
 			return err
 		}
@@ -538,8 +538,8 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, data
 // SetupWithManager sets up the controller with the Manager.
 func (r *Neo4jDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&neo4jv1alpha1.Neo4jDatabase{}).
-		Owns(&neo4jv1alpha1.Neo4jEnterpriseCluster{}).
+		For(&neo4jv1beta1.Neo4jDatabase{}).
+		Owns(&neo4jv1beta1.Neo4jEnterpriseCluster{}).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
 		}).

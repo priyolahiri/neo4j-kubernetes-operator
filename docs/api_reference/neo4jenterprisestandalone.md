@@ -4,7 +4,7 @@ The `Neo4jEnterpriseStandalone` custom resource manages single-node Neo4j Enterp
 
 ## Overview
 
-- **API Version**: `neo4j.neo4j.com/v1alpha1`
+- **API Version**: `neo4j.neo4j.com/v1beta1`
 - **Kind**: `Neo4jEnterpriseStandalone`
 - **Supported Neo4j Versions**: 5.26.x (last semver LTS) and 2025.01.0+ (CalVer)
 - **Architecture**: Single StatefulSet with unified clustering infrastructure
@@ -268,7 +268,7 @@ The embedded plugin configuration is deprecated. Use separate Neo4jPlugin resour
 
 ```yaml
 # Instead of embedded plugins, use Neo4jPlugin CRD
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: my-apoc-plugin
@@ -393,7 +393,7 @@ The most recent generation observed by the controller. Compare with `metadata.ge
 ### Basic Standalone Deployment
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: dev-neo4j
@@ -433,7 +433,7 @@ spec:
 ### Standalone with LoadBalancer Service
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: public-neo4j
@@ -490,7 +490,7 @@ spec:
 ### Standalone with Ingress
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: web-neo4j
@@ -535,7 +535,7 @@ spec:
 ### Production Standalone with TLS and Plugins
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: prod-neo4j-standalone
@@ -594,7 +594,7 @@ spec:
 
 ---
 # Install APOC plugin using Neo4jPlugin CRD
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: prod-apoc-plugin
@@ -610,7 +610,7 @@ spec:
 
 ---
 # Create a database using Neo4jDatabase CRD
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: prod-app-database
@@ -665,7 +665,7 @@ kubectl get neo4jenterprisestandalone dev-neo4j -o yaml
 ```bash
 # Create a database in the standalone instance
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: app-database
@@ -681,7 +681,7 @@ EOF
 
 # Install APOC plugin
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: apoc-plugin
@@ -699,7 +699,7 @@ EOF
 ```bash
 # Create a backup
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: dev-neo4j-backup
@@ -715,7 +715,7 @@ EOF
 
 # Restore from backup
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: restore-dev-neo4j
@@ -738,7 +738,7 @@ If you previously used `Neo4jEnterpriseCluster` with 1 primary and 0 secondaries
 
 **Before (no longer supported):**
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: single-node-cluster
@@ -751,7 +751,7 @@ spec:
 
 **After:**
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: single-node-standalone
@@ -860,7 +860,7 @@ config:
 
 ```yaml
 # Minimal development setup
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: dev-neo4j
@@ -890,7 +890,7 @@ spec:
 
 ```yaml
 # Standalone for testing multiple databases
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: test-neo4j
@@ -913,7 +913,7 @@ spec:
 
 ---
 # Test database 1
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: test-users-db
@@ -924,7 +924,7 @@ spec:
 
 ---
 # Test database 2
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: test-products-db
@@ -939,7 +939,7 @@ spec:
 ```bash
 # 1. Create backup from cluster
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: cluster-migration-backup
@@ -957,7 +957,7 @@ EOF
 kubectl wait --for=condition=Ready neo4jbackup/cluster-migration-backup --timeout=600s
 
 # 3. Create standalone with restore
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: migrated-standalone

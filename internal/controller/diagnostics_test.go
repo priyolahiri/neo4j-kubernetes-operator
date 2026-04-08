@@ -20,14 +20,14 @@ import (
 	"fmt"
 	"testing"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // helper: build a minimal cluster for condition testing
-func diagTestCluster() *neo4jv1alpha1.Neo4jEnterpriseCluster {
-	return &neo4jv1alpha1.Neo4jEnterpriseCluster{
+func diagTestCluster() *neo4jv1beta1.Neo4jEnterpriseCluster {
+	return &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "test-cluster",
 			Namespace:  "default",
@@ -37,7 +37,7 @@ func diagTestCluster() *neo4jv1alpha1.Neo4jEnterpriseCluster {
 }
 
 // helper: find a condition by type
-func findCondByType(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, condType string) *metav1.Condition {
+func findCondByType(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, condType string) *metav1.Condition {
 	for i := range cluster.Status.Conditions {
 		if cluster.Status.Conditions[i].Type == condType {
 			return &cluster.Status.Conditions[i]

@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // ResourceValidator validates cluster resource capacity for scaling operations
@@ -41,7 +41,7 @@ func NewResourceValidator(client client.Client) *ResourceValidator {
 }
 
 // ValidateScaling validates if cluster has sufficient resources for scaling operation
-func (v *ResourceValidator) ValidateScaling(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, targetTopology neo4jv1alpha1.TopologyConfiguration) field.ErrorList {
+func (v *ResourceValidator) ValidateScaling(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, targetTopology neo4jv1beta1.TopologyConfiguration) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Calculate total resource requirements for target topology
@@ -238,7 +238,7 @@ func (v *ResourceValidator) calculateAvailableResources(ctx context.Context, nod
 }
 
 // calculateRequiredResources calculates resources needed for new pods
-func (v *ResourceValidator) calculateRequiredResources(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, newPods int) ResourceInfo {
+func (v *ResourceValidator) calculateRequiredResources(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, newPods int) ResourceInfo {
 	// Use default resources if not specified
 	memoryRequest := resource.MustParse("2Gi") // Default memory request
 	cpuRequest := resource.MustParse("500m")   // Default CPU request

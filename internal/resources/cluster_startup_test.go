@@ -7,22 +7,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
 func TestBuildConfigMapForEnterprise_NoSingleRaftEnabled(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  "5.26-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 2,
 			},
 		},
@@ -40,23 +40,23 @@ func TestBuildConfigMapForEnterprise_NoSingleRaftEnabled(t *testing.T) {
 func TestBuildConfigMapForEnterprise_ClusterFormation(t *testing.T) {
 	tests := []struct {
 		name              string
-		cluster           *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster           *neo4jv1beta1.Neo4jEnterpriseCluster
 		expectedBootstrap string
 		expectedJoining   string
 	}{
 		{
 			name: "two_node_cluster",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "two-node",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "5.26-enterprise",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2,
 					},
 				},
@@ -66,17 +66,17 @@ func TestBuildConfigMapForEnterprise_ClusterFormation(t *testing.T) {
 		},
 		{
 			name: "three_node_cluster",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "three-node",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "5.26-enterprise",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
 				},
@@ -86,17 +86,17 @@ func TestBuildConfigMapForEnterprise_ClusterFormation(t *testing.T) {
 		},
 		{
 			name: "list_discovery_5x",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-5x",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "5.26-enterprise",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2,
 					},
 				},
@@ -106,17 +106,17 @@ func TestBuildConfigMapForEnterprise_ClusterFormation(t *testing.T) {
 		},
 		{
 			name: "list_discovery_2025",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-2025",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "2025.01-enterprise",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2,
 					},
 				},
@@ -127,17 +127,17 @@ func TestBuildConfigMapForEnterprise_ClusterFormation(t *testing.T) {
 		},
 		{
 			name: "list_discovery_no_k8s_clusterip",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "v2-only-test",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "5.26-enterprise",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2,
 					},
 				},
@@ -261,17 +261,17 @@ func TestListDiscoveryConfiguration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  tt.imageTag,
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: tt.servers,
 					},
 				},
@@ -322,13 +322,13 @@ func TestListDiscoveryConfiguration(t *testing.T) {
 }
 
 func TestBuildConfigMapForEnterprise_HealthScript(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
 		},

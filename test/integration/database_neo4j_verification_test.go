@@ -29,7 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Neo4jDatabase Neo4j-Level Verification", func() {
@@ -41,8 +41,8 @@ var _ = Describe("Neo4jDatabase Neo4j-Level Verification", func() {
 	var (
 		testCtx     context.Context
 		namespace   *corev1.Namespace
-		cluster     *neo4jv1alpha1.Neo4jEnterpriseCluster
-		database    *neo4jv1alpha1.Neo4jDatabase
+		cluster     *neo4jv1beta1.Neo4jEnterpriseCluster
+		database    *neo4jv1beta1.Neo4jDatabase
 		clusterName string
 	)
 
@@ -102,29 +102,29 @@ var _ = Describe("Neo4jDatabase Neo4j-Level Verification", func() {
 	Context("Neo4jDatabase creates database inside Neo4j", func() {
 		It("should create 'verifydb' database visible via SHOW DATABASES", SpecTimeout(testTimeout), func(ctx SpecContext) {
 			By("Creating a 2-server cluster")
-			cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      clusterName,
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  getNeo4jImageTag(),
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: getCIAppropriateClusterSize(2),
 					},
 					Resources: getCIAppropriateResourceRequirements(),
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						ClassName: "standard",
 						Size:      "1Gi",
 					},
-					Auth: &neo4jv1alpha1.AuthSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"native"},
 						AdminSecret:             "neo4j-admin-secret",
 					},
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 					Env: []corev1.EnvVar{
@@ -137,7 +137,7 @@ var _ = Describe("Neo4jDatabase Neo4j-Level Verification", func() {
 
 			By("Waiting for cluster phase=Ready")
 			Eventually(func() string {
-				c := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+				c := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: namespace.Name}, c); err != nil {
 					return ""
 				}
@@ -145,12 +145,12 @@ var _ = Describe("Neo4jDatabase Neo4j-Level Verification", func() {
 			}, clusterTimeout, interval).Should(Equal("Ready"))
 
 			By("Creating Neo4jDatabase 'verifydb'")
-			database = &neo4jv1alpha1.Neo4jDatabase{
+			database = &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "verifydb",
 					Namespace: namespace.Name,
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef:  clusterName,
 					Name:        "verifydb",
 					IfNotExists: true,
@@ -160,7 +160,7 @@ var _ = Describe("Neo4jDatabase Neo4j-Level Verification", func() {
 
 			By("Waiting for Neo4jDatabase status.phase=Ready")
 			Eventually(func() string {
-				db := &neo4jv1alpha1.Neo4jDatabase{}
+				db := &neo4jv1beta1.Neo4jDatabase{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: "verifydb", Namespace: namespace.Name}, db); err != nil {
 					return ""
 				}

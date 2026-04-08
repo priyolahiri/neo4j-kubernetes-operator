@@ -165,7 +165,7 @@ spec:
 ### Database Topology for Performance
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: high-performance-db

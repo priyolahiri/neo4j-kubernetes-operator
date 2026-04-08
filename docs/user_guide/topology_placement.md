@@ -27,7 +27,7 @@ Standard Kubernetes topology labels used for placement:
 For most production deployments, distributing across availability zones is recommended:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: production-cluster
@@ -302,7 +302,7 @@ kubectl describe neo4jenterprisecluster <cluster-name>
 Complete example for a production-grade deployment:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: production-neo4j

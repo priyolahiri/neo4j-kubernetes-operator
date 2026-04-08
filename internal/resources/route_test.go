@@ -6,24 +6,24 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestBuildRouteForEnterprise(t *testing.T) {
 	g := NewWithT(t)
 
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: testObjectMeta("test-cluster", "default"),
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Service: &neo4jv1alpha1.ServiceSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Service: &neo4jv1beta1.ServiceSpec{
 				Annotations: map[string]string{"svc": "anno"},
-				Route: &neo4jv1alpha1.RouteSpec{
+				Route: &neo4jv1beta1.RouteSpec{
 					Enabled:     true,
 					Host:        "example.com",
 					Path:        "/",
 					Annotations: map[string]string{"route": "anno"},
 					TargetPort:  8080,
-					TLS: &neo4jv1alpha1.RouteTLSSpec{
+					TLS: &neo4jv1beta1.RouteTLSSpec{
 						Termination:                   "edge",
 						InsecureEdgeTerminationPolicy: "Redirect",
 					},
@@ -43,11 +43,11 @@ func TestBuildRouteForEnterprise(t *testing.T) {
 func TestBuildRouteForStandalone(t *testing.T) {
 	g := NewWithT(t)
 
-	standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
 		ObjectMeta: testObjectMeta("standalone", "default"),
-		Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-			Service: &neo4jv1alpha1.ServiceSpec{
-				Route: &neo4jv1alpha1.RouteSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+			Service: &neo4jv1beta1.ServiceSpec{
+				Route: &neo4jv1beta1.RouteSpec{
 					Enabled: true,
 				},
 			},

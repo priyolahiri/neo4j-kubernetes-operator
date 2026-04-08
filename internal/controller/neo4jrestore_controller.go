@@ -38,7 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
@@ -115,7 +115,7 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	logger := log.FromContext(ctx)
 
 	// Fetch the Neo4jRestore instance
-	restore := &neo4jv1alpha1.Neo4jRestore{}
+	restore := &neo4jv1beta1.Neo4jRestore{}
 	if err := r.Get(ctx, req.NamespacedName, restore); err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("Neo4jRestore resource not found")
@@ -170,7 +170,7 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return r.startRestore(ctx, restore, targetCluster)
 }
 
-func (r *Neo4jRestoreReconciler) handleDeletion(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore) (ctrl.Result, error) {
+func (r *Neo4jRestoreReconciler) handleDeletion(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	if !controllerutil.ContainsFinalizer(restore, RestoreFinalizer) {
@@ -188,7 +188,7 @@ func (r *Neo4jRestoreReconciler) handleDeletion(ctx context.Context, restore *ne
 	return ctrl.Result{}, r.Update(ctx, restore)
 }
 
-func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
+func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	// Set start time
@@ -245,7 +245,7 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
-func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
+func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	// Get restore job
@@ -275,7 +275,7 @@ func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, resto
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
-func (r *Neo4jRestoreReconciler) handleRestoreSuccess(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, job *batchv1.Job) (ctrl.Result, error) {
+func (r *Neo4jRestoreReconciler) handleRestoreSuccess(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, job *batchv1.Job) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	// Set completion time
@@ -326,7 +326,7 @@ func (r *Neo4jRestoreReconciler) handleRestoreSuccess(ctx context.Context, resto
 
 // createOrStartDatabase registers the restored database with Neo4j.
 // If the database already exists (overwrite restore) it starts it; otherwise it creates it.
-func (r *Neo4jRestoreReconciler) createOrStartDatabase(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jRestoreReconciler) createOrStartDatabase(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
 	if err != nil {
 		return fmt.Errorf("failed to create Neo4j client: %w", err)
@@ -344,14 +344,14 @@ func (r *Neo4jRestoreReconciler) createOrStartDatabase(ctx context.Context, rest
 	return neo4jClient.CreateDatabase(ctx, restore.Spec.DatabaseName, nil, false, false)
 }
 
-func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore) error {
+func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
 	// Validate source
 	switch restore.Spec.Source.Type {
 	case SourceTypeBackup:
 		if restore.Spec.Source.BackupRef == "" {
 			return fmt.Errorf("backupRef is required when source type is 'backup'")
 		}
-		backup := &neo4jv1alpha1.Neo4jBackup{}
+		backup := &neo4jv1beta1.Neo4jBackup{}
 		if err := r.Get(ctx, types.NamespacedName{
 			Name:      restore.Spec.Source.BackupRef,
 			Namespace: restore.Namespace,
@@ -383,7 +383,7 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 	return nil
 }
 
-func (r *Neo4jRestoreReconciler) checkDatabaseExists(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jRestoreReconciler) checkDatabaseExists(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	// Create Neo4j client
 	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
 	if err != nil {
@@ -408,7 +408,7 @@ func (r *Neo4jRestoreReconciler) checkDatabaseExists(ctx context.Context, restor
 	return nil
 }
 
-func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
+func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
 	jobName := restore.Name + "-restore"
 
 	// Build restore command
@@ -477,14 +477,14 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 	return job, nil
 }
 
-func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (string, error) {
+func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (string, error) {
 	var backupPath string
 
 	// Determine backup path based on source type
 	switch restore.Spec.Source.Type {
 	case "backup":
 		// Get backup resource to determine path
-		backup := &neo4jv1alpha1.Neo4jBackup{}
+		backup := &neo4jv1beta1.Neo4jBackup{}
 		backupKey := types.NamespacedName{Name: restore.Spec.Source.BackupRef, Namespace: restore.Namespace}
 		if err := r.Get(ctx, backupKey, backup); err != nil {
 			return "", fmt.Errorf("failed to get backup %s: %w", restore.Spec.Source.BackupRef, err)
@@ -530,7 +530,7 @@ func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restor
 // buildPITRRestoreCommand builds a Point-in-Time Recovery restore command.
 // PITR in Neo4j is implemented via the --restore-until flag on neo4j-admin database restore;
 // there is no separate log-replay step.
-func (r *Neo4jRestoreReconciler) buildPITRRestoreCommand(_ context.Context, restore *neo4jv1alpha1.Neo4jRestore, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (string, error) {
+func (r *Neo4jRestoreReconciler) buildPITRRestoreCommand(_ context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (string, error) {
 	pitrConfig := restore.Spec.Source.PITR
 	if pitrConfig == nil {
 		return "", fmt.Errorf("PITR configuration is required for PITR restore")
@@ -574,7 +574,7 @@ func (r *Neo4jRestoreReconciler) buildPITRRestoreCommand(_ context.Context, rest
 	return cmd, nil
 }
 
-func (r *Neo4jRestoreReconciler) buildRestoreVolumeMounts(restore *neo4jv1alpha1.Neo4jRestore) []corev1.VolumeMount {
+func (r *Neo4jRestoreReconciler) buildRestoreVolumeMounts(restore *neo4jv1beta1.Neo4jRestore) []corev1.VolumeMount {
 	mounts := []corev1.VolumeMount{
 		{
 			Name:      "backup-storage",
@@ -599,7 +599,7 @@ func (r *Neo4jRestoreReconciler) buildRestoreVolumeMounts(restore *neo4jv1alpha1
 	return mounts
 }
 
-func (r *Neo4jRestoreReconciler) buildRestoreVolumes(restore *neo4jv1alpha1.Neo4jRestore) []corev1.Volume {
+func (r *Neo4jRestoreReconciler) buildRestoreVolumes(restore *neo4jv1beta1.Neo4jRestore) []corev1.Volume {
 	var dataVolume corev1.Volume
 	if restore.Spec.StopCluster {
 		// For offline restore, write directly to the first server pod's data PVC so the
@@ -702,7 +702,7 @@ func (r *Neo4jRestoreReconciler) buildRestoreVolumes(restore *neo4jv1alpha1.Neo4
 	return volumes
 }
 
-func (r *Neo4jRestoreReconciler) stopCluster(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jRestoreReconciler) stopCluster(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Stopping cluster for restore", "cluster", cluster.Name)
 
@@ -759,7 +759,7 @@ func (r *Neo4jRestoreReconciler) stopCluster(ctx context.Context, cluster *neo4j
 	}
 }
 
-func (r *Neo4jRestoreReconciler) startCluster(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jRestoreReconciler) startCluster(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Starting cluster after restore", "cluster", cluster.Name)
 
@@ -799,7 +799,7 @@ func (r *Neo4jRestoreReconciler) startCluster(ctx context.Context, cluster *neo4
 	return nil
 }
 
-func (r *Neo4jRestoreReconciler) waitForClusterReady(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jRestoreReconciler) waitForClusterReady(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Waiting for cluster to be ready", "cluster", cluster.Name)
 
@@ -867,7 +867,7 @@ func (r *Neo4jRestoreReconciler) waitForClusterReady(ctx context.Context, cluste
 	}
 }
 
-func (r *Neo4jRestoreReconciler) runRestoreHooks(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, hooks *neo4jv1alpha1.RestoreHooks, phase string) error {
+func (r *Neo4jRestoreReconciler) runRestoreHooks(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, hooks *neo4jv1beta1.RestoreHooks, phase string) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Running restore hooks", "restore", restore.Name, "phase", phase)
 
@@ -900,12 +900,12 @@ func (r *Neo4jRestoreReconciler) runRestoreHooks(ctx context.Context, restore *n
 	return nil
 }
 
-func (r *Neo4jRestoreReconciler) runHookJob(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, phase string) error {
+func (r *Neo4jRestoreReconciler) runHookJob(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, phase string) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Running hook job", "restore", restore.Name, "phase", phase)
 
 	// Get hook configuration based on phase
-	var hookSpec *neo4jv1alpha1.RestoreHookJob
+	var hookSpec *neo4jv1beta1.RestoreHookJob
 	if phase == "pre" && restore.Spec.Options != nil && restore.Spec.Options.PreRestore != nil {
 		hookSpec = restore.Spec.Options.PreRestore.Job
 	} else if phase == "post" && restore.Spec.Options != nil && restore.Spec.Options.PostRestore != nil {
@@ -992,15 +992,15 @@ func (r *Neo4jRestoreReconciler) runHookJob(ctx context.Context, restore *neo4jv
 	}
 }
 
-func (r *Neo4jRestoreReconciler) getClusterRef(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore) (*neo4jv1alpha1.Neo4jEnterpriseCluster, error) {
+func (r *Neo4jRestoreReconciler) getClusterRef(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) (*neo4jv1beta1.Neo4jEnterpriseCluster, error) {
 	key := types.NamespacedName{Name: restore.Spec.ClusterRef, Namespace: restore.Namespace}
 
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	if err := r.Get(ctx, key, cluster); err == nil {
 		return cluster, nil
 	}
 
-	standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 	if err := r.Get(ctx, key, standalone); err != nil {
 		return nil, fmt.Errorf("target %q not found as Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone: %w",
 			restore.Spec.ClusterRef, err)
@@ -1008,11 +1008,11 @@ func (r *Neo4jRestoreReconciler) getClusterRef(ctx context.Context, restore *neo
 	return standaloneAsCluster(standalone), nil
 }
 
-func (r *Neo4jRestoreReconciler) createNeo4jClient(_ context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
+func (r *Neo4jRestoreReconciler) createNeo4jClient(_ context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
 	return neo4j.NewClientForEnterprise(cluster, r.Client, cluster.Spec.Auth.AdminSecret)
 }
 
-func (r *Neo4jRestoreReconciler) cleanupRestoreJobs(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore) error {
+func (r *Neo4jRestoreReconciler) cleanupRestoreJobs(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
 	// Delete associated jobs
 	jobList := &batchv1.JobList{}
 	if err := r.List(ctx, jobList, client.InNamespace(restore.Namespace), client.MatchingLabels{
@@ -1031,9 +1031,9 @@ func (r *Neo4jRestoreReconciler) cleanupRestoreJobs(ctx context.Context, restore
 	return nil
 }
 
-func (r *Neo4jRestoreReconciler) updateRestoreStatus(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, phase, message string) {
+func (r *Neo4jRestoreReconciler) updateRestoreStatus(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, phase, message string) {
 	update := func() error {
-		latest := &neo4jv1alpha1.Neo4jRestore{}
+		latest := &neo4jv1beta1.Neo4jRestore{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
 			return err
 		}
@@ -1050,7 +1050,7 @@ func (r *Neo4jRestoreReconciler) updateRestoreStatus(ctx context.Context, restor
 	}
 }
 
-func (r *Neo4jRestoreReconciler) updateRestoreStats(ctx context.Context, restore *neo4jv1alpha1.Neo4jRestore, job *batchv1.Job) {
+func (r *Neo4jRestoreReconciler) updateRestoreStats(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, job *batchv1.Job) {
 	// Update completion time
 	if job.Status.CompletionTime != nil {
 		restore.Status.CompletionTime = job.Status.CompletionTime
@@ -1070,7 +1070,7 @@ func (r *Neo4jRestoreReconciler) updateRestoreStats(ctx context.Context, restore
 // SetupWithManager sets up the controller with the Manager.
 func (r *Neo4jRestoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&neo4jv1alpha1.Neo4jRestore{}).
+		For(&neo4jv1beta1.Neo4jRestore{}).
 		Owns(&batchv1.Job{}).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
@@ -1079,7 +1079,7 @@ func (r *Neo4jRestoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // validateNeo4jVersion validates that the target cluster uses Neo4j 5.26+ or 2025.01+
-func (r *Neo4jRestoreReconciler) validateNeo4jVersion(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jRestoreReconciler) validateNeo4jVersion(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	if cluster.Spec.Image.Tag == "" {
 		return fmt.Errorf("Neo4j image tag is not specified in cluster %s", cluster.Name)
 	}

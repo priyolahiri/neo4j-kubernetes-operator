@@ -11,7 +11,7 @@
 # This configuration provides better fault tolerance than 2-server clusters.
 # See: docs/user_guide/guides/fault_tolerance.md
 #
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: three-server-cluster

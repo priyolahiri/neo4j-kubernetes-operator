@@ -25,7 +25,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // BackupValidator validates Neo4j backup configuration for Neo4j 5.26+ compatibility
@@ -37,7 +37,7 @@ func NewBackupValidator() *BackupValidator {
 }
 
 // Validate validates the backup configuration for Neo4j 5.26+ compatibility
-func (v *BackupValidator) Validate(backup *neo4jv1alpha1.Neo4jBackup) field.ErrorList {
+func (v *BackupValidator) Validate(backup *neo4jv1beta1.Neo4jBackup) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Validate backup target
@@ -76,7 +76,7 @@ func (v *BackupValidator) Validate(backup *neo4jv1alpha1.Neo4jBackup) field.Erro
 }
 
 // validateBackupTarget validates the backup target configuration
-func (v *BackupValidator) validateBackupTarget(target *neo4jv1alpha1.BackupTarget) field.ErrorList {
+func (v *BackupValidator) validateBackupTarget(target *neo4jv1beta1.BackupTarget) field.ErrorList {
 	var allErrs field.ErrorList
 	targetPath := field.NewPath("spec", "target")
 
@@ -123,7 +123,7 @@ func (v *BackupValidator) validateBackupTarget(target *neo4jv1alpha1.BackupTarge
 }
 
 // validateStorageConfiguration validates storage configuration for Neo4j 5.26+
-func (v *BackupValidator) validateStorageConfiguration(storage *neo4jv1alpha1.StorageLocation) field.ErrorList {
+func (v *BackupValidator) validateStorageConfiguration(storage *neo4jv1beta1.StorageLocation) field.ErrorList {
 	var allErrs field.ErrorList
 	storagePath := field.NewPath("spec", "storage")
 
@@ -218,7 +218,7 @@ func (v *BackupValidator) validateSchemeSpecificURI(uri, scheme string) error {
 }
 
 // validateStorageProvider validates provider-specific storage configurations
-func (v *BackupValidator) validateStorageProvider(storage *neo4jv1alpha1.StorageLocation) error {
+func (v *BackupValidator) validateStorageProvider(storage *neo4jv1beta1.StorageLocation) error {
 	storageType := strings.ToLower(storage.Type)
 
 	// For cloud storage providers, validate additional configuration
@@ -370,7 +370,7 @@ func (v *BackupValidator) validateCronField(field string, min, max int) bool {
 }
 
 // validateCloudConfiguration validates cloud-specific backup configuration
-func (v *BackupValidator) validateCloudConfiguration(cloud *neo4jv1alpha1.CloudBlock) field.ErrorList {
+func (v *BackupValidator) validateCloudConfiguration(cloud *neo4jv1beta1.CloudBlock) field.ErrorList {
 	var allErrs field.ErrorList
 	cloudPath := field.NewPath("spec", "cloud")
 
@@ -407,7 +407,7 @@ func (v *BackupValidator) validateCloudConfiguration(cloud *neo4jv1alpha1.CloudB
 }
 
 // validateRetentionPolicy validates backup retention policy
-func (v *BackupValidator) validateRetentionPolicy(retention *neo4jv1alpha1.RetentionPolicy) field.ErrorList {
+func (v *BackupValidator) validateRetentionPolicy(retention *neo4jv1beta1.RetentionPolicy) field.ErrorList {
 	var allErrs field.ErrorList
 	retentionPath := field.NewPath("spec", "retention")
 
@@ -463,7 +463,7 @@ func (v *BackupValidator) validateRetentionPolicy(retention *neo4jv1alpha1.Reten
 }
 
 // validateBackupOptions validates backup options for Neo4j 5.26+
-func (v *BackupValidator) validateBackupOptions(options *neo4jv1alpha1.BackupOptions) field.ErrorList {
+func (v *BackupValidator) validateBackupOptions(options *neo4jv1beta1.BackupOptions) field.ErrorList {
 	var allErrs field.ErrorList
 	optionsPath := field.NewPath("spec", "options")
 
@@ -489,7 +489,7 @@ func (v *BackupValidator) validateBackupOptions(options *neo4jv1alpha1.BackupOpt
 }
 
 // validateEncryptionConfiguration validates backup encryption for Neo4j 5.26+
-func (v *BackupValidator) validateEncryptionConfiguration(encryption *neo4jv1alpha1.EncryptionSpec) field.ErrorList {
+func (v *BackupValidator) validateEncryptionConfiguration(encryption *neo4jv1beta1.EncryptionSpec) field.ErrorList {
 	var allErrs field.ErrorList
 	encryptionPath := field.NewPath("spec", "options", "encryption")
 

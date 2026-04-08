@@ -36,15 +36,15 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("MCP Integration Tests", func() {
 	var (
 		ctx          context.Context
 		namespace    *corev1.Namespace
-		cluster      *neo4jv1alpha1.Neo4jEnterpriseCluster
-		standalone   *neo4jv1alpha1.Neo4jEnterpriseStandalone
+		cluster      *neo4jv1beta1.Neo4jEnterpriseCluster
+		standalone   *neo4jv1beta1.Neo4jEnterpriseStandalone
 		curlJob      *batchv1.Job
 		clusterName  string
 		standaloneID string
@@ -104,11 +104,11 @@ var _ = Describe("MCP Integration Tests", func() {
 			Expect(k8sClient.Create(ctx, adminSecret)).To(Succeed())
 
 			cluster = createBasicCluster(clusterName, namespace.Name)
-			cluster.Spec.Auth = &neo4jv1alpha1.AuthSpec{
+			cluster.Spec.Auth = &neo4jv1beta1.AuthSpec{
 				AdminSecret: adminSecret.Name,
 			}
 			cluster.Spec.Resources = getCIAppropriateResourceRequirements()
-			cluster.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
+			cluster.Spec.MCP = &neo4jv1beta1.MCPServerSpec{
 				Enabled:   true,
 				Transport: "http",
 				ReadOnly:  true,
@@ -236,11 +236,11 @@ var _ = Describe("MCP Integration Tests", func() {
 			Expect(k8sClient.Create(ctx, adminSecret)).To(Succeed())
 
 			standalone = createBasicStandalone(standaloneID, namespace.Name)
-			standalone.Spec.Auth = &neo4jv1alpha1.AuthSpec{
+			standalone.Spec.Auth = &neo4jv1beta1.AuthSpec{
 				AdminSecret: adminSecret.Name,
 			}
 			standalone.Spec.Resources = getCIAppropriateResourceRequirements()
-			standalone.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
+			standalone.Spec.MCP = &neo4jv1beta1.MCPServerSpec{
 				Enabled:   true,
 				Image:     imageSpec,
 				Transport: "http",
@@ -250,7 +250,7 @@ var _ = Describe("MCP Integration Tests", func() {
 			Expect(k8sClient.Create(ctx, standalone)).To(Succeed())
 
 			Eventually(func() bool {
-				var currentStandalone neo4jv1alpha1.Neo4jEnterpriseStandalone
+				var currentStandalone neo4jv1beta1.Neo4jEnterpriseStandalone
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      standaloneID,
 					Namespace: namespace.Name,
@@ -313,15 +313,15 @@ var _ = Describe("MCP Integration Tests", func() {
 			Expect(k8sClient.Create(ctx, adminSecret)).To(Succeed())
 
 			standalone = createBasicStandalone(standaloneID, namespace.Name)
-			standalone.Spec.Auth = &neo4jv1alpha1.AuthSpec{
+			standalone.Spec.Auth = &neo4jv1beta1.AuthSpec{
 				AdminSecret: adminSecret.Name,
 			}
 			standalone.Spec.Resources = getCIAppropriateResourceRequirements()
-			standalone.Spec.MCP = &neo4jv1alpha1.MCPServerSpec{
+			standalone.Spec.MCP = &neo4jv1beta1.MCPServerSpec{
 				Enabled:   true,
 				Transport: "stdio",
 				ReadOnly:  true,
-				Auth: &neo4jv1alpha1.MCPAuthSpec{
+				Auth: &neo4jv1beta1.MCPAuthSpec{
 					SecretName:  adminSecret.Name,
 					UsernameKey: "username",
 					PasswordKey: "password",
@@ -526,17 +526,17 @@ func dumpJobLogs(namespace, jobName string) {
 
 // mcpRuntimeImageSpec returns the MCP image spec for runtime tests.
 // Uses the official mcp/neo4j image unless overridden via MCP_TEST_IMAGE.
-func mcpRuntimeImageSpec() *neo4jv1alpha1.ImageSpec {
+func mcpRuntimeImageSpec() *neo4jv1beta1.ImageSpec {
 	image := os.Getenv("MCP_TEST_IMAGE")
 	if image != "" {
 		repo, tag := splitImageTag(image)
-		return &neo4jv1alpha1.ImageSpec{
+		return &neo4jv1beta1.ImageSpec{
 			Repo: repo,
 			Tag:  tag,
 		}
 	}
 	// Official image from Docker Hub — no pull secret required.
-	return &neo4jv1alpha1.ImageSpec{
+	return &neo4jv1beta1.ImageSpec{
 		Repo: "mcp/neo4j",
 		Tag:  "latest",
 	}

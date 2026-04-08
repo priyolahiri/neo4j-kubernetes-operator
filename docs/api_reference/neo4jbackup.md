@@ -7,7 +7,7 @@ For a comprehensive guide on using backups, see the [Backup and Restore Guide](.
 ## API Version
 
 - **Group**: `neo4j.neo4j.com`
-- **Version**: `v1alpha1`
+- **Version**: `v1beta1`
 - **Kind**: `Neo4jBackup`
 
 ## How it works
@@ -280,7 +280,7 @@ Represents a single backup Job execution.
 Uses AWS IRSA workload identity — no static credentials needed.
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: daily-cluster-backup
@@ -321,7 +321,7 @@ spec:
 Uses an explicit Kubernetes Secret for AWS credentials instead of IRSA.
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: daily-cluster-backup-static-creds
@@ -352,7 +352,7 @@ spec:
 Backs up only one database. Both `name` (database) and `clusterRef` (cluster) are required.
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: mydb-daily-backup
@@ -380,7 +380,7 @@ spec:
 ### Differential Backup with preferDiffAsParent (CalVer 2025.04+)
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: hourly-diff-backup
@@ -407,7 +407,7 @@ spec:
 ### On-Demand PVC Backup
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: manual-pvc-backup
@@ -432,7 +432,7 @@ spec:
 ### GCS Backup with GKE Workload Identity
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: weekly-gcs-backup
@@ -468,7 +468,7 @@ spec:
 ### GCS Backup with Static Service Account Credentials
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: weekly-gcs-backup-static
@@ -496,7 +496,7 @@ spec:
 ### Azure Backup with Azure Workload Identity
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: daily-azure-backup
@@ -531,7 +531,7 @@ spec:
 ### Azure Backup with Static Credentials
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: daily-azure-backup-static

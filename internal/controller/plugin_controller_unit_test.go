@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // Unit tests using standard Go testing for unexported methods
@@ -203,9 +203,9 @@ func TestGetExpectedReplicas(t *testing.T) {
 			name: "cluster with 3 servers",
 			deployment: &DeploymentInfo{
 				Type: "cluster",
-				Object: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+				Object: &neo4jv1beta1.Neo4jEnterpriseCluster{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: 3,
 						},
 					},
@@ -217,9 +217,9 @@ func TestGetExpectedReplicas(t *testing.T) {
 			name: "cluster with 5 servers",
 			deployment: &DeploymentInfo{
 				Type: "cluster",
-				Object: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+				Object: &neo4jv1beta1.Neo4jEnterpriseCluster{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: 5,
 						},
 					},
@@ -231,7 +231,7 @@ func TestGetExpectedReplicas(t *testing.T) {
 			name: "standalone always 1",
 			deployment: &DeploymentInfo{
 				Type:   "standalone",
-				Object: &neo4jv1alpha1.Neo4jEnterpriseStandalone{},
+				Object: &neo4jv1beta1.Neo4jEnterpriseStandalone{},
 			},
 			expected: 1,
 		},
@@ -336,28 +336,28 @@ func TestFleetManagementPluginType(t *testing.T) {
 func TestPluginSourceValidation(t *testing.T) {
 	tests := []struct {
 		name        string
-		source      *neo4jv1alpha1.PluginSource
+		source      *neo4jv1beta1.PluginSource
 		shouldError bool
 	}{
 		{
 			name: "official source",
-			source: &neo4jv1alpha1.PluginSource{
+			source: &neo4jv1beta1.PluginSource{
 				Type: "official",
 			},
 			shouldError: false,
 		},
 		{
 			name: "community source",
-			source: &neo4jv1alpha1.PluginSource{
+			source: &neo4jv1beta1.PluginSource{
 				Type: "community",
 			},
 			shouldError: false,
 		},
 		{
 			name: "custom source with registry",
-			source: &neo4jv1alpha1.PluginSource{
+			source: &neo4jv1beta1.PluginSource{
 				Type: "custom",
-				Registry: &neo4jv1alpha1.PluginRegistry{
+				Registry: &neo4jv1beta1.PluginRegistry{
 					URL: "https://my-registry.example.com",
 				},
 			},
@@ -365,7 +365,7 @@ func TestPluginSourceValidation(t *testing.T) {
 		},
 		{
 			name: "url source with URL",
-			source: &neo4jv1alpha1.PluginSource{
+			source: &neo4jv1beta1.PluginSource{
 				Type: "url",
 				URL:  "https://example.com/plugin.jar",
 			},
@@ -373,7 +373,7 @@ func TestPluginSourceValidation(t *testing.T) {
 		},
 		{
 			name: "url source with checksum",
-			source: &neo4jv1alpha1.PluginSource{
+			source: &neo4jv1beta1.PluginSource{
 				Type:     "url",
 				URL:      "https://example.com/plugin.jar",
 				Checksum: "sha256:abcd1234",

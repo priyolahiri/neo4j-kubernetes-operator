@@ -21,7 +21,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestPluginValidator_Validate(t *testing.T) {
@@ -29,17 +29,17 @@ func TestPluginValidator_Validate(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		plugin      *neo4jv1alpha1.Neo4jPlugin
+		plugin      *neo4jv1beta1.Neo4jPlugin
 		expectError bool
 		errorCount  int
 	}{
 		{
 			name: "valid APOC plugin",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "apoc-plugin",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc",
 					Version:    "5.26.0",
@@ -51,11 +51,11 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid GDS plugin",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "gds-plugin",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "graph-data-science",
 					Version:    "2.9.0",
@@ -67,11 +67,11 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid plugin version - too old",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "apoc-old",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc",
 					Version:    "5.25.0", // Too old for Neo4j 5.26+
@@ -83,11 +83,11 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "deprecated plugin",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "deprecated-plugin",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "neo4j-graph-algorithms",
 					Version:    "3.5.0",
@@ -99,11 +99,11 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "unknown plugin",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "unknown-plugin",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "unknown-plugin",
 					Version:    "1.0.0",
@@ -115,11 +115,11 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "missing plugin name",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "missing-name",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Version:    "5.26.0",
 					Enabled:    true,
@@ -130,11 +130,11 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "missing plugin version",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "missing-version",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc",
 					Enabled:    true,
@@ -145,16 +145,16 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid plugin with custom source",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "custom-plugin",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc",
 					Version:    "5.26.0",
 					Enabled:    true,
-					Source: &neo4jv1alpha1.PluginSource{
+					Source: &neo4jv1beta1.PluginSource{
 						Type:     "url",
 						URL:      "https://example.com/plugin.jar",
 						Checksum: "sha256:abc123",
@@ -166,16 +166,16 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid plugin source - missing URL",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "invalid-source",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc",
 					Version:    "5.26.0",
 					Enabled:    true,
-					Source: &neo4jv1alpha1.PluginSource{
+					Source: &neo4jv1beta1.PluginSource{
 						Type: "url",
 						// Missing URL
 					},
@@ -186,16 +186,16 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid plugin with dependencies",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "plugin-with-deps",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc-extended",
 					Version:    "5.26.0",
 					Enabled:    true,
-					Dependencies: []neo4jv1alpha1.PluginDependency{
+					Dependencies: []neo4jv1beta1.PluginDependency{
 						{
 							Name:              "apoc",
 							VersionConstraint: ">=5.26.0",
@@ -209,16 +209,16 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid plugin dependency - missing name",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "invalid-dep",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc",
 					Version:    "5.26.0",
 					Enabled:    true,
-					Dependencies: []neo4jv1alpha1.PluginDependency{
+					Dependencies: []neo4jv1beta1.PluginDependency{
 						{
 							// Missing name
 							VersionConstraint: ">=5.26.0",
@@ -232,16 +232,16 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid plugin with security config",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "secure-plugin",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc",
 					Version:    "5.26.0",
 					Enabled:    true,
-					Security: &neo4jv1alpha1.PluginSecurity{
+					Security: &neo4jv1beta1.PluginSecurity{
 						AllowedProcedures: []string{"apoc.load.json"},
 						SecurityPolicy:    "strict",
 						Sandbox:           true,
@@ -253,16 +253,16 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid plugin security - conflicting procedures",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "conflicting-security",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc",
 					Version:    "5.26.0",
 					Enabled:    true,
-					Security: &neo4jv1alpha1.PluginSecurity{
+					Security: &neo4jv1beta1.PluginSecurity{
 						AllowedProcedures: []string{"apoc.load.json"},
 						DeniedProcedures:  []string{"apoc.load.json"}, // Conflict
 						SecurityPolicy:    "strict",
@@ -274,16 +274,16 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid plugin with resources",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "resource-plugin",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc",
 					Version:    "5.26.0",
 					Enabled:    true,
-					Resources: &neo4jv1alpha1.PluginResourceRequirements{
+					Resources: &neo4jv1beta1.PluginResourceRequirements{
 						MemoryLimit:    "512Mi",
 						CPULimit:       "500m",
 						ThreadPoolSize: 10,
@@ -295,16 +295,16 @@ func TestPluginValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid plugin resources - negative thread pool",
-			plugin: &neo4jv1alpha1.Neo4jPlugin{
+			plugin: &neo4jv1beta1.Neo4jPlugin{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "invalid-resources",
 				},
-				Spec: neo4jv1alpha1.Neo4jPluginSpec{
+				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc",
 					Version:    "5.26.0",
 					Enabled:    true,
-					Resources: &neo4jv1alpha1.PluginResourceRequirements{
+					Resources: &neo4jv1beta1.PluginResourceRequirements{
 						ThreadPoolSize: -1, // Invalid
 					},
 				},

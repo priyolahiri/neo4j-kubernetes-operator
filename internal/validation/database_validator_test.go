@@ -29,33 +29,33 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 
 	// Create test clusters
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 5, // 5-server cluster
 			},
 		},
 	}
 
-	cluster2Server := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster2Server := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster-2server",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 2, // 2-server cluster for CI compatibility test
 			},
 		},
@@ -67,7 +67,7 @@ func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 
 	tests := []struct {
 		name                 string
-		database             *neo4jv1alpha1.Neo4jDatabase
+		database             *neo4jv1beta1.Neo4jDatabase
 		expectedErrors       int
 		expectedWarnings     int
 		shouldContainError   string
@@ -75,12 +75,12 @@ func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 	}{
 		{
 			name: "valid topology within cluster capacity",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   2,
 						Secondaries: 1,
 					},
@@ -91,12 +91,12 @@ func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 		},
 		{
 			name: "topology exceeds cluster capacity",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   3,
 						Secondaries: 4, // Total: 7 servers, but cluster only has 5
 					},
@@ -108,12 +108,12 @@ func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 		},
 		{
 			name: "zero primaries",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   0,
 						Secondaries: 2,
 					},
@@ -125,12 +125,12 @@ func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 		},
 		{
 			name: "negative values",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   -1,
 						Secondaries: -2,
 					},
@@ -141,12 +141,12 @@ func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 		},
 		{
 			name: "uses all cluster servers",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   3,
 						Secondaries: 2, // Total: 5 servers (all available)
 					},
@@ -158,12 +158,12 @@ func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 		},
 		{
 			name: "uses all servers in 2-server cluster",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db-2server", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster-2server",
 					Name:       "testdb2server",
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   1,
 						Secondaries: 1, // Total: 2 servers (all available in 2-server cluster)
 					},
@@ -175,12 +175,12 @@ func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 		},
 		{
 			name: "excessive secondaries ratio",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   1,
 						Secondaries: 4, // 4:1 ratio is excessive
 					},
@@ -192,12 +192,12 @@ func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 		},
 		{
 			name: "cluster not found",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "nonexistent-cluster",
 					Name:       "testdb",
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   2,
 						Secondaries: 1,
 					},
@@ -245,12 +245,12 @@ func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 
 func TestDatabaseValidator_ValidateCypherLanguage(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
 		},
 	}
 
@@ -296,9 +296,9 @@ func TestDatabaseValidator_ValidateCypherLanguage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef:            "test-cluster",
 					Name:                  "testdb",
 					DefaultCypherLanguage: tt.cypherVersion,
@@ -339,13 +339,13 @@ func TestDatabaseValidator_ValidateCypherLanguage(t *testing.T) {
 
 func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
 		},
 	}
 
@@ -374,7 +374,7 @@ func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 
 	tests := []struct {
 		name                 string
-		database             *neo4jv1alpha1.Neo4jDatabase
+		database             *neo4jv1beta1.Neo4jDatabase
 		expectedErrors       int
 		expectedWarnings     int
 		shouldContainError   string
@@ -382,13 +382,13 @@ func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 	}{
 		{
 			name: "valid S3 seed URI with credentials",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
 					SeedURI:    "s3://my-backups/database-backup.backup",
-					SeedCredentials: &neo4jv1alpha1.SeedCredentials{
+					SeedCredentials: &neo4jv1beta1.SeedCredentials{
 						SecretRef: "s3-credentials",
 					},
 				},
@@ -398,9 +398,9 @@ func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 		},
 		{
 			name: "valid seed URI without credentials (system-wide auth)",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
 					SeedURI:    "s3://my-backups/database-backup.backup",
@@ -412,9 +412,9 @@ func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 		},
 		{
 			name: "invalid URI format",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
 					SeedURI:    "not-a-valid-uri",
@@ -426,9 +426,9 @@ func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 		},
 		{
 			name: "unsupported URI scheme",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
 					SeedURI:    "file:///local/path/backup.backup",
@@ -440,9 +440,9 @@ func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 		},
 		{
 			name: "URI missing host",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
 					SeedURI:    "s3:///path/backup.backup",
@@ -454,9 +454,9 @@ func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 		},
 		{
 			name: "URI missing path",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
 					SeedURI:    "s3://my-bucket/",
@@ -468,13 +468,13 @@ func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 		},
 		{
 			name: "missing credentials secret",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
 					SeedURI:    "s3://my-backups/database-backup.backup",
-					SeedCredentials: &neo4jv1alpha1.SeedCredentials{
+					SeedCredentials: &neo4jv1beta1.SeedCredentials{
 						SecretRef: "nonexistent-secret",
 					},
 				},
@@ -485,13 +485,13 @@ func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 		},
 		{
 			name: "incomplete credentials secret",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
 					SeedURI:    "s3://my-backups/database-backup.backup",
-					SeedCredentials: &neo4jv1alpha1.SeedCredentials{
+					SeedCredentials: &neo4jv1beta1.SeedCredentials{
 						SecretRef: "incomplete-credentials",
 					},
 				},
@@ -502,9 +502,9 @@ func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 		},
 		{
 			name: "dump file format warning",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
 					SeedURI:    "s3://my-backups/database-backup.dump",
@@ -552,12 +552,12 @@ func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 
 func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
 		},
 	}
 
@@ -567,7 +567,7 @@ func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 
 	tests := []struct {
 		name                 string
-		seedConfig           *neo4jv1alpha1.SeedConfiguration
+		seedConfig           *neo4jv1beta1.SeedConfiguration
 		expectedErrors       int
 		expectedWarnings     int
 		shouldContainError   string
@@ -575,7 +575,7 @@ func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 	}{
 		{
 			name: "valid RFC3339 restoreUntil",
-			seedConfig: &neo4jv1alpha1.SeedConfiguration{
+			seedConfig: &neo4jv1beta1.SeedConfiguration{
 				RestoreUntil: "2025-01-15T10:30:00Z",
 			},
 			expectedErrors:       0,
@@ -584,7 +584,7 @@ func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 		},
 		{
 			name: "valid transaction ID restoreUntil",
-			seedConfig: &neo4jv1alpha1.SeedConfiguration{
+			seedConfig: &neo4jv1beta1.SeedConfiguration{
 				RestoreUntil: "txId:12345",
 			},
 			expectedErrors:   0,
@@ -592,7 +592,7 @@ func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 		},
 		{
 			name: "invalid restoreUntil format",
-			seedConfig: &neo4jv1alpha1.SeedConfiguration{
+			seedConfig: &neo4jv1beta1.SeedConfiguration{
 				RestoreUntil: "invalid-format",
 			},
 			expectedErrors:     1,
@@ -601,7 +601,7 @@ func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 		},
 		{
 			name: "empty transaction ID",
-			seedConfig: &neo4jv1alpha1.SeedConfiguration{
+			seedConfig: &neo4jv1beta1.SeedConfiguration{
 				RestoreUntil: "txId:",
 			},
 			expectedErrors:     1,
@@ -610,7 +610,7 @@ func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 		},
 		{
 			name: "valid compression config",
-			seedConfig: &neo4jv1alpha1.SeedConfiguration{
+			seedConfig: &neo4jv1beta1.SeedConfiguration{
 				Config: map[string]string{
 					"compression": "gzip",
 					"validation":  "strict",
@@ -621,7 +621,7 @@ func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 		},
 		{
 			name: "invalid compression value",
-			seedConfig: &neo4jv1alpha1.SeedConfiguration{
+			seedConfig: &neo4jv1beta1.SeedConfiguration{
 				Config: map[string]string{
 					"compression": "invalid-compression",
 				},
@@ -632,7 +632,7 @@ func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 		},
 		{
 			name: "unknown config option",
-			seedConfig: &neo4jv1alpha1.SeedConfiguration{
+			seedConfig: &neo4jv1beta1.SeedConfiguration{
 				Config: map[string]string{
 					"unknownOption": "someValue",
 				},
@@ -645,9 +645,9 @@ func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-cluster",
 					Name:       "testdb",
 					SeedURI:    "s3://my-backups/database-backup.backup",
@@ -689,17 +689,17 @@ func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 
 func TestDatabaseValidator_ValidateStandalone(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 
 	// Create test standalone
-	standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-standalone",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-			Auth: &neo4jv1alpha1.AuthSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+			Auth: &neo4jv1beta1.AuthSpec{
 				AdminSecret: "admin-secret",
 			},
 		},
@@ -719,7 +719,7 @@ func TestDatabaseValidator_ValidateStandalone(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		database        *neo4jv1alpha1.Neo4jDatabase
+		database        *neo4jv1beta1.Neo4jDatabase
 		expectErrors    int
 		expectWarnings  int
 		errorMessages   []string
@@ -727,12 +727,12 @@ func TestDatabaseValidator_ValidateStandalone(t *testing.T) {
 	}{
 		{
 			name: "valid standalone database without topology",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-db",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-standalone",
 					Name:       "testdb",
 					Wait:       true,
@@ -743,16 +743,16 @@ func TestDatabaseValidator_ValidateStandalone(t *testing.T) {
 		},
 		{
 			name: "standalone database with topology (should warn)",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-db-with-topology",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-standalone",
 					Name:       "testdb",
 					Wait:       true,
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   1,
 						Secondaries: 2,
 					},
@@ -767,16 +767,16 @@ func TestDatabaseValidator_ValidateStandalone(t *testing.T) {
 		},
 		{
 			name: "standalone database with invalid topology",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-db-invalid",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "test-standalone",
 					Name:       "testdb",
 					Wait:       true,
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   0, // Invalid - need at least 1 primary
 						Secondaries: 1,
 					},
@@ -792,12 +792,12 @@ func TestDatabaseValidator_ValidateStandalone(t *testing.T) {
 		},
 		{
 			name: "standalone not found",
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-db-notfound",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "nonexistent-standalone",
 					Name:       "testdb",
 					Wait:       true,
@@ -855,23 +855,23 @@ func TestDatabaseValidator_ValidateStandalone(t *testing.T) {
 
 func TestDatabaseValidator_ValidateClusterAndStandaloneFallback(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 
 	// Create both cluster and standalone with same name
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "neo4j-resource",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
 		},
 	}
 
-	standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "neo4j-resource", // Same name as cluster
 			Namespace: "default",
@@ -881,19 +881,19 @@ func TestDatabaseValidator_ValidateClusterAndStandaloneFallback(t *testing.T) {
 	tests := []struct {
 		name         string
 		objects      []client.Object
-		database     *neo4jv1alpha1.Neo4jDatabase
+		database     *neo4jv1beta1.Neo4jDatabase
 		expectErrors int
 		description  string
 	}{
 		{
 			name:    "cluster found first (takes precedence)",
 			objects: []client.Object{cluster},
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "neo4j-resource",
 					Name:       "testdb",
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   2,
 						Secondaries: 1,
 					},
@@ -905,9 +905,9 @@ func TestDatabaseValidator_ValidateClusterAndStandaloneFallback(t *testing.T) {
 		{
 			name:    "only standalone exists (fallback works)",
 			objects: []client.Object{standalone},
-			database: &neo4jv1alpha1.Neo4jDatabase{
+			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-db", Namespace: "default"},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "neo4j-resource",
 					Name:       "testdb",
 				},

@@ -10,7 +10,7 @@
 #
 # See: docs/user_guide/guides/server_based_architecture.md
 #
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: six-server-cluster

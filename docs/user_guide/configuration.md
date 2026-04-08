@@ -148,7 +148,7 @@ Default ports: `8080` (no TLS) or `8443` (with TLS). Override with `spec.mcp.htt
 ### Example: Cluster MCP (HTTP)
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: graph-prod
@@ -191,7 +191,7 @@ spec:
 ### Example: Standalone MCP (STDIO)
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: graph-dev

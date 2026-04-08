@@ -24,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 const (
@@ -61,7 +61,7 @@ func calculateSystemMemoryReserved(memoryBytes int64) int64 {
 }
 
 // CalculateOptimalMemorySettings calculates optimal memory settings based on container resources
-func CalculateOptimalMemorySettings(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) MemoryConfig {
+func CalculateOptimalMemorySettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) MemoryConfig {
 	var memoryLimit resource.Quantity
 
 	// Get memory limit from cluster spec or use default
@@ -148,7 +148,7 @@ func CalculateOptimalMemorySettings(cluster *neo4jv1alpha1.Neo4jEnterpriseCluste
 }
 
 // CalculateOptimalMemoryForNeo4j526Plus calculates memory settings optimized for Neo4j 5.26+
-func CalculateOptimalMemoryForNeo4j526Plus(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) MemoryConfig {
+func CalculateOptimalMemoryForNeo4j526Plus(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) MemoryConfig {
 	baseConfig := CalculateOptimalMemorySettings(cluster)
 
 	// Neo4j 5.26+ optimizations
@@ -272,7 +272,7 @@ func parseMemorySize(size string) (int64, error) {
 }
 
 // GetMemoryConfigForCluster returns memory configuration for the cluster
-func GetMemoryConfigForCluster(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) MemoryConfig {
+func GetMemoryConfigForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) MemoryConfig {
 	// Check if custom memory configuration is provided
 	if cluster.Spec.Config != nil {
 		// Check for custom heap settings

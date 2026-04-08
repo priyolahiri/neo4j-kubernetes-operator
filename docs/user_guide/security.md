@@ -19,7 +19,7 @@ Security for Neo4j in Kubernetes involves multiple layers:
 The operator integrates with cert-manager for automated certificate lifecycle management:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: secure-cluster
@@ -56,7 +56,7 @@ spec:
     secretName: ca-key-pair     # Your internal CA certificate
 ---
 # Neo4j cluster with production TLS
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: production-cluster
@@ -123,7 +123,7 @@ If you omit `authenticationProviders`, the operator defaults to `["native"]`.
 ### Native Authentication
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: secure-cluster
@@ -605,7 +605,7 @@ spec:
 ### Backup Security
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: secure-backup

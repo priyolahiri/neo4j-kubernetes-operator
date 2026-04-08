@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestMemoryValidator_Validate(t *testing.T) {
@@ -31,15 +31,15 @@ func TestMemoryValidator_Validate(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		cluster       *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster       *neo4jv1beta1.Neo4jEnterpriseCluster
 		wantErrorsLen int
 		wantErrorMsg  string
 	}{
 		{
 			name: "valid memory configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
 					Resources: &corev1.ResourceRequirements{
@@ -57,9 +57,9 @@ func TestMemoryValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "memory configuration exceeds container limits",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
 					Resources: &corev1.ResourceRequirements{
@@ -78,9 +78,9 @@ func TestMemoryValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "insufficient memory for cluster size",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 7, // 5 + 2
 					},
 					Resources: &corev1.ResourceRequirements{
@@ -95,9 +95,9 @@ func TestMemoryValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "heap size too small",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
 					Resources: &corev1.ResourceRequirements{
@@ -115,9 +115,9 @@ func TestMemoryValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "no resources specified",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 1, // Invalid - needs at least 2
 					},
 				},
@@ -126,9 +126,9 @@ func TestMemoryValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "transaction memory exceeds heap size",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
 					Resources: &corev1.ResourceRequirements{

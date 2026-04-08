@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/go-logr/logr"
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // FastCacheStrategy defines ultra-fast caching approaches
@@ -152,7 +152,7 @@ func (fc *FastCache) GetClient() client.Client {
 // prewarmEssentialResources pre-warms only the most critical resources
 func (fc *FastCache) prewarmEssentialResources() error {
 	essential := []schema.GroupVersionKind{
-		neo4jv1alpha1.GroupVersion.WithKind("Neo4jEnterpriseCluster"),
+		neo4jv1beta1.GroupVersion.WithKind("Neo4jEnterpriseCluster"),
 	}
 
 	switch fc.strategy {
@@ -221,16 +221,16 @@ func (fc *FastCache) warmupResource(ctx context.Context, gvk schema.GroupVersion
 	// Create object instance for the resource type
 	var obj client.Object
 	switch gvk {
-	case neo4jv1alpha1.GroupVersion.WithKind("Neo4jEnterpriseCluster"):
-		obj = &neo4jv1alpha1.Neo4jEnterpriseCluster{}
-	case neo4jv1alpha1.GroupVersion.WithKind("Neo4jDatabase"):
-		obj = &neo4jv1alpha1.Neo4jDatabase{}
-	case neo4jv1alpha1.GroupVersion.WithKind("Neo4jBackup"):
-		obj = &neo4jv1alpha1.Neo4jBackup{}
-	case neo4jv1alpha1.GroupVersion.WithKind("Neo4jRestore"):
-		obj = &neo4jv1alpha1.Neo4jRestore{}
-	case neo4jv1alpha1.GroupVersion.WithKind("Neo4jPlugin"):
-		obj = &neo4jv1alpha1.Neo4jPlugin{}
+	case neo4jv1beta1.GroupVersion.WithKind("Neo4jEnterpriseCluster"):
+		obj = &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	case neo4jv1beta1.GroupVersion.WithKind("Neo4jDatabase"):
+		obj = &neo4jv1beta1.Neo4jDatabase{}
+	case neo4jv1beta1.GroupVersion.WithKind("Neo4jBackup"):
+		obj = &neo4jv1beta1.Neo4jBackup{}
+	case neo4jv1beta1.GroupVersion.WithKind("Neo4jRestore"):
+		obj = &neo4jv1beta1.Neo4jRestore{}
+	case neo4jv1beta1.GroupVersion.WithKind("Neo4jPlugin"):
+		obj = &neo4jv1beta1.Neo4jPlugin{}
 	default:
 		return fmt.Errorf("unsupported resource type: %v", gvk)
 	}

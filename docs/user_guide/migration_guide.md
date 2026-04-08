@@ -15,7 +15,7 @@ The Neo4j Kubernetes Operator now separates single-node and clustered deployment
 
 **Previous behavior** (no longer supported):
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: single-node-cluster
@@ -28,7 +28,7 @@ spec:
 
 **Option A: Migrate to Neo4jEnterpriseStandalone** (recommended for development/testing):
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: single-node-standalone
@@ -45,7 +45,7 @@ spec:
 
 **Option B: Migrate to Minimal Cluster** (recommended for production):
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: minimal-cluster
@@ -90,7 +90,7 @@ All Neo4j 5.26+ deployments now use `V2_ONLY` discovery mode automatically. You 
 
 **Before**:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: dev-neo4j
@@ -113,7 +113,7 @@ spec:
 
 **After**:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: dev-neo4j
@@ -137,7 +137,7 @@ spec:
 
 **Before**:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: prod-neo4j
@@ -163,7 +163,7 @@ spec:
 
 **After**:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: prod-neo4j
@@ -192,7 +192,7 @@ spec:
 **No changes required** - existing multi-node clusters will continue to work as before:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: prod-cluster
@@ -223,7 +223,7 @@ Before making any changes, create backups:
 ```bash
 # Create backup for each cluster
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: migration-backup-$(date +%Y%m%d)
@@ -503,9 +503,84 @@ If you encounter issues during migration:
    - [GitHub Issues](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues)
    - [Neo4j Community](https://community.neo4j.com/)
 
+## Upgrading to v1.7.0-alpha (API Version Bump to v1beta1)
+
+v1.7.0-alpha graduates the API from `v1alpha1` to `v1beta1`, signaling field stability. The API schema is unchanged — only the version identifier changes. Additionally, TLS bolt enforcement and standalone health probes are introduced.
+
+### API version change
+
+All manifests must update their `apiVersion` field:
+
+```yaml
+# Before (v1.6.0-alpha and earlier)
+apiVersion: neo4j.neo4j.com/v1alpha1
+
+# After (v1.7.0-alpha)
+apiVersion: neo4j.neo4j.com/v1beta1
+```
+
+This applies to **all** operator CRDs:
+- `Neo4jEnterpriseCluster`
+- `Neo4jEnterpriseStandalone`
+- `Neo4jDatabase`
+- `Neo4jBackup`
+- `Neo4jRestore`
+- `Neo4jPlugin`
+- `Neo4jShardedDatabase`
+
+### Bolt TLS enforcement
+
+When TLS is enabled (`tls.mode: cert-manager`), the operator now sets `server.bolt.tls_level=REQUIRED` on both cluster and standalone deployments. Previously this was `OPTIONAL`, meaning plain `bolt://` connections were silently accepted even with TLS configured.
+
+**Action required** if you have clients connecting via plain `bolt://` to TLS-enabled deployments:
+- Update connection strings from `bolt://` to `bolt+s://` (with CA verification) or `bolt+ssc://` (self-signed certs)
+- Update `cypher-shell` commands to use `-a bolt+ssc://host:7687`
+- Update application driver configurations to enable TLS
+
+### Deprecated configuration key
+
+`dbms.logs.query.enabled` is now flagged as deprecated by the config validator. Replace with `db.logs.query.enabled` in your `spec.config` sections.
+
+### Standalone health probes
+
+Standalone deployments now include readiness, liveness, and startup probes using `/conf/health.sh`. This means:
+- Pods are no longer marked Ready until Neo4j is actually accepting connections
+- The `status.phase` transition to `Ready` now reflects true Neo4j readiness
+- Existing deployments will see a rolling update when the operator is upgraded (new probe spec on the StatefulSet)
+
+### Quick upgrade checklist
+
+1. Update all manifests: `apiVersion: neo4j.neo4j.com/v1alpha1` → `apiVersion: neo4j.neo4j.com/v1beta1`
+2. Apply updated CRDs before deploying the new operator version:
+   ```bash
+   # If using Helm
+   helm upgrade neo4j-operator ./charts/neo4j-operator --namespace neo4j-operator-system
+
+   # If using make targets
+   make install   # Updates CRDs
+   make deploy-prod  # or deploy-dev
+   ```
+3. If TLS is enabled, update client connection strings from `bolt://` to `bolt+s://` or `bolt+ssc://`
+4. Replace `dbms.logs.query.enabled` with `db.logs.query.enabled` in `spec.config`
+5. Expect a one-time rolling restart of standalone pods (new health probes added to StatefulSet)
+
+### Batch update with sed
+
+```bash
+# Update all YAML manifests in your deployment directory
+find /path/to/manifests -name '*.yaml' -exec \
+  sed -i 's|neo4j.neo4j.com/v1alpha1|neo4j.neo4j.com/v1beta1|g' {} +
+
+# Update deprecated config key
+find /path/to/manifests -name '*.yaml' -exec \
+  sed -i 's|dbms.logs.query.enabled|db.logs.query.enabled|g' {} +
+```
+
+---
+
 ## Upgrading to v1.6.0-alpha (API Stabilization)
 
-v1.6.0-alpha includes breaking changes to the `v1alpha1` API in preparation for graduating to `v1beta1`. These changes fix field naming inconsistencies, remove deprecated fields, and resolve bugs.
+v1.6.0-alpha included breaking changes to the `v1alpha1` API to stabilize fields ahead of the v1beta1 graduation (completed in v1.7.0-alpha). These changes fixed field naming inconsistencies, removed deprecated fields, and resolved bugs.
 
 ### Field renames
 
@@ -517,7 +592,7 @@ v1.6.0-alpha includes breaking changes to the `v1alpha1` API in preparation for 
 
 Example — before:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 spec:
   targetCluster: my-cluster
@@ -529,7 +604,7 @@ spec:
 
 After:
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 spec:
   clusterRef: my-cluster

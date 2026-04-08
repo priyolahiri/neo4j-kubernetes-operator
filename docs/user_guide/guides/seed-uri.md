@@ -29,7 +29,7 @@ The operator supports the following URI schemes through Neo4j's CloudSeedProvide
 ### Simple Seed URI Database
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: my-database
@@ -82,7 +82,7 @@ data:
   AWS_ACCESS_KEY_ID: <base64-encoded-key>
   AWS_SECRET_ACCESS_KEY: <base64-encoded-secret>
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: my-database

@@ -21,7 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 )
 
@@ -49,7 +49,7 @@ func NewStandaloneValidator() *StandaloneValidator {
 const maxStandaloneNameLength = 63
 
 // ValidateCreate validates a new standalone deployment
-func (v *StandaloneValidator) ValidateCreate(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
+func (v *StandaloneValidator) ValidateCreate(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Validate resource name length
@@ -98,7 +98,7 @@ func (v *StandaloneValidator) ValidateCreate(standalone *neo4jv1alpha1.Neo4jEnte
 }
 
 // ValidateUpdate validates an update to a standalone deployment
-func (v *StandaloneValidator) ValidateUpdate(oldStandalone, newStandalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
+func (v *StandaloneValidator) ValidateUpdate(oldStandalone, newStandalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Validate the new standalone configuration
@@ -121,12 +121,12 @@ func (v *StandaloneValidator) ValidateUpdate(oldStandalone, newStandalone *neo4j
 
 // validateEdition validates the edition field
 // Edition field has been removed - operator only supports enterprise edition
-func (v *StandaloneValidator) validateEdition(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
+func (v *StandaloneValidator) validateEdition(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
 	return field.ErrorList{}
 }
 
 // validateImage validates the image configuration
-func (v *StandaloneValidator) validateImage(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
+func (v *StandaloneValidator) validateImage(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
 	var allErrs field.ErrorList
 	imagePath := field.NewPath("spec", "image")
 
@@ -160,7 +160,7 @@ func (v *StandaloneValidator) validateImage(standalone *neo4jv1alpha1.Neo4jEnter
 }
 
 // validateStorage validates the storage configuration
-func (v *StandaloneValidator) validateStorage(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
+func (v *StandaloneValidator) validateStorage(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
 	var allErrs field.ErrorList
 	storagePath := field.NewPath("spec", "storage")
 
@@ -182,7 +182,7 @@ func (v *StandaloneValidator) validateStorage(standalone *neo4jv1alpha1.Neo4jEnt
 }
 
 // validateTLS validates the TLS configuration
-func (v *StandaloneValidator) validateTLS(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
+func (v *StandaloneValidator) validateTLS(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if standalone.Spec.TLS == nil {
@@ -219,14 +219,14 @@ func (v *StandaloneValidator) validateTLS(standalone *neo4jv1alpha1.Neo4jEnterpr
 }
 
 // validateAuth validates the auth configuration
-func (v *StandaloneValidator) validateAuth(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
+func (v *StandaloneValidator) validateAuth(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
 	// Delegate to AuthValidator which handles both old Provider field and new provider lists
 	authValidator := NewAuthValidator()
 	return authValidator.ValidateAuthSpec(standalone.Spec.Auth, field.NewPath("spec", "auth"))
 }
 
 // validateConfig validates the custom configuration for single mode
-func (v *StandaloneValidator) validateConfig(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
+func (v *StandaloneValidator) validateConfig(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if standalone.Spec.Config == nil {
@@ -276,7 +276,7 @@ func (v *StandaloneValidator) validateConfig(standalone *neo4jv1alpha1.Neo4jEnte
 }
 
 // validateImageUpgrade validates image upgrade path
-func (v *StandaloneValidator) validateImageUpgrade(oldStandalone, newStandalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
+func (v *StandaloneValidator) validateImageUpgrade(oldStandalone, newStandalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// For now, allow all upgrades - more sophisticated validation can be added later
@@ -284,7 +284,7 @@ func (v *StandaloneValidator) validateImageUpgrade(oldStandalone, newStandalone 
 }
 
 // validateStorageChanges validates storage changes (should be immutable)
-func (v *StandaloneValidator) validateStorageChanges(oldStandalone, newStandalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) field.ErrorList {
+func (v *StandaloneValidator) validateStorageChanges(oldStandalone, newStandalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
 	var allErrs field.ErrorList
 	storagePath := field.NewPath("spec", "storage")
 

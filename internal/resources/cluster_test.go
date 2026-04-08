@@ -12,21 +12,21 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
 func TestBuildPodSpecForEnterprise_WithPlugins(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j/neo4j",
 				Tag:  "5.26-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "fast-ssd",
 				Size:      "10Gi",
 			},
@@ -64,20 +64,20 @@ func TestBuildPodSpecForEnterprise_WithPlugins(t *testing.T) {
 }
 
 func TestBuildPodSpecForEnterprise_WithMonitoring(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j/neo4j",
 				Tag:  "5.26-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "fast-ssd",
 				Size:      "10Gi",
 			},
-			Monitoring: &neo4jv1alpha1.MonitoringSpec{
+			Monitoring: &neo4jv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -101,16 +101,16 @@ func TestBuildPodSpecForEnterprise_WithMonitoring(t *testing.T) {
 }
 
 func TestBuildPodSpecForEnterprise_WithoutFeatures(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j/neo4j",
 				Tag:  "5.26-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "fast-ssd",
 				Size:      "10Gi",
 			},
@@ -128,21 +128,21 @@ func TestBuildPodSpecForEnterprise_WithoutFeatures(t *testing.T) {
 }
 
 func TestBuildStatefulSetForEnterprise_WithFeatures(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j/neo4j",
 				Tag:  "5.26-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "fast-ssd",
 				Size:      "10Gi",
 			},
 			// Plugin management is now handled via separate Neo4jPlugin CRD
-			Monitoring: &neo4jv1alpha1.MonitoringSpec{
+			Monitoring: &neo4jv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -174,13 +174,13 @@ func TestBuildStatefulSetForEnterprise_WithFeatures(t *testing.T) {
 }
 
 func TestBuildDiscoveryServiceAccountForEnterprise(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
 		},
@@ -208,13 +208,13 @@ func TestBuildDiscoveryServiceAccountForEnterprise(t *testing.T) {
 }
 
 func TestBuildDiscoveryRoleForEnterprise(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
 		},
@@ -235,13 +235,13 @@ func TestBuildDiscoveryRoleForEnterprise(t *testing.T) {
 }
 
 func TestBuildDiscoveryRoleBindingForEnterprise(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
 		},
@@ -267,20 +267,20 @@ func TestBuildDiscoveryRoleBindingForEnterprise(t *testing.T) {
 }
 
 func TestBuildStatefulSetForEnterprise_ParallelManagement(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  "5.26.0-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "standard",
 				Size:      "10Gi",
 			},
@@ -305,24 +305,24 @@ func TestBuildStatefulSetForEnterprise_ParallelManagement(t *testing.T) {
 func TestBuildCertificateForEnterprise_DNSNames(t *testing.T) {
 	tests := []struct {
 		name       string
-		cluster    *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster    *neo4jv1beta1.Neo4jEnterpriseCluster
 		wantDNS    []string
 		notWantDNS []string
 	}{
 		{
 			name: "Certificate includes headless service DNS names",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
-					TLS: &neo4jv1alpha1.TLSSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name: "test-issuer",
 							Kind: "ClusterIssuer",
 						},
@@ -357,13 +357,13 @@ func TestBuildCertificateForEnterprise_DNSNames(t *testing.T) {
 		},
 		{
 			name: "No certificate when TLS disabled",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2,
 					},
 				},
@@ -391,18 +391,18 @@ func TestBuildCertificateForEnterprise_DNSNames(t *testing.T) {
 func TestBuildClientServiceForEnterprise_WithEnhancedFeatures(t *testing.T) {
 	tests := []struct {
 		name      string
-		cluster   *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster   *neo4jv1beta1.Neo4jEnterpriseCluster
 		checkFunc func(t *testing.T, service *corev1.Service)
 	}{
 		{
 			name: "LoadBalancer with IP and external traffic policy",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Service: &neo4jv1alpha1.ServiceSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Service: &neo4jv1beta1.ServiceSpec{
 						Type:                  "LoadBalancer",
 						LoadBalancerIP:        "10.0.0.100",
 						ExternalTrafficPolicy: "Local",
@@ -422,13 +422,13 @@ func TestBuildClientServiceForEnterprise_WithEnhancedFeatures(t *testing.T) {
 		},
 		{
 			name: "NodePort service",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Service: &neo4jv1alpha1.ServiceSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Service: &neo4jv1beta1.ServiceSpec{
 						Type: "NodePort",
 					},
 				},
@@ -439,12 +439,12 @@ func TestBuildClientServiceForEnterprise_WithEnhancedFeatures(t *testing.T) {
 		},
 		{
 			name: "Default ClusterIP when service spec is nil",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					Service: nil,
 				},
 			},
@@ -454,13 +454,13 @@ func TestBuildClientServiceForEnterprise_WithEnhancedFeatures(t *testing.T) {
 		},
 		{
 			name: "Service with annotations",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Service: &neo4jv1alpha1.ServiceSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Service: &neo4jv1beta1.ServiceSpec{
 						Type: "LoadBalancer",
 						Annotations: map[string]string{
 							"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
@@ -477,13 +477,13 @@ func TestBuildClientServiceForEnterprise_WithEnhancedFeatures(t *testing.T) {
 		},
 		{
 			name: "Service with external traffic policy Cluster",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Service: &neo4jv1alpha1.ServiceSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Service: &neo4jv1beta1.ServiceSpec{
 						Type:                  "LoadBalancer",
 						ExternalTrafficPolicy: "Cluster",
 					},
@@ -516,17 +516,17 @@ func TestBuildClientServiceForEnterprise_WithEnhancedFeatures(t *testing.T) {
 // This addresses the ConfigMap oscillation issue where non-deterministic map iteration
 // caused hash changes leading to unnecessary pod restarts
 func TestConfigMapDeterminism(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
 			Namespace: "default",
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  "5.26.0-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
 			// Add configuration with multiple keys that could be iterated in different orders
@@ -590,14 +590,14 @@ func assertContainsAndGetIndex(t *testing.T, haystack, needle string) int {
 func TestValidateServerRoleHints(t *testing.T) {
 	tests := []struct {
 		name           string
-		cluster        *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster        *neo4jv1beta1.Neo4jEnterpriseCluster
 		expectedErrors []string
 	}{
 		{
 			name: "No role hints - should pass",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
 				},
@@ -606,11 +606,11 @@ func TestValidateServerRoleHints(t *testing.T) {
 		},
 		{
 			name: "Valid role hints - should pass",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 0, ModeConstraint: "PRIMARY"},
 							{ServerIndex: 1, ModeConstraint: "SECONDARY"},
 							{ServerIndex: 2, ModeConstraint: "NONE"},
@@ -622,11 +622,11 @@ func TestValidateServerRoleHints(t *testing.T) {
 		},
 		{
 			name: "Server index out of range - should fail",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 3, ModeConstraint: "PRIMARY"}, // Index 3 is out of range for 3 servers (0-2)
 						},
 					},
@@ -636,11 +636,11 @@ func TestValidateServerRoleHints(t *testing.T) {
 		},
 		{
 			name: "Duplicate server indices - should fail",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 0, ModeConstraint: "PRIMARY"},
 							{ServerIndex: 0, ModeConstraint: "SECONDARY"}, // Duplicate index
 						},
@@ -651,11 +651,11 @@ func TestValidateServerRoleHints(t *testing.T) {
 		},
 		{
 			name: "All servers constrained to SECONDARY - should fail",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 0, ModeConstraint: "SECONDARY"},
 							{ServerIndex: 1, ModeConstraint: "SECONDARY"},
 							{ServerIndex: 2, ModeConstraint: "SECONDARY"},
@@ -667,11 +667,11 @@ func TestValidateServerRoleHints(t *testing.T) {
 		},
 		{
 			name: "Invalid mode constraint - should fail",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 0, ModeConstraint: "INVALID"}, // Invalid mode
 						},
 					},
@@ -681,11 +681,11 @@ func TestValidateServerRoleHints(t *testing.T) {
 		},
 		{
 			name: "Multiple validation errors - should return all",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 2,
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 0, ModeConstraint: "PRIMARY"},
 							{ServerIndex: 0, ModeConstraint: "SECONDARY"}, // Duplicate
 							{ServerIndex: 3, ModeConstraint: "PRIMARY"},   // Out of range
@@ -719,15 +719,15 @@ func TestValidateServerRoleHints(t *testing.T) {
 func TestBuildServerModeConstraintConfig(t *testing.T) {
 	tests := []struct {
 		name             string
-		cluster          *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster          *neo4jv1beta1.Neo4jEnterpriseCluster
 		expectedInConfig []string
 		notInConfig      []string
 	}{
 		{
 			name: "No server mode constraint or role hints",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
 				},
@@ -737,9 +737,9 @@ func TestBuildServerModeConstraintConfig(t *testing.T) {
 		},
 		{
 			name: "Global server mode constraint - PRIMARY",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers:              3,
 						ServerModeConstraint: "PRIMARY",
 					},
@@ -752,11 +752,11 @@ func TestBuildServerModeConstraintConfig(t *testing.T) {
 		},
 		{
 			name: "Per-server role hints",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 0, ModeConstraint: "PRIMARY"},
 							{ServerIndex: 1, ModeConstraint: "SECONDARY"},
 						},
@@ -775,12 +775,12 @@ func TestBuildServerModeConstraintConfig(t *testing.T) {
 		},
 		{
 			name: "Role hints take precedence over global constraint",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers:              3,
 						ServerModeConstraint: "SECONDARY", // This should be ignored
-						ServerRoles: []neo4jv1alpha1.ServerRoleHint{
+						ServerRoles: []neo4jv1beta1.ServerRoleHint{
 							{ServerIndex: 0, ModeConstraint: "PRIMARY"},
 						},
 					},
@@ -813,16 +813,16 @@ func TestBuildServerModeConstraintConfig(t *testing.T) {
 }
 
 func TestBuildPodSpecForEnterprise_DefaultSecurityContext(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j/neo4j",
 				Tag:  "5.26-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "fast-ssd",
 				Size:      "10Gi",
 			},
@@ -855,23 +855,23 @@ func TestBuildPodSpecForEnterprise_CustomSecurityContext(t *testing.T) {
 		AllowPrivilegeEscalation: ptr.To(false),
 	}
 
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j/neo4j",
 				Tag:  "5.26-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "fast-ssd",
 				Size:      "10Gi",
 			},
-			Monitoring: &neo4jv1alpha1.MonitoringSpec{
+			Monitoring: &neo4jv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
-			SecurityContext: &neo4jv1alpha1.SecurityContextSpec{
+			SecurityContext: &neo4jv1beta1.SecurityContextSpec{
 				PodSecurityContext:       customPodSC,
 				ContainerSecurityContext: customContainerSC,
 			},
@@ -890,24 +890,24 @@ func TestBuildPodSpecForEnterprise_CustomSecurityContext(t *testing.T) {
 // TestBuildServerStatefulSet_CustomAdminSecret verifies that spec.auth.adminSecret is
 // respected when building the server StatefulSet (regression test for GitHub issue #27).
 func TestBuildServerStatefulSet_CustomAdminSecret(t *testing.T) {
-	clusterWithCustomSecret := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	clusterWithCustomSecret := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image:    neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
-			Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
-			Storage:  neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "10Gi"},
-			Auth: &neo4jv1alpha1.AuthSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			Storage:  neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+			Auth: &neo4jv1beta1.AuthSpec{
 				AdminSecret: "my-custom-secret",
 			},
 		},
 	}
 
-	clusterWithDefaultSecret := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	clusterWithDefaultSecret := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image:    neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
-			Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
-			Storage:  neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			Storage:  neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
 		},
 	}
 
@@ -948,12 +948,12 @@ func TestBuildServerStatefulSet_CustomAdminSecret(t *testing.T) {
 }
 
 func TestClusterConfigContainsBackupListenAddress(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "backup-listen-test", Namespace: "default"},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image:    neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
-			Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
-			Storage:  neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			Storage:  neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
 		},
 	}
 	neo4jConf := resources.BuildConfigMapForEnterprise(cluster).Data["neo4j.conf"]
@@ -963,12 +963,12 @@ func TestClusterConfigContainsBackupListenAddress(t *testing.T) {
 }
 
 func TestBuildBackupFromAddresses(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "default"},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image:    neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
-			Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 3},
-			Storage:  neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			Storage:  neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
 		},
 	}
 
@@ -980,12 +980,12 @@ func TestBuildBackupFromAddresses(t *testing.T) {
 }
 
 func TestBuildBackupFromAddressesStandaloneEquivalent(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "ops"},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image:    neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
-			Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 1},
-			Storage:  neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 1},
+			Storage:  neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
 		},
 	}
 
@@ -993,18 +993,83 @@ func TestBuildBackupFromAddressesStandaloneEquivalent(t *testing.T) {
 	assert.Equal(t, "my-cluster-server-0.my-cluster-headless.ops.svc.cluster.local:6362", addrs)
 }
 
+func TestBuildBackupStatefulSet_Structure(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.0-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			Storage:  neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+			Auth:     &neo4jv1beta1.AuthSpec{AdminSecret: "neo4j-admin-secret"},
+			Backups:  &neo4jv1beta1.BackupsSpec{},
+		},
+	}
+
+	sts := resources.BuildBackupStatefulSet(cluster)
+	require.NotNil(t, sts, "backup StatefulSet should be created when backups enabled")
+
+	// Replicas
+	require.NotNil(t, sts.Spec.Replicas)
+	assert.Equal(t, int32(1), *sts.Spec.Replicas, "backup should have 1 replica")
+
+	// Labels
+	assert.Equal(t, "test-cluster", sts.Labels["neo4j.com/cluster"])
+	assert.Equal(t, "backup", sts.Labels["neo4j.com/component"])
+
+	// Container
+	containers := sts.Spec.Template.Spec.Containers
+	require.Len(t, containers, 1, "should have exactly 1 container")
+	assert.Equal(t, "backup", containers[0].Name)
+
+	// Environment variables
+	envMap := make(map[string]string)
+	for _, env := range containers[0].Env {
+		if env.Value != "" {
+			envMap[env.Name] = env.Value
+		}
+	}
+	assert.Equal(t, "yes", envMap["NEO4J_ACCEPT_LICENSE_AGREEMENT"])
+	assert.Equal(t, "test-cluster", envMap["NEO4J_CLUSTER_NAME"])
+
+	// Volume mounts
+	mountMap := make(map[string]string)
+	for _, vm := range containers[0].VolumeMounts {
+		mountMap[vm.Name] = vm.MountPath
+	}
+	assert.Equal(t, "/backups", mountMap["backup-storage"], "should mount backup-storage at /backups")
+	assert.Equal(t, "/backup-requests", mountMap["backup-requests"], "should mount backup-requests at /backup-requests")
+
+	// VolumeClaimTemplates
+	require.Len(t, sts.Spec.VolumeClaimTemplates, 1, "should have 1 PVC template")
+	assert.Equal(t, "backup-storage", sts.Spec.VolumeClaimTemplates[0].Name)
+}
+
+func TestBuildBackupStatefulSet_NilWhenDisabled(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.0-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			Storage:  neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+		},
+	}
+
+	sts := resources.BuildBackupStatefulSet(cluster)
+	assert.Nil(t, sts, "backup StatefulSet should be nil when backups not configured")
+}
+
 func TestBuildPodSpecForEnterprise_WithPullSecrets(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo:        "neo4j",
 				Tag:         "5.26-enterprise",
 				PullSecrets: []string{"my-registry-secret", "another-secret"},
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "fast-ssd",
 				Size:      "10Gi",
 			},
@@ -1019,16 +1084,16 @@ func TestBuildPodSpecForEnterprise_WithPullSecrets(t *testing.T) {
 }
 
 func TestBuildPodSpecForEnterprise_WithNoPullSecrets(t *testing.T) {
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  "5.26-enterprise",
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 3,
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "fast-ssd",
 				Size:      "10Gi",
 			},
@@ -1059,7 +1124,7 @@ func TestBuildMonitoringConfig(t *testing.T) {
 	})
 
 	t.Run("custom values", func(t *testing.T) {
-		spec := &neo4jv1alpha1.MonitoringSpec{
+		spec := &neo4jv1beta1.MonitoringSpec{
 			Enabled:            true,
 			SlowQueryThreshold: "2s",
 			ExplainPlan:        true,
@@ -1083,7 +1148,7 @@ func TestBuildMonitoringConfig(t *testing.T) {
 	})
 
 	t.Run("empty optional fields omitted", func(t *testing.T) {
-		spec := &neo4jv1alpha1.MonitoringSpec{
+		spec := &neo4jv1beta1.MonitoringSpec{
 			Enabled: true,
 		}
 		config := resources.BuildMonitoringConfig(spec)
@@ -1093,7 +1158,7 @@ func TestBuildMonitoringConfig(t *testing.T) {
 	})
 
 	t.Run("trailing newline prevents config corruption when metricsFilter is set", func(t *testing.T) {
-		spec := &neo4jv1alpha1.MonitoringSpec{
+		spec := &neo4jv1beta1.MonitoringSpec{
 			Enabled:       true,
 			MetricsFilter: "*",
 		}

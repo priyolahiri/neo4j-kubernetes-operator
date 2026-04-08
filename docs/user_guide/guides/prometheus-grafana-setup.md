@@ -29,7 +29,7 @@ Before Prometheus can scrape Neo4j, you must enable the built-in Prometheus endp
 ### Cluster deployments
 
 ```yaml
-apiVersion: neo4j.com/v1alpha1
+apiVersion: neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: my-cluster
@@ -50,7 +50,7 @@ When `monitoring.enabled: true`, the operator automatically:
 ### Standalone deployments
 
 ```yaml
-apiVersion: neo4j.com/v1alpha1
+apiVersion: neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: my-standalone

@@ -37,7 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/metrics"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
@@ -92,7 +92,7 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	logger := log.FromContext(ctx)
 
 	// Fetch the Neo4jBackup instance
-	backup := &neo4jv1alpha1.Neo4jBackup{}
+	backup := &neo4jv1beta1.Neo4jBackup{}
 	if err := r.Get(ctx, req.NamespacedName, backup); err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("Neo4jBackup resource not found")
@@ -147,7 +147,7 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return r.handleOneTimeBackup(ctx, backup, targetCluster)
 }
 
-func (r *Neo4jBackupReconciler) handleDeletion(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup) (ctrl.Result, error) {
+func (r *Neo4jBackupReconciler) handleDeletion(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	if !controllerutil.ContainsFinalizer(backup, BackupFinalizer) {
@@ -171,7 +171,7 @@ func (r *Neo4jBackupReconciler) handleDeletion(ctx context.Context, backup *neo4
 	return ctrl.Result{}, r.Update(ctx, backup)
 }
 
-func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
+func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	// Ensure backup ServiceAccount exists (and carries workload-identity annotations).
@@ -201,7 +201,7 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
-func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
+func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	// Ensure backup ServiceAccount exists (and carries workload-identity annotations).
@@ -240,7 +240,7 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
-func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, job *batchv1.Job) (ctrl.Result, error) {
+func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, job *batchv1.Job) (ctrl.Result, error) {
 	backupStart := time.Now()
 	backupM := metrics.NewBackupMetrics(backup.Name, backup.Namespace)
 
@@ -273,7 +273,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 // backupTargetName resolves the Neo4j instance name from a backup spec.
 // When Kind is "Database" the target name is the database name, not the instance;
 // ClusterRef holds the actual Neo4j instance in that case.
-func backupTargetName(backup *neo4jv1alpha1.Neo4jBackup) string {
+func backupTargetName(backup *neo4jv1beta1.Neo4jBackup) string {
 	if backup.Spec.Target.Kind == "Database" && backup.Spec.Target.ClusterRef != "" {
 		return backup.Spec.Target.ClusterRef
 	}
@@ -282,7 +282,7 @@ func backupTargetName(backup *neo4jv1alpha1.Neo4jBackup) string {
 
 // backupLabels returns the standard label set for a Neo4jBackup workload, ready to
 // be applied identically at the CronJob/Job level and both template levels.
-func backupLabels(backup *neo4jv1alpha1.Neo4jBackup, component string) map[string]string {
+func backupLabels(backup *neo4jv1beta1.Neo4jBackup, component string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       "neo4j-backup",
 		"app.kubernetes.io/instance":   backup.Name,
@@ -292,7 +292,7 @@ func backupLabels(backup *neo4jv1alpha1.Neo4jBackup, component string) map[strin
 	}
 }
 
-func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
+func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
 	jobName := backup.Name + "-backup"
 	logger := log.FromContext(ctx)
 
@@ -344,7 +344,7 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 	return job, nil
 }
 
-func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*batchv1.CronJob, error) {
+func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.CronJob, error) {
 	cronJobName := backup.Name + "-backup-cron"
 
 	backupCmd, err := r.buildBackupCommand(backup, cluster)
@@ -398,7 +398,7 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 	return cronJob, nil
 }
 
-func (r *Neo4jBackupReconciler) buildBackupCommand(backup *neo4jv1alpha1.Neo4jBackup, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (string, error) {
+func (r *Neo4jBackupReconciler) buildBackupCommand(backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (string, error) {
 	imageTag := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
 	version, err := neo4j.GetImageVersion(imageTag)
 	if err != nil {
@@ -470,7 +470,7 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(backup *neo4jv1alpha1.Neo4jBa
 
 // buildToPath returns the --to-path value: a cloud URI for cloud storage or a
 // timestamped local directory for PVC storage.
-func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1alpha1.Neo4jBackup) string {
+func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1beta1.Neo4jBackup) string {
 	st := backup.Spec.Storage
 	p := st.Path
 	if p == "" {
@@ -490,7 +490,7 @@ func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1alpha1.Neo4jBackup) s
 }
 
 // cloudBlockForBackup returns the CloudBlock from whichever spec field is populated.
-func cloudBlockForBackup(backup *neo4jv1alpha1.Neo4jBackup) *neo4jv1alpha1.CloudBlock {
+func cloudBlockForBackup(backup *neo4jv1beta1.Neo4jBackup) *neo4jv1beta1.CloudBlock {
 	if backup.Spec.Storage.Cloud != nil {
 		return backup.Spec.Storage.Cloud
 	}
@@ -501,7 +501,7 @@ func cloudBlockForBackup(backup *neo4jv1alpha1.Neo4jBackup) *neo4jv1alpha1.Cloud
 // into the backup job container as environment variables.
 // When CredentialsSecretRef is empty the function returns nil, which means the
 // Job relies on ambient cloud identity (IRSA, GKE Workload Identity, etc.).
-func (r *Neo4jBackupReconciler) buildCloudEnvVars(backup *neo4jv1alpha1.Neo4jBackup) []corev1.EnvVar {
+func (r *Neo4jBackupReconciler) buildCloudEnvVars(backup *neo4jv1beta1.Neo4jBackup) []corev1.EnvVar {
 	cloud := cloudBlockForBackup(backup)
 	if cloud == nil || cloud.CredentialsSecretRef == "" {
 		return nil
@@ -551,7 +551,7 @@ func (r *Neo4jBackupReconciler) buildCloudEnvVars(backup *neo4jv1alpha1.Neo4jBac
 	return nil
 }
 
-func (r *Neo4jBackupReconciler) buildVolumeMounts(backup *neo4jv1alpha1.Neo4jBackup) []corev1.VolumeMount {
+func (r *Neo4jBackupReconciler) buildVolumeMounts(backup *neo4jv1beta1.Neo4jBackup) []corev1.VolumeMount {
 	mounts := []corev1.VolumeMount{
 		{Name: "backup-storage", MountPath: "/backup"},
 	}
@@ -569,7 +569,7 @@ func (r *Neo4jBackupReconciler) buildVolumeMounts(backup *neo4jv1alpha1.Neo4jBac
 	return mounts
 }
 
-func (r *Neo4jBackupReconciler) buildVolumes(backup *neo4jv1alpha1.Neo4jBackup) []corev1.Volume {
+func (r *Neo4jBackupReconciler) buildVolumes(backup *neo4jv1beta1.Neo4jBackup) []corev1.Volume {
 	volumes := []corev1.Volume{}
 
 	// Backup storage volume.
@@ -612,7 +612,7 @@ func (r *Neo4jBackupReconciler) buildVolumes(backup *neo4jv1alpha1.Neo4jBackup) 
 	return volumes
 }
 
-func (r *Neo4jBackupReconciler) getTargetCluster(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup) (*neo4jv1alpha1.Neo4jEnterpriseCluster, error) {
+func (r *Neo4jBackupReconciler) getTargetCluster(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) (*neo4jv1beta1.Neo4jEnterpriseCluster, error) {
 	targetNamespace := backup.Spec.Target.Namespace
 	if targetNamespace == "" {
 		targetNamespace = backup.Namespace
@@ -628,24 +628,24 @@ func (r *Neo4jBackupReconciler) getTargetCluster(ctx context.Context, backup *ne
 	}
 
 	// Try Neo4jEnterpriseCluster first.
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	if err := r.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: targetNamespace}, cluster); err == nil {
 		return cluster, nil
 	}
 
 	// Fall back to Neo4jEnterpriseStandalone.
-	standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 	if err := r.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: targetNamespace}, standalone); err != nil {
 		return nil, fmt.Errorf("target %q not found as Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone in namespace %q", clusterName, targetNamespace)
 	}
 	return standaloneAsCluster(standalone), nil
 }
 
-func (r *Neo4jBackupReconciler) isClusterReady(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) bool {
+func (r *Neo4jBackupReconciler) isClusterReady(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	return cluster.Status.Phase == "Ready"
 }
 
-func (r *Neo4jBackupReconciler) cleanupBackupJobs(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup) error {
+func (r *Neo4jBackupReconciler) cleanupBackupJobs(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
 	// Delete associated jobs
 	jobList := &batchv1.JobList{}
 	if err := r.List(ctx, jobList, client.InNamespace(backup.Namespace), client.MatchingLabels{
@@ -679,7 +679,7 @@ func (r *Neo4jBackupReconciler) cleanupBackupJobs(ctx context.Context, backup *n
 	return nil
 }
 
-func (r *Neo4jBackupReconciler) cleanupBackupArtifacts(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup) error {
+func (r *Neo4jBackupReconciler) cleanupBackupArtifacts(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
 	logger := log.FromContext(ctx)
 
 	if backup.Spec.Retention == nil {
@@ -742,7 +742,7 @@ func (r *Neo4jBackupReconciler) cleanupBackupArtifacts(ctx context.Context, back
 
 // buildRetentionScript generates a shell script that enforces the given retention
 // policy against directories under /backup.
-func buildRetentionScript(policy *neo4jv1alpha1.RetentionPolicy) string {
+func buildRetentionScript(policy *neo4jv1beta1.RetentionPolicy) string {
 	script := `#!/bin/sh
 set -e
 BACKUP_DIR="/backup"
@@ -800,9 +800,9 @@ func parseFindTimeArg(maxAge string) string {
 	}
 }
 
-func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, phase, message string) {
+func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, phase, message string) {
 	update := func() error {
-		latest := &neo4jv1alpha1.Neo4jBackup{}
+		latest := &neo4jv1beta1.Neo4jBackup{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(backup), latest); err != nil {
 			return err
 		}
@@ -826,10 +826,10 @@ func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *
 	}
 }
 
-func (r *Neo4jBackupReconciler) updateBackupStats(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup, job *batchv1.Job) {
+func (r *Neo4jBackupReconciler) updateBackupStats(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, job *batchv1.Job) {
 	logger := log.FromContext(ctx)
 
-	stats := &neo4jv1alpha1.BackupStats{}
+	stats := &neo4jv1beta1.BackupStats{}
 	if job.Status.StartTime != nil && job.Status.CompletionTime != nil {
 		duration := job.Status.CompletionTime.Sub(job.Status.StartTime.Time)
 		stats.Duration = duration.Round(time.Second).String()
@@ -838,13 +838,13 @@ func (r *Neo4jBackupReconciler) updateBackupStats(ctx context.Context, backup *n
 	// they require parsing neo4j-admin stdout from Job pod logs (future enhancement).
 
 	update := func() error {
-		latest := &neo4jv1alpha1.Neo4jBackup{}
+		latest := &neo4jv1beta1.Neo4jBackup{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(backup), latest); err != nil {
 			return err
 		}
 		latest.Status.Stats = stats
 
-		run := neo4jv1alpha1.BackupRun{
+		run := neo4jv1beta1.BackupRun{
 			Status: "Succeeded",
 			Stats:  stats,
 		}
@@ -853,7 +853,7 @@ func (r *Neo4jBackupReconciler) updateBackupStats(ctx context.Context, backup *n
 		}
 		run.CompletionTime = job.Status.CompletionTime
 
-		latest.Status.History = append([]neo4jv1alpha1.BackupRun{run}, latest.Status.History...)
+		latest.Status.History = append([]neo4jv1beta1.BackupRun{run}, latest.Status.History...)
 		if len(latest.Status.History) > 10 {
 			latest.Status.History = latest.Status.History[:10]
 		}
@@ -866,7 +866,7 @@ func (r *Neo4jBackupReconciler) updateBackupStats(ctx context.Context, backup *n
 }
 
 // validateNeo4jVersion validates that the target cluster uses Neo4j 5.26+ or 2025.01+
-func (r *Neo4jBackupReconciler) validateNeo4jVersion(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jBackupReconciler) validateNeo4jVersion(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	if cluster.Spec.Image.Tag == "" {
 		return fmt.Errorf("Neo4j image tag is not specified in cluster %s", cluster.Name)
 	}
@@ -883,7 +883,7 @@ const backupServiceAccountName = "neo4j-backup-sa"
 // and applies any workload-identity annotations declared in the backup spec.
 // No Role or RoleBinding is created: the backup Job runs neo4j-admin directly and
 // does not need any Kubernetes API access.
-func (r *Neo4jBackupReconciler) ensureBackupServiceAccount(ctx context.Context, backup *neo4jv1alpha1.Neo4jBackup) error {
+func (r *Neo4jBackupReconciler) ensureBackupServiceAccount(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
 	namespace := backup.Namespace
 
 	// Collect workload-identity annotations from the spec (if any).
@@ -918,7 +918,7 @@ func (r *Neo4jBackupReconciler) ensureBackupServiceAccount(ctx context.Context, 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Neo4jBackupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&neo4jv1alpha1.Neo4jBackup{}).
+		For(&neo4jv1beta1.Neo4jBackup{}).
 		Owns(&batchv1.Job{}).
 		Owns(&batchv1.CronJob{}).
 		WithOptions(controller.Options{

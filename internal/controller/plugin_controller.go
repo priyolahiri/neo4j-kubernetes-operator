@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -47,7 +47,7 @@ const (
 )
 
 // getAdminSecretName safely extracts the admin secret name from cluster spec with fallback to default
-func getClusterAdminSecretName(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func getClusterAdminSecretName(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	if cluster.Spec.Auth != nil && cluster.Spec.Auth.AdminSecret != "" {
 		return cluster.Spec.Auth.AdminSecret
 	}
@@ -55,7 +55,7 @@ func getClusterAdminSecretName(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) st
 }
 
 // getStandaloneAdminSecretName safely extracts the admin secret name from standalone spec with fallback to default
-func getStandaloneAdminSecretName(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) string {
+func getStandaloneAdminSecretName(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) string {
 	if standalone.Spec.Auth != nil && standalone.Spec.Auth.AdminSecret != "" {
 		return standalone.Spec.Auth.AdminSecret
 	}
@@ -82,7 +82,7 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	logger := log.FromContext(ctx)
 
 	// Fetch the Neo4jPlugin instance
-	plugin := &neo4jv1alpha1.Neo4jPlugin{}
+	plugin := &neo4jv1beta1.Neo4jPlugin{}
 	if err := r.Get(ctx, req.NamespacedName, plugin); err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("Neo4jPlugin resource not found")
@@ -170,7 +170,7 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{}, nil
 }
 
-func (r *Neo4jPluginReconciler) handleDeletion(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin) (ctrl.Result, error) {
+func (r *Neo4jPluginReconciler) handleDeletion(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	// Uninstall plugin
@@ -199,9 +199,9 @@ type DeploymentInfo struct {
 	IsReady   bool
 }
 
-func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin) (*DeploymentInfo, error) {
+func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin) (*DeploymentInfo, error) {
 	// Try Neo4jEnterpriseCluster first
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      plugin.Spec.ClusterRef,
 		Namespace: plugin.Namespace,
@@ -217,7 +217,7 @@ func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin 
 	}
 
 	// Try Neo4jEnterpriseStandalone
-	standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      plugin.Spec.ClusterRef,
 		Namespace: plugin.Namespace,
@@ -235,7 +235,7 @@ func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin 
 	return nil, fmt.Errorf("target deployment %s not found (tried both Neo4jEnterpriseCluster and Neo4jEnterpriseStandalone)", plugin.Spec.ClusterRef)
 }
 
-func (r *Neo4jPluginReconciler) waitForPluginReady(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin) error {
+func (r *Neo4jPluginReconciler) waitForPluginReady(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin) error {
 	logger := log.FromContext(ctx)
 
 	// Wait for plugin to be in Ready state with timeout
@@ -250,7 +250,7 @@ func (r *Neo4jPluginReconciler) waitForPluginReady(ctx context.Context, plugin *
 		case <-timeout:
 			return fmt.Errorf("timeout waiting for plugin %s to be ready", plugin.Name)
 		case <-ticker.C:
-			current := &neo4jv1alpha1.Neo4jPlugin{}
+			current := &neo4jv1beta1.Neo4jPlugin{}
 			if err := r.Get(ctx, types.NamespacedName{Name: plugin.Name, Namespace: plugin.Namespace}, current); err != nil {
 				logger.Error(err, "Failed to get plugin status")
 				continue
@@ -366,7 +366,7 @@ func (r *Neo4jPluginReconciler) waitForDeploymentReady(ctx context.Context, depl
 	}
 }
 
-func (r *Neo4jPluginReconciler) configurePlugin(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin, deployment *DeploymentInfo) error {
+func (r *Neo4jPluginReconciler) configurePlugin(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
 	logger := log.FromContext(ctx)
 
 	// Check if plugin requires automatic security configuration even without user config
@@ -396,10 +396,10 @@ func (r *Neo4jPluginReconciler) configurePlugin(ctx context.Context, plugin *neo
 	var err error
 
 	if deployment.Type == "cluster" {
-		cluster := deployment.Object.(*neo4jv1alpha1.Neo4jEnterpriseCluster)
+		cluster := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseCluster)
 		neo4jClient, err = neo4jclient.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
 	} else {
-		standalone := deployment.Object.(*neo4jv1alpha1.Neo4jEnterpriseStandalone)
+		standalone := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseStandalone)
 		neo4jClient, err = neo4jclient.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
 	}
 
@@ -427,7 +427,7 @@ func (r *Neo4jPluginReconciler) configurePlugin(ctx context.Context, plugin *neo
 	return nil
 }
 
-func (r *Neo4jPluginReconciler) applySecurityConfiguration(ctx context.Context, neo4jClient *neo4jclient.Client, plugin *neo4jv1alpha1.Neo4jPlugin) error {
+func (r *Neo4jPluginReconciler) applySecurityConfiguration(ctx context.Context, neo4jClient *neo4jclient.Client, plugin *neo4jv1beta1.Neo4jPlugin) error {
 	logger := log.FromContext(ctx)
 
 	// In Neo4j 5.26+, most security settings (allowlist, denylist, unrestricted) are non-dynamic
@@ -467,7 +467,7 @@ func hardenedPluginContainerSecurityContext() *corev1.SecurityContext {
 	}
 }
 
-func (r *Neo4jPluginReconciler) uninstallPlugin(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin) error {
+func (r *Neo4jPluginReconciler) uninstallPlugin(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin) error {
 	logger := log.FromContext(ctx)
 
 	// Get target deployment
@@ -492,7 +492,7 @@ func (r *Neo4jPluginReconciler) uninstallPlugin(ctx context.Context, plugin *neo
 	return nil
 }
 
-func (r *Neo4jPluginReconciler) removePluginFromDeployment(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin, deployment *DeploymentInfo) error {
+func (r *Neo4jPluginReconciler) removePluginFromDeployment(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Removing plugin from deployment", "plugin", plugin.Spec.Name, "type", deployment.Type)
 
@@ -556,9 +556,9 @@ func (r *Neo4jPluginReconciler) removePluginFromDeployment(ctx context.Context, 
 	return r.waitForJobCompletion(ctx, removeJob)
 }
 
-func (r *Neo4jPluginReconciler) cleanupDependencies(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin) error {
+func (r *Neo4jPluginReconciler) cleanupDependencies(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin) error {
 	// Clean up dependency plugins created for this plugin
-	dependencyPlugins := &neo4jv1alpha1.Neo4jPluginList{}
+	dependencyPlugins := &neo4jv1beta1.Neo4jPluginList{}
 	if err := r.List(ctx, dependencyPlugins, client.InNamespace(plugin.Namespace), client.MatchingLabels{
 		"neo4j.plugin/parent": plugin.Name,
 	}); err != nil {
@@ -574,9 +574,9 @@ func (r *Neo4jPluginReconciler) cleanupDependencies(ctx context.Context, plugin 
 	return nil
 }
 
-func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin, phase, message string) {
+func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, phase, message string) {
 	update := func() error {
-		latest := &neo4jv1alpha1.Neo4jPlugin{}
+		latest := &neo4jv1beta1.Neo4jPlugin{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(plugin), latest); err != nil {
 			return err
 		}
@@ -596,7 +596,7 @@ func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *
 // SetupWithManager configures the controller with the manager
 // installPluginViaEnvironment installs the plugin using NEO4J_PLUGINS environment variable
 // This is the recommended approach by Neo4j for Docker plugin installation
-func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin, deployment *DeploymentInfo) error {
+func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Installing plugin via NEO4J_PLUGINS environment variable", "plugin", plugin.Spec.Name)
 
@@ -853,7 +853,7 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 }
 
 // updateStandaloneConfigMapForPlugin updates the ConfigMap for standalone deployments with plugin security settings
-func (r *Neo4jPluginReconciler) updateStandaloneConfigMapForPlugin(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin, deployment *DeploymentInfo) error {
+func (r *Neo4jPluginReconciler) updateStandaloneConfigMapForPlugin(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
 	logger := log.FromContext(ctx)
 
 	// Get automatic security settings for this plugin
@@ -883,7 +883,7 @@ func (r *Neo4jPluginReconciler) updateStandaloneConfigMapForPlugin(ctx context.C
 	}
 
 	// Get the standalone resource
-	standalone := deployment.Object.(*neo4jv1alpha1.Neo4jEnterpriseStandalone)
+	standalone := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseStandalone)
 
 	// Get the ConfigMap name for the standalone
 	configMapName := fmt.Sprintf("%s-config", standalone.Name)
@@ -937,7 +937,7 @@ func (r *Neo4jPluginReconciler) updateStandaloneConfigMapForPlugin(ctx context.C
 }
 
 // restartStandalonePods restarts the pods of a standalone deployment to pick up ConfigMap changes
-func (r *Neo4jPluginReconciler) restartStandalonePods(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jPluginReconciler) restartStandalonePods(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 
 	// Get the StatefulSet for the standalone
@@ -1036,7 +1036,7 @@ func (r *Neo4jPluginReconciler) isDeploymentFunctional(ctx context.Context, depl
 
 	// For clusters, try to connect and verify cluster formation
 	if deployment.Type == "cluster" {
-		cluster := deployment.Object.(*neo4jv1alpha1.Neo4jEnterpriseCluster)
+		cluster := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseCluster)
 		neo4jClient, err := neo4jclient.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
 		if err != nil {
 			logger.Info("Cannot create Neo4j client", "error", err)
@@ -1064,7 +1064,7 @@ func (r *Neo4jPluginReconciler) isDeploymentFunctional(ctx context.Context, depl
 
 	// For standalone, just check basic connectivity
 	if deployment.Type == "standalone" {
-		standalone := deployment.Object.(*neo4jv1alpha1.Neo4jEnterpriseStandalone)
+		standalone := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseStandalone)
 		neo4jClient, err := neo4jclient.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
 		if err != nil {
 			logger.Info("Cannot create Neo4j standalone client", "error", err)
@@ -1131,7 +1131,7 @@ func MergeNeo4jPluginList(existing string, newPlugin string) (string, error) {
 
 func (r *Neo4jPluginReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&neo4jv1alpha1.Neo4jPlugin{}).
+		For(&neo4jv1beta1.Neo4jPlugin{}).
 		Complete(r)
 }
 
@@ -1163,7 +1163,7 @@ func (r *Neo4jPluginReconciler) getPodLabels(deployment *DeploymentInfo) map[str
 // getExpectedReplicas returns the expected number of replicas for the deployment
 func (r *Neo4jPluginReconciler) getExpectedReplicas(deployment *DeploymentInfo) int {
 	if deployment.Type == "cluster" {
-		cluster := deployment.Object.(*neo4jv1alpha1.Neo4jEnterpriseCluster)
+		cluster := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseCluster)
 		return int(cluster.Spec.Topology.Servers)
 	}
 	// Standalone always has 1 replica
@@ -1348,7 +1348,7 @@ func (r *Neo4jPluginReconciler) isNonDynamicSetting(key string) bool {
 
 // hasRuntimeSecurityConfiguration checks if security configuration contains settings that can be applied at runtime
 // Most security settings (allowlist, denylist, unrestricted) are non-dynamic and must be applied as environment variables
-func (r *Neo4jPluginReconciler) hasRuntimeSecurityConfiguration(security *neo4jv1alpha1.PluginSecurity) bool {
+func (r *Neo4jPluginReconciler) hasRuntimeSecurityConfiguration(security *neo4jv1beta1.PluginSecurity) bool {
 	// Currently, all common security settings are non-dynamic in Neo4j 5.26+
 	// They must be applied as environment variables at StatefulSet creation time
 	// Future: if there are any dynamic security settings, check for them here
@@ -1357,7 +1357,7 @@ func (r *Neo4jPluginReconciler) hasRuntimeSecurityConfiguration(security *neo4jv
 
 // applyAPOCSecurityConfiguration applies APOC security configuration without using Neo4j client configuration
 // APOC security is handled via environment variables and procedure allowlists in Neo4j configuration
-func (r *Neo4jPluginReconciler) applyAPOCSecurityConfiguration(ctx context.Context, plugin *neo4jv1alpha1.Neo4jPlugin, deployment *DeploymentInfo) error {
+func (r *Neo4jPluginReconciler) applyAPOCSecurityConfiguration(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
 	logger := log.FromContext(ctx)
 
 	if plugin.Spec.Security == nil {
@@ -1371,10 +1371,10 @@ func (r *Neo4jPluginReconciler) applyAPOCSecurityConfiguration(ctx context.Conte
 		var err error
 
 		if deployment.Type == "cluster" {
-			cluster := deployment.Object.(*neo4jv1alpha1.Neo4jEnterpriseCluster)
+			cluster := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseCluster)
 			neo4jClient, err = neo4jclient.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
 		} else {
-			standalone := deployment.Object.(*neo4jv1alpha1.Neo4jEnterpriseStandalone)
+			standalone := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseStandalone)
 			neo4jClient, err = neo4jclient.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
 		}
 

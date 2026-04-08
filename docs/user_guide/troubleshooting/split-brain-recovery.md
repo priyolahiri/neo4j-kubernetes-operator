@@ -394,7 +394,7 @@ If split-brain causes data corruption:
 ```bash
 # 1. Create restoration cluster
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: recovery-cluster
@@ -406,7 +406,7 @@ EOF
 
 # 2. Restore from backup
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: split-brain-recovery

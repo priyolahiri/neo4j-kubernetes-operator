@@ -6,7 +6,7 @@
 
 **Architecture:** Add a `CollectDiagnostics(ctx, cluster, neo4jClient)` method to the existing `QueryMonitor` type. The cluster reconciler calls it whenever `Monitoring.Enabled=true` AND `status.phase=Ready`. Results are written into a new `status.diagnostics` sub-struct and two new Kubernetes conditions (`ServersHealthy`, `DatabasesHealthy`). All diagnostics collection is non-blocking and non-fatal — failure to collect never prevents the cluster from reaching Ready.
 
-**Tech Stack:** Go 1.24, controller-runtime v0.21, `internal/neo4j.Client` (existing Bolt client), `api/v1alpha1` CRD types, `internal/metrics` (Prometheus).
+**Tech Stack:** Go 1.24, controller-runtime v0.21, `internal/neo4j.Client` (existing Bolt client), `api/v1beta1` CRD types, `internal/metrics` (Prometheus).
 
 ---
 
@@ -15,7 +15,7 @@
 | Symbol | File |
 |---|---|
 | `QueryMonitor` struct + `ReconcileMonitoring` | `internal/controller/neo4jenterprisecluster_controller.go:1340–1500` |
-| `Neo4jEnterpriseClusterStatus` | `api/v1alpha1/neo4jenterprisecluster_types.go:563–604` |
+| `Neo4jEnterpriseClusterStatus` | `api/v1beta1/neo4jenterprisecluster_types.go:563–604` |
 | `conditions.go` constants | `internal/controller/conditions.go` |
 | `neo4jclient.GetServerList` | `internal/neo4j/client.go:1639` — returns `[]ServerInfo{Name,Address,State,Health,Hosting}` |
 | `neo4jclient.GetDatabases` | `internal/neo4j/client.go:555` — returns `[]DatabaseInfo{Name,Status,Default,Home,Role,RequestedStatus}` |
@@ -31,12 +31,12 @@
 ## Task 1: Add Diagnostic Status Types to the API
 
 **Files:**
-- Modify: `api/v1alpha1/neo4jenterprisecluster_types.go`
+- Modify: `api/v1beta1/neo4jenterprisecluster_types.go`
 - Run: `make generate && make manifests`
 
 ### Step 1: Read the existing status struct
 
-Read `api/v1alpha1/neo4jenterprisecluster_types.go` lines 563–610 to understand the current `Neo4jEnterpriseClusterStatus` and the structs that appear after it (so you know where to insert the new types).
+Read `api/v1beta1/neo4jenterprisecluster_types.go` lines 563–610 to understand the current `Neo4jEnterpriseClusterStatus` and the structs that appear after it (so you know where to insert the new types).
 
 ### Step 2: Add new types after the existing status types
 
@@ -121,7 +121,7 @@ make generate
 make manifests
 ```
 
-Expected: `api/v1alpha1/zz_generated.deepcopy.go` updated with new types; `config/crd/bases/` CRD updated.
+Expected: `api/v1beta1/zz_generated.deepcopy.go` updated with new types; `config/crd/bases/` CRD updated.
 
 ### Step 5: Verify build
 
@@ -134,8 +134,8 @@ Expected: no errors.
 ### Step 6: Commit
 
 ```bash
-git add api/v1alpha1/neo4jenterprisecluster_types.go \
-    api/v1alpha1/zz_generated.deepcopy.go \
+git add api/v1beta1/neo4jenterprisecluster_types.go \
+    api/v1beta1/zz_generated.deepcopy.go \
     config/crd/bases/
 git commit -m "feat(api): add ClusterDiagnosticsStatus with server and database diagnostic fields"
 ```
@@ -236,11 +236,11 @@ Add the following method AFTER the existing `setupAlertingRules` function. It sh
 // and writes the results into status.diagnostics and status.conditions.
 // This is non-blocking — all errors are surfaced in status but do not fail
 // the reconciliation loop.
-func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, neo4jClient *neo4jclient.Client) error {
+func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, neo4jClient *neo4jclient.Client) error {
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("Collecting cluster diagnostics", "cluster", cluster.Name)
 
-	diagnostics := &neo4jv1alpha1.ClusterDiagnosticsStatus{}
+	diagnostics := &neo4jv1beta1.ClusterDiagnosticsStatus{}
 
 	// --- Collect server list ---
 	servers, serverErr := neo4jClient.GetServerList(ctx)
@@ -249,7 +249,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 		diagnostics.CollectionError = fmt.Sprintf("SHOW SERVERS failed: %v", serverErr)
 	} else {
 		for _, s := range servers {
-			diagnostics.Servers = append(diagnostics.Servers, neo4jv1alpha1.ServerDiagnosticInfo{
+			diagnostics.Servers = append(diagnostics.Servers, neo4jv1beta1.ServerDiagnosticInfo{
 				Name:             s.Name,
 				Address:          s.Address,
 				State:            s.State,
@@ -270,7 +270,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 		}
 	} else {
 		for _, d := range databases {
-			diagnostics.Databases = append(diagnostics.Databases, neo4jv1alpha1.DatabaseDiagnosticInfo{
+			diagnostics.Databases = append(diagnostics.Databases, neo4jv1beta1.DatabaseDiagnosticInfo{
 				Name:            d.Name,
 				Status:          d.Status,
 				RequestedStatus: d.RequestedStatus,
@@ -286,7 +286,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 
 	// --- Patch status with collected data ---
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		latest := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		if err := qm.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
 			return err
 		}
@@ -304,7 +304,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 }
 
 // updateServersCondition sets the ServersHealthy condition based on SHOW SERVERS results.
-func (qm *QueryMonitor) updateServersCondition(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, servers []neo4jclient.ServerInfo, collectErr error) {
+func (qm *QueryMonitor) updateServersCondition(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, servers []neo4jclient.ServerInfo, collectErr error) {
 	if collectErr != nil {
 		SetNamedCondition(&cluster.Status.Conditions, ConditionTypeServersHealthy,
 			cluster.Generation, metav1.ConditionUnknown,
@@ -340,7 +340,7 @@ func (qm *QueryMonitor) updateServersCondition(cluster *neo4jv1alpha1.Neo4jEnter
 }
 
 // updateDatabasesCondition sets the DatabasesHealthy condition based on SHOW DATABASES results.
-func (qm *QueryMonitor) updateDatabasesCondition(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, databases []neo4jclient.DatabaseInfo, collectErr error) {
+func (qm *QueryMonitor) updateDatabasesCondition(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, databases []neo4jclient.DatabaseInfo, collectErr error) {
 	if collectErr != nil {
 		SetNamedCondition(&cluster.Status.Conditions, ConditionTypeDatabasesHealthy,
 			cluster.Generation, metav1.ConditionUnknown,
@@ -485,14 +485,14 @@ package controller
 import (
 	"testing"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func makeCluster() *neo4jv1alpha1.Neo4jEnterpriseCluster {
-	return &neo4jv1alpha1.Neo4jEnterpriseCluster{
+func makeCluster() *neo4jv1beta1.Neo4jEnterpriseCluster {
+	return &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "test-cluster",
 			Namespace:  "default",
@@ -501,7 +501,7 @@ func makeCluster() *neo4jv1alpha1.Neo4jEnterpriseCluster {
 	}
 }
 
-func findCond(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, condType string) *metav1.Condition {
+func findCond(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, condType string) *metav1.Condition {
 	for i := range cluster.Status.Conditions {
 		if cluster.Status.Conditions[i].Type == condType {
 			return &cluster.Status.Conditions[i]

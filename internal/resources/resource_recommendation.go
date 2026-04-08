@@ -22,7 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // ResourceRecommendation provides intelligent resource suggestions
@@ -48,7 +48,7 @@ func NewResourceRecommender() *ResourceRecommender {
 }
 
 // RecommendResourcesForTopology calculates optimal resources for a given cluster topology
-func (r *ResourceRecommender) RecommendResourcesForTopology(topology neo4jv1alpha1.TopologyConfiguration, currentResources *corev1.ResourceRequirements) *ResourceRecommendation {
+func (r *ResourceRecommender) RecommendResourcesForTopology(topology neo4jv1beta1.TopologyConfiguration, currentResources *corev1.ResourceRequirements) *ResourceRecommendation {
 	totalPods := topology.Servers
 
 	// Base recommendations on cluster size and configuration
@@ -221,7 +221,7 @@ func (r *ResourceRecommender) calculateOptimalNeo4jMemory(containerMemoryBytes i
 }
 
 // addTopologySpecificTips adds tips specific to the cluster topology
-func (r *ResourceRecommender) addTopologySpecificTips(recommendation *ResourceRecommendation, topology neo4jv1alpha1.TopologyConfiguration) {
+func (r *ResourceRecommender) addTopologySpecificTips(recommendation *ResourceRecommendation, topology neo4jv1beta1.TopologyConfiguration) {
 	if topology.Servers < 2 {
 		recommendation.OptimizationTips = append(recommendation.OptimizationTips,
 			"Single server: Use Neo4jEnterpriseStandalone for single-node deployments")

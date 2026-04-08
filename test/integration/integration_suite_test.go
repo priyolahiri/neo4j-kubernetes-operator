@@ -41,7 +41,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
@@ -73,7 +73,7 @@ func init() {
 }
 
 // applyCIOptimizations applies CI-specific optimizations to cluster specs
-func applyCIOptimizations(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) {
+func applyCIOptimizations(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
 	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
 		// Reduce cluster size in CI for faster formation
 		if cluster.Spec.Topology.Servers > 2 {
@@ -152,7 +152,7 @@ var _ = BeforeSuite(func() {
 
 	By("registering schemes")
 	// Register the scheme
-	err = neo4jv1alpha1.AddToScheme(clientgoscheme.Scheme)
+	err = neo4jv1beta1.AddToScheme(clientgoscheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = apiextensionsv1.AddToScheme(clientgoscheme.Scheme)
@@ -313,7 +313,7 @@ func cleanupTestNamespaces() {
 // cleanupCustomResourcesInNamespace removes all custom resources from a namespace
 func cleanupCustomResourcesInNamespace(namespace string) {
 	// Clean up Neo4j Backups
-	backupList := &neo4jv1alpha1.Neo4jBackupList{}
+	backupList := &neo4jv1beta1.Neo4jBackupList{}
 	if err := k8sClient.List(ctx, backupList, client.InNamespace(namespace)); err == nil {
 		for _, item := range backupList.Items {
 			cleanupResource(&item, namespace, "Neo4jBackup")
@@ -321,7 +321,7 @@ func cleanupCustomResourcesInNamespace(namespace string) {
 	}
 
 	// Clean up Neo4j Databases
-	dbList := &neo4jv1alpha1.Neo4jDatabaseList{}
+	dbList := &neo4jv1beta1.Neo4jDatabaseList{}
 	if err := k8sClient.List(ctx, dbList, client.InNamespace(namespace)); err == nil {
 		for _, item := range dbList.Items {
 			cleanupResource(&item, namespace, "Neo4jDatabase")
@@ -329,7 +329,7 @@ func cleanupCustomResourcesInNamespace(namespace string) {
 	}
 
 	// Clean up Neo4j Enterprise Clusters
-	clusterList := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
+	clusterList := &neo4jv1beta1.Neo4jEnterpriseClusterList{}
 	if err := k8sClient.List(ctx, clusterList, client.InNamespace(namespace)); err == nil {
 		for _, item := range clusterList.Items {
 			cleanupResource(&item, namespace, "Neo4jEnterpriseCluster")
@@ -337,7 +337,7 @@ func cleanupCustomResourcesInNamespace(namespace string) {
 	}
 
 	// Clean up Neo4j Enterprise Standalones
-	standaloneList := &neo4jv1alpha1.Neo4jEnterpriseStandaloneList{}
+	standaloneList := &neo4jv1beta1.Neo4jEnterpriseStandaloneList{}
 	if err := k8sClient.List(ctx, standaloneList, client.InNamespace(namespace)); err == nil {
 		for _, item := range standaloneList.Items {
 			cleanupResource(&item, namespace, "Neo4jEnterpriseStandalone")
@@ -345,7 +345,7 @@ func cleanupCustomResourcesInNamespace(namespace string) {
 	}
 
 	// Clean up Neo4j Restores
-	restoreList := &neo4jv1alpha1.Neo4jRestoreList{}
+	restoreList := &neo4jv1beta1.Neo4jRestoreList{}
 	if err := k8sClient.List(ctx, restoreList, client.InNamespace(namespace)); err == nil {
 		for _, item := range restoreList.Items {
 			cleanupResource(&item, namespace, "Neo4jRestore")
@@ -353,7 +353,7 @@ func cleanupCustomResourcesInNamespace(namespace string) {
 	}
 
 	// Clean up Neo4j Sharded Databases
-	shardedDBList := &neo4jv1alpha1.Neo4jShardedDatabaseList{}
+	shardedDBList := &neo4jv1beta1.Neo4jShardedDatabaseList{}
 	if err := k8sClient.List(ctx, shardedDBList, client.InNamespace(namespace)); err == nil {
 		for _, item := range shardedDBList.Items {
 			cleanupResource(&item, namespace, "Neo4jShardedDatabase")
@@ -361,7 +361,7 @@ func cleanupCustomResourcesInNamespace(namespace string) {
 	}
 
 	// Clean up Neo4j Plugins
-	pluginList := &neo4jv1alpha1.Neo4jPluginList{}
+	pluginList := &neo4jv1beta1.Neo4jPluginList{}
 	if err := k8sClient.List(ctx, pluginList, client.InNamespace(namespace)); err == nil {
 		for _, item := range pluginList.Items {
 			cleanupResource(&item, namespace, "Neo4jPlugin")
@@ -432,12 +432,12 @@ func monitorResourceUsage(context string) {
 		}
 
 		// Count Neo4j resources
-		clusterList := &neo4jv1alpha1.Neo4jEnterpriseClusterList{}
+		clusterList := &neo4jv1beta1.Neo4jEnterpriseClusterList{}
 		if err := k8sClient.List(ctx, clusterList, &client.ListOptions{}); err == nil {
 			By(fmt.Sprintf("NEO4J CLUSTERS: %d", len(clusterList.Items)))
 		}
 
-		standaloneList := &neo4jv1alpha1.Neo4jEnterpriseStandaloneList{}
+		standaloneList := &neo4jv1beta1.Neo4jEnterpriseStandaloneList{}
 		if err := k8sClient.List(ctx, standaloneList, &client.ListOptions{}); err == nil {
 			By(fmt.Sprintf("NEO4J STANDALONES: %d", len(standaloneList.Items)))
 		}
@@ -495,21 +495,21 @@ func randomName(prefix string) string {
 }
 
 // createBasicCluster creates a basic Neo4j cluster for testing with minimum topology
-func createBasicCluster(name, namespace string) *neo4jv1alpha1.Neo4jEnterpriseCluster {
-	return &neo4jv1alpha1.Neo4jEnterpriseCluster{
+func createBasicCluster(name, namespace string) *neo4jv1beta1.Neo4jEnterpriseCluster {
+	return &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  getNeo4jImageTag(), // Use environment-specified version
 			},
-			Topology: neo4jv1alpha1.TopologyConfiguration{
+			Topology: neo4jv1beta1.TopologyConfiguration{
 				Servers: 2, // Minimum cluster topology
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "standard",
 				Size:      "1Gi",
 			},
@@ -518,18 +518,18 @@ func createBasicCluster(name, namespace string) *neo4jv1alpha1.Neo4jEnterpriseCl
 }
 
 // createBasicStandalone creates a basic Neo4j standalone deployment for testing
-func createBasicStandalone(name, namespace string) *neo4jv1alpha1.Neo4jEnterpriseStandalone {
-	return &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+func createBasicStandalone(name, namespace string) *neo4jv1beta1.Neo4jEnterpriseStandalone {
+	return &neo4jv1beta1.Neo4jEnterpriseStandalone{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-			Image: neo4jv1alpha1.ImageSpec{
+		Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+			Image: neo4jv1beta1.ImageSpec{
 				Repo: "neo4j",
 				Tag:  getNeo4jImageTag(), // Use environment-specified version
 			},
-			Storage: neo4jv1alpha1.StorageSpec{
+			Storage: neo4jv1beta1.StorageSpec{
 				ClassName: "standard",
 				Size:      "1Gi",
 			},

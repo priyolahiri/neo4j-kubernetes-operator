@@ -19,10 +19,10 @@ package validation
 import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
-func validateMCPConfig(spec *neo4jv1alpha1.MCPServerSpec, path *field.Path) field.ErrorList {
+func validateMCPConfig(spec *neo4jv1beta1.MCPServerSpec, path *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if spec == nil || !spec.Enabled {

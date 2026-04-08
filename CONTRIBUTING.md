@@ -161,7 +161,7 @@ tilt ci            # run once and exit (useful for validation)
    make smoke-test   # Deploys a standalone instance and waits for Ready
    ```
 
-5. **If you modified API types** (`api/v1alpha1/`):
+5. **If you modified API types** (`api/v1beta1/`):
    ```bash
    make generate manifests   # Regenerate DeepCopy and CRDs
    ```
@@ -319,7 +319,7 @@ Run `make help` for the most common targets, or `make help-all` for the complete
 
 ```text
 .
-├── api/v1alpha1/           # CRD type definitions
+├── api/v1beta1/           # CRD type definitions
 ├── cmd/                    # Operator entrypoint
 ├── config/                 # Kustomize manifests
 │   ├── crd/bases/          # Generated CRD YAML

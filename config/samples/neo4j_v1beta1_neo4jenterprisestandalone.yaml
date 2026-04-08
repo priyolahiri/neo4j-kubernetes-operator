@@ -1,13 +1,11 @@
-apiVersion: neo4j.neo4j.com/v1alpha1
-kind: Neo4jEnterpriseCluster
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jEnterpriseStandalone
 metadata:
-  name: sample-cluster
+  name: sample-standalone
 spec:
   image:
     repo: neo4j
     tag: 5.26.0-enterprise
-  topology:
-    servers: 3
   storage:
     className: standard
     size: 10Gi
