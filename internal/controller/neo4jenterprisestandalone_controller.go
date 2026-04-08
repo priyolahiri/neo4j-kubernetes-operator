@@ -46,7 +46,7 @@ import (
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/neo4j-partners/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/resources"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/validation"
@@ -62,7 +62,7 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	ConfigMapManager *ConfigMapManager
 }
 
-func podSecurityContextForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *corev1.PodSecurityContext {
+func podSecurityContextForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.PodSecurityContext {
 	if standalone.Spec.SecurityContext != nil && standalone.Spec.SecurityContext.PodSecurityContext != nil {
 		return standalone.Spec.SecurityContext.PodSecurityContext
 	}
@@ -79,7 +79,7 @@ func podSecurityContextForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseSt
 	}
 }
 
-func containerSecurityContextForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *corev1.SecurityContext {
+func containerSecurityContextForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.SecurityContext {
 	if standalone.Spec.SecurityContext != nil && standalone.Spec.SecurityContext.ContainerSecurityContext != nil {
 		return standalone.Spec.SecurityContext.ContainerSecurityContext
 	}
@@ -98,7 +98,7 @@ func containerSecurityContextForStandalone(standalone *neo4jv1alpha1.Neo4jEnterp
 }
 
 // standaloneImagePullSecrets converts the standalone's image pull secret names to []corev1.LocalObjectReference.
-func standaloneImagePullSecrets(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) []corev1.LocalObjectReference {
+func standaloneImagePullSecrets(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) []corev1.LocalObjectReference {
 	if len(standalone.Spec.Image.PullSecrets) == 0 {
 		return nil
 	}
@@ -131,7 +131,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	logger := log.FromContext(ctx)
 
 	// Fetch the Neo4jEnterpriseStandalone instance
-	standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 	if err := r.Get(ctx, req.NamespacedName, standalone); err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("Neo4jEnterpriseStandalone resource not found")
@@ -193,7 +193,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 }
 
 // handleDeletion handles the deletion of a standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) (ctrl.Result, error) {
+func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	// Cleanup resources
@@ -214,7 +214,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 }
 
 // reconcileStandalone reconciles the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) (ctrl.Result, error) {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	// Reconcile TLS Certificate (if TLS is enabled)
@@ -274,7 +274,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 	if standalone.Spec.Service != nil && standalone.Spec.Service.Route != nil && standalone.Spec.Service.Route.Enabled {
 		route := resources.BuildRouteForStandalone(standalone)
 		if route != nil {
-			route.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(standalone, neo4jv1alpha1.GroupVersion.WithKind("Neo4jEnterpriseStandalone"))})
+			route.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(standalone, neo4jv1beta1.GroupVersion.WithKind("Neo4jEnterpriseStandalone"))})
 
 			if err := r.createOrUpdateUnstructured(ctx, route); err != nil {
 				if meta.IsNoMatchError(err) {
@@ -325,7 +325,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 }
 
 // reconcileConfigMap reconciles the ConfigMap for the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 
 	// Create ConfigMap using the standalone configuration
@@ -353,7 +353,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 }
 
 // reconcileService reconciles the Service for the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 
 	// Create Service using the standalone configuration
@@ -386,7 +386,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Conte
 }
 
 // reconcileStatefulSet reconciles the StatefulSet for the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 
 	// Create StatefulSet using the standalone configuration
@@ -414,7 +414,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 }
 
 // reconcileIngress reconciles the Ingress for the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileIngress(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileIngress(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 
 	ingress := r.createIngress(standalone)
@@ -452,7 +452,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileIngress(ctx context.Conte
 }
 
 // reconcileRoute ensures an OpenShift Route exists when requested
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileRoute(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileRoute(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 
 	route := resources.BuildRouteForStandalone(standalone)
@@ -487,7 +487,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileRoute(ctx context.Context
 	return nil
 }
 
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileMCP(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileMCP(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	if standalone.Spec.MCP == nil || !standalone.Spec.MCP.Enabled {
 		return nil
 	}
@@ -518,7 +518,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileMCP(ctx context.Context, 
 	return nil
 }
 
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileMCPRoute(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileMCPRoute(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 
 	route := resources.BuildMCPRouteForStandalone(standalone)
@@ -569,12 +569,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createOrUpdateMCPResource(ctx cont
 	})
 }
 
-func (r *Neo4jEnterpriseStandaloneReconciler) warnIfMCPMissingAPOC(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) {
+func (r *Neo4jEnterpriseStandaloneReconciler) warnIfMCPMissingAPOC(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) {
 	if standalone.Spec.MCP == nil || !standalone.Spec.MCP.Enabled || r.Recorder == nil {
 		return
 	}
 
-	plugins := &neo4jv1alpha1.Neo4jPluginList{}
+	plugins := &neo4jv1beta1.Neo4jPluginList{}
 	if err := r.List(ctx, plugins, client.InNamespace(standalone.Namespace)); err != nil {
 		log.FromContext(ctx).V(1).Info("Unable to list plugins for MCP APOC check", "error", err)
 		return
@@ -594,7 +594,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) warnIfMCPMissingAPOC(ctx context.C
 }
 
 // createConfigMap creates a ConfigMap for the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *corev1.ConfigMap {
+func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.ConfigMap {
 	// Build neo4j.conf content
 	var configLines []string
 
@@ -767,7 +767,7 @@ func buildStandaloneStartupProbe() *corev1.Probe {
 }
 
 // createService creates a Service for the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) createService(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *corev1.Service {
+func (r *Neo4jEnterpriseStandaloneReconciler) createService(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.Service {
 	// Determine service type from spec
 	serviceType := corev1.ServiceTypeClusterIP
 	if standalone.Spec.Service != nil && standalone.Spec.Service.Type != "" {
@@ -856,7 +856,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createService(standalone *neo4jv1a
 }
 
 // createStatefulSet creates a StatefulSet for the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *appsv1.StatefulSet {
+func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *appsv1.StatefulSet {
 	replicas := int32(1)
 	annotations := map[string]string{}
 	if standalone.Spec.Monitoring != nil && standalone.Spec.Monitoring.Enabled {
@@ -985,11 +985,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(standalone *neo4
 }
 
 // updateStatus updates the status of the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 
 	// Get the latest version of the resource to avoid conflicts
-	latestStandalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+	latestStandalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 	if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, latestStandalone); err != nil {
 		return fmt.Errorf("failed to get latest standalone resource: %w", err)
 	}
@@ -1041,7 +1041,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 	if standalone.Spec.TLS != nil && standalone.Spec.TLS.Mode == "cert-manager" {
 		boltScheme = "bolt+s"
 	}
-	latestStandalone.Status.Endpoints = &neo4jv1alpha1.EndpointStatus{
+	latestStandalone.Status.Endpoints = &neo4jv1beta1.EndpointStatus{
 		Bolt:  fmt.Sprintf("%s://%s-service.%s.svc.cluster.local:7687", boltScheme, standalone.Name, standalone.Namespace),
 		HTTP:  fmt.Sprintf("http://%s-service.%s.svc.cluster.local:7474", standalone.Name, standalone.Namespace),
 		HTTPS: fmt.Sprintf("https://%s-service.%s.svc.cluster.local:7473", standalone.Name, standalone.Namespace),
@@ -1059,11 +1059,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 
 // collectStandaloneDiagnostics runs SHOW DATABASES against the standalone instance
 // and writes results into status.diagnostics. Non-fatal: errors are surfaced in status only.
-func (r *Neo4jEnterpriseStandaloneReconciler) collectStandaloneDiagnostics(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) collectStandaloneDiagnostics(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("Collecting standalone diagnostics", "standalone", standalone.Name)
 
-	diagnostics := &neo4jv1alpha1.StandaloneDiagnosticsStatus{}
+	diagnostics := &neo4jv1beta1.StandaloneDiagnosticsStatus{}
 
 	neo4jClient, err := neo4jclient.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
 	if err != nil {
@@ -1078,7 +1078,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) collectStandaloneDiagnostics(ctx c
 		diagnostics.CollectionError = fmt.Sprintf("SHOW DATABASES failed: %v", dbErr)
 	} else {
 		for _, d := range databases {
-			diagnostics.Databases = append(diagnostics.Databases, neo4jv1alpha1.DatabaseDiagnosticInfo{
+			diagnostics.Databases = append(diagnostics.Databases, neo4jv1beta1.DatabaseDiagnosticInfo{
 				Name:            d.Name,
 				Status:          d.Status,
 				RequestedStatus: d.RequestedStatus,
@@ -1095,9 +1095,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) collectStandaloneDiagnostics(ctx c
 }
 
 // updateStandaloneDiagnostics persists diagnostics into standalone status with retry.
-func (r *Neo4jEnterpriseStandaloneReconciler) updateStandaloneDiagnostics(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone, diagnostics *neo4jv1alpha1.StandaloneDiagnosticsStatus) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) updateStandaloneDiagnostics(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, diagnostics *neo4jv1beta1.StandaloneDiagnosticsStatus) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		latest := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+		latest := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(standalone), latest); err != nil {
 			return err
 		}
@@ -1107,13 +1107,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStandaloneDiagnostics(ctx co
 }
 
 // isStandaloneUpgradeRequired returns true if the Neo4j image tag is changing.
-func (r *Neo4jEnterpriseStandaloneReconciler) isStandaloneUpgradeRequired(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) bool {
+func (r *Neo4jEnterpriseStandaloneReconciler) isStandaloneUpgradeRequired(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) bool {
 	return standalone.Status.Version != "" && standalone.Status.Version != standalone.Spec.Image.Tag
 }
 
 // preUpgradeHealthCheck runs a health check before allowing an image upgrade.
 // Returns true if the upgrade should be blocked (health check failed and autoPause enabled).
-func (r *Neo4jEnterpriseStandaloneReconciler) preUpgradeHealthCheck(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) bool {
+func (r *Neo4jEnterpriseStandaloneReconciler) preUpgradeHealthCheck(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) bool {
 	logger := log.FromContext(ctx)
 
 	// Skip if no upgrade strategy or health check disabled
@@ -1153,7 +1153,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) preUpgradeHealthCheck(ctx context.
 }
 
 // cleanupResources cleans up resources during deletion
-func (r *Neo4jEnterpriseStandaloneReconciler) cleanupResources(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) cleanupResources(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 
 	// Cleanup based on retention policy (uses spec.storage.retentionPolicy, matching cluster pattern)
@@ -1179,7 +1179,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) cleanupResources(ctx context.Conte
 }
 
 // buildEnvVars builds environment variables for the standalone Neo4j container
-func (r *Neo4jEnterpriseStandaloneReconciler) buildEnvVars(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) []corev1.EnvVar {
+func (r *Neo4jEnterpriseStandaloneReconciler) buildEnvVars(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) []corev1.EnvVar {
 	envVars := []corev1.EnvVar{}
 
 	// Add essential Neo4j environment variables
@@ -1256,7 +1256,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildEnvVars(standalone *neo4jv1al
 }
 
 // buildVolumeMounts builds volume mounts for the standalone Neo4j container
-func (r *Neo4jEnterpriseStandaloneReconciler) buildVolumeMounts(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) []corev1.VolumeMount {
+func (r *Neo4jEnterpriseStandaloneReconciler) buildVolumeMounts(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) []corev1.VolumeMount {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      "neo4j-data",
@@ -1289,7 +1289,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildVolumeMounts(standalone *neo4
 }
 
 // buildVolumes builds volumes for the standalone Neo4j pod
-func (r *Neo4jEnterpriseStandaloneReconciler) buildVolumes(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) []corev1.Volume {
+func (r *Neo4jEnterpriseStandaloneReconciler) buildVolumes(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) []corev1.Volume {
 	volumes := []corev1.Volume{}
 
 	// Add ConfigMap volume (always present now, 0755 for executable health.sh)
@@ -1334,7 +1334,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildVolumes(standalone *neo4jv1al
 }
 
 // reconcileTLSCertificate reconciles the TLS certificate for the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileTLSCertificate(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileTLSCertificate(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 
 	// Create Certificate using cert-manager
@@ -1369,7 +1369,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileTLSCertificate(ctx contex
 }
 
 // createTLSCertificate creates a TLS certificate for the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) createTLSCertificate(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *certmanagerv1.Certificate {
+func (r *Neo4jEnterpriseStandaloneReconciler) createTLSCertificate(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *certmanagerv1.Certificate {
 	return &certmanagerv1.Certificate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-tls-cert", standalone.Name),
@@ -1393,7 +1393,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createTLSCertificate(standalone *n
 }
 
 // buildBackupSidecarContainer creates the backup sidecar container for standalone deployments
-func (r *Neo4jEnterpriseStandaloneReconciler) buildBackupSidecarContainer(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) corev1.Container {
+func (r *Neo4jEnterpriseStandaloneReconciler) buildBackupSidecarContainer(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) corev1.Container {
 	return corev1.Container{
 		Name:            "backup-sidecar",
 		Image:           fmt.Sprintf("%s:%s", standalone.Spec.Image.Repo, standalone.Spec.Image.Tag),
@@ -1527,7 +1527,7 @@ done`,
 }
 
 // createIngress creates an Ingress for the standalone deployment
-func (r *Neo4jEnterpriseStandaloneReconciler) createIngress(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *networkingv1.Ingress {
+func (r *Neo4jEnterpriseStandaloneReconciler) createIngress(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *networkingv1.Ingress {
 	if standalone.Spec.Service == nil || standalone.Spec.Service.Ingress == nil || !standalone.Spec.Service.Ingress.Enabled {
 		return nil
 	}
@@ -1592,7 +1592,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createIngress(standalone *neo4jv1a
 }
 
 // reconcileServiceMonitor creates or updates a ServiceMonitor for standalone Prometheus scraping.
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileServiceMonitor(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileServiceMonitor(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	serviceMonitor := &unstructured.Unstructured{}
 	serviceMonitor.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "monitoring.coreos.com",
@@ -1649,7 +1649,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createOrUpdateUnstructured(ctx con
 // SetupWithManager sets up the controller with the Manager.
 func (r *Neo4jEnterpriseStandaloneReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&neo4jv1alpha1.Neo4jEnterpriseStandalone{}).
+		For(&neo4jv1beta1.Neo4jEnterpriseStandalone{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
@@ -1666,7 +1666,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) SetupWithManager(mgr ctrl.Manager)
 	if _, err := mgr.GetRESTMapper().RESTMapping(routeGVK.GroupKind(), routeGVK.Version); err == nil {
 		routeObj := &unstructured.Unstructured{}
 		routeObj.SetGroupVersionKind(routeGVK)
-		routeHandler := handler.TypedEnqueueRequestForOwner[*unstructured.Unstructured](mgr.GetScheme(), mgr.GetRESTMapper(), &neo4jv1alpha1.Neo4jEnterpriseStandalone{}, handler.OnlyControllerOwner())
+		routeHandler := handler.TypedEnqueueRequestForOwner[*unstructured.Unstructured](mgr.GetScheme(), mgr.GetRESTMapper(), &neo4jv1beta1.Neo4jEnterpriseStandalone{}, handler.OnlyControllerOwner())
 		builder = builder.WatchesRawSource(source.Kind(mgr.GetCache(), routeObj, routeHandler))
 	}
 
@@ -1683,7 +1683,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) SetupWithManager(mgr ctrl.Manager)
 // Phase 2 — Token registration: once the standalone is Ready and the plugin is loaded,
 //
 //	reads the Aura token from the referenced Secret and calls registerToken.
-func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 	spec := standalone.Spec.AuraFleetManagement
 
@@ -1816,9 +1816,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) mergeFleetManagementPlugin(ctx con
 	})
 }
 
-func (r *Neo4jEnterpriseStandaloneReconciler) setFleetManagementStatus(ctx context.Context, standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone, registered bool, message string) error {
+func (r *Neo4jEnterpriseStandaloneReconciler) setFleetManagementStatus(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, registered bool, message string) error {
 	now := metav1.Now()
-	status := &neo4jv1alpha1.AuraFleetManagementStatus{
+	status := &neo4jv1beta1.AuraFleetManagementStatus{
 		Registered: registered,
 		Message:    message,
 	}
@@ -1826,7 +1826,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) setFleetManagementStatus(ctx conte
 		status.LastRegistrationTime = &now
 	}
 
-	latest := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+	latest := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: standalone.Namespace, Name: standalone.Name}, latest); err != nil {
 		return err
 	}

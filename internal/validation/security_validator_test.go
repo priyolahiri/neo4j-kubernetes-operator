@@ -21,7 +21,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestSecurityValidator_Validate(t *testing.T) {
@@ -29,18 +29,18 @@ func TestSecurityValidator_Validate(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		cluster     *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster     *neo4jv1beta1.Neo4jEnterpriseCluster
 		expectError bool
 		errorCount  int
 	}{
 		{
 			name: "valid native authentication",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"native"},
 					},
 				},
@@ -50,12 +50,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid LDAP authentication",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"ldap"},
 					},
 					Config: map[string]string{
@@ -70,12 +70,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid OIDC authentication",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"oidc"},
 					},
 					Config: map[string]string{
@@ -90,12 +90,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid JWT authentication",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"jwt"},
 					},
 					Config: map[string]string{
@@ -109,12 +109,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid SAML authentication",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"saml"},
 					},
 					Config: map[string]string{
@@ -128,12 +128,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid Kerberos authentication",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"kerberos"},
 					},
 					Config: map[string]string{
@@ -147,12 +147,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid authentication provider",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"invalid-provider"},
 					},
 				},
@@ -162,12 +162,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "external auth without secret (validated by AuthValidator now)",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"ldap"},
 						// Validated by AuthValidator, not SecurityValidator
 					},
@@ -178,12 +178,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid LDAP configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"ldap"},
 					},
 					Config: map[string]string{
@@ -198,12 +198,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid OIDC configuration - missing issuer",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"oidc"},
 					},
 					Config: map[string]string{
@@ -217,12 +217,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid OIDC configuration - invalid issuer URL",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"oidc"},
 					},
 					Config: map[string]string{
@@ -236,12 +236,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid OIDC configuration - missing openid scope",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"oidc"},
 					},
 					Config: map[string]string{
@@ -256,12 +256,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid JWT configuration - no key or secret",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"jwt"},
 					},
 					Config: map[string]string{
@@ -275,12 +275,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid JWT algorithm",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"jwt"},
 					},
 					Config: map[string]string{
@@ -294,12 +294,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid Kerberos configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Auth: &neo4jv1alpha1.AuthSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Auth: &neo4jv1beta1.AuthSpec{
 						AuthenticationProviders: []string{"kerberos"},
 					},
 					Config: map[string]string{
@@ -313,14 +313,14 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid TLS configuration with cert-manager",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name: "letsencrypt-prod",
 							Kind: "ClusterIssuer",
 						},
@@ -332,12 +332,12 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid TLS configuration - missing issuer",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
 						// Missing IssuerRef
 					},
@@ -348,11 +348,11 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "deprecated security configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					Config: map[string]string{
 						"dbms.security.auth_cache_max_capacity": "1000", // Deprecated in 5.26+
 					},
@@ -363,11 +363,11 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid security configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					Config: map[string]string{
 						"dbms.security.auth_enabled":                 "true",
 						"dbms.security.auth_minimum_password_length": "8",
@@ -383,11 +383,11 @@ func TestSecurityValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid security configuration values",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 					Config: map[string]string{
 						"dbms.security.auth_enabled":                 "maybe",     // Invalid boolean
 						"dbms.security.auth_minimum_password_length": "0",         // Invalid (should be positive)
@@ -425,16 +425,16 @@ func TestSecurityValidator_validateTLSConfig(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		cluster     *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster     *neo4jv1beta1.Neo4jEnterpriseCluster
 		expectError bool
 	}{
 		{
 			name: "standard ClusterIssuer accepted",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name: "ca-cluster-issuer",
 							Kind: "ClusterIssuer",
 						},
@@ -445,11 +445,11 @@ func TestSecurityValidator_validateTLSConfig(t *testing.T) {
 		},
 		{
 			name: "standard Issuer accepted",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name: "my-issuer",
 							Kind: "Issuer",
 						},
@@ -460,11 +460,11 @@ func TestSecurityValidator_validateTLSConfig(t *testing.T) {
 		},
 		{
 			name: "AWSPCAClusterIssuer accepted (issue #33)",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name:  "aws-acm-pca-issuer",
 							Kind:  "AWSPCAClusterIssuer",
 							Group: "awspca.cert-manager.io",
@@ -476,11 +476,11 @@ func TestSecurityValidator_validateTLSConfig(t *testing.T) {
 		},
 		{
 			name: "VaultIssuer accepted",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name:  "vault-issuer",
 							Kind:  "VaultIssuer",
 							Group: "cert.cert-manager.io",
@@ -492,11 +492,11 @@ func TestSecurityValidator_validateTLSConfig(t *testing.T) {
 		},
 		{
 			name: "GoogleCASClusterIssuer accepted",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name:  "google-cas-issuer",
 							Kind:  "GoogleCASClusterIssuer",
 							Group: "cas-issuer.jetstack.io",
@@ -508,11 +508,11 @@ func TestSecurityValidator_validateTLSConfig(t *testing.T) {
 		},
 		{
 			name: "missing issuerRef name rejected",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Kind: "ClusterIssuer",
 						},
 					},
@@ -522,9 +522,9 @@ func TestSecurityValidator_validateTLSConfig(t *testing.T) {
 		},
 		{
 			name: "nil issuerRef rejected for cert-manager mode",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
 					},
 				},

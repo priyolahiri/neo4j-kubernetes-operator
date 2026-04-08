@@ -35,13 +35,13 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func newStorageTestScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 	_ = storagev1.AddToScheme(scheme)
 	return scheme
 }
@@ -302,10 +302,10 @@ func TestCheckStorageExpansionNeeded(t *testing.T) {
 
 		r := newTestReconciler(scheme, pvc0, pvc1)
 
-		cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "default"},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-				Storage: neo4jv1alpha1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				Storage: neo4jv1beta1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
 			},
 		}
 
@@ -322,10 +322,10 @@ func TestCheckStorageExpansionNeeded(t *testing.T) {
 
 		r := newTestReconciler(scheme, pvc0, pvc1)
 
-		cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "default"},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-				Storage: neo4jv1alpha1.StorageSpec{ClassName: "ssd", Size: "200Gi"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				Storage: neo4jv1beta1.StorageSpec{ClassName: "ssd", Size: "200Gi"},
 			},
 		}
 
@@ -342,10 +342,10 @@ func TestCheckStorageExpansionNeeded(t *testing.T) {
 
 		r := newTestReconciler(scheme, pvc0, pvc1)
 
-		cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "default"},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-				Storage: neo4jv1alpha1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				Storage: neo4jv1beta1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
 			},
 		}
 
@@ -359,10 +359,10 @@ func TestCheckStorageExpansionNeeded(t *testing.T) {
 	t.Run("no PVCs yet (fresh cluster)", func(t *testing.T) {
 		r := newTestReconciler(scheme)
 
-		cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "new-cluster", Namespace: "default"},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-				Storage: neo4jv1alpha1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				Storage: neo4jv1beta1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
 			},
 		}
 

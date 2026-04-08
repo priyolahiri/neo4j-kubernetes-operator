@@ -21,7 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // TopologyValidator validates Neo4j topology configuration
@@ -39,7 +39,7 @@ type ValidationResult struct {
 }
 
 // Validate validates the topology configuration
-func (v *TopologyValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *TopologyValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 	topologyPath := field.NewPath("spec", "topology")
 
@@ -100,7 +100,7 @@ func (v *TopologyValidator) Validate(cluster *neo4jv1alpha1.Neo4jEnterpriseClust
 }
 
 // ValidateWithWarnings validates the topology configuration and returns both errors and warnings
-func (v *TopologyValidator) ValidateWithWarnings(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) ValidationResult {
+func (v *TopologyValidator) ValidateWithWarnings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) ValidationResult {
 	result := ValidationResult{
 		Errors:   v.Validate(cluster),
 		Warnings: []string{},

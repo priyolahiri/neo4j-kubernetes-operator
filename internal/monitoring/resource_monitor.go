@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // ResourceMonitor monitors cluster resources and provides early warning
@@ -72,7 +72,7 @@ type NodeUtilization struct {
 }
 
 // MonitorClusterResources monitors and analyzes cluster resource utilization
-func (rm *ResourceMonitor) MonitorClusterResources(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*ResourceUtilization, error) {
+func (rm *ResourceMonitor) MonitorClusterResources(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*ResourceUtilization, error) {
 	logger := log.FromContext(ctx)
 
 	// Get cluster nodes
@@ -108,7 +108,7 @@ func (rm *ResourceMonitor) MonitorClusterResources(ctx context.Context, cluster 
 }
 
 // ValidateScalingCapacity validates if cluster can handle scaling operation
-func (rm *ResourceMonitor) ValidateScalingCapacity(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, targetTopology neo4jv1alpha1.TopologyConfiguration) (bool, string, error) {
+func (rm *ResourceMonitor) ValidateScalingCapacity(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, targetTopology neo4jv1beta1.TopologyConfiguration) (bool, string, error) {
 	utilization, err := rm.MonitorClusterResources(ctx, cluster)
 	if err != nil {
 		return false, "", err
@@ -329,7 +329,7 @@ func (rm *ResourceMonitor) countPodsInNamespace(ctx context.Context, namespace s
 }
 
 // canScaleUp determines if the cluster can scale up
-func (rm *ResourceMonitor) canScaleUp(utilization *ResourceUtilization, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) bool {
+func (rm *ResourceMonitor) canScaleUp(utilization *ResourceUtilization, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	// Check if memory utilization is too high
 	if utilization.MemoryPercentage > 85 {
 		return false
@@ -352,7 +352,7 @@ func (rm *ResourceMonitor) canScaleUp(utilization *ResourceUtilization, cluster 
 }
 
 // generateScalingRecommendation provides scaling recommendations
-func (rm *ResourceMonitor) generateScalingRecommendation(utilization *ResourceUtilization, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) string {
+func (rm *ResourceMonitor) generateScalingRecommendation(utilization *ResourceUtilization, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	if !utilization.CanScale {
 		if utilization.MemoryPercentage > 90 {
 			return "Cannot scale: memory utilization too high (>90%). Consider adding nodes or reducing resource requests."
@@ -375,7 +375,7 @@ func (rm *ResourceMonitor) generateScalingRecommendation(utilization *ResourceUt
 }
 
 // checkResourceThresholds checks resource thresholds and emits warnings
-func (rm *ResourceMonitor) checkResourceThresholds(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, utilization *ResourceUtilization) {
+func (rm *ResourceMonitor) checkResourceThresholds(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, utilization *ResourceUtilization) {
 	// High memory utilization warning
 	if utilization.MemoryPercentage > 85 {
 		rm.recorder.Eventf(cluster, corev1.EventTypeWarning, "HighMemoryUtilization",

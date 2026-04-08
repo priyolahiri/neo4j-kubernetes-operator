@@ -38,7 +38,7 @@ create_samples() {
 
     # Basic Neo4j cluster
     cat > samples/basic-cluster.yaml << 'EOF'
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: basic-neo4j
@@ -63,7 +63,7 @@ EOF
 
     # HA Neo4j cluster
     cat > samples/ha-cluster.yaml << 'EOF'
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: ha-neo4j
@@ -93,7 +93,7 @@ EOF
 
     # Neo4j database
     cat > samples/database.yaml << 'EOF'
-apiVersion: neo4j.com/v1alpha1
+apiVersion: neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: movies-db

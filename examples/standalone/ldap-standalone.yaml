@@ -21,7 +21,7 @@ data:
   username: Y249c3ZjLGRjPWV4YW1wbGUsZGM9Y29t # cn=svc,dc=example,dc=com
   password: c2VjcmV0MTIz                       # secret123
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: ldap-standalone

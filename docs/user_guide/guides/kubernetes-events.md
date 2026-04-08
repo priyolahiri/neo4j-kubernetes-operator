@@ -18,7 +18,7 @@ kubectl get events --field-selector reason=ClusterFormationStarted
 kubectl get events -w
 
 # All Neo4j operator events across namespaces
-kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com/v1alpha1
+kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com/v1beta1
 ```
 
 ## Event Reasons Reference

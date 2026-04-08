@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func() {
@@ -40,7 +40,7 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 	BeforeEach(func() {
 		ctx = context.Background()
 		scheme = runtime.NewScheme()
-		Expect(neo4jv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(neo4jv1beta1.AddToScheme(scheme)).To(Succeed())
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 	})
 
@@ -48,20 +48,20 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 		Context("when property sharding is enabled", func() {
 			It("should validate Neo4j version requirements", func() {
 				// Create cluster with property sharding but old Neo4j version
-				cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-cluster",
 						Namespace: "default",
 					},
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Image: neo4jv1alpha1.ImageSpec{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Image: neo4jv1beta1.ImageSpec{
 							Repo: "neo4j",
 							Tag:  "5.26-enterprise", // Too old for property sharding
 						},
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: int32(5),
 						},
-						PropertySharding: &neo4jv1alpha1.PropertyShardingSpec{
+						PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
 							Enabled: true,
 						},
 					},
@@ -80,20 +80,20 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 			})
 
 			It("should accept valid Neo4j 2025.12+ version", func() {
-				cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-cluster",
 						Namespace: "default",
 					},
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Image: neo4jv1alpha1.ImageSpec{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Image: neo4jv1beta1.ImageSpec{
 							Repo: "neo4j",
 							Tag:  "2025.12-enterprise",
 						},
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: int32(7),
 						},
-						PropertySharding: &neo4jv1alpha1.PropertyShardingSpec{
+						PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
 							Enabled: true,
 						},
 					},
@@ -110,20 +110,20 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 			})
 
 			It("should validate minimum server requirements", func() {
-				cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-cluster",
 						Namespace: "default",
 					},
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Image: neo4jv1alpha1.ImageSpec{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Image: neo4jv1beta1.ImageSpec{
 							Repo: "neo4j",
 							Tag:  "2025.12-enterprise",
 						},
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: int32(0), // Invalid server count
 						},
-						PropertySharding: &neo4jv1alpha1.PropertyShardingSpec{
+						PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
 							Enabled: true,
 						},
 					},
@@ -141,20 +141,20 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 			})
 
 			It("should apply required configuration settings", func() {
-				cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-cluster",
 						Namespace: "default",
 					},
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Image: neo4jv1alpha1.ImageSpec{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Image: neo4jv1beta1.ImageSpec{
 							Repo: "neo4j",
 							Tag:  "2025.12-enterprise",
 						},
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: int32(5),
 						},
-						PropertySharding: &neo4jv1alpha1.PropertyShardingSpec{
+						PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
 							Enabled: true,
 						},
 						Config: map[string]string{},
@@ -185,20 +185,20 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 			})
 
 			It("should preserve custom configuration settings", func() {
-				cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-cluster",
 						Namespace: "default",
 					},
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Image: neo4jv1alpha1.ImageSpec{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Image: neo4jv1beta1.ImageSpec{
 							Repo: "neo4j",
 							Tag:  "2025.12-enterprise",
 						},
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: int32(5),
 						},
-						PropertySharding: &neo4jv1alpha1.PropertyShardingSpec{
+						PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
 							Enabled: true,
 							Config: map[string]string{
 								"db.tx_log.rotation.retention_policy":                            "14 days",
@@ -245,17 +245,17 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 
 		Context("when property sharding is disabled", func() {
 			It("should not apply property sharding configuration", func() {
-				cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+				cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-cluster",
 						Namespace: "default",
 					},
-					Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-						Image: neo4jv1alpha1.ImageSpec{
+					Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+						Image: neo4jv1beta1.ImageSpec{
 							Repo: "neo4j",
 							Tag:  "5.26-enterprise",
 						},
-						Topology: neo4jv1alpha1.TopologyConfiguration{
+						Topology: neo4jv1beta1.TopologyConfiguration{
 							Servers: int32(5),
 						},
 						Config: map[string]string{},
@@ -280,24 +280,24 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 
 	Describe("Property Sharding Status", func() {
 		It("should update status when property sharding is ready", func() {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "2025.12-enterprise",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: int32(3),
 					},
-					PropertySharding: &neo4jv1alpha1.PropertyShardingSpec{
+					PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
 						Enabled: true,
 					},
 				},
-				Status: neo4jv1alpha1.Neo4jEnterpriseClusterStatus{
+				Status: neo4jv1beta1.Neo4jEnterpriseClusterStatus{
 					Phase: "Ready",
 				},
 			}
@@ -318,7 +318,7 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 			Expect(err).NotTo(HaveOccurred())
 
 			// Fetch updated cluster
-			updatedCluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+			updatedCluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 			err = fakeClient.Get(ctx, types.NamespacedName{
 				Name:      cluster.Name,
 				Namespace: cluster.Namespace,
@@ -331,24 +331,24 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 		})
 
 		It("should not set ready status when cluster is not ready", func() {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "2025.12-enterprise",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: int32(3),
 					},
-					PropertySharding: &neo4jv1alpha1.PropertyShardingSpec{
+					PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
 						Enabled: true,
 					},
 				},
-				Status: neo4jv1alpha1.Neo4jEnterpriseClusterStatus{
+				Status: neo4jv1beta1.Neo4jEnterpriseClusterStatus{
 					Phase: "Pending",
 				},
 			}
@@ -369,7 +369,7 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 			Expect(err).NotTo(HaveOccurred())
 
 			// Fetch updated cluster
-			updatedCluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+			updatedCluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 			err = fakeClient.Get(ctx, types.NamespacedName{
 				Name:      cluster.Name,
 				Namespace: cluster.Namespace,
@@ -384,9 +384,9 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 
 	Describe("Version Parsing", func() {
 		It("should correctly parse semver versions", func() {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Tag: "5.26.0-enterprise",
 					},
 				},
@@ -400,9 +400,9 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 		})
 
 		It("should correctly parse calver versions", func() {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Tag: "2025.12.0-enterprise", // 2025.12 is the minimum for property sharding
 					},
 				},
@@ -415,9 +415,9 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 		})
 
 		It("should correctly parse calver without patch version", func() {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Tag: "2025.12-enterprise",
 					},
 				},
@@ -430,9 +430,9 @@ var _ = Describe("Neo4jEnterpriseCluster Controller - Property Sharding", func()
 		})
 
 		It("should reject old calver versions", func() {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Tag: "2025.11.0-enterprise", // 2025.11 < 2025.12 minimum
 					},
 				},

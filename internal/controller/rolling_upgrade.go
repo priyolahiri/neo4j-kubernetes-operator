@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/metrics"
 	neo4jclient "github.com/neo4j-partners/neo4j-kubernetes-operator/internal/neo4j"
 )
@@ -53,7 +53,7 @@ func NewRollingUpgradeOrchestrator(c client.Client, clusterName, namespace strin
 // ExecuteRollingUpgrade orchestrates a complete rolling upgrade
 func (r *RollingUpgradeOrchestrator) ExecuteRollingUpgrade(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	neo4jClient *neo4jclient.Client,
 ) error {
 	logger := log.FromContext(ctx).WithName("rolling-upgrade")
@@ -109,17 +109,17 @@ func (r *RollingUpgradeOrchestrator) ExecuteRollingUpgrade(
 // Helper methods for upgrade orchestration
 func (r *RollingUpgradeOrchestrator) initializeUpgradeStatus(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 ) error {
 	now := metav1.Now()
 
-	cluster.Status.UpgradeStatus = &neo4jv1alpha1.UpgradeStatus{
+	cluster.Status.UpgradeStatus = &neo4jv1beta1.UpgradeStatus{
 		Phase:           "InProgress",
 		StartTime:       &now,
 		CurrentStep:     "Initializing upgrade",
 		PreviousVersion: cluster.Status.Version,
 		TargetVersion:   cluster.Spec.Image.Tag,
-		Progress: &neo4jv1alpha1.UpgradeProgress{
+		Progress: &neo4jv1beta1.UpgradeProgress{
 			Total:   cluster.Spec.Topology.Servers,
 			Pending: cluster.Spec.Topology.Servers,
 		},
@@ -130,7 +130,7 @@ func (r *RollingUpgradeOrchestrator) initializeUpgradeStatus(
 
 func (r *RollingUpgradeOrchestrator) preUpgradeValidations(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	neo4jClient *neo4jclient.Client,
 ) error {
 	logger := log.FromContext(ctx)
@@ -162,7 +162,7 @@ func (r *RollingUpgradeOrchestrator) preUpgradeValidations(
 
 func (r *RollingUpgradeOrchestrator) upgradeSecondaries(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	_ *neo4jclient.Client,
 ) error {
 	logger := log.FromContext(ctx)
@@ -174,7 +174,7 @@ func (r *RollingUpgradeOrchestrator) upgradeSecondaries(
 
 func (r *RollingUpgradeOrchestrator) upgradePrimaries(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	neo4jClient *neo4jclient.Client,
 ) error {
 	logger := log.FromContext(ctx)
@@ -191,7 +191,7 @@ func (r *RollingUpgradeOrchestrator) upgradePrimaries(
 
 func (r *RollingUpgradeOrchestrator) upgradeServers(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	neo4jClient *neo4jclient.Client,
 ) error {
 	logger := log.FromContext(ctx)
@@ -339,7 +339,7 @@ func (r *RollingUpgradeOrchestrator) upgradeServers(
 
 func (r *RollingUpgradeOrchestrator) updatePartitionAndWait(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	partition int32,
 	timeout time.Duration,
 ) error {
@@ -359,7 +359,7 @@ func (r *RollingUpgradeOrchestrator) updatePartitionAndWait(
 
 func (r *RollingUpgradeOrchestrator) updateServerStatefulSet(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	mutate func(*appsv1.StatefulSet),
 ) (*appsv1.StatefulSet, error) {
 	key := types.NamespacedName{
@@ -387,7 +387,7 @@ func (r *RollingUpgradeOrchestrator) updateServerStatefulSet(
 
 func (r *RollingUpgradeOrchestrator) getServerStatefulSet(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 ) (*appsv1.StatefulSet, error) {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{
@@ -402,7 +402,7 @@ func (r *RollingUpgradeOrchestrator) getServerStatefulSet(
 
 func (r *RollingUpgradeOrchestrator) postUpgradeValidations(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	neo4jClient *neo4jclient.Client,
 ) error {
 	logger := log.FromContext(ctx)
@@ -462,7 +462,7 @@ func (r *RollingUpgradeOrchestrator) postUpgradeValidations(
 // Utility methods
 func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	phase, currentStep, lastError string,
 ) {
 	if cluster.Status.UpgradeStatus == nil {
@@ -660,7 +660,7 @@ type VersionInfo struct {
 
 func (r *RollingUpgradeOrchestrator) validateStatefulSetsReady(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 ) error {
 	serverSts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{
@@ -741,7 +741,7 @@ func (r *RollingUpgradeOrchestrator) waitForPartialStatefulSetRollout(
 
 func (r *RollingUpgradeOrchestrator) verifyVersionUpgrade(
 	ctx context.Context,
-	cluster *neo4jv1alpha1.Neo4jEnterpriseCluster,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	neo4jClient *neo4jclient.Client,
 ) error {
 	logger := log.FromContext(ctx)
@@ -928,7 +928,7 @@ func (r *RollingUpgradeOrchestrator) versionsMatch(actual, expected string) bool
 }
 
 // Configuration helpers
-func (r *RollingUpgradeOrchestrator) getUpgradeTimeout(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) time.Duration {
+func (r *RollingUpgradeOrchestrator) getUpgradeTimeout(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) time.Duration {
 	if cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.UpgradeTimeout != "" {
 		if timeout, err := time.ParseDuration(cluster.Spec.UpgradeStrategy.UpgradeTimeout); err == nil {
 			return timeout
@@ -937,7 +937,7 @@ func (r *RollingUpgradeOrchestrator) getUpgradeTimeout(cluster *neo4jv1alpha1.Ne
 	return 30 * time.Minute // Default
 }
 
-func (r *RollingUpgradeOrchestrator) getHealthCheckTimeout(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) time.Duration {
+func (r *RollingUpgradeOrchestrator) getHealthCheckTimeout(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) time.Duration {
 	if cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.HealthCheckTimeout != "" {
 		if timeout, err := time.ParseDuration(cluster.Spec.UpgradeStrategy.HealthCheckTimeout); err == nil {
 			return timeout
@@ -946,7 +946,7 @@ func (r *RollingUpgradeOrchestrator) getHealthCheckTimeout(cluster *neo4jv1alpha
 	return 5 * time.Minute // Default
 }
 
-func (r *RollingUpgradeOrchestrator) getStabilizationTimeout(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) time.Duration {
+func (r *RollingUpgradeOrchestrator) getStabilizationTimeout(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) time.Duration {
 	if cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.StabilizationTimeout != "" {
 		if timeout, err := time.ParseDuration(cluster.Spec.UpgradeStrategy.StabilizationTimeout); err == nil {
 			return timeout

@@ -6,13 +6,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // buildRoute constructs an OpenShift Route as an unstructured object.
 // It is used by both cluster and standalone controllers to avoid a hard dependency
 // on the OpenShift API types while still reconciling Route resources when available.
-func buildRoute(name, namespace, serviceName string, labels map[string]string, annotations map[string]string, host, path string, targetPort int32, tls *neo4jv1alpha1.RouteTLSSpec) *unstructured.Unstructured {
+func buildRoute(name, namespace, serviceName string, labels map[string]string, annotations map[string]string, host, path string, targetPort int32, tls *neo4jv1beta1.RouteTLSSpec) *unstructured.Unstructured {
 	if path == "" {
 		path = "/"
 	}
@@ -70,7 +70,7 @@ func buildRoute(name, namespace, serviceName string, labels map[string]string, a
 }
 
 // BuildRouteForEnterprise creates a Route targeting the cluster client service.
-func BuildRouteForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *unstructured.Unstructured {
+func BuildRouteForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *unstructured.Unstructured {
 	if cluster.Spec.Service == nil || cluster.Spec.Service.Route == nil || !cluster.Spec.Service.Route.Enabled {
 		return nil
 	}
@@ -106,7 +106,7 @@ func BuildRouteForEnterprise(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) *uns
 }
 
 // BuildRouteForStandalone creates a Route targeting the standalone service.
-func BuildRouteForStandalone(standalone *neo4jv1alpha1.Neo4jEnterpriseStandalone) *unstructured.Unstructured {
+func BuildRouteForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *unstructured.Unstructured {
 	if standalone.Spec.Service == nil || standalone.Spec.Service.Route == nil || !standalone.Spec.Service.Route.Enabled {
 		return nil
 	}

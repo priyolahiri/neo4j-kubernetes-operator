@@ -28,7 +28,7 @@ stringData:
   password: developer123
 ---
 # Lightweight standalone instance for development
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: dev-instance
@@ -68,7 +68,7 @@ spec:
 # STEP 2: Development Database with Schema
 ---
 # Create development database
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: dev-database
@@ -237,7 +237,7 @@ spec:
 # STEP 5: Integration Test Database
 ---
 # Separate database for integration tests
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: test-database

@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 const (
@@ -154,13 +154,13 @@ func (cm *CacheManager) GetCacheOptions() cache.Options {
 		Scheme: cm.scheme,
 		ByObject: map[client.Object]cache.ByObject{
 			// Neo4j CRDs - always watch these
-			&neo4jv1alpha1.Neo4jEnterpriseCluster{}:    {},
-			&neo4jv1alpha1.Neo4jEnterpriseStandalone{}: {},
-			&neo4jv1alpha1.Neo4jDatabase{}:             {},
-			&neo4jv1alpha1.Neo4jBackup{}:               {},
-			&neo4jv1alpha1.Neo4jRestore{}:              {},
-			&neo4jv1alpha1.Neo4jPlugin{}:               {},
-			&neo4jv1alpha1.Neo4jShardedDatabase{}:      {},
+			&neo4jv1beta1.Neo4jEnterpriseCluster{}:    {},
+			&neo4jv1beta1.Neo4jEnterpriseStandalone{}: {},
+			&neo4jv1beta1.Neo4jDatabase{}:             {},
+			&neo4jv1beta1.Neo4jBackup{}:               {},
+			&neo4jv1beta1.Neo4jRestore{}:              {},
+			&neo4jv1beta1.Neo4jPlugin{}:               {},
+			&neo4jv1beta1.Neo4jShardedDatabase{}:      {},
 
 			// Core Kubernetes resources - filtered by labels
 			&corev1.Secret{}: {
@@ -322,10 +322,10 @@ func (cm *CacheManager) ShouldFilterResource(obj client.Object) bool {
 
 	// Always cache Neo4j CRDs
 	switch obj.(type) {
-	case *neo4jv1alpha1.Neo4jEnterpriseCluster,
-		*neo4jv1alpha1.Neo4jDatabase,
-		*neo4jv1alpha1.Neo4jBackup,
-		*neo4jv1alpha1.Neo4jRestore:
+	case *neo4jv1beta1.Neo4jEnterpriseCluster,
+		*neo4jv1beta1.Neo4jDatabase,
+		*neo4jv1beta1.Neo4jBackup,
+		*neo4jv1beta1.Neo4jRestore:
 		return false
 	}
 
@@ -558,13 +558,13 @@ func (cm *CacheManager) namespaceHasNeo4jResources(ctx context.Context, namespac
 		name string
 		list client.ObjectList
 	}{
-		{name: "Neo4jEnterpriseCluster", list: &neo4jv1alpha1.Neo4jEnterpriseClusterList{}},
-		{name: "Neo4jEnterpriseStandalone", list: &neo4jv1alpha1.Neo4jEnterpriseStandaloneList{}},
-		{name: "Neo4jDatabase", list: &neo4jv1alpha1.Neo4jDatabaseList{}},
-		{name: "Neo4jPlugin", list: &neo4jv1alpha1.Neo4jPluginList{}},
-		{name: "Neo4jBackup", list: &neo4jv1alpha1.Neo4jBackupList{}},
-		{name: "Neo4jRestore", list: &neo4jv1alpha1.Neo4jRestoreList{}},
-		{name: "Neo4jShardedDatabase", list: &neo4jv1alpha1.Neo4jShardedDatabaseList{}},
+		{name: "Neo4jEnterpriseCluster", list: &neo4jv1beta1.Neo4jEnterpriseClusterList{}},
+		{name: "Neo4jEnterpriseStandalone", list: &neo4jv1beta1.Neo4jEnterpriseStandaloneList{}},
+		{name: "Neo4jDatabase", list: &neo4jv1beta1.Neo4jDatabaseList{}},
+		{name: "Neo4jPlugin", list: &neo4jv1beta1.Neo4jPluginList{}},
+		{name: "Neo4jBackup", list: &neo4jv1beta1.Neo4jBackupList{}},
+		{name: "Neo4jRestore", list: &neo4jv1beta1.Neo4jRestoreList{}},
+		{name: "Neo4jShardedDatabase", list: &neo4jv1beta1.Neo4jShardedDatabaseList{}},
 	}
 
 	for _, check := range checks {
@@ -581,19 +581,19 @@ func (cm *CacheManager) namespaceHasNeo4jResources(ctx context.Context, namespac
 
 func listHasItems(list client.ObjectList) bool {
 	switch typed := list.(type) {
-	case *neo4jv1alpha1.Neo4jEnterpriseClusterList:
+	case *neo4jv1beta1.Neo4jEnterpriseClusterList:
 		return len(typed.Items) > 0
-	case *neo4jv1alpha1.Neo4jEnterpriseStandaloneList:
+	case *neo4jv1beta1.Neo4jEnterpriseStandaloneList:
 		return len(typed.Items) > 0
-	case *neo4jv1alpha1.Neo4jDatabaseList:
+	case *neo4jv1beta1.Neo4jDatabaseList:
 		return len(typed.Items) > 0
-	case *neo4jv1alpha1.Neo4jPluginList:
+	case *neo4jv1beta1.Neo4jPluginList:
 		return len(typed.Items) > 0
-	case *neo4jv1alpha1.Neo4jBackupList:
+	case *neo4jv1beta1.Neo4jBackupList:
 		return len(typed.Items) > 0
-	case *neo4jv1alpha1.Neo4jRestoreList:
+	case *neo4jv1beta1.Neo4jRestoreList:
 		return len(typed.Items) > 0
-	case *neo4jv1alpha1.Neo4jShardedDatabaseList:
+	case *neo4jv1beta1.Neo4jShardedDatabaseList:
 		return len(typed.Items) > 0
 	default:
 		return false

@@ -369,7 +369,7 @@ deploy_single_node() {
 
     # Create single-node standalone manifest
     local manifest=$(cat << EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: neo4j-single
@@ -499,7 +499,7 @@ deploy_multi_node_cluster() {
 
     # Create cluster manifest
     local manifest=$(cat << EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: neo4j-cluster
@@ -712,7 +712,7 @@ demonstrate_standalone_database_creation() {
 
     # Create standalone database manifest
     local db_manifest=$(cat << EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: products-database-standalone
@@ -950,7 +950,7 @@ demonstrate_database_creation() {
     log_manifest "Creating application database manifest:"
 
     local database_manifest=$(cat << EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: orders-database

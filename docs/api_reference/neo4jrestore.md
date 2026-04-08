@@ -7,7 +7,7 @@ For practical examples and usage guidance, see the [Backup and Restore Guide](..
 ## API Version
 
 - **Group**: `neo4j.neo4j.com`
-- **Version**: `v1alpha1`
+- **Version**: `v1beta1`
 - **Kind**: `Neo4jRestore`
 
 ## How it works
@@ -330,7 +330,7 @@ Use `stopCluster: true` when:
 ### Simple Restore from a Neo4jBackup Reference
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: simple-backup-restore
@@ -352,7 +352,7 @@ spec:
 ### Restore from S3 (Static Credentials)
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: dev-s3-restore
@@ -385,7 +385,7 @@ spec:
 ### Restore from GCS (Static Credentials)
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: gcs-restore
@@ -414,7 +414,7 @@ spec:
 ### Restore from Azure Blob Storage
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: enterprise-azure-restore
@@ -467,7 +467,7 @@ spec:
 ### Point-in-Time Recovery (PITR)
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: production-pitr-restore
@@ -520,7 +520,7 @@ spec:
 When `stopCluster: true`, the operator mounts the server data PVC (`data-{cluster}-server-0`) directly into the restore Job for a cold/offline restore.
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: offline-restore
@@ -548,7 +548,7 @@ spec:
 `clusterRef` can reference a `Neo4jEnterpriseStandalone` resource. The controller detects the type automatically.
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: standalone-restore
@@ -570,7 +570,7 @@ spec:
 ### Cross-Cloud Disaster Recovery
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: cross-cloud-dr-restore

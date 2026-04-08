@@ -45,7 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/metrics"
 	neo4jclient "github.com/neo4j-partners/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/resources"
@@ -103,7 +103,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	logger := log.FromContext(ctx)
 
 	// Fetch the Neo4jEnterpriseCluster instance
-	cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("Neo4jEnterpriseCluster resource not found")
@@ -136,7 +136,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		if isUpdate {
 			// For updates, we need to get the current state from the API server
 			// to compare with the new desired state
-			currentCluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+			currentCluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 			if err := r.Get(ctx, req.NamespacedName, currentCluster); err != nil {
 				if !errors.IsNotFound(err) {
 					logger.Error(err, "Failed to get current cluster state for validation")
@@ -485,7 +485,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
+func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	if !controllerutil.ContainsFinalizer(cluster, ClusterFinalizer) {
 		logger.Info("Finalizer not present, nothing to do", "finalizers", cluster.Finalizers, "deletionTimestamp", cluster.DeletionTimestamp)
@@ -516,7 +516,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	return ctrl.Result{}, nil
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) cleanupPVCs(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jEnterpriseClusterReconciler) cleanupPVCs(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 
 	// List PVCs that belong to this cluster
@@ -910,13 +910,13 @@ func (r *Neo4jEnterpriseClusterReconciler) initContainersEqual(current, desired 
 	return true
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, phase, message string) bool {
+func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, phase, message string) bool {
 	logger := log.FromContext(ctx)
 	statusChanged := false
 
 	update := func() error {
 		// Get latest version
-		latest := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
 			return err
 		}
@@ -988,7 +988,7 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Conte
 }
 
 // createExternalSecretForTLS creates an ExternalSecret resource for TLS certificates
-func (r *Neo4jEnterpriseClusterReconciler) createExternalSecretForTLS(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jEnterpriseClusterReconciler) createExternalSecretForTLS(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	esData := resources.BuildExternalSecretForTLS(cluster)
 	if esData == nil {
 		return nil
@@ -1002,7 +1002,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createExternalSecretForTLS(ctx contex
 }
 
 // createExternalSecretForAuth creates an ExternalSecret resource for authentication secrets
-func (r *Neo4jEnterpriseClusterReconciler) createExternalSecretForAuth(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jEnterpriseClusterReconciler) createExternalSecretForAuth(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	esData := resources.BuildExternalSecretForAuth(cluster)
 	if esData == nil {
 		return nil
@@ -1042,7 +1042,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateUnstructuredResource(ct
 }
 
 // isUpgradeRequired checks if an image upgrade is needed
-func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) bool {
+func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	// Skip upgrade check if cluster is not ready
 	if cluster.Status.Phase != "Ready" {
 		return false
@@ -1074,7 +1074,7 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 }
 
 // handleRollingUpgrade manages the rolling upgrade process
-func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
+func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("rolling-upgrade-handler")
 
 	// Check if upgrade strategy allows rolling upgrades
@@ -1133,7 +1133,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 }
 
 // createNeo4jClient creates a Neo4j client for cluster operations
-func (r *Neo4jEnterpriseClusterReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (*neo4jclient.Client, error) {
+func (r *Neo4jEnterpriseClusterReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*neo4jclient.Client, error) {
 	// Get admin credentials
 	adminSecretName := DefaultAdminSecretName
 	if cluster.Spec.Auth != nil && cluster.Spec.Auth.AdminSecret != "" {
@@ -1150,7 +1150,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createNeo4jClient(ctx context.Context
 }
 
 // verifyNeo4jClusterFormation checks if Neo4j cluster formation is complete and detects split-brain scenarios
-func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) (bool, string, error) {
+func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (bool, string, error) {
 	logger := log.FromContext(ctx)
 
 	// Skip verification for single-server clusters (always formed)
@@ -1274,7 +1274,7 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 }
 
 // legacyClusterFormationCheck performs the original cluster formation verification
-func (r *Neo4jEnterpriseClusterReconciler) legacyClusterFormationCheck(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, expectedServers int) (bool, string, error) {
+func (r *Neo4jEnterpriseClusterReconciler) legacyClusterFormationCheck(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, expectedServers int) (bool, string, error) {
 	logger := log.FromContext(ctx)
 
 	// Create Neo4j client to check cluster status
@@ -1367,7 +1367,7 @@ type QueryMonitor struct {
 }
 
 // ReconcileMonitoring sets up query monitoring for the cluster
-func (qm *QueryMonitor) ReconcileMonitoring(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (qm *QueryMonitor) ReconcileMonitoring(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Setting up query monitoring", "cluster", cluster.Name)
 
@@ -1388,7 +1388,7 @@ func (qm *QueryMonitor) ReconcileMonitoring(ctx context.Context, cluster *neo4jv
 }
 
 // setupMetricsCollection sets up metrics collection for the cluster
-func (qm *QueryMonitor) setupMetricsCollection(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (qm *QueryMonitor) setupMetricsCollection(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Setting up metrics collection", "cluster", cluster.Name)
 
@@ -1441,7 +1441,7 @@ func (qm *QueryMonitor) setupMetricsCollection(ctx context.Context, cluster *neo
 }
 
 // setupAlertingRules sets up alerting rules for query monitoring
-func (qm *QueryMonitor) setupAlertingRules(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (qm *QueryMonitor) setupAlertingRules(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Setting up alerting rules", "cluster", cluster.Name)
 
@@ -1518,11 +1518,11 @@ func (qm *QueryMonitor) setupAlertingRules(ctx context.Context, cluster *neo4jv1
 // CollectDiagnostics runs SHOW SERVERS and SHOW DATABASES against the cluster
 // and writes the results into status.diagnostics and status.conditions.
 // Non-blocking: all errors are surfaced in status but do not fail the reconciliation loop.
-func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, neo4jClient *neo4jclient.Client) error {
+func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, neo4jClient *neo4jclient.Client) error {
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("Collecting cluster diagnostics", "cluster", cluster.Name)
 
-	diagnostics := &neo4jv1alpha1.ClusterDiagnosticsStatus{}
+	diagnostics := &neo4jv1beta1.ClusterDiagnosticsStatus{}
 
 	// Collect server list
 	servers, serverErr := neo4jClient.GetServerList(ctx)
@@ -1531,7 +1531,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 		diagnostics.CollectionError = fmt.Sprintf("SHOW SERVERS failed: %v", serverErr)
 	} else {
 		for _, s := range servers {
-			diagnostics.Servers = append(diagnostics.Servers, neo4jv1alpha1.ServerDiagnosticInfo{
+			diagnostics.Servers = append(diagnostics.Servers, neo4jv1beta1.ServerDiagnosticInfo{
 				Name:             s.Name,
 				Address:          s.Address,
 				State:            s.State,
@@ -1564,7 +1564,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 		}
 	} else {
 		for _, d := range databases {
-			diagnostics.Databases = append(diagnostics.Databases, neo4jv1alpha1.DatabaseDiagnosticInfo{
+			diagnostics.Databases = append(diagnostics.Databases, neo4jv1beta1.DatabaseDiagnosticInfo{
 				Name:            d.Name,
 				Status:          d.Status,
 				RequestedStatus: d.RequestedStatus,
@@ -1578,7 +1578,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 	diagnostics.LastCollected = &now
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		latest := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		if err := qm.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
 			return err
 		}
@@ -1592,7 +1592,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 }
 
 // updateServersCondition sets the ServersHealthy condition from SHOW SERVERS results.
-func (qm *QueryMonitor) updateServersCondition(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, servers []neo4jclient.ServerInfo, collectErr error) {
+func (qm *QueryMonitor) updateServersCondition(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, servers []neo4jclient.ServerInfo, collectErr error) {
 	if collectErr != nil {
 		SetNamedCondition(&cluster.Status.Conditions, ConditionTypeServersHealthy,
 			cluster.Generation, metav1.ConditionUnknown,
@@ -1628,7 +1628,7 @@ func (qm *QueryMonitor) updateServersCondition(cluster *neo4jv1alpha1.Neo4jEnter
 }
 
 // updateDatabasesCondition sets the DatabasesHealthy condition from SHOW DATABASES results.
-func (qm *QueryMonitor) updateDatabasesCondition(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, databases []neo4jclient.DatabaseInfo, collectErr error) {
+func (qm *QueryMonitor) updateDatabasesCondition(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, databases []neo4jclient.DatabaseInfo, collectErr error) {
 	if collectErr != nil {
 		SetNamedCondition(&cluster.Status.Conditions, ConditionTypeDatabasesHealthy,
 			cluster.Generation, metav1.ConditionUnknown,
@@ -1669,7 +1669,7 @@ func (qm *QueryMonitor) updateDatabasesCondition(cluster *neo4jv1alpha1.Neo4jEnt
 }
 
 // validatePropertyShardingConfiguration validates property sharding settings
-func (r *Neo4jEnterpriseClusterReconciler) validatePropertyShardingConfiguration(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jEnterpriseClusterReconciler) validatePropertyShardingConfiguration(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 
 	// Validate Neo4j version supports property sharding (2025.12+)
@@ -1748,12 +1748,12 @@ func validatePropertyShardingVersion(imageTag string) error {
 }
 
 // updatePropertyShardingStatus updates the property sharding ready status
-func (r *Neo4jEnterpriseClusterReconciler) updatePropertyShardingStatus(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, ready bool) error {
+func (r *Neo4jEnterpriseClusterReconciler) updatePropertyShardingStatus(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ready bool) error {
 	logger := log.FromContext(ctx)
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Get latest version
-		latest := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
 			return err
 		}
@@ -1772,7 +1772,7 @@ func (r *Neo4jEnterpriseClusterReconciler) updatePropertyShardingStatus(ctx cont
 }
 
 // reconcileRoute ensures an OpenShift Route exists when requested
-func (r *Neo4jEnterpriseClusterReconciler) reconcileRoute(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jEnterpriseClusterReconciler) reconcileRoute(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 
 	route := resources.BuildRouteForEnterprise(cluster)
@@ -1807,7 +1807,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRoute(ctx context.Context, c
 	return nil
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) reconcileMCP(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jEnterpriseClusterReconciler) reconcileMCP(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	if cluster.Spec.MCP == nil || !cluster.Spec.MCP.Enabled {
 		return nil
 	}
@@ -1838,7 +1838,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMCP(ctx context.Context, clu
 	return nil
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) reconcileMCPRoute(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jEnterpriseClusterReconciler) reconcileMCPRoute(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 
 	route := resources.BuildMCPRouteForCluster(cluster)
@@ -1876,12 +1876,12 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMCPRoute(ctx context.Context
 	return nil
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) warnIfMCPMissingAPOC(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) {
+func (r *Neo4jEnterpriseClusterReconciler) warnIfMCPMissingAPOC(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
 	if cluster.Spec.MCP == nil || !cluster.Spec.MCP.Enabled || r.Recorder == nil {
 		return
 	}
 
-	plugins := &neo4jv1alpha1.Neo4jPluginList{}
+	plugins := &neo4jv1beta1.Neo4jPluginList{}
 	if err := r.List(ctx, plugins, client.InNamespace(cluster.Namespace)); err != nil {
 		log.FromContext(ctx).V(1).Info("Unable to list plugins for MCP APOC check", "error", err)
 		return
@@ -1918,7 +1918,7 @@ func isAPOCPluginName(name string) bool {
 //
 //	Reads the Aura token from the referenced Kubernetes Secret and calls
 //	CALL fleetManagement.registerToken($token). Registration is idempotent.
-func (r *Neo4jEnterpriseClusterReconciler) reconcileAuraFleetManagement(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jEnterpriseClusterReconciler) reconcileAuraFleetManagement(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 	spec := cluster.Spec.AuraFleetManagement
 
@@ -2054,9 +2054,9 @@ func (r *Neo4jEnterpriseClusterReconciler) mergeFleetManagementPlugin(ctx contex
 	})
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) setFleetManagementStatus(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster, registered bool, message string) error {
+func (r *Neo4jEnterpriseClusterReconciler) setFleetManagementStatus(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, registered bool, message string) error {
 	now := metav1.Now()
-	status := &neo4jv1alpha1.AuraFleetManagementStatus{
+	status := &neo4jv1beta1.AuraFleetManagementStatus{
 		Registered: registered,
 		Message:    message,
 	}
@@ -2070,7 +2070,7 @@ func (r *Neo4jEnterpriseClusterReconciler) setFleetManagementStatus(ctx context.
 // SetupWithManager sets up the controller with the Manager.
 func (r *Neo4jEnterpriseClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&neo4jv1alpha1.Neo4jEnterpriseCluster{}).
+		For(&neo4jv1beta1.Neo4jEnterpriseCluster{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
@@ -2093,7 +2093,7 @@ func (r *Neo4jEnterpriseClusterReconciler) SetupWithManager(mgr ctrl.Manager) er
 	if _, err := mgr.GetRESTMapper().RESTMapping(routeGVK.GroupKind(), routeGVK.Version); err == nil {
 		routeObj := &unstructured.Unstructured{}
 		routeObj.SetGroupVersionKind(routeGVK)
-		routeHandler := handler.TypedEnqueueRequestForOwner[*unstructured.Unstructured](mgr.GetScheme(), mgr.GetRESTMapper(), &neo4jv1alpha1.Neo4jEnterpriseCluster{}, handler.OnlyControllerOwner())
+		routeHandler := handler.TypedEnqueueRequestForOwner[*unstructured.Unstructured](mgr.GetScheme(), mgr.GetRESTMapper(), &neo4jv1beta1.Neo4jEnterpriseCluster{}, handler.OnlyControllerOwner())
 		builder = builder.WatchesRawSource(source.Kind(mgr.GetCache(), routeObj, routeHandler))
 	}
 

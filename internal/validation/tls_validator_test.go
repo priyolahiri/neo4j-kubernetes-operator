@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestNewTLSValidator(t *testing.T) {
@@ -17,31 +17,31 @@ func TestNewTLSValidator(t *testing.T) {
 func TestTLSValidator_Validate(t *testing.T) {
 	tests := []struct {
 		name       string
-		cluster    *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster    *neo4jv1beta1.Neo4jEnterpriseCluster
 		wantErrors bool
 	}{
 		{
 			name: "no TLS configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{},
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{},
 			},
 			wantErrors: false,
 		},
 		{
 			name: "valid cert-manager TLS configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name: "ca-cluster-issuer",
 							Kind: "ClusterIssuer",
 						},
@@ -55,13 +55,13 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid disabled TLS configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "disabled",
 					},
 				},
@@ -70,13 +70,13 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid TLS mode",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "invalid-mode",
 					},
 				},
@@ -85,15 +85,15 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "cert-manager mode missing issuer name",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Kind: "ClusterIssuer",
 						},
 					},
@@ -103,15 +103,15 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "cert-manager mode third-party issuer kind is accepted",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name:  "aws-pca-issuer",
 							Kind:  "AWSPCAClusterIssuer",
 							Group: "awspca.cert-manager.io",
@@ -123,15 +123,15 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "cert-manager mode invalid duration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name: "ca-cluster-issuer",
 							Kind: "ClusterIssuer",
 						},
@@ -143,15 +143,15 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "cert-manager mode invalid renewBefore",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name: "ca-cluster-issuer",
 							Kind: "ClusterIssuer",
 						},
@@ -163,15 +163,15 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "cert-manager mode invalid usage",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name: "ca-cluster-issuer",
 							Kind: "ClusterIssuer",
 						},
@@ -183,31 +183,31 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid external secrets TLS configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						ExternalSecrets: &neo4jv1alpha1.ExternalSecretsConfig{
+						ExternalSecrets: &neo4jv1beta1.ExternalSecretsConfig{
 							Enabled: true,
-							SecretStoreRef: &neo4jv1alpha1.SecretStoreRef{
+							SecretStoreRef: &neo4jv1beta1.SecretStoreRef{
 								Name: "aws-secret-store",
 								Kind: "SecretStore",
 							},
 							RefreshInterval: "15m",
-							Data: []neo4jv1alpha1.ExternalSecretData{
+							Data: []neo4jv1beta1.ExternalSecretData{
 								{
 									SecretKey: "tls.crt",
-									RemoteRef: &neo4jv1alpha1.ExternalSecretRemoteRef{
+									RemoteRef: &neo4jv1beta1.ExternalSecretRemoteRef{
 										Key: "neo4j-tls-cert",
 									},
 								},
 								{
 									SecretKey: "tls.key",
-									RemoteRef: &neo4jv1alpha1.ExternalSecretRemoteRef{
+									RemoteRef: &neo4jv1beta1.ExternalSecretRemoteRef{
 										Key: "neo4j-tls-key",
 									},
 								},
@@ -220,15 +220,15 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "external secrets enabled but missing secret store ref",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						ExternalSecrets: &neo4jv1alpha1.ExternalSecretsConfig{
+						ExternalSecrets: &neo4jv1beta1.ExternalSecretsConfig{
 							Enabled: true,
 						},
 					},
@@ -238,17 +238,17 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "external secrets missing secret store name",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						ExternalSecrets: &neo4jv1alpha1.ExternalSecretsConfig{
+						ExternalSecrets: &neo4jv1beta1.ExternalSecretsConfig{
 							Enabled: true,
-							SecretStoreRef: &neo4jv1alpha1.SecretStoreRef{
+							SecretStoreRef: &neo4jv1beta1.SecretStoreRef{
 								Kind: "SecretStore",
 							},
 						},
@@ -259,17 +259,17 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "external secrets invalid secret store kind",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						ExternalSecrets: &neo4jv1alpha1.ExternalSecretsConfig{
+						ExternalSecrets: &neo4jv1beta1.ExternalSecretsConfig{
 							Enabled: true,
-							SecretStoreRef: &neo4jv1alpha1.SecretStoreRef{
+							SecretStoreRef: &neo4jv1beta1.SecretStoreRef{
 								Name: "aws-secret-store",
 								Kind: "InvalidKind",
 							},
@@ -281,17 +281,17 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "external secrets invalid refresh interval",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						ExternalSecrets: &neo4jv1alpha1.ExternalSecretsConfig{
+						ExternalSecrets: &neo4jv1beta1.ExternalSecretsConfig{
 							Enabled: true,
-							SecretStoreRef: &neo4jv1alpha1.SecretStoreRef{
+							SecretStoreRef: &neo4jv1beta1.SecretStoreRef{
 								Name: "aws-secret-store",
 								Kind: "SecretStore",
 							},
@@ -304,17 +304,17 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "external secrets missing data mappings",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						ExternalSecrets: &neo4jv1alpha1.ExternalSecretsConfig{
+						ExternalSecrets: &neo4jv1beta1.ExternalSecretsConfig{
 							Enabled: true,
-							SecretStoreRef: &neo4jv1alpha1.SecretStoreRef{
+							SecretStoreRef: &neo4jv1beta1.SecretStoreRef{
 								Name: "aws-secret-store",
 								Kind: "SecretStore",
 							},
@@ -326,23 +326,23 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "external secrets missing secret key in data mapping",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						ExternalSecrets: &neo4jv1alpha1.ExternalSecretsConfig{
+						ExternalSecrets: &neo4jv1beta1.ExternalSecretsConfig{
 							Enabled: true,
-							SecretStoreRef: &neo4jv1alpha1.SecretStoreRef{
+							SecretStoreRef: &neo4jv1beta1.SecretStoreRef{
 								Name: "aws-secret-store",
 								Kind: "SecretStore",
 							},
-							Data: []neo4jv1alpha1.ExternalSecretData{
+							Data: []neo4jv1beta1.ExternalSecretData{
 								{
-									RemoteRef: &neo4jv1alpha1.ExternalSecretRemoteRef{
+									RemoteRef: &neo4jv1beta1.ExternalSecretRemoteRef{
 										Key: "neo4j-tls-cert",
 									},
 								},
@@ -355,24 +355,24 @@ func TestTLSValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "external secrets missing remote ref key",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						ExternalSecrets: &neo4jv1alpha1.ExternalSecretsConfig{
+						ExternalSecrets: &neo4jv1beta1.ExternalSecretsConfig{
 							Enabled: true,
-							SecretStoreRef: &neo4jv1alpha1.SecretStoreRef{
+							SecretStoreRef: &neo4jv1beta1.SecretStoreRef{
 								Name: "aws-secret-store",
 								Kind: "SecretStore",
 							},
-							Data: []neo4jv1alpha1.ExternalSecretData{
+							Data: []neo4jv1beta1.ExternalSecretData{
 								{
 									SecretKey: "tls.crt",
-									RemoteRef: &neo4jv1alpha1.ExternalSecretRemoteRef{},
+									RemoteRef: &neo4jv1beta1.ExternalSecretRemoteRef{},
 								},
 							},
 						},
@@ -420,15 +420,15 @@ func TestTLSValidator_ValidUsages(t *testing.T) {
 
 	for _, usage := range validUsages {
 		t.Run("valid usage: "+usage, func(t *testing.T) {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name: "ca-cluster-issuer",
 							Kind: "ClusterIssuer",
 						},
@@ -463,15 +463,15 @@ func TestTLSValidator_ValidIssuerKinds(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run("valid issuer kind: "+tc.kind, func(t *testing.T) {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						IssuerRef: &neo4jv1alpha1.IssuerRef{
+						IssuerRef: &neo4jv1beta1.IssuerRef{
 							Name:  "my-issuer",
 							Kind:  tc.kind,
 							Group: tc.group,
@@ -493,24 +493,24 @@ func TestTLSValidator_ValidSecretStoreKinds(t *testing.T) {
 
 	for _, kind := range validKinds {
 		t.Run("valid secret store kind: "+kind, func(t *testing.T) {
-			cluster := &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					TLS: &neo4jv1alpha1.TLSSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					TLS: &neo4jv1beta1.TLSSpec{
 						Mode: "cert-manager",
-						ExternalSecrets: &neo4jv1alpha1.ExternalSecretsConfig{
+						ExternalSecrets: &neo4jv1beta1.ExternalSecretsConfig{
 							Enabled: true,
-							SecretStoreRef: &neo4jv1alpha1.SecretStoreRef{
+							SecretStoreRef: &neo4jv1beta1.SecretStoreRef{
 								Name: "test-secret-store",
 								Kind: kind,
 							},
-							Data: []neo4jv1alpha1.ExternalSecretData{
+							Data: []neo4jv1beta1.ExternalSecretData{
 								{
 									SecretKey: "tls.crt",
-									RemoteRef: &neo4jv1alpha1.ExternalSecretRemoteRef{
+									RemoteRef: &neo4jv1beta1.ExternalSecretRemoteRef{
 										Key: "neo4j-tls-cert",
 									},
 								},

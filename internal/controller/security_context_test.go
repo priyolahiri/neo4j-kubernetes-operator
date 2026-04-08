@@ -6,11 +6,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestStandaloneSecurityContextDefaults(t *testing.T) {
-	standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{}
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 
 	podSC := podSecurityContextForStandalone(standalone)
 	if podSC == nil || podSC.RunAsUser == nil || *podSC.RunAsUser != 7474 {
@@ -34,9 +34,9 @@ func TestStandaloneSecurityContextOverrides(t *testing.T) {
 		RunAsUser: ptr.To[int64](1000),
 	}
 
-	standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{
-		Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-			SecurityContext: &neo4jv1alpha1.SecurityContextSpec{
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+		Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+			SecurityContext: &neo4jv1beta1.SecurityContextSpec{
 				PodSecurityContext:       customPodSC,
 				ContainerSecurityContext: customContainerSC,
 			},

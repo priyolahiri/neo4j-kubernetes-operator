@@ -190,7 +190,7 @@ kubectl wait --for=condition=Ready neo4jenterprisecluster/minimal-cluster --time
 ```bash
 # Create a database on your cluster
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: my-cluster-database
@@ -210,7 +210,7 @@ EOF
 ```bash
 # Create a database on your standalone instance
 kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: my-standalone-database
@@ -257,7 +257,7 @@ kubectl create secret generic neo4j-admin-secret \
 2. **Create a property sharding enabled cluster:**
 
 ```yaml
-apiVersion: neo4j.com/v1alpha1
+apiVersion: neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: sharding-cluster
@@ -290,7 +290,7 @@ spec:
 3. **Create a sharded database:**
 
 ```yaml
-apiVersion: neo4j.com/v1alpha1
+apiVersion: neo4j.com/v1beta1
 kind: Neo4jShardedDatabase
 metadata:
   name: my-sharded-db
@@ -566,6 +566,21 @@ kubectl logs -l app.kubernetes.io/name=neo4j-operator
 Note: "Compliance-ready logging and auditing" means the operator exposes Neo4j logging/audit controls via `spec.config` and emits Kubernetes Events for key actions; you still need to enable the desired Neo4j log settings and ship/retain logs per your compliance requirements.
 
 ## 🎯 Recent Improvements
+
+### v1.7.0-alpha: API Version Bump to v1beta1 (Breaking Changes)
+
+> **⚠️ Upgrading from v1.6.0-alpha or earlier requires updating all manifests.** See the [Migration Guide](docs/user_guide/migration_guide.md#upgrading-to-v170-alpha-api-version-bump-to-v1beta1) for details.
+
+**Breaking changes:**
+- **API version**: All CRDs changed from `neo4j.neo4j.com/v1alpha1` to `neo4j.neo4j.com/v1beta1`. Every manifest must be updated.
+- **Bolt TLS enforcement**: When TLS is enabled, `server.bolt.tls_level` is now `REQUIRED` (was `OPTIONAL`). Plain `bolt://` connections are rejected on TLS-enabled clusters and standalones — clients must use `bolt+s://` or `bolt+ssc://`.
+- **Deprecated config key**: `dbms.logs.query.enabled` is deprecated and will produce a validation warning. Use `db.logs.query.enabled` instead.
+
+**Other improvements in this release:**
+- Standalone deployments now have readiness, liveness, and startup probes (previously had none — pods were marked Ready before Neo4j was actually accepting connections)
+- Standalone status endpoints correctly report `bolt+s://` when TLS is enabled (was always `bolt://`)
+- Fixed duplicate `server.bolt.*` config entries in standalone ConfigMap when TLS enabled (caused CrashLoopBackOff)
+- Demo script overhauled: TLS on both standalone and cluster, cleanup flags, confirmation for destructive steps
 
 ### v1.6.0-alpha: API Stabilization (Breaking Changes)
 

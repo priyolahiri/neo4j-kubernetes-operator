@@ -12,7 +12,7 @@ stringData:
   password: changeme123!  # CHANGE THIS IN PRODUCTION
 
 ---
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: loadbalancer-standalone
@@ -89,7 +89,7 @@ spec:
 
 ---
 # Optional: Install APOC plugin using Neo4jPlugin CRD
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
   name: loadbalancer-standalone-apoc

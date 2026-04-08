@@ -9,7 +9,7 @@
 # SCENARIO 1: Pre-maintenance Backup
 ---
 # Take a manual backup before maintenance window
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: pre-maintenance-backup
@@ -45,7 +45,7 @@ spec:
 # SCENARIO 2: Full Database Restore
 ---
 # Restore entire cluster from backup
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: full-cluster-restore
@@ -83,7 +83,7 @@ spec:
 # SCENARIO 3: Point-in-Time Recovery
 ---
 # Restore to specific point in time
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: pitr-restore
@@ -114,7 +114,7 @@ spec:
 # SCENARIO 4: Cross-Region Disaster Recovery
 ---
 # Source region backup configuration
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: cross-region-backup
@@ -145,7 +145,7 @@ spec:
       kmsKeyId: "arn:aws:kms:us-east-1:123456789:key/xxxxx"
 ---
 # Target region restore configuration
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: cross-region-restore
@@ -184,7 +184,7 @@ spec:
 # SCENARIO 5: Selective Database Restore
 ---
 # Restore only specific database
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: selective-restore
@@ -246,7 +246,7 @@ spec:
 
                   # Create test restore
                   cat <<EOF | kubectl apply -f -
-                  apiVersion: neo4j.neo4j.com/v1alpha1
+                  apiVersion: neo4j.neo4j.com/v1beta1
                   kind: Neo4jRestore
                   metadata:
                     name: validation-restore-$(date +%s)
@@ -294,7 +294,7 @@ data:
 
       # Create restore to DR cluster
       kubectl apply -f - <<EOF
-      apiVersion: neo4j.neo4j.com/v1alpha1
+      apiVersion: neo4j.neo4j.com/v1beta1
       kind: Neo4jRestore
       metadata:
         name: failover-restore-$(date +%s)

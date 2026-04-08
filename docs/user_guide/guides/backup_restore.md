@@ -226,7 +226,7 @@ kubectl create secret generic minio-backup-credentials \
 #### Step 2: Create the backup resource
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: minio-backup
@@ -387,7 +387,7 @@ The Azure AD application / managed identity identified by `AZURE_CLIENT_ID` must
 The simplest backup option — no cloud credentials needed:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: simple-backup
@@ -413,7 +413,7 @@ spec:
 #### Cluster Backup to S3 with Explicit Credentials
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: cluster-backup-s3
@@ -442,7 +442,7 @@ spec:
 #### Cluster Backup to S3 with IRSA
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: cluster-backup-s3-irsa
@@ -474,7 +474,7 @@ spec:
 #### Cluster Backup to GCS with Explicit Credentials
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: cluster-backup-gcs
@@ -501,7 +501,7 @@ spec:
 #### Cluster Backup to Azure with Explicit Credentials
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: cluster-backup-azure
@@ -529,7 +529,7 @@ To back up a specific database rather than the whole cluster, use `kind: Databas
 #### Database Backup to GCS
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: database-backup-gcs
@@ -558,7 +558,7 @@ spec:
 #### Database Backup to S3
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: database-backup-s3
@@ -585,7 +585,7 @@ spec:
 Differential backups capture only the pages changed since the last full backup, making them faster and smaller:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: differential-backup
@@ -638,7 +638,7 @@ options:
 #### Daily Scheduled Backup to S3
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: daily-backup
@@ -675,7 +675,7 @@ spec:
 #### Weekly Backup with Long Retention
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: weekly-backup
@@ -714,7 +714,7 @@ spec:
 Temporarily pause a scheduled backup without deleting the resource:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
   name: maintenance-backup
@@ -753,7 +753,7 @@ When you create a `Neo4jRestore` resource:
 #### Restore from a Backup Reference
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: restore-from-backup
@@ -777,7 +777,7 @@ After the Job completes, the operator automatically runs `START DATABASE neo4j` 
 #### Restore from a Storage Location
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: restore-from-s3
@@ -808,7 +808,7 @@ spec:
 `clusterRef` can reference a `Neo4jEnterpriseStandalone` as well as a `Neo4jEnterpriseCluster`:
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: restore-to-standalone
@@ -833,7 +833,7 @@ PITR restores your database to a specific point in time using a base backup comb
 #### PITR Configuration
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: pitr-restore
@@ -878,7 +878,7 @@ spec:
 #### PITR with Storage-Based Base Backup
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: pitr-storage-restore
@@ -922,7 +922,7 @@ Pre and post-restore hooks execute custom operations at key points in the restor
 #### Restore with Cypher Hooks
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: restore-with-hooks
@@ -951,7 +951,7 @@ Note: The operator still automatically runs `CREATE DATABASE` or `START DATABASE
 #### Restore with Job Hooks
 
 ```yaml
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
   name: restore-with-job-hooks

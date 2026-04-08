@@ -17,14 +17,14 @@ limitations under the License.
 package controller
 
 import (
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // standaloneAsCluster converts a Neo4jEnterpriseStandalone into a synthetic
 // Neo4jEnterpriseCluster for use in backup/restore command generation (image/auth lookup only).
 // The returned cluster is NOT reconciled — only use it for field access.
-func standaloneAsCluster(s *neo4jv1alpha1.Neo4jEnterpriseStandalone) *neo4jv1alpha1.Neo4jEnterpriseCluster {
-	c := &neo4jv1alpha1.Neo4jEnterpriseCluster{}
+func standaloneAsCluster(s *neo4jv1beta1.Neo4jEnterpriseStandalone) *neo4jv1beta1.Neo4jEnterpriseCluster {
+	c := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	c.Name = s.Name
 	c.Namespace = s.Namespace
 	c.Spec.Image = s.Spec.Image

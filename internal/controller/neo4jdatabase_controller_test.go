@@ -29,7 +29,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/controller"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/validation"
 )
@@ -40,12 +40,12 @@ var _ = Describe("Neo4jDatabase Controller", func() {
 			ctx := context.Background()
 
 			By("Creating a database with non-existent cluster reference")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-orphan-db",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: "non-existent-cluster",
 					Name:       "orphandb",
 				},
@@ -73,31 +73,31 @@ var _ = Describe("Neo4jDatabase Controller", func() {
 	})
 
 	Context("When reconciling a database with seed URI", func() {
-		var testCluster *neo4jv1alpha1.Neo4jEnterpriseCluster
+		var testCluster *neo4jv1beta1.Neo4jEnterpriseCluster
 		var testSecret *corev1.Secret
 
 		BeforeEach(func() {
 			// Create a test cluster with unique name
 			testClusterName := fmt.Sprintf("test-cluster-%d", time.Now().UnixNano())
-			testCluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			testCluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testClusterName,
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Image: neo4jv1alpha1.ImageSpec{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Image: neo4jv1beta1.ImageSpec{
 						Repo: "neo4j",
 						Tag:  "5.26-enterprise",
 					},
-					Topology: neo4jv1alpha1.TopologyConfiguration{
+					Topology: neo4jv1beta1.TopologyConfiguration{
 						Servers: 3,
 					},
-					Storage: neo4jv1alpha1.StorageSpec{
+					Storage: neo4jv1beta1.StorageSpec{
 						Size:      "1Gi",
 						ClassName: "standard",
 					},
 				},
-				Status: neo4jv1alpha1.Neo4jEnterpriseClusterStatus{
+				Status: neo4jv1beta1.Neo4jEnterpriseClusterStatus{
 					Conditions: []metav1.Condition{
 						{
 							Type:   "Ready",
@@ -134,25 +134,25 @@ var _ = Describe("Neo4jDatabase Controller", func() {
 			ctx := context.Background()
 
 			By("Creating a database with valid seed URI")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-seed-db",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "seeddb",
 					SeedURI:    "s3://my-backups/database.backup",
-					SeedCredentials: &neo4jv1alpha1.SeedCredentials{
+					SeedCredentials: &neo4jv1beta1.SeedCredentials{
 						SecretRef: testSecret.Name,
 					},
-					SeedConfig: &neo4jv1alpha1.SeedConfiguration{
+					SeedConfig: &neo4jv1beta1.SeedConfiguration{
 						Config: map[string]string{
 							"compression": "gzip",
 							"validation":  "strict",
 						},
 					},
-					Topology: &neo4jv1alpha1.DatabaseTopology{
+					Topology: &neo4jv1beta1.DatabaseTopology{
 						Primaries:   1,
 						Secondaries: 1,
 					},
@@ -180,16 +180,16 @@ var _ = Describe("Neo4jDatabase Controller", func() {
 			ctx := context.Background()
 
 			By("Creating a database with both seed URI and initial data")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-conflict-db",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "conflictdb",
 					SeedURI:    "s3://my-backups/database.backup",
-					InitialData: &neo4jv1alpha1.InitialDataSpec{
+					InitialData: &neo4jv1beta1.InitialDataSpec{
 						Source: "cypher",
 						CypherStatements: []string{
 							"CREATE (:Test)",
@@ -226,12 +226,12 @@ var _ = Describe("Neo4jDatabase Controller", func() {
 			ctx := context.Background()
 
 			By("Creating a database with invalid seed URI")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-invalid-uri-db",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "invaliddb",
 					SeedURI:    "invalid-uri-format",
@@ -255,16 +255,16 @@ var _ = Describe("Neo4jDatabase Controller", func() {
 			ctx := context.Background()
 
 			By("Creating a database with missing credentials secret")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-missing-secret-db",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "missingsecretdb",
 					SeedURI:    "s3://my-backups/database.backup",
-					SeedCredentials: &neo4jv1alpha1.SeedCredentials{
+					SeedCredentials: &neo4jv1beta1.SeedCredentials{
 						SecretRef: "nonexistent-secret",
 					},
 				},
@@ -287,16 +287,16 @@ var _ = Describe("Neo4jDatabase Controller", func() {
 			ctx := context.Background()
 
 			By("Creating a database with invalid seed configuration")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-invalid-config-db",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "invalidconfigdb",
 					SeedURI:    "s3://my-backups/database.backup",
-					SeedConfig: &neo4jv1alpha1.SeedConfiguration{
+					SeedConfig: &neo4jv1beta1.SeedConfiguration{
 						RestoreUntil: "invalid-timestamp",
 						Config: map[string]string{
 							"compression": "invalid-compression",
@@ -348,12 +348,12 @@ var _ = Describe("Neo4jDatabase Controller", func() {
 			ctx := context.Background()
 
 			By("Creating a database with invalid seed URI format")
-			database := &neo4jv1alpha1.Neo4jDatabase{
+			database := &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-invalid-uri-db",
 					Namespace: "default",
 				},
-				Spec: neo4jv1alpha1.Neo4jDatabaseSpec{
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
 					ClusterRef: testCluster.Name,
 					Name:       "invaliduridb",
 					SeedURI:    "invalid-uri-format", // No scheme, no host

@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestGenerateConnectionExamples(t *testing.T) {
@@ -33,7 +33,7 @@ func TestGenerateConnectionExamples(t *testing.T) {
 		serviceType corev1.ServiceType
 		externalIP  string
 		hasTLS      bool
-		checkFunc   func(t *testing.T, examples *neo4jv1alpha1.ConnectionExamples)
+		checkFunc   func(t *testing.T, examples *neo4jv1beta1.ConnectionExamples)
 	}{
 		{
 			name:        "ClusterIP service without TLS",
@@ -42,7 +42,7 @@ func TestGenerateConnectionExamples(t *testing.T) {
 			serviceType: corev1.ServiceTypeClusterIP,
 			externalIP:  "",
 			hasTLS:      false,
-			checkFunc: func(t *testing.T, examples *neo4jv1alpha1.ConnectionExamples) {
+			checkFunc: func(t *testing.T, examples *neo4jv1beta1.ConnectionExamples) {
 				assert.Contains(t, examples.PortForward, "kubectl port-forward")
 				assert.Contains(t, examples.BrowserURL, "http://localhost:7474")
 				assert.Contains(t, examples.BoltURI, "bolt://localhost:7687")
@@ -56,7 +56,7 @@ func TestGenerateConnectionExamples(t *testing.T) {
 			serviceType: corev1.ServiceTypeLoadBalancer,
 			externalIP:  "10.20.30.40",
 			hasTLS:      true,
-			checkFunc: func(t *testing.T, examples *neo4jv1alpha1.ConnectionExamples) {
+			checkFunc: func(t *testing.T, examples *neo4jv1beta1.ConnectionExamples) {
 				assert.Contains(t, examples.PortForward, "kubectl port-forward")
 				assert.Contains(t, examples.BrowserURL, "https://10.20.30.40:7473")
 				assert.Contains(t, examples.BoltURI, "bolt+ssc://10.20.30.40:7687")
@@ -70,7 +70,7 @@ func TestGenerateConnectionExamples(t *testing.T) {
 			serviceType: corev1.ServiceTypeLoadBalancer,
 			externalIP:  "<pending>",
 			hasTLS:      false,
-			checkFunc: func(t *testing.T, examples *neo4jv1alpha1.ConnectionExamples) {
+			checkFunc: func(t *testing.T, examples *neo4jv1beta1.ConnectionExamples) {
 				assert.Contains(t, examples.PortForward, "kubectl port-forward -n production")
 				assert.Contains(t, examples.BrowserURL, "http://<external-ip>:7474")
 				assert.Contains(t, examples.BoltURI, "bolt://<external-ip>:7687")
@@ -83,7 +83,7 @@ func TestGenerateConnectionExamples(t *testing.T) {
 			serviceType: corev1.ServiceTypeNodePort,
 			externalIP:  "",
 			hasTLS:      true,
-			checkFunc: func(t *testing.T, examples *neo4jv1alpha1.ConnectionExamples) {
+			checkFunc: func(t *testing.T, examples *neo4jv1beta1.ConnectionExamples) {
 				assert.Contains(t, examples.BrowserURL, "https://<node-ip>:<node-port>:7473")
 				assert.Contains(t, examples.BoltURI, "bolt+ssc://<node-ip>:<bolt-node-port>:7687")
 			},

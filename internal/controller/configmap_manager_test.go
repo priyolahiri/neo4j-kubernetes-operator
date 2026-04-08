@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // ---------------------------------------------------------------------------
@@ -37,19 +37,19 @@ import (
 
 func newTestScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
-	_ = neo4jv1alpha1.AddToScheme(s)
+	_ = neo4jv1beta1.AddToScheme(s)
 	_ = appsv1.AddToScheme(s)
 	_ = corev1.AddToScheme(s)
 	return s
 }
 
-func minimalCluster(name, ns string) *neo4jv1alpha1.Neo4jEnterpriseCluster {
-	return &neo4jv1alpha1.Neo4jEnterpriseCluster{
+func minimalCluster(name, ns string) *neo4jv1beta1.Neo4jEnterpriseCluster {
+	return &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-		Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-			Image:    neo4jv1alpha1.ImageSpec{Repo: "neo4j", Tag: "5.26.0-enterprise"},
-			Topology: neo4jv1alpha1.TopologyConfiguration{Servers: 2},
-			Storage:  neo4jv1alpha1.StorageSpec{ClassName: "standard", Size: "1Gi"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.0-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 2},
+			Storage:  neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "1Gi"},
 		},
 	}
 }

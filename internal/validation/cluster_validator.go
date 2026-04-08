@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/resources"
 )
 
@@ -66,7 +66,7 @@ func NewClusterValidator(client client.Client) *ClusterValidator {
 }
 
 // ValidateCreate validates a Neo4jEnterpriseCluster for creation
-func (v *ClusterValidator) ValidateCreate(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (v *ClusterValidator) ValidateCreate(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	allErrs := v.validateCluster(ctx, cluster)
 	if len(allErrs) > 0 {
 		return fmt.Errorf("validation failed: %s", allErrs.ToAggregate().Error())
@@ -75,7 +75,7 @@ func (v *ClusterValidator) ValidateCreate(ctx context.Context, cluster *neo4jv1a
 }
 
 // ValidateUpdate validates a Neo4jEnterpriseCluster for update
-func (v *ClusterValidator) ValidateUpdate(ctx context.Context, oldCluster, newCluster *neo4jv1alpha1.Neo4jEnterpriseCluster) error {
+func (v *ClusterValidator) ValidateUpdate(ctx context.Context, oldCluster, newCluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	allErrs := v.validateCluster(ctx, newCluster)
 	allErrs = append(allErrs, v.validateClusterUpdate(ctx, oldCluster, newCluster)...)
 
@@ -86,7 +86,7 @@ func (v *ClusterValidator) ValidateUpdate(ctx context.Context, oldCluster, newCl
 }
 
 // ApplyDefaults applies default values to the cluster
-func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) {
+func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
 	// Edition field removed - operator only supports enterprise edition
 
 	// Default image pull policy
@@ -96,7 +96,7 @@ func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1al
 
 	// Default TLS configuration - disable TLS by default for simplicity
 	if cluster.Spec.TLS == nil {
-		cluster.Spec.TLS = &neo4jv1alpha1.TLSSpec{
+		cluster.Spec.TLS = &neo4jv1beta1.TLSSpec{
 			Mode: "disabled",
 		}
 	} else if cluster.Spec.TLS.Mode == "" {
@@ -105,14 +105,14 @@ func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1al
 
 	// Default TLS issuer reference
 	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" && cluster.Spec.TLS.IssuerRef == nil {
-		cluster.Spec.TLS.IssuerRef = &neo4jv1alpha1.IssuerRef{
+		cluster.Spec.TLS.IssuerRef = &neo4jv1beta1.IssuerRef{
 			Kind: "ClusterIssuer",
 		}
 	}
 
 	// Default auth configuration
 	if cluster.Spec.Auth == nil {
-		cluster.Spec.Auth = &neo4jv1alpha1.AuthSpec{
+		cluster.Spec.Auth = &neo4jv1beta1.AuthSpec{
 			AuthenticationProviders: []string{"native"},
 			AuthorizationProviders:  []string{"native"},
 		}
@@ -123,7 +123,7 @@ func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1al
 
 	// Default service configuration
 	if cluster.Spec.Service == nil {
-		cluster.Spec.Service = &neo4jv1alpha1.ServiceSpec{
+		cluster.Spec.Service = &neo4jv1beta1.ServiceSpec{
 			Type: "ClusterIP",
 		}
 	}
@@ -142,7 +142,7 @@ func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1al
 // Generated resources append "-server" (7 chars), and DNS labels max at 63.
 const maxClusterNameLength = 56
 
-func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Preallocate slice with estimated capacity to reduce allocations
@@ -193,7 +193,7 @@ func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1
 }
 
 // validateClusterUpdate performs validation specific to cluster updates
-func (v *ClusterValidator) validateClusterUpdate(ctx context.Context, oldCluster, newCluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *ClusterValidator) validateClusterUpdate(ctx context.Context, oldCluster, newCluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Validate scaling resource requirements
@@ -228,12 +228,12 @@ func (v *ClusterValidator) validateClusterUpdate(ctx context.Context, oldCluster
 }
 
 // isScalingUp checks if the cluster is scaling up (increasing server count)
-func (v *ClusterValidator) isScalingUp(oldCluster, newCluster *neo4jv1alpha1.Neo4jEnterpriseCluster) bool {
+func (v *ClusterValidator) isScalingUp(oldCluster, newCluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	return newCluster.Spec.Topology.Servers > oldCluster.Spec.Topology.Servers
 }
 
 // ValidateCreateWithWarnings validates a Neo4jEnterpriseCluster for creation and returns warnings
-func (v *ClusterValidator) ValidateCreateWithWarnings(ctx context.Context, cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) ClusterValidationResult {
+func (v *ClusterValidator) ValidateCreateWithWarnings(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) ClusterValidationResult {
 	result := ClusterValidationResult{
 		Errors:   v.validateCluster(ctx, cluster),
 		Warnings: []string{},
@@ -247,7 +247,7 @@ func (v *ClusterValidator) ValidateCreateWithWarnings(ctx context.Context, clust
 }
 
 // ValidateUpdateWithWarnings validates a Neo4jEnterpriseCluster for update and returns warnings
-func (v *ClusterValidator) ValidateUpdateWithWarnings(ctx context.Context, oldCluster, newCluster *neo4jv1alpha1.Neo4jEnterpriseCluster) ClusterValidationResult {
+func (v *ClusterValidator) ValidateUpdateWithWarnings(ctx context.Context, oldCluster, newCluster *neo4jv1beta1.Neo4jEnterpriseCluster) ClusterValidationResult {
 	result := ClusterValidationResult{
 		Errors: v.validateCluster(ctx, newCluster),
 	}
@@ -261,7 +261,7 @@ func (v *ClusterValidator) ValidateUpdateWithWarnings(ctx context.Context, oldCl
 }
 
 // validatePropertySharding validates property sharding configuration and version requirements
-func (v *ClusterValidator) validatePropertySharding(cluster *neo4jv1alpha1.Neo4jEnterpriseCluster) field.ErrorList {
+func (v *ClusterValidator) validatePropertySharding(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Only validate if property sharding is enabled

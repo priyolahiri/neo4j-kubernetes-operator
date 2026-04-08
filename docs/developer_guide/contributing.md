@@ -54,7 +54,7 @@ The operator follows a well-defined architecture. Key areas for contributions:
 - Neo4jEnterpriseStandalone controller for single-node deployments
 - Database, Plugin, Backup, and Restore controllers
 
-**Custom Resources** (`api/v1alpha1/`):
+**Custom Resources** (`api/v1beta1/`):
 - CRD type definitions for all Neo4j resources
 - Validation tags and documentation
 
@@ -328,16 +328,16 @@ When reporting bugs, include:
 
 When adding new Custom Resource Definitions:
 
-1. **Define Types** (`api/v1alpha1/`):
+1. **Define Types** (`api/v1beta1/`):
    ```bash
    # Create new CRD type file
-   touch api/v1alpha1/mynewresource_types.go
+   touch api/v1beta1/mynewresource_types.go
    ```
 
 2. **Create Controller** (`internal/controller/`):
    ```bash
    # Generate controller scaffold
-   kubebuilder create api --group neo4j --version v1alpha1 --kind MyNewResource
+   kubebuilder create api --group neo4j --version v1beta1 --kind MyNewResource
    ```
 
 3. **Add Validation** (`internal/validation/`):

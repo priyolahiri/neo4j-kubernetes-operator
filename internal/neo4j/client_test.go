@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/neo4j"
 )
 
@@ -41,7 +41,7 @@ func TestClient(t *testing.T) {
 var _ = Describe("Neo4j Client", func() {
 	var (
 		ctx        context.Context
-		cluster    *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster    *neo4jv1beta1.Neo4jEnterpriseCluster
 		secret     *corev1.Secret
 		fakeClient client.Client
 		scheme     *runtime.Scheme
@@ -51,23 +51,23 @@ var _ = Describe("Neo4j Client", func() {
 		ctx = context.Background()
 		scheme = runtime.NewScheme()
 		Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
-		Expect(neo4jv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(neo4jv1beta1.AddToScheme(scheme)).To(Succeed())
 
 		// Create test cluster
-		cluster = &neo4jv1alpha1.Neo4jEnterpriseCluster{
+		cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-cluster",
 				Namespace: "default",
 			},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-				Image: neo4jv1alpha1.ImageSpec{
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				Image: neo4jv1beta1.ImageSpec{
 					Repo: "neo4j",
 					Tag:  "5.26-enterprise",
 				},
-				Topology: neo4jv1alpha1.TopologyConfiguration{
+				Topology: neo4jv1beta1.TopologyConfiguration{
 					Servers: 5,
 				},
-				Storage: neo4jv1alpha1.StorageSpec{
+				Storage: neo4jv1beta1.StorageSpec{
 					ClassName: "standard",
 					Size:      "10Gi",
 				},

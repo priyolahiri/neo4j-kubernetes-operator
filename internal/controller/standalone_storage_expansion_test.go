@@ -35,13 +35,13 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func newStandaloneTestScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
-	_ = neo4jv1alpha1.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
 	_ = storagev1.AddToScheme(scheme)
 	return scheme
 }
@@ -217,10 +217,10 @@ func TestReconcileStandaloneStorageExpansion(t *testing.T) {
 		pvc := makeStandalonePVC("my-standalone", "default", "ssd", "100Gi", 0, true)
 		r := newStandaloneTestReconciler(scheme, pvc)
 
-		standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+		standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-standalone", Namespace: "default"},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-				Storage: neo4jv1alpha1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+				Storage: neo4jv1beta1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
 			},
 		}
 
@@ -233,10 +233,10 @@ func TestReconcileStandaloneStorageExpansion(t *testing.T) {
 		pvc := makeStandalonePVC("my-standalone", "default", "ssd", "200Gi", 0, true)
 		r := newStandaloneTestReconciler(scheme, pvc)
 
-		standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+		standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-standalone", Namespace: "default"},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-				Storage: neo4jv1alpha1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+				Storage: neo4jv1beta1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
 			},
 		}
 
@@ -259,10 +259,10 @@ func TestReconcileStandaloneStorageExpansion(t *testing.T) {
 		}
 		r := newStandaloneTestReconciler(scheme, pvc, sc, sts)
 
-		standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+		standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-standalone", Namespace: "default"},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-				Storage: neo4jv1alpha1.StorageSpec{ClassName: "ssd", Size: "200Gi"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+				Storage: neo4jv1beta1.StorageSpec{ClassName: "ssd", Size: "200Gi"},
 			},
 		}
 
@@ -286,10 +286,10 @@ func TestReconcileStandaloneStorageExpansion(t *testing.T) {
 	t.Run("no PVCs yet (fresh deployment)", func(t *testing.T) {
 		r := newStandaloneTestReconciler(scheme)
 
-		standalone := &neo4jv1alpha1.Neo4jEnterpriseStandalone{
+		standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
 			ObjectMeta: metav1.ObjectMeta{Name: "new-standalone", Namespace: "default"},
-			Spec: neo4jv1alpha1.Neo4jEnterpriseStandaloneSpec{
-				Storage: neo4jv1alpha1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+				Storage: neo4jv1beta1.StorageSpec{ClassName: "ssd", Size: "100Gi"},
 			},
 		}
 

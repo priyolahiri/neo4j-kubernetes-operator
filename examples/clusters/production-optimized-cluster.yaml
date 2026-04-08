@@ -1,7 +1,7 @@
 # Production-optimized Neo4j Enterprise cluster with transaction memory limits and JVM tuning
 # This configuration addresses critical performance and stability requirements
 
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: production-optimized
@@ -132,7 +132,7 @@ stringData:
 
 ---
 # Example: Create a database with appropriate topology
-apiVersion: neo4j.neo4j.com/v1alpha1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
   name: production-db

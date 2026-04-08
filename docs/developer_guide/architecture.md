@@ -50,7 +50,7 @@ topology:
 
 ## Custom Resource Definitions (CRDs)
 
-The operator defines six core CRDs located in `api/v1alpha1/`:
+The operator defines six core CRDs located in `api/v1beta1/`:
 
 ### Core Deployment CRDs
 

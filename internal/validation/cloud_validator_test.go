@@ -7,7 +7,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	neo4jv1alpha1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1alpha1"
+	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestNewCloudValidator(t *testing.T) {
@@ -18,34 +18,34 @@ func TestNewCloudValidator(t *testing.T) {
 func TestCloudValidator_Validate(t *testing.T) {
 	tests := []struct {
 		name       string
-		cluster    *neo4jv1alpha1.Neo4jEnterpriseCluster
+		cluster    *neo4jv1beta1.Neo4jEnterpriseCluster
 		wantErrors bool
 	}{
 		{
 			name: "no cloud configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{},
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{},
 			},
 			wantErrors: false,
 		},
 		{
 			name: "valid AWS cloud configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Backups: &neo4jv1alpha1.BackupsSpec{
-						Cloud: &neo4jv1alpha1.CloudBlock{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "aws",
-							Identity: &neo4jv1alpha1.CloudIdentity{
+							Identity: &neo4jv1beta1.CloudIdentity{
 								Provider: "aws",
-								AutoCreate: &neo4jv1alpha1.AutoCreateSpec{
+								AutoCreate: &neo4jv1beta1.AutoCreateSpec{
 									Enabled: true,
 									Annotations: map[string]string{
 										"eks.amazonaws.com/role-arn": "arn:aws:iam::123456789012:role/my-role",
@@ -60,18 +60,18 @@ func TestCloudValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid GCP cloud configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Backups: &neo4jv1alpha1.BackupsSpec{
-						Cloud: &neo4jv1alpha1.CloudBlock{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "gcp",
-							Identity: &neo4jv1alpha1.CloudIdentity{
+							Identity: &neo4jv1beta1.CloudIdentity{
 								Provider: "gcp",
-								AutoCreate: &neo4jv1alpha1.AutoCreateSpec{
+								AutoCreate: &neo4jv1beta1.AutoCreateSpec{
 									Enabled: true,
 									Annotations: map[string]string{
 										"iam.gke.io/gcp-service-account": "my-service-account@project.iam.gserviceaccount.com",
@@ -86,18 +86,18 @@ func TestCloudValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "valid Azure cloud configuration",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Backups: &neo4jv1alpha1.BackupsSpec{
-						Cloud: &neo4jv1alpha1.CloudBlock{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "azure",
-							Identity: &neo4jv1alpha1.CloudIdentity{
+							Identity: &neo4jv1beta1.CloudIdentity{
 								Provider: "azure",
-								AutoCreate: &neo4jv1alpha1.AutoCreateSpec{
+								AutoCreate: &neo4jv1beta1.AutoCreateSpec{
 									Enabled: true,
 									Annotations: map[string]string{
 										"azure.workload.identity/client-id": "12345678-1234-1234-1234-123456789012",
@@ -112,14 +112,14 @@ func TestCloudValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid cloud provider",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Backups: &neo4jv1alpha1.BackupsSpec{
-						Cloud: &neo4jv1alpha1.CloudBlock{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "invalid-provider",
 						},
 					},
@@ -129,16 +129,16 @@ func TestCloudValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "mismatched identity provider",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Backups: &neo4jv1alpha1.BackupsSpec{
-						Cloud: &neo4jv1alpha1.CloudBlock{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "aws",
-							Identity: &neo4jv1alpha1.CloudIdentity{
+							Identity: &neo4jv1beta1.CloudIdentity{
 								Provider: "gcp", // Mismatch
 							},
 						},
@@ -149,18 +149,18 @@ func TestCloudValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "missing AWS role-arn annotation",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Backups: &neo4jv1alpha1.BackupsSpec{
-						Cloud: &neo4jv1alpha1.CloudBlock{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "aws",
-							Identity: &neo4jv1alpha1.CloudIdentity{
+							Identity: &neo4jv1beta1.CloudIdentity{
 								Provider: "aws",
-								AutoCreate: &neo4jv1alpha1.AutoCreateSpec{
+								AutoCreate: &neo4jv1beta1.AutoCreateSpec{
 									Enabled: true,
 									Annotations: map[string]string{
 										"other-annotation": "value",
@@ -175,18 +175,18 @@ func TestCloudValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "missing GCP service account annotation",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Backups: &neo4jv1alpha1.BackupsSpec{
-						Cloud: &neo4jv1alpha1.CloudBlock{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "gcp",
-							Identity: &neo4jv1alpha1.CloudIdentity{
+							Identity: &neo4jv1beta1.CloudIdentity{
 								Provider: "gcp",
-								AutoCreate: &neo4jv1alpha1.AutoCreateSpec{
+								AutoCreate: &neo4jv1beta1.AutoCreateSpec{
 									Enabled: true,
 									Annotations: map[string]string{
 										"other-annotation": "value",
@@ -201,18 +201,18 @@ func TestCloudValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "missing Azure client-id annotation",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Backups: &neo4jv1alpha1.BackupsSpec{
-						Cloud: &neo4jv1alpha1.CloudBlock{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "azure",
-							Identity: &neo4jv1alpha1.CloudIdentity{
+							Identity: &neo4jv1beta1.CloudIdentity{
 								Provider: "azure",
-								AutoCreate: &neo4jv1alpha1.AutoCreateSpec{
+								AutoCreate: &neo4jv1beta1.AutoCreateSpec{
 									Enabled: true,
 									Annotations: map[string]string{
 										"other-annotation": "value",
@@ -227,18 +227,18 @@ func TestCloudValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "missing annotations for auto-create",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Backups: &neo4jv1alpha1.BackupsSpec{
-						Cloud: &neo4jv1alpha1.CloudBlock{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "aws",
-							Identity: &neo4jv1alpha1.CloudIdentity{
+							Identity: &neo4jv1beta1.CloudIdentity{
 								Provider: "aws",
-								AutoCreate: &neo4jv1alpha1.AutoCreateSpec{
+								AutoCreate: &neo4jv1beta1.AutoCreateSpec{
 									Enabled: true,
 									// Missing annotations
 								},
@@ -251,18 +251,18 @@ func TestCloudValidator_Validate(t *testing.T) {
 		},
 		{
 			name: "auto-create disabled",
-			cluster: &neo4jv1alpha1.Neo4jEnterpriseCluster{
+			cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "test-namespace",
 				},
-				Spec: neo4jv1alpha1.Neo4jEnterpriseClusterSpec{
-					Backups: &neo4jv1alpha1.BackupsSpec{
-						Cloud: &neo4jv1alpha1.CloudBlock{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Backups: &neo4jv1beta1.BackupsSpec{
+						Cloud: &neo4jv1beta1.CloudBlock{
 							Provider: "aws",
-							Identity: &neo4jv1alpha1.CloudIdentity{
+							Identity: &neo4jv1beta1.CloudIdentity{
 								Provider: "aws",
-								AutoCreate: &neo4jv1alpha1.AutoCreateSpec{
+								AutoCreate: &neo4jv1beta1.AutoCreateSpec{
 									Enabled: false,
 									// Annotations not required when disabled
 								},
