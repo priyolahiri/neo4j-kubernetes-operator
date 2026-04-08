@@ -33,7 +33,7 @@ Verify CRDs are installed:
 
 2. Deploy a Neo4j standalone instance:
    cat <<EOF | kubectl apply -f -
-   apiVersion: neo4j.neo4j.com/v1alpha1
+   apiVersion: neo4j.neo4j.com/v1beta1
    kind: Neo4jEnterpriseStandalone
    metadata:
      name: my-neo4j
@@ -45,7 +45,7 @@ Verify CRDs are installed:
 
 3. Or deploy a Neo4j cluster:
    cat <<EOF | kubectl apply -f -
-   apiVersion: neo4j.neo4j.com/v1alpha1
+   apiVersion: neo4j.neo4j.com/v1beta1
    kind: Neo4jEnterpriseCluster
    metadata:
      name: my-cluster
