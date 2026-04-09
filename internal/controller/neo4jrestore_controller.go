@@ -442,19 +442,26 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 							SecurityContext: hardenedRestoreContainerSecurityContext(),
 							Command:         []string{"/bin/sh"},
 							Args:            []string{"-c", restoreCmd},
-							Env: []corev1.EnvVar{
-								{
-									Name: "NEO4J_ADMIN_PASSWORD",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: cluster.Spec.Auth.AdminSecret,
+							Env: func() []corev1.EnvVar {
+								envs := []corev1.EnvVar{
+									{
+										Name: "NEO4J_ADMIN_PASSWORD",
+										ValueFrom: &corev1.EnvVarSource{
+											SecretKeyRef: &corev1.SecretKeySelector{
+												LocalObjectReference: corev1.LocalObjectReference{
+													Name: cluster.Spec.Auth.AdminSecret,
+												},
+												Key: "password",
 											},
-											Key: "password",
 										},
 									},
-								},
-							},
+								}
+								// Inject cloud provider credentials for S3/GCS/Azure restores
+								if cloudEnvs := r.buildRestoreCloudEnvVars(restore); cloudEnvs != nil {
+									envs = append(envs, cloudEnvs...)
+								}
+								return envs
+							}(),
 							VolumeMounts: r.buildRestoreVolumeMounts(restore),
 						},
 					},
@@ -477,6 +484,97 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 	return job, nil
 }
 
+// cloudBlockForRestore returns the CloudBlock from the restore's storage config.
+func cloudBlockForRestore(restore *neo4jv1beta1.Neo4jRestore) *neo4jv1beta1.CloudBlock {
+	if restore.Spec.Source.Storage != nil && restore.Spec.Source.Storage.Cloud != nil {
+		return restore.Spec.Source.Storage.Cloud
+	}
+	return nil
+}
+
+// buildRestoreCloudEnvVars injects cloud provider credentials into the restore Job,
+// mirroring the backup controller's buildCloudEnvVars.
+func (r *Neo4jRestoreReconciler) buildRestoreCloudEnvVars(restore *neo4jv1beta1.Neo4jRestore) []corev1.EnvVar {
+	cloud := cloudBlockForRestore(restore)
+	if cloud == nil || cloud.CredentialsSecretRef == "" {
+		return nil
+	}
+	ref := cloud.CredentialsSecretRef
+	fromSecret := func(key string) *corev1.EnvVarSource {
+		return &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: ref}, Key: key,
+		}}
+	}
+	switch cloud.Provider {
+	case "aws":
+		envVars := []corev1.EnvVar{
+			{Name: "AWS_ACCESS_KEY_ID", ValueFrom: fromSecret("AWS_ACCESS_KEY_ID")},
+			{Name: "AWS_SECRET_ACCESS_KEY", ValueFrom: fromSecret("AWS_SECRET_ACCESS_KEY")},
+			{Name: "AWS_REGION", ValueFrom: fromSecret("AWS_REGION")},
+		}
+		if cloud.EndpointURL != "" {
+			envVars = append(envVars, corev1.EnvVar{
+				Name:  "AWS_ENDPOINT_URL_S3",
+				Value: cloud.EndpointURL,
+			})
+		}
+		if cloud.ForcePathStyle {
+			envVars = append(envVars, corev1.EnvVar{
+				Name:  "JAVA_TOOL_OPTIONS",
+				Value: "-Daws.s3.forcePathStyle=true",
+			})
+		}
+		return envVars
+	case "azure":
+		return []corev1.EnvVar{
+			{Name: "AZURE_STORAGE_ACCOUNT", ValueFrom: fromSecret("AZURE_STORAGE_ACCOUNT")},
+			{Name: "AZURE_STORAGE_KEY", ValueFrom: fromSecret("AZURE_STORAGE_KEY")},
+		}
+	case "gcp":
+		return []corev1.EnvVar{
+			{Name: "GOOGLE_APPLICATION_CREDENTIALS", Value: "/var/secrets/gcp/credentials.json"},
+		}
+	}
+	return nil
+}
+
+// buildRestoreFromPath constructs a cloud URI (s3://, gs://, azb://) from the
+// restore source's storage location and backup path, or returns a local path.
+func (r *Neo4jRestoreReconciler) buildRestoreFromPath(restore *neo4jv1beta1.Neo4jRestore) string {
+	st := restore.Spec.Source.Storage
+	if st == nil {
+		return restore.Spec.Source.BackupPath
+	}
+	basePath := st.Path
+	if basePath == "" {
+		basePath = ""
+	}
+	backupFile := restore.Spec.Source.BackupPath
+	// Combine storage path and backup filename
+	var fullPath string
+	if basePath != "" && backupFile != "" {
+		fullPath = fmt.Sprintf("%s/%s", basePath, backupFile)
+	} else if basePath != "" {
+		fullPath = basePath
+	} else {
+		fullPath = backupFile
+	}
+
+	switch st.Type {
+	case "s3":
+		return fmt.Sprintf("s3://%s/%s", st.Bucket, fullPath)
+	case "gcs":
+		return fmt.Sprintf("gs://%s/%s", st.Bucket, fullPath)
+	case "azure":
+		return fmt.Sprintf("azb://%s/%s", st.Bucket, fullPath)
+	default: // pvc
+		if backupFile != "" {
+			return fmt.Sprintf("/backup/%s", backupFile)
+		}
+		return "/backup"
+	}
+}
+
 func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (string, error) {
 	var backupPath string
 
@@ -491,7 +589,7 @@ func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restor
 		}
 		backupPath = fmt.Sprintf("/backup/%s", restore.Spec.Source.BackupRef)
 	case "storage", SourceTypeS3, SourceTypeGCS, "azure":
-		backupPath = restore.Spec.Source.BackupPath
+		backupPath = r.buildRestoreFromPath(restore)
 	case "pitr":
 		return r.buildPITRRestoreCommand(ctx, restore, cluster)
 	}
@@ -596,6 +694,16 @@ func (r *Neo4jRestoreReconciler) buildRestoreVolumeMounts(restore *neo4jv1beta1.
 		})
 	}
 
+	// GCP credentials mount
+	cloud := cloudBlockForRestore(restore)
+	if cloud != nil && cloud.Provider == "gcp" && cloud.CredentialsSecretRef != "" {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      "gcp-credentials",
+			MountPath: "/var/secrets/gcp",
+			ReadOnly:  true,
+		})
+	}
+
 	return mounts
 }
 
@@ -655,12 +763,34 @@ func (r *Neo4jRestoreReconciler) buildRestoreVolumes(restore *neo4jv1beta1.Neo4j
 				})
 			}
 		default:
+			// For cloud storage (s3, gcs, azure), neo4j-admin reads directly from cloud URIs
+			// via env vars — no local volume needed. An EmptyDir is still mounted at /backup
+			// as a scratch space for neo4j-admin's temp files.
 			volumes = append(volumes, corev1.Volume{
 				Name: "backup-storage",
 				VolumeSource: corev1.VolumeSource{
 					EmptyDir: &corev1.EmptyDirVolumeSource{},
 				},
 			})
+
+			// GCP credentials: mount the service-account JSON Secret
+			cloud := cloudBlockForRestore(restore)
+			if cloud != nil && cloud.Provider == "gcp" && cloud.CredentialsSecretRef != "" {
+				volumes = append(volumes, corev1.Volume{
+					Name: "gcp-credentials",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: cloud.CredentialsSecretRef,
+							Items: []corev1.KeyToPath{
+								{
+									Key:  "GOOGLE_APPLICATION_CREDENTIALS_JSON",
+									Path: "credentials.json",
+								},
+							},
+						},
+					},
+				})
+			}
 		}
 	} else if restore.Spec.Source.Type == "pitr" {
 		// Add backup storage volume for PITR base backup
