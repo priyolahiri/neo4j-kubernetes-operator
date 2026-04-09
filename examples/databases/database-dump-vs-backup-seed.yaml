@@ -68,10 +68,10 @@ spec:
 
   # Production-grade resource allocation
   options:
-    "dbms.memory.heap.initial_size": "2g"
-    "dbms.memory.heap.max_size": "8g"
-    "dbms.memory.pagecache.size": "4g"
-    "dbms.memory.transaction.total.max": "2g"
+    "server.memory.heap.initial_size": "2g"
+    "server.memory.heap.max_size": "8g"
+    "server.memory.pagecache.size": "4g"
+    "server.memory.transaction.total.max": "2g"
 
   wait: true
   ifNotExists: true

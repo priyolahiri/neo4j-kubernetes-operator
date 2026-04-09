@@ -37,9 +37,9 @@ spec:
 
   # Database options optimized for analytics
   options:
-    "dbms.memory.heap.initial_size": "1g"
-    "dbms.memory.heap.max_size": "2g"
-    "dbms.memory.pagecache.size": "1g"
+    "server.memory.heap.initial_size": "1g"
+    "server.memory.heap.max_size": "2g"
+    "server.memory.pagecache.size": "1g"
 
   # Wait for database to be ready
   wait: true

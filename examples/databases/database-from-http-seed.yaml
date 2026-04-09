@@ -110,9 +110,9 @@ spec:
 
   # Archive-optimized settings
   options:
-    "dbms.memory.heap.initial_size": "2g"
-    "dbms.memory.heap.max_size": "8g"
-    "dbms.memory.pagecache.size": "4g"
+    "server.memory.heap.initial_size": "2g"
+    "server.memory.heap.max_size": "8g"
+    "server.memory.pagecache.size": "4g"
 
   wait: true
   ifNotExists: true

@@ -132,8 +132,8 @@ kubectl port-forward svc/production-cluster-client 7474:7474 &
 3. **Monitor Resource Usage**
    ```yaml
    options:
-     "dbms.memory.heap.max_size": "4g"
-     "dbms.memory.pagecache.size": "2g"
+     "server.memory.heap.max_size": "4g"
+     "server.memory.pagecache.size": "2g"
    ```
 
 ## Troubleshooting

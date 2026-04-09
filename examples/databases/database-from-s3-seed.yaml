@@ -50,8 +50,8 @@ spec:
 
   # Database options
   options:
-    "dbms.memory.heap.initial_size": "512m"
-    "dbms.memory.heap.max_size": "1g"
+    "server.memory.heap.initial_size": "512m"
+    "server.memory.heap.max_size": "1g"
 
   # Wait for database to be online before considering creation complete
   wait: true

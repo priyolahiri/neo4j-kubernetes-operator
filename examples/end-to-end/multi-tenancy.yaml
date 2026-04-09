@@ -182,8 +182,8 @@ spec:
 
   options:
     # Optimized for graph traversals
-    dbms.memory.transaction.max: "2g"
-    dbms.memory.transaction.global_max: "4g"
+    server.memory.transaction.max: "2g"
+    server.memory.transaction.global_max: "4g"
 
   # Social network schema
   initialData:
@@ -248,8 +248,7 @@ spec:
     name: tenant_a_prod
     namespace: neo4j-multi-tenant
 
-  schedule:
-    cron: "0 1 * * *"  # Daily at 1 AM
+  schedule: "0 1 * * *"  # Daily at 1 AM
 
   storage:
     type: s3
@@ -276,8 +275,7 @@ spec:
     name: tenant_b_social
     namespace: neo4j-multi-tenant
 
-  schedule:
-    cron: "0 * * * *"  # Hourly
+  schedule: "0 * * * *"  # Hourly
 
   storage:
     type: s3
@@ -308,8 +306,7 @@ spec:
     name: tenant_c_analytics
     namespace: neo4j-multi-tenant
 
-  schedule:
-    cron: "0 3 * * 0"  # Weekly on Sunday at 3 AM
+  schedule: "0 3 * * 0"  # Weekly on Sunday at 3 AM
 
   storage:
     type: s3
