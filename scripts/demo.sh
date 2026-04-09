@@ -5,7 +5,7 @@ set -euo pipefail
 # This script demonstrates the core capabilities of the Neo4j Kubernetes Operator
 # including single-node standalone and multi-node HA cluster deployments
 
-# Colors for beautiful output
+# Colors and formatting
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[1;33m'
@@ -13,7 +13,19 @@ readonly BLUE='\033[0;34m'
 readonly PURPLE='\033[0;35m'
 readonly CYAN='\033[0;36m'
 readonly WHITE='\033[1;37m'
+readonly BOLD='\033[1m'
+readonly DIM='\033[2m'
 readonly NC='\033[0m' # No Color
+
+# Total demo parts for step counter
+readonly TOTAL_PARTS=7
+
+# Spinner frames (Braille dots)
+readonly SPINNER_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+
+# Section and demo timing
+SECTION_START_TIME=0
+DEMO_START_TIME=0
 
 # Demo configuration
 DEMO_NAMESPACE=${DEMO_NAMESPACE:-default}
@@ -43,60 +55,120 @@ case "${DEMO_SPEED}" in
         ;;
 esac
 
-# Enhanced logging functions
-log_header() {
-    echo
-    echo -e "${WHITE}╔══════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${WHITE}║${NC} ${CYAN}$1${NC} ${WHITE}║${NC}"
-    echo -e "${WHITE}╚══════════════════════════════════════════════════════════════════════════════╝${NC}"
-    echo
+# ── Display functions ──────────────────────────────────────────────────────
+
+# Full-width separator
+separator() {
+    echo -e "${DIM}$(printf '━%.0s' $(seq 1 78))${NC}"
 }
 
+# Part header with step counter and emoji
+log_header() {
+    local part_num=${1:-0}
+    local emoji=${2:-""}
+    local title=${3:-""}
+    echo
+    separator
+    if [[ $part_num -gt 0 ]]; then
+        echo -e "${WHITE}${BOLD}  ${emoji}  PART ${part_num} of ${TOTAL_PARTS}: ${title}${NC}"
+    else
+        echo -e "${WHITE}${BOLD}  ${emoji}  ${title}${NC}"
+    fi
+    separator
+    echo
+    SECTION_START_TIME=$(date +%s)
+}
+
+# Section header within a part
 log_section() {
     echo
-    echo -e "${YELLOW}▶ $1${NC}"
-    echo -e "${YELLOW}$(printf '─%.0s' $(seq 1 ${#1}))${NC}"
+    echo -e "  ${YELLOW}${BOLD}▸ $1${NC}"
+    echo -e "  ${DIM}$(printf '─%.0s' $(seq 1 ${#1}))${NC}"
 }
 
 log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    echo -e "  ${BLUE}ℹ${NC}  $1"
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "  ${GREEN}✔${NC}  $1"
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    echo -e "  ${YELLOW}⚠${NC}  $1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "  ${RED}✘${NC}  $1"
 }
 
 log_demo() {
-    echo -e "${PURPLE}[DEMO]${NC} $1"
+    echo -e "  ${PURPLE}│${NC}  $1"
 }
 
 log_command() {
-    echo -e "${CYAN}[COMMAND]${NC} $1"
+    echo -e "  ${CYAN}\$${NC} ${DIM}$1${NC}"
 }
 
 log_manifest() {
-    echo -e "${YELLOW}[MANIFEST]${NC} $1"
+    echo -e "  ${YELLOW}📄${NC} $1"
 }
 
-# Progress indicator
+# Show elapsed time for the current section
+log_elapsed() {
+    if [[ $SECTION_START_TIME -gt 0 ]]; then
+        local elapsed=$(( $(date +%s) - SECTION_START_TIME ))
+        echo
+        echo -e "  ${DIM}completed in ${elapsed}s${NC}"
+    fi
+}
+
+# Animated spinner with message
 show_progress() {
     local duration=$1
     local message=$2
+    local i=0
 
-    echo -n -e "${CYAN}${message}${NC}"
-    for i in $(seq 1 $duration); do
-        echo -n "."
+    for t in $(seq 1 "$duration"); do
+        local frame=${SPINNER_FRAMES[$((i % ${#SPINNER_FRAMES[@]}))]}
+        printf "\r  ${CYAN}%s${NC}  %s" "$frame" "$message"
         sleep 1
+        ((i++))
     done
-    echo -e " ${GREEN}Done!${NC}"
+    printf "\r  ${GREEN}✔${NC}  %s\n" "$message"
+}
+
+# Resource dashboard: compact one-liner of what exists
+show_resource_dashboard() {
+    local ns=${1:-$DEMO_NAMESPACE}
+    local standalone_count=$(kubectl get neo4jenterprisestandalone -n "$ns" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    local cluster_count=$(kubectl get neo4jenterprisecluster -n "$ns" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    local db_count=$(kubectl get neo4jdatabase -n "$ns" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    local plugin_count=$(kubectl get neo4jplugin -n "$ns" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    local pod_count=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null | grep -c Running || echo 0)
+
+    echo -e "  ${DIM}┌─────────────────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${DIM}│${NC}  ${BOLD}Resources:${NC} ${pod_count} pods  ${standalone_count} standalone  ${cluster_count} cluster  ${db_count} databases  ${plugin_count} plugins  ${DIM}│${NC}"
+    echo -e "  ${DIM}└─────────────────────────────────────────────────────────────┘${NC}"
+}
+
+# Display YAML manifest with highlighted key fields
+show_manifest() {
+    local yaml="$1"
+    echo -e "  ${DIM}┌──────────────────────────────────────────────────────────────────────┐${NC}"
+    echo "$yaml" | while IFS= read -r line; do
+        # Highlight apiVersion, kind, name lines
+        if echo "$line" | grep -qE '^(apiVersion|kind|  name):'; then
+            echo -e "  ${DIM}│${NC} ${BOLD}${line}${NC}"
+        elif echo "$line" | grep -qE '^metadata:|^spec:'; then
+            echo -e "  ${DIM}│${NC} ${CYAN}${line}${NC}"
+        elif echo "$line" | grep -qE '^  #'; then
+            echo -e "  ${DIM}│ ${line}${NC}"
+        else
+            echo -e "  ${DIM}│${NC} ${line}"
+        fi
+    done
+    echo -e "  ${DIM}└──────────────────────────────────────────────────────────────────────┘${NC}"
 }
 
 # Confirmation with skip option
@@ -119,60 +191,59 @@ confirm() {
     esac
 }
 
-# Wait for pods to be ready with visual feedback
+# Wait for pods to be ready with compact spinner status
 wait_for_pods() {
     local label_selector=$1
     local namespace=$2
     local timeout=${3:-300}
     local expected_count=${4:-1}
 
-    log_info "Waiting for ${expected_count} pod(s) with selector '${label_selector}' to be ready..."
-    log_command "kubectl get pods -l '${label_selector}' -n ${namespace} --watch"
-
     local start_time=$(date +%s)
-    local dots=0
-    local last_status=""
+    local i=0
 
     while true; do
-        # Count pods where READY column shows X/X (all containers ready) and status is Running
         local ready_count=$(kubectl get pods -l "${label_selector}" -n "${namespace}" --no-headers 2>/dev/null | awk -F' +' '{split($2,a,"/"); if(a[1]==a[2] && a[1]>0 && $3=="Running") print}' | wc -l | tr -d ' ')
         local current_time=$(date +%s)
         local elapsed=$((current_time - start_time))
 
-        # Show current pod status every 10 seconds
-        if [[ $((dots % 10)) -eq 0 ]]; then
-            local current_status=$(kubectl get pods -l "${label_selector}" -n "${namespace}" --no-headers 2>/dev/null | head -3 || echo "No pods found")
-            if [[ "${current_status}" != "${last_status}" ]]; then
-                echo
-                log_info "Current pod status:"
-                kubectl get pods -l "${label_selector}" -n "${namespace}" --no-headers 2>/dev/null | head -3 | while read line; do
-                    echo "  ${line}"
-                done
-                last_status="${current_status}"
-            fi
-        fi
-
         if [[ "${ready_count}" -eq "${expected_count}" ]]; then
-            echo
-            log_success "All ${expected_count} pod(s) are ready!"
-            echo
-            log_info "Final pod status:"
-            kubectl get pods -l "${label_selector}" -n "${namespace}" -o wide
+            # Build per-pod status string
+            local pod_status=""
+            kubectl get pods -l "${label_selector}" -n "${namespace}" --no-headers 2>/dev/null | while read -r name ready status rest; do
+                echo -n "${GREEN}✔${NC} ${name}  "
+            done | { pod_status=$(cat); printf "\r  ${GREEN}✔${NC}  Pods ready: ${ready_count}/${expected_count}  ${pod_status}${DIM}(${elapsed}s)${NC}     \n"; }
             return 0
         fi
 
         if [[ "${elapsed}" -gt "${timeout}" ]]; then
-            echo
-            log_error "Timeout waiting for pods to be ready"
+            printf "\r  ${RED}✘${NC}  Timeout waiting for pods (${elapsed}s elapsed)                              \n"
             return 1
         fi
 
-        # Visual progress indicator
-        echo -n "."
-        if [[ $((dots % 60)) -eq 59 ]]; then
-            echo " (${elapsed}s elapsed, ${ready_count}/${expected_count} ready)"
-        fi
-        ((dots++))
+        # Build compact per-pod status
+        local pod_line=""
+        while IFS= read -r line; do
+            local name=$(echo "$line" | awk '{print $1}' | sed 's/.*-//')
+            local status=$(echo "$line" | awk '{print $3}')
+            if [[ "$status" == "Running" ]]; then
+                local ready_col=$(echo "$line" | awk '{print $2}')
+                local ready_n=$(echo "$ready_col" | cut -d/ -f1)
+                local total_n=$(echo "$ready_col" | cut -d/ -f2)
+                if [[ "$ready_n" -eq "$total_n" && "$ready_n" -gt 0 ]]; then
+                    pod_line="${pod_line}${GREEN}✔${NC}${name} "
+                else
+                    pod_line="${pod_line}${YELLOW}◐${NC}${name} "
+                fi
+            elif [[ "$status" == "ContainerCreating" || "$status" == "Pending" ]]; then
+                pod_line="${pod_line}${CYAN}◌${NC}${name} "
+            else
+                pod_line="${pod_line}${DIM}?${name}${NC} "
+            fi
+        done < <(kubectl get pods -l "${label_selector}" -n "${namespace}" --no-headers 2>/dev/null)
+
+        local frame=${SPINNER_FRAMES[$((i % ${#SPINNER_FRAMES[@]}))]}
+        printf "\r  ${CYAN}%s${NC}  Pods: ${ready_count}/${expected_count} ready  %b ${DIM}(%ds)${NC}     " "$frame" "$pod_line" "$elapsed"
+        ((i++))
 
         sleep 1
     done
@@ -346,7 +417,7 @@ create_admin_secret() {
 
 # Deploy single node cluster
 deploy_single_node() {
-    log_header "DEMO PART 1: Single-Node Neo4j Standalone"
+    log_header 1 "🚀" "Single-Node Neo4j Standalone"
 
     log_demo "We'll start with a simple single-node Neo4j standalone deployment for development and testing."
     log_demo "This configuration is perfect for:"
@@ -414,9 +485,7 @@ spec:
 EOF
 )
 
-    echo -e "${YELLOW}---${NC}"
-    echo "${manifest}"
-    echo -e "${YELLOW}---${NC}"
+    show_manifest "${manifest}"
     echo
 
     log_command "kubectl apply -f -"
@@ -457,6 +526,8 @@ EOF
     fi
 
     log_success "Single-node standalone is ready!"
+    log_elapsed
+    show_resource_dashboard
     log_demo "Neo4j is now running as a standalone instance (no clustering)"
     log_demo "This provides a simplified deployment suitable for development and testing"
 
@@ -473,7 +544,7 @@ EOF
 
 # Deploy multi-node HA cluster
 deploy_multi_node_cluster() {
-    log_header "DEMO PART 2: Multi-Node High Availability Neo4j Cluster"
+    log_header 2 "🏗️" "Multi-Node High Availability Cluster"
 
     log_demo "Now we'll deploy a production-ready 3-node Neo4j cluster with:"
     log_demo "  • High availability through clustering"
@@ -552,9 +623,7 @@ spec:
 EOF
 )
 
-    echo -e "${YELLOW}---${NC}"
-    echo "${manifest}"
-    echo -e "${YELLOW}---${NC}"
+    show_manifest "${manifest}"
     echo
 
     log_command "kubectl apply -f -"
@@ -624,6 +693,8 @@ EOF
     fi
 
     log_success "Multi-node cluster is fully operational!"
+    log_elapsed
+    show_resource_dashboard
 
     log_demo "The cluster now provides:"
     log_demo "  ✓ High availability with 3 server nodes"
@@ -748,9 +819,7 @@ spec:
 EOF
 )
 
-    echo -e "${YELLOW}---${NC}"
-    echo "${db_manifest}"
-    echo -e "${YELLOW}---${NC}"
+    show_manifest "${db_manifest}"
     echo
 
     log_info "This Neo4jDatabase resource will:"
@@ -835,7 +904,7 @@ EOF
 
 # Demonstrate external access to Neo4j
 demonstrate_external_access() {
-    log_header "DEMO PART 3: External Access Demonstration"
+    log_header 3 "🔌" "External Access"
 
     log_demo "Real-world applications need external access to Neo4j clusters."
     log_demo "We'll demonstrate the most practical access methods:"
@@ -932,7 +1001,7 @@ demonstrate_external_access() {
 
 # Demonstrate Neo4jDatabase creation and management
 demonstrate_database_creation() {
-    log_header "DEMO PART 4: Database Creation and Management"
+    log_header 4 "🗄️" "Database Creation and Management"
 
     log_demo "Neo4j Enterprise supports multiple databases within a cluster."
     log_demo "We'll demonstrate creating and managing databases using the operator:"
@@ -990,9 +1059,7 @@ spec:
 EOF
 )
 
-    echo -e "${YELLOW}---${NC}"
-    echo "${database_manifest}"
-    echo -e "${YELLOW}---${NC}"
+    show_manifest "${database_manifest}"
     echo
 
     log_info "This Neo4jDatabase resource will:"
@@ -1087,7 +1154,7 @@ EOF
 
 # Demonstrate APOC plugin installation on the cluster
 demonstrate_plugin_installation() {
-    log_header "DEMO PART 5: Plugin Management (APOC)"
+    log_header 5 "🔌" "Plugin Management (APOC)"
 
     log_demo "The operator manages Neo4j plugins via the Neo4jPlugin CRD."
     log_demo "We'll install APOC (the most popular Neo4j plugin) on our cluster:"
@@ -1118,9 +1185,7 @@ spec:
 EOF
 )
 
-    echo -e "${YELLOW}---${NC}"
-    echo "${plugin_manifest}"
-    echo -e "${YELLOW}---${NC}"
+    show_manifest "${plugin_manifest}"
     echo
 
     log_command "kubectl apply -f -"
@@ -1181,11 +1246,13 @@ EOF
     log_demo "  ✓ Declarative plugin management via Neo4jPlugin CRD"
     log_demo "  ✓ Automatic rolling restart preserves cluster availability"
     log_demo "  ✓ Plugin configuration managed as Kubernetes resources"
+    log_elapsed
+    show_resource_dashboard
 }
 
 # Demonstrate multiple databases with different topologies
 demonstrate_multi_database() {
-    log_header "DEMO PART 6: Multi-Database Topologies"
+    log_header 6 "📊" "Multi-Database Topologies"
 
     log_demo "Neo4j Enterprise supports multiple databases on a single cluster,"
     log_demo "each with its own topology distribution:"
@@ -1221,9 +1288,7 @@ EOF
 )
 
     log_manifest "Analytics database (1 primary, 2 secondaries):"
-    echo -e "${YELLOW}---${NC}"
-    echo "${analytics_manifest}"
-    echo -e "${YELLOW}---${NC}"
+    show_manifest "${analytics_manifest}"
 
     echo "${analytics_manifest}" | kubectl apply -f -
 
@@ -1246,9 +1311,7 @@ EOF
 )
 
     log_manifest "Sessions database (2 primaries, 0 secondaries):"
-    echo -e "${YELLOW}---${NC}"
-    echo "${sessions_manifest}"
-    echo -e "${YELLOW}---${NC}"
+    show_manifest "${sessions_manifest}"
 
     echo "${sessions_manifest}" | kubectl apply -f -
 
@@ -1276,11 +1339,13 @@ EOF
     log_demo "  ✓ Multiple databases on a single cluster infrastructure"
     log_demo "  ✓ Per-database topology tuning (read-heavy vs write-heavy)"
     log_demo "  ✓ Declarative management via Neo4jDatabase CRD"
+    log_elapsed
+    show_resource_dashboard
 }
 
 # Demonstrate live cluster diagnostics
 demonstrate_diagnostics() {
-    log_header "DEMO PART 7: Live Cluster Diagnostics"
+    log_header 7 "🔍" "Live Cluster Diagnostics"
 
     log_demo "The operator continuously monitors the cluster and surfaces"
     log_demo "diagnostics directly in the custom resource status:"
@@ -1386,45 +1451,31 @@ demo_cleanup() {
 
 # Demo summary and next steps
 show_demo_summary() {
-    log_header "DEMO SUMMARY"
+    log_header 0 "🎯" "Demo Summary"
 
-    log_demo "We successfully demonstrated the Neo4j Kubernetes Operator capabilities:"
-    echo
-    echo -e "${GREEN}✓ Single-Node Standalone (TLS)${NC}"
-    echo "  • Perfect for development and testing"
-    echo "  • Simple deployment and management"
-    echo "  • TLS encryption via cert-manager"
-    echo "  • Resource efficient"
-    echo "  • No clustering overhead"
-    echo "  • Secure external access via port-forward (HTTPS/Bolt+TLS)"
-    echo "  • Database creation without topology complexity"
-    echo
-    echo -e "${GREEN}✓ Multi-Node HA Cluster (TLS)${NC}"
-    echo "  • Production-ready high availability"
-    echo "  • Automatic cluster formation"
-    echo "  • TLS encryption for all communications"
-    echo "  • Raft consensus and data consistency"
-    echo "  • Horizontal scaling capabilities"
-    echo "  • Secure external access via port-forward (HTTPS/Bolt+TLS)"
-    echo
-    echo -e "${GREEN}✓ Plugin Management${NC}"
-    echo "  • Declarative plugin lifecycle via Neo4jPlugin CRD"
-    echo "  • Automatic rolling restart preserves availability"
-    echo "  • APOC installed and verified via cypher-shell"
-    echo
-    echo -e "${GREEN}✓ Multi-Database Topologies${NC}"
-    echo "  • Multiple databases on a single cluster"
-    echo "  • Per-database read/write scaling (analytics vs sessions)"
-    echo "  • Kubernetes-native database lifecycle"
-    echo
-    echo -e "${GREEN}✓ Live Diagnostics${NC}"
-    echo "  • Server health in CR status (no kubectl exec needed)"
-    echo "  • Database status surfaced automatically"
-    echo "  • Standard Kubernetes conditions for monitoring"
+    local total_elapsed=$(( $(date +%s) - DEMO_START_TIME ))
+    local total_min=$((total_elapsed / 60))
+    local total_sec=$((total_elapsed % 60))
+
+    echo -e "  ${DIM}┌──────────────────────────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${DIM}│${NC}                                                                      ${DIM}│${NC}"
+    echo -e "  ${DIM}│${NC}  ${GREEN}${BOLD}All 7 demo parts completed successfully${NC}              ${DIM}${total_min}m ${total_sec}s total${NC}  ${DIM}│${NC}"
+    echo -e "  ${DIM}│${NC}                                                                      ${DIM}│${NC}"
+    echo -e "  ${DIM}│${NC}  ${GREEN}✔${NC} Part 1  TLS Standalone deployment                                 ${DIM}│${NC}"
+    echo -e "  ${DIM}│${NC}  ${GREEN}✔${NC} Part 2  TLS HA Cluster (3 servers, Raft consensus)                ${DIM}│${NC}"
+    echo -e "  ${DIM}│${NC}  ${GREEN}✔${NC} Part 3  Secure external access (HTTPS + Bolt+TLS)                 ${DIM}│${NC}"
+    echo -e "  ${DIM}│${NC}  ${GREEN}✔${NC} Part 4  Database creation with schema and sample data             ${DIM}│${NC}"
+    echo -e "  ${DIM}│${NC}  ${GREEN}✔${NC} Part 5  APOC plugin via Neo4jPlugin CRD                           ${DIM}│${NC}"
+    echo -e "  ${DIM}│${NC}  ${GREEN}✔${NC} Part 6  Multi-database topologies (read-heavy + write-heavy)      ${DIM}│${NC}"
+    echo -e "  ${DIM}│${NC}  ${GREEN}✔${NC} Part 7  Live diagnostics from CR status                           ${DIM}│${NC}"
+    echo -e "  ${DIM}│${NC}                                                                      ${DIM}│${NC}"
+    echo -e "  ${DIM}└──────────────────────────────────────────────────────────────────────┘${NC}"
     echo
 
+    show_resource_dashboard
+
+    echo
     log_section "Active Resources"
-    log_command "kubectl get neo4jenterprisestandalone,neo4jenterprisecluster,neo4jplugin,neo4jdatabase -n ${DEMO_NAMESPACE} -o wide"
     kubectl get neo4jenterprisestandalone,neo4jenterprisecluster -n "${DEMO_NAMESPACE}" -o wide 2>/dev/null
     kubectl get neo4jplugin -n "${DEMO_NAMESPACE}" -o wide 2>/dev/null
     kubectl get neo4jdatabase -n "${DEMO_NAMESPACE}" -o wide 2>/dev/null
@@ -1511,26 +1562,30 @@ validate_prerequisites() {
 # Main demo flow
 main() {
     clear
-    log_header "Neo4j Kubernetes Operator Demo"
+    log_header 0 "🎬" "Neo4j Kubernetes Operator Demo"
 
-    log_demo "Welcome to the Neo4j Kubernetes Operator demonstration!"
-    log_demo "This demo will showcase:"
-    log_demo "  1. Single-node TLS standalone deployment"
-    log_demo "  2. Multi-node TLS HA cluster deployment"
-    log_demo "  3. Secure external access to Neo4j"
-    log_demo "  4. Neo4jDatabase creation and management"
-    log_demo "  5. APOC plugin installation via Neo4jPlugin CRD"
-    log_demo "  6. Multi-database topologies on a single cluster"
-    log_demo "  7. Live cluster diagnostics"
+    echo -e "  ${PURPLE}${BOLD}Welcome to the Neo4j Kubernetes Operator demonstration!${NC}"
     echo
-    log_info "Demo configuration:"
-    log_info "  • Namespace: ${DEMO_NAMESPACE}"
-    log_info "  • Admin password: ${ADMIN_PASSWORD}"
-    log_info "  • Demo speed: ${DEMO_SPEED}"
-    log_info "  • Skip confirmations: ${SKIP_CONFIRMATIONS}"
+    echo -e "  ${DIM}This demo deploys real Neo4j Enterprise instances and walks through${NC}"
+    echo -e "  ${DIM}the operator's core capabilities in 7 parts:${NC}"
+    echo
+    echo -e "  ${WHITE} 1${NC}  🚀  TLS standalone deployment"
+    echo -e "  ${WHITE} 2${NC}  🏗️   TLS HA cluster (3 servers)"
+    echo -e "  ${WHITE} 3${NC}  🔌  Secure external access"
+    echo -e "  ${WHITE} 4${NC}  🗄️   Database creation with sample data"
+    echo -e "  ${WHITE} 5${NC}  🔌  APOC plugin installation"
+    echo -e "  ${WHITE} 6${NC}  📊  Multi-database topologies"
+    echo -e "  ${WHITE} 7${NC}  🔍  Live cluster diagnostics"
+    echo
+    echo -e "  ${DIM}┌────────────────────────────────────────────┐${NC}"
+    echo -e "  ${DIM}│${NC}  Namespace: ${BOLD}${DEMO_NAMESPACE}${NC}  Speed: ${BOLD}${DEMO_SPEED}${NC}  ${DIM}│${NC}"
+    echo -e "  ${DIM}│${NC}  Estimated time: ${BOLD}~10-12 minutes${NC}           ${DIM}│${NC}"
+    echo -e "  ${DIM}└────────────────────────────────────────────┘${NC}"
     echo
 
     confirm "Ready to start the demo?"
+
+    DEMO_START_TIME=$(date +%s)
 
     # Execute demo steps
     validate_prerequisites
@@ -1639,7 +1694,7 @@ done
 
 # Run cleanup-only or full demo
 if [[ "${CLEANUP_ONLY}" == "true" ]]; then
-    log_header "Neo4j Kubernetes Operator Demo Cleanup"
+    log_header 0 "🧹" "Demo Cleanup"
     validate_prerequisites
     demo_cleanup
 else
