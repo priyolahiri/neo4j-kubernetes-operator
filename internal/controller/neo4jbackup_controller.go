@@ -445,6 +445,8 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(backup *neo4jv1beta1.Neo4jBac
 		}
 		if backup.Spec.Options.TempPath != "" {
 			cmd += " --temp-path=" + backup.Spec.Options.TempPath
+		} else if backup.Spec.Options.TempStorage != nil {
+			cmd += " --temp-path=/tmp/neo4j-staging"
 		}
 		if backup.Spec.Options.PreferDiffAsParent {
 			cmd += " --prefer-diff-as-parent"
@@ -577,6 +579,14 @@ func (r *Neo4jBackupReconciler) buildVolumeMounts(backup *neo4jv1beta1.Neo4jBack
 		})
 	}
 
+	// Temp storage PVC for cloud backup staging
+	if backup.Spec.Options != nil && backup.Spec.Options.TempStorage != nil {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      "temp-staging",
+			MountPath: "/tmp/neo4j-staging",
+		})
+	}
+
 	return mounts
 }
 
@@ -615,6 +625,18 @@ func (r *Neo4jBackupReconciler) buildVolumes(backup *neo4jv1beta1.Neo4jBackup) [
 							Path: "credentials.json",
 						},
 					},
+				},
+			},
+		})
+	}
+
+	// Temp staging PVC for cloud operations
+	if backup.Spec.Options != nil && backup.Spec.Options.TempStorage != nil && backup.Spec.Options.TempStorage.Name != "" {
+		volumes = append(volumes, corev1.Volume{
+			Name: "temp-staging",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: backup.Spec.Options.TempStorage.Name,
 				},
 			},
 		})

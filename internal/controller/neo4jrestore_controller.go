@@ -607,10 +607,11 @@ func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restor
 		cmd += " --overwrite-destination=true"
 	}
 
-	// Add --temp-path when the user has configured it. This should point to a
-	// volume with enough space for staging (e.g., an emptyDir or PVC mount),
-	// not the container's default ephemeral storage.
-	if restore.Spec.Options != nil && restore.Spec.Options.TempPath != "" {
+	// Add --temp-path when the user has configured staging storage.
+	// TempStorage (PVC reference) takes priority, then explicit TempPath.
+	if restore.Spec.Options != nil && restore.Spec.Options.TempStorage != nil {
+		cmd += " --temp-path=/tmp/neo4j-staging"
+	} else if restore.Spec.Options != nil && restore.Spec.Options.TempPath != "" {
 		cmd += " --temp-path=" + restore.Spec.Options.TempPath
 	}
 
@@ -729,6 +730,14 @@ func (r *Neo4jRestoreReconciler) buildRestoreVolumeMounts(restore *neo4jv1beta1.
 			Name:      "gcp-credentials",
 			MountPath: "/var/secrets/gcp",
 			ReadOnly:  true,
+		})
+	}
+
+	// Temp staging PVC for cloud operations
+	if restore.Spec.Options != nil && restore.Spec.Options.TempStorage != nil && restore.Spec.Options.TempStorage.Name != "" {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      "temp-staging",
+			MountPath: "/tmp/neo4j-staging",
 		})
 	}
 
@@ -860,6 +869,18 @@ func (r *Neo4jRestoreReconciler) buildRestoreVolumes(ctx context.Context, restor
 				})
 			}
 		}
+	}
+
+	// Temp staging PVC for cloud operations
+	if restore.Spec.Options != nil && restore.Spec.Options.TempStorage != nil && restore.Spec.Options.TempStorage.Name != "" {
+		volumes = append(volumes, corev1.Volume{
+			Name: "temp-staging",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: restore.Spec.Options.TempStorage.Name,
+				},
+			},
+		})
 	}
 
 	return volumes

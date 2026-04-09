@@ -142,10 +142,15 @@ type RestoreOptionsSpec struct {
 	AdditionalArgs []string `json:"additionalArgs,omitempty"`
 
 	// TempPath is a local directory for temporary files during restore.
-	// Recommended when restoring from cloud storage (S3/GCS/Azure) to avoid
-	// filling the container's ephemeral disk. Defaults to /tmp/neo4j-restore
-	// for cloud restores if not set.
+	// When TempStorage is configured, this is set automatically to the mount path.
+	// Only set manually if you are mounting your own volume via other means.
 	TempPath string `json:"tempPath,omitempty"`
+
+	// TempStorage provisions a PVC for temporary staging files during cloud restores.
+	// Without this, cloud restores use the container's ephemeral disk which may be
+	// too small for large databases. The operator mounts this PVC and passes
+	// --temp-path automatically.
+	TempStorage *TempStorageSpec `json:"tempStorage,omitempty"`
 
 	// Pre-restore hooks
 	PreRestore *RestoreHooks `json:"preRestore,omitempty"`
