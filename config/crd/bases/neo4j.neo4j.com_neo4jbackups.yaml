@@ -200,9 +200,24 @@ spec:
                   tempPath:
                     description: |-
                       TempPath is a local directory for temporary files during the backup.
-                      Strongly recommended when --to-path points to cloud storage to avoid
-                      filling the Neo4j working directory.
+                      When TempStorage is configured, this is set automatically to the mount path.
+                      Only set manually if you are mounting your own volume via other means.
                     type: string
+                  tempStorage:
+                    description: |-
+                      TempStorage provisions a PVC for temporary staging files during cloud backups.
+                      Without this, cloud backups stage to the container's ephemeral disk which may
+                      be too small for large databases. The operator mounts this PVC and passes
+                      --temp-path automatically.
+                    properties:
+                      name:
+                        description: |-
+                          Name of an existing PVC to mount as temporary staging storage.
+                          Should be at least as large as the expected backup/restore size.
+                        type: string
+                    required:
+                    - name
+                    type: object
                   verify:
                     description: Verify backup integrity after creation
                     type: boolean

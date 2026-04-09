@@ -120,9 +120,15 @@ type BackupOptions struct {
 	PreferDiffAsParent bool `json:"preferDiffAsParent,omitempty"`
 
 	// TempPath is a local directory for temporary files during the backup.
-	// Strongly recommended when --to-path points to cloud storage to avoid
-	// filling the Neo4j working directory.
+	// When TempStorage is configured, this is set automatically to the mount path.
+	// Only set manually if you are mounting your own volume via other means.
 	TempPath string `json:"tempPath,omitempty"`
+
+	// TempStorage provisions a PVC for temporary staging files during cloud backups.
+	// Without this, cloud backups stage to the container's ephemeral disk which may
+	// be too small for large databases. The operator mounts this PVC and passes
+	// --temp-path automatically.
+	TempStorage *TempStorageSpec `json:"tempStorage,omitempty"`
 
 	// IncludeMetadata controls which metadata (users, roles) is included in the backup.
 	// Supported values: "all" (default), "none", "users", "roles".
@@ -153,6 +159,30 @@ type EncryptionSpec struct {
 	// +kubebuilder:validation:Enum=AES256;ChaCha20Poly1305
 	// +kubebuilder:default=AES256
 	Algorithm string `json:"algorithm,omitempty"`
+}
+
+// TempStorageSpec references a PVC to use for temporary staging during cloud
+// backup/restore operations. The operator mounts this PVC at /tmp/neo4j-staging
+// and passes --temp-path=/tmp/neo4j-staging to neo4j-admin.
+//
+// Create the PVC before the backup/restore:
+//
+//	kubectl create -f - <<EOF
+//	apiVersion: v1
+//	kind: PersistentVolumeClaim
+//	metadata:
+//	  name: backup-staging
+//	spec:
+//	  accessModes: [ReadWriteOnce]
+//	  resources:
+//	    requests:
+//	      storage: 50Gi
+//	EOF
+type TempStorageSpec struct {
+	// Name of an existing PVC to mount as temporary staging storage.
+	// Should be at least as large as the expected backup/restore size.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
 }
 
 // Neo4jBackupStatus defines the observed state of Neo4jBackup
