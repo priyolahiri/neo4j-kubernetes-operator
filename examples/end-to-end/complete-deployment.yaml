@@ -171,8 +171,7 @@ spec:
     namespace: neo4j-production
 
   # Daily at 2 AM UTC
-  schedule:
-    cron: "0 2 * * *"
+  schedule: "0 2 * * *"
 
   # S3 storage
   storage:
@@ -208,8 +207,7 @@ spec:
     namespace: neo4j-production
 
   # Weekly on Sunday at 3 AM UTC
-  schedule:
-    cron: "0 3 * * 0"
+  schedule: "0 3 * * 0"
 
   storage:
     type: s3

@@ -43,7 +43,7 @@ spec:
 
     # Transaction memory limits (auto-configured by operator)
     # These prevent OOM kills from runaway queries
-    # dbms.memory.transaction.total.max: "2.8G"  # 70% of heap
+    # server.memory.transaction.total.max: "2.8G"  # 70% of heap
     # db.memory.transaction.max: "280M"          # 10% of global limit (Neo4j 5.26+ format)
     # db.memory.transaction.total.max: "1.4G"    # 50% of global limit
 
@@ -53,11 +53,11 @@ spec:
 
     # Query performance settings
     db.logs.query.enabled: "INFO"
-    dbms.logs.query.threshold: "500ms"
+    db.logs.query.threshold: "500ms"
     dbms.logs.query.page_logging_enabled: "true"
 
     # Transaction settings
-    dbms.transaction.timeout: "5m"
+    db.transaction.timeout: "5m"
     dbms.lock.acquisition.timeout: "2m"
 
     # Checkpoint tuning for write performance
@@ -65,7 +65,7 @@ spec:
     dbms.checkpoint.interval.tx: "100000"
 
     # Security settings
-    dbms.security.auth_enabled: "true"
+    server.security.auth_enabled: "true"
     dbms.security.procedures.unrestricted: "gds.*,apoc.*"
 
   # Environment variables

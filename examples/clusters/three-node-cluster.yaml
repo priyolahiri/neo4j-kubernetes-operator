@@ -57,7 +57,7 @@ spec:
     # Enable query logging for monitoring
     db.logs.query.enabled: "INFO"
     # Increase transaction timeout for long operations
-    dbms.transaction.timeout: "60s"
+    db.transaction.timeout: "60s"
     # Enable metrics collection
     metrics.enabled: "true"
 

@@ -71,15 +71,15 @@ spec:
     server.memory.pagecache.size: "2G"
 
     # Security settings
-    dbms.security.auth_enabled: "true"
+    server.security.auth_enabled: "true"
     dbms.security.procedures.unrestricted: "gds.*,apoc.*"
 
     # Logging settings
     db.logs.query.enabled: "true"
-    dbms.logs.query.threshold: "500ms"
+    db.logs.query.threshold: "500ms"
 
     # Performance settings
-    dbms.transaction.timeout: "60s"
+    db.transaction.timeout: "60s"
     server.bolt.thread_pool_max_size: "200"
 
   # Query monitoring

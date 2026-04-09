@@ -55,8 +55,8 @@ spec:
       bufferSize: "128MB"
 
   options:
-    "dbms.memory.heap.initial_size": "1g"
-    "dbms.memory.heap.max_size": "4g"
+    "server.memory.heap.initial_size": "1g"
+    "server.memory.heap.max_size": "4g"
 
   wait: true
   ifNotExists: true

@@ -88,11 +88,11 @@ spec:
     initial.dbms.automatically_enable_free_servers: "true"
 
     # Security
-    dbms.security.auth_enabled: "true"
+    server.security.auth_enabled: "true"
 
     # Monitoring
     db.logs.query.enabled: "true"
-    dbms.logs.query.threshold: "1s"
+    db.logs.query.threshold: "1s"
 
 ---
 # Admin credentials secret

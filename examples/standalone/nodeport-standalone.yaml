@@ -59,7 +59,7 @@ spec:
 
     # Development settings
     db.logs.query.enabled: "INFO"
-    dbms.logs.query.threshold: "100ms"
+    db.logs.query.threshold: "100ms"
 
     # Enable browser on all interfaces
     server.default_listen_address: "0.0.0.0"

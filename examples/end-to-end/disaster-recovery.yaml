@@ -134,8 +134,7 @@ spec:
       credentialsSecret: s3-dr-credentials
       region: us-east-1
 
-  schedule:
-    cron: "0 */4 * * *"  # Every 4 hours
+  schedule: "0 */4 * * *"  # Every 4 hours
 
   options:
     backupType: "AUTO"
