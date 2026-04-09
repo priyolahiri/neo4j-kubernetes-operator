@@ -540,6 +540,10 @@ spec:
       name: ca-cluster-issuer
       kind: ClusterIssuer
 
+  # Enable monitoring and diagnostics
+  monitoring:
+    enabled: true
+
   # Cluster configuration
   config:
     db.logs.query.enabled: "INFO"
@@ -1166,7 +1170,7 @@ EOF
 
     show_progress 10 "Waiting for pods to stabilize after rolling restart"
 
-    if kubectl exec "${CLUSTER_NAME_MULTI}-server-0" -c neo4j -n "${DEMO_NAMESPACE}" -- cypher-shell -a "bolt+ssc://localhost:7687" -u neo4j -p "${ADMIN_PASSWORD}" -d system "RETURN apoc.version() AS apocVersion" 2>/dev/null; then
+    if kubectl exec "${CLUSTER_NAME_MULTI}-server-0" -c neo4j -n "${DEMO_NAMESPACE}" -- cypher-shell -a "bolt+ssc://localhost:7687" -u neo4j -p "${ADMIN_PASSWORD}" "RETURN apoc.version() AS apocVersion" 2>/dev/null; then
         log_success "APOC is installed and functional!"
         log_demo "APOC procedures are now available across all cluster servers"
     else
