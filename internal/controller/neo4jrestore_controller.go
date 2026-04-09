@@ -26,6 +26,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -408,7 +409,46 @@ func (r *Neo4jRestoreReconciler) checkDatabaseExists(ctx context.Context, restor
 	return nil
 }
 
+// ensureRestoreTempStagingPVC creates a PVC for temporary staging if tempStorage is configured.
+func (r *Neo4jRestoreReconciler) ensureRestoreTempStagingPVC(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
+	if restore.Spec.Options == nil || restore.Spec.Options.TempStorage == nil {
+		return nil
+	}
+	pvcName := restore.Name + "-temp-staging"
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: restore.Namespace}, pvc); err == nil {
+		return nil // already exists
+	}
+
+	pvc = &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvcName,
+			Namespace: restore.Namespace,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse(restore.Spec.Options.TempStorage.Size),
+				},
+			},
+		},
+	}
+	if restore.Spec.Options.TempStorage.StorageClassName != "" {
+		pvc.Spec.StorageClassName = &restore.Spec.Options.TempStorage.StorageClassName
+	}
+	if err := controllerutil.SetControllerReference(restore, pvc, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set owner reference on temp PVC: %w", err)
+	}
+	return r.Create(ctx, pvc)
+}
+
 func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
+	// Create temp staging PVC if configured
+	if err := r.ensureRestoreTempStagingPVC(ctx, restore); err != nil {
+		return nil, fmt.Errorf("failed to create temp staging PVC: %w", err)
+	}
+
 	jobName := restore.Name + "-restore"
 
 	// Build restore command
@@ -733,8 +773,8 @@ func (r *Neo4jRestoreReconciler) buildRestoreVolumeMounts(restore *neo4jv1beta1.
 		})
 	}
 
-	// Temp staging PVC for cloud operations
-	if restore.Spec.Options != nil && restore.Spec.Options.TempStorage != nil && restore.Spec.Options.TempStorage.Name != "" {
+	// Temp staging PVC for cloud operations (created by ensureRestoreTempStagingPVC)
+	if restore.Spec.Options != nil && restore.Spec.Options.TempStorage != nil {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "temp-staging",
 			MountPath: "/tmp/neo4j-staging",
@@ -871,13 +911,13 @@ func (r *Neo4jRestoreReconciler) buildRestoreVolumes(ctx context.Context, restor
 		}
 	}
 
-	// Temp staging PVC for cloud operations
-	if restore.Spec.Options != nil && restore.Spec.Options.TempStorage != nil && restore.Spec.Options.TempStorage.Name != "" {
+	// Temp staging PVC for cloud operations (created by ensureRestoreTempStagingPVC)
+	if restore.Spec.Options != nil && restore.Spec.Options.TempStorage != nil {
 		volumes = append(volumes, corev1.Volume{
 			Name: "temp-staging",
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: restore.Spec.Options.TempStorage.Name,
+					ClaimName: restore.Name + "-temp-staging",
 				},
 			},
 		})

@@ -161,28 +161,19 @@ type EncryptionSpec struct {
 	Algorithm string `json:"algorithm,omitempty"`
 }
 
-// TempStorageSpec references a PVC to use for temporary staging during cloud
-// backup/restore operations. The operator mounts this PVC at /tmp/neo4j-staging
-// and passes --temp-path=/tmp/neo4j-staging to neo4j-admin.
-//
-// Create the PVC before the backup/restore:
-//
-//	kubectl create -f - <<EOF
-//	apiVersion: v1
-//	kind: PersistentVolumeClaim
-//	metadata:
-//	  name: backup-staging
-//	spec:
-//	  accessModes: [ReadWriteOnce]
-//	  resources:
-//	    requests:
-//	      storage: 50Gi
-//	EOF
+// TempStorageSpec provisions temporary staging storage for cloud backup/restore.
+// The operator creates a PVC, mounts it at /tmp/neo4j-staging in the Job pod,
+// and passes --temp-path=/tmp/neo4j-staging to neo4j-admin. The PVC is owned
+// by the Job and garbage-collected when the Job's TTL expires.
 type TempStorageSpec struct {
-	// Name of an existing PVC to mount as temporary staging storage.
-	// Should be at least as large as the expected backup/restore size.
+	// Size of the temporary PVC (e.g., "50Gi"). Should be at least as large
+	// as the expected backup/restore artifact.
 	// +kubebuilder:validation:Required
-	Name string `json:"name"`
+	// +kubebuilder:validation:Pattern="^[0-9]+(Ki|Mi|Gi|Ti)?$"
+	Size string `json:"size"`
+
+	// StorageClassName for the temporary PVC. If empty, uses the cluster default.
+	StorageClassName string `json:"storageClassName,omitempty"`
 }
 
 // Neo4jBackupStatus defines the observed state of Neo4jBackup
