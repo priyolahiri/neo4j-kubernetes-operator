@@ -281,6 +281,29 @@ CREATE DATABASE baddb OPTIONS {primaries: 1, secondaries: 1}  -- DEPRECATED
 CALL dbms.cluster.role()  -- REMOVED in 5.0, use SHOW DATABASES
 ```
 
+## Default Database Behavior
+
+Neo4j automatically creates a default `neo4j` database at cluster bootstrap. The operator does not create, manage, or interfere with it.
+
+**Default Topology**: The `neo4j` database is created with Neo4j's built-in defaults: **1 primary, 0 secondaries** — regardless of how many servers the cluster has. This means on a 3-server cluster, the `neo4j` database only runs on 1 server.
+
+**Controlling default topology at bootstrap** (initial.* settings — first bootstrap only, no effect after):
+```yaml
+spec:
+  config:
+    initial.dbms.default_primaries_count: "3"
+    initial.dbms.default_secondaries_count: "1"
+```
+
+**Changing topology after bootstrap**: Use `ALTER DATABASE neo4j SET TOPOLOGY 3 PRIMARIES 1 SECONDARY`.
+
+**Cannot skip creation**: Neo4j has no setting to prevent the default database from being created.
+
+**Operator interaction**:
+- Diagnostics: included in `status.diagnostics.databases[]` and counts toward `DatabasesHealthy` condition (unlike `system` which is excluded)
+- Neo4jDatabase CRD named `neo4j`: allowed with a warning ("will shadow the default database"); `IF NOT EXISTS` makes creation a no-op since it already exists; deletion via CRD will drop it
+- `dbms.default_database` in `spec.config`: rejected by validator (deprecated — use `dbms.setDefaultDatabase()` procedure instead)
+
 ## Neo4jDatabase CRD
 
 Works with both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone`. `DatabaseValidator` tries cluster lookup first, then standalone automatically.
@@ -346,6 +369,7 @@ kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manag
 34. **Standalone Health Probes**: Readiness/liveness/startup probes via `/conf/health.sh` (checks process + HTTP 7474); ConfigMap includes `health.sh` alongside `neo4j.conf` with `DefaultMode: 0755`
 35. **Bolt TLS REQUIRED**: Both cluster and standalone set `server.bolt.tls_level=REQUIRED` when TLS enabled; plain `bolt://` rejected
 36. **Deprecated Config Keys**: Validator warns on `dbms.logs.query.enabled` (use `db.logs.query.enabled`); always use `db.*` namespace for Neo4j 5.x+ settings
+37. **Default Database Topology**: `neo4j` database gets 1 primary, 0 secondaries by default; `initial.dbms.default_primaries_count`/`default_secondaries_count` only work at first bootstrap; use `ALTER DATABASE` to change post-bootstrap
 
 ## Reports
 

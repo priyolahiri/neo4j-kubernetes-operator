@@ -554,6 +554,19 @@ spec:
 3. **Validation**: Applies appropriate validation rules based on target type
 4. **Client Creation**: Uses correct Neo4j client (cluster vs standalone connection)
 
+### Default Database (`neo4j`)
+
+Neo4j automatically creates a default database called `neo4j` at cluster bootstrap with a topology of 1 primary and 0 secondaries. The operator does not create or manage this database.
+
+If you create a `Neo4jDatabase` resource with `name: neo4j`, the operator will:
+
+1. **Emit a validation warning**: `'neo4j' is the default database name; creating a database with this name will shadow the default database`
+2. **Skip creation**: Since `ifNotExists: true` is the default and the database already exists, `CREATE DATABASE` is a no-op
+3. **Apply topology changes**: If you specify a `topology`, the operator will issue an `ALTER DATABASE` to update it
+4. **Drop on deletion**: If you delete the `Neo4jDatabase` resource, the operator will drop the `neo4j` database — use caution
+
+To control the default database topology at cluster creation time without using this CRD, set `initial.dbms.default_primaries_count` and `initial.dbms.default_secondaries_count` in the cluster's `spec.config` (bootstrap-only, see [Clustering Guide](../user_guide/clustering.md#default-database-topology)).
+
 ### Database Creation Process
 
 **Standard Database Creation**:
