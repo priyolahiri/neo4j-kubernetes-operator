@@ -176,6 +176,44 @@ kubectl describe neo4jenterprisecluster my-cluster
 kubectl get pods -l app.kubernetes.io/instance=my-cluster
 ```
 
+## Default Database Topology
+
+When a Neo4j cluster starts for the first time, it automatically creates a default database called `neo4j`. This database is created with Neo4j's built-in defaults: **1 primary and 0 secondaries**, regardless of how many servers are in your cluster.
+
+This means that on a 3-server cluster, the default `neo4j` database will only be hosted on a single server — which may be surprising if you expect it to span the entire cluster.
+
+### Configuring Default Topology at Bootstrap
+
+You can control the default topology for all newly created databases (including the auto-created `neo4j` database) using `initial.*` settings in `spec.config`:
+
+```yaml
+spec:
+  config:
+    initial.dbms.default_primaries_count: "3"
+    initial.dbms.default_secondaries_count: "1"
+```
+
+> **Important**: These are bootstrap-only settings. They only take effect when the cluster is created for the first time. Adding or changing them on an existing cluster has no effect.
+
+### Changing Database Topology After Bootstrap
+
+To change the topology of an existing database, use the `ALTER DATABASE` Cypher command:
+
+```bash
+kubectl exec <cluster>-server-0 -c neo4j -- cypher-shell -u neo4j -p <password> \
+  "ALTER DATABASE neo4j SET TOPOLOGY 3 PRIMARIES 1 SECONDARY"
+```
+
+Alternatively, you can manage database topology declaratively using the `Neo4jDatabase` CRD. See the [Neo4jDatabase API Reference](../api_reference/neo4jdatabase.md) for details.
+
+### Cannot Skip Default Database Creation
+
+Neo4j does not provide a way to prevent the default `neo4j` database from being created. It is always created at cluster bootstrap. The only post-bootstrap options are:
+
+- **Change its topology** using `ALTER DATABASE`
+- **Rename the default** using the `dbms.setDefaultDatabase()` procedure (do not use the deprecated `dbms.default_database` config setting)
+- **Manage it declaratively** via a `Neo4jDatabase` CRD (the operator will warn that you are shadowing the default)
+
 ## Advanced Configuration
 
 
