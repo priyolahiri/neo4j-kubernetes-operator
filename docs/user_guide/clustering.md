@@ -108,9 +108,9 @@ The operator uses a unified clustering approach for all deployments:
 - All pods start simultaneously and coordinate during bootstrap
 - Prevents split-brain scenarios through proper coordination
 
-### Cluster Formation Strategy
+#### Formation Requirements
 
-The operator uses a unified approach where all primaries must be present for initial cluster formation:
+All primaries must be present for initial cluster formation:
 
 | Cluster Size | Formation Requirement | Rationale |
 |--------------|----------------------|-----------|
@@ -211,7 +211,12 @@ Alternatively, you can manage database topology declaratively using the `Neo4jDa
 Neo4j does not provide a way to prevent the default `neo4j` database from being created. It is always created at cluster bootstrap. The only post-bootstrap options are:
 
 - **Change its topology** using `ALTER DATABASE`
-- **Rename the default** using the `dbms.setDefaultDatabase()` procedure (do not use the deprecated `dbms.default_database` config setting)
+- **Rename the default** using the `dbms.setDefaultDatabase()` procedure (do not use the deprecated `dbms.default_database` config setting):
+  ```bash
+  kubectl exec <cluster>-server-0 -c neo4j -- cypher-shell -u neo4j -p <password> \
+    "CALL dbms.setDefaultDatabase('mydb');"
+  ```
+  This must be executed as a database operation after bootstrap, not via `spec.config`.
 - **Manage it declaratively** via a `Neo4jDatabase` CRD (the operator will warn that you are shadowing the default)
 
 ## Advanced Configuration
@@ -323,7 +328,7 @@ spec:
 ### Common Issues
 
 1. **Cluster Formation Issues (Rare with Current Configuration)**
-   - The parallel startup with MIN_PRIMARIES=1 eliminates most formation issues
+   - The parallel startup strategy and topology-aligned minimum primaries configuration eliminate most formation issues
    - Check pod logs: `kubectl logs <pod-name>` for any startup errors
    - Verify all pods can resolve DNS: `kubectl exec <pod> -- nslookup <cluster>-discovery`
 
@@ -357,11 +362,10 @@ kubectl logs my-cluster-server-0 -c neo4j
 1. **Use odd numbers of servers (3, 5, 7)** for optimal fault tolerance. Even numbers are allowed but may have less optimal quorum behavior.
 2. **Configure proper resource limits** based on workload
 3. **Use multi-zone deployment** for high availability
-4. **Configure proper resource limits** based on workload
-5. **Enable TLS** for secure cluster communication
-6. **Monitor cluster health** regularly
-7. **Use rolling upgrades** for zero-downtime updates
-8. **Trust automatic discovery** - the operator handles all Kubernetes discovery configuration
+4. **Enable TLS** for secure cluster communication
+5. **Monitor cluster health** regularly
+6. **Use rolling upgrades** for zero-downtime updates
+7. **Trust automatic discovery** - the operator handles all Kubernetes discovery configuration
 
 ## Migration from Neo4j 4.x
 
