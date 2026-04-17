@@ -111,7 +111,7 @@ Defines the cluster server topology and role constraints.
 
 | Field | Type | Description |
 |---|---|---|
-| `servers` | `int32` | **Required**. Number of Neo4j servers (minimum: 2, maximum: 20) |
+| `servers` | `int32` | **Required**. Number of Neo4j servers (minimum: 2, maximum: 100) |
 | `serverModeConstraint` | `string` | Global server mode constraint: `"NONE"` (default), `"PRIMARY"`, `"SECONDARY"` |
 | `serverRoles` | [`[]ServerRoleHint`](#serverrolehint) | Per-server role constraints (overrides global constraint) |
 | `placement` | [`*PlacementConfig`](#placementconfig) | Advanced placement and scheduling configuration |
