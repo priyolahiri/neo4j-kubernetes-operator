@@ -72,12 +72,6 @@ make dev-down
 
 `make dev-up` takes ~3 minutes on first run. Subsequent runs are faster since it reuses an existing cluster.
 
-### Alternative: GitHub Codespaces (Zero Local Setup)
-
-The project includes a `.devcontainer/` configuration. On GitHub, click **Code > Codespaces > New codespace** to get a fully configured environment with Go, Docker-in-Docker, kubectl, Helm, and Kind pre-installed. Once the container starts, run `make dev-up` to bootstrap.
-
-Ports 7474 (Neo4j Browser) and 7687 (Bolt) are auto-forwarded.
-
 ## Development Workflow
 
 ### Setting Up Your Environment
@@ -357,7 +351,6 @@ Run `make help` for the most common targets, or `make help-all` for the complete
 │   └── smoke-test-standalone.yaml  # Manifest for smoke-test target
 ├── scripts/                # CI and operational scripts
 ├── examples/               # 67+ example manifests by use case
-├── .devcontainer/          # GitHub Codespaces / VS Code Dev Container
 ├── .tool-versions          # Pinned tool versions for mise/asdf
 ├── Tiltfile                # Tilt live-reload configuration
 ├── Makefile                # Build, test, deploy targets
