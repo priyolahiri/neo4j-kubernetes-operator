@@ -9,3 +9,6 @@ resources:
   - neo4j_v1beta1_neo4jbackup.yaml
   - neo4j_v1beta1_neo4jrestore.yaml
   - neo4j_v1beta1_neo4jshardeddatabase.yaml
+  - neo4j_v1beta1_neo4juser.yaml
+  - neo4j_v1beta1_neo4jrole.yaml
+  - neo4j_v1beta1_neo4jrolebinding.yaml
