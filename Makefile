@@ -569,7 +569,11 @@ endif
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	go run ./scripts/update-alm-examples config/manifests/bases/neo4j-kubernetes-operator.clusterserviceversion.yaml
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
-	sed -i'' -e 's|containerImage: .*|containerImage: $(IMG)|' bundle/manifests/neo4j-kubernetes-operator.clusterserviceversion.yaml
+	# `sed -i'' -e ...` is parsed by macOS BSD sed as `-i -e` (writing a backup file
+	# named "<file>-e"). Use the portable form: pass the in-place flag without the
+	# backup extension and clean up any straggler from older runs.
+	sed -i.bak 's|containerImage: .*|containerImage: $(IMG)|' bundle/manifests/neo4j-kubernetes-operator.clusterserviceversion.yaml
+	rm -f bundle/manifests/neo4j-kubernetes-operator.clusterserviceversion.yaml.bak bundle/manifests/neo4j-kubernetes-operator.clusterserviceversion.yaml-e
 	go run ./scripts/update-alm-examples bundle/manifests/neo4j-kubernetes-operator.clusterserviceversion.yaml
 	$(OPERATOR_SDK) bundle validate ./bundle
 
