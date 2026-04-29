@@ -8,10 +8,12 @@ repo_name: neo4j-partners/neo4j-kubernetes-operator
 edit_uri: edit/main/docs/
 
 # docs/README.md duplicates docs/index.md for GitHub-flavoured directory
-# rendering; the dated planning docs in docs/plans/ are internal-only.
+# rendering; the dated planning docs in docs/plans/ are internal-only;
+# requirements.txt is consumed by the docs workflow, not part of the site.
 # Anchor with leading slash so nested READMEs (e.g. gitops/README.md) aren't matched.
 exclude_docs: |
   /README.md
+  /requirements.txt
   /plans/
 
 theme:

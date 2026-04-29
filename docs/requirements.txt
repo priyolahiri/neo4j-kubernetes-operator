@@ -1,0 +1,8 @@
+# Pinned dependencies for the docs site build (consumed by .github/workflows/pages-docs.yml).
+# Bump intentionally — mkdocs-material in particular ships breaking nav/theme changes
+# between minor versions, and material 2.0 will drop the plugin system entirely.
+
+mkdocs==1.6.1
+mkdocs-material==9.7.6
+mike==2.2.0
+pymdown-extensions==10.21.2
