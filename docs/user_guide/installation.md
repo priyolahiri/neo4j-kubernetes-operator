@@ -471,4 +471,4 @@ gh release list --repo priyolahiri/neo4j-kubernetes-operator
 Once installed, see:
 - [Getting Started Guide](getting_started.md) - Deploy your first Neo4j instance
 - [Configuration Guide](configuration.md) - Detailed configuration options
-- [Examples](../../examples/README.md) - Ready-to-use configurations
+- [Examples](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples) - Ready-to-use configurations

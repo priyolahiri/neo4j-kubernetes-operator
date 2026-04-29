@@ -152,10 +152,10 @@ For production workloads requiring high availability and clustering:
 If you need a custom configuration, create your own manifest based on our examples:
 
 1. **Browse the examples directory:**
-   - [Minimal cluster](../../examples/clusters/minimal-cluster.yaml) - 2 servers (minimum cluster topology)
-   - [Multi-server cluster](../../examples/clusters/multi-server-cluster.yaml) - Production HA with TLS
-   - [Three-node cluster](../../examples/clusters/three-node-cluster.yaml) - Three servers with TLS
-   - [Production optimized cluster](../../examples/clusters/production-optimized-cluster.yaml) - Production with advanced features
+   - [Minimal cluster](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/clusters/minimal-cluster.yaml) - 2 servers (minimum cluster topology)
+   - [Multi-server cluster](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/clusters/multi-server-cluster.yaml) - Production HA with TLS
+   - [Three-node cluster](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/clusters/three-node-cluster.yaml) - Three servers with TLS
+   - [Production optimized cluster](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/clusters/production-optimized-cluster.yaml) - Production with advanced features
 
 2. **Copy and customize an example:**
    ```bash
@@ -164,7 +164,7 @@ If you need a custom configuration, create your own manifest based on our exampl
    kubectl apply -f my-cluster.yaml
    ```
 
-See the [Examples README](../../examples/README.md) for detailed customization guidance.
+See the [Examples README](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples) for detailed customization guidance.
 
 ### What Happens Next?
 
@@ -296,8 +296,8 @@ For detailed database management, see:
 - [Neo4jDatabase API Reference](../api_reference/neo4jdatabase.md)
 - [Property Sharding Guide](property_sharding.md)
 - [Database Seed URI Guide](guides/seed-uri.md)
-- [Database Examples](../../examples/databases/)
-- [Property Sharding Examples](../../examples/property_sharding/)
+- [Database Examples](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/databases)
+- [Property Sharding Examples](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/property_sharding)
 
 ## Next Steps
 
