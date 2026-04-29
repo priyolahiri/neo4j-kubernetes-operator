@@ -314,6 +314,24 @@ jobs:
       run: |
         git clone "https://x-access-token:${GH_TOKEN}@github.com/priyolahiri/community-operators.git" /tmp/community-operators
 
+    - name: Sync fork's main with upstream
+      # Must run BEFORE the bundle is extracted into the working tree.
+      # Otherwise, when upstream's main has tracked files (e.g. ci.yaml)
+      # whose paths we are about to add as untracked files, the merge
+      # aborts with "untracked working tree files would be overwritten".
+      env:
+        GH_TOKEN: ${{ secrets.OPERATORHUB_PAT }}
+      run: |
+        cd /tmp/community-operators
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        git remote add upstream https://github.com/k8s-operatorhub/community-operators.git
+        git fetch upstream main
+        git checkout main
+        git merge upstream/main --no-edit
+        git push origin main
+
     - name: Extract bundle into versioned directory
       env:
         CLEAN_TAG: ${{ needs.determine-tag.outputs.clean_tag }}
@@ -328,21 +346,12 @@ jobs:
           echo "updateGraph: semver-mode" > "${OPERATOR_DIR}/ci.yaml"
         fi
 
-    - name: Sync fork with upstream and create PR
+    - name: Create submission branch and PR
       env:
         GH_TOKEN: ${{ secrets.OPERATORHUB_PAT }}
         CLEAN_TAG: ${{ needs.determine-tag.outputs.clean_tag }}
       run: |
         cd /tmp/community-operators
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-
-        # Sync fork's main with upstream to avoid drift
-        git remote add upstream https://github.com/k8s-operatorhub/community-operators.git
-        git fetch upstream main
-        git checkout main
-        git merge upstream/main --no-edit
-        git push origin main
 
         BRANCH="neo4j-kubernetes-operator-${CLEAN_TAG}"
         git checkout -b "${BRANCH}"
