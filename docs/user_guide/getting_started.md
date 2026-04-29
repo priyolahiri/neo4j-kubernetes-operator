@@ -12,23 +12,27 @@ This guide will walk you through the process of deploying your first Neo4j Enter
 
 ## Installation
 
-For detailed installation instructions, refer to the main README.
-
-Since this is a private repository, installation requires cloning from source:
+The recommended path is the Helm chart repository (available from v1.8.0 onwards):
 
 ```bash
-# Clone the repository and checkout latest tag
-git clone https://github.com/neo4j-partners/neo4j-kubernetes-operator.git
-cd neo4j-kubernetes-operator
-LATEST_TAG=$(git describe --tags --abbrev=0)
-git checkout $LATEST_TAG
+helm repo add neo4j https://neo4j-partners.github.io/neo4j-kubernetes-operator/charts
+helm repo update
 
-# Install CRDs and operator
-make install      # Install CRDs
-make deploy-prod  # Deploy operator (builds and uses local image)
-# or (requires ghcr.io access)
-make deploy-prod-registry  # Deploy from ghcr.io registry
+helm install neo4j-operator neo4j/neo4j-operator \
+  --namespace neo4j-operator-system \
+  --create-namespace
 ```
+
+For pre-v1.8.0 releases, the chart is also published to the OCI registry:
+
+```bash
+helm install neo4j-operator oci://ghcr.io/neo4j-partners/charts/neo4j-operator \
+  --version <release-version> \
+  --namespace neo4j-operator-system \
+  --create-namespace
+```
+
+For all installation methods (kubectl-apply bundle, source clone, `make` targets for contributor workflows), see the full [Installation Guide](installation.md).
 
 ## Operator Modes
 
