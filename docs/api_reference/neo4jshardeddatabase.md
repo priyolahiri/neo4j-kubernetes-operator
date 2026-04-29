@@ -388,7 +388,7 @@ queryMetrics:
 
 ## Examples
 
-See [examples directory](../../examples/property_sharding/) for complete configuration examples.
+See [examples directory](https://github.com/neo4j-partners/neo4j-kubernetes-operator/tree/main/examples/property_sharding) for complete configuration examples.
 
 ## Related APIs
 

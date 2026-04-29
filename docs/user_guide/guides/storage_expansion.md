@@ -171,4 +171,4 @@ For clusters created before labeling was added, the operator falls back to name-
 
 ## Example
 
-See [`examples/clusters/storage-expansion.yaml`](../../../examples/clusters/storage-expansion.yaml) for a complete example.
+See [`examples/clusters/storage-expansion.yaml`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/examples/clusters/storage-expansion.yaml) for a complete example.
