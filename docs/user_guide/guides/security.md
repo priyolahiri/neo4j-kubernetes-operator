@@ -18,7 +18,7 @@ The operator provides first-class, typed configuration for external identity pro
 
 **JVM TrustStore**: For LDAPS or OIDC with internal CAs, configure `spec.auth.trustStore` and the operator automatically creates an init container that builds a JKS truststore from your CA certificate.
 
-For full configuration details and examples, see the [Security Best Practices](../security.md#authentication-configuration) guide and the [auth examples](../../../examples/clusters/auth-example.yaml).
+For full configuration details and examples, see the [Security Best Practices](../security.md#authentication-configuration) guide and the [auth examples](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/examples/clusters/auth-example.yaml).
 
 ## TLS
 

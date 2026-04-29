@@ -1,0 +1,104 @@
+name: Pages — Docs
+
+# Builds the documentation site with mkdocs-material and publishes it to the
+# gh-pages branch as a versioned subdirectory using mike.
+#
+#   - Push to main         → publishes to /dev/ alias  (rolling preview)
+#   - Push of v* tag       → publishes to /vX.Y/ and updates the /latest/ alias
+#
+# The chart-publishing workflow (pages-helm.yml) writes to /charts/ on the
+# same gh-pages branch; concurrency: gh-pages serialises pushes between the
+# two workflows so they cannot race.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version-alias:
+        description: 'Version label to publish under (e.g. v1.7, latest, dev)'
+        required: true
+        type: string
+      update-latest:
+        description: 'Also update the "latest" alias'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write   # mike needs to push to gh-pages
+
+concurrency:
+  group: gh-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with full history for mike)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install mkdocs-material + mike
+        run: |
+          pip install --upgrade pip
+          pip install mkdocs-material mike pymdown-extensions
+
+      - name: Determine deploy parameters
+        id: params
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            # vX.Y.Z → vX.Y (drop the patch — patch releases overwrite)
+            full_tag="${GITHUB_REF#refs/tags/}"
+            short="${full_tag%.*}"
+            echo "alias=${short}"   >> "$GITHUB_OUTPUT"
+            echo "extra=latest"     >> "$GITHUB_OUTPUT"
+            echo "title=${full_tag}" >> "$GITHUB_OUTPUT"
+            echo "Publishing tag ${full_tag} as ${short} (and updating 'latest')"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "alias=${{ inputs.version-alias }}" >> "$GITHUB_OUTPUT"
+            if [[ "${{ inputs.update-latest }}" == "true" ]]; then
+              echo "extra=latest" >> "$GITHUB_OUTPUT"
+            else
+              echo "extra="       >> "$GITHUB_OUTPUT"
+            fi
+            echo "title=${{ inputs.version-alias }}" >> "$GITHUB_OUTPUT"
+            echo "Manual deploy: ${{ inputs.version-alias }}"
+          else
+            echo "alias=dev"   >> "$GITHUB_OUTPUT"
+            echo "extra="      >> "$GITHUB_OUTPUT"
+            echo "title=dev"   >> "$GITHUB_OUTPUT"
+            echo "Publishing main branch to /dev/"
+          fi
+
+      - name: Verify mkdocs strict build
+        run: mkdocs build --strict --site-dir /tmp/mkdocs-verify
+
+      - name: Deploy with mike
+        run: |
+          mike deploy \
+            --push \
+            --update-aliases \
+            --title "${{ steps.params.outputs.title }}" \
+            "${{ steps.params.outputs.alias }}" \
+            ${{ steps.params.outputs.extra }}
+
+      - name: Set default redirect to /latest/ (idempotent)
+        if: contains(steps.params.outputs.extra, 'latest')
+        run: mike set-default --push latest

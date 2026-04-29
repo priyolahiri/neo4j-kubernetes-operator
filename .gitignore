@@ -98,3 +98,6 @@ integration-test-output.log
 *.log
 logs/*.log
 update-alm-examples
+
+# MkDocs build output
+/site/
