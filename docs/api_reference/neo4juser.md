@@ -9,7 +9,7 @@ The `Neo4jUser` Custom Resource Definition (CRD) provides declarative management
 - **Scope**: Namespaced
 - **Short names**: `n4juser`, `n4jusers`
 - **Categories**: `neo4j`
-- **Supported Neo4j Versions**: 5.26.x and 2025.x.x+ (Enterprise edition only — `SET STATUS` and external auth providers are Enterprise-only features)
+- **Supported Neo4j Versions**: 5.26 LTS and any CalVer release (2025.x, 2026.x, and onward) — Enterprise edition only (`SET STATUS` and external auth providers are Enterprise-only features)
 - **Reconciliation**: User existence, password (rotated via Secret hash), `SET STATUS`, `SET HOME DATABASE`, role bindings (`GRANT/REVOKE ROLE`), external auth providers (`SET AUTH`)
 
 ## Design rules
