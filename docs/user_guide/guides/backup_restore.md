@@ -271,7 +271,7 @@ kubectl run minio-client --rm -it --restart=Never \
 | Path-style not working | `forcePathStyle` missing | Confirm `forcePathStyle: true` in spec |
 | `SSL handshake failed` | TLS mismatch | Use `http://` for in-cluster; mount CA for self-signed certs |
 
-Full examples with scheduled incremental backups: [`examples/backup-restore/backup-minio.yaml`](../../../examples/backup-restore/backup-minio.yaml).
+Full examples with scheduled incremental backups: [`examples/backup-restore/backup-minio.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/backup-minio.yaml).
 
 ---
 
@@ -1291,7 +1291,7 @@ For comprehensive troubleshooting, diagnostics, and advanced problem-solving, se
 
 ### Examples and Templates
 
-- **[Working Examples](../../../examples/backup-restore/)** — Copy-paste ready YAML files
+- **[Working Examples](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/backup-restore)** — Copy-paste ready YAML files
 - **[Getting Started Guide](../getting_started.md)** — Deploy your first cluster
 - **[Installation Guide](../installation.md)** — Install the operator
 
