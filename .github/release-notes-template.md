@@ -12,7 +12,21 @@ kubectl apply -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releas
 kubectl apply -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/__TAG__/neo4j-kubernetes-operator.yaml
 ```
 
-## Helm (OCI)
+## Helm
+
+### Helm chart repository (recommended, available from v1.8.0 onwards)
+
+```bash
+helm repo add neo4j https://priyolahiri.github.io/neo4j-kubernetes-operator/charts
+helm repo update
+
+helm install neo4j-operator neo4j/neo4j-operator \
+  --version __VERSION__ \
+  --namespace neo4j-operator-system \
+  --create-namespace
+```
+
+### OCI registry (all releases)
 
 ```bash
 helm install neo4j-operator oci://ghcr.io/priyolahiri/charts/neo4j-operator \
