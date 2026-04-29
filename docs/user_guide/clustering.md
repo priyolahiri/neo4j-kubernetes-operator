@@ -4,7 +4,7 @@ This document describes how to configure and manage Neo4j Enterprise clusters us
 
 ## Overview
 
-The Neo4j Kubernetes Operator supports Neo4j 5.26.x (last semver LTS) and 2025.x.x+ (CalVer) Enterprise clustering with multiple discovery mechanisms and advanced features like read replicas and multi-zone deployments.
+The Neo4j Kubernetes Operator supports Neo4j 5.26 LTS (the final SemVer release) and any CalVer release (2025.x, 2026.x, and onward) for Enterprise clustering, with multiple discovery mechanisms and advanced features like read replicas and multi-zone deployments.
 
 ## Cluster Architecture
 

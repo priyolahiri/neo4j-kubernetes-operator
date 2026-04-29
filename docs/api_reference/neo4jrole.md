@@ -9,7 +9,7 @@ The `Neo4jRole` Custom Resource Definition (CRD) provides declarative management
 - **Scope**: Namespaced
 - **Short names**: `n4jrole`, `n4jroles`
 - **Categories**: `neo4j`
-- **Supported Neo4j Versions**: 5.26.x and 2025.x.x+ (Enterprise edition only — RBAC roles are an Enterprise feature)
+- **Supported Neo4j Versions**: 5.26 LTS and any CalVer release (2025.x, 2026.x, and onward) — Enterprise edition only (RBAC roles are an Enterprise feature)
 - **Reconciliation**: Role existence and privilege drift via `SHOW ROLE <r> PRIVILEGES AS COMMANDS`
 
 ## Design rules

@@ -52,14 +52,14 @@ Specifies the Neo4j Docker image to use.
 | Field | Type | Description |
 |---|---|---|
 | `repo` | `string` | **Required**. Docker repository (default: `"neo4j"`) |
-| `tag` | `string` | **Required**. Neo4j version tag (5.26.x last semver LTS, or 2025.x.x CalVer required) |
+| `tag` | `string` | **Required**. Neo4j version tag — 5.26 LTS or any CalVer release (2025.x, 2026.x, and onward) |
 | `pullPolicy` | `string` | Image pull policy: `"Always"`, `"IfNotPresent"` (default), `"Never"` |
 | `pullSecrets` | `[]string` | Image pull secrets for private registries |
 
 ```yaml
 image:
   repo: neo4j                    # Docker repository
-  tag: "5.26.0-enterprise"       # Neo4j version (5.26.x last semver LTS or 2025.x.x CalVer required)
+  tag: "5.26.0-enterprise"       # Neo4j version: 5.26 LTS or any CalVer release (2025.x, 2026.x, ...)
   pullPolicy: IfNotPresent       # Image pull policy
   pullSecrets: []                # Image pull secrets
 ```
@@ -790,7 +790,7 @@ kubectl describe pvc neo4j-data-<standalone-name>-0
 kubectl describe neo4jenterprisestandalone <name>
 
 # Common validation issues:
-# - Invalid Neo4j version (must be 5.26.x last semver LTS or 2025.x.x CalVer)
+# - Invalid Neo4j version (must be 5.26 LTS or a CalVer release: 2025.x, 2026.x, etc.)
 # - Clustering configurations in spec.config
 # - Invalid storage size format
 ```

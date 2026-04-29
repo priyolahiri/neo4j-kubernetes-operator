@@ -9,7 +9,7 @@ The `Neo4jRoleBinding` Custom Resource Definition (CRD) declaratively manages ro
 - **Scope**: Namespaced
 - **Short names**: `n4jrb`, `n4jrolebindings`
 - **Categories**: `neo4j`
-- **Supported Neo4j Versions**: 5.26.x and 2025.x.x+ (Enterprise edition)
+- **Supported Neo4j Versions**: 5.26 LTS and any CalVer release (2025.x, 2026.x, and onward) — Enterprise edition
 - **Reconciliation**: Role grants/revokes via `GRANT/REVOKE ROLE`, with optional exclusive enforcement of the user's full role set
 
 ## When to use this vs. Neo4jUser
