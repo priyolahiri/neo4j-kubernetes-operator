@@ -298,11 +298,111 @@ Each cluster gets automatic RBAC creation:
 - **RoleBinding**: Links account to role
 - **Endpoints Permission**: **CRITICAL** for cluster formation
 
-### TLS/SSL Support:
-- **Cert-Manager Integration**: Automatic certificate provisioning
-- **SSL Policy Configuration**: Separate policies for `https`, `bolt`, and `cluster` scopes
-- **Trust All for Cluster**: `dbms.ssl.policy.cluster.trust_all=true` for formation
-- **Certificate DNS Names**: Includes all server pod names
+### TLS/SSL Support
+
+The operator integrates with [cert-manager](https://cert-manager.io/) for the
+full certificate lifecycle. The flow is the same for clusters and standalones,
+with one structural difference noted at the end.
+
+#### 1. Activation
+
+TLS is opt-in via `spec.tls`:
+
+```yaml
+spec:
+  tls:
+    mode: cert-manager
+    issuerRef:
+      name: ca-cluster-issuer
+      kind: ClusterIssuer
+```
+
+Validation (`internal/validation/tls_validator.go`) runs inline during
+reconciliation — no admission webhooks are used (CLAUDE.md rule #26). When
+`mode: disabled`, the entire TLS path is skipped and the deployment uses plain
+`bolt://` and `http://`.
+
+#### 2. Certificate creation
+
+`BuildCertificateForEnterprise` (`internal/resources/cluster.go`) emits a
+`cert-manager.io/v1` `Certificate` whose `dnsNames` cover every endpoint clients
+or peers may connect to:
+
+- The headless discovery service (`{cluster}-discovery`)
+- The client service (`{cluster}-client`)
+- Each individual server pod FQDN (`{cluster}-server-0.{cluster}-discovery.{ns}.svc.cluster.local`, …)
+- LoadBalancer hostnames where applicable
+
+The `Certificate` references the user-supplied `issuerRef` and writes its
+material into a Secret named `{resource-name}-tls-secret` (`tls.crt`, `tls.key`,
+`ca.crt`). cert-manager owns rotation; the operator never touches expiry.
+
+#### 3. Mounting into Neo4j pods
+
+The StatefulSet builder mounts the Secret read-only at `/ssl/`
+(`internal/resources/cluster.go:~1349`). Neo4j is then pointed at this directory
+via `server.directories.certificates=/ssl` along with three SSL policies that
+share the same key/cert/CA bundle:
+
+- `dbms.ssl.policy.bolt.*` — client traffic (`bolt+s://`)
+- `dbms.ssl.policy.https.*` — Browser/HTTP API
+- `dbms.ssl.policy.cluster.*` — RAFT and discovery between server pods
+
+`dbms.ssl.policy.cluster.trust_all=true` is set to allow servers to trust each
+other during cluster formation without per-pod CA pinning.
+
+When TLS is enabled, `server.bolt.tls_level=REQUIRED` is also set — plain
+`bolt://` connections are rejected (regression checklist item #16).
+
+#### 4. Operator-side TLS (outgoing Bolt connections)
+
+The operator reconciles the cluster by issuing Cypher commands over Bolt. Its
+client must trust the cert-manager-issued cert. `buildTLSConfig`
+(`internal/neo4j/client.go`) handles this:
+
+1. **Auto-discovery**: load `ca.crt` from the `{resource-name}-tls-secret`
+   Secret and pin it as the trusted CA for outgoing connections. This is the
+   default path — no user configuration required.
+2. **Override**: `spec.tls.trustedCASecret` lets users point at a different
+   Secret (e.g. when bringing their own CA outside cert-manager).
+3. **Fallback**: `InsecureSkipVerify` is used only during the brief window
+   before the Secret has been populated by cert-manager (regression checklist
+   item #27).
+
+All three Bolt entry points — `NewClientForEnterprise`,
+`NewClientForEnterpriseStandalone`, and `NewClientForPod` (used by the
+split-brain detector) — go through `buildTLSConfig`, so the scheme switches
+dynamically between `bolt+s://` and `bolt://` based on `spec.tls.mode`
+(checklist item #28).
+
+#### 5. Standalone differences
+
+`Neo4jEnterpriseStandalone` follows the same flow with two structural
+differences:
+
+- A single pod, so `dnsNames` is shorter (one server FQDN + the client service).
+- Neo4j configuration is delivered via a ConfigMap rather than StatefulSet env
+  vars; the `health.sh` probe (mounted alongside `neo4j.conf` with mode `0755`)
+  also lives in this ConfigMap (checklist item #34).
+
+#### 6. Adjacent integrations
+
+- **ExternalSecrets**: when `spec.auth.adminSecret` references a Secret managed
+  by ExternalSecrets, the operator resolves it identically — TLS material
+  remains under cert-manager's control regardless.
+- **TrustStore for ABAC OIDC**: the `Neo4jAuthRule` flow does not interact with
+  the TLS bundle; OIDC providers configure their own truststores via
+  `dbms.security.oidc.<provider>.*` keys.
+
+#### Quick reference
+
+| Concern | Source |
+|---|---|
+| Validation | `internal/validation/tls_validator.go` |
+| Certificate CR shape | `internal/resources/cluster.go:BuildCertificateForEnterprise` |
+| `/ssl/` mount + SSL policies | `internal/resources/cluster.go` (~line 1349, ~line 1672) |
+| Operator outgoing TLS | `internal/neo4j/client.go:buildTLSConfig` |
+| Regression invariants | CLAUDE.md checklist items #16, #27, #28, #34 |
 
 ## Monitoring & Observability
 
