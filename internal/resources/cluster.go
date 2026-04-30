@@ -1107,7 +1107,7 @@ echo "Connecting to cluster via $NEO4J_BOLT_URI"
 
 # Wait for cluster to be ready
 echo "Waiting for Neo4j cluster to be available..."
-while ! cypher-shell -a $NEO4J_BOLT_URI -u $NEO4J_USERNAME -p $NEO4J_PASSWORD "SHOW SERVERS" 2>/dev/null; do
+while ! cypher-shell --format plain -a $NEO4J_BOLT_URI -u $NEO4J_USERNAME -p $NEO4J_PASSWORD "SHOW SERVERS" 2>/dev/null; do
     echo "Cluster not ready, waiting..."
     sleep 10
 done
