@@ -249,7 +249,15 @@ var _ = Describe("Neo4jUser end-to-end", func() {
 			//   <count>
 			// Take the last non-empty line and check it equals "0", rather
 			// than depending on \n placement around the count value.
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+			//
+			// Defensive: cypher-shell could in principle emit empty output
+			// during a transient connection blip; bail to false rather than
+			// risk an off-by-one on the slice access.
+			trimmed := strings.TrimSpace(string(out))
+			if trimmed == "" {
+				return false
+			}
+			lines := strings.Split(trimmed, "\n")
 			lastValue := strings.TrimSpace(lines[len(lines)-1])
 			return lastValue == "0"
 		}, clusterTimeout, interval).Should(BeTrue(), "DROP USER must remove appuser from SHOW USERS")
