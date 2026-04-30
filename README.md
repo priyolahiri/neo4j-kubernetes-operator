@@ -297,13 +297,18 @@ EOF
 
 If the user doesn't exist yet, the binding sits in `UserNotFound` and reconciles when it appears.
 
+For claims-driven role assignment — granting roles to *anyone whose OIDC token matches a condition*, rather than to a specific username — use **[`Neo4jAuthRule`](docs/api_reference/neo4jauthrule.md)** (attribute-based access control, requires Neo4j 2026.03+). Rules are expressed as Cypher conditions over OIDC token attributes (`abac.oidc.user_attribute('claim')`) and grant roles dynamically at authentication time. See the *Recent Improvements* section below for an example.
+
+For per-row data filtering — restricting which nodes or relationships a role can see based on property values — use **property-based access control (PBAC)** directly inside `Neo4jRole.spec.privileges` with the `FOR pattern WHERE …` clause. Documented in the [`Neo4jRole` API reference](docs/api_reference/neo4jrole.md#property-based-access-control-pbac).
+
 **Documentation and more examples:**
 
 - [User & Role Management Guide](docs/user_guide/user_role_management.md) — end-to-end walkthrough with troubleshooting
 - [Neo4jUser API reference](docs/api_reference/neo4juser.md)
 - [Neo4jRole API reference](docs/api_reference/neo4jrole.md)
 - [Neo4jRoleBinding API reference](docs/api_reference/neo4jrolebinding.md)
-- [`examples/users-roles/`](examples/users-roles/) — six end-to-end YAMLs covering native users, custom roles, SSO bindings, suspension, external auth, and built-in adoption
+- [Neo4jAuthRule API reference](docs/api_reference/neo4jauthrule.md) — ABAC, claims-to-roles mapping (Neo4j 2026.03+)
+- [`examples/users-roles/`](examples/users-roles/) — seven end-to-end YAMLs covering native users, custom roles, SSO bindings, suspension, external auth, built-in adoption, and ABAC auth rules
 
 ## 🔄 Property Sharding (Infinigraph GA)
 
@@ -664,6 +669,31 @@ kubectl logs -l app.kubernetes.io/name=neo4j-operator
 Note: "Compliance-ready logging and auditing" means the operator exposes Neo4j logging/audit controls via `spec.config` and emits Kubernetes Events for key actions; you still need to enable the desired Neo4j log settings and ship/retain logs per your compliance requirements.
 
 ## 🎯 Recent Improvements
+
+### Property-Based and Attribute-Based Access Control (April 2026)
+
+Two complementary additions to the operator's RBAC story, covering the two pieces Neo4j ships under that umbrella.
+
+- **Property-based access control (PBAC)** is supported directly inside `Neo4jRole.spec.privileges`. The full Cypher grammar is accepted, including the `FOR pattern WHERE …` clause that refines `MATCH`, `READ`, and `TRAVERSE` privileges with per-row property conditions. PBAC privileges flow through the same drift-reconciliation loop as ordinary privileges. The role validator rejects PBAC privileges that name a `Neo4jShardedDatabase` (PBAC is unsupported on sharded property databases) and warns when `ON GRAPH *` is combined with a `WHERE` clause.
+- **Attribute-based access control (ABAC)** is exposed through a new **`Neo4jAuthRule`** CRD. Each rule maps OIDC token claims to a set of role grants via a Cypher condition expression evaluated at authentication time:
+
+  ```yaml
+  apiVersion: neo4j.neo4j.com/v1beta1
+  kind: Neo4jAuthRule
+  metadata: { name: emea-business-hours }
+  spec:
+    clusterRef: production
+    name: emea_business_hours
+    condition: |
+      abac.oidc.user_attribute('region') = 'EMEA'
+        AND time.transaction('UTC').hour >= 6
+        AND time.transaction('UTC').hour < 18
+    grantedRoles: [reader]
+  ```
+
+  The reconciler diffs the live state via `SHOW AUTH RULES` on every loop. ABAC requires Neo4j 2026.03 or later; older clusters surface a clear `AuthRuleVersionTooOld` condition. The cluster owner must set `dbms.security.abac.authorization_providers` in `spec.config` — the operator detects this prerequisite and surfaces `OIDCProviderConfigured=False` rather than silently editing the cluster spec.
+
+Both features are documented end-to-end in the [User & Role Management Guide](docs/user_guide/user_role_management.md), with full API references at [`Neo4jRole`](docs/api_reference/neo4jrole.md#property-based-access-control-pbac) and [`Neo4jAuthRule`](docs/api_reference/neo4jauthrule.md). Worked examples live at [`examples/users-roles/07-authrule-abac.yaml`](examples/users-roles/07-authrule-abac.yaml).
 
 ### Declarative User & Role Management (April 2026)
 
