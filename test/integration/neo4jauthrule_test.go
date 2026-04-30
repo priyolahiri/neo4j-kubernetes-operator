@@ -182,25 +182,38 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 
 		By("Waiting for the rolling restart to settle (cluster phase returns to Ready)")
 		// The operator detects the config change, triggers a rolling restart,
-		// and brings the cluster back to Ready. We need to wait for both:
-		//   1. Phase to leave Ready (Forming or Pending), then
-		//   2. Phase to return to Ready.
-		// Using a stable-Ready check (Ready for at least N consecutive
-		// observations) avoids racing the brief transition window.
+		// and brings the cluster back to Ready. The status flip can happen in
+		// either order:
+		//   - Phase=Ready may briefly persist (controller hasn't yet seen the
+		//     STS update) — Status.ObservedGeneration < Generation in this
+		//     window, so we gate on observedGeneration first.
+		//   - Then Phase typically transitions Ready → Forming/Pending → Ready.
+		// We REQUIRE Phase=Ready to hold stable for `stableReadyDuration` to
+		// ensure we don't proceed during the brief Ready window before the
+		// STS rollout begins.
+		const stableReadyDuration = 30 * time.Second
+		var firstReadyAt time.Time
 		lastRestartPhase := ""
 		var lastRestartObsGen int64 = -1
+		pollCount := 0
 		Eventually(func(g Gomega) {
 			c := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: namespace.Name}, c)).To(Succeed())
-			if c.Status.Phase != lastRestartPhase || c.Status.ObservedGeneration != lastRestartObsGen {
-				GinkgoWriter.Printf("[abac-e2e] rolling restart progress: phase=%q gen=%d obsGen=%d\n",
-					c.Status.Phase, c.Generation, c.Status.ObservedGeneration)
+			pollCount++
+			if c.Status.Phase != lastRestartPhase || c.Status.ObservedGeneration != lastRestartObsGen || pollCount%6 == 0 {
+				GinkgoWriter.Printf("[abac-e2e] rolling restart progress (poll #%d): phase=%q gen=%d obsGen=%d firstReadyAt=%v\n",
+					pollCount, c.Status.Phase, c.Generation, c.Status.ObservedGeneration, firstReadyAt)
 				lastRestartPhase = c.Status.Phase
 				lastRestartObsGen = c.Status.ObservedGeneration
 			}
+			g.Expect(c.Status.ObservedGeneration).To(BeNumerically(">=", c.Generation),
+				"controller has not yet observed the patched generation")
 			g.Expect(c.Status.Phase).To(Equal("Ready"))
-			// observedGeneration must reflect the patched spec
-			g.Expect(c.Status.ObservedGeneration).To(BeNumerically(">=", c.Generation))
+			if firstReadyAt.IsZero() {
+				firstReadyAt = time.Now()
+			}
+			g.Expect(time.Since(firstReadyAt)).To(BeNumerically(">=", stableReadyDuration),
+				"phase=Ready must hold stable for %s before we proceed", stableReadyDuration)
 		}, clusterTimeout, interval).Should(Succeed())
 
 		By("Creating an analytics_reader Neo4jRole that the auth rule will grant")
@@ -217,16 +230,18 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, role)).To(Succeed())
-		lastRolePhase := ""
+		lastRolePhase := "<unset>"
+		rolePoll := 0
 		Eventually(func() string {
 			r := &neo4jv1beta1.Neo4jRole{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: "analytics-reader", Namespace: namespace.Name}, r); err != nil {
 				GinkgoWriter.Printf("[abac-e2e] get role err: %v\n", err)
 				return ""
 			}
-			if r.Status.Phase != lastRolePhase {
-				GinkgoWriter.Printf("[abac-e2e] role analytics-reader phase: %q -> %q (gen=%d obsGen=%d conds=%s)\n",
-					lastRolePhase, r.Status.Phase, r.Generation, r.Status.ObservedGeneration, conditionsSummary(r.Status.Conditions))
+			rolePoll++
+			if r.Status.Phase != lastRolePhase || rolePoll == 1 || rolePoll%6 == 0 {
+				GinkgoWriter.Printf("[abac-e2e] role analytics-reader (poll #%d) phase=%q gen=%d obsGen=%d appliedPrivs=%d conds=%s\n",
+					rolePoll, r.Status.Phase, r.Generation, r.Status.ObservedGeneration, len(r.Status.AppliedPrivileges), conditionsSummary(r.Status.Conditions))
 				lastRolePhase = r.Status.Phase
 			}
 			return r.Status.Phase
@@ -246,16 +261,18 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 		Expect(k8sClient.Create(ctx, authRule)).To(Succeed())
 
 		By("Waiting for the auth rule to reach status.phase=Ready")
-		lastRulePhase := ""
+		lastRulePhase := "<unset>"
+		rulePoll := 0
 		Eventually(func() string {
 			r := &neo4jv1beta1.Neo4jAuthRule{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: "analytics-team", Namespace: namespace.Name}, r); err != nil {
 				GinkgoWriter.Printf("[abac-e2e] get authrule err: %v\n", err)
 				return ""
 			}
-			if r.Status.Phase != lastRulePhase {
-				GinkgoWriter.Printf("[abac-e2e] authrule analytics-team phase: %q -> %q (gen=%d obsGen=%d appliedRoles=%v conds=%s)\n",
-					lastRulePhase, r.Status.Phase, r.Generation, r.Status.ObservedGeneration, r.Status.AppliedRoles, conditionsSummary(r.Status.Conditions))
+			rulePoll++
+			if r.Status.Phase != lastRulePhase || rulePoll == 1 || rulePoll%6 == 0 {
+				GinkgoWriter.Printf("[abac-e2e] authrule analytics-team (poll #%d) phase=%q gen=%d obsGen=%d appliedRoles=%v conds=%s\n",
+					rulePoll, r.Status.Phase, r.Generation, r.Status.ObservedGeneration, r.Status.AppliedRoles, conditionsSummary(r.Status.Conditions))
 				lastRulePhase = r.Status.Phase
 			}
 			return r.Status.Phase
