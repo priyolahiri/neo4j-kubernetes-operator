@@ -45,7 +45,12 @@ import (
 // authenticate any users.
 
 var _ = Describe("Neo4jAuthRule end-to-end", func() {
-	const testTimeout = time.Second * 600
+	// Each spec creates a fresh 2-server cluster on Neo4j 2026.04, then
+	// patches the cluster's spec.config to add the ABAC provider key
+	// (which forces a rolling restart). 15 minutes is the realistic
+	// budget on a 4-core CI runner: ~5 min initial bootstrap + ~5 min
+	// rolling restart + ~5 min for the auth-rule + drift assertions.
+	const testTimeout = time.Second * 900
 
 	var (
 		testCtx     context.Context
@@ -120,7 +125,14 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 	})
 
 	It("creates a rule, reverts drift, drops on delete", SpecTimeout(testTimeout), func(ctx SpecContext) {
-		By("Creating a 2-server cluster with dbms.security.abac.authorization_providers")
+		// We deliberately create the cluster WITHOUT
+		// dbms.security.abac.authorization_providers in spec.config — setting
+		// that key at boot can wedge Neo4j 2026.04 (it expects a corresponding
+		// dbms.security.oidc.<name>.* block, which we don't supply). Adding
+		// the key after the cluster is Ready triggers a rolling restart that
+		// the operator handles, and the rule reconciler picks it up on the
+		// next loop.
+		By("Creating a 2-server cluster (no ABAC provider configured yet)")
 		cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: clusterName, Namespace: namespace.Name},
 			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
@@ -133,19 +145,13 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 					AdminSecret:             "neo4j-admin-secret",
 				},
 				TLS: &neo4jv1beta1.TLSSpec{Mode: "disabled"},
-				// The provider name does not need to resolve — Neo4j only
-				// validates it at auth time. The operator just needs the key
-				// present so its OIDCProviderConfigured precondition passes.
-				Config: map[string]string{
-					"dbms.security.abac.authorization_providers": "test-oidc",
-				},
 				Env: []corev1.EnvVar{{Name: "NEO4J_ACCEPT_LICENSE_AGREEMENT", Value: "eval"}},
 			},
 		}
 		applyCIOptimizations(cluster)
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
-		By("Waiting for cluster phase=Ready")
+		By("Waiting for initial cluster phase=Ready")
 		Eventually(func() string {
 			c := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: namespace.Name}, c); err != nil {
@@ -153,6 +159,34 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 			}
 			return c.Status.Phase
 		}, clusterTimeout, interval).Should(Equal("Ready"))
+
+		By("Patching cluster spec.config to add dbms.security.abac.authorization_providers")
+		Eventually(func() error {
+			latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: namespace.Name}, latest); err != nil {
+				return err
+			}
+			if latest.Spec.Config == nil {
+				latest.Spec.Config = map[string]string{}
+			}
+			latest.Spec.Config["dbms.security.abac.authorization_providers"] = "test-oidc"
+			return k8sClient.Update(ctx, latest)
+		}, clusterTimeout, interval).Should(Succeed())
+
+		By("Waiting for the rolling restart to settle (cluster phase returns to Ready)")
+		// The operator detects the config change, triggers a rolling restart,
+		// and brings the cluster back to Ready. We need to wait for both:
+		//   1. Phase to leave Ready (Forming or Pending), then
+		//   2. Phase to return to Ready.
+		// Using a stable-Ready check (Ready for at least N consecutive
+		// observations) avoids racing the brief transition window.
+		Eventually(func(g Gomega) {
+			c := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: namespace.Name}, c)).To(Succeed())
+			g.Expect(c.Status.Phase).To(Equal("Ready"))
+			// observedGeneration must reflect the patched spec
+			g.Expect(c.Status.ObservedGeneration).To(BeNumerically(">=", c.Generation))
+		}, clusterTimeout, interval).Should(Succeed())
 
 		By("Creating an analytics_reader Neo4jRole that the auth rule will grant")
 		role = &neo4jv1beta1.Neo4jRole{
