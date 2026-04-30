@@ -831,14 +831,17 @@ spec:
       kind: ClusterIssuer
 
   config:
-    # Strong encryption requirements (PCI DSS v4.0 requires TLS 1.2 minimum).
-    # TLS 1.3 is strongly preferred; TLS 1.2 is included here for compatibility
-    # with mixed client environments (older Java drivers, legacy applications).
-    # If every client in your environment supports TLS 1.3, harden further by
-    # removing TLSv1.2 — see the TLS 1.3-only example commented out below.
+    # Strong encryption requirements. For PCI-aligned deployments use TLS 1.3
+    # as the default baseline; TLS 1.2 is shown below only for temporary
+    # legacy-client compatibility during migration. PCI DSS v4.0 mandates a
+    # TLS 1.2 minimum, but the standard expects active migration toward
+    # TLS 1.3, and several other regimes (FIPS-140-3 modules, NIST SP
+    # 800-52r2 in advisory mode) already discourage TLS 1.2 for new builds.
+    # If every client in your environment supports TLS 1.3, harden by
+    # removing TLSv1.2 — see the TLS 1.3-only target-state example below.
     dbms.ssl.policy.bolt.tls_versions: "TLSv1.2,TLSv1.3"
     dbms.ssl.policy.https.tls_versions: "TLSv1.2,TLSv1.3"
-    # TLS 1.3-only hardening (uncomment if all clients support TLS 1.3):
+    # TLS 1.3-only hardening (target state — recommended once clients migrate):
     # dbms.ssl.policy.bolt.tls_versions: "TLSv1.3"
     # dbms.ssl.policy.https.tls_versions: "TLSv1.3"
     dbms.ssl.policy.bolt.ciphers: "TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256"
