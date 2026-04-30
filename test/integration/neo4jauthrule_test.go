@@ -26,11 +26,18 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/neo4j"
+)
+
+const (
+	oidcStubName = "oidc-stub"
+	oidcStubPort = 8080
 )
 
 // These tests verify Neo4jAuthRule end-to-end. ABAC requires Neo4j 2026.03+;
@@ -53,13 +60,14 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 	const testTimeout = time.Second * 900
 
 	var (
-		testCtx     context.Context
-		namespace   *corev1.Namespace
-		cluster     *neo4jv1beta1.Neo4jEnterpriseCluster
-		role        *neo4jv1beta1.Neo4jRole
-		authRule    *neo4jv1beta1.Neo4jAuthRule
-		clusterName string
-		adminPass   string
+		testCtx          context.Context
+		namespace        *corev1.Namespace
+		cluster          *neo4jv1beta1.Neo4jEnterpriseCluster
+		role             *neo4jv1beta1.Neo4jRole
+		authRule         *neo4jv1beta1.Neo4jAuthRule
+		clusterName      string
+		adminPass        string
+		oidcDiscoveryURL string
 	)
 
 	BeforeEach(func() {
@@ -90,6 +98,16 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 			},
 		}
 		Expect(k8sClient.Create(testCtx, adminSecret)).To(Succeed())
+
+		// Stand up an in-cluster OIDC discovery stub so the cluster can boot
+		// with a real (reachable) `dbms.security.oidc.test-oidc.well_known_discovery_uri`.
+		// We never authenticate; Neo4j only needs to fetch the discovery doc
+		// + JWKS to consider the provider configured. Without this, setting
+		// `dbms.security.abac.authorization_providers` makes Neo4j 2026.04
+		// wedge during boot (the rolling-restart approach we tried in earlier
+		// commits did not fix this — Neo4j won't accept the provider name
+		// without a corresponding `dbms.security.oidc.<name>.*` block).
+		oidcDiscoveryURL = setupOIDCStub(testCtx, namespaceName)
 	})
 
 	AfterEach(func() {
@@ -125,14 +143,11 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 	})
 
 	It("creates a rule, reverts drift, drops on delete", SpecTimeout(testTimeout), func(ctx SpecContext) {
-		// We deliberately create the cluster WITHOUT
-		// dbms.security.abac.authorization_providers in spec.config — setting
-		// that key at boot can wedge Neo4j 2026.04 (it expects a corresponding
-		// dbms.security.oidc.<name>.* block, which we don't supply). Adding
-		// the key after the cluster is Ready triggers a rolling restart that
-		// the operator handles, and the rule reconciler picks it up on the
-		// next loop.
-		By("Creating a 2-server cluster (no ABAC provider configured yet)")
+		// Single-phase boot: the OIDC stub deployed in BeforeEach is already
+		// reachable, so we can include the abac + oidc provider block in the
+		// initial cluster config. Neo4j 2026.04 fetches the discovery doc at
+		// boot and accepts the provider; no rolling restart needed.
+		By("Creating a 2-server cluster with ABAC + OIDC provider configured")
 		cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: clusterName, Namespace: namespace.Name},
 			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
@@ -146,12 +161,19 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 				},
 				TLS: &neo4jv1beta1.TLSSpec{Mode: "disabled"},
 				Env: []corev1.EnvVar{{Name: "NEO4J_ACCEPT_LICENSE_AGREEMENT", Value: "eval"}},
+				Config: map[string]string{
+					"dbms.security.abac.authorization_providers":            "test-oidc",
+					"dbms.security.oidc.test-oidc.display_name":             "Test OIDC",
+					"dbms.security.oidc.test-oidc.well_known_discovery_uri": oidcDiscoveryURL,
+					"dbms.security.oidc.test-oidc.audience":                 "neo4j",
+					"dbms.security.oidc.test-oidc.client_id":                "neo4j",
+				},
 			},
 		}
 		applyCIOptimizations(cluster)
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
-		By("Waiting for initial cluster phase=Ready")
+		By("Waiting for cluster phase=Ready")
 		lastClusterPhase := ""
 		Eventually(func() string {
 			c := &neo4jv1beta1.Neo4jEnterpriseCluster{}
@@ -166,55 +188,6 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 			}
 			return c.Status.Phase
 		}, clusterTimeout, interval).Should(Equal("Ready"))
-
-		By("Patching cluster spec.config to add dbms.security.abac.authorization_providers")
-		Eventually(func() error {
-			latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: namespace.Name}, latest); err != nil {
-				return err
-			}
-			if latest.Spec.Config == nil {
-				latest.Spec.Config = map[string]string{}
-			}
-			latest.Spec.Config["dbms.security.abac.authorization_providers"] = "test-oidc"
-			return k8sClient.Update(ctx, latest)
-		}, clusterTimeout, interval).Should(Succeed())
-
-		By("Waiting for the rolling restart to settle (cluster phase returns to Ready)")
-		// The operator detects the config change, triggers a rolling restart,
-		// and brings the cluster back to Ready. The status flip can happen in
-		// either order:
-		//   - Phase=Ready may briefly persist (controller hasn't yet seen the
-		//     STS update) — Status.ObservedGeneration < Generation in this
-		//     window, so we gate on observedGeneration first.
-		//   - Then Phase typically transitions Ready → Forming/Pending → Ready.
-		// We REQUIRE Phase=Ready to hold stable for `stableReadyDuration` to
-		// ensure we don't proceed during the brief Ready window before the
-		// STS rollout begins.
-		const stableReadyDuration = 30 * time.Second
-		var firstReadyAt time.Time
-		lastRestartPhase := ""
-		var lastRestartObsGen int64 = -1
-		pollCount := 0
-		Eventually(func(g Gomega) {
-			c := &neo4jv1beta1.Neo4jEnterpriseCluster{}
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: namespace.Name}, c)).To(Succeed())
-			pollCount++
-			if c.Status.Phase != lastRestartPhase || c.Status.ObservedGeneration != lastRestartObsGen || pollCount%6 == 0 {
-				GinkgoWriter.Printf("[abac-e2e] rolling restart progress (poll #%d): phase=%q gen=%d obsGen=%d firstReadyAt=%v\n",
-					pollCount, c.Status.Phase, c.Generation, c.Status.ObservedGeneration, firstReadyAt)
-				lastRestartPhase = c.Status.Phase
-				lastRestartObsGen = c.Status.ObservedGeneration
-			}
-			g.Expect(c.Status.ObservedGeneration).To(BeNumerically(">=", c.Generation),
-				"controller has not yet observed the patched generation")
-			g.Expect(c.Status.Phase).To(Equal("Ready"))
-			if firstReadyAt.IsZero() {
-				firstReadyAt = time.Now()
-			}
-			g.Expect(time.Since(firstReadyAt)).To(BeNumerically(">=", stableReadyDuration),
-				"phase=Ready must hold stable for %s before we proceed", stableReadyDuration)
-		}, clusterTimeout, interval).Should(Succeed())
 
 		By("Creating an analytics_reader Neo4jRole that the auth rule will grant")
 		role = &neo4jv1beta1.Neo4jRole{
@@ -466,4 +439,88 @@ func neo4jVersionSupportsAuthRules() bool {
 		return false
 	}
 	return v.SupportsAuthRules()
+}
+
+// setupOIDCStub deploys an in-cluster mock-oauth2-server (navikt/mock-oauth2-server)
+// Pod + Service in `ns` and returns the cluster-internal well-known discovery
+// URL for the "test-oidc" issuer. mock-oauth2-server serves a fully spec-compliant
+// OIDC discovery doc + JWKS without any pre-baked configuration; the issuer-id
+// is taken from the first path segment of the request, so we point Neo4j at
+// `/test-oidc/.well-known/openid-configuration`.
+//
+// The stub is needed because Neo4j 2026.04 wedges during boot if
+// `dbms.security.abac.authorization_providers` references a name that has no
+// reachable `well_known_discovery_uri`. We never actually authenticate users;
+// Neo4j only needs to fetch and parse the discovery doc + JWKS to consider
+// the provider configured.
+func setupOIDCStub(ctx context.Context, ns string) string {
+	const image = "ghcr.io/navikt/mock-oauth2-server:2.1.10"
+
+	stubPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      oidcStubName,
+			Namespace: ns,
+			Labels:    map[string]string{"app": oidcStubName},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:  "mock-oauth2",
+				Image: image,
+				Ports: []corev1.ContainerPort{{ContainerPort: oidcStubPort}},
+				Env: []corev1.EnvVar{
+					{Name: "SERVER_PORT", Value: fmt.Sprintf("%d", oidcStubPort)},
+				},
+				ReadinessProbe: &corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
+							Path: "/test-oidc/.well-known/openid-configuration",
+							Port: intstr.FromInt(oidcStubPort),
+						},
+					},
+					InitialDelaySeconds: 5,
+					PeriodSeconds:       2,
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						"cpu":    resource.MustParse("50m"),
+						"memory": resource.MustParse("128Mi"),
+					},
+					Limits: corev1.ResourceList{
+						"memory": resource.MustParse("512Mi"),
+					},
+				},
+			}},
+		},
+	}
+	Expect(k8sClient.Create(ctx, stubPod)).To(Succeed())
+
+	stubSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: oidcStubName, Namespace: ns},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"app": oidcStubName},
+			Ports: []corev1.ServicePort{{
+				Port:       oidcStubPort,
+				TargetPort: intstr.FromInt(oidcStubPort),
+			}},
+		},
+	}
+	Expect(k8sClient.Create(ctx, stubSvc)).To(Succeed())
+
+	By("Waiting for OIDC stub Pod to be Ready")
+	Eventually(func() bool {
+		p := &corev1.Pod{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: oidcStubName, Namespace: ns}, p); err != nil {
+			return false
+		}
+		for _, c := range p.Status.Conditions {
+			if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+				GinkgoWriter.Printf("[abac-e2e] OIDC stub ready (image=%s)\n", image)
+				return true
+			}
+		}
+		return false
+	}, 3*time.Minute, 2*time.Second).Should(BeTrue(), "OIDC stub pod did not become Ready within 3m")
+
+	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d/test-oidc/.well-known/openid-configuration",
+		oidcStubName, ns, oidcStubPort)
 }
