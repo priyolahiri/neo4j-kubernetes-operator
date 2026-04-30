@@ -249,7 +249,11 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 				GinkgoWriter.Printf("cypher-shell SHOW AUTH RULES failed: %v; output: %s\n", err, string(out))
 				return false
 			}
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+			trimmed := strings.TrimSpace(string(out))
+			if trimmed == "" {
+				return false
+			}
+			lines := strings.Split(trimmed, "\n")
 			return strings.TrimSpace(lines[len(lines)-1]) == "1"
 		}, clusterTimeout, interval).Should(BeTrue(), "controller must recreate the dropped auth rule")
 
@@ -291,7 +295,11 @@ var _ = Describe("Neo4jAuthRule end-to-end", func() {
 				GinkgoWriter.Printf("cypher-shell SHOW AUTH RULES failed: %v; output: %s\n", err, string(out))
 				return false
 			}
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+			trimmed := strings.TrimSpace(string(out))
+			if trimmed == "" {
+				return false
+			}
+			lines := strings.Split(trimmed, "\n")
 			return strings.TrimSpace(lines[len(lines)-1]) == "0"
 		}, clusterTimeout, interval).Should(BeTrue(), "DROP AUTH RULE must remove analytics_team from SHOW AUTH RULES")
 	})
