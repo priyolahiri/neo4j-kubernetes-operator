@@ -230,7 +230,7 @@ stringData:
 | Field | Neo4j Config Key | Description |
 |-------|-----------------|-------------|
 | `ldap.host` | `dbms.security.ldap.host` | LDAP server URL (`ldap://` or `ldaps://`) |
-| `ldap.useStartTLS` | `dbms.security.ldap.use_starttls` | Use STARTTLS with `ldap://` (typically port 389) to upgrade the connection to TLS after connect. Use `ldaps://` (typically port 636) for immediate TLS negotiation at connect time. These approaches are mutually exclusive; do not enable STARTTLS when using `ldaps://`. |
+| `ldap.useStartTLS` | `dbms.security.ldap.use_starttls` | Use STARTTLS with `ldap://` (typically port 389) to upgrade the connection to TLS after connection. Use `ldaps://` (typically port 636) for immediate TLS negotiation at connect time. These approaches are mutually exclusive; do not enable STARTTLS when using `ldaps://`. |
 | `ldap.authentication.userDNTemplate` | `dbms.security.ldap.authentication.user_dn_template` | DN template, `{0}` = username |
 | `ldap.authentication.searchForAttribute` | `dbms.security.ldap.authentication.search_for_attribute` | Use attribute search instead of DN template |
 | `ldap.authentication.attribute` | `dbms.security.ldap.authentication.attribute` | Attribute to search (e.g., `samaccountname`) |
@@ -685,7 +685,7 @@ spec:
           app.kubernetes.io/name: neo4j
     ports:
     - protocol: TCP
-      port: 6000  # Cluster discovery (member discovery)
+      port: 6000  # Cluster discovery
     - protocol: TCP
       port: 7000  # RAFT
 
@@ -934,7 +934,8 @@ spec:
     # legacy-client compatibility during migration. PCI DSS v4.0 mandates a
     # TLS 1.2 minimum, but the standard expects active migration toward
     # TLS 1.3, and several other regimes (FIPS-140-3 modules, NIST SP
-    # 800-52r2 in advisory mode) already discourage TLS 1.2 for new builds.
+    # 800-52r2 guidance/recommendations, i.e., not a strict prohibition)
+    # already discourage TLS 1.2 for new builds.
     # If every client in your environment supports TLS 1.3, harden by
     # removing TLSv1.2 — see the TLS 1.3-only target-state example below.
     dbms.ssl.policy.bolt.tls_versions: "TLSv1.2,TLSv1.3"
