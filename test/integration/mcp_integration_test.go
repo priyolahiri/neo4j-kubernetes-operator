@@ -18,8 +18,6 @@ package integration_test
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -41,13 +39,13 @@ import (
 
 var _ = Describe("MCP Integration Tests", func() {
 	var (
-		ctx          context.Context
-		namespace    *corev1.Namespace
-		cluster      *neo4jv1beta1.Neo4jEnterpriseCluster
-		standalone   *neo4jv1beta1.Neo4jEnterpriseStandalone
-		curlJob      *batchv1.Job
-		clusterName  string
-		standaloneID string
+		ctx            context.Context
+		namespace      *corev1.Namespace
+		cluster        *neo4jv1beta1.Neo4jEnterpriseCluster
+		standalone     *neo4jv1beta1.Neo4jEnterpriseStandalone
+		curlJob        *batchv1.Job
+		clusterName    string
+		standaloneName string
 	)
 
 	BeforeEach(func() {
@@ -59,7 +57,7 @@ var _ = Describe("MCP Integration Tests", func() {
 			},
 		}
 		clusterName = randomName("mcp-cluster")
-		standaloneID = randomName("mcp-standalone")
+		standaloneName = randomName("mcp-standalone")
 	})
 
 	AfterEach(func() {
@@ -235,7 +233,7 @@ var _ = Describe("MCP Integration Tests", func() {
 			}
 			Expect(k8sClient.Create(ctx, adminSecret)).To(Succeed())
 
-			standalone = createBasicStandalone(standaloneID, namespace.Name)
+			standalone = createBasicStandalone(standaloneName, namespace.Name)
 			standalone.Spec.Auth = &neo4jv1beta1.AuthSpec{
 				AdminSecret: adminSecret.Name,
 			}
@@ -252,7 +250,7 @@ var _ = Describe("MCP Integration Tests", func() {
 			Eventually(func() bool {
 				var currentStandalone neo4jv1beta1.Neo4jEnterpriseStandalone
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      standaloneID,
+					Name:      standaloneName,
 					Namespace: namespace.Name,
 				}, &currentStandalone)
 				if err != nil {
@@ -262,7 +260,7 @@ var _ = Describe("MCP Integration Tests", func() {
 			}, clusterTimeout, interval).Should(BeTrue())
 
 			deploymentKey := types.NamespacedName{
-				Name:      fmt.Sprintf("%s-mcp", standaloneID),
+				Name:      fmt.Sprintf("%s-mcp", standaloneName),
 				Namespace: namespace.Name,
 			}
 
@@ -274,7 +272,7 @@ var _ = Describe("MCP Integration Tests", func() {
 				return deployment.Status.ReadyReplicas > 0
 			}, timeout, interval).Should(BeTrue())
 
-			serviceHost := fmt.Sprintf("%s-mcp.%s.svc.cluster.local", standaloneID, namespace.Name)
+			serviceHost := fmt.Sprintf("%s-mcp.%s.svc.cluster.local", standaloneName, namespace.Name)
 			// Official image serves at /mcp (no trailing slash required).
 			serviceURL := fmt.Sprintf("http://%s:8080/mcp", serviceHost)
 
@@ -287,7 +285,7 @@ var _ = Describe("MCP Integration Tests", func() {
 					return err
 				}
 				if job.Status.Failed > 0 {
-					dumpJobLogs(namespace.Name, job.Name)
+					dumpJobLogs(ctx, namespace.Name, job.Name)
 					return fmt.Errorf("mcp curl job failed")
 				}
 				if job.Status.Succeeded > 0 {
@@ -312,7 +310,7 @@ var _ = Describe("MCP Integration Tests", func() {
 			}
 			Expect(k8sClient.Create(ctx, adminSecret)).To(Succeed())
 
-			standalone = createBasicStandalone(standaloneID, namespace.Name)
+			standalone = createBasicStandalone(standaloneName, namespace.Name)
 			standalone.Spec.Auth = &neo4jv1beta1.AuthSpec{
 				AdminSecret: adminSecret.Name,
 			}
@@ -331,7 +329,7 @@ var _ = Describe("MCP Integration Tests", func() {
 			Expect(k8sClient.Create(ctx, standalone)).To(Succeed())
 
 			deploymentKey := types.NamespacedName{
-				Name:      fmt.Sprintf("%s-mcp", standaloneID),
+				Name:      fmt.Sprintf("%s-mcp", standaloneName),
 				Namespace: namespace.Name,
 			}
 
@@ -354,8 +352,8 @@ var _ = Describe("MCP Integration Tests", func() {
 					return fmt.Errorf("expected MCP label neo4j.com/component=mcp")
 				}
 
-				if deployment.Spec.Template.Labels["neo4j.com/cluster"] != standaloneID {
-					return fmt.Errorf("expected MCP label neo4j.com/cluster=%s", standaloneID)
+				if deployment.Spec.Template.Labels["neo4j.com/cluster"] != standaloneName {
+					return fmt.Errorf("expected MCP label neo4j.com/cluster=%s", standaloneName)
 				}
 
 				// Official mcp/neo4j image (github.com/neo4j/mcp).
@@ -371,7 +369,7 @@ var _ = Describe("MCP Integration Tests", func() {
 				neo4jURI := findEnvVar(container.Env, "NEO4J_URI")
 				// Standalone MCP URI uses the routing scheme for parity with
 				// the cluster builder; see internal/resources/mcp.go.
-				expectedURI := fmt.Sprintf("neo4j://%s-service.%s.svc.cluster.local:7687", standaloneID, namespace.Name)
+				expectedURI := fmt.Sprintf("neo4j://%s-service.%s.svc.cluster.local:7687", standaloneName, namespace.Name)
 				if neo4jURI == nil || neo4jURI.Value != expectedURI {
 					return fmt.Errorf("expected NEO4J_URI=%s", expectedURI)
 				}
@@ -411,7 +409,7 @@ var _ = Describe("MCP Integration Tests", func() {
 			}, timeout, interval).Should(Succeed())
 
 			serviceKey := types.NamespacedName{
-				Name:      fmt.Sprintf("%s-mcp", standaloneID),
+				Name:      fmt.Sprintf("%s-mcp", standaloneName),
 				Namespace: namespace.Name,
 			}
 
@@ -489,7 +487,7 @@ func buildMCPCurlJob(namespace, name, url, username, password string) *batchv1.J
 	}
 }
 
-func dumpJobLogs(namespace, jobName string) {
+func dumpJobLogs(ctx context.Context, namespace, jobName string) {
 	podList := &corev1.PodList{}
 	if err := k8sClient.List(ctx, podList, client.InNamespace(namespace),
 		client.MatchingLabels{"job-name": jobName}); err != nil {
@@ -550,70 +548,4 @@ func splitImageTag(image string) (string, string) {
 		return image, "latest"
 	}
 	return image[:colon], image[colon+1:]
-}
-
-func createRegistryPullSecret(ctx context.Context, namespace, repo string) string {
-	registry, needsAuth := registryHostFromRepo(repo)
-	if !needsAuth {
-		return ""
-	}
-	if registry == "" {
-		registry = "ghcr.io"
-	}
-
-	username := os.Getenv("MCP_REGISTRY_USERNAME")
-	password := os.Getenv("MCP_REGISTRY_PASSWORD")
-	if username == "" {
-		username = os.Getenv("GITHUB_ACTOR")
-	}
-	if password == "" {
-		password = os.Getenv("GITHUB_TOKEN")
-	}
-
-	if username == "" || password == "" {
-		Fail("registry credentials missing: set MCP_REGISTRY_USERNAME and MCP_REGISTRY_PASSWORD (or GITHUB_ACTOR/GITHUB_TOKEN)")
-	}
-
-	auth := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", username, password)))
-	dockerConfig := map[string]map[string]map[string]string{
-		"auths": {
-			registry: {
-				"username": username,
-				"password": password,
-				"auth":     auth,
-			},
-		},
-	}
-	configJSON, err := json.Marshal(dockerConfig)
-	if err != nil {
-		Fail(fmt.Sprintf("failed to build dockerconfigjson: %v", err))
-	}
-
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "mcp-registry-credentials",
-			Namespace: namespace,
-		},
-		Type: corev1.SecretTypeDockerConfigJson,
-		Data: map[string][]byte{
-			corev1.DockerConfigJsonKey: configJSON,
-		},
-	}
-	if err := k8sClient.Create(ctx, secret); err != nil && !errors.IsAlreadyExists(err) {
-		Fail(fmt.Sprintf("failed to create registry pull secret: %v", err))
-	}
-
-	return secret.Name
-}
-
-func registryHostFromRepo(repo string) (string, bool) {
-	parts := strings.Split(repo, "/")
-	if len(parts) == 0 {
-		return "", false
-	}
-	host := parts[0]
-	if strings.Contains(host, ".") || strings.Contains(host, ":") || host == "localhost" {
-		return host, true
-	}
-	return "", false
 }

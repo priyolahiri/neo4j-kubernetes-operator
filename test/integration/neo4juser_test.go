@@ -172,7 +172,12 @@ var _ = Describe("Neo4jUser end-to-end", func() {
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"SHOW USERS YIELD user, roles WHERE user = 'appuser' RETURN user, roles",
 			)
-			out, _ := cmd.CombinedOutput()
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				// Surface the failure mode so the Eventually's last-observed value
+				// in the timeout message includes the cause, not an empty string.
+				return fmt.Sprintf("kubectl exec/cypher-shell failed: %v; output: %s", err, string(out))
+			}
 			return string(out)
 		}, clusterTimeout, interval).Should(SatisfyAll(
 			ContainSubstring("appuser"),
@@ -244,22 +249,29 @@ var _ = Describe("Neo4jUser end-to-end", func() {
 				GinkgoWriter.Printf("cypher-shell SHOW USERS failed: %v; output: %s\n", err, string(out))
 				return false
 			}
-			// `--format plain` produces:
-			//   n
-			//   <count>
-			// Take the last non-empty line and check it equals "0", rather
-			// than depending on \n placement around the count value.
-			//
-			// Defensive: cypher-shell could in principle emit empty output
-			// during a transient connection blip; bail to false rather than
-			// risk an off-by-one on the slice access.
-			trimmed := strings.TrimSpace(string(out))
-			if trimmed == "" {
-				return false
-			}
-			lines := strings.Split(trimmed, "\n")
-			lastValue := strings.TrimSpace(lines[len(lines)-1])
-			return lastValue == "0"
+			return cypherShellLastValueIsZero(out)
 		}, clusterTimeout, interval).Should(BeTrue(), "DROP USER must remove appuser from SHOW USERS")
 	})
 })
+
+// cypherShellLastValueIsZero parses output from `cypher-shell --format plain`
+// for a single-column count query and returns true when the last non-empty
+// line equals "0". Plain format emits:
+//
+//	n
+//	<count>
+//
+// The header row is unreliable to split on (some cypher-shell versions wrap
+// it differently across newlines), so we just take the last non-empty line.
+//
+// Empty input is treated as "not zero" rather than panicking on the slice
+// access — cypher-shell can in principle emit nothing during a transient
+// connection blip, and the calling Eventually loop will retry.
+func cypherShellLastValueIsZero(out []byte) bool {
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" {
+		return false
+	}
+	lines := strings.Split(trimmed, "\n")
+	return strings.TrimSpace(lines[len(lines)-1]) == "0"
+}
