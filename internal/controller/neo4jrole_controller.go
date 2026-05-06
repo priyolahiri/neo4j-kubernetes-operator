@@ -220,6 +220,13 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			"applied %d added / %d revoked privileges", len(toAdd), len(toRemove))
 	}
 
+	// Emit RoleReady on the first transition to Ready (avoids spamming the
+	// event stream on every reconcile after the role is already Ready).
+	if role.Status.Phase != "Ready" {
+		r.Recorder.Eventf(role, corev1.EventTypeNormal, EventReasonRoleReady,
+			"Role %q is ready (%d privileges in sync)", roleName, len(final))
+	}
+
 	r.setStatus(ctx, role, "Ready", metav1.ConditionTrue, ConditionReasonRoleReady,
 		fmt.Sprintf("role %q is in sync (%d privileges)", roleName, len(final)), final, drift)
 

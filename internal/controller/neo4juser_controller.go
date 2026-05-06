@@ -272,6 +272,12 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if overallReady {
+		// Emit UserReady once when the CR first transitions into Ready,
+		// not on every subsequent reconcile.
+		if user.Status.Phase != "Ready" {
+			r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserReady,
+				"User %q is ready (%d roles in sync)", username, len(finalRoles))
+		}
 		r.setStatus(ctx, user, "Ready", metav1.ConditionTrue, ConditionReasonUserReady,
 			fmt.Sprintf("user %q is in sync (%d roles)", username, len(finalRoles)),
 			finalRoles, passwordHash, rotated)
