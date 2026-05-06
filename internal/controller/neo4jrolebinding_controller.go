@@ -212,6 +212,23 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	if allDesiredGranted && len(missing) == 0 {
+		// Distinguish first-time success ("Created") from a subsequent
+		// successful reconcile after a spec change ("Updated"). Both
+		// previously went unannounced.
+		switch {
+		case rb.Status.Phase != "Ready":
+			// First time this binding has reached Ready (either fresh CR
+			// or recovering from a previous failure). EventReasonBindingCreated
+			// names the initial-grant transition.
+			r.Recorder.Eventf(rb, corev1.EventTypeNormal, EventReasonBindingCreated,
+				"RoleBinding for user %q ready with %d roles", rb.Spec.Username, len(granted))
+		case !stringSlicesEqualSorted(rb.Status.GrantedRoles, granted):
+			// Already Ready before, but the granted-role set has changed —
+			// either spec.roles edited, or an externally granted/revoked role
+			// has been reconciled.
+			r.Recorder.Eventf(rb, corev1.EventTypeNormal, EventReasonBindingUpdated,
+				"RoleBinding for user %q updated; granted roles now %v", rb.Spec.Username, granted)
+		}
 		r.setStatus(ctx, rb, "Ready", metav1.ConditionTrue, "BindingReady",
 			fmt.Sprintf("user %q has all %d desired roles", rb.Spec.Username, len(granted)),
 			granted)

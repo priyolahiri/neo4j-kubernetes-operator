@@ -984,6 +984,11 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Conte
 		// for the standalone path.
 		latest.Status.Endpoints = r.buildClusterEndpoints(ctx, cluster)
 
+		// Replica count (desired vs ready). Pulls Ready directly off the
+		// server StatefulSet status — the controller-runtime cache already
+		// has the StatefulSet, so this is a free lookup.
+		latest.Status.Replicas = r.buildReplicaStatus(ctx, cluster)
+
 		// Update Ready condition using standard helper
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
 
@@ -1009,6 +1014,25 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Conte
 		return false
 	}
 	return statusChanged
+}
+
+// buildReplicaStatus reports the desired vs ready server count by reading
+// the live `{cluster}-server` StatefulSet's status.readyReplicas. Returns
+// nil if the StatefulSet doesn't exist yet (early in reconcile, before the
+// resource builder has run) — better than reporting fictional zeros.
+func (r *Neo4jEnterpriseClusterReconciler) buildReplicaStatus(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *neo4jv1beta1.ReplicaStatus {
+	sts := &appsv1.StatefulSet{}
+	stsKey := types.NamespacedName{
+		Namespace: cluster.Namespace,
+		Name:      fmt.Sprintf("%s-server", cluster.Name),
+	}
+	if err := r.Get(ctx, stsKey, sts); err != nil {
+		return nil
+	}
+	return &neo4jv1beta1.ReplicaStatus{
+		Servers: cluster.Spec.Topology.Servers,
+		Ready:   sts.Status.ReadyReplicas,
+	}
 }
 
 // buildClusterEndpoints assembles the EndpointStatus surfaced via

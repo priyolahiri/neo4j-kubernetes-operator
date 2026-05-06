@@ -56,8 +56,6 @@ const (
 const (
 	EventReasonPluginInstalled     = "PluginInstalled"
 	EventReasonPluginInstallFailed = "PluginInstallFailed"
-	EventReasonPluginEnabled       = "PluginEnabled"
-	EventReasonPluginDisabled      = "PluginDisabled"
 )
 
 // Split-brain events
