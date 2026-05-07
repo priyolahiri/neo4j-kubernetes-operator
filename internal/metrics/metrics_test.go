@@ -58,8 +58,10 @@ func TestReconcileMetrics_RecordReconcile(t *testing.T) {
 			counter := reconcileTotal.WithLabelValues("test-cluster", "test-namespace", tt.operation, tt.wantResult)
 			assert.Equal(t, 1.0, testutil.ToFloat64(counter))
 
-			// Check histogram metric
-			_ = reconcileDuration.WithLabelValues("test-cluster", "test-namespace", tt.operation)
+			// Check histogram metric — verify the labelled child exists and the
+			// vec has a single registered series after the recorded observation.
+			histogram := reconcileDuration.WithLabelValues("test-cluster", "test-namespace", tt.operation)
+			require.NotNil(t, histogram)
 			assert.Equal(t, 1, testutil.CollectAndCount(reconcileDuration))
 		})
 	}
@@ -190,7 +192,8 @@ func TestUpgradeMetrics_RecordUpgradePhase(t *testing.T) {
 	duration := time.Minute * 2
 	metrics.RecordUpgradePhase("prepare", duration)
 
-	_ = upgradeDuration.WithLabelValues("test-cluster", "test-namespace", "prepare")
+	histogram := upgradeDuration.WithLabelValues("test-cluster", "test-namespace", "prepare")
+	require.NotNil(t, histogram)
 	assert.Equal(t, 1, testutil.CollectAndCount(upgradeDuration))
 }
 
@@ -241,8 +244,11 @@ func TestBackupMetrics_RecordBackup(t *testing.T) {
 			counter := backupTotal.WithLabelValues("test-cluster", "test-namespace", tt.wantResult)
 			assert.Equal(t, 1.0, testutil.ToFloat64(counter))
 
-			// Check histogram
-			_ = backupDuration.WithLabelValues("test-cluster", "test-namespace")
+			// Check histogram — verify the labelled child exists and the vec has
+			// a single registered series. (testutil.ToFloat64 is undefined on a
+			// histogram observer; CollectAndCount is the right primitive here.)
+			histogram := backupDuration.WithLabelValues("test-cluster", "test-namespace")
+			require.NotNil(t, histogram)
 			assert.Equal(t, 1, testutil.CollectAndCount(backupDuration))
 
 			// Check size gauge only for successful backups
@@ -301,7 +307,8 @@ func TestCypherMetrics_RecordCypherExecution(t *testing.T) {
 			assert.Equal(t, 1.0, testutil.ToFloat64(counter))
 
 			// Check histogram
-			_ = cypherDuration.WithLabelValues("test-cluster", "test-namespace", tt.operation)
+			histogram := cypherDuration.WithLabelValues("test-cluster", "test-namespace", tt.operation)
+			require.NotNil(t, histogram)
 			assert.Equal(t, 1, testutil.CollectAndCount(cypherDuration))
 		})
 	}
