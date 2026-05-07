@@ -248,7 +248,7 @@ stringData:
 
 ### OIDC / SSO Integration
 
-> **Prerequisite (Neo4j 2026.x): OIDC endpoints must use HTTPS.** Configure TLS for your identity provider (or place it behind a TLS-terminating proxy) before enabling OIDC, or Neo4j will fail to start. Full details on the requirement are in the warning further down this section.
+> **Prerequisite (Neo4j 2026.x): OIDC endpoints must use HTTPS.** Configure TLS for your identity provider (or place it behind a TLS-terminating proxy) before enabling OIDC. Neo4j validates every OIDC URI at config-parse time; any `http://` value causes startup to fail with `Error evaluating value for setting … does not have required scheme 'https'`. There is no insecure-mode override.
 
 The operator supports one or more OIDC providers via the `spec.auth.oidc` map. Each key becomes the provider name in Neo4j's config (`dbms.security.oidc.<name>.*`).
 
@@ -260,7 +260,7 @@ Wiring up an OIDC provider — especially when used as an ABAC authorization pro
 
 | Step | Where | What to set | Symptom if missed |
 |---|---|---|---|
-| 1. Provider block | `spec.config["dbms.security.oidc.<name>.*"]` (or use the typed `spec.auth.oidc.<name>` map below) | `display_name`, `well_known_discovery_uri` (https!), `audience`, `client_id` | `Failed to validate '[<name>]' …: entries must be a valid OIDC authorization provider` |
+| 1. Provider block | `spec.config["dbms.security.oidc.<name>.*"]` (or use the typed `spec.auth.oidc.<name>` map below) | `display_name`, `well_known_discovery_uri`, `audience`, `client_id` | `Failed to validate '[<name>]' …: entries must be a valid OIDC authorization provider` |
 | 2. Authentication providers | `spec.auth.authenticationProviders` | include `oidc-<name>` | OIDC sign-in is rejected |
 | 3. Authorization providers | `spec.auth.authorizationProviders` | include `oidc-<name>` | `entries must exist in dbms.security.authorization_providers. Invalid values: oidc-<name>` |
 | 4. ABAC provider list (only for `Neo4jAuthRule`) | `spec.config["dbms.security.abac.authorization_providers"]` | the prefixed name `oidc-<name>` (NOT bare `<name>`) | `entries must be a valid OIDC authorization provider` *or* `entries must exist in dbms.security.authorization_providers` |
@@ -934,15 +934,9 @@ spec:
       kind: ClusterIssuer
 
   config:
-    # Strong encryption requirements. For PCI-aligned deployments use TLS 1.3
-    # as the default baseline; TLS 1.2 is shown below only for temporary
-    # legacy-client compatibility during migration. PCI DSS v4.0 mandates a
-    # TLS 1.2 minimum, but the standard expects active migration toward
-    # TLS 1.3, and several other regimes (FIPS-140-3 modules, NIST SP
-    # 800-52r2 guidance/recommendations, i.e., not a strict prohibition)
-    # already discourage TLS 1.2 for new builds.
-    # If every client in your environment supports TLS 1.3, harden by
-    # removing TLSv1.2 — see the TLS 1.3-only target-state example below.
+    # TLS 1.2 included for legacy-client compatibility during migration.
+    # See the regulatory-context note below the example for guidance on
+    # moving to the TLS 1.3-only target state.
     dbms.ssl.policy.bolt.tls_versions: "TLSv1.2,TLSv1.3"
     dbms.ssl.policy.https.tls_versions: "TLSv1.2,TLSv1.3"
     # TLS 1.3-only hardening (target state — recommended once clients migrate):
@@ -959,6 +953,8 @@ spec:
     db.logs.query.enabled: "INFO"
     dbms.logs.security.level: "INFO"
 ```
+
+> **Why TLS 1.3 over TLS 1.2.** PCI DSS v4.0 mandates a TLS 1.2 minimum but expects active migration toward TLS 1.3. Several adjacent regimes also discourage TLS 1.2 for new builds — FIPS-140-3 module validations and NIST SP 800-52r2 guidance both recommend TLS 1.3 as the baseline (the latter as guidance, not a strict prohibition). If every client in your environment supports TLS 1.3, drop `TLSv1.2` from the `tls_versions` list — the commented-out TLS 1.3-only target-state lines in the example above show the resulting hardened form.
 
 ## Security Best Practices Checklist
 

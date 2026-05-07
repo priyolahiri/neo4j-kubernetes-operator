@@ -94,15 +94,14 @@ func TestClusterMetrics_RecordClusterReplicas(t *testing.T) {
 	// Clear metrics before test
 	clusterReplicas.Reset()
 
+	// desired=3 (spec.topology.servers), ready=2 (StatefulSet readyReplicas)
 	metrics.RecordClusterReplicas(3, 2)
 
-	// Check primary replicas
-	primaryGauge := clusterReplicas.WithLabelValues("test-cluster", "test-namespace", "primary")
-	assert.Equal(t, 3.0, testutil.ToFloat64(primaryGauge))
+	desiredGauge := clusterReplicas.WithLabelValues("test-cluster", "test-namespace", "desired")
+	assert.Equal(t, 3.0, testutil.ToFloat64(desiredGauge))
 
-	// Check secondary replicas
-	secondaryGauge := clusterReplicas.WithLabelValues("test-cluster", "test-namespace", "secondary")
-	assert.Equal(t, 2.0, testutil.ToFloat64(secondaryGauge))
+	readyGauge := clusterReplicas.WithLabelValues("test-cluster", "test-namespace", "ready")
+	assert.Equal(t, 2.0, testutil.ToFloat64(readyGauge))
 }
 
 func TestClusterMetrics_RecordClusterHealth(t *testing.T) {

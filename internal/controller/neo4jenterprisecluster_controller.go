@@ -845,6 +845,20 @@ func (r *Neo4jEnterpriseClusterReconciler) containerSecurityContextEqual(current
 // look like a "significant change", causing the cluster controller to overwrite the
 // StatefulSet on every reconcile and creating an infinite oscillation between the
 // two controllers.
+//
+// Known limitation — env-var REMOVALS are not enforced today. Because the
+// comparison is one-directional (desired ⊆ current), removing a key from the
+// cluster controller's desired template (e.g. the user deletes a `spec.config`
+// entry) leaves the corresponding NEO4J_* env var stuck on the live StatefulSet:
+// `desired` no longer carries it, the loop has nothing to compare, and the
+// "no change" decision skips the update. Adds and value-changes still work.
+//
+// The proper fix is ownership tracking: record the set of env-var names this
+// controller most recently considered owned in a StatefulSet annotation
+// (e.g. `neo4j.com/cluster-controller-env-vars`), then on each reconcile
+// remove names in `previously-owned ∖ desired` and leave foreign names
+// (in `current ∖ previously-owned ∖ desired`) untouched. Same pattern kubectl
+// uses for `last-applied-configuration`. Tracked separately from this comment.
 func (r *Neo4jEnterpriseClusterReconciler) envVarsEqual(current, desired []corev1.EnvVar) bool {
 	currentMap := make(map[string]corev1.EnvVar)
 	for _, env := range current {
@@ -997,7 +1011,11 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Conte
 		clusterM.RecordClusterPhase(phase)
 		if phase == "Ready" {
 			clusterM.RecordClusterHealth(true)
-			clusterM.RecordClusterReplicas(cluster.Spec.Topology.Servers, 0)
+			var ready int32
+			if latest.Status.Replicas != nil {
+				ready = latest.Status.Replicas.Ready
+			}
+			clusterM.RecordClusterReplicas(cluster.Spec.Topology.Servers, ready)
 		} else if phase == "Failed" || phase == "Degraded" {
 			clusterM.RecordClusterHealth(false)
 		} else if phase == "Forming" {
