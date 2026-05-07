@@ -503,6 +503,85 @@ If you encounter issues during migration:
    - [GitHub Issues](https://github.com/neo4j-partners/neo4j-kubernetes-operator/issues)
    - [Neo4j Community](https://community.neo4j.com/)
 
+## Upgrading from v1.9.x to the next release (Unreleased)
+
+This section covers the breaking and behavioural changes on `main` since `v1.9.0`. Replace the heading with the actual version when the next release is tagged.
+
+### 1. Removed spec fields (CRD validation will reject manifests using them)
+
+Four typed fields that were defined on the schema but were never wired through to Neo4j config have been removed. Manifests still using these fields will be rejected by CRD validation with `unknown field` errors:
+
+| Removed field | Replacement |
+|---|---|
+| `Neo4jEnterpriseCluster.spec.auth.jwt` (also: `JWTAuthSpec`, `JWTValidationSpec` types) | Use the `oidc-<name>` typed providers under `spec.auth.oidc` — Neo4j ID tokens are JWTs, so OIDC covers the JWT use case end-to-end. |
+| `Neo4jEnterpriseCluster.spec.ui` and `Neo4jEnterpriseStandalone.spec.ui` (`UISpec` type) | Neo4j Browser is bundled in the Enterprise image. Expose it via the existing `spec.service.ingress` block (or your own ingress / route). The typed `UISpec` block was a no-op. |
+| `Neo4jEnterpriseCluster.spec.restoreFrom` and `Neo4jEnterpriseStandalone.spec.restoreFrom` (`RestoreSpec` inline type) | Use the `Neo4jRestore` CR. Apply the cluster/standalone first, wait for `status.phase=Ready`, then apply a `Neo4jRestore` referencing the backup. The migration-from-cluster-to-standalone example in the standalone API reference shows the canonical flow. |
+| `Neo4jPlugin.spec.license` (`PluginLicense` type) | Mount license files via `spec.extraVolumes` + `spec.extraVolumeMounts` on the cluster/standalone CR, then reference the mount path from `spec.config` (e.g. `gds.enterprise.license_file: /licenses/gds.license`). |
+
+**Action**: grep your manifests for these fields and migrate before upgrading the operator:
+
+```bash
+grep -rE 'spec:.*\b(jwt|ui|restoreFrom|license):' path/to/manifests/
+```
+
+### 2. `spec.auth.passwordPolicy` and `spec.auth.kerberos` are now documented as schema-only
+
+These typed blocks remain on the CRD for back-compat — manifests carrying them will not be rejected — but the operator does **not** wire them through to Neo4j config and never has. Earlier docs implied otherwise.
+
+**Action**: until typed-field support is implemented, set the equivalent Neo4j config keys directly in `spec.config`:
+
+```yaml
+spec:
+  auth:
+    adminSecret: neo4j-admin-secret
+    # spec.auth.passwordPolicy is schema-only and ignored — set the Neo4j
+    # keys directly until typed-field support lands.
+  config:
+    dbms.security.auth_minimum_password_length: "12"
+    # Kerberos: dbms.security.kerberos.* keys here, plus a keytab volume
+    # mounted via spec.extraVolumes / spec.extraVolumeMounts.
+```
+
+### 3. `neo4j_operator_cluster_replicas_total` metric: role label values renamed
+
+The Prometheus gauge that exposes server counts had its `role` label values renamed:
+
+| Before | After | Meaning |
+|---|---|---|
+| `role="primary"` | `role="desired"` | `spec.topology.servers` |
+| `role="secondary"` | `role="ready"` | StatefulSet `readyReplicas` |
+
+The original `primary` / `secondary` shape was inherited from a pre-server-architecture design. Neo4j 5.26+ uses a single `{cluster}-server` StatefulSet where roles are assigned at runtime via `serverModeConstraint`; the old labels were structurally meaningless and the call site was hardcoding `secondaries=0` regardless of cluster state. Per-server primary/secondary state is exposed separately via `neo4j_operator_server_health` (populated from `SHOW SERVERS` when monitoring is enabled).
+
+**Action**: update PromQL queries / Grafana dashboards filtering on the old labels:
+
+```promql
+# Before
+neo4j_operator_cluster_replicas_total{role="primary"}
+
+# After
+neo4j_operator_cluster_replicas_total{role="desired"}
+```
+
+### 4. Env-var removals from `spec.config` now actually take effect
+
+Previously, removing a key from `spec.config` did not remove the corresponding `NEO4J_*` env var from the live StatefulSet — the cluster controller's `envVarsEqual` was a one-directional subset check that didn't detect "name dropped from desired". Pods continued running with the stale setting until something else triggered a template-replacing restart.
+
+The fix tracks the cluster controller's owned env-var names in a `neo4j.com/cluster-controller-env-vars` annotation on the StatefulSet; on each reconcile, names previously owned but no longer in desired are dropped from the live env array, while foreign env vars (added by the plugin / fleet-management / Aura controllers) are preserved as before.
+
+**Action**: this is generally the behaviour users expected. But if any cluster has been silently relying on a stale env var sticking around after the corresponding `spec.config` key was removed, that env var will disappear on the next reconcile after the upgrade — and then on the next pod restart, Neo4j will boot without that setting. Audit your `spec.config` entries before upgrading if your cluster has a long history of key edits.
+
+**Behind the scenes**: the annotation is bootstrapped on the next reconcile after the upgrade — `previousOwned` is empty on first read, so no spurious removals happen. From that reconcile onward the set is tracked.
+
+### Quick upgrade checklist
+
+1. Grep manifests for the removed fields (step 1) and migrate them.
+2. If you set `spec.auth.passwordPolicy` or `spec.auth.kerberos` and were depending on it doing something, move the equivalent keys into `spec.config` (step 2).
+3. Update PromQL / Grafana queries on `cluster_replicas_total` (step 3).
+4. Audit `spec.config` if you have long-edit-history clusters that may have relied on the env-var-removal bug (step 4).
+
+---
+
 ## Upgrading to v1.7.0-alpha (API Version Bump to v1beta1)
 
 v1.7.0-alpha graduates the API from `v1alpha1` to `v1beta1`, signaling field stability. The API schema is unchanged — only the version identifier changes. Additionally, TLS bolt enforcement and standalone health probes are introduced.

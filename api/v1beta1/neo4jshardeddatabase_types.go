@@ -300,7 +300,13 @@ type ShardBackupStatus struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// Neo4jShardedDatabase is the Schema for the neo4jshardeddatabases API
+// Neo4jShardedDatabase declaratively manages a property-sharded
+// Neo4j database (Neo4j 2025.12+ feature). The operator coordinates
+// the graph shard and N property shards, each with its own topology
+// (primaries / secondaries), sets the database's default Cypher
+// language version (5 or 25), and surfaces shard-level health on
+// .status. Use a regular Neo4jDatabase resource for non-sharded
+// (single-graph) workloads.
 type Neo4jShardedDatabase struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

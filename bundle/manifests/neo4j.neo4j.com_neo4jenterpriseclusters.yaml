@@ -30,8 +30,16 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: Neo4jEnterpriseCluster is the Schema for the neo4jenterpriseclusters
-          API
+        description: |-
+          Neo4jEnterpriseCluster declaratively manages a Neo4j Enterprise
+          causal cluster (minimum 2 servers). The operator builds a single
+          `{name}-server` StatefulSet whose pods self-organize into
+          primary/secondary roles at runtime via `serverModeConstraint`,
+          wires up V2 discovery on port 6000, manages cert-manager-driven
+          TLS, plugin installation (APOC, GDS, Bloom, …), backup and restore
+          integration, optional Aura Fleet Management registration, optional
+          MCP server, and live cluster diagnostics. For single-node
+          development workloads, use Neo4jEnterpriseStandalone instead.
         properties:
           apiVersion:
             description: |-

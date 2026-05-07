@@ -211,7 +211,14 @@ type PluginUsage struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// Neo4jPlugin is the Schema for the neo4jplugins API
+// Neo4jPlugin declaratively installs and manages a Neo4j plugin
+// (APOC, Graph Data Science, Bloom, GenAI, n10s, GraphQL, or a custom
+// plugin) on a referenced cluster or standalone. The controller
+// merges the plugin name into the StatefulSet's NEO4J_PLUGINS env
+// var (without overwriting plugins added by other controllers),
+// applies plugin-specific configuration, and triggers a controlled
+// rolling restart. Multiple Neo4jPlugin resources targeting the same
+// deployment coexist and stack additively.
 type Neo4jPlugin struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

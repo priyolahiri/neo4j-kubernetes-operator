@@ -245,7 +245,14 @@ type Neo4jDatabaseStatus struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// Neo4jDatabase is the Schema for the neo4jdatabases API
+// Neo4jDatabase declaratively manages a single named Neo4j database
+// inside a referenced cluster or standalone. The operator issues
+// CREATE / ALTER / DROP DATABASE statements against the system
+// database, with optional topology (primaries/secondaries), Cypher
+// language version (5 or 25), seed-from-URI, and IF NOT EXISTS
+// semantics. Cluster-level concerns (image, storage, auth, TLS, plugins)
+// stay on the cluster/standalone CR — Neo4jDatabase only owns
+// database-scope CREATE DATABASE options.
 type Neo4jDatabase struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

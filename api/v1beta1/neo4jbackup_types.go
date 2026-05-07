@@ -247,7 +247,12 @@ type BackupRun struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// Neo4jBackup is the Schema for the neo4jbackups API
+// Neo4jBackup declaratively manages a Neo4j backup. The operator runs
+// `neo4j-admin database backup` against the referenced cluster or
+// standalone target, writes the backup to local PVC storage or to a
+// supported cloud bucket (S3 / GCS / Azure Blob / MinIO), records the
+// outcome on .status, and (optionally) enforces retention. Schedules
+// are expressed via standard cron syntax. See also: Neo4jRestore.
 type Neo4jBackup struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

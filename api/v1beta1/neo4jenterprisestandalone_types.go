@@ -229,7 +229,14 @@ type StandaloneDiagnosticsStatus struct {
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// Neo4jEnterpriseStandalone is the Schema for the neo4jenterprisestandalones API
+// Neo4jEnterpriseStandalone declaratively manages a single-node
+// Neo4j Enterprise deployment for development, testing, and
+// low-availability production workloads. Built on the same clustering
+// infrastructure as Neo4jEnterpriseCluster but with replicas=1, so
+// it is fully compatible with the rest of the CRD ecosystem
+// (Neo4jDatabase, Neo4jPlugin, Neo4jBackup, Neo4jRestore, Neo4jUser,
+// Neo4jRole, …). For high-availability workloads requiring
+// fault tolerance, use Neo4jEnterpriseCluster instead.
 type Neo4jEnterpriseStandalone struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

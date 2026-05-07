@@ -30,7 +30,15 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: Neo4jDatabase is the Schema for the neo4jdatabases API
+        description: |-
+          Neo4jDatabase declaratively manages a single named Neo4j database
+          inside a referenced cluster or standalone. The operator issues
+          CREATE / ALTER / DROP DATABASE statements against the system
+          database, with optional topology (primaries/secondaries), Cypher
+          language version (5 or 25), seed-from-URI, and IF NOT EXISTS
+          semantics. Cluster-level concerns (image, storage, auth, TLS, plugins)
+          stay on the cluster/standalone CR — Neo4jDatabase only owns
+          database-scope CREATE DATABASE options.
         properties:
           apiVersion:
             description: |-
