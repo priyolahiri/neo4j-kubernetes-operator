@@ -14,40 +14,77 @@ spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
-    - description: Neo4jBackup is the Schema for the neo4jbackups API
+    - description: Neo4jBackup declaratively manages a Neo4j backup. The operator
+        runs `neo4j-admin database backup` against the referenced cluster or standalone
+        target, writes the backup to local PVC storage or to a supported cloud bucket
+        (S3 / GCS / Azure Blob / MinIO), records the outcome on .status, and (optionally)
+        enforces retention. Schedules are expressed via standard cron syntax.
       displayName: Neo4j Backup
       kind: Neo4jBackup
       name: neo4jbackups.neo4j.neo4j.com
       version: v1beta1
-    - description: Neo4jDatabase is the Schema for the neo4jdatabases API
+    - description: Neo4jDatabase declaratively manages a single named Neo4j database
+        inside a referenced cluster or standalone. The operator issues CREATE / ALTER
+        / DROP DATABASE statements against the system database, with optional topology
+        (primaries/secondaries), Cypher language version (5 or 25), seed-from-URI,
+        and IF NOT EXISTS semantics. Cluster-level concerns (image, storage, auth,
+        TLS, plugins) stay on the cluster/standalone CR — Neo4jDatabase only owns
+        database-scope CREATE DATABASE options.
       displayName: Neo4j Database
       kind: Neo4jDatabase
       name: neo4jdatabases.neo4j.neo4j.com
       version: v1beta1
-    - description: Neo4jEnterpriseCluster is the Schema for the neo4jenterpriseclusters
-        API
+    - description: Neo4jEnterpriseCluster declaratively manages a Neo4j Enterprise
+        causal cluster (minimum 2 servers). The operator builds a single `{name}-server`
+        StatefulSet whose pods self-organize into primary/secondary roles at runtime
+        via `serverModeConstraint`, wires up V2 discovery on port 6000, manages cert-manager-driven
+        TLS, plugin installation (APOC, GDS, Bloom, …), backup and restore integration,
+        optional Aura Fleet Management registration, optional MCP server, and live
+        cluster diagnostics. For single-node development workloads, use Neo4jEnterpriseStandalone
+        instead.
       displayName: Neo4j Enterprise Cluster
       kind: Neo4jEnterpriseCluster
       name: neo4jenterpriseclusters.neo4j.neo4j.com
       version: v1beta1
-    - description: Neo4jEnterpriseStandalone is the Schema for the neo4jenterprisestandalones
-        API
+    - description: Neo4jEnterpriseStandalone declaratively manages a single-node Neo4j
+        Enterprise deployment for development, testing, and low-availability production
+        workloads. Built on the same clustering infrastructure as Neo4jEnterpriseCluster
+        but with replicas=1, so it is fully compatible with the rest of the CRD ecosystem
+        (Neo4jDatabase, Neo4jPlugin, Neo4jBackup, Neo4jRestore, Neo4jUser, Neo4jRole,
+        …). For high-availability workloads requiring fault tolerance, use Neo4jEnterpriseCluster
+        instead.
       displayName: Neo4j Enterprise Standalone
       kind: Neo4jEnterpriseStandalone
       name: neo4jenterprisestandalones.neo4j.neo4j.com
       version: v1beta1
-    - description: Neo4jPlugin is the Schema for the neo4jplugins API
+    - description: Neo4jPlugin declaratively installs and manages a Neo4j plugin (APOC,
+        Graph Data Science, Bloom, GenAI, n10s, GraphQL, or a custom plugin) on a
+        referenced cluster or standalone. The controller merges the plugin name into
+        the StatefulSet's NEO4J_PLUGINS env var (without overwriting plugins added
+        by other controllers), applies plugin-specific configuration, and triggers
+        a controlled rolling restart. Multiple Neo4jPlugin resources targeting the
+        same deployment coexist and stack additively.
       displayName: Neo4j Plugin
       kind: Neo4jPlugin
       name: neo4jplugins.neo4j.neo4j.com
       version: v1beta1
-    - description: Neo4jRestore is the Schema for the neo4jrestores API
+    - description: Neo4jRestore declaratively restores a Neo4j database from a previously-completed
+        Neo4jBackup or directly from a storage location (PVC or cloud bucket). The
+        operator launches a Job that runs `neo4j-admin database restore` against the
+        referenced cluster or standalone target, with optional pre-restore hooks and
+        configurable handling of an existing same-named database. The referenced cluster/standalone
+        must be Ready before the restore proceeds; failed restores do not silently
+        retry without a spec change.
       displayName: Neo4j Restore
       kind: Neo4jRestore
       name: neo4jrestores.neo4j.neo4j.com
       version: v1beta1
-    - description: Neo4jShardedDatabase is the Schema for the neo4jshardeddatabases
-        API
+    - description: Neo4jShardedDatabase declaratively manages a property-sharded Neo4j
+        database (Neo4j 2025.12+ feature). The operator coordinates the graph shard
+        and N property shards, each with its own topology (primaries / secondaries),
+        sets the database's default Cypher language version (5 or 25), and surfaces
+        shard-level health on .status. Use a regular Neo4jDatabase resource for non-sharded
+        (single-graph) workloads.
       displayName: Neo4j Sharded Database
       kind: Neo4jShardedDatabase
       name: neo4jshardeddatabases.neo4j.neo4j.com

@@ -1215,7 +1215,15 @@ type ServerRoleHint struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// Neo4jEnterpriseCluster is the Schema for the neo4jenterpriseclusters API
+// Neo4jEnterpriseCluster declaratively manages a Neo4j Enterprise
+// causal cluster (minimum 2 servers). The operator builds a single
+// `{name}-server` StatefulSet whose pods self-organize into
+// primary/secondary roles at runtime via `serverModeConstraint`,
+// wires up V2 discovery on port 6000, manages cert-manager-driven
+// TLS, plugin installation (APOC, GDS, Bloom, …), backup and restore
+// integration, optional Aura Fleet Management registration, optional
+// MCP server, and live cluster diagnostics. For single-node
+// development workloads, use Neo4jEnterpriseStandalone instead.
 type Neo4jEnterpriseCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

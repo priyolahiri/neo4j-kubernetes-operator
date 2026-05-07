@@ -33,8 +33,14 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: Neo4jShardedDatabase is the Schema for the neo4jshardeddatabases
-          API
+        description: |-
+          Neo4jShardedDatabase declaratively manages a property-sharded
+          Neo4j database (Neo4j 2025.12+ feature). The operator coordinates
+          the graph shard and N property shards, each with its own topology
+          (primaries / secondaries), sets the database's default Cypher
+          language version (5 or 25), and surfaces shard-level health on
+          .status. Use a regular Neo4jDatabase resource for non-sharded
+          (single-graph) workloads.
         properties:
           apiVersion:
             description: |-

@@ -272,7 +272,15 @@ type RestoreBackupInfo struct {
 // +kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.stats.duration`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// Neo4jRestore is the Schema for the neo4jrestores API
+// Neo4jRestore declaratively restores a Neo4j database from a
+// previously-completed Neo4jBackup or directly from a storage
+// location (PVC or cloud bucket). The operator launches a Job that
+// runs `neo4j-admin database restore` against the referenced
+// cluster or standalone target, with optional pre-restore hooks and
+// configurable handling of an existing same-named database. The
+// referenced cluster/standalone must be Ready before the restore
+// proceeds; failed restores do not silently retry without a spec
+// change. See also: Neo4jBackup.
 type Neo4jRestore struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
