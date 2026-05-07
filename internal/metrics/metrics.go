@@ -66,12 +66,19 @@ var (
 
 	// Prometheus metrics
 
-	// Cluster metrics
+	// Cluster metrics.
+	//
+	// `role` label values are `desired` (spec.topology.servers) and `ready`
+	// (StatefulSet readyReplicas). Earlier versions of this metric used
+	// `primary`/`secondary`, but Neo4j's server-based architecture (5.26+)
+	// has no static primary/secondary split — all servers are servers and
+	// roles are assigned at runtime via `serverModeConstraint`. Per-server
+	// role health is exposed separately by `neo4j_operator_server_health`.
 	clusterReplicas = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Subsystem: subsystem,
 			Name:      "cluster_replicas_total",
-			Help:      "Total number of Neo4j cluster replicas by role",
+			Help:      "Neo4j cluster replica counts: role=desired (spec.topology.servers), role=ready (StatefulSet readyReplicas).",
 		},
 		[]string{LabelClusterName, LabelNamespace, LabelRole},
 	)
@@ -332,10 +339,12 @@ func NewClusterMetrics(clusterName, namespace string) *ClusterMetrics {
 	}
 }
 
-// RecordClusterReplicas records the number of replicas by role
-func (m *ClusterMetrics) RecordClusterReplicas(primaries, secondaries int32) {
-	clusterReplicas.WithLabelValues(m.clusterName, m.namespace, "primary").Set(float64(primaries))
-	clusterReplicas.WithLabelValues(m.clusterName, m.namespace, "secondary").Set(float64(secondaries))
+// RecordClusterReplicas records the desired and ready server counts.
+// `desired` = spec.topology.servers, `ready` = StatefulSet readyReplicas.
+// See the gauge declaration for why the label values are not primary/secondary.
+func (m *ClusterMetrics) RecordClusterReplicas(desired, ready int32) {
+	clusterReplicas.WithLabelValues(m.clusterName, m.namespace, "desired").Set(float64(desired))
+	clusterReplicas.WithLabelValues(m.clusterName, m.namespace, "ready").Set(float64(ready))
 }
 
 // RecordClusterHealth records cluster health status
