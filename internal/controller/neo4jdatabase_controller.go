@@ -385,11 +385,6 @@ func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *ne
 				logger.Info("Creating database with topology",
 					"database", database.Spec.Name,
 					"primaries", database.Spec.Topology.Primaries,
-					"secondaries", database.Spec.Topology.Secondaries)
-
-				logger.Info("Creating database with topology",
-					"database", database.Spec.Name,
-					"primaries", database.Spec.Topology.Primaries,
 					"secondaries", database.Spec.Topology.Secondaries,
 					"wait", database.Spec.Wait,
 					"timeout", "300s")
@@ -536,10 +531,35 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, data
 }
 
 // SetupWithManager sets up the controller with the Manager.
+//
+// Watches the referenced cluster/standalone so a database reconcile fires
+// the moment its target's status changes — most importantly the Ready
+// condition flipping during cluster formation. Without this the database
+// only sees those transitions on its next 30-second requeue, which adds
+// perceived latency that compounds across multiple status updates.
+//
+// Owns() is NOT used: a Neo4jDatabase references a cluster via
+// spec.clusterRef, it does not own one (no ownerReference is set), so
+// Owns() would register a watch whose handler maps via
+// EnqueueRequestForOwner and silently ignores every event. Watches() with
+// the shared EnqueueDependentsForClusterChange helper is the correct
+// primitive for a reference relationship.
 func (r *Neo4jDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	enqueueDatabasesForCluster := EnqueueDependentsForClusterChange(
+		mgr.GetClient(),
+		func() client.ObjectList { return &neo4jv1beta1.Neo4jDatabaseList{} },
+		func(list client.ObjectList, emit func(name, namespace, clusterRef string)) {
+			databases := list.(*neo4jv1beta1.Neo4jDatabaseList)
+			for i := range databases.Items {
+				d := &databases.Items[i]
+				emit(d.Name, d.Namespace, d.Spec.ClusterRef)
+			}
+		},
+	)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.Neo4jDatabase{}).
-		Owns(&neo4jv1beta1.Neo4jEnterpriseCluster{}).
+		Watches(&neo4jv1beta1.Neo4jEnterpriseCluster{}, enqueueDatabasesForCluster).
+		Watches(&neo4jv1beta1.Neo4jEnterpriseStandalone{}, enqueueDatabasesForCluster).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
 		}).
