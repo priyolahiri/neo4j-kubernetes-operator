@@ -18,7 +18,7 @@ readonly DIM='\033[2m'
 readonly NC='\033[0m' # No Color
 
 # Total demo parts for step counter
-readonly TOTAL_PARTS=7
+readonly TOTAL_PARTS=8
 
 # Spinner frames (Braille dots)
 readonly SPINNER_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
