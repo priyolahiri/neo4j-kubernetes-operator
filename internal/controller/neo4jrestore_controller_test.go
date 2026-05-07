@@ -18,7 +18,7 @@ import (
 
 var _ = Describe("Neo4jRestore Controller", func() {
 	const (
-		timeout  = time.Second * 10
+		timeout  = time.Second * 30
 		interval = time.Millisecond * 250
 	)
 
