@@ -1842,13 +1842,6 @@ func BuildMonitoringConfig(mon *neo4jv1beta1.MonitoringSpec) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// isNeo4jVersion526OrHigher checks if the Neo4j image is the 5.26.x semver LTS release.
-// Neo4j moved to CalVer (2025.x.x) after 5.26 — no 5.27+ semver versions exist.
-// CalVer images are handled separately via version.IsCalver checks.
-func isNeo4jVersion526OrHigher(imageTag string) bool {
-	return strings.Contains(imageTag, "5.26")
-}
-
 // IsNeo4jVersion202512OrHigher checks if the Neo4j version supports property sharding.
 // Property sharding (Infinigraph) was introduced in 2025.12; calver only — no semver version supports it.
 // See: https://neo4j.com/docs/operations-manual/current/scalability/sharded-property-databases/overview/
