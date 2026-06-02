@@ -75,7 +75,7 @@ func TestPluginValidator_Validate(t *testing.T) {
 				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "apoc",
-					Version:    "5.25.0", // Too old for Neo4j 5.26+
+					Version:    "5.25.0", // Valid APOC version format, but intentionally below the validator's minimum APOC >= 5.26.0 (see plugin_validator.go compatibility matrix)
 					Enabled:    true,
 				},
 			},
@@ -472,7 +472,7 @@ func TestPluginValidator_validatePluginCompatibility(t *testing.T) {
 		{
 			name:        "valid plugin version newer than minimum",
 			pluginName:  "apoc",
-			version:     "5.26.5", // patch release of APOC for Neo4j 5.26.x
+			version:     "5.26.5", // synthetic fixture to verify version-comparison ordering (> 5.26.0); not a claim about an actual published APOC release
 			expectError: false,
 		},
 		{
@@ -516,9 +516,8 @@ func TestPluginValidator_compareVersions(t *testing.T) {
 			expected: 0,
 		},
 		{
-			// 5.27.x does not exist in practice; used only for comparison arithmetic
 			name:     "version1 greater",
-			version1: "5.27.0",
+			version1: "5.27.0", // non-existent in practice; used only to test comparison arithmetic
 			version2: "5.26.0",
 			expected: 1,
 		},

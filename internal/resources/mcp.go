@@ -48,6 +48,33 @@ var (
 	defaultMCPUID int64 = 65532
 )
 
+// mcpReservedEnvVars are the environment variable names the operator
+// populates on every MCP pod from spec, secrets, or computed values. User-
+// supplied env via spec.mcp.env is filtered against this set in filterMCPEnv
+// so it can never shadow operator-controlled values (e.g. a user can't
+// override NEO4J_URI to point at a different cluster).
+//
+// MUST stay in sync with the names emitted by buildMCPEnv and the HTTP/TLS
+// env block — if a new operator-emitted env var is added, append it here.
+var mcpReservedEnvVars = map[string]struct{}{
+	"NEO4J_URI":                    {},
+	"NEO4J_USERNAME":               {},
+	"NEO4J_PASSWORD":               {},
+	"NEO4J_DATABASE":               {},
+	"NEO4J_READ_ONLY":              {},
+	"NEO4J_SCHEMA_SAMPLE_SIZE":     {},
+	"NEO4J_TELEMETRY":              {},
+	"NEO4J_LOG_LEVEL":              {},
+	"NEO4J_LOG_FORMAT":             {},
+	"NEO4J_TRANSPORT_MODE":         {},
+	"NEO4J_MCP_HTTP_HOST":          {},
+	"NEO4J_MCP_HTTP_PORT":          {},
+	"NEO4J_MCP_HTTP_TLS_ENABLED":   {},
+	"NEO4J_MCP_HTTP_TLS_CERT_FILE": {},
+	"NEO4J_MCP_HTTP_TLS_KEY_FILE":  {},
+	"NEO4J_AUTH_HEADER_NAME":       {},
+}
+
 // BuildMCPDeploymentForCluster builds the MCP Deployment for a cluster.
 func BuildMCPDeploymentForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *appsv1.Deployment {
 	if cluster.Spec.MCP == nil || !cluster.Spec.MCP.Enabled {
@@ -580,11 +607,18 @@ func mcpNeo4jURIForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone
 //
 // See: https://github.com/neo4j/mcp#transport-modes
 func buildMCPEnv(spec *neo4jv1beta1.MCPServerSpec, neo4jURI string, secretName, usernameKey, passwordKey string) []corev1.EnvVar {
+	// mcpTransport already handles nil spec (returns "http"). Guard
+	// spec.ReadOnly separately so a future caller that omits the nil
+	// check above this function can't trip a nil deref.
 	transport := mcpTransport(spec)
+	readOnly := false
+	if spec != nil {
+		readOnly = spec.ReadOnly
+	}
 
 	env := []corev1.EnvVar{
 		{Name: "NEO4J_URI", Value: neo4jURI},
-		{Name: "NEO4J_READ_ONLY", Value: strconv.FormatBool(spec.ReadOnly)},
+		{Name: "NEO4J_READ_ONLY", Value: strconv.FormatBool(readOnly)},
 	}
 
 	// In STDIO mode the server connects using env-var credentials at startup.
@@ -671,29 +705,9 @@ func filterMCPEnv(env []corev1.EnvVar) []corev1.EnvVar {
 		return nil
 	}
 
-	// These are set by the operator and must not be overridden by spec.env.
-	reserved := map[string]struct{}{
-		"NEO4J_URI":                    {},
-		"NEO4J_USERNAME":               {},
-		"NEO4J_PASSWORD":               {},
-		"NEO4J_DATABASE":               {},
-		"NEO4J_READ_ONLY":              {},
-		"NEO4J_SCHEMA_SAMPLE_SIZE":     {},
-		"NEO4J_TELEMETRY":              {},
-		"NEO4J_LOG_LEVEL":              {},
-		"NEO4J_LOG_FORMAT":             {},
-		"NEO4J_TRANSPORT_MODE":         {},
-		"NEO4J_MCP_HTTP_HOST":          {},
-		"NEO4J_MCP_HTTP_PORT":          {},
-		"NEO4J_MCP_HTTP_TLS_ENABLED":   {},
-		"NEO4J_MCP_HTTP_TLS_CERT_FILE": {},
-		"NEO4J_MCP_HTTP_TLS_KEY_FILE":  {},
-		"NEO4J_AUTH_HEADER_NAME":       {},
-	}
-
 	filtered := make([]corev1.EnvVar, 0, len(env))
 	for _, e := range env {
-		if _, blocked := reserved[e.Name]; blocked {
+		if _, blocked := mcpReservedEnvVars[e.Name]; blocked {
 			continue
 		}
 		filtered = append(filtered, e)
