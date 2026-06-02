@@ -46,7 +46,12 @@ const (
 	HTTPPort = 7474
 	// HTTPSPort is the default port for Neo4j HTTPS API
 	HTTPSPort = 7473
-	// LegacyClusterPort is the Neo4j V1 cluster port (deprecated). Active discovery uses DiscoveryPort (6000).
+	// LegacyClusterPort is the Neo4j V1 discovery / cluster port. Deprecated;
+	// not used by this operator at runtime — V2 discovery on DiscoveryPort
+	// (6000) is the only active path. The constant is kept because the
+	// {cluster}-discovery K8s Service still exposes port 5000 (pending a
+	// separate removal pass). It is no longer added to the headless service,
+	// internals service, or pod containerPorts (issue #117-adjacent cleanup).
 	LegacyClusterPort = 5000
 	// DiscoveryPort is the default port for Neo4j cluster discovery
 	DiscoveryPort = 6000
@@ -283,12 +288,8 @@ func BuildHeadlessServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseClus
 					TargetPort: intstr.FromInt(HTTPPort),
 					Protocol:   corev1.ProtocolTCP,
 				},
-				{
-					Name:       "tcp-discovery",
-					Port:       LegacyClusterPort,
-					TargetPort: intstr.FromInt(LegacyClusterPort),
-					Protocol:   corev1.ProtocolTCP,
-				},
+				// Port 5000 (tcp-discovery, V1) intentionally not exposed —
+				// active V2 discovery rides on tcp-tx (6000) below.
 				{
 					Name:       "tcp-tx",
 					Port:       DiscoveryPort,
@@ -405,12 +406,8 @@ func BuildInternalsServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseClu
 					TargetPort: intstr.FromInt(HTTPPort),
 					Protocol:   corev1.ProtocolTCP,
 				},
-				{
-					Name:       "tcp-discovery",
-					Port:       LegacyClusterPort,
-					TargetPort: intstr.FromInt(LegacyClusterPort),
-					Protocol:   corev1.ProtocolTCP,
-				},
+				// Port 5000 (tcp-discovery, V1) intentionally not exposed —
+				// active V2 discovery rides on tcp-tx (6000) below.
 				{
 					Name:       "tcp-tx",
 					Port:       DiscoveryPort,
@@ -1377,11 +1374,8 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 				ContainerPort: HTTPSPort,
 				Protocol:      corev1.ProtocolTCP,
 			},
-			{
-				Name:          "tcp-discovery",
-				ContainerPort: LegacyClusterPort,
-				Protocol:      corev1.ProtocolTCP,
-			},
+			// Port 5000 (tcp-discovery, V1) intentionally not exposed —
+			// active V2 discovery rides on tcp-tx (6000) below.
 			{
 				Name:          "tcp-tx",
 				ContainerPort: DiscoveryPort,
@@ -1643,8 +1637,8 @@ db.format=block
 
 # Enterprise clustering configuration for Neo4j 5.x
 # Note: advertised addresses will be set dynamically by startup script
-# Port 5000: V2 discovery protocol (tcp-discovery)
-# Port 6000: Cluster catchup/transaction protocol (tcp-tx)
+# Port 5000: V1 discovery protocol (tcp-discovery) — DEPRECATED, not used by this operator
+# Port 6000: V2 discovery + cluster catchup/transaction protocol (tcp-tx) — active
 # Port 7000: RAFT consensus (raft)
 server.cluster.listen_address=0.0.0.0:6000
 server.routing.listen_address=0.0.0.0:7688
@@ -1935,19 +1929,7 @@ echo "Server index: ${SERVER_INDEX}"
 # Minimum: 2 servers (servers self-organize for database hosting)
 echo "Multi-server cluster: using LIST discovery with static pod FQDNs"
 
-# ME/OTHER bootstrap strategy: server-0 bootstraps, all others join.
-# With Parallel pod management all pods start simultaneously. Using LIST discovery
-# with static pod FQDNs (via the headless service DNS) and minimum_initial_system_primaries_count
-# set to TOTAL_SERVERS ensures all servers discover each other before RAFT election.
-# Server-0 (me) is preferred bootstrapper; all others (other) join when ready.
-if [ "$SERVER_INDEX" = "0" ]; then
-    echo "Server 0: Using bootstrapping strategy 'me' (preferred cluster bootstrapper)"
-    BOOTSTRAP_STRATEGY="me"
-else
-    echo "Server ${SERVER_INDEX}: Using bootstrapping strategy 'other' (joining cluster)"
-    BOOTSTRAP_STRATEGY="other"
-fi
-echo "Configuring cluster with bootstrap strategy: ${BOOTSTRAP_STRATEGY}"
+` + buildBootstrapStrategyShellBlock(cluster) + `
 
 cat >> /tmp/neo4j-config/neo4j.conf << EOF
 
@@ -2103,6 +2085,38 @@ internal.dbms.cluster.discovery.resolution_timeout=1d`
 // in both Neo4j 5.26.x and 2025.x CalVer.
 func getMinInitialPrimariesSetting(_ *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	return "dbms.cluster.minimum_initial_system_primaries_count"
+}
+
+// buildBootstrapStrategyShellBlock returns the shell snippet that assigns
+// BOOTSTRAP_STRATEGY (me on server-0, other elsewhere) before
+// buildVersionSpecificDiscoveryConfig inserts ${BOOTSTRAP_STRATEGY} into
+// the SemVer-only internal.dbms.cluster.discovery.system_bootstrapping_strategy
+// directive.
+//
+// CalVer (2025.x+) does not honour system_bootstrapping_strategy at all — the
+// V2 discovery protocol elects a bootstrapper from the LIST endpoints
+// without an explicit hint — so on CalVer the variable would be assigned
+// and never consumed. Return an empty string so the dead assignment isn't
+// even emitted into the startup script.
+func buildBootstrapStrategyShellBlock(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	if isCalverImage(cluster.Spec.Image.Tag) {
+		return `# CalVer (2025.x+): V2 discovery elects a bootstrapper from the LIST endpoints;
+# internal.dbms.cluster.discovery.system_bootstrapping_strategy is SemVer-only,
+# so no BOOTSTRAP_STRATEGY assignment is emitted here.`
+	}
+	return `# ME/OTHER bootstrap strategy: server-0 bootstraps, all others join.
+# With Parallel pod management all pods start simultaneously. Using LIST discovery
+# with static pod FQDNs (via the headless service DNS) and minimum_initial_system_primaries_count
+# set to TOTAL_SERVERS ensures all servers discover each other before RAFT election.
+# Server-0 (me) is preferred bootstrapper; all others (other) join when ready.
+if [ "$SERVER_INDEX" = "0" ]; then
+    echo "Server 0: Using bootstrapping strategy 'me' (preferred cluster bootstrapper)"
+    BOOTSTRAP_STRATEGY="me"
+else
+    echo "Server ${SERVER_INDEX}: Using bootstrapping strategy 'other' (joining cluster)"
+    BOOTSTRAP_STRATEGY="other"
+fi
+echo "Configuring cluster with bootstrap strategy: ${BOOTSTRAP_STRATEGY}"`
 }
 
 // ValidateServerRoleHints validates server role hints configuration
