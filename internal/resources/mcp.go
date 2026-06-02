@@ -607,18 +607,21 @@ func mcpNeo4jURIForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone
 //
 // See: https://github.com/neo4j/mcp#transport-modes
 func buildMCPEnv(spec *neo4jv1beta1.MCPServerSpec, neo4jURI string, secretName, usernameKey, passwordKey string) []corev1.EnvVar {
-	// mcpTransport already handles nil spec (returns "http"). Guard
-	// spec.ReadOnly separately so a future caller that omits the nil
-	// check above this function can't trip a nil deref.
-	transport := mcpTransport(spec)
-	readOnly := false
-	if spec != nil {
-		readOnly = spec.ReadOnly
+	// Substitute a zero-value spec when nil so the rest of the function can
+	// dereference fields (spec.Database, spec.HTTP, spec.Env, etc.) without
+	// scattering per-field nil checks. Today's callers all nil-check
+	// cluster.Spec.MCP before reaching here, but this protects future
+	// callers and keeps the body readable. A previous patch attempted to
+	// guard only spec.ReadOnly and missed the half-dozen other accesses
+	// below.
+	if spec == nil {
+		spec = &neo4jv1beta1.MCPServerSpec{}
 	}
+	transport := mcpTransport(spec)
 
 	env := []corev1.EnvVar{
 		{Name: "NEO4J_URI", Value: neo4jURI},
-		{Name: "NEO4J_READ_ONLY", Value: strconv.FormatBool(readOnly)},
+		{Name: "NEO4J_READ_ONLY", Value: strconv.FormatBool(spec.ReadOnly)},
 	}
 
 	// In STDIO mode the server connects using env-var credentials at startup.
