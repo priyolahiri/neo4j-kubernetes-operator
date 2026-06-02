@@ -257,9 +257,7 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 
 		// Sort newest-first by StartTime to match the one-time-backup path's
 		// ordering (which prepends), then cap at 10 entries.
-		sort.SliceStable(latest.Status.History, func(i, j int) bool {
-			return latest.Status.History[i].StartTime.After(latest.Status.History[j].StartTime.Time)
-		})
+		sortBackupRunsNewestFirst(latest.Status.History)
 		if len(latest.Status.History) > 10 {
 			latest.Status.History = latest.Status.History[:10]
 		}
@@ -267,6 +265,29 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 		return r.Status().Update(ctx, latest)
 	}
 	return retry.RetryOnConflict(retry.DefaultBackoff, update)
+}
+
+// sortBackupRunsNewestFirst orders history newest-first by StartTime, with
+// RunID as a deterministic tie-breaker for entries whose StartTime is equal
+// (e.g. two CronJob children spawned at the same instant, or several entries
+// with zero StartTime from edge cases where a Job ended before its StartTime
+// was written). Without the tie-breaker the cap-at-10 in
+// reconcileScheduledHistory could drop different entries on different
+// reconciles when StartTime collisions are present.
+//
+// RunID descending (lexicographic) is the chosen tie-break direction; UID
+// has no semantic ordering anyway, we just need *some* total order, and
+// "higher string sorts to the top" keeps the function's contract uniform
+// (newest first → if you can't tell which is newest, pick the
+// lexicographically-larger UID).
+func sortBackupRunsNewestFirst(runs []neo4jv1beta1.BackupRun) {
+	sort.Slice(runs, func(i, j int) bool {
+		a, b := runs[i], runs[j]
+		if a.StartTime.Equal(&b.StartTime) {
+			return a.RunID > b.RunID
+		}
+		return a.StartTime.After(b.StartTime.Time)
+	})
 }
 
 // jobToBackupRun builds a BackupRun for a completed Job. Returns ok=false if
