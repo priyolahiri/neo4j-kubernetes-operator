@@ -166,6 +166,74 @@ func TestBackupRunAlreadyRecorded(t *testing.T) {
 	}
 }
 
+func TestSortBackupRunsNewestFirst(t *testing.T) {
+	// Lock in deterministic ordering. SliceStable + StartTime alone is
+	// ill-defined when two entries have equal StartTime — possible with
+	// CronJob children spawned at the same instant or with zero-StartTime
+	// edge-case entries — so cap-at-10 could drop different entries on
+	// different reconciles. The RunID tie-breaker makes the order total.
+	t0 := metav1.NewTime(time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC))
+	t1 := metav1.NewTime(time.Date(2026, 6, 1, 11, 0, 0, 0, time.UTC))
+	t2 := metav1.NewTime(time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC))
+
+	t.Run("newest StartTime first", func(t *testing.T) {
+		runs := []neo4jv1beta1.BackupRun{
+			{RunID: "a", StartTime: t0},
+			{RunID: "b", StartTime: t2},
+			{RunID: "c", StartTime: t1},
+		}
+		sortBackupRunsNewestFirst(runs)
+		assert.Equal(t, []string{"b", "c", "a"}, ids(runs))
+	})
+
+	t.Run("equal StartTime → RunID descending", func(t *testing.T) {
+		runs := []neo4jv1beta1.BackupRun{
+			{RunID: "a", StartTime: t1},
+			{RunID: "c", StartTime: t1},
+			{RunID: "b", StartTime: t1},
+		}
+		sortBackupRunsNewestFirst(runs)
+		assert.Equal(t, []string{"c", "b", "a"}, ids(runs))
+	})
+
+	t.Run("mixed zero and non-zero StartTime", func(t *testing.T) {
+		// Zero StartTime sorts to the bottom (correct "newest first"
+		// behaviour — entries without timestamps are treated as oldest)
+		// and their relative order is RunID-deterministic.
+		runs := []neo4jv1beta1.BackupRun{
+			{RunID: "zero-x"},
+			{RunID: "real-a", StartTime: t0},
+			{RunID: "zero-z"},
+			{RunID: "real-b", StartTime: t2},
+		}
+		sortBackupRunsNewestFirst(runs)
+		assert.Equal(t, []string{"real-b", "real-a", "zero-z", "zero-x"}, ids(runs))
+	})
+
+	t.Run("stable across re-sorts of already-sorted input", func(t *testing.T) {
+		// Important: the controller Gets history from the API, appends
+		// any new entries at the end, and re-sorts. The sort must be
+		// idempotent — sorting an already-sorted slice mustn't change it.
+		runs := []neo4jv1beta1.BackupRun{
+			{RunID: "c", StartTime: t2},
+			{RunID: "b", StartTime: t1},
+			{RunID: "a", StartTime: t0},
+		}
+		want := ids(runs)
+		sortBackupRunsNewestFirst(runs)
+		assert.Equal(t, want, ids(runs))
+	})
+}
+
+// ids extracts the RunID slice from a BackupRun slice for cleaner assertions.
+func ids(runs []neo4jv1beta1.BackupRun) []string {
+	out := make([]string, len(runs))
+	for i, r := range runs {
+		out[i] = r.RunID
+	}
+	return out
+}
+
 func TestShellQuote(t *testing.T) {
 	// Hardening for backup.Spec.Options.AdditionalArgs (issue #117-adjacent).
 	// Single-quoted shell strings disable every metacharacter except a single
