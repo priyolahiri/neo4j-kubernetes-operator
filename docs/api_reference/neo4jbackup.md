@@ -281,6 +281,7 @@ Represents a single backup Job execution.
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `runID` | `string` | Unique identifier for this run, populated from the backing Job's `metadata.uid`. Stable for the lifetime of the Job; a new value for every retry. Used by the operator to dedupe history entries across reconciles and by users to correlate a history entry with the actual Job (and its logs / audit trail). |
 | `startTime` | `metav1.Time` | When the backup run started |
 | `completionTime` | `*metav1.Time` | When the run completed (`nil` if still running) |
 | `status` | `string` | Run status: `"Running"`, `"Succeeded"`, `"Failed"` |
@@ -324,7 +325,7 @@ spec:
   options:
     compress: true
     backupType: FULL
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
     encryption:
       enabled: true
@@ -359,7 +360,7 @@ spec:
   options:
     compress: true
     backupType: FULL
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
 ```
 
@@ -390,7 +391,7 @@ spec:
   options:
     compress: true
     backupType: AUTO
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
 ```
 
@@ -417,7 +418,7 @@ spec:
   options:
     backupType: DIFF
     preferDiffAsParent: true   # Requires Neo4j CalVer 2025.04+
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
     compress: true
 ```
@@ -480,7 +481,7 @@ spec:
   options:
     backupType: AUTO
     pageCache: "8G"
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
 ```
 
@@ -509,7 +510,7 @@ spec:
   options:
     backupType: AUTO
     pageCache: "8G"
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
 ```
 
@@ -545,7 +546,7 @@ spec:
   options:
     compress: true
     backupType: FULL
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
 ```
 
@@ -574,7 +575,7 @@ spec:
   options:
     compress: true
     backupType: FULL
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
 ```
 
