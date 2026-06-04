@@ -1790,6 +1790,8 @@ server.bolt.tls_level=REQUIRED
 			"server.memory.heap.initial_size": true,
 			"server.memory.heap.max_size":     true,
 			"server.memory.pagecache.size":    true,
+			"server.bolt.tls_level":           true,
+			"server.directories.certificates": true,
 		}
 		for _, key := range authGeneratedKeys {
 			excludeKeys[key] = true
@@ -1798,9 +1800,24 @@ server.bolt.tls_level=REQUIRED
 		// Sort keys to ensure deterministic order and prevent hash oscillation
 		var keys []string
 		for key := range cluster.Spec.Config {
-			if !excludeKeys[key] {
-				keys = append(keys, key)
+			if excludeKeys[key] {
+				continue
 			}
+			// Belt-and-suspenders: SSL policy keys are rejected by the
+			// validator at apply time, but if a CR was applied before the
+			// validator was in place (or with a future custom admission
+			// controller that bypasses our reconcile-time validation), we
+			// still must not let user values for these keys override the
+			// operator-managed TLS posture. Skip every dbms.ssl.policy.*
+			// key. Note that server.config.strict_validation.enabled=false
+			// is set elsewhere in this file, so without this filter Neo4j
+			// would silently let a later spec.config line shadow our
+			// strict-mode emission (issue: spec.config could override
+			// strict TLS defaults).
+			if strings.HasPrefix(key, "dbms.ssl.policy.") {
+				continue
+			}
+			keys = append(keys, key)
 		}
 		// Sort keys alphabetically for consistent ordering
 		sort.Strings(keys)

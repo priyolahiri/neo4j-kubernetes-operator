@@ -151,6 +151,64 @@ func TestBuildConfigMapForEnterprise_TLSStrictPeerValidationOptOut(t *testing.T)
 		"opt-out should not emit verify_hostname — leave Neo4j to its version default")
 }
 
+// TestBuildConfigMap_SSLPolicyKeysInSpecConfigAreDropped is the
+// defence-in-depth test for the validator-side rejection of
+// dbms.ssl.policy.* / server.bolt.tls_level / server.directories.
+// certificates in spec.config. Even if a CR slips past the validator
+// (e.g. a future custom admission controller bypasses our
+// reconcile-time validation), the rendered neo4j.conf must NOT contain
+// user values for these keys — because server.config.strict_validation.
+// enabled=false elsewhere lets Neo4j silently honour a duplicate-key
+// override and downgrade the strict cluster SSL posture.
+func TestBuildConfigMap_SSLPolicyKeysInSpecConfigAreDropped(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "evil", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.0-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			TLS: &neo4jv1beta1.TLSSpec{
+				Mode:      "cert-manager",
+				IssuerRef: &neo4jv1beta1.IssuerRef{Name: "ca-cluster-issuer", Kind: "ClusterIssuer"},
+			},
+			Storage: neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+			Config: map[string]string{
+				// Hostile overrides that would silently downgrade the
+				// strict default if the merge path didn't filter them.
+				"dbms.ssl.policy.cluster.trust_all":       "true",
+				"dbms.ssl.policy.cluster.client_auth":     "NONE",
+				"dbms.ssl.policy.cluster.verify_hostname": "false",
+				"dbms.ssl.policy.bolt.client_auth":        "REQUIRE",
+				"server.bolt.tls_level":                   "OPTIONAL",
+				"server.directories.certificates":         "/etc/neo4j/certs",
+				// A legitimate key to verify the rest of spec.config still merges.
+				"db.logs.query.enabled": "INFO",
+			},
+		},
+	}
+
+	neo4jConf := resources.BuildConfigMapForEnterprise(cluster).Data["neo4j.conf"]
+
+	// The operator's strict defaults must be the values present in the
+	// rendered config.
+	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.trust_all=false")
+	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.client_auth=REQUIRE")
+	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.verify_hostname=true")
+	assert.Contains(t, neo4jConf, "server.bolt.tls_level=REQUIRED")
+
+	// The hostile spec.config values must NOT appear as standalone lines.
+	// (Each is filtered out at merge time even though strict_validation is
+	// disabled.)
+	assert.NotContains(t, neo4jConf, "dbms.ssl.policy.cluster.trust_all=true")
+	assert.NotContains(t, neo4jConf, "dbms.ssl.policy.cluster.client_auth=NONE")
+	assert.NotContains(t, neo4jConf, "dbms.ssl.policy.cluster.verify_hostname=false")
+	assert.NotContains(t, neo4jConf, "dbms.ssl.policy.bolt.client_auth=REQUIRE")
+	assert.NotContains(t, neo4jConf, "server.bolt.tls_level=OPTIONAL")
+	assert.NotContains(t, neo4jConf, "server.directories.certificates=/etc/neo4j/certs")
+
+	// Legitimate spec.config keys still pass through.
+	assert.Contains(t, neo4jConf, "db.logs.query.enabled=INFO")
+}
+
 // TestBuildStatefulSet_TLSVolumeProjectsCAToTrustedDir locks in the Secret
 // items projection that places ca.crt at /ssl/trusted/ca.crt — the path
 // Neo4j's cluster SSL policy reads when trust_all=false. Without the
