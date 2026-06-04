@@ -209,6 +209,56 @@ func TestBuildConfigMap_SSLPolicyKeysInSpecConfigAreDropped(t *testing.T) {
 	assert.Contains(t, neo4jConf, "db.logs.query.enabled=INFO")
 }
 
+// TestBuildCertificate_UsagesAlwaysIncludeServerAndClientAuth is the
+// defence-in-depth lock-in for the user-supplied-usages override. The
+// validator already rejects a spec.tls.usages list missing either
+// server-auth or client-auth, but if a CR slips past validation, the
+// builder must still ensure both EKUs land on the issued cert —
+// otherwise Neo4j's runtime would fail mutual TLS handshakes on
+// cluster links under strict peer validation.
+func TestBuildCertificate_UsagesAlwaysIncludeServerAndClientAuth(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-cust", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			TLS: &neo4jv1beta1.TLSSpec{
+				Mode:      "cert-manager",
+				IssuerRef: &neo4jv1beta1.IssuerRef{Name: "ca-cluster-issuer", Kind: "ClusterIssuer"},
+				// User explicitly OMITS server-auth and client-auth.
+				// (In practice this CR would be rejected by the validator,
+				// but the builder is the second line of defence.)
+				Usages: []string{"digital signature", "key encipherment"},
+			},
+		},
+	}
+
+	cert := resources.BuildCertificateForEnterprise(cluster)
+	require.NotNil(t, cert)
+
+	have := map[string]bool{}
+	for _, u := range cert.Spec.Usages {
+		have[string(u)] = true
+	}
+	assert.True(t, have["server auth"],
+		"builder must inject server-auth EKU even when user override omits it; got %v", cert.Spec.Usages)
+	assert.True(t, have["client auth"],
+		"builder must inject client-auth EKU even when user override omits it; got %v", cert.Spec.Usages)
+	// User's other usages must still be honoured.
+	assert.True(t, have["digital signature"])
+	assert.True(t, have["key encipherment"])
+
+	// Idempotent: a user list that ALREADY includes both EKUs shouldn't
+	// produce duplicates.
+	cluster.Spec.TLS.Usages = []string{"server auth", "client auth", "digital signature"}
+	cert = resources.BuildCertificateForEnterprise(cluster)
+	seen := map[string]int{}
+	for _, u := range cert.Spec.Usages {
+		seen[string(u)]++
+	}
+	assert.Equal(t, 1, seen["server auth"], "no duplicate server auth: %v", cert.Spec.Usages)
+	assert.Equal(t, 1, seen["client auth"], "no duplicate client auth: %v", cert.Spec.Usages)
+}
+
 // TestBuildStatefulSet_TLSVolume_OptOutFlatMount covers the opt-out path:
 // when strictPeerValidation=false, the Secret must mount FLAT (no items[])
 // so issuers that don't populate ca.crt still produce a working Pod. With

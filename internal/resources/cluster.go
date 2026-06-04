@@ -717,11 +717,32 @@ func BuildCertificateForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 		}
 	}
 
-	// Set certificate usages if specified
+	// Set certificate usages. When the user supplies an explicit list we
+	// honour their custom usages, but ALWAYS ensure server-auth and
+	// client-auth are present — Neo4j needs server-auth for incoming
+	// Bolt/HTTPS/cluster TLS and client-auth for the mutual TLS the
+	// operator emits on cluster links under strict peer validation
+	// (client_auth=REQUIRE). The TLS validator already rejects a
+	// missing required EKU at apply time; this is the defence-in-depth
+	// layer that catches any CR slipping past validation (older CR
+	// applied before this check shipped, custom admission controller,
+	// etc.) and silently augments the usages list rather than producing
+	// a cert that can't satisfy Neo4j's runtime requirements.
 	if len(cluster.Spec.TLS.Usages) > 0 {
-		certSpec.Usages = make([]certv1.KeyUsage, len(cluster.Spec.TLS.Usages))
-		for i, usage := range cluster.Spec.TLS.Usages {
-			certSpec.Usages[i] = certv1.KeyUsage(usage)
+		present := make(map[certv1.KeyUsage]bool, len(cluster.Spec.TLS.Usages))
+		certSpec.Usages = make([]certv1.KeyUsage, 0, len(cluster.Spec.TLS.Usages)+2)
+		for _, usage := range cluster.Spec.TLS.Usages {
+			u := certv1.KeyUsage(usage)
+			if present[u] {
+				continue
+			}
+			present[u] = true
+			certSpec.Usages = append(certSpec.Usages, u)
+		}
+		for _, required := range []certv1.KeyUsage{certv1.UsageServerAuth, certv1.UsageClientAuth} {
+			if !present[required] {
+				certSpec.Usages = append(certSpec.Usages, required)
+			}
 		}
 	} else {
 		// Default usages for Neo4j TLS
