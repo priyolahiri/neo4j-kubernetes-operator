@@ -125,11 +125,23 @@ const (
 //     only, since it does not offer security." Kept as an opt-out for
 //     installations whose external issuer does not populate ca.crt in
 //     the cert-manager Secret.
-func buildClusterSSLPolicyTrustConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
-	strict := true
-	if cluster.Spec.TLS != nil && cluster.Spec.TLS.StrictPeerValidation != nil {
-		strict = *cluster.Spec.TLS.StrictPeerValidation
+//
+// clusterStrictPeerValidationEnabled mirrors controller-side
+// isStrictPeerValidationEnabled but for the resources package, where we
+// cannot import the controller package (would be a circular dependency).
+// Both must stay in sync — they read the same field with the same default.
+func clusterStrictPeerValidationEnabled(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
+	if cluster == nil || cluster.Spec.TLS == nil || cluster.Spec.TLS.Mode != CertManagerMode {
+		return false
 	}
+	if cluster.Spec.TLS.StrictPeerValidation == nil {
+		return true
+	}
+	return *cluster.Spec.TLS.StrictPeerValidation
+}
+
+func buildClusterSSLPolicyTrustConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	strict := clusterStrictPeerValidationEnabled(cluster)
 	if strict {
 		return `dbms.ssl.policy.cluster.trust_all=false
 dbms.ssl.policy.cluster.client_auth=REQUIRE
@@ -1501,32 +1513,41 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 		},
 	}
 
-	// Add TLS volume. The Items projection puts the Secret's ca.crt at both
-	// /ssl/ca.crt (back-compat path that some user-supplied configs may
-	// reference) and /ssl/trusted/ca.crt (Neo4j's expected trust-anchor
-	// location for cluster SSL when trust_all=false). The projection is
-	// emitted unconditionally — having /ssl/trusted/ca.crt present is
-	// harmless when strict peer validation is disabled, and unconditional
-	// projection keeps the StatefulSet template stable across the field
-	// toggle (no spurious roll-restarts).
+	// Add TLS volume.
+	//
+	// When strict peer validation is on (the default), we project the
+	// Secret with an explicit Items list that places ca.crt at both
+	// /ssl/ca.crt and /ssl/trusted/ca.crt — the second path is where
+	// Neo4j's cluster SSL policy reads the trust anchor when
+	// trust_all=false (operations-manual/current/security/ssl-framework/).
+	// Items[] is REQUIRED here: KeyToPath has no per-item `optional` flag,
+	// so listing ca.crt makes the kubelet refuse to mount the volume if
+	// the issuer didn't populate it — which is the desired loud failure
+	// (the reconcile-time preflight verifyTLSSecretHasCA catches this
+	// earlier and surfaces a clear status before the Pod ever attempts
+	// to start).
+	//
+	// When strict peer validation is OFF (opt-out), we MUST NOT require
+	// ca.crt — the whole point of the opt-out is to support issuers that
+	// don't populate it. Emit a flat Secret mount (no Items projection)
+	// so whatever keys the issuer DOES populate land at /ssl/<key> and
+	// missing keys are simply absent. trust_all=true ignores
+	// /ssl/trusted/ entirely under this posture.
 	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == CertManagerMode {
+		source := &corev1.SecretVolumeSource{
+			SecretName: fmt.Sprintf("%s-tls-secret", cluster.Name),
+		}
+		if clusterStrictPeerValidationEnabled(cluster) {
+			source.Items = []corev1.KeyToPath{
+				{Key: "tls.crt", Path: "tls.crt"},
+				{Key: "tls.key", Path: "tls.key"},
+				{Key: "ca.crt", Path: "ca.crt"},
+				{Key: "ca.crt", Path: "trusted/ca.crt"},
+			}
+		}
 		volumes = append(volumes, corev1.Volume{
-			Name: CertsVolume,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: fmt.Sprintf("%s-tls-secret", cluster.Name),
-					Items: []corev1.KeyToPath{
-						{Key: "tls.crt", Path: "tls.crt"},
-						{Key: "tls.key", Path: "tls.key"},
-						{Key: "ca.crt", Path: "ca.crt"},
-						// trusted/ca.crt is what Neo4j's cluster SSL policy
-						// reads when dbms.ssl.policy.cluster.trust_all=false
-						// — see operations-manual/current/security/
-						// ssl-framework/#_directory_layout.
-						{Key: "ca.crt", Path: "trusted/ca.crt"},
-					},
-				},
-			},
+			Name:         CertsVolume,
+			VolumeSource: corev1.VolumeSource{Secret: source},
 		})
 	}
 

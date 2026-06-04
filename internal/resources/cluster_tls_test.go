@@ -209,6 +209,48 @@ func TestBuildConfigMap_SSLPolicyKeysInSpecConfigAreDropped(t *testing.T) {
 	assert.Contains(t, neo4jConf, "db.logs.query.enabled=INFO")
 }
 
+// TestBuildStatefulSet_TLSVolume_OptOutFlatMount covers the opt-out path:
+// when strictPeerValidation=false, the Secret must mount FLAT (no items[])
+// so issuers that don't populate ca.crt still produce a working Pod. With
+// items[] in play, a missing ca.crt key causes the kubelet to refuse the
+// volume mount (KeyToPath has no per-item optional flag).
+func TestBuildStatefulSet_TLSVolume_OptOutFlatMount(t *testing.T) {
+	optOut := false
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-loose-vol", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.0-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			TLS: &neo4jv1beta1.TLSSpec{
+				Mode:                 "cert-manager",
+				IssuerRef:            &neo4jv1beta1.IssuerRef{Name: "ca-cluster-issuer", Kind: "ClusterIssuer"},
+				StrictPeerValidation: &optOut,
+			},
+			Storage: neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+		},
+	}
+
+	sts := resources.BuildServerStatefulSetsForEnterprise(cluster)[0]
+
+	var certsVol *corev1.Volume
+	for i := range sts.Spec.Template.Spec.Volumes {
+		v := &sts.Spec.Template.Spec.Volumes[i]
+		if v.Name == "certs" {
+			certsVol = v
+			break
+		}
+	}
+	require.NotNil(t, certsVol, "certs volume must be present when TLS enabled")
+	require.NotNil(t, certsVol.Secret, "certs volume must be backed by a Secret")
+	require.Equal(t, "tls-loose-vol-tls-secret", certsVol.Secret.SecretName)
+
+	// Critical: when opting out, Items MUST be empty so a missing ca.crt
+	// key in the Secret doesn't cause the kubelet to refuse the mount.
+	require.Empty(t, certsVol.Secret.Items,
+		"strictPeerValidation=false must emit a flat Secret mount; Items list found: %+v",
+		certsVol.Secret.Items)
+}
+
 // TestBuildStatefulSet_TLSVolumeProjectsCAToTrustedDir locks in the Secret
 // items projection that places ca.crt at /ssl/trusted/ca.crt — the path
 // Neo4j's cluster SSL policy reads when trust_all=false. Without the

@@ -9,6 +9,7 @@ package controller
 
 import (
 	"context"
+	goerrors "errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -84,13 +85,23 @@ func TestVerifyTLSSecretHasCA(t *testing.T) {
 		}
 	}
 
-	t.Run("Secret missing → nil (cert-manager still issuing)", func(t *testing.T) {
-		// Without the Secret in the fake client, Get returns NotFound; the
-		// preflight must treat that as "issuance pending" not "fatal".
+	t.Run("Secret missing → errTLSSecretPending sentinel", func(t *testing.T) {
+		// Without the Secret in the fake client, Get returns NotFound. The
+		// preflight returns the sentinel error so the caller can update
+		// status to Initializing AND block downstream STS emission.
+		//
+		// Returning nil (the prior behavior) would allow the reconciler to
+		// proceed and emit a strict-mode STS that requires ca.crt in its
+		// Secret volume projection — Pods would then be stuck in
+		// CreateContainerConfigError if the Secret eventually appeared
+		// without ca.crt.
 		cluster := mkCluster("cluster-pending")
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 		r := &Neo4jEnterpriseClusterReconciler{Client: c, Scheme: scheme}
-		assert.NoError(t, r.verifyTLSSecretHasCA(ctx, cluster))
+		err := r.verifyTLSSecretHasCA(ctx, cluster)
+		require.Error(t, err)
+		assert.True(t, goerrors.Is(err, errTLSSecretPending),
+			"expected errTLSSecretPending so caller distinguishes bootstrap from permanent failure; got %v", err)
 	})
 
 	t.Run("Secret present with ca.crt → no error", func(t *testing.T) {

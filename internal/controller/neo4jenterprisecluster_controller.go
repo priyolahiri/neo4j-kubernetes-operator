@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	goerrors "errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -113,22 +114,33 @@ func isStrictPeerValidationEnabled(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 	return *cluster.Spec.TLS.StrictPeerValidation
 }
 
-// verifyTLSSecretHasCA fetches the cert-manager-issued Secret and returns
-// an error if it lacks a non-empty ca.crt key. Strict peer validation puts
-// the issuer's CA at /ssl/trusted/ca.crt; without it, every Neo4j cluster
-// SSL handshake would fail and the cluster would never form. We'd rather
-// surface a clear status message than silently roll the STS into a broken
-// state.
+// errTLSSecretPending is the sentinel returned by verifyTLSSecretHasCA when
+// the cert-manager Secret has not yet been issued. The reconciler treats
+// this as "wait for cert-manager, don't proceed to STS emission" — surfacing
+// a clear Initializing status rather than the misleading Failed status that
+// would result from treating it as a hard preflight error.
 //
-// Returns nil if the Secret does not yet exist — cert-manager is still
-// issuing it, the next reconcile retries.
+// Used with errors.Is so callers can distinguish "still bootstrapping" from
+// "issuer is permanently mis-configured."
+var errTLSSecretPending = goerrors.New("cert-manager Secret has not yet been issued")
+
+// verifyTLSSecretHasCA fetches the cert-manager-issued Secret and returns:
+//   - errTLSSecretPending if the Secret does not yet exist (cert-manager
+//     is still working; the reconcile must NOT proceed to emit the strict
+//     STS template, because that template references a Secret with a
+//     required ca.crt key that doesn't exist yet — the Pod would get
+//     stuck in CreateContainerConfigError).
+//   - A descriptive error if the Secret exists but ca.crt is missing or
+//     empty (the issuer doesn't populate it; permanent until the user
+//     either fixes the issuer or opts out of strict peer validation).
+//   - nil if the Secret exists and has a non-empty ca.crt — safe to emit
+//     strict-mode resources.
 func (r *Neo4jEnterpriseClusterReconciler) verifyTLSSecretHasCA(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	secretName := fmt.Sprintf("%s-tls-secret", cluster.Name)
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: cluster.Namespace}, secret); err != nil {
 		if errors.IsNotFound(err) {
-			// cert-manager hasn't issued yet — no preflight failure to surface.
-			return nil
+			return errTLSSecretPending
 		}
 		return fmt.Errorf("strict peer validation preflight: failed to read Secret %s/%s: %w", cluster.Namespace, secretName, err)
 	}
@@ -292,11 +304,23 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		// Strict peer validation requires the cert-manager Secret to
 		// expose a ca.crt key (the issuer's CA bundle). Most issuers
 		// populate it (CA, ACME, Vault); some external issuers do not.
-		// Refuse loudly rather than rolling the STS into a strict
-		// config with no trust anchors. Issue #117-class regression
-		// protection.
+		// We must NOT proceed to ConfigMap + STS emission until we've
+		// verified the Secret is ready, because the strict-mode STS
+		// template requires ca.crt in its volume projection (KeyToPath
+		// has no per-item optional flag — the kubelet would refuse to
+		// mount the volume if the key is missing).
 		if isStrictPeerValidationEnabled(cluster) {
 			if err := r.verifyTLSSecretHasCA(ctx, cluster); err != nil {
+				if goerrors.Is(err, errTLSSecretPending) {
+					// Bootstrap path: cert-manager hasn't issued the Secret
+					// yet. Surface a clear waiting-for-cert-manager status
+					// and requeue. Returning here also blocks downstream
+					// resource emission so the strict STS template never
+					// lands before the Secret is verified.
+					_ = r.updateClusterStatus(ctx, cluster, "Initializing",
+						fmt.Sprintf("Waiting for cert-manager to issue Secret %s-tls-secret (strict peer validation)", cluster.Name))
+					return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+				}
 				logger.Error(err, "Strict peer validation preflight failed")
 				_ = r.updateClusterStatus(ctx, cluster, "Failed", err.Error())
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
