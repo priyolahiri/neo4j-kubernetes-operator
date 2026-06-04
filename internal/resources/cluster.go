@@ -106,6 +106,44 @@ const (
 
 // OperatorUDCPackagingValue returns the value for the NEO4J_UDC_PACKAGING environment variable.
 // It reads the OPERATOR_VERSION env var and returns "k8s-<version>", or "k8s-development" if unset.
+// buildClusterSSLPolicyTrustConfig emits the trust-anchor and client-auth
+// lines of dbms.ssl.policy.cluster.*, gated on
+// cluster.Spec.TLS.StrictPeerValidation. Default-true; explicit false opts
+// the cluster into the legacy "trust_all + no client auth" posture.
+//
+// Strict (default):
+//   - trust_all=false: peers validated against /ssl/trusted/ca.crt (the
+//     projected Secret ca.crt — see buildVolumes).
+//   - client_auth=REQUIRE: mutual TLS, matching Neo4j's canonical cluster
+//     SSL guidance (operations-manual/current/security/ssl-framework/).
+//   - verify_hostname=true: explicit because the Neo4j default differs
+//     between 5.26 (false) and 2025.01+ (true). The operator's emitted
+//     Certificate already includes every server-pod FQDN as a SAN.
+//
+// Legacy (StrictPeerValidation=false):
+//   - trust_all=true, client_auth=NONE. Neo4j's docs call this "debugging
+//     only, since it does not offer security." Kept as an opt-out for
+//     installations whose external issuer does not populate ca.crt in
+//     the cert-manager Secret.
+func buildClusterSSLPolicyTrustConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	strict := true
+	if cluster.Spec.TLS != nil && cluster.Spec.TLS.StrictPeerValidation != nil {
+		strict = *cluster.Spec.TLS.StrictPeerValidation
+	}
+	if strict {
+		return `dbms.ssl.policy.cluster.trust_all=false
+dbms.ssl.policy.cluster.client_auth=REQUIRE
+dbms.ssl.policy.cluster.verify_hostname=true
+`
+	}
+	return `# strictPeerValidation=false: legacy posture. trust_all=true accepts
+# any peer cert without validation; client_auth=NONE skips mutual TLS.
+# Neo4j's own documentation flags trust_all=true as debugging only.
+dbms.ssl.policy.cluster.trust_all=true
+dbms.ssl.policy.cluster.client_auth=NONE
+`
+}
+
 func OperatorUDCPackagingValue() string {
 	if v := os.Getenv(operatorVersionEnv); v != "" {
 		return "k8s-" + v
@@ -1463,13 +1501,30 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 		},
 	}
 
-	// Add TLS volume
+	// Add TLS volume. The Items projection puts the Secret's ca.crt at both
+	// /ssl/ca.crt (back-compat path that some user-supplied configs may
+	// reference) and /ssl/trusted/ca.crt (Neo4j's expected trust-anchor
+	// location for cluster SSL when trust_all=false). The projection is
+	// emitted unconditionally — having /ssl/trusted/ca.crt present is
+	// harmless when strict peer validation is disabled, and unconditional
+	// projection keeps the StatefulSet template stable across the field
+	// toggle (no spurious roll-restarts).
 	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == CertManagerMode {
 		volumes = append(volumes, corev1.Volume{
 			Name: CertsVolume,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: fmt.Sprintf("%s-tls-secret", cluster.Name),
+					Items: []corev1.KeyToPath{
+						{Key: "tls.crt", Path: "tls.crt"},
+						{Key: "tls.key", Path: "tls.key"},
+						{Key: "ca.crt", Path: "ca.crt"},
+						// trusted/ca.crt is what Neo4j's cluster SSL policy
+						// reads when dbms.ssl.policy.cluster.trust_all=false
+						// — see operations-manual/current/security/
+						// ssl-framework/#_directory_layout.
+						{Key: "ca.crt", Path: "trusted/ca.crt"},
+					},
 				},
 			},
 		})
@@ -1700,15 +1755,11 @@ dbms.ssl.policy.https.client_auth=NONE
 dbms.ssl.policy.https.tls_versions=TLSv1.3,TLSv1.2
 
 # Cluster SSL Policy (for intra-cluster communication)
-# CRITICAL: trust_all=true is required for reliable TLS cluster formation
-# This allows nodes to trust each other's certificates during initial handshake
 dbms.ssl.policy.cluster.enabled=true
 dbms.ssl.policy.cluster.base_directory=/ssl
 dbms.ssl.policy.cluster.private_key=tls.key
 dbms.ssl.policy.cluster.public_certificate=tls.crt
-dbms.ssl.policy.cluster.trust_all=true
-dbms.ssl.policy.cluster.client_auth=NONE
-dbms.ssl.policy.cluster.tls_versions=TLSv1.3,TLSv1.2
+` + buildClusterSSLPolicyTrustConfig(cluster) + `dbms.ssl.policy.cluster.tls_versions=TLSv1.3,TLSv1.2
 
 # Enable TLS for connectors
 server.bolt.tls_level=REQUIRED

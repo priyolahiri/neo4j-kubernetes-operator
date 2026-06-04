@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
@@ -57,9 +58,17 @@ func TestBuildConfigMapForEnterprise_TLSConfiguration(t *testing.T) {
 	assert.Contains(t, neo4jConf, "dbms.ssl.policy.bolt.private_key=tls.key", "should set Bolt private key")
 	assert.Contains(t, neo4jConf, "dbms.ssl.policy.bolt.public_certificate=tls.crt", "should set Bolt certificate")
 
-	// Test Cluster SSL policy - CRITICAL for TLS cluster formation
+	// Test Cluster SSL policy — strictPeerValidation defaults to true, so
+	// the operator emits trust_all=false + client_auth=REQUIRE +
+	// verify_hostname=true to match Neo4j's canonical production posture.
+	// The old "trust_all=true" assertion was a lock-in of debugging-only
+	// config; see the strictPeerValidation=false test below for the
+	// opt-out path.
 	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.enabled=true", "should enable cluster SSL policy")
-	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.trust_all=true", "CRITICAL: should set trust_all=true for cluster SSL")
+	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.trust_all=false", "default posture: peers validated against /ssl/trusted/ca.crt")
+	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.client_auth=REQUIRE", "default posture: mutual TLS")
+	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.verify_hostname=true", "default posture: explicit hostname verification")
+	assert.NotContains(t, neo4jConf, "dbms.ssl.policy.cluster.trust_all=true", "must not emit legacy trust_all=true by default")
 	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.base_directory=/ssl", "should set cluster base directory")
 	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.private_key=tls.key", "should set cluster private key")
 	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.public_certificate=tls.crt", "should set cluster certificate")
@@ -110,4 +119,78 @@ func TestBuildStatefulSetForEnterprise_TLSClusterFormation(t *testing.T) {
 	serverSts := serverStatefulSets[0]
 	assert.Equal(t, serverSts.Spec.PodManagementPolicy, appsv1.ParallelPodManagement,
 		"TLS clusters must use ParallelPodManagement for reliable formation")
+}
+
+// TestBuildConfigMapForEnterprise_TLSStrictPeerValidationOptOut covers the
+// escape hatch for users whose external issuer doesn't populate ca.crt in
+// the cert-manager Secret. With strictPeerValidation=false we revert to
+// the legacy debugging-only posture (trust_all=true, client_auth=NONE).
+func TestBuildConfigMapForEnterprise_TLSStrictPeerValidationOptOut(t *testing.T) {
+	optOut := false
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-loose", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.0-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			TLS: &neo4jv1beta1.TLSSpec{
+				Mode:                 "cert-manager",
+				IssuerRef:            &neo4jv1beta1.IssuerRef{Name: "ca-cluster-issuer", Kind: "ClusterIssuer"},
+				StrictPeerValidation: &optOut,
+			},
+			Storage: neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+		},
+	}
+
+	neo4jConf := resources.BuildConfigMapForEnterprise(cluster).Data["neo4j.conf"]
+
+	// Legacy posture: opt-out flips back to trust_all=true + client_auth=NONE.
+	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.trust_all=true")
+	assert.Contains(t, neo4jConf, "dbms.ssl.policy.cluster.client_auth=NONE")
+	assert.NotContains(t, neo4jConf, "dbms.ssl.policy.cluster.trust_all=false")
+	assert.NotContains(t, neo4jConf, "dbms.ssl.policy.cluster.verify_hostname=true",
+		"opt-out should not emit verify_hostname — leave Neo4j to its version default")
+}
+
+// TestBuildStatefulSet_TLSVolumeProjectsCAToTrustedDir locks in the Secret
+// items projection that places ca.crt at /ssl/trusted/ca.crt — the path
+// Neo4j's cluster SSL policy reads when trust_all=false. Without the
+// projection, strict peer validation would have no trust anchors and
+// every peer connection would fail.
+func TestBuildStatefulSet_TLSVolumeProjectsCAToTrustedDir(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-vol", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.0-enterprise"},
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			TLS: &neo4jv1beta1.TLSSpec{
+				Mode:      "cert-manager",
+				IssuerRef: &neo4jv1beta1.IssuerRef{Name: "ca-cluster-issuer", Kind: "ClusterIssuer"},
+			},
+			Storage: neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+		},
+	}
+
+	sts := resources.BuildServerStatefulSetsForEnterprise(cluster)[0]
+
+	var certsVol *corev1.Volume
+	for i := range sts.Spec.Template.Spec.Volumes {
+		v := &sts.Spec.Template.Spec.Volumes[i]
+		if v.Name == "certs" {
+			certsVol = v
+			break
+		}
+	}
+	require.NotNil(t, certsVol, "certs volume must be present when TLS enabled")
+	require.NotNil(t, certsVol.Secret, "certs volume must be backed by a Secret")
+	require.Equal(t, "tls-vol-tls-secret", certsVol.Secret.SecretName)
+
+	// Items must include the trusted/ca.crt projection.
+	paths := map[string]string{}
+	for _, item := range certsVol.Secret.Items {
+		paths[item.Key+"->"+item.Path] = item.Path
+	}
+	require.Contains(t, paths, "ca.crt->trusted/ca.crt",
+		"Secret projection must put ca.crt at /ssl/trusted/ca.crt for cluster SSL trust anchors")
+	require.Contains(t, paths, "tls.crt->tls.crt", "tls.crt projected at root")
+	require.Contains(t, paths, "tls.key->tls.key", "tls.key projected at root")
 }

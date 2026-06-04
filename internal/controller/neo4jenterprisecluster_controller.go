@@ -100,6 +100,49 @@ const (
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors;prometheusrules,verbs=get;list;watch;create;update;patch;delete
 
+// isStrictPeerValidationEnabled reports whether the cluster wants strict
+// intra-cluster TLS peer validation. The CRD field defaults to true; an
+// explicit false opts the cluster into the legacy debugging-only posture.
+func isStrictPeerValidationEnabled(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
+	if cluster.Spec.TLS == nil || cluster.Spec.TLS.Mode != "cert-manager" {
+		return false
+	}
+	if cluster.Spec.TLS.StrictPeerValidation == nil {
+		return true
+	}
+	return *cluster.Spec.TLS.StrictPeerValidation
+}
+
+// verifyTLSSecretHasCA fetches the cert-manager-issued Secret and returns
+// an error if it lacks a non-empty ca.crt key. Strict peer validation puts
+// the issuer's CA at /ssl/trusted/ca.crt; without it, every Neo4j cluster
+// SSL handshake would fail and the cluster would never form. We'd rather
+// surface a clear status message than silently roll the STS into a broken
+// state.
+//
+// Returns nil if the Secret does not yet exist — cert-manager is still
+// issuing it, the next reconcile retries.
+func (r *Neo4jEnterpriseClusterReconciler) verifyTLSSecretHasCA(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
+	secretName := fmt.Sprintf("%s-tls-secret", cluster.Name)
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: cluster.Namespace}, secret); err != nil {
+		if errors.IsNotFound(err) {
+			// cert-manager hasn't issued yet — no preflight failure to surface.
+			return nil
+		}
+		return fmt.Errorf("strict peer validation preflight: failed to read Secret %s/%s: %w", cluster.Namespace, secretName, err)
+	}
+	if ca, ok := secret.Data["ca.crt"]; !ok || len(ca) == 0 {
+		issuerName := ""
+		if cluster.Spec.TLS != nil && cluster.Spec.TLS.IssuerRef != nil {
+			issuerName = cluster.Spec.TLS.IssuerRef.Name
+		}
+		return fmt.Errorf("strict peer validation requires Secret %s/%s to expose a non-empty ca.crt key, but the cert-manager-issued Secret has none. The issuer %q likely does not populate ca.crt (some external issuers don't). Either fix the issuer to include the CA in its Secret output, or set spec.tls.strictPeerValidation=false on this cluster to opt into the legacy trust_all=true posture",
+			cluster.Namespace, secretName, issuerName)
+	}
+	return nil
+}
+
 func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -243,6 +286,20 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 				logger.Error(err, "Failed to create Certificate")
 				_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Certificate: %v", err))
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			}
+		}
+
+		// Strict peer validation requires the cert-manager Secret to
+		// expose a ca.crt key (the issuer's CA bundle). Most issuers
+		// populate it (CA, ACME, Vault); some external issuers do not.
+		// Refuse loudly rather than rolling the STS into a strict
+		// config with no trust anchors. Issue #117-class regression
+		// protection.
+		if isStrictPeerValidationEnabled(cluster) {
+			if err := r.verifyTLSSecretHasCA(ctx, cluster); err != nil {
+				logger.Error(err, "Strict peer validation preflight failed")
+				_ = r.updateClusterStatus(ctx, cluster, "Failed", err.Error())
+				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
 		}
 	}
