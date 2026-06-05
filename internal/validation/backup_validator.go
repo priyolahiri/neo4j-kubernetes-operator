@@ -260,7 +260,12 @@ func (v *BackupValidator) validateStorageProvider(storage *neo4jv1beta1.StorageL
 		if storage.PVC == nil {
 			return fmt.Errorf("PVC storage requires spec.storage.pvc to be set")
 		}
-		if storage.PVC.Name == "" {
+		// Trim before checking so whitespace-only names like "   " don't
+		// slip through. K8s would reject them at PVC lookup time anyway
+		// (PVC names follow DNS-label rules), but failing here gives a
+		// clear "your CR is wrong" message instead of an opaque
+		// MountVolume.SetUp failure on Pod startup.
+		if strings.TrimSpace(storage.PVC.Name) == "" {
 			return fmt.Errorf("PVC storage requires spec.storage.pvc.name to reference an existing PVC — without it, backup artifacts are written to an EmptyDir and discarded when the Job's TTL elapses")
 		}
 	}

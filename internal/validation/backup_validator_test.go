@@ -24,7 +24,7 @@ import (
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
-func TestBackupValidator_ValidateFixed(t *testing.T) {
+func TestBackupValidator_Validate(t *testing.T) {
 	validator := NewBackupValidator()
 
 	tests := []struct {
@@ -157,6 +157,26 @@ func TestBackupValidator_ValidateFixed(t *testing.T) {
 			},
 			// Without a PVC name, /backup in the Pod is an EmptyDir;
 			// the backup "succeeds" but artifacts evaporate at Job TTL.
+			expectError: true,
+			errorCount:  1,
+		},
+		{
+			name: "PVC storage with whitespace-only pvc.name is rejected",
+			backup: &neo4jv1beta1.Neo4jBackup{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-backup"},
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{Kind: "Cluster", Name: "test-cluster"},
+					Storage: neo4jv1beta1.StorageLocation{
+						Type: "pvc",
+						// "   " would slip past a naive == "" check; the
+						// validator trims first so K8s never sees a
+						// malformed PVC name and the user gets a clear
+						// rejection at apply time, not a Pod
+						// MountVolume.SetUp failure later.
+						PVC: &neo4jv1beta1.PVCSpec{Name: "   "},
+					},
+				},
+			},
 			expectError: true,
 			errorCount:  1,
 		},
