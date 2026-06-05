@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	stderrors "errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -305,6 +306,61 @@ func TestResolveRestoreSource_BackupRefDereferencePVC(t *testing.T) {
 	tmp := &neo4jv1beta1.Neo4jRestore{Spec: neo4jv1beta1.Neo4jRestoreSpec{Source: src}}
 	assert.Equal(t, "/backup/local-daily-backup", r.buildRestoreFromPath(tmp),
 		"PVC restores must use the run-subfolder (Job name), not the Neo4jBackup CR name")
+}
+
+// TestResolveRestoreSource_BackupRefNoSucceededRun_IsTransient verifies
+// that "no Succeeded run" returns errBackupNotReady (wrapped). The caller
+// uses errors.Is to detect this and route to Pending+requeue instead of
+// terminal Failed — restores created before the upstream backup
+// completes auto-promote to Running once the backup catches up.
+func TestResolveRestoreSource_BackupRefNoSucceededRun_IsTransient(t *testing.T) {
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "pending", Namespace: "neo4j"},
+		Spec: neo4jv1beta1.Neo4jBackupSpec{
+			Storage: neo4jv1beta1.StorageLocation{Type: "s3", Bucket: "b"},
+		},
+		Status: neo4jv1beta1.Neo4jBackupStatus{
+			History: []neo4jv1beta1.BackupRun{
+				{RunID: "uid-1", Status: "Running"}, // no Succeeded yet
+			},
+		},
+	}
+	r := &Neo4jRestoreReconciler{
+		Client: fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(backup).Build(),
+	}
+	restore := &neo4jv1beta1.Neo4jRestore{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "neo4j"},
+		Spec: neo4jv1beta1.Neo4jRestoreSpec{
+			Source: neo4jv1beta1.RestoreSource{Type: "backup", BackupRef: "pending"},
+		},
+	}
+
+	_, err := r.resolveRestoreSource(context.Background(), restore)
+	require.Error(t, err)
+	assert.True(t, stderrors.Is(err, errBackupNotReady),
+		"errors.Is must detect errBackupNotReady so startRestore routes to StatusPending instead of StatusFailed")
+	assert.Contains(t, err.Error(), `Neo4jBackup "pending"`, "error message must name the backup CR")
+}
+
+// TestResolveRestoreSource_BackupRefMissingCR_IsPermanent verifies that
+// the missing-CR error is NOT wrapped with errBackupNotReady — that is a
+// permanent failure (typo? wrong namespace?), not a wait condition, and
+// must NOT trigger an infinite Pending+requeue loop.
+func TestResolveRestoreSource_BackupRefMissingCR_IsPermanent(t *testing.T) {
+	r := &Neo4jRestoreReconciler{
+		Client: fake.NewClientBuilder().WithScheme(newTestScheme()).Build(),
+	}
+	restore := &neo4jv1beta1.Neo4jRestore{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "neo4j"},
+		Spec: neo4jv1beta1.Neo4jRestoreSpec{
+			Source: neo4jv1beta1.RestoreSource{Type: "backup", BackupRef: "typo"},
+		},
+	}
+
+	_, err := r.resolveRestoreSource(context.Background(), restore)
+	require.Error(t, err)
+	assert.False(t, stderrors.Is(err, errBackupNotReady),
+		"missing-CR error must be permanent (StatusFailed), not transient (StatusPending)")
 }
 
 // TestResolveRestoreSource_BackupRefNoSucceededRun verifies the loud-fail

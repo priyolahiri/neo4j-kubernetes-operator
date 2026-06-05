@@ -144,6 +144,35 @@ func TestBackupValidator_ValidateFixed(t *testing.T) {
 			errorCount:  1,
 		},
 		{
+			name: "PVC storage with empty pvc.name is rejected",
+			backup: &neo4jv1beta1.Neo4jBackup{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-backup"},
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{Kind: "Cluster", Name: "test-cluster"},
+					Storage: neo4jv1beta1.StorageLocation{
+						Type: "pvc",
+						PVC:  &neo4jv1beta1.PVCSpec{}, // PVCSpec set but Name is empty
+					},
+				},
+			},
+			// Without a PVC name, /backup in the Pod is an EmptyDir;
+			// the backup "succeeds" but artifacts evaporate at Job TTL.
+			expectError: true,
+			errorCount:  1,
+		},
+		{
+			name: "PVC storage with nil PVC is rejected",
+			backup: &neo4jv1beta1.Neo4jBackup{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-backup"},
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target:  neo4jv1beta1.BackupTarget{Kind: "Cluster", Name: "test-cluster"},
+					Storage: neo4jv1beta1.StorageLocation{Type: "pvc"}, // no PVC block at all
+				},
+			},
+			expectError: true,
+			errorCount:  1,
+		},
+		{
 			name: "S3 without cloud provider",
 			backup: &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{
