@@ -587,6 +587,15 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.CronJob, error) {
 	cronJobName := backup.Name + "-backup-cron"
 
+	// Temp staging PVC, if configured, must exist before the first
+	// scheduled run starts — otherwise the Pod hangs in
+	// ContainerCreating with "MountVolume.SetUp failed: PVC not found".
+	// The one-shot path already does this in createBackupJob; the
+	// scheduled path was skipping it (recheck bug #4).
+	if err := r.ensureTempStagingPVC(ctx, backup); err != nil {
+		return nil, fmt.Errorf("failed to create temp staging PVC: %w", err)
+	}
+
 	backupCmd, err := r.buildBackupCommand(ctx, backup, cluster)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build backup command: %w", err)
@@ -594,6 +603,23 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 
 	image := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
 	backoffLimit := int32(3)
+	// Job TTL of 30 min (vs the legacy 5 min) gives reconcileScheduledHistory
+	// time to record completed runs into status.history across modest
+	// operator outages — without this, an operator restart during a
+	// scheduled window would silently drop history entries (recheck bug #7).
+	// Bounded above by spec.successfulJobsHistoryLimit so we still cap
+	// long-term etcd footprint.
+	jobTTL := int32(1800)
+	// Skip any scheduled run missed by more than 60s — protects against
+	// thundering-herd on operator/scheduler recovery, where K8s would
+	// otherwise try to spawn every missed run at once (recheck bug #3).
+	startingDeadline := int64(60)
+	// SuccessfulJobsHistoryLimit defaults to 3; raise to 10 to match our
+	// internal status.history cap so K8s doesn't GC Jobs before the
+	// controller records them. FailedJobsHistoryLimit=3 keeps a small
+	// post-mortem trail of failures.
+	successHistory := int32(10)
+	failedHistory := int32(3)
 
 	cronJob := &batchv1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
@@ -606,10 +632,20 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 		labels := backupLabels(backup, "backup-cron")
 		cronJob.Labels = labels
 		cronJob.Spec.Schedule = backup.Spec.Schedule
+		// ConcurrencyPolicy=Forbid prevents a slow run from overlapping
+		// with the next scheduled run — two concurrent neo4j-admin backup
+		// invocations against the same cluster double the network/disk
+		// load and risk Bolt connection limits (recheck bug #2). The
+		// per-run-subfolder change in #129 fixed file collisions; this
+		// fixes the upstream load.
+		cronJob.Spec.ConcurrencyPolicy = batchv1.ForbidConcurrent
+		cronJob.Spec.StartingDeadlineSeconds = &startingDeadline
+		cronJob.Spec.SuccessfulJobsHistoryLimit = &successHistory
+		cronJob.Spec.FailedJobsHistoryLimit = &failedHistory
 		cronJob.Spec.JobTemplate = batchv1.JobTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{Labels: labels},
 			Spec: batchv1.JobSpec{
-				TTLSecondsAfterFinished: func() *int32 { v := int32(300); return &v }(),
+				TTLSecondsAfterFinished: &jobTTL,
 				BackoffLimit:            &backoffLimit,
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{Labels: labels},

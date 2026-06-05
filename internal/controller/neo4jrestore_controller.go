@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -60,6 +61,27 @@ const (
 	SourceTypeS3     = "s3"
 	SourceTypeGCS    = "gcs"
 )
+
+// errBackupNotReady is a sentinel error returned by the source resolver
+// when the referenced Neo4jBackup exists but has no Succeeded run in
+// status.history yet. This is a *transient* condition — the backup may
+// complete on a future reconcile — so callers route it to StatusPending
+// (which the Reconcile guard requeues) rather than StatusFailed (which
+// the guard pins as a terminal state until the CR is recreated).
+//
+// Use errors.Is to detect; resolveBackupRef wraps it with fmt.Errorf
+// to preserve the human-readable backup name in the message.
+var errBackupNotReady = fmt.Errorf("backup has no Succeeded run yet")
+
+// restoreServiceAccountName is the ServiceAccount used by all restore Job
+// pods. Mirrors neo4j-backup-sa on the backup side; intentionally separate
+// so cluster operators can scope IAM permissions narrowly (read-only for
+// restore, write for backup). Operators can attach workload-identity
+// annotations (IRSA / GKE Workload Identity / Azure Workload Identity)
+// via the resolved CloudBlock.Identity.AutoCreate.Annotations on the
+// restore source — for source.type=backup that comes from the referenced
+// Neo4jBackup's cloud config.
+const restoreServiceAccountName = "neo4j-restore-sa"
 
 // RestoreInProgressAnnotation is set on the target Neo4jEnterpriseCluster /
 // Neo4jEnterpriseStandalone CR while a Neo4jRestore is actively coordinating
@@ -279,6 +301,18 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	// Create restore job
 	job, err := r.createRestoreJob(ctx, restore, cluster)
 	if err != nil {
+		// "Backup has no Succeeded run yet" is a TRANSIENT condition:
+		// the user may have created the restore before the backup
+		// completed. Route to Pending (which the Reconcile guard
+		// requeues) instead of Failed (which the guard pins as
+		// terminal until the CR is recreated). The restore will
+		// auto-promote to Running once the backup's history gains a
+		// Succeeded entry on a future reconcile.
+		if stderrors.Is(err, errBackupNotReady) {
+			logger.Info("Restore is waiting for the referenced backup to complete", "error", err.Error())
+			r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Waiting for backup to complete: %v", err))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
 		logger.Error(err, "Failed to create restore job")
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to create restore job: %v", err))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
@@ -518,6 +552,16 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 	resolvedRestore := *restore
 	resolvedRestore.Spec.Source = resolvedSource
 
+	// Ensure the restore ServiceAccount exists with the resolved cloud
+	// identity's annotations (IRSA / GKE WI / Azure WI). Without this the
+	// restore Pod runs as the namespace's `default` SA, so any cloud
+	// access that relies on workload identity instead of static creds
+	// silently fails with "no creds" — backup worked, restore couldn't
+	// see the same bucket (recheck gap 1 follow-up).
+	if err := r.ensureRestoreServiceAccount(ctx, &resolvedRestore); err != nil {
+		return nil, fmt.Errorf("failed to ensure restore ServiceAccount: %w", err)
+	}
+
 	// Build restore command
 	restoreCmd, err := r.buildRestoreCommand(ctx, &resolvedRestore, cluster)
 	if err != nil {
@@ -543,6 +587,12 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 				Spec: corev1.PodSpec{
 					RestartPolicy:   corev1.RestartPolicyNever,
 					SecurityContext: hardenedRestorePodSecurityContext(),
+					// Mirror the backup path: a dedicated SA carries
+					// workload-identity annotations (IRSA / GKE WI / Azure
+					// WI). Without this the restore Pod ran as the
+					// namespace `default` SA and any IAM-via-workload-
+					// identity flow silently failed.
+					ServiceAccountName: restoreServiceAccountName,
 					// Restore pod uses the cluster's Neo4j image; propagate
 					// pull secrets so private-registry clusters can restore.
 					// Without this, a private-image cluster restore fails
@@ -605,6 +655,52 @@ func cloudBlockForRestore(restore *neo4jv1beta1.Neo4jRestore) *neo4jv1beta1.Clou
 	return nil
 }
 
+// ensureRestoreServiceAccount creates (or updates) the neo4j-restore-sa
+// ServiceAccount in the restore's namespace and applies any
+// workload-identity annotations declared in the resolved cloud block.
+// Mirrors ensureBackupServiceAccount on the backup side. No Role or
+// RoleBinding is created — the restore Job runs neo4j-admin directly and
+// does not need Kubernetes API access.
+//
+// Called with the RESOLVED restore (after resolveRestoreSource has
+// dereferenced source.type=backup), so for backupRef-based restores the
+// annotations correctly come from the referenced Neo4jBackup's cloud
+// config rather than the empty restore.Spec.Source.Storage.Cloud.
+func (r *Neo4jRestoreReconciler) ensureRestoreServiceAccount(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
+	namespace := restore.Namespace
+
+	// Collect workload-identity annotations from the resolved cloud block
+	// (if any). Static-credential paths (CredentialsSecretRef) need no
+	// SA annotations; the env vars feed the SDK directly.
+	wiAnnotations := map[string]string{}
+	cloud := cloudBlockForRestore(restore)
+	if cloud != nil && cloud.Identity != nil && cloud.Identity.AutoCreate != nil {
+		for k, v := range cloud.Identity.AutoCreate.Annotations {
+			wiAnnotations[k] = v
+		}
+	}
+
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      restoreServiceAccountName,
+			Namespace: namespace,
+		},
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error {
+		// Apply workload-identity annotations; preserve any other
+		// annotations already present (e.g. set by cloud-controller or
+		// the user directly).
+		if sa.Annotations == nil {
+			sa.Annotations = map[string]string{}
+		}
+		for k, v := range wiAnnotations {
+			sa.Annotations[k] = v
+		}
+		return nil
+	})
+	return err
+}
+
 // resolveBackupRef dereferences a Neo4jBackup CR name into a concrete
 // StorageLocation (with cloud creds folded in) and the per-run subfolder
 // (BackupsPath) of its most-recent Succeeded run. Used by both the main
@@ -636,9 +732,12 @@ func (r *Neo4jRestoreReconciler) resolveBackupRef(ctx context.Context, backupRef
 		}
 	}
 	if succeeded == nil {
+		// Wrap with errBackupNotReady so the caller can detect this
+		// transient condition with errors.Is and route to Pending +
+		// requeue instead of the terminal Failed phase.
 		return neo4jv1beta1.StorageLocation{}, "", fmt.Errorf(
-			"Neo4jBackup %q has no Succeeded run in status.history — cannot restore from it",
-			backupRef,
+			"Neo4jBackup %q: %w (status.history has no Succeeded run yet)",
+			backupRef, errBackupNotReady,
 		)
 	}
 

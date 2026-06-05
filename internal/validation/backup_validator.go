@@ -248,9 +248,20 @@ func (v *BackupValidator) validateStorageProvider(storage *neo4jv1beta1.StorageL
 			return fmt.Errorf("Azure storage requires cloud provider to be set to 'azure'")
 		}
 	case "pvc":
-		// PVC specific validations
+		// PVC specific validations.
+		//
+		// `spec.storage.pvc.name` is REQUIRED — backups land in /backup
+		// inside the Pod, which is either the named PVC or (if Name is
+		// empty) an EmptyDir that evaporates with the Job. The
+		// previously-permissive check let `pvc: {}` through and produced
+		// silently-discarded artifacts: the backup Job reports Succeeded,
+		// status.history records the run, but the .backup file never
+		// existed on durable storage so any future restore is impossible.
 		if storage.PVC == nil {
-			return fmt.Errorf("PVC storage requires PVC configuration")
+			return fmt.Errorf("PVC storage requires spec.storage.pvc to be set")
+		}
+		if storage.PVC.Name == "" {
+			return fmt.Errorf("PVC storage requires spec.storage.pvc.name to reference an existing PVC — without it, backup artifacts are written to an EmptyDir and discarded when the Job's TTL elapses")
 		}
 	}
 
