@@ -67,37 +67,36 @@ spec:
       name: production-issuer
       kind: ClusterIssuer
 
-  config:
-    # SSL policy configuration
-    dbms.ssl.policy.https.enabled: "true"
-    dbms.ssl.policy.https.base_directory: "/ssl"
-    dbms.ssl.policy.https.client_auth: "REQUIRE"
-
-    # Bolt SSL configuration
-    dbms.ssl.policy.bolt.enabled: "true"
-    dbms.ssl.policy.bolt.base_directory: "/ssl"
-    dbms.ssl.policy.bolt.client_auth: "REQUIRE"
-
-    # Cluster SSL (for server-to-server communication)
-    dbms.ssl.policy.cluster.enabled: "true"
-    dbms.ssl.policy.cluster.base_directory: "/ssl"
-    # The cluster SSL policy lines below are managed by the operator — do
-    # NOT set dbms.ssl.policy.cluster.* in spec.config. The operator emits
-    # the canonical Neo4j production configuration:
-    #
-    #   dbms.ssl.policy.cluster.trust_all       = false
-    #   dbms.ssl.policy.cluster.client_auth     = REQUIRE     (mutual TLS)
-    #   dbms.ssl.policy.cluster.verify_hostname = true
-    #
-    # All three are controlled by the boolean spec.tls.strictPeerValidation
-    # (default true). The operator projects the cert-manager Secret's
-    # ca.crt to /ssl/trusted/ca.crt as the trust anchor.
-    #
-    # To opt OUT into the legacy debugging-only posture (trust_all=true,
-    # client_auth=NONE — what the operator emitted before this field was
-    # added), set spec.tls.strictPeerValidation=false. Only needed if your
-    # external issuer does not populate ca.crt in the Secret it issues.
 ```
+
+> **Note — SSL policy configuration is operator-managed.**
+> Do NOT set `dbms.ssl.policy.*`, `server.bolt.tls_level`, or
+> `server.directories.certificates` in `spec.config`. The cluster
+> validator rejects every key in that namespace with a `Forbidden`
+> error at apply time. The reason: `server.config.strict_validation.
+> enabled=false` lets Neo4j silently honour duplicate-key overrides,
+> so a user value would shadow operator-managed configuration without
+> any warning at startup.
+>
+> When `spec.tls.mode: cert-manager` and `spec.tls.strictPeerValidation:
+> true` (the default), the operator emits Neo4j's canonical production
+> SSL configuration automatically:
+>
+> | Setting | Value | Source |
+> |---|---|---|
+> | `dbms.ssl.policy.bolt.*` | mounted from `/ssl/`, `client_auth=NONE`, TLSv1.3/1.2 | Bolt serves external drivers — `NONE` so drivers don't need client certs |
+> | `dbms.ssl.policy.https.*` | mounted from `/ssl/`, `client_auth=NONE`, TLSv1.3/1.2 | HTTPS serves the Browser and HTTP API |
+> | `dbms.ssl.policy.cluster.trust_all` | `false` | strict peer validation; trust anchor at `/ssl/trusted/ca.crt` |
+> | `dbms.ssl.policy.cluster.client_auth` | `REQUIRE` | mutual TLS between server pods |
+> | `dbms.ssl.policy.cluster.verify_hostname` | `true` | explicit (Neo4j default differs across 5.26 / 2025.x) |
+> | `server.bolt.tls_level` | `REQUIRED` | plain `bolt://` connections are rejected |
+>
+> Set `spec.tls.strictPeerValidation: false` to revert the cluster SSL
+> policy to the legacy `trust_all=true` + `client_auth=NONE` posture.
+> This is the only legitimate override path — useful when an external
+> issuer doesn't populate `ca.crt` in the Secret it issues. Neo4j's own
+> documentation flags `trust_all=true` as *"debugging only, since it
+> does not offer security."*
 
 ## Authentication Configuration
 
