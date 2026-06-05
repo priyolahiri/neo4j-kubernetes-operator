@@ -234,15 +234,18 @@ spec:
       group: awspca.cert-manager.io
 ```
 
-**HashiCorp Vault**:
+**HashiCorp Vault** (native cert-manager — no separate CRD):
+
+Vault is supported by cert-manager itself, not via a third-party external-issuer CRD. Configure it on a standard `Issuer`/`ClusterIssuer` via `spec.vault` (see [cert-manager Vault docs](https://cert-manager.io/docs/configuration/vault/)) and reference it the same way as any other built-in issuer:
+
 ```yaml
 spec:
   tls:
     mode: cert-manager
     issuerRef:
-      name: vault-issuer
-      kind: VaultIssuer
-      group: cert.cert-manager.io
+      name: vault-issuer          # name of your Issuer/ClusterIssuer with spec.vault
+      kind: ClusterIssuer
+      # group defaults to cert-manager.io — Vault is built-in, no external group
 ```
 
 **Google Certificate Authority Service**:
