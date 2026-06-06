@@ -17,6 +17,7 @@ limitations under the License.
 package integration_test
 
 import (
+	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -30,6 +31,50 @@ import (
 
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
+
+// quiesceBackupJob suspends a backup Job and waits for its pod (if any)
+// to disappear. The contract this guarantees: after the function returns,
+// no `neo4j-admin backup` invocation will run, so the operator's
+// `handleExistingBackupJob` cannot race the test's Status patch.
+//
+// Why this is needed: the operator's `handleOneTimeBackup` is terminal on
+// `phase in {Completed, Failed}` (neo4jbackup_controller.go:347). The
+// real Job, running against a live Ready cluster, completes in ~5-10s.
+// Without quiescing, a slow CI runner could let the real Job set
+// `Status.Succeeded > 0` and the operator record a Succeeded history
+// entry BEFORE the test's `Status.Failed = 4` patch lands — at which
+// point the terminal-state guard makes the failure patch a no-op and
+// the failure-path assertions never reach the expected state.
+//
+// `Spec.Suspend = true` deletes existing pods and prevents new ones (K8s
+// 1.21+ Job suspension semantics). After suspension we wait for
+// `Status.Active == 0` so any in-flight pod has fully terminated; only
+// then is it safe to set `Status.Succeeded` / `Status.Failed` ourselves
+// without racing the real backup's eventual completion.
+func quiesceBackupJob(ctx context.Context, c client.Client, key types.NamespacedName) {
+	GinkgoHelper()
+	Eventually(func() error {
+		j := &batchv1.Job{}
+		if err := c.Get(ctx, key, j); err != nil {
+			return err
+		}
+		t := true
+		j.Spec.Suspend = &t
+		return c.Update(ctx, j)
+	}, time.Second*15, time.Second).Should(Succeed(),
+		"suspending the Job (retries handle resourceVersion conflicts from the operator's parallel watches)")
+
+	Eventually(func() int32 {
+		j := &batchv1.Job{}
+		if err := c.Get(ctx, key, j); err != nil {
+			return -1
+		}
+		return j.Status.Active
+	}, time.Second*60, time.Second).Should(BeEquivalentTo(0),
+		"suspended Job must have Status.Active=0 (no pods running) before the test sets Succeeded/Failed; "+
+			"otherwise the real backup's neo4j-admin call could land first and the operator's "+
+			"terminal-state guard would make our patch a no-op")
+}
 
 var _ = Describe("Backup Integration Tests", Ordered, func() {
 	const (
@@ -360,6 +405,14 @@ var _ = Describe("Backup Integration Tests", Ordered, func() {
 		}, backupTimeout, backupInterval).Should(Succeed(),
 			"operator must create a backup Job named %q after Neo4jBackup is applied", expectedJobName)
 
+		By("Suspending the Job so the real neo4j-admin call can't race our simulated status patch")
+		// See quiesceBackupJob for rationale. Even on the success path
+		// this matters: without it, a real failure (cluster bolt blip,
+		// PVC pending, etc.) would set Status.Failed first and lock the
+		// terminal-state guard, making this test's later Succeeded patch
+		// a no-op.
+		quiesceBackupJob(ctx, k8sClient, jobKey)
+
 		By("Asserting the Job's container command contains the ${BACKUP_RUN_ID} placeholder")
 		// Single backup container; args[1] is the `/bin/sh -c "<cmd>"`
 		// payload because Command=["/bin/sh"] + Args=["-c", "<cmd>"].
@@ -475,6 +528,16 @@ var _ = Describe("Backup Integration Tests", Ordered, func() {
 		Eventually(func() error {
 			return k8sClient.Get(ctx, jobKey, job)
 		}, backupTimeout, backupInterval).Should(Succeed())
+
+		By("Suspending the Job so the real neo4j-admin can't succeed before we set Status.Failed")
+		// This is the spec the race actually bites: against a Ready
+		// cluster, the real backup Job tends to succeed in ~5-10s, which
+		// would land a `Status=Succeeded` history entry FIRST and lock
+		// the terminal-state guard at handleOneTimeBackup:347. The
+		// later `Status.Failed = 4` patch would then be ignored by the
+		// operator, leaving the test asserting `Status="Failed"` on a
+		// run the operator recorded as Succeeded.
+		quiesceBackupJob(ctx, k8sClient, jobKey)
 
 		By("Simulating Job failure by setting Status.Failed > backoffLimit")
 		// Same minimal-status-update approach as the success test above.
