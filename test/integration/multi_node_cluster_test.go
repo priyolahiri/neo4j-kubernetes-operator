@@ -31,7 +31,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/neo4j"
 )
+
+// envImageIsCalver reports whether the NEO4J_VERSION-driven image tag
+// resolves to a CalVer release (2025.x+). The "Minimal Cluster" test
+// below has assertions that only hold on the SemVer (5.26.x) startup
+// script — `BOOTSTRAP_STRATEGY="me"` is an SemVer-only emission
+// (see buildBootstrapStrategyShellBlock in internal/resources/cluster.go);
+// CalVer's V2 discovery doesn't honour system_bootstrapping_strategy
+// so that line is intentionally omitted. Without this guard the test
+// silently fails when the workflow is dispatched with
+// NEO4J_VERSION=2026.04-enterprise (or any CalVer).
+func envImageIsCalver() bool {
+	v, err := neo4j.ParseVersion(getNeo4jImageTag())
+	if err != nil {
+		return false
+	}
+	return v.IsCalver
+}
 
 var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 	var (
@@ -155,9 +173,33 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", func() {
 					return fmt.Errorf("startup script does not contain pod FQDN: %s", expectedFQDN)
 				}
 
-				// Verify ME/OTHER bootstrap strategy
-				if !containsString(startupScript, `BOOTSTRAP_STRATEGY="me"`) {
-					return fmt.Errorf("startup script does not contain 'me' bootstrapping strategy for server-0")
+				// ME/OTHER bootstrap strategy is SemVer-only. CalVer's
+				// V2 discovery doesn't honour system_bootstrapping_strategy
+				// — the startup script intentionally omits the
+				// BOOTSTRAP_STRATEGY assignment and emits a comment block
+				// instead. Branch the assertion against the actual image
+				// tag so the test passes whether the workflow is
+				// dispatched with NEO4J_VERSION=5.26-enterprise or a
+				// CalVer tag like 2026.04-enterprise.
+				if envImageIsCalver() {
+					// CalVer: BOOTSTRAP_STRATEGY assignment MUST be absent
+					// (the SemVer-only directive is dead on CalVer); the
+					// comment block from buildBootstrapStrategyShellBlock
+					// MUST be present so future readers know why it's
+					// missing.
+					if containsString(startupScript, `BOOTSTRAP_STRATEGY="me"`) {
+						return fmt.Errorf("CalVer startup script unexpectedly contains SemVer-only BOOTSTRAP_STRATEGY=\"me\"")
+					}
+					if !containsString(startupScript, "V2 discovery elects a bootstrapper from the LIST endpoints") {
+						return fmt.Errorf("CalVer startup script missing the explanatory comment for the omitted BOOTSTRAP_STRATEGY")
+					}
+				} else {
+					// SemVer: BOOTSTRAP_STRATEGY="me" must appear so the
+					// SemVer-only internal.dbms.cluster.discovery.system_bootstrapping_strategy
+					// directive can interpolate it.
+					if !containsString(startupScript, `BOOTSTRAP_STRATEGY="me"`) {
+						return fmt.Errorf("startup script does not contain 'me' bootstrapping strategy for server-0")
+					}
 				}
 
 				return nil
