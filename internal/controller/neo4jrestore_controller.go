@@ -1079,16 +1079,26 @@ func buildLocalRestoreFilePath(restore *neo4jv1beta1.Neo4jRestore, sourceDir str
 //
 // Returns the input unchanged for empty DB names (defensive — neo4j-admin
 // will surface a clearer error than a malformed glob).
+//
+// **Shell-injection guard**: both backupPath and databaseName are passed
+// through shellQuote(). backupPath ends with the user-controlled
+// `spec.source.backupPath` field (the operator just prepends `/backup/`)
+// and an unquoted value like `foo; rm -rf /data #` would otherwise close
+// the `ls` invocation early and execute arbitrary commands in the restore
+// Pod, which mounts `/data` (server-0's data PVC, read-write) and carries
+// `NEO4J_ADMIN_PASSWORD` in its env. Quoting both inputs makes the
+// substitution body a single token that `ls` receives as one argument;
+// any metacharacter is taken literally.
 func resolveLocalPVCFromPath(backupPath, databaseName string) string {
 	if databaseName == "" || !strings.HasPrefix(backupPath, "/backup") {
 		return backupPath
 	}
-	quotedDB := shellQuote(databaseName)
 	// `ls ... | head -1` picks the single matching file (per-run subfolder
 	// holds at most one `<dbname>-*.backup`). If no match exists, ls prints
 	// to stderr and head returns nothing, so --from-path= becomes empty and
 	// neo4j-admin errors with a clear "missing argument" message.
-	return fmt.Sprintf("$(ls %s/%s-*.backup | head -1)", backupPath, quotedDB)
+	return fmt.Sprintf("$(ls %s/%s-*.backup | head -1)",
+		shellQuote(backupPath), shellQuote(databaseName))
 }
 
 // isPVCBackupPath reports whether a resolved restore `--from-path` value
