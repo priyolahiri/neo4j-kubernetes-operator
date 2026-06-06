@@ -17,7 +17,6 @@ limitations under the License.
 package integration_test
 
 import (
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -391,20 +390,29 @@ var _ = Describe("Backup Integration Tests", Ordered, func() {
 			"FieldRef MUST be metadata.labels['batch.kubernetes.io/job-name'] — "+
 				"the canonical K8s 1.27+ label Job controller stamps on every Pod")
 
-		By("Simulating Job success by patching status.succeeded=1 + completion timestamps")
-		// We don't run an actual Neo4j backup in this test; the operator
-		// just needs to see job.Status.Succeeded > 0 with start/completion
-		// times to populate status.history. Patch (not Update) so we
-		// don't race the operator on the status subresource's
-		// resourceVersion.
-		now := metav1.Now()
-		started := metav1.NewTime(now.Add(-30 * time.Second))
-		patch := client.MergeFrom(job.DeepCopy())
-		job.Status.Succeeded = 1
-		job.Status.StartTime = &started
-		job.Status.CompletionTime = &now
-		Expect(k8sClient.Status().Patch(ctx, job, patch)).To(Succeed(),
-			"patching Job status to simulate completion")
+		By("Simulating Job success by setting Status.Succeeded = 1")
+		// Minimal status update: only Succeeded. The operator's
+		// handleExistingBackupJob only checks `job.Status.Succeeded > 0`;
+		// it doesn't read CompletionTime or Conditions, so we don't need
+		// to set them. This also dodges K8s 1.31+/1.33 Job validation
+		// rules:
+		//   - completionTime requires conditions[Complete=True]
+		//   - Complete=True requires SuccessCriteriaMet=True first
+		//   - startTime cannot be "removed" once unsuspended
+		// Adding either condition triggers a chain of required fields
+		// that's painful to fake without actually running the Job. The
+		// minimal Succeeded-only path is what's actually under test
+		// anyway — the contract we care about is "operator records
+		// history when it sees Succeeded > 0".
+		Eventually(func() error {
+			latest := &batchv1.Job{}
+			if err := k8sClient.Get(ctx, jobKey, latest); err != nil {
+				return err
+			}
+			latest.Status.Succeeded = 1
+			return k8sClient.Status().Update(ctx, latest)
+		}, time.Second*10, time.Second).Should(Succeed(),
+			"updating Job status to simulate completion (retried for resourceVersion conflicts)")
 
 		By("Waiting for the controller to record backupsPath in status.history[0]")
 		Eventually(func() string {
@@ -468,13 +476,18 @@ var _ = Describe("Backup Integration Tests", Ordered, func() {
 			return k8sClient.Get(ctx, jobKey, job)
 		}, backupTimeout, backupInterval).Should(Succeed())
 
-		By("Simulating Job failure (failed > backoffLimit)")
-		now := metav1.Now()
-		started := metav1.NewTime(now.Add(-5 * time.Second))
-		patch := client.MergeFrom(job.DeepCopy())
-		job.Status.Failed = 4 // > backoffLimit=3, terminal failure
-		job.Status.StartTime = &started
-		Expect(k8sClient.Status().Patch(ctx, job, patch)).To(Succeed())
+		By("Simulating Job failure by setting Status.Failed > backoffLimit")
+		// Same minimal-status-update approach as the success test above.
+		// handleExistingBackupJob routes on `job.Status.Failed > 0`; no
+		// conditions or completionTime required.
+		Eventually(func() error {
+			latest := &batchv1.Job{}
+			if err := k8sClient.Get(ctx, jobKey, latest); err != nil {
+				return err
+			}
+			latest.Status.Failed = 4 // > backoffLimit=3, terminal failure
+			return k8sClient.Status().Update(ctx, latest)
+		}, time.Second*10, time.Second).Should(Succeed())
 
 		By("Asserting the failed run lands in status.history with BackupsPath set")
 		Eventually(func() bool {
@@ -513,91 +526,31 @@ var _ = Describe("Backup Integration Tests", Ordered, func() {
 		}
 	})
 
-	// Bonus per #130's "8. Bonus" — verifies the inverse contract: a
-	// Neo4jRestore CR with source.backupPath set to a history.BackupsPath
-	// value builds a --from-path that points at the per-run subfolder.
-	// This is the user-facing "restore from a specific historical run"
-	// workflow that #129 enabled. Done as an inline build-only check
-	// rather than running an actual restore Job — the goal here is the
-	// path-construction contract, not a data round-trip (#121 covers
-	// that separately).
-	It("should construct restore --from-path from a history.backupsPath value (issue #130 bonus)", func() {
-		// Build a synthetic Neo4jRestore that points at where a
-		// previous backup run's artifacts would live. The PVC name
-		// matches the backup tests above so the restore can resolve
-		// against the same volume.
-		const historicalRunSubfolder = "subfolder-backup-backup"
-		restore := &neo4jv1beta1.Neo4jRestore{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "restore-from-history",
-				Namespace: testNamespace,
-			},
-			Spec: neo4jv1beta1.Neo4jRestoreSpec{
-				ClusterRef:   cluster.Name,
-				DatabaseName: "neo4j",
-				Source: neo4jv1beta1.RestoreSource{
-					Type: "storage",
-					Storage: &neo4jv1beta1.StorageLocation{
-						Type: "pvc",
-						PVC:  &neo4jv1beta1.PVCSpec{Name: "backup-pvc"},
-					},
-					// This is the value a user would copy from
-					// status.history[i].backupsPath on a real backup CR.
-					BackupPath: historicalRunSubfolder,
-				},
-				// stopCluster: false because we won't actually run the
-				// restore — we only need the operator to construct the
-				// Job (or fail with a recognisable refuseRestoreIfPodsRunning
-				// message that we then read from status). Either way,
-				// the spec is shaped correctly.
-				StopCluster: false,
-			},
-		}
-		Expect(k8sClient.Create(ctx, restore)).To(Succeed())
-
-		By("Waiting for the operator to react (either Failed-with-refuse or Job-created)")
-		// We tolerate both terminal states. The contract under test is
-		// "the operator's path resolution sees the per-run subfolder";
-		// whether the Job actually runs is a separate concern (#121's
-		// data-integrity test handles that).
-		Eventually(func() bool {
-			latest := &neo4jv1beta1.Neo4jRestore{}
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
-				return false
-			}
-			switch latest.Status.Phase {
-			case "Failed":
-				// Expected: refuseRestoreIfPodsRunning fires because
-				// the cluster is up and stopCluster=false. The
-				// important part — the error must NOT be a generic
-				// path-resolution failure; it should be the
-				// live-cluster guard.
-				return strings.Contains(latest.Status.Message, "restore") ||
-					strings.Contains(latest.Status.Message, "cluster")
-			case "Running", "Completed":
-				// If the operator gets here, the path resolved fine.
-				return true
-			}
-			return false
-		}, backupTimeout, backupInterval).Should(BeTrue(),
-			"the operator must react to the restore CR — either by refusing "+
-				"(stopCluster=false against a live cluster) or by creating a "+
-				"restore Job whose --from-path includes the historicalRunSubfolder")
-
-		// Final assertion: any Job created (if the live-cluster check
-		// somehow didn't fire) must carry the per-run subfolder in
-		// --from-path.
-		jobList := &batchv1.JobList{}
-		_ = k8sClient.List(ctx, jobList, client.InNamespace(testNamespace),
-			client.MatchingLabels{"app.kubernetes.io/instance": restore.Name})
-		for _, j := range jobList.Items {
-			for _, c := range j.Spec.Template.Spec.Containers {
-				if len(c.Args) >= 2 {
-					Expect(c.Args[1]).To(ContainSubstring(historicalRunSubfolder),
-						"if a restore Job is created, its --from-path MUST include the historical run subfolder %q",
-						historicalRunSubfolder)
-				}
-			}
-		}
-	})
+	// #130's bonus item ("verify a Neo4jRestore referencing
+	// history.backupsPath builds the right --from-path") is
+	// intentionally NOT covered here. The path-construction contract
+	// is fully covered by unit tests:
+	//
+	//   - internal/controller/neo4jrestore_cloud_test.go
+	//     TestResolveRestoreSource_BackupRefDereferenceS3 / PVC
+	//   - internal/resources/cluster_test.go
+	//     TestBuildRestoreFromPath_*
+	//
+	// An end-to-end version was attempted here but couldn't be made
+	// non-brittle in integration runtime — the only way to actually
+	// build a --from-path in the running operator is to let the
+	// restore Job be created, which requires either stopCluster=true
+	// (which scales down the shared BeforeAll cluster and breaks the
+	// other tests in this Ordered Describe) or a non-live cluster
+	// (not available here). The earlier attempt resorted to "trigger
+	// the restore and assert on status" but couldn't distinguish
+	// path-resolution success from unrelated validation failures
+	// (database-exists, refuseRestoreIfPodsRunning, etc.).
+	//
+	// The user-facing "restore from a specific historical run"
+	// workflow is exercised end-to-end by the #121-1 round-trip in
+	// restore_integration_test.go, which uses its own cluster + a
+	// real backup + stopCluster=true and asserts on the restored
+	// data — the most thorough proof that the per-run subfolder
+	// actually drives a working restore.
 })
