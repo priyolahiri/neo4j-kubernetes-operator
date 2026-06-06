@@ -3,12 +3,18 @@ name: Pages — Docs
 # Builds the documentation site with mkdocs-material and publishes it to the
 # gh-pages branch as a versioned subdirectory using mike.
 #
-#   - Push to main         → publishes to /dev/ alias  (rolling preview)
+#   - Push to main         → publishes to /main/ alias  (rolling preview)
 #   - Push of v* tag       → publishes to /vX.Y/ and updates the /latest/ alias
 #
 # The chart-publishing workflow (pages-helm.yml) writes to /charts/ on the
 # same gh-pages branch; concurrency: gh-pages serialises pushes between the
 # two workflows so they cannot race.
+#
+# Naming history: the rolling-preview alias was called `dev` until June
+# 2026. Renamed to `main` because the operator already uses `dev` as a
+# CLI flag value (--mode=dev vs --mode=production); having "dev" mean
+# two different things in this codebase was a footgun. The `main` alias
+# matches the git branch name 1:1 with no overload.
 
 on:
   push:
@@ -82,10 +88,10 @@ jobs:
             echo "title=${{ inputs.version-alias }}" >> "$GITHUB_OUTPUT"
             echo "Manual deploy: ${{ inputs.version-alias }}"
           else
-            echo "alias=dev"   >> "$GITHUB_OUTPUT"
+            echo "alias=main"  >> "$GITHUB_OUTPUT"
             echo "extra="      >> "$GITHUB_OUTPUT"
-            echo "title=dev"   >> "$GITHUB_OUTPUT"
-            echo "Publishing main branch to /dev/"
+            echo "title=main"  >> "$GITHUB_OUTPUT"
+            echo "Publishing main branch to /main/"
           fi
 
       - name: Verify mkdocs strict build
@@ -103,3 +109,13 @@ jobs:
       - name: Set default redirect to /latest/ (idempotent)
         if: contains(steps.params.outputs.extra, 'latest')
         run: mike set-default --push latest
+
+      # One-time cleanup after the dev → main rename (June 2026).
+      # Runs only on push-to-main deploys; mike delete errors when the
+      # version is already gone, so `|| true` makes it idempotent — once
+      # the old `dev` entry has been removed from versions.json, every
+      # subsequent run is a no-op. Safe to leave in the workflow
+      # indefinitely; can be deleted in a few release cycles.
+      - name: Remove orphan 'dev' alias (one-time cleanup)
+        if: steps.params.outputs.alias == 'main'
+        run: mike delete dev --push 2>/dev/null || true
