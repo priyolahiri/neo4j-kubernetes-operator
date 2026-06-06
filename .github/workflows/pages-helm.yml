@@ -8,7 +8,7 @@ name: Pages — Helm Repo
 #   helm repo add neo4j https://priyolahiri.github.io/neo4j-kubernetes-operator/charts
 #   helm install neo4j-operator neo4j/neo4j-operator
 #
-# The docs workflow (pages-docs.yml) writes to /, /latest/, /vX.Y/, /dev/ on the
+# The docs workflow (pages-docs.yml) writes to /, /latest/, /vX.Y/, /main/ on the
 # same gh-pages branch; concurrency: gh-pages serialises pushes so they cannot race.
 
 on:
