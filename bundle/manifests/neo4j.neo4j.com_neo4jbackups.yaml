@@ -196,8 +196,12 @@ spec:
                       differential backup. Requires CalVer 2025.04+.
                     type: boolean
                   remoteAddressResolution:
-                    description: Resolve remote addresses for backups (useful in multi-homed
-                      environments)
+                    description: |-
+                      Resolve remote addresses for backups via the cluster discovery service
+                      (useful in multi-homed environments). When unset and target Kind is
+                      ShardedDatabase on Neo4j 2025.09+, the operator defaults this to true to
+                      match the canonical upstream sharded-backup invocation. Set explicitly to
+                      override the default in either direction.
                     type: boolean
                   skipRecovery:
                     description: Skip recovery step after backup (advanced; use when
@@ -352,15 +356,20 @@ spec:
                   clusterRef:
                     description: |-
                       ClusterRef is the name of the Neo4jEnterpriseCluster (or Neo4jEnterpriseStandalone)
-                      that owns the database. Required when Kind=Database; unused when Kind=Cluster.
+                      that owns the database. Required when Kind=Database or Kind=ShardedDatabase;
+                      unused when Kind=Cluster.
                     type: string
                   kind:
                     enum:
                     - Cluster
                     - Database
+                    - ShardedDatabase
                     type: string
                   name:
-                    description: Name of the target resource
+                    description: |-
+                      Name of the target resource. For Kind=ShardedDatabase, this is the logical
+                      sharded-database name (e.g. "products"); the operator backs up all shards
+                      (products-g000, products-p000, …) in one neo4j-admin invocation via a glob.
                     type: string
                   namespace:
                     description: Namespace of the target resource (defaults to backup

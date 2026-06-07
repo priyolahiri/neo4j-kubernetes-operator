@@ -49,18 +49,37 @@ type Neo4jBackupSpec struct {
 	Suspend bool `json:"suspend,omitempty"`
 }
 
+// BackupTargetKind values accepted on BackupTarget.Kind. Use these constants
+// instead of raw strings at call sites.
+const (
+	BackupTargetKindCluster         = "Cluster"
+	BackupTargetKindDatabase        = "Database"
+	BackupTargetKindShardedDatabase = "ShardedDatabase"
+)
+
+// IsDatabaseScoped reports whether the kind addresses a single database (or
+// logical sharded family) rather than the whole cluster. Database-scoped kinds
+// require ClusterRef and carry the database name (not the cluster name) in
+// Target.Name.
+func IsDatabaseScopedBackupKind(kind string) bool {
+	return kind == BackupTargetKindDatabase || kind == BackupTargetKindShardedDatabase
+}
+
 // BackupTarget defines what to backup
 type BackupTarget struct {
-	// +kubebuilder:validation:Enum=Cluster;Database
+	// +kubebuilder:validation:Enum=Cluster;Database;ShardedDatabase
 	// +kubebuilder:validation:Required
 	Kind string `json:"kind"`
 
 	// +kubebuilder:validation:Required
-	// Name of the target resource
+	// Name of the target resource. For Kind=ShardedDatabase, this is the logical
+	// sharded-database name (e.g. "products"); the operator backs up all shards
+	// (products-g000, products-p000, …) in one neo4j-admin invocation via a glob.
 	Name string `json:"name"`
 
 	// ClusterRef is the name of the Neo4jEnterpriseCluster (or Neo4jEnterpriseStandalone)
-	// that owns the database. Required when Kind=Database; unused when Kind=Cluster.
+	// that owns the database. Required when Kind=Database or Kind=ShardedDatabase;
+	// unused when Kind=Cluster.
 	ClusterRef string `json:"clusterRef,omitempty"`
 
 	// Namespace of the target resource (defaults to backup namespace)
@@ -105,8 +124,12 @@ type BackupOptions struct {
 	// Enable parallel download for remote backups
 	ParallelDownload bool `json:"parallelDownload,omitempty"`
 
-	// Resolve remote addresses for backups (useful in multi-homed environments)
-	RemoteAddressResolution bool `json:"remoteAddressResolution,omitempty"`
+	// Resolve remote addresses for backups via the cluster discovery service
+	// (useful in multi-homed environments). When unset and target Kind is
+	// ShardedDatabase on Neo4j 2025.09+, the operator defaults this to true to
+	// match the canonical upstream sharded-backup invocation. Set explicitly to
+	// override the default in either direction.
+	RemoteAddressResolution *bool `json:"remoteAddressResolution,omitempty"`
 
 	// Skip recovery step after backup (advanced; use when recovery is handled separately)
 	SkipRecovery bool `json:"skipRecovery,omitempty"`

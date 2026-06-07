@@ -154,6 +154,14 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
+	// Sharded-DB-specific static preflight (cluster sharding enabled, version
+	// gate, Neo4jShardedDatabase CR exists + Ready, clusterRef matches). No-op
+	// for non-ShardedDatabase kinds. The expensive glob-safety SHOW DATABASES
+	// check fires later, only at Job creation time.
+	if done, result, preflightErr := r.applyShardedPreflight(ctx, backup, targetCluster); done {
+		return result, preflightErr
+	}
+
 	// Handle scheduled backups
 	if backup.Spec.Schedule != "" {
 		return r.handleScheduledBackup(ctx, backup, targetCluster)
@@ -456,10 +464,10 @@ func jobDuration(job *batchv1.Job) time.Duration {
 }
 
 // backupTargetName resolves the Neo4j instance name from a backup spec.
-// When Kind is "Database" the target name is the database name, not the instance;
-// ClusterRef holds the actual Neo4j instance in that case.
+// For database-scoped kinds (Database, ShardedDatabase) the target Name is the
+// database name and ClusterRef holds the actual Neo4j instance.
 func backupTargetName(backup *neo4jv1beta1.Neo4jBackup) string {
-	if backup.Spec.Target.Kind == "Database" && backup.Spec.Target.ClusterRef != "" {
+	if neo4jv1beta1.IsDatabaseScopedBackupKind(backup.Spec.Target.Kind) && backup.Spec.Target.ClusterRef != "" {
 		return backup.Spec.Target.ClusterRef
 	}
 	return backup.Spec.Target.Name
@@ -518,6 +526,13 @@ func (r *Neo4jBackupReconciler) ensureTempStagingPVC(ctx context.Context, backup
 }
 
 func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
+	// Glob-safety check for sharded backups: refuse to submit a Job whose
+	// `{name}*` neo4j-admin glob would also pull in unrelated databases. No-op
+	// for non-sharded kinds.
+	if err := r.shardedPreflightGlobSafety(ctx, backup, cluster); err != nil {
+		return nil, err
+	}
+
 	// Create temp staging PVC if configured
 	if err := r.ensureTempStagingPVC(ctx, backup); err != nil {
 		return nil, fmt.Errorf("failed to create temp staging PVC: %w", err)
@@ -586,6 +601,15 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 
 func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.CronJob, error) {
 	cronJobName := backup.Name + "-backup-cron"
+
+	// Glob-safety check for sharded backups, runs once at CronJob create/update
+	// time. Known limitation: a colliding database created AFTER the CronJob
+	// already exists will be silently included in future scheduled runs until
+	// the user touches the CR. Phase 1 accepts this gap; Phase 3 observability
+	// can surface it via neo4j-admin backup validate output.
+	if err := r.shardedPreflightGlobSafety(ctx, backup, cluster); err != nil {
+		return nil, err
+	}
 
 	// Temp staging PVC, if configured, must exist before the first
 	// scheduled run starts — otherwise the Pod hangs in
@@ -681,6 +705,19 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 	return cronJob, nil
 }
 
+// effectiveRemoteAddressResolution resolves Spec.Options.RemoteAddressResolution
+// to its effective bool value with defaulting applied. Explicit user values
+// (true or false) always win. When the field is unset (nil) AND target.Kind is
+// ShardedDatabase AND the Neo4j version supports the flag (2025.09+), default
+// to true — matches the canonical upstream sharded-backup invocation.
+func effectiveRemoteAddressResolution(backup *neo4jv1beta1.Neo4jBackup, version *neo4j.Version) bool {
+	if backup.Spec.Options != nil && backup.Spec.Options.RemoteAddressResolution != nil {
+		return *backup.Spec.Options.RemoteAddressResolution
+	}
+	return backup.Spec.Target.Kind == neo4jv1beta1.BackupTargetKindShardedDatabase &&
+		version != nil && version.SupportsRemoteAddressResolution()
+}
+
 func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (string, error) {
 	imageTag := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
 	version, err := neo4j.GetImageVersion(imageTag)
@@ -697,12 +734,19 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 		version = &neo4j.Version{Major: 5, Minor: 26, Patch: 0}
 	}
 
+	// Resolve --remote-address-resolution with defaulting applied. For
+	// ShardedDatabase backups on Neo4j 2025.09+ the upstream canonical
+	// invocation includes this flag; the operator defaults it to true when
+	// the user hasn't set the field explicitly. Explicit values (true/false)
+	// always win.
+	remoteAddrRes := effectiveRemoteAddressResolution(backup, version)
+
 	// Validate version-gated flags individually.
 	if backup.Spec.Options != nil {
 		if backup.Spec.Options.ParallelDownload && !version.SupportsParallelDownload() {
 			return "", fmt.Errorf("--parallel-download requires CalVer 2025.11+ (image: %s)", cluster.Spec.Image.Tag)
 		}
-		if backup.Spec.Options.RemoteAddressResolution && !version.SupportsRemoteAddressResolution() {
+		if remoteAddrRes && !version.SupportsRemoteAddressResolution() {
 			return "", fmt.Errorf("--remote-address-resolution requires CalVer 2025.09+ (image: %s)", cluster.Spec.Image.Tag)
 		}
 		if backup.Spec.Options.SkipRecovery && !version.SupportsSkipRecovery() {
@@ -727,10 +771,17 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 	if isStandalone, standalone, lookupErr := r.isStandaloneTarget(ctx, backup); lookupErr == nil && isStandalone && standalone != nil {
 		fromAddresses = resources.BuildStandaloneBackupFromAddress(standalone)
 	}
-	allDatabases := backup.Spec.Target.Kind == "Cluster"
+	allDatabases := backup.Spec.Target.Kind == neo4jv1beta1.BackupTargetKindCluster
 	dbName := ""
-	if !allDatabases {
+	switch backup.Spec.Target.Kind {
+	case neo4jv1beta1.BackupTargetKindDatabase:
 		dbName = backup.Spec.Target.Name
+	case neo4jv1beta1.BackupTargetKindShardedDatabase:
+		// Property-sharded DBs are backed up as a glob across all shards:
+		// {name}-g000 (graph) + {name}-p000…p{N-1} (property shards). The
+		// argument is wrapped in single quotes by GetBackupCommand so the
+		// shell doesn't expand "*" before reaching neo4j-admin.
+		dbName = backup.Spec.Target.Name + "*"
 	}
 
 	cmd := neo4j.GetBackupCommand(version, dbName, toPath, allDatabases, fromAddresses)
@@ -753,9 +804,6 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 		if backup.Spec.Options.PreferDiffAsParent {
 			cmd += " --prefer-diff-as-parent"
 		}
-		if backup.Spec.Options.RemoteAddressResolution {
-			cmd += " --remote-address-resolution=true"
-		}
 		if backup.Spec.Options.ParallelDownload {
 			cmd += " --parallel-download=true"
 		}
@@ -774,6 +822,19 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 		for _, arg := range backup.Spec.Options.AdditionalArgs {
 			cmd += " " + shellQuote(arg)
 		}
+	}
+
+	// --remote-address-resolution is emitted OUTSIDE the Options-nil guard
+	// because its effective value can be true even when the user did not set
+	// Spec.Options at all: the ShardedDatabase + 2025.09+ default fires for
+	// any backup whose target.kind is sharded, regardless of whether other
+	// BackupOptions fields were touched. Gating this on Options != nil would
+	// silently swallow the default for users who only set spec.target +
+	// spec.storage. Pinned at the unit-test layer by
+	// TestEffectiveRemoteAddressResolution and at the integration-test layer
+	// by TestPropertyShardingBackup_HappyPath.
+	if remoteAddrRes {
+		cmd += " --remote-address-resolution=true"
 	}
 
 	if backup.Spec.Storage.Type == "pvc" {
@@ -982,11 +1043,11 @@ func (r *Neo4jBackupReconciler) getTargetCluster(ctx context.Context, backup *ne
 		targetNamespace = backup.Namespace
 	}
 
-	// For Kind=Database the Name is the database name; use ClusterRef for the cluster.
+	// For database-scoped kinds the Name is the database name; use ClusterRef for the cluster.
 	clusterName := backup.Spec.Target.Name
-	if backup.Spec.Target.Kind == "Database" {
+	if neo4jv1beta1.IsDatabaseScopedBackupKind(backup.Spec.Target.Kind) {
 		if backup.Spec.Target.ClusterRef == "" {
-			return nil, fmt.Errorf("clusterRef must be set when backup target Kind is Database")
+			return nil, fmt.Errorf("clusterRef must be set when backup target Kind is %s", backup.Spec.Target.Kind)
 		}
 		clusterName = backup.Spec.Target.ClusterRef
 	}
@@ -1016,7 +1077,7 @@ func (r *Neo4jBackupReconciler) isStandaloneTarget(ctx context.Context, backup *
 		targetNamespace = backup.Namespace
 	}
 	name := backup.Spec.Target.Name
-	if backup.Spec.Target.Kind == "Database" {
+	if neo4jv1beta1.IsDatabaseScopedBackupKind(backup.Spec.Target.Kind) {
 		name = backup.Spec.Target.ClusterRef
 	}
 	// Cluster CR wins if both exist (defensive; name collisions are rare).

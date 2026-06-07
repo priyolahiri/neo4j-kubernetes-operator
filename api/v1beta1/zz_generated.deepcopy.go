@@ -172,6 +172,11 @@ func (in *BackupOptions) DeepCopyInto(out *BackupOptions) {
 		*out = new(EncryptionSpec)
 		**out = **in
 	}
+	if in.RemoteAddressResolution != nil {
+		in, out := &in.RemoteAddressResolution, &out.RemoteAddressResolution
+		*out = new(bool)
+		**out = **in
+	}
 	if in.AdditionalArgs != nil {
 		in, out := &in.AdditionalArgs, &out.AdditionalArgs
 		*out = make([]string, len(*in))
