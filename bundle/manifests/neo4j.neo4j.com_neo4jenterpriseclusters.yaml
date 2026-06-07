@@ -1405,31 +1405,6 @@ spec:
                       OIDC configures one or more OIDC/SSO providers. Map keys become the provider name
                       in Neo4j config (dbms.security.oidc.<name>.*) and in the authentication_providers list (oidc-<name>).
                     type: object
-                  passwordPolicy:
-                    description: PasswordPolicy configures Neo4j password policy requirements
-                    properties:
-                      minLength:
-                        default: 8
-                        description: Minimum password length
-                        minimum: 1
-                        type: integer
-                      requireLowercase:
-                        default: true
-                        description: Require lowercase characters
-                        type: boolean
-                      requireNumbers:
-                        default: true
-                        description: Require numeric characters
-                        type: boolean
-                      requireSpecialChars:
-                        default: false
-                        description: Require special characters
-                        type: boolean
-                      requireUppercase:
-                        default: true
-                        description: Require uppercase characters
-                        type: boolean
-                    type: object
                   trustStore:
                     description: |-
                       TrustStore configures a custom JVM truststore for LDAPS or OIDC with internal CAs.

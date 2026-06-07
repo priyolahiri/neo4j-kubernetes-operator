@@ -245,8 +245,6 @@ Set via:
 --skip-cache-wait      # readiness does not wait for cache sync
 ```
 
-Note: `--lazy-informers` is accepted for backward compatibility with older deployment manifests but is currently a no-op (the flag's value is ignored by `configureDevelopmentCache`). Use `--cache-strategy` for all new deployments.
-
 ## Controller Selection (Dev Mode)
 
 In development mode, you can load only a subset of controllers:

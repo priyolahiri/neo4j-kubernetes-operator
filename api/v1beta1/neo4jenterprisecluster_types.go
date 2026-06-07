@@ -382,10 +382,6 @@ type AuthSpec struct {
 	// +optional
 	ExternalSecrets *ExternalSecretsConfig `json:"externalSecrets,omitempty"`
 
-	// PasswordPolicy configures Neo4j password policy requirements
-	// +optional
-	PasswordPolicy *PasswordPolicySpec `json:"passwordPolicy,omitempty"`
-
 	// LDAP configures LDAP authentication and authorization
 	// +optional
 	LDAP *Neo4jLDAPSpec `json:"ldap,omitempty"`
@@ -409,30 +405,6 @@ type AuthSpec struct {
 	// Name is the Secret name; Key defaults to "ca.crt" if omitted.
 	// +optional
 	TrustStore *SecretKeyRef `json:"trustStore,omitempty"`
-}
-
-// PasswordPolicySpec defines Neo4j password policy
-type PasswordPolicySpec struct {
-	// Minimum password length
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:default=8
-	MinLength int `json:"minLength,omitempty"`
-
-	// Require uppercase characters
-	// +kubebuilder:default=true
-	RequireUppercase bool `json:"requireUppercase,omitempty"`
-
-	// Require lowercase characters
-	// +kubebuilder:default=true
-	RequireLowercase bool `json:"requireLowercase,omitempty"`
-
-	// Require numeric characters
-	// +kubebuilder:default=true
-	RequireNumbers bool `json:"requireNumbers,omitempty"`
-
-	// Require special characters
-	// +kubebuilder:default=false
-	RequireSpecialChars bool `json:"requireSpecialChars,omitempty"`
 }
 
 // Neo4jLDAPSpec configures LDAP authentication and authorization.
