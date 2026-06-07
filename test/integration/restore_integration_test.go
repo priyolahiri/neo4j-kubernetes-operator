@@ -221,8 +221,10 @@ var _ = Describe("Restore Integration Tests", Ordered, func() {
 					StopCluster:  false, // the dangerous knob
 					Force:        true,  // skip checkDatabaseExists so refuseRestoreIfPodsRunning is the failure
 					Source: neo4jv1beta1.RestoreSource{
-						Type:       "storage",
-						BackupPath: "doesnt-matter.backup",
+						Type: "storage",
+						// Path is intentionally unreachable: these tests fail on an earlier guard
+						// (live-cluster refuse / annotation conflict) before backup-path resolution.
+						BackupPath: "intentionally-missing.backup",
 						Storage: &neo4jv1beta1.StorageLocation{
 							Type: "pvc",
 							PVC:  &neo4jv1beta1.PVCSpec{Name: "restore-backup-pvc"},
@@ -304,8 +306,10 @@ var _ = Describe("Restore Integration Tests", Ordered, func() {
 					StopCluster:  true, // path that calls setRestoreInProgressAnnotation
 					Force:        true, // skip checkDatabaseExists so the flow reaches the annotation conflict
 					Source: neo4jv1beta1.RestoreSource{
-						Type:       "storage",
-						BackupPath: "doesnt-matter.backup",
+						Type: "storage",
+						// Path is intentionally unreachable: these tests fail on an earlier guard
+						// (live-cluster refuse / annotation conflict) before backup-path resolution.
+						BackupPath: "intentionally-missing.backup",
 						Storage: &neo4jv1beta1.StorageLocation{
 							Type: "pvc",
 							PVC:  &neo4jv1beta1.PVCSpec{Name: "restore-backup-pvc"},
