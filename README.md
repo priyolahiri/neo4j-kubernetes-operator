@@ -6,7 +6,8 @@
 
 A Kubernetes operator for Neo4j Enterprise — declarative clusters, databases, users, roles, backups, and plugins. Supports Neo4j Enterprise 5.26 LTS and any CalVer release (2025.x, 2026.x, …).
 
-📖 **Full documentation**: [neo4j-partners.github.io/neo4j-kubernetes-operator](https://neo4j-partners.github.io/neo4j-kubernetes-operator/) — versioned, with full-text search.
+> [!TIP]
+> 📖 **Documentation site**: [neo4j-partners.github.io/neo4j-kubernetes-operator](https://neo4j-partners.github.io/neo4j-kubernetes-operator/) — searchable, versioned, with a release dropdown. Every link in this README also resolves on the docs site.
 
 > [!WARNING]
 > **Alpha software.** Maintained by a single Neo4j employee in a personal capacity (not an official Neo4j product, not supported by Neo4j Inc.). LLM-assisted development means subtle bugs are possible. Not recommended for production without independent validation. APIs may change between releases. Issues and PRs are best-effort via [GitHub Issues](https://github.com/neo4j-partners/neo4j-kubernetes-operator/issues).
