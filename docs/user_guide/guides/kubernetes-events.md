@@ -87,8 +87,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 |---|---|---|
 | `PluginInstalled` | Normal | Plugin successfully installed |
 | `PluginInstallFailed` | Warning | Plugin installation failed |
-| `PluginEnabled` | Normal | Plugin enabled on cluster |
-| `PluginDisabled` | Normal | Plugin disabled on cluster |
+| `PluginDuplicate` | Warning | Another `Neo4jPlugin` already targets this name (only the first owner reconciles; duplicates sit in `Failed` until the conflict is resolved) |
 
 ### Split-Brain Detection
 

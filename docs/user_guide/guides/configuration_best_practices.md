@@ -122,10 +122,11 @@ spec:
     server.memory.heap.max_size: "16G"
     server.memory.pagecache.size: "8G"
 
-    # Query performance
+    # Query performance — use the db.logs.query.* namespace (Neo4j 5.x+).
+    # The legacy dbms.logs.query.* namespace is rejected by the validator.
     db.logs.query.enabled: "INFO"
-    dbms.logs.query.threshold: "1s"
-    dbms.logs.query.page_logging_enabled: "true"
+    db.logs.query.threshold: "1s"
+    db.logs.query.parameter_logging_enabled: "true"
 
     # Transaction settings
     dbms.transaction.timeout: "5m"

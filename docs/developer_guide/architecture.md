@@ -379,7 +379,7 @@ CREATE DATABASE name [IF NOT EXISTS]
 
 #### Startup Optimization:
 - **Parallel Pod Management**: All server pods start simultaneously
-- **Minimum Primaries = 1**: First pod forms cluster immediately
+- **`minimum_initial_system_primaries_count = TOTAL_SERVERS`**: Set only on initial cluster formation (when `/data/databases/system` doesn't exist). Forces RAFT to wait until every configured server is visible before electing a bootstrap leader — eliminates the split-brain window when multiple pods come up in parallel. Skipped on restart so a single server can rejoin without waiting on its peers.
 - **PublishNotReadyAddresses**: Discovery includes pending pods
 - **Resource Version Conflict Retry**: Handles concurrent updates gracefully
 
