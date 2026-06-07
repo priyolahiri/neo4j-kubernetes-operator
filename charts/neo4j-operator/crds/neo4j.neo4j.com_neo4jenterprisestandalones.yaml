@@ -1708,6 +1708,65 @@ spec:
                   - name
                   type: object
                 type: array
+              extraEnvFrom:
+                description: |-
+                  ExtraEnvFrom projects entire Secrets or ConfigMaps as environment
+                  variables on the neo4j container. Same semantics as
+                  Neo4jEnterpriseCluster.spec.extraEnvFrom — required when this
+                  standalone hosts a `Neo4jDatabase` with `spec.seedURI` against a
+                  cloud-backed source (S3/GCS/Azure) and `spec.seedCredentials` is
+                  set, so the Neo4j JVM's AWS/GCP/Azure SDK default credential chain
+                  can authenticate the seed fetch.
+
+                  Same actionable-error + annotation-gated auto-inherit semantics as
+                  the cluster field (see Neo4jEnterpriseCluster docs): set
+                  `neo4j.com/auto-inherit-seed-creds=true` on this CR to let the
+                  operator add missing entries automatically (triggers a pod restart).
+                items:
+                  description: EnvFromSource represents the source of a set of ConfigMaps
+                    or Secrets
+                  properties:
+                    configMapRef:
+                      description: The ConfigMap to select from
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                        optional:
+                          description: Specify whether the ConfigMap must be defined
+                          type: boolean
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    prefix:
+                      description: |-
+                        Optional text to prepend to the name of each environment variable.
+                        May consist of any printable ASCII characters except '='.
+                      type: string
+                    secretRef:
+                      description: The Secret to select from
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                        optional:
+                          description: Specify whether the Secret must be defined
+                          type: boolean
+                      type: object
+                      x-kubernetes-map-type: atomic
+                  type: object
+                type: array
               extraVolumeMounts:
                 description: |-
                   ExtraVolumeMounts are additional volume mounts for the Neo4j container.

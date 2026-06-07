@@ -1760,6 +1760,13 @@ func (in *Neo4jEnterpriseStandaloneSpec) DeepCopyInto(out *Neo4jEnterpriseStanda
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.ExtraEnvFrom != nil {
+		in, out := &in.ExtraEnvFrom, &out.ExtraEnvFrom
+		*out = make([]v1.EnvFromSource, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.NodeSelector != nil {
 		in, out := &in.NodeSelector, &out.NodeSelector
 		*out = make(map[string]string, len(*in))

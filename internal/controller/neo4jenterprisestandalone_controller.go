@@ -1090,7 +1090,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(standalone *neo4
 								SecurityContext: containerSecurityContextForStandalone(standalone),
 								Ports:           ports,
 								Env:             r.buildEnvVars(standalone),
-								VolumeMounts:    r.buildVolumeMounts(standalone),
+								// Project user-supplied env-from-Secret / env-from-ConfigMap
+								// bundles onto the container. Mirrors Neo4jEnterpriseCluster
+								// behaviour: cloud creds for seedURI restores live here.
+								EnvFrom:      standalone.Spec.ExtraEnvFrom,
+								VolumeMounts: r.buildVolumeMounts(standalone),
 								Resources: func() corev1.ResourceRequirements {
 									if standalone.Spec.Resources != nil {
 										return *standalone.Spec.Resources
