@@ -25,6 +25,7 @@ make dev-cluster
 make deploy-dev   # for development
 # or
 make deploy-prod  # for production
+```
 
 This approach:
 - ✅ Builds operator from your current code automatically
