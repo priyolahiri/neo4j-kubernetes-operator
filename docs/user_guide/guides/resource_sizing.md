@@ -852,7 +852,7 @@ See also the Neo4j Operations Manual: [5.x](https://neo4j.com/docs/operations-ma
 
 ## Related Documentation
 
-- [Configuration Best Practices](configuration_best_practices.md)
+- [Configuration Best Practices](../configuration.md#best-practices-for-specconfig)
 - [Performance Tuning](performance.md)
 - [Troubleshooting Guide](troubleshooting.md)
 - [Fault Tolerance](fault_tolerance.md)

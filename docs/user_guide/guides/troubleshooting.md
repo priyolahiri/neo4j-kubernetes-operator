@@ -57,7 +57,7 @@ for i in 0 1 2; do
 done
 ```
 
-**Solution**: See the comprehensive [Split-Brain Recovery Guide](../troubleshooting/split-brain-recovery.md) or use the [Quick Reference](../quick-reference/split-brain-recovery-quick-ref.md).
+**Solution**: See the [Split-Brain Recovery Guide](../troubleshooting/split-brain-recovery.md) — the top of that page has a one-screen quick reference for detection and manual override commands.
 
 **Quick Fix**:
 ```bash

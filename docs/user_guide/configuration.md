@@ -213,3 +213,149 @@ spec:
     # auth:
     #   secretName: my-readonly-user
 ```
+
+## Best practices for `spec.config`
+
+`spec.config` is a free-form `map[string]string` that lands in `neo4j.conf`. A lot of older example material still floats around using the pre-5.x key namespace. Use the current keys below and you'll avoid the most common foot-guns.
+
+### Memory
+
+Use the `server.memory.*` namespace. The pre-5.x `dbms.memory.*` keys still appear in many older tutorials but are deprecated:
+
+```yaml
+config:
+  server.memory.heap.initial_size: "2G"
+  server.memory.heap.max_size: "4G"
+  server.memory.pagecache.size: "2G"
+```
+
+Don't use `dbms.memory.*` — those keys have been deprecated since Neo4j 5.0.
+
+### Query log
+
+Neo4j 5.x+ uses the `db.logs.query.*` namespace; the validator warns on the legacy `dbms.logs.query.*` form:
+
+```yaml
+config:
+  db.logs.query.enabled: "INFO"
+  db.logs.query.threshold: "1s"
+  db.logs.query.parameter_logging_enabled: "true"
+```
+
+### TLS — operator-managed, off-limits in `spec.config`
+
+TLS is configured via `spec.tls`, not `spec.config`. Setting any of the following keys in `spec.config` is rejected by the validator at apply time:
+
+- `server.bolt.tls_level` (operator emits `REQUIRED` when TLS is enabled)
+- `dbms.ssl.policy.{bolt,https,cluster}.*` (full SSL policy block is operator-managed)
+- `server.directories.certificates`
+
+The pre-5.x `dbms.connector.{https,bolt}.*` keys are also rejected (`spec.tls` replaces them). Reason: Neo4j runs with `server.config.strict_validation.enabled=false`, so duplicate keys silently override each other; the validator blocks user values that would shadow operator-managed ones. See the [TLS certificates guide](tls_configuration.md) for the full TLS surface.
+
+### Cluster discovery — operator-managed, off-limits in `spec.config`
+
+The operator emits version-specific discovery config at pod startup (LIST resolver, static pod FQDNs, port 6000). All of the following are rejected by the validator:
+
+- `dbms.cluster.discovery.resolver_type`
+- `dbms.cluster.discovery.v2.endpoints` (operator-managed for Neo4j 5.26.x)
+- `dbms.cluster.endpoints` (operator-managed for Neo4j 2025.x+)
+- `dbms.kubernetes.label_selector` (K8s discovery is not used; LIST resolver only)
+
+See the [Clustering guide](clustering.md) for what the operator writes for each Neo4j version.
+
+### Deprecated / removed keys to avoid
+
+| Key | Status | Use instead |
+|---|---|---|
+| `dbms.mode=SINGLE` | Removed in 5.x | (no replacement — standalone is just `Neo4jEnterpriseStandalone`) |
+| `dbms.memory.*` | Deprecated | `server.memory.*` |
+| `dbms.connector.*` | Deprecated | `server.bolt.*` / `server.http.*` / `server.https.*` (or `spec.tls`) |
+| `causal_clustering.*` | Removed in 5.x | `dbms.cluster.*` |
+| `db.format=standard` / `db.format=high_limit` | Deprecated since 5.23 | `db.format=block` |
+| `server.groups` | Deprecated | `initial.server.tags` |
+| `dbms.logs.query.*` | Deprecated namespace | `db.logs.query.*` |
+| `dbms.cluster.role` | Removed in 5.0 | `SHOW DATABASES` / `SHOW SERVERS` |
+| `metrics.bolt.*` | Deprecated | (removed metric category) |
+
+### Sample production cluster config
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: production-cluster
+spec:
+  topology:
+    servers: 5   # self-organise into primary/secondary
+  config:
+    # Memory
+    server.memory.heap.initial_size: "8G"
+    server.memory.heap.max_size: "16G"
+    server.memory.pagecache.size: "8G"
+
+    # Query logging
+    db.logs.query.enabled: "INFO"
+    db.logs.query.threshold: "1s"
+    db.logs.query.parameter_logging_enabled: "true"
+
+    # Transactions
+    dbms.transaction.timeout: "5m"
+    dbms.lock.acquisition.timeout: "2m"
+
+    # Checkpointing
+    dbms.checkpoint.interval.time: "15m"
+    dbms.checkpoint.interval.tx: "100000"
+```
+
+### Sample development standalone config
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jEnterpriseStandalone
+metadata:
+  name: dev-instance
+spec:
+  config:
+    server.memory.heap.initial_size: "1G"
+    server.memory.heap.max_size: "2G"
+    server.memory.pagecache.size: "512M"
+
+    db.logs.query.enabled: "true"
+    dbms.security.procedures.unrestricted: "gds.*,apoc.*"
+    dbms.security.allow_csv_import_from_file_urls: "true"
+```
+
+### Configuration the operator writes for you
+
+You don't need to set these yourself — the operator injects them at pod startup based on `spec.topology` and the Neo4j version:
+
+**Cluster deployments**
+- LIST discovery with static pod FQDNs (`{cluster}-server-{n}.{cluster}-headless.{ns}.svc.cluster.local:6000`)
+- Version-specific endpoint key (`dbms.cluster.discovery.v2.endpoints` for 5.26.x, `dbms.cluster.endpoints` for 2025.x+)
+- `dbms.cluster.discovery.version=V2_ONLY` (5.26.x only — V2 is the only protocol in CalVer)
+- ME/OTHER bootstrap strategy (server-0 is the preferred bootstrapper)
+- RAFT and routing port advertisement
+
+**Standalone deployments**
+- Unified clustering infrastructure (no `dbms.mode=SINGLE`)
+- Single-member cluster configuration
+- Listen-address bindings
+
+## Migrating from older Neo4j versions
+
+If you're moving from Neo4j 4.x or an early 5.x release:
+
+1. `dbms.memory.*` → `server.memory.*`
+2. `dbms.connector.*` → `server.bolt.*` / `server.http.*` / `server.https.*` (and TLS via `spec.tls`)
+3. Remove any `dbms.mode=SINGLE` — there is no replacement; use `Neo4jEnterpriseStandalone` instead
+4. `causal_clustering.*` → `dbms.cluster.*` (most discovery keys are now operator-managed anyway)
+5. `db.format=standard` / `db.format=high_limit` → `db.format=block` for new databases
+6. `dbms.logs.query.*` → `db.logs.query.*`
+
+See the [Migration Guide](migration_guide.md) for operator-level migration steps (removed CRD fields, etc.).
+
+## References
+
+- [Neo4j 5.26 configuration settings](https://neo4j.com/docs/operations-manual/5/configuration/configuration-settings/)
+- [Neo4j 2025.x configuration settings](https://neo4j.com/docs/operations-manual/2025.06/configuration/configuration-settings/)
+- [Neo4j upgrade guide](https://neo4j.com/docs/upgrade-migration-guide/current/)

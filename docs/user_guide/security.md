@@ -1225,7 +1225,7 @@ Operator-specific posture for production deployments:
    ```
 
 For additional security guidance, see:
-- [Configuration Best Practices](guides/configuration_best_practices.md)
-- [TLS Configuration Guide](configuration/tls.md)
+- [Configuration Best Practices](configuration.md#best-practices-for-specconfig)
+- [TLS Configuration Guide](tls_configuration.md)
 - [Backup & Restore](guides/backup_restore.md)
 - [Split-Brain Recovery](troubleshooting/split-brain-recovery.md)

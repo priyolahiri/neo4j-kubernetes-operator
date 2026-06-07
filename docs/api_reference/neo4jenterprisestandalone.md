@@ -918,7 +918,7 @@ config:
 5. **Use specific Neo4j versions** instead of latest tags
 6. **Set proper password policies** for security
 7. **Configure resource quotas** in production namespaces
-8. **Use correct configuration settings** - see [Configuration Best Practices](../user_guide/guides/configuration_best_practices.md)
+8. **Use correct configuration settings** - see [Configuration Best Practices](../user_guide/configuration.md#best-practices-for-specconfig)
 
 ## Usage Patterns
 
@@ -1078,4 +1078,4 @@ For more information:
 - [Neo4jDatabase API Reference](neo4jdatabase.md)
 - [Neo4jPlugin API Reference](neo4jplugin.md)
 - [Backup and Restore Guide](../user_guide/guides/backup_restore.md)
-- [Configuration Best Practices](../user_guide/guides/configuration_best_practices.md)
+- [Configuration Best Practices](../user_guide/configuration.md#best-practices-for-specconfig)
