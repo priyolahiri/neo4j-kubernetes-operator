@@ -34,7 +34,7 @@ spec:
     # strictPeerValidation defaults to true (mutual TLS on cluster links).
 ```
 
-The operator integrates with `cert-manager` to automatically provision and manage TLS certificates. This is the recommended approach for production environments. Intra-cluster mutual TLS is enabled by default via `spec.tls.strictPeerValidation: true`. See the dedicated [TLS Configuration](../configuration/tls.md) guide for the full configuration surface, including third-party issuers (AWS PCA, Vault) and the `strictPeerValidation: false` opt-out.
+The operator integrates with `cert-manager` to automatically provision and manage TLS certificates. This is the recommended approach for production environments. Intra-cluster mutual TLS is enabled by default via `spec.tls.strictPeerValidation: true`. See the dedicated [TLS Configuration](../tls_configuration.md) guide for the full configuration surface, including third-party issuers (AWS PCA, Vault) and the `strictPeerValidation: false` opt-out.
 
 ## Network Policies
 

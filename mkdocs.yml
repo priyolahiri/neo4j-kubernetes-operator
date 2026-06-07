@@ -102,69 +102,68 @@ extra:
 nav:
   - Home: index.md
 
-  - Getting Started:
+  - Get Started:
       - Quickstart: user_guide/getting_started.md
       - Installation: user_guide/installation.md
       - Deployment: user_guide/deployment.md
       - Operator Modes: user_guide/operator-modes.md
-      - Migration Guide: user_guide/migration_guide.md
+      - Try the Demo: user_guide/guides/demo.md
+      - Migrating from a Prior Version: user_guide/migration_guide.md
 
-  - User Guide:
+  - Configure & Deploy:
       - Configuration: user_guide/configuration.md
-      - TLS Certificates: user_guide/tls_certificates.md
-      - TLS (Detailed): user_guide/configuration/tls.md
-      - External Access: user_guide/external_access.md
+      - Resource Sizing: user_guide/guides/resource_sizing.md
       - Clustering: user_guide/clustering.md
       - Topology Placement: user_guide/topology_placement.md
       - Property Sharding: user_guide/property_sharding.md
-      - Aura Fleet Management: user_guide/aura_fleet_management.md
-      - User & Role Management: user_guide/user_role_management.md
-      - Performance: user_guide/performance.md
-      - Security: user_guide/security.md
-
-  - Guides:
-      - Configuration Best Practices: user_guide/guides/configuration_best_practices.md
-      - Backup & Restore: user_guide/guides/backup_restore.md
-      - Backup Disk Management: user_guide/guides/backup-disk-management.md
-      - Backup Sidecar Requirements: user_guide/guides/backup-sidecar-requirements.md
-      - Storage Expansion: user_guide/guides/storage_expansion.md
-      - Upgrades: user_guide/guides/upgrades.md
-      - Resource Sizing: user_guide/guides/resource_sizing.md
-      - Performance: user_guide/guides/performance.md
-      - Fault Tolerance: user_guide/guides/fault_tolerance.md
-      - Security: user_guide/guides/security.md
+      - External Access (LB / NodePort / Ingress / Route): user_guide/external_access.md
       - Seed URI: user_guide/guides/seed-uri.md
-      - Monitoring: user_guide/guides/monitoring.md
-      - Prometheus & Grafana: user_guide/guides/prometheus-grafana-setup.md
-      - Kubernetes Events: user_guide/guides/kubernetes-events.md
+      - Aura Fleet Management: user_guide/aura_fleet_management.md
       - MCP Client Setup: user_guide/guides/mcp_client_setup.md
-      - Demo: user_guide/guides/demo.md
-      - Troubleshooting: user_guide/guides/troubleshooting.md
 
-  - Troubleshooting:
-      - Backup & Restore: user_guide/troubleshooting/backup_restore.md
+  - Security:
+      - Overview: user_guide/security.md
+      - Authentication & Authorization: user_guide/guides/security.md
+      - TLS Configuration: user_guide/tls_configuration.md
+      - Users, Roles & Auth Rules: user_guide/user_role_management.md
+
+  - Operate:
+      - Backup & Restore:
+          - Overview: user_guide/guides/backup_restore.md
+          - Disk Management: user_guide/guides/backup-disk-management.md
+          - Sidecar Requirements: user_guide/guides/backup-sidecar-requirements.md
+      - Upgrades: user_guide/guides/upgrades.md
+      - Storage Expansion: user_guide/guides/storage_expansion.md
+      - Fault Tolerance: user_guide/guides/fault_tolerance.md
+      - Monitoring:
+          - Overview: user_guide/guides/monitoring.md
+          - Prometheus & Grafana: user_guide/guides/prometheus-grafana-setup.md
+          - Kubernetes Events: user_guide/guides/kubernetes-events.md
+      - Performance:
+          - Tuning Neo4j Workloads: user_guide/performance.md
+          - Tuning the Operator: user_guide/guides/performance.md
+
+  - Troubleshoot:
+      - General Troubleshooting: user_guide/guides/troubleshooting.md
+      - Backup & Restore Issues: user_guide/troubleshooting/backup_restore.md
       - Split-Brain Recovery: user_guide/troubleshooting/split-brain-recovery.md
 
-  - Quick Reference:
-      - Operator Modes Cheat Sheet: quick-reference/operator-modes-cheat-sheet.md
-      - Split-Brain Recovery: user_guide/quick-reference/split-brain-recovery-quick-ref.md
+  - Reference:
+      - CRD Reference:
+          - Neo4jEnterpriseCluster: api_reference/neo4jenterprisecluster.md
+          - Neo4jEnterpriseStandalone: api_reference/neo4jenterprisestandalone.md
+          - Neo4jDatabase: api_reference/neo4jdatabase.md
+          - Neo4jShardedDatabase: api_reference/neo4jshardeddatabase.md
+          - Neo4jUser: api_reference/neo4juser.md
+          - Neo4jRole: api_reference/neo4jrole.md
+          - Neo4jRoleBinding: api_reference/neo4jrolebinding.md
+          - Neo4jAuthRule: api_reference/neo4jauthrule.md
+          - Neo4jPlugin: api_reference/neo4jplugin.md
+          - Neo4jBackup: api_reference/neo4jbackup.md
+          - Neo4jRestore: api_reference/neo4jrestore.md
+      - GitOps Integration: gitops/README.md
 
-  - API Reference:
-      - Neo4jEnterpriseCluster: api_reference/neo4jenterprisecluster.md
-      - Neo4jEnterpriseStandalone: api_reference/neo4jenterprisestandalone.md
-      - Neo4jDatabase: api_reference/neo4jdatabase.md
-      - Neo4jShardedDatabase: api_reference/neo4jshardeddatabase.md
-      - Neo4jUser: api_reference/neo4juser.md
-      - Neo4jRole: api_reference/neo4jrole.md
-      - Neo4jRoleBinding: api_reference/neo4jrolebinding.md
-      - Neo4jAuthRule: api_reference/neo4jauthrule.md
-      - Neo4jPlugin: api_reference/neo4jplugin.md
-      - Neo4jBackup: api_reference/neo4jbackup.md
-      - Neo4jRestore: api_reference/neo4jrestore.md
-
-  - GitOps Integration: gitops/README.md
-
-  - Developer Guide:
+  - Contribute:
       - Development: developer_guide/development.md
       - Architecture: developer_guide/architecture.md
       - Testing: developer_guide/testing.md

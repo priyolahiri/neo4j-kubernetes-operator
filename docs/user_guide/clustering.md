@@ -92,7 +92,7 @@ TLS-enabled clusters use the same parallel formation approach with additional op
 - **Parallel startup maintained**: TLS doesn't change the pod startup behavior
 - **Reliable formation**: With proper configuration, TLS clusters form as reliably as non-TLS clusters
 
-For detailed TLS configuration, see the [TLS Configuration Guide](configuration/tls.md).
+For detailed TLS configuration, see the [TLS Configuration Guide](tls_configuration.md).
 
 ### Cluster Formation Strategy
 

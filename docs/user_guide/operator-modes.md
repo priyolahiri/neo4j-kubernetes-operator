@@ -9,6 +9,58 @@ The operator has two separate axes of configuration:
 
 Choose both explicitly so your deployment matches your environment and security model.
 
+## Cheat sheet
+
+### Mode defaults
+
+| Setting | Production | Development |
+|---|---|---|
+| `--mode` | `production` | `dev` |
+| Metrics bind | `:8080` | `:8082` |
+| Health bind | `:8081` | `:8083` |
+| Cache strategy | `on-demand` | `on-demand` |
+| `--skip-cache-wait` | `false` | `true` (auto) |
+
+CLI flags and Helm values always override these defaults.
+
+### Common CLI flags
+
+```bash
+--mode=production|dev
+--leader-elect=true|false
+--metrics-bind-address=:8080
+--metrics-secure=true
+--health-probe-bind-address=:8081
+--cache-strategy=standard|lazy|selective|on-demand|none
+--ultra-fast
+--skip-cache-wait
+--controllers=cluster,standalone,database,backup,restore,plugin,shardeddatabase,authrule
+--zap-log-level=debug|info|warn|error|dpanic|panic|fatal
+```
+
+### Helm shortcuts
+
+- `developmentMode: true` adds `--mode=dev` and `--zap-devel=true`.
+- `metrics.enabled` controls `--metrics-bind-address` (`0` disables). Port comes from `metrics.service.port`.
+- `--health-probe-bind-address=:8081` is always set by the chart.
+- `leaderElection.enabled: true` passes `--leader-elect=true`.
+
+### Health and metrics endpoints (production defaults)
+
+```bash
+curl http://localhost:8081/healthz
+curl http://localhost:8081/readyz
+curl http://localhost:8080/metrics
+```
+
+### Environment variables
+
+```bash
+export WATCH_NAMESPACE=team-a,team-b   # empty = all namespaces
+export GOMEMLIMIT=500MiB
+export GOMAXPROCS=4
+```
+
 ## Quick Start (Beginner)
 
 **1) Choose a scope**

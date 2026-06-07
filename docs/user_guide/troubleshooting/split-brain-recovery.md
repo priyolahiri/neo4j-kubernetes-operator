@@ -2,6 +2,36 @@
 
 This guide provides comprehensive troubleshooting and recovery procedures for Neo4j cluster split-brain scenarios when using the Neo4j Kubernetes Operator with server-based architecture.
 
+## Quick reference
+
+**Detect** — compare each server's view of the cluster. Different lists across pods mean split-brain:
+
+```bash
+for i in 0 1 2; do
+  echo "=== server-$i ==="
+  kubectl exec <cluster>-server-$i -- cypher-shell -u neo4j -p <pw> \
+    "SHOW SERVERS YIELD name, state ORDER BY name"
+done
+```
+
+**Watch the operator do its job** — auto-recovery is the default; manual intervention is rare:
+
+```bash
+kubectl get events --field-selector reason=SplitBrainDetected -A
+kubectl get events --field-selector reason=SplitBrainRepaired -A
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager -f \
+  | grep -i splitbrain
+```
+
+**Manual override if auto-recovery fails** — restart the orphaned pod and verify:
+
+```bash
+kubectl delete pod <cluster>-server-N -n <namespace>
+kubectl exec <cluster>-server-0 -- cypher-shell -u neo4j -p <pw> "SHOW SERVERS"
+```
+
+If the cluster doesn't reconverge after that, follow the [full recovery procedure](#repair-strategies) below.
+
 ## Overview
 
 Split-brain occurs when Neo4j cluster servers lose communication and form separate, independent clusters instead of one unified cluster. This can lead to data inconsistencies and cluster instability if not properly detected and resolved.
@@ -448,6 +478,6 @@ kubectl exec recovery-cluster-server-0 -- cypher-shell -u neo4j -p password \
 
 For additional troubleshooting help, see:
 - [General Troubleshooting Guide](../guides/troubleshooting.md)
-- [TLS Configuration Issues](../configuration/tls.md)
+- [TLS Configuration Issues](../tls_configuration.md)
 - [Performance Troubleshooting](../performance.md)
 - [Backup/Restore Issues](backup_restore.md)

@@ -16,7 +16,7 @@ The [User Guide](user_guide) is for users of the Neo4j Enterprise Operator. It c
 *   **[Property Sharding](user_guide/property_sharding.md)**: Horizontal scaling for large datasets with property sharding
 *   **[Aura Fleet Management](user_guide/aura_fleet_management.md)**: Monitor self-managed deployments from the Neo4j Aura console
 *   **[Guides](user_guide/guides)**: In-depth guides on specific topics, such as:
-    *   [Configuration Best Practices](user_guide/guides/configuration_best_practices.md) - Neo4j 5.26+ configuration guidelines and **seed URI best practices**
+    *   [Configuration Best Practices](user_guide/configuration.md#best-practices-for-specconfig) - Neo4j 5.26+ configuration guidelines and **seed URI best practices**
     *   [Backup and Restore](user_guide/guides/backup_restore.md) - Comprehensive backup and restore operations including PITR
     *   [Backup & Restore Troubleshooting](user_guide/troubleshooting/backup_restore.md) - Troubleshooting guide for backup/restore issues
     *   [MCP Client Setup](user_guide/guides/mcp_client_setup.md) - Connect VSCode/Claude to MCP over HTTP
@@ -35,12 +35,6 @@ The [Developer Guide](developer_guide) is for contributors and developers who wa
 *   **[Development](developer_guide/development.md)**: How to set up your development environment and get started with contributing.
 *   **[Architecture](developer_guide/architecture.md)**: An overview of the operator's architecture.
 *   **[Testing](developer_guide/testing.md)**: How to run the test suite.
-
-## 📋 Quick Reference
-
-Need something fast? Check out our quick reference materials:
-
-*   **[Operator Modes Cheat Sheet](quick-reference/operator-modes-cheat-sheet.md)**: Essential commands, flags, and troubleshooting for production and development modes
 
 ## 📄 API Reference
 

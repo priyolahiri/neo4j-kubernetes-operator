@@ -354,7 +354,7 @@ spec:
 7. **Optimization**: Continuously tune configuration based on workload patterns
 
 For additional performance guidance, see:
-- [Configuration Best Practices](guides/configuration_best_practices.md)
+- [Configuration Best Practices](configuration.md#best-practices-for-specconfig)
 - [Resource Sizing Guide](guides/resource_sizing.md)
 - [Monitoring Guide](guides/monitoring.md)
 - [Backup and Restore](guides/backup_restore.md)
