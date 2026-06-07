@@ -65,6 +65,13 @@ ENVTEST_K8S_VERSION = 1.34.0
 # tests run one minor ahead at the upstream N-2 floor.
 KIND_NODE_IMAGE ?= kindest/node:v1.34.0
 
+# CERT_MANAGER_VERSION pins the cert-manager release applied to dev and
+# test clusters. The user-facing minimum per docs/README is v1.18+; we
+# install a known-good v1.20.x for tests. Single source of truth —
+# scripts/test-env.sh and hack/deploy-dev.sh both read this via env so
+# bumping here propagates to every cluster path.
+CERT_MANAGER_VERSION ?= v1.20.0
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -899,8 +906,8 @@ dev-cluster: ## Create a Kind cluster for development
 		kind create cluster --name neo4j-operator-dev --image $(KIND_NODE_IMAGE) --config hack/kind-config.yaml; \
 		echo "Waiting for cluster to be ready..."; \
 		kubectl wait --for=condition=ready node --all --timeout=300s; \
-		echo "Installing cert-manager..."; \
-		kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.20.0/cert-manager.yaml; \
+		echo "Installing cert-manager $(CERT_MANAGER_VERSION)..."; \
+		kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/$(CERT_MANAGER_VERSION)/cert-manager.yaml; \
 		kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s; \
 		echo "Creating self-signed ClusterIssuer for development..."; \
 		kubectl apply -f config/dev/self-signed-issuer.yaml || echo "Self-signed issuer creation skipped (file may not exist)"; \
@@ -911,8 +918,8 @@ dev-cluster: ## Create a Kind cluster for development
 
 .PHONY: test-cluster
 test-cluster: ## Create a Kind cluster for testing
-	@echo "Creating test cluster (image: $(KIND_NODE_IMAGE))..."
-	@KIND_NODE_IMAGE=$(KIND_NODE_IMAGE) ./scripts/test-env.sh cluster
+	@echo "Creating test cluster (image: $(KIND_NODE_IMAGE), cert-manager: $(CERT_MANAGER_VERSION))..."
+	@KIND_NODE_IMAGE=$(KIND_NODE_IMAGE) CERT_MANAGER_VERSION=$(CERT_MANAGER_VERSION) ./scripts/test-env.sh cluster
 
 .PHONY: test-cluster-clean
 test-cluster-clean: ## Clean operator resources from test cluster

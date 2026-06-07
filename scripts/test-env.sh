@@ -15,6 +15,12 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 # fast with a clear message if invoked directly without the env set.
 : "${KIND_NODE_IMAGE:?KIND_NODE_IMAGE must be set (e.g. via 'make test-cluster' or 'KIND_NODE_IMAGE=kindest/node:v1.34.0 scripts/test-env.sh ...')}"
 
+# CERT_MANAGER_VERSION pins the cert-manager release applied to the test
+# cluster. Same single-source-of-truth contract as KIND_NODE_IMAGE — the
+# Makefile passes the value via `make test-cluster`; direct invocation
+# must export the env var. No fallback here on purpose.
+: "${CERT_MANAGER_VERSION:?CERT_MANAGER_VERSION must be set (e.g. via 'make test-cluster' or 'CERT_MANAGER_VERSION=v1.20.0 scripts/test-env.sh ...')}"
+
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
@@ -36,8 +42,8 @@ cluster() {
     kind export kubeconfig --name "${CLUSTER_NAME}"
 
     # Install cert-manager
-    log "Installing cert-manager..."
-    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.20.0/cert-manager.yaml
+    log "Installing cert-manager ${CERT_MANAGER_VERSION}..."
+    kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.yaml"
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s
 
     # Create self-signed ClusterIssuer for testing
