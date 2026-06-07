@@ -56,6 +56,8 @@ The `pullSecrets` field accepts a list of secret names. Secrets must exist in th
 *   `spec.tls`: Configure TLS/SSL encryption. Set mode to `cert-manager` and provide an issuerRef for automatic certificate management.
 *   `spec.config`: Add custom Neo4j configuration settings as key-value pairs. These are added to neo4j.conf.
 *   `spec.env`: Add environment variables to Neo4j pods. Note that NEO4J_AUTH and NEO4J_ACCEPT_LICENSE_AGREEMENT are managed by the operator.
+
+    > **Warning**: Do not set `NEO4J_AUTH` via `spec.env`. The operator builds it from the admin Secret's `username` / `password` keys (referenced via `spec.auth.adminSecret`); overriding via `spec.env` bypasses the Secret-managed flow and the two paths can desync on Secret rotation. Override the Secret itself, not the env var.
 *   `spec.service`: Configure service type (ClusterIP, NodePort, LoadBalancer), annotations, and external access settings (Ingress; OpenShift Route).
 *   `spec.propertySharding`: (Neo4j 2025.12+) Enable property sharding for horizontal scaling of large datasets. See the [Property Sharding Guide](property_sharding.md) for detailed configuration options.
 

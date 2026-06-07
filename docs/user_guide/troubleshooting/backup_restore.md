@@ -1,15 +1,6 @@
-# Backup & Restore Troubleshooting Guide
+# Backup & Restore Troubleshooting
 
-This comprehensive troubleshooting guide covers common issues with Neo4j backup and restore operations when using the Neo4j Kubernetes Operator.
-
-## Overview
-
-The Neo4j Kubernetes Operator provides comprehensive backup and restore capabilities including:
-- **Automated backups** with scheduling and retention policies
-- **Point-in-Time Recovery (PITR)** for Neo4j 2025.x
-- **Multi-cloud storage** support (S3, GCS, Azure Blob)
-- **Centralized backup pod** for clusters (standalone uses a backup sidecar)
-- **Automatic RBAC** management for backup operations
+Common backup and restore failures and their fixes. For the feature overview and configuration, see the [Backup & Restore guide](../guides/backup_restore.md).
 
 ## Common Backup Issues
 
@@ -370,72 +361,6 @@ kubectl exec production-cluster-server-0 -- neo4j-admin database info system
        tag: "2025.01.0-enterprise"
    ```
 
-## Backup Pod Issues (Cluster)
-
-### Backup Pod Problems
-
-#### Symptom: Backup pod fails to start
-
-**Diagnosis:**
-```bash
-# Check backup pod status
-kubectl get pods -l neo4j.com/cluster=production-cluster -o wide
-kubectl describe pod production-cluster-backup-0
-
-# Check backup pod logs
-kubectl logs production-cluster-backup-0 -c backup
-```
-
-**Common Solutions:**
-
-1. **Resource Constraints**:
-   Backup pod resources are fixed by the operator. Prefer off-peak scheduling or larger cluster nodes if backups are OOM-killed.
-
-2. **Storage Mount Issues**:
-   ```bash
-   # Check volume mounts
-   kubectl describe pod production-cluster-backup-0 | grep -A 10 "Mounts:"
-   ```
-
-3. **Permission Problems**:
-   ```bash
-   # Check file permissions
-   kubectl exec production-cluster-backup-0 -c backup -- ls -la /backup-requests
-   kubectl exec production-cluster-backup-0 -c backup -- id
-   ```
-
-### Backup Request Processing Issues
-
-#### Symptom: Backup requests not processed by backup pod
-
-**Diagnosis:**
-```bash
-# Check backup request queue
-kubectl exec production-cluster-backup-0 -c backup -- ls -la /backup-requests/
-
-# Test manual backup request
-kubectl exec production-cluster-backup-0 -c backup -- sh -c \
-  'echo "{\"type\":\"FULL\"}" > /backup-requests/test.request'
-```
-
-**Solutions:**
-
-1. **Request Format Issues**:
-   ```json
-   // Correct format
-   {
-     "path": "/data/backups/test",
-     "type": "FULL",
-     "databases": ["neo4j", "system"]
-   }
-   ```
-
-2. **Request Volume Problems**:
-   ```bash
-   # Check backup request volume
-   kubectl exec production-cluster-backup-0 -c backup -- ls -la /backup-requests/
-   ```
-
 ## Performance Issues
 
 ### Slow Backup Performance
@@ -568,100 +493,13 @@ validate_backup() {
 validate_backup
 ```
 
-## Emergency Recovery Procedures
+## Emergency Recovery
 
-### Complete Database Recovery
+For full disaster recovery (corrupted primary, restore to a new cluster from latest backup), follow the standard restore flow in the [Backup & Restore guide § Restore Operations](../guides/backup_restore.md#restore-operations). The normal `Neo4jRestore` CR with `source.type: backup` + `clusterRef` pointing at a fresh cluster IS the emergency procedure — there's no separate path. Use `force: true` to overwrite existing data, and `source.type: pitr` with `pointInTime` if you need to roll back to a specific timestamp before the corruption.
 
-**Scenario:** Primary database corrupted, need complete restore
+## See Also
 
-```bash
-# 1. Create new cluster for restoration
-kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jEnterpriseCluster
-metadata:
-  name: recovery-cluster
-spec:
-  topology:
-    servers: 3
-  # Use same configuration as original cluster
-  storage:
-    className: "fast-ssd"
-    size: "1Ti"
-EOF
-
-# 2. Wait for cluster to be ready
-kubectl wait --for=condition=Ready neo4jenterprisecluster/recovery-cluster --timeout=600s
-
-# 3. Restore from latest backup
-kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jRestore
-metadata:
-  name: emergency-restore
-spec:
-  clusterRef: recovery-cluster
-  source:
-    type: backup
-    backupRef: production-backup-latest
-  databaseName: neo4j
-  force: true
-EOF
-
-# 4. Monitor restore progress
-kubectl logs -f job/emergency-restore
-
-# 5. Verify data integrity
-kubectl exec recovery-cluster-server-0 -- cypher-shell -u neo4j -p password \
-  "MATCH (n) RETURN count(n) as total_nodes"
-```
-
-### Point-in-Time Emergency Recovery
-
-```bash
-# Restore to specific point before corruption
-kubectl apply -f - <<EOF
-apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jRestore
-metadata:
-  name: pitr-emergency-restore
-spec:
-  clusterRef: recovery-cluster
-  source:
-    type: pitr
-    backupRef: production-backup-latest
-    pointInTime: "2025-01-15T10:30:00Z"  # Before corruption occurred
-  databaseName: neo4j
-  force: true
-EOF
-```
-
-## Best Practices Summary
-
-### Backup Best Practices
-- [ ] **Regular Testing**: Test backup and restore procedures regularly
-- [ ] **Multiple Storage Locations**: Store backups in multiple locations/regions
-- [ ] **Retention Policies**: Implement appropriate retention policies
-- [ ] **Monitoring**: Set up comprehensive backup monitoring and alerting
-- [ ] **Documentation**: Document recovery procedures and test them
-- [ ] **Security**: Encrypt backups and use secure storage access
-
-### Restore Best Practices
-- [ ] **Validation**: Always validate restored data integrity
-- [ ] **Staging Environment**: Test restores in staging before production
-- [ ] **Downtime Planning**: Plan for service interruption during restore
-- [ ] **Data Consistency**: Ensure cluster consistency after restore
-- [ ] **Application Testing**: Test applications after database restore
-
-### Performance Best Practices
-- [ ] **Resource Allocation**: Adequate resources for backup/restore operations
-- [ ] **Storage Performance**: Use high-performance storage for operations
-- [ ] **Network Optimization**: Optimize network for data transfer
-- [ ] **Scheduling**: Schedule backups during low-activity periods
-- [ ] **Parallel Operations**: Use parallelism where possible
-
-For additional help, see:
 - [Backup & Restore Guide](../guides/backup_restore.md)
 - [Performance Tuning](../performance.md)
-- [Security Best Practices](../security.md)
+- [Security Guide](../security.md)
 - [Split-Brain Recovery](split-brain-recovery.md)
