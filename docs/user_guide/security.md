@@ -1159,7 +1159,7 @@ A starter pack of [Kyverno](https://kyverno.io/) ClusterPolicies that
 audit Neo4j CRs against this operator's recommended production posture
 (enterprise image, TLS enabled, monitoring on, no `runAsNonRoot=false`
 override, explicit resource limits) is included at
-[`examples/security/policies/`](../../examples/security/policies/).
+[`examples/security/policies/`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/tree/main/examples/security/policies).
 All policies ship in `Audit` mode and match only user-facing CRs, so
 they never block operator reconciliation. See the directory's README
 for install, the Audit → Enforce migration path, and the list of

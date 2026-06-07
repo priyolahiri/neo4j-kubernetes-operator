@@ -16,7 +16,7 @@ Kerberos and JWT authentication are configurable via raw `spec.config` keys (`db
 
 **Multi-provider support**: Neo4j evaluates providers in order, so you can configure `authenticationProviders: [ldap, native]` to try LDAP first with native as fallback.
 
-**JVM TrustStore**: For LDAPS or OIDC with internal CAs, use the top-level `spec.trustedCASecrets` field to add extra trust anchors to the operator-managed JKS truststore (seeded from the JDK `cacerts`). The legacy `spec.auth.trustStore` field still works for back-compat but is folded into the same path — prefer `spec.trustedCASecrets` for new deployments. See the [Security Best Practices](../security.md#custom-ca-truststore) guide for the full configuration.
+**JVM TrustStore**: For LDAPS or OIDC with internal CAs, use the top-level `spec.trustedCASecrets` field to add extra trust anchors to the operator-managed JKS truststore (seeded from the JDK `cacerts`). The legacy `spec.auth.trustStore` field still works for back-compat but is folded into the same path — prefer `spec.trustedCASecrets` for new deployments. See the [Security Guide § JVM TrustStore](../security.md#jvm-truststore-for-internal-cas) for the full configuration.
 
 For full configuration details and examples, see the [Security Best Practices](../security.md#authentication-configuration) guide and the [auth examples](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/examples/clusters/auth-example.yaml).
 
