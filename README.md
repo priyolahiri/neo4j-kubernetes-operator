@@ -16,7 +16,7 @@ A Kubernetes operator for Neo4j Enterprise — declarative clusters, databases, 
 
 - **Neo4j**: Enterprise 5.26 LTS or any CalVer release (2025.x+)
 - **Kubernetes**: 1.32+
-- **cert-manager** 1.18+ — optional, only for TLS-enabled deployments
+- **cert-manager** 1.20+ — optional, only for TLS-enabled deployments (tested against the version pinned in `Makefile`'s `CERT_MANAGER_VERSION`)
 
 ## Quick Start
 
