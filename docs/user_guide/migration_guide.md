@@ -62,18 +62,16 @@ Four typed fields that were defined on the schema but were never wired through t
 grep -rE 'spec:.*\b(jwt|ui|restoreFrom|license):' path/to/manifests/
 ```
 
-### 2. `spec.auth.passwordPolicy` and `spec.auth.kerberos` are now documented as schema-only
+### 2. `spec.auth.passwordPolicy` is removed from the CRD
 
-These typed blocks remain on the CRD for back-compat — manifests carrying them will not be rejected — but the operator does **not** wire them through to Neo4j config and never has. Earlier docs implied otherwise.
+The `spec.auth.passwordPolicy` block was always schema-only — the operator never wired it through to Neo4j config. It has been removed from the CRD entirely. `spec.auth.kerberos` remains for back-compat but is also schema-only (still on the CRD; the operator does not mount keytabs or write `dbms.security.kerberos.*` config from it).
 
-**Action**: until typed-field support is implemented, set the equivalent Neo4j config keys directly in `spec.config`:
+**Action**: set the equivalent Neo4j config keys directly in `spec.config`. Manifests still carrying `spec.auth.passwordPolicy` will be rejected by the API server after the upgrade.
 
 ```yaml
 spec:
   auth:
     adminSecret: neo4j-admin-secret
-    # spec.auth.passwordPolicy is schema-only and ignored — set the Neo4j
-    # keys directly until typed-field support lands.
   config:
     dbms.security.auth_minimum_password_length: "12"
     # Kerberos: dbms.security.kerberos.* keys here, plus a keytab volume
@@ -146,7 +144,7 @@ Backups against the recreated standalone work end-to-end after step 4.
 ### Quick upgrade checklist
 
 1. Grep manifests for the removed fields (step 1) and migrate them.
-2. If you set `spec.auth.passwordPolicy` or `spec.auth.kerberos` and were depending on it doing something, move the equivalent keys into `spec.config` (step 2).
+2. If you set `spec.auth.passwordPolicy` (now removed) or `spec.auth.kerberos` (still schema-only) and were depending on it doing something, move the equivalent keys into `spec.config` (step 2).
 3. Update PromQL / Grafana queries on `cluster_replicas_total` (step 3).
 4. Audit `spec.config` if you have long-edit-history clusters that may have relied on the env-var-removal bug (step 4).
 5. If you have existing `Neo4jEnterpriseStandalone` CRs AND want backups against them, delete + recreate with `retentionPolicy=Retain` per step 5 above. Standalones that never need backups can be left as-is.

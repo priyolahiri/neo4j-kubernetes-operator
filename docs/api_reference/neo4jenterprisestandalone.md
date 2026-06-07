@@ -155,8 +155,6 @@ Authentication configuration.
 auth:
   authenticationProviders: ["native"]
   adminSecret: neo4j-admin-secret
-  # NOTE: spec.auth.passwordPolicy is schema-only and currently ignored.
-  # Set Neo4j password-policy keys via spec.config until implemented.
 ```
 
 #### `service` (ServiceSpec)
@@ -541,8 +539,6 @@ spec:
 
   auth:
     adminSecret: neo4j-admin-secret
-    # spec.auth.passwordPolicy is schema-only and ignored; set the Neo4j
-    # password-policy keys directly in spec.config below until implemented.
 
   env:
     - name: NEO4J_ACCEPT_LICENSE_AGREEMENT
@@ -638,8 +634,6 @@ spec:
 
   auth:
     adminSecret: neo4j-admin-secret
-    # spec.auth.passwordPolicy is schema-only and ignored; set the Neo4j
-    # password-policy keys directly in spec.config below until implemented.
 
   service:
     type: LoadBalancer

@@ -482,8 +482,7 @@ kubectl logs <pod-name> | grep -i auth
    ```
 
 2. **Check Password Policy:**
-   `spec.auth.passwordPolicy` is schema-only and currently ignored — set the
-   Neo4j keys directly in `spec.config` instead:
+   Set the Neo4j password-policy keys in `spec.config`:
    ```yaml
    spec:
      config:

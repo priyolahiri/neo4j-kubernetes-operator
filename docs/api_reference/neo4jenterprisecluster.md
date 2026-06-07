@@ -170,7 +170,6 @@ Specifies role constraints for individual servers.
 | `authorizationProviders` | `[]string` | Ordered list of authorization providers. Default: `["native"]` |
 | `adminSecret` | `string` | Secret containing admin username and password (keys: `username`, `password`) |
 | `externalSecrets` | [`*ExternalSecretsConfig`](#externalsecretsconfig) | External secrets configuration |
-| `passwordPolicy` | `*PasswordPolicySpec` | **Schema-only.** Defined on the API but the operator does not currently generate `dbms.security.auth_minimum_password_length` (and friends) from this. Set those keys via `spec.config` directly until implemented. |
 | `ldap` | [`*Neo4jLDAPSpec`](#neo4jldapspec) | LDAP authentication and authorization configuration |
 | `oidc` | `map[string]`[`Neo4jOIDCProviderSpec`](#neo4joidcproviderspec) | OIDC/SSO providers. Map key = provider name (used in `authenticationProviders` as `oidc-<key>`). For JWT-based auth, use OIDC — Neo4j ID tokens are JWTs. |
 | `kerberos` | [`*KerberosAuthSpec`](#kerberosauthspec) | **Schema-only.** Defined on the API but the operator does not wire it to Neo4j config or mount the keytab. Use `spec.config["dbms.security.kerberos.*"]` plus `spec.extraVolumes` for the keytab Secret until full Kerberos support lands. |
@@ -1349,10 +1348,6 @@ spec:
       name: ca-cluster-issuer
       kind: ClusterIssuer
   auth:
-    # NOTE: spec.auth.passwordPolicy is schema-only and currently ignored
-    # by the operator. Set the equivalent Neo4j config keys via spec.config
-    # (e.g. dbms.security.auth_minimum_password_length=12) until typed-field
-    # support lands.
     adminSecret: neo4j-admin-secret
 ```
 

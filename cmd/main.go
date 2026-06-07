@@ -138,7 +138,6 @@ func main() {
 		// Cache optimization flags
 		cacheStrategy = flag.String("cache-strategy", "", "Cache strategy: standard, lazy, selective, on-demand, none (auto-selected based on mode if empty)")
 		skipCacheWait = flag.Bool("skip-cache-wait", false, "Skip waiting for cache sync before starting controllers")
-		lazyInformers = flag.Bool("lazy-informers", false, "Enable lazy informer creation")
 		ultraFast     = flag.Bool("ultra-fast", false, "Enable ultra-fast mode with no informer caching")
 	)
 
@@ -210,7 +209,6 @@ func main() {
 		"mode", operatorMode,
 		"cache_strategy", *cacheStrategy,
 		"skip_cache_wait", *skipCacheWait,
-		"lazy_informers", *lazyInformers,
 		"ultra_fast", *ultraFast,
 		"metrics_address", *metricsAddr,
 		"health_address", *probeAddr,
@@ -233,7 +231,7 @@ func main() {
 		if useDirectClient {
 			cacheOpts = cache.Options{} // Empty cache options
 		} else {
-			cacheOpts = configureDevelopmentCache(*cacheStrategy, *lazyInformers)
+			cacheOpts = configureDevelopmentCache(*cacheStrategy)
 		}
 		config.Timeout = 10 * time.Second
 		config.QPS = 100
@@ -245,11 +243,7 @@ func main() {
 			setupLog.Info("WARNING: using direct client in production mode - this may impact performance")
 			cacheOpts = cache.Options{}
 		} else {
-			// Force lazy cache for production to avoid RBAC and startup issues
-			if *cacheStrategy == "" {
-				*cacheStrategy = "lazy"
-			}
-			cacheOpts = configureProductionCache(*cacheStrategy, *lazyInformers)
+			cacheOpts = configureProductionCache(*cacheStrategy)
 		}
 		setupLog.Info("production mode enabled - using standard settings")
 	}
@@ -744,7 +738,7 @@ func mergeCacheOptions(base, override cache.Options) cache.Options {
 }
 
 // configureDevelopmentCache sets up optimized caching for development mode
-func configureDevelopmentCache(strategy string, _ bool) cache.Options {
+func configureDevelopmentCache(strategy string) cache.Options {
 	opts := cache.Options{
 		SyncPeriod: func() *time.Duration {
 			d := 30 * time.Second
@@ -771,7 +765,7 @@ func configureDevelopmentCache(strategy string, _ bool) cache.Options {
 }
 
 // configureProductionCache sets up standard caching for production mode
-func configureProductionCache(strategy string, _ bool) cache.Options {
+func configureProductionCache(strategy string) cache.Options {
 	opts := cache.Options{}
 
 	switch CacheStrategy(strategy) {
