@@ -22,9 +22,12 @@ Health state mapping:
 | Degraded       | Failed, Degraded                       |
 | Progressing    | Forming, Pending, Creating, or empty   |
 
-Health checks are configured for all 7 CRDs in the `neo4j.neo4j.com` group:
-`Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`, `Neo4jDatabase`,
-`Neo4jBackup`, `Neo4jRestore`, `Neo4jPlugin`, `Neo4jShardedDatabase`.
+Health checks are configured for the 7 workload CRDs in the `neo4j.neo4j.com`
+group: `Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`, `Neo4jDatabase`,
+`Neo4jBackup`, `Neo4jRestore`, `Neo4jPlugin`, `Neo4jShardedDatabase`. The four
+identity CRDs (`Neo4jAuthRule`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`)
+do not yet have ArgoCD health customizations — ArgoCD will fall back to its
+default "Progressing" assessment for those resources.
 
 ## Flux Health Checks
 

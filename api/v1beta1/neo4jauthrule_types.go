@@ -112,7 +112,7 @@ type Neo4jAuthRuleStatus struct {
 	//   Ready                  — auth rule exists and granted roles are in sync
 	//   ConditionValid         — the Cypher condition parses successfully
 	//   OIDCProviderConfigured — the cluster has dbms.security.abac.authorization_providers set
-	//   GrantedRolesExist      — all spec.grantedRoles resolve in Neo4j
+	//   RolesSynced            — all spec.grantedRoles are granted in Neo4j
 	//   ClusterNotReady        — referenced cluster is not Ready or too old
 	//   PendingDependencies    — one or more granted roles do not yet exist
 	// +optional
