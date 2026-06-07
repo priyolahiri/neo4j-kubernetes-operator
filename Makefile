@@ -179,7 +179,7 @@ test-unit: manifests generate fmt vet envtest ## Run unit tests (no cluster requ
 
 # Integration Tests
 .PHONY: test-integration
-test-integration: test-cluster ginkgo kustomize ## Run integration tests (production mode, neo4j-operator-system)
+test-integration: manifests generate test-cluster ginkgo kustomize ## Run integration tests (production mode, neo4j-operator-system)
 	@echo "🔗 Running integration tests..."
 	@kind export kubeconfig --name neo4j-operator-test
 	@echo "📦 Building and loading operator image..."
