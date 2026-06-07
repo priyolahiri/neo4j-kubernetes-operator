@@ -113,6 +113,8 @@ After configuring external access:
 - **NodePort**: `http://<node-ip>:<node-port>`
 - **Ingress**: `https://neo4j.example.com`
 
+For **SSO into Neo4j Browser** (login button → IdP redirect), configure one or more OIDC providers via `spec.auth.oidc` on the `Neo4jEnterpriseCluster` / `Neo4jEnterpriseStandalone` resource. Neo4j Browser supports OIDC natively — no oauth2-proxy or external gateway needed. See the [Authentication & Authorization guide](guides/security.md) for the field reference and provider examples (Okta, Azure AD, Google, etc.).
+
 ### Bolt (Applications)
 - **Port Forward**: `bolt://localhost:7687`
 - **LoadBalancer**: `bolt://<external-ip>:7687`
@@ -249,9 +251,3 @@ spec:
 4. **Monitor External IPs**: Set up alerts for IP changes
 5. **Use DNS**: Point domain names to load balancer IPs
 6. **Implement Rate Limiting**: Protect against abuse
-
-## Future Improvements
-
-The operator team is working on:
-- Built-in DNS management
-- OAuth/OIDC integration for Browser access
