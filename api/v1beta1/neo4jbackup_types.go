@@ -134,6 +134,22 @@ type BackupOptions struct {
 	// Skip recovery step after backup (advanced; use when recovery is handled separately)
 	SkipRecovery bool `json:"skipRecovery,omitempty"`
 
+	// Validate runs `neo4j-admin backup validate` against the backup artifacts
+	// after the backup itself succeeds, capturing per-shard recoverability
+	// status into `BackupRun.Validation`. Opt-in because validate adds
+	// ~10-60s of runtime depending on artifact size, and validate failures
+	// are recorded but don't fail the Job (the backup itself already
+	// succeeded). Pointer type so users explicitly opting in OR out
+	// preserves their choice across Update round-trips.
+	//
+	// When nil (default) or false: validate is not invoked; Validation
+	// field stays empty.
+	// When true: validate is appended to the backup command with `|| true`
+	// (suppress non-zero exit so the Job stays Succeeded). The operator
+	// parses validate's stdout into BackupRun.Validation.
+	// +optional
+	Validate *bool `json:"validate,omitempty"`
+
 	// Additional neo4j-admin backup arguments
 	AdditionalArgs []string `json:"additionalArgs,omitempty"`
 

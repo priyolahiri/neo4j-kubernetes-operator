@@ -233,6 +233,22 @@ spec:
                     required:
                     - size
                     type: object
+                  validate:
+                    description: |-
+                      Validate runs `neo4j-admin backup validate` against the backup artifacts
+                      after the backup itself succeeds, capturing per-shard recoverability
+                      status into `BackupRun.Validation`. Opt-in because validate adds
+                      ~10-60s of runtime depending on artifact size, and validate failures
+                      are recorded but don't fail the Job (the backup itself already
+                      succeeded). Pointer type so users explicitly opting in OR out
+                      preserves their choice across Update round-trips.
+
+                      When nil (default) or false: validate is not invoked; Validation
+                      field stays empty.
+                      When true: validate is appended to the backup command with `|| true`
+                      (suppress non-zero exit so the Job stays Succeeded). The operator
+                      parses validate's stdout into BackupRun.Validation.
+                    type: boolean
                   verify:
                     description: Verify backup integrity after creation
                     type: boolean

@@ -177,6 +177,11 @@ func (in *BackupOptions) DeepCopyInto(out *BackupOptions) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.Validate != nil {
+		in, out := &in.Validate, &out.Validate
+		*out = new(bool)
+		**out = **in
+	}
 	if in.AdditionalArgs != nil {
 		in, out := &in.AdditionalArgs, &out.AdditionalArgs
 		*out = make([]string, len(*in))

@@ -275,6 +275,20 @@ func main() {
 	}
 }
 
+// mustBuildClientset constructs a typed Kubernetes Clientset from the
+// manager's rest config. Used by reconcilers that need to call APIs the
+// controller-runtime client doesn't expose (e.g. Pod log streaming for the
+// backup controller's post-Job log parsing). Panics on failure — the same
+// rest config already worked for the manager itself, so a failure here
+// indicates a misconfigured environment that the operator can't recover from.
+func mustBuildClientset(mgr ctrl.Manager) kubernetes.Interface {
+	cs, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		panic(fmt.Sprintf("failed to construct kubernetes.Clientset for backup reconciler: %v", err))
+	}
+	return cs
+}
+
 // setupControllers sets up controllers based on the operator mode
 func setupControllers(mgr ctrl.Manager, mode OperatorMode, controllersToLoad string) error {
 	switch mode {
@@ -336,6 +350,11 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
 				RequeueAfter: controller.GetTestRequeueAfter(),
+				// Typed Kubernetes client for fetching backup-Pod logs (used by
+				// shard-artifact filename/size parsing + neo4j-admin backup
+				// validate output parsing). Errors here are non-fatal — the
+				// log-parsing features no-op if Clientset is nil.
+				Clientset: mustBuildClientset(mgr),
 			},
 		},
 		{
@@ -460,6 +479,7 @@ func setupDevelopmentControllers(mgr ctrl.Manager, controllers []string) error {
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
 				RequeueAfter: controller.GetTestRequeueAfter(),
+				Clientset:    mustBuildClientset(mgr),
 			}, "Neo4jBackup"
 		},
 		"restore": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {

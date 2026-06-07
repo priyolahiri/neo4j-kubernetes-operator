@@ -32,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -54,6 +55,16 @@ type Neo4jBackupReconciler struct {
 	Recorder                record.EventRecorder
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
+
+	// Clientset is the typed Kubernetes client used for pod-log fetches
+	// (BackupRun.ShardArtifacts filename/size population, BackupRun.Validation
+	// from `neo4j-admin backup validate` output). Optional — when nil the
+	// log-parsing features short-circuit and leave the corresponding status
+	// fields empty rather than failing the reconcile. Production wiring sets
+	// this in cmd/main.go via kubernetes.NewForConfig(mgr.GetConfig()); unit
+	// tests using a fake client.Client leave it nil and the pod-log paths
+	// no-op.
+	Clientset kubernetes.Interface
 }
 
 const (
@@ -267,8 +278,29 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 			if backupRunAlreadyRecorded(latest.Status.History, run) {
 				continue
 			}
+			// F3 / F4: augment with per-Job filename/size + validation
+			// from the Job's pod logs. Each CronJob child has its own Pod
+			// with its own log, so we fetch per-Job rather than once per
+			// outer call. Errors non-fatal — empty fields still leave the
+			// ShardName audit list populated.
+			var jobLog string
+			if len(shardArtifacts) > 0 ||
+				(latest.Spec.Options != nil && latest.Spec.Options.Validate != nil && *latest.Spec.Options.Validate) {
+				if got, logErr := r.fetchBackupPodLog(ctx, job.Name, job.Namespace); logErr == nil {
+					jobLog = got
+				}
+			}
 			if len(shardArtifacts) > 0 {
-				run.ShardArtifacts = shardArtifacts
+				perJobArtifacts := shardArtifacts
+				if jobLog != "" {
+					perJobArtifacts = mergeShardArtifactsFromLog(shardArtifacts, parseShardArtifactsFromLog(jobLog))
+				}
+				run.ShardArtifacts = perJobArtifacts
+			}
+			if jobLog != "" {
+				if validation := parseValidationFromLog(jobLog); validation != nil {
+					run.Validation = validation
+				}
 			}
 			latest.Status.History = append(latest.Status.History, run)
 			changed = true
@@ -878,6 +910,21 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 		cmd += " --remote-address-resolution=true"
 	}
 
+	// F4: opt-in `neo4j-admin backup validate` step. Chained with `|| true`
+	// so a validate failure doesn't fail the Job — the backup itself
+	// succeeded, validate is informational. The operator parses the
+	// stdout into BackupRun.Validation after the Job completes (see the
+	// post-Job hook in recordOneShotBackupRun / reconcileScheduledHistory).
+	// dbArg matches the backup command's database argument so validate
+	// runs against the same scope (one DB / glob / all-DBs).
+	if backup.Spec.Options != nil && backup.Spec.Options.Validate != nil && *backup.Spec.Options.Validate {
+		validateDBArg := dbName
+		if allDatabases {
+			validateDBArg = "*"
+		}
+		cmd += fmt.Sprintf(` && (neo4j-admin backup validate --from-path=%s --database="%s" || true)`, toPath, validateDBArg)
+	}
+
 	if backup.Spec.Storage.Type == "pvc" {
 		cmd = fmt.Sprintf("mkdir -p %s && %s", toPath, cmd)
 	}
@@ -1350,8 +1397,31 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 	}
 	// Phase 3: stamp the per-shard audit list onto the BackupRun. No-op for
 	// non-sharded kinds; failure to fetch the sharded DB CR is non-fatal.
+	// F3 / F4: augment with per-shard Filename / Size AND BackupValidationResult
+	// by parsing the backup Pod's neo4j-admin output. We fetch the Pod log
+	// once and feed it into both parsers — Pod logs are TTL-bound, so a
+	// single fetch is cheaper than separate calls. Non-fatal — log-fetch
+	// failures and parse misses leave the corresponding fields empty.
+	logContent := ""
+	if shouldFetchLog := r.expectedShardArtifactsForBackup(ctx, backup) != nil ||
+		(backup.Spec.Options != nil && backup.Spec.Options.Validate != nil && *backup.Spec.Options.Validate); shouldFetchLog {
+		if got, logErr := r.fetchBackupPodLog(ctx, job.Name, job.Namespace); logErr != nil {
+			logger.Info("Failed to fetch backup pod log; ShardArtifacts/Validation may be incomplete",
+				"error", logErr.Error(), "job", job.Name)
+		} else {
+			logContent = got
+		}
+	}
 	if artifacts := r.expectedShardArtifactsForBackup(ctx, backup); len(artifacts) > 0 {
+		if logContent != "" {
+			artifacts = mergeShardArtifactsFromLog(artifacts, parseShardArtifactsFromLog(logContent))
+		}
 		run.ShardArtifacts = artifacts
+	}
+	if logContent != "" {
+		if validation := parseValidationFromLog(logContent); validation != nil {
+			run.Validation = validation
+		}
 	}
 	// Size, Throughput, FileCount are intentionally omitted from run.Stats:
 	// they require parsing neo4j-admin stdout from Job pod logs (future
