@@ -797,7 +797,13 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 	// Pod via the downward API; the shell expands it at command-execution
 	// time. status.history.BackupsPath records the same Job name so each
 	// history entry deterministically points at its artifact directory.
-	toPath := r.buildToPath(backup) + "/${BACKUP_RUN_ID}"
+	// Trailing slash matters for cloud targets: neo4j-admin rejects
+	// "s3://bucket/path/run-id" with "The path … is not a directory - please
+	// add a terminal '/' to your path". The runtime-evaluated ${BACKUP_RUN_ID}
+	// is a per-run subdirectory, so we always want directory semantics.
+	// Harmless for PVC targets — the `mkdir -p` prelude tolerates a trailing
+	// slash and the local filesystem treats both forms identically.
+	toPath := r.buildToPath(backup) + "/${BACKUP_RUN_ID}/"
 	// The --from FQDN differs between cluster and standalone targets;
 	// resolve the type from the live API so the FQDN matches reality.
 	// Falls back to the cluster shape on any lookup error so the
