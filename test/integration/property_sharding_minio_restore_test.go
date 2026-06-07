@@ -118,14 +118,31 @@ var _ = Describe("Property Sharding Restore (MinIO) Integration Tests", Serial, 
 		if CurrentSpecReport().Failed() {
 			dumpNamespaceDiagnostics(testNamespace)
 		}
-		for _, cr := range []client.Object{shardedDB2, backup, shardedDB, cluster} {
-			if cr != nil {
-				if len(cr.GetFinalizers()) > 0 {
-					cr.SetFinalizers(nil)
-					_ = k8sClient.Update(ctx, cr)
-				}
-				_ = k8sClient.Delete(ctx, cr)
+		// Build cleanup list dynamically to skip typed-nil pointers — a
+		// `*Neo4jShardedDatabase(nil)` in a `[]client.Object` slice carries
+		// a non-nil interface value (only the underlying pointer is nil),
+		// so `cr != nil` is true and cr.GetFinalizers() then panics with
+		// nil-pointer dereference. Building the slice from explicit
+		// per-pointer checks avoids the interface-vs-pointer footgun.
+		var toClean []client.Object
+		if shardedDB2 != nil {
+			toClean = append(toClean, shardedDB2)
+		}
+		if backup != nil {
+			toClean = append(toClean, backup)
+		}
+		if shardedDB != nil {
+			toClean = append(toClean, shardedDB)
+		}
+		if cluster != nil {
+			toClean = append(toClean, cluster)
+		}
+		for _, cr := range toClean {
+			if len(cr.GetFinalizers()) > 0 {
+				cr.SetFinalizers(nil)
+				_ = k8sClient.Update(ctx, cr)
 			}
+			_ = k8sClient.Delete(ctx, cr)
 		}
 		shardedDB, shardedDB2, backup, cluster = nil, nil, nil, nil
 		if testNamespace != "" {
