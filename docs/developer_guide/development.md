@@ -559,7 +559,7 @@ export GOMAXPROCS=4
 ```bash
 # CI/CD testing
 export CI=true
-export KUBEBUILDER_ASSETS="$(pwd)/bin/k8s/1.31.0-linux-amd64"
+export KUBEBUILDER_ASSETS="$(pwd)/bin/k8s/1.34.0-linux-amd64"
 ```
 
 ## Next Steps

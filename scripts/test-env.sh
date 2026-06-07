@@ -7,6 +7,12 @@ CLUSTER_NAME="neo4j-operator-test"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Pin Kubernetes version explicitly so dev cluster, integration tests, and
+# unit-test envtest all run on the same K8s. Overridable via env to support
+# forward-compat smoke runs. Kept in sync with KIND_NODE_IMAGE in Makefile
+# and ENVTEST_K8S_VERSION (which controls the envtest API server).
+KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.34.0}"
+
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
@@ -21,8 +27,8 @@ cluster() {
     fi
 
     # Create new cluster
-    log "Creating cluster: ${CLUSTER_NAME}"
-    kind create cluster --name "${CLUSTER_NAME}" --wait 10m
+    log "Creating cluster: ${CLUSTER_NAME} (image: ${KIND_NODE_IMAGE})"
+    kind create cluster --name "${CLUSTER_NAME}" --image "${KIND_NODE_IMAGE}" --wait 10m
 
     # Export kubeconfig
     kind export kubeconfig --name "${CLUSTER_NAME}"

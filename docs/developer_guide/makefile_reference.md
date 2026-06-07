@@ -959,7 +959,7 @@ make clean
 ### Testing Configuration
 - `CI`: Enable CI mode (affects resource limits)
 - `GITHUB_ACTIONS`: Enable GitHub Actions mode
-- `ENVTEST_K8S_VERSION`: Kubernetes version for testing (1.31.0)
+- `ENVTEST_K8S_VERSION`: Kubernetes version for testing (1.34.0)
 
 ### Bundle Configuration
 - `CHANNELS`: Bundle channels for OLM

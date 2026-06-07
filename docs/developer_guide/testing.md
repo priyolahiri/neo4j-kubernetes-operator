@@ -497,7 +497,7 @@ Tests run automatically in CI with:
 ```bash
 # Environment variables for CI
 export CI=true
-export KUBEBUILDER_ASSETS="$(pwd)/bin/k8s/1.31.0-linux-amd64"
+export KUBEBUILDER_ASSETS="$(pwd)/bin/k8s/1.34.0-linux-amd64"
 export KUBECONFIG=~/.kube/config
 ```
 

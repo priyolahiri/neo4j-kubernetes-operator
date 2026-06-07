@@ -56,7 +56,14 @@ IMG ?= ghcr.io/neo4j-partners/neo4j-kubernetes-operator:latest
 # MCP: use the official Docker Hub image (mcp/neo4j-cypher).
 # No custom image build is required.
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.31.0
+ENVTEST_K8S_VERSION = 1.34.0
+
+# KIND_NODE_IMAGE pins the Kubernetes version used by dev and test clusters.
+# Kept in sync with ENVTEST_K8S_VERSION so unit-test envtest, dev cluster,
+# and CI integration cluster all run against the same K8s version. The
+# user-facing minimum is currently 1.32 (see README + Helm Chart.yaml);
+# tests run one minor ahead at the upstream N-2 floor.
+KIND_NODE_IMAGE ?= kindest/node:v1.34.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -880,10 +887,10 @@ operator-setup: ## Deploy operator to available Kind cluster
 
 .PHONY: dev-cluster
 dev-cluster: ## Create a Kind cluster for development
-	@echo "Creating development cluster..."
+	@echo "Creating development cluster (image: $(KIND_NODE_IMAGE))..."
 	@./scripts/setup-kind-dirs.sh
 	@if ! kind get clusters | grep -q "neo4j-operator-dev"; then \
-		kind create cluster --name neo4j-operator-dev --config hack/kind-config.yaml; \
+		kind create cluster --name neo4j-operator-dev --image $(KIND_NODE_IMAGE) --config hack/kind-config.yaml; \
 		echo "Waiting for cluster to be ready..."; \
 		kubectl wait --for=condition=ready node --all --timeout=300s; \
 		echo "Installing cert-manager..."; \
