@@ -211,6 +211,34 @@ func (v *ShardedDatabaseValidator) validatePropertyShardingConfig(shardedDB *neo
 			"seedCredentials requires seedURI, seedURIs, or seedBackupRef"))
 	}
 
+	// replaceExisting is the destructive drop-and-recreate path. Two safety
+	// gates:
+	//   1. Must be paired with force=true so an accidental flip can't
+	//      destroy data (mirrors Neo4jRestore.spec.force semantics).
+	//   2. Mutex with ifNotExists=true — those two settings contradict
+	//      each other (one says "skip if exists", the other says "destroy
+	//      if exists").
+	if shardedDB.Spec.ReplaceExisting {
+		if !shardedDB.Spec.Force {
+			result.Errors = append(result.Errors, field.Invalid(
+				specPath.Child("replaceExisting"),
+				shardedDB.Spec.ReplaceExisting,
+				"replaceExisting=true is destructive (DROP DATABASE DESTROY DATA) and requires force=true as confirmation"))
+		}
+		if shardedDB.Spec.IfNotExists {
+			result.Errors = append(result.Errors, field.Invalid(
+				specPath.Child("ifNotExists"),
+				shardedDB.Spec.IfNotExists,
+				"ifNotExists=true is mutually exclusive with replaceExisting=true (the former skips when present, the latter drops when present). Set ifNotExists=false."))
+		}
+		if !hasSeedSource {
+			result.Errors = append(result.Errors, field.Invalid(
+				specPath.Child("replaceExisting"),
+				shardedDB.Spec.ReplaceExisting,
+				"replaceExisting=true requires a seed source (seedURI, seedURIs, or seedBackupRef) — re-creating without data would leave the database empty"))
+		}
+	}
+
 	if strings.HasSuffix(shardedDB.Spec.SeedURI, ".dump") {
 		result.Warnings = append(result.Warnings,
 			"Using dump file format. For better performance with large databases, consider using Neo4j backup format (.backup) instead.")

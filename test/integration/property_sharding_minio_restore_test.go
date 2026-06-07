@@ -260,6 +260,119 @@ var _ = Describe("Property Sharding Restore (MinIO) Integration Tests", Serial, 
 		}, shardedDBReadyTimeout, pollInterval).Should(BeTrue(),
 			"products-restored failed to reach Ready — likely Neo4j couldn't reach MinIO or auth failed; check cluster pod logs for `Unable to start database` + debug.log")
 	})
+
+	It("destructively replaces an existing sharded DB via replaceExisting+force", func() {
+		By("Creating a property-sharding cluster with MinIO seed-creds projected")
+		cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "minio-replace-cluster", Namespace: testNamespace},
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				Image:    neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: getNeo4jImageTag()},
+				Auth:     &neo4jv1beta1.AuthSpec{AdminSecret: "neo4j-admin-secret"},
+				Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+				Storage:  neo4jv1beta1.StorageSpec{Size: "1Gi", ClassName: "standard"},
+				Resources: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("4Gi"),
+						corev1.ResourceCPU:    resource.MustParse("2000m"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("8Gi"),
+						corev1.ResourceCPU:    resource.MustParse("2000m"),
+					},
+				},
+				PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
+					Enabled: true,
+					Config: map[string]string{
+						"internal.dbms.sharded_property_database.enabled":                     "true",
+						"db.query.default_language":                                           "CYPHER_25",
+						"internal.dbms.sharded_property_database.allow_external_shard_access": "false",
+					},
+				},
+				Env: []corev1.EnvVar{
+					{Name: "JAVA_TOOL_OPTIONS", Value: "-Daws.s3.forcePathStyle=true"},
+				},
+				ExtraEnvFrom: []corev1.EnvFromSource{
+					{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "minio-creds"}}},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		Eventually(func() bool {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)
+			return cluster.Status.PropertyShardingReady != nil && *cluster.Status.PropertyShardingReady
+		}, clusterReadyTimeout, pollInterval).Should(BeTrue())
+
+		By("Creating the source sharded DB 'products' (no seed)")
+		shardedDB = &neo4jv1beta1.Neo4jShardedDatabase{
+			ObjectMeta: metav1.ObjectMeta{Name: "products", Namespace: testNamespace},
+			Spec: neo4jv1beta1.Neo4jShardedDatabaseSpec{
+				ClusterRef:            cluster.Name,
+				Name:                  "products",
+				DefaultCypherLanguage: "25",
+				PropertySharding: neo4jv1beta1.PropertyShardingConfiguration{
+					PropertyShards:        2,
+					GraphShard:            neo4jv1beta1.DatabaseTopology{Primaries: 1},
+					PropertyShardTopology: neo4jv1beta1.PropertyShardTopology{Replicas: 1},
+				},
+				Wait:        true,
+				IfNotExists: true,
+			},
+		}
+		Expect(k8sClient.Create(ctx, shardedDB)).To(Succeed())
+		Eventually(func() bool {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(shardedDB), shardedDB)
+			return shardedDB.Status.ShardingReady != nil && *shardedDB.Status.ShardingReady
+		}, shardedDBReadyTimeout, pollInterval).Should(BeTrue())
+
+		By("Backing up 'products' to MinIO")
+		backup = &neo4jv1beta1.Neo4jBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: "products-backup", Namespace: testNamespace},
+			Spec: neo4jv1beta1.Neo4jBackupSpec{
+				Target: neo4jv1beta1.BackupTarget{
+					Kind: neo4jv1beta1.BackupTargetKindShardedDatabase, Name: "products", ClusterRef: cluster.Name,
+				},
+				Storage: neo4jv1beta1.StorageLocation{
+					Type:   "s3",
+					Bucket: minioBucket,
+					Path:   "products-replace",
+					Cloud: &neo4jv1beta1.CloudBlock{
+						Provider:             "aws",
+						CredentialsSecretRef: "minio-creds",
+						EndpointURL:          "http://minio:9000",
+						ForcePathStyle:       true,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
+		Eventually(func() string {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
+			return backup.Status.Phase
+		}, backupJobTimeout, pollInterval).Should(Equal("Completed"))
+
+		By("Flipping 'products' to destructive-restore mode (replaceExisting+force+seedBackupRef)")
+		Eventually(func() error {
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(shardedDB), shardedDB); err != nil {
+				return err
+			}
+			shardedDB.Spec.ReplaceExisting = true
+			shardedDB.Spec.Force = true
+			shardedDB.Spec.IfNotExists = false
+			shardedDB.Spec.SeedBackupRef = "products-backup"
+			shardedDB.Spec.SeedSourceDatabase = "products"
+			return k8sClient.Update(ctx, shardedDB)
+		}, 30*time.Second, pollInterval).Should(Succeed(),
+			"failed to update sharded DB CR for destructive restore")
+		preReplaceGeneration := shardedDB.Generation
+
+		By("Verifying the operator dropped + re-created from seed (Ready + LastDestructiveRestoreGeneration stamped)")
+		Eventually(func() bool {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(shardedDB), shardedDB)
+			return shardedDB.Status.ShardingReady != nil && *shardedDB.Status.ShardingReady &&
+				shardedDB.Status.LastDestructiveRestoreGeneration >= preReplaceGeneration
+		}, shardedDBReadyTimeout, pollInterval).Should(BeTrue(),
+			"destructive restore did not complete — expected LastDestructiveRestoreGeneration to be stamped and ShardingReady=true")
+	})
 })
 
 // deployMinIO stamps a minimal single-pod MinIO into the namespace + a

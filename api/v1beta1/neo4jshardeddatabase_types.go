@@ -53,6 +53,34 @@ type Neo4jShardedDatabaseSpec struct {
 	// +kubebuilder:default=true
 	IfNotExists bool `json:"ifNotExists,omitempty"`
 
+	// ReplaceExisting destroys an existing logical sharded database before
+	// recreating it from the seed (typically `spec.seedBackupRef`). Intended
+	// for the operationally-load-bearing recovery path where shards have
+	// become unrecoverable (e.g. all replicas of a property shard severed),
+	// and the only restore mechanism is drop-and-recreate from backup.
+	//
+	// REQUIRES `force: true` as a separate confirmation field, mirroring
+	// the safety pattern used by `Neo4jRestore.spec.force`. The validator
+	// rejects `replaceExisting: true` without `force: true`.
+	//
+	// Mutually exclusive with `ifNotExists: true` — those two settings
+	// contradict each other (one says "no-op if it exists", the other says
+	// "destroy if it exists"). Set `ifNotExists: false` explicitly when
+	// using `replaceExisting`.
+	//
+	// THIS IS DESTRUCTIVE: the operator runs `DROP DATABASE {name}
+	// DESTROY DATA WAIT` before CREATE. All existing data in the named
+	// sharded DB is lost. The seedBackupRef contents are the only source
+	// of data after the operation.
+	// +optional
+	ReplaceExisting bool `json:"replaceExisting,omitempty"`
+
+	// Force confirms the destructive ReplaceExisting operation. Required as
+	// a separate field so an accidental ReplaceExisting flip can't destroy
+	// data — the user must consciously set BOTH fields.
+	// +optional
+	Force bool `json:"force,omitempty"`
+
 	// Seed URI for creating the sharded database from backups or dumps.
 	// When provided as a single URI, Neo4j expects backup artifacts to be named
 	// using shard suffixes (e.g., <db>-g000, <db>-p000).
@@ -167,6 +195,19 @@ type Neo4jShardedDatabaseStatus struct {
 	// is informational; operators auditing backup health should also consult
 	// the Neo4jBackup CR's status.history for the full chain.
 	LastBackup *ShardedDatabaseBackupReference `json:"lastBackup,omitempty"`
+
+	// LastDestructiveRestoreGeneration is the spec.metadata.generation at
+	// which the operator last executed a successful destructive restore
+	// (replaceExisting+force). Set by the sharded DB controller after the
+	// DROP DATABASE … DESTROY DATA WAIT + CREATE DATABASE … OPTIONS { seedURI }
+	// cycle finishes. Used to prevent re-triggering the destructive flow on
+	// every reconcile: the controller only runs DROP if
+	// `LastDestructiveRestoreGeneration < Generation`. To re-trigger after
+	// a successful restore (e.g. to re-seed from a newer backup), the user
+	// updates spec — which bumps Generation past
+	// LastDestructiveRestoreGeneration — and the operator picks up the new
+	// request.
+	LastDestructiveRestoreGeneration int64 `json:"lastDestructiveRestoreGeneration,omitempty"`
 }
 
 // ShardedDatabaseBackupReference is the reverse-lookup pointer populated by

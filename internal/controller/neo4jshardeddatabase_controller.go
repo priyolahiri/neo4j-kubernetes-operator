@@ -237,7 +237,8 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	// Create or update sharded database
-	if err := r.reconcileShardedDatabase(ctx, &shardedDatabase, neo4jClient); err != nil {
+	destructive, err := r.reconcileShardedDatabase(ctx, &shardedDatabase, neo4jClient)
+	if err != nil {
 		logger.Error(err, "Failed to reconcile sharded database")
 		r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonReconcileFailed, err.Error())
 
@@ -247,11 +248,23 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 	}
 
-	// Update status to Ready if everything succeeded
+	// Update status to Ready if everything succeeded. When the destructive
+	// path fired AND succeeded, also stamp Status.LastDestructiveRestoreGeneration
+	// so the next reconcile at the same generation skips the destructive
+	// branch (otherwise the controller would re-drop on every poll cycle
+	// since IF EXISTS makes the drop idempotent).
 	ready := true
 	if err := r.updateStatus(ctx, &shardedDatabase, "Ready", "Sharded database is operational", &ready); err != nil {
 		logger.Error(err, "Failed to update status to Ready")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+	}
+	if destructive {
+		if err := r.recordDestructiveRestoreGeneration(ctx, &shardedDatabase); err != nil {
+			// Non-fatal: re-running drop+create at the same generation is
+			// safe-but-wasteful; the user can still recover by editing the
+			// CR. Log and continue.
+			logger.Error(err, "Failed to record LastDestructiveRestoreGeneration; reconciler may re-drop on next poll")
+		}
 	}
 
 	r.Recorder.Event(&shardedDatabase, corev1.EventTypeNormal, EventReasonShardedDatabaseReady, "Sharded database is ready and operational")
@@ -335,33 +348,79 @@ func (r *Neo4jShardedDatabaseReconciler) createNeo4jClient(ctx context.Context, 
 	return neo4j.NewClientForEnterprise(cluster, r.Client, cluster.Spec.Auth.AdminSecret)
 }
 
-// reconcileShardedDatabase handles the creation and management of sharded databases
-func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
+// reconcileShardedDatabase handles the creation and management of sharded
+// databases. Returns destructive=true when the Phase 2c
+// replaceExisting+force path fired at the current spec generation; the
+// caller is expected to record that generation in
+// Status.LastDestructiveRestoreGeneration so future reconciles at the
+// same generation skip the destructive branch.
+func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) (destructive bool, err error) {
 	logger := log.FromContext(ctx)
 
 	// Wait for Neo4j to be ready for database operations
 	if err := r.waitForNeo4jReadiness(ctx, client); err != nil {
-		return fmt.Errorf("Neo4j not ready for database operations: %w", err)
+		return false, fmt.Errorf("Neo4j not ready for database operations: %w", err)
+	}
+
+	// Phase 2c: destructive drop-and-recreate path. Validator already
+	// ensured replaceExisting+force pair correctly and that a seed source
+	// is present. Generation guard: only run DROP if the current spec
+	// generation hasn't already been destructively restored — without this
+	// the controller would re-drop on every reconcile (and re-seed from
+	// the backup), since IF EXISTS keeps the DROP idempotent. The guard
+	// records Generation on Status.LastDestructiveRestoreGeneration once
+	// the drop+create cycle succeeds; any subsequent reconcile at the same
+	// generation skips the destructive branch and falls through to the
+	// standard create path.
+	destructive = shardedDB.Spec.ReplaceExisting && shardedDB.Spec.Force &&
+		shardedDB.Status.LastDestructiveRestoreGeneration < shardedDB.Generation
+	if destructive {
+		if dropErr := r.dropShardedDatabaseIfExists(ctx, shardedDB, client); dropErr != nil {
+			return false, fmt.Errorf("failed to DROP DATABASE %q for replaceExisting: %w", shardedDB.Spec.Name, dropErr)
+		}
+		logger.Info("Dropped existing sharded database for replaceExisting", "database", shardedDB.Spec.Name)
+		r.Recorder.Event(shardedDB, corev1.EventTypeNormal, "ShardedDatabaseDropped",
+			fmt.Sprintf("Dropped existing sharded database %q before recreating from seed", shardedDB.Spec.Name))
 	}
 
 	// Create the sharded database using Cypher 25 syntax in a single command
 	if (shardedDB.Spec.SeedURI != "" || len(shardedDB.Spec.SeedURIs) > 0) && shardedDB.Spec.SeedCredentials != nil {
-		if err := client.PrepareCloudCredentialsForShardedDatabase(ctx, r.Client, shardedDB); err != nil {
-			return fmt.Errorf("failed to prepare cloud credentials: %w", err)
+		if credErr := client.PrepareCloudCredentialsForShardedDatabase(ctx, r.Client, shardedDB); credErr != nil {
+			return destructive, fmt.Errorf("failed to prepare cloud credentials: %w", credErr)
 		}
 	}
 
-	if err := r.createShardedDatabase(ctx, shardedDB, client); err != nil {
-		return fmt.Errorf("failed to create sharded database: %w", err)
+	if createErr := r.createShardedDatabase(ctx, shardedDB, client); createErr != nil {
+		return destructive, fmt.Errorf("failed to create sharded database: %w", createErr)
 	}
 
 	// Update shard status
-	if err := r.updateShardStatus(ctx, shardedDB, client); err != nil {
-		logger.Error(err, "Failed to update shard status, continuing")
+	if statusErr := r.updateShardStatus(ctx, shardedDB, client); statusErr != nil {
+		logger.Error(statusErr, "Failed to update shard status, continuing")
 		// Non-fatal error, continue
 	}
 
-	return nil
+	return destructive, nil
+}
+
+// dropShardedDatabaseIfExists runs `CYPHER 25 DROP DATABASE name IF EXISTS
+// DESTROY DATA WAIT` against the system database, idempotently. Used by the
+// Phase 2c replaceExisting+force path before re-creating from seed.
+//
+// IF EXISTS makes the call a no-op when the logical sharded database isn't
+// present, so the helper is safe to invoke on every reconcile while the
+// caller still has replaceExisting=true. The WAIT clause blocks until the
+// drop completes (including all per-shard databases the sharded DB owns)
+// so the subsequent CREATE doesn't race against in-flight cleanup.
+//
+// CYPHER 25 prefix matches createShardedDatabase's invocation — the rest
+// of the sharded DB Cypher path is Cypher 25 so the prefix stays
+// consistent (CLAUDE.md rule 30 territory).
+func (r *Neo4jShardedDatabaseReconciler) dropShardedDatabaseIfExists(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
+	query := fmt.Sprintf("CYPHER 25 DROP DATABASE `%s` IF EXISTS DESTROY DATA WAIT", shardedDB.Spec.Name)
+	logger := log.FromContext(ctx).WithValues("database", shardedDB.Spec.Name, "query", query)
+	logger.Info("Executing destructive DROP DATABASE for replaceExisting")
+	return client.ExecuteCypher(ctx, "system", query)
 }
 
 // createShardedDatabase creates the sharded database using Cypher 25 syntax
@@ -613,6 +672,27 @@ func (r *Neo4jShardedDatabaseReconciler) updateStatus(ctx context.Context, shard
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
 
 		return r.Status().Update(ctx, &latest)
+	})
+}
+
+// recordDestructiveRestoreGeneration stamps Status.LastDestructiveRestoreGeneration
+// with the current spec generation after a Phase 2c destructive restore
+// completes successfully. Used as a guard against re-triggering the
+// drop-and-recreate cycle on every reconcile while
+// spec.replaceExisting=true (which is the steady state after a destructive
+// restore — users typically leave the field set rather than racing to
+// unset it after Ready). Done as a separate Status.Update from the Ready
+// transition so a single retry-on-conflict cycle covers it; failure here
+// is non-fatal because a re-trigger is just a wasteful drop+create at
+// the same generation, not data loss.
+func (r *Neo4jShardedDatabaseReconciler) recordDestructiveRestoreGeneration(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.Neo4jShardedDatabase{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(shardedDB), latest); err != nil {
+			return err
+		}
+		latest.Status.LastDestructiveRestoreGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
 	})
 }
 
