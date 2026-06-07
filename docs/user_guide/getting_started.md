@@ -264,8 +264,23 @@ Now that you have Neo4j running on Kubernetes:
 5. **Plan backups** - Implement backup strategies for data protection
 6. **Scale your deployment** - For clusters, you can scale up/down based on your needs
 
+## Browse the examples
+
+Ready-to-apply YAML manifests for every CRD live under [`examples/`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/tree/main/examples):
+
+| Directory | What's in it |
+|---|---|
+| [`standalone/`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/tree/main/examples/standalone) | Single-node `Neo4jEnterpriseStandalone` examples |
+| [`clusters/`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/tree/main/examples/clusters) | `Neo4jEnterpriseCluster` topologies (minimal, prod, TLS, fleet-managed) |
+| [`databases/`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/tree/main/examples/databases) | `Neo4jDatabase` examples (basic, seed URI, custom topology) |
+| [`users-and-roles/`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/tree/main/examples/users-and-roles) | `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule` |
+| [`plugins/`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/tree/main/examples/plugins) | `Neo4jPlugin` examples (APOC, GDS, Bloom, GenAI, …) |
+| [`backup-restore/`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/tree/main/examples/backup-restore) | `Neo4jBackup`, `Neo4jRestore` (PVC, S3, GCS, Azure, PITR) |
+| [`property_sharding/`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/tree/main/examples/property_sharding) | `Neo4jShardedDatabase` setups |
+| [`security/`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/tree/main/examples/security) | NetworkPolicy + Kyverno conformance policies |
+
 For more advanced topics, see:
 - [Configuration Guide](configuration.md) - Advanced configuration options
-- [Security Guide](guides/security.md) - Authentication, TLS, and security best practices
-- [Performance Guide](guides/performance.md) - Optimization and scaling strategies
+- [Security Guide](security.md) - Authentication, TLS, and security best practices
+- [Performance Guide](performance.md) - Optimization and scaling strategies
 - [Migration Guide](migration_guide.md) - Migrating from previous versions
