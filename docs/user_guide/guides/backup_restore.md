@@ -1,96 +1,30 @@
 # Backup and Restore
 
-This comprehensive guide explains how to use the Neo4j Kubernetes Operator to back up and restore your Neo4j Enterprise clusters and standalone instances. The operator provides advanced backup and restore capabilities through `Neo4jBackup` and `Neo4jRestore` Custom Resources, supporting multiple storage backends, scheduled backups, point-in-time recovery, and more.
+Back up and restore Neo4j Enterprise clusters and standalone instances via the `Neo4jBackup` and `Neo4jRestore` CRDs. Both deployment kinds are auto-detected by the operator from `target.name` (backup) or `clusterRef` (restore).
 
-## Quick Start (5 minutes)
-
-New to backup and restore? Start here for an immediate working backup solution.
-
-### Step 1: Create Your First Backup
+## Quick Start
 
 ```bash
-# 1. Create admin credentials (if not already done)
 kubectl create secret generic neo4j-admin-secret \
   --from-literal=username=neo4j --from-literal=password=admin123
 
-# 2. Apply a simple backup to local PVC storage
 kubectl apply -f examples/backup-restore/backup-pvc-simple.yaml
-```
-
-### Step 2: Monitor Progress
-
-```bash
-# Watch backup status
 kubectl get neo4jbackups simple-backup -w
-
-# Check backup job logs
-kubectl logs job/simple-backup-backup
 ```
 
-### Step 3: What You Just Created
-
-- **Backup Resource**: Backs up your `single-node-cluster` to local PVC storage
-- **Compression**: Automatically compresses backup data
-- **Verification**: Validates backup integrity after creation
-- **Retention**: Keeps the 5 most recent backups
-
-**Success Indicator**: Status should show `Completed` with `BackupSuccessful` condition.
-
-### Next Steps by User Type
-
-- **Teams/Production**: Continue to [Cloud Storage Authentication](#cloud-storage-authentication) → [Scheduled Backups](#scheduled-backup-examples)
-- **Developers**: Try [Database-Specific Backups](#database-backup-examples) → [Restore Testing](#simple-restore-examples)
-- **Enterprise**: Jump to [Point-in-Time Recovery](#point-in-time-recovery-pitr) → [Advanced Configuration](#advanced-configuration)
-
----
+Watch for `status.phase: Completed`. Logs at `kubectl logs job/simple-backup-backup`.
 
 ## Prerequisites
 
-- Neo4j Enterprise cluster or standalone running version **5.26.0+** (semver) or **2025.01.0+** (CalVer)
-- Kubernetes cluster with the Neo4j Operator installed
-- Appropriate storage backend configured (S3, GCS, Azure, or PVC)
-- Admin credentials for the Neo4j instance
-
-## Supported Deployment Types
-
-Both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone` are fully supported as backup and restore targets. The `clusterRef` field (on restore) and `target.name` / `target.clusterRef` fields (on backup) can reference either type — the operator detects the deployment type automatically.
-
-## Neo4j Version Requirements
-
-Backup and restore require Neo4j Enterprise 5.26.0 or later, or CalVer 2025.01.0+.
-
-**Supported Versions:**
-- **Semver**: 5.26.0, 5.26.1 (5.26.x is the last semver LTS — no 5.27+ exists)
-- **CalVer**: 2025.01.0, 2025.04.0, 2026.01.0, etc.
-- **Enterprise tags required**: `neo4j:5.26.0-enterprise`, `neo4j:2025.01.0-enterprise`
-
----
+- Neo4j Enterprise **5.26.0+** (semver) or **2025.01.0+** (CalVer), enterprise image tag (`neo4j:X-enterprise`)
+- Admin credentials Secret
+- Storage backend: PVC, S3, GCS, or Azure
 
 ## Backup Architecture
 
-### How Backups Work
+The operator spawns a Kubernetes Job that runs `neo4j-admin database backup` from the same Neo4j Enterprise image as the cluster (no sidecar containers). The Job connects to each `{cluster}-server-N` Pod on port 6362 (`server.backup.listen_address=0.0.0.0:6362`, configured automatically). For cloud destinations, `neo4j-admin` streams directly to the bucket — set `tempStorage` for large databases that need a PVC for staging.
 
-The operator runs a Kubernetes **Job** that executes `neo4j-admin database backup` directly inside the **same Neo4j Enterprise image** as your cluster. No sidecar containers, no separate tooling images.
-
-**End-to-end flow:**
-
-1. You create a `Neo4jBackup` resource.
-2. The operator creates a Kubernetes Job using the same Neo4j Enterprise image as your cluster.
-3. The Job runs `neo4j-admin database backup --from=<server-pod-fqdn>:6362 --to-path=<destination>` against each server pod.
-4. For cloud storage destinations (`s3://`, `gs://`, `azb://`), `neo4j-admin` streams data directly to the cloud — no intermediate local copy is required. For large databases, configure `tempStorage` to provision a PVC for staging (see [Temporary Storage for Cloud Operations](#temporary-storage-for-cloud-operations)).
-5. The operator updates the `Neo4jBackup` status as the Job progresses.
-
-**Backup listen address**: The operator automatically configures `server.backup.listen_address=0.0.0.0:6362` in each server pod's `neo4j.conf`, so backup Jobs can reach any server pod without additional manual configuration.
-
-**Pod naming**: Backup Jobs connect to `{cluster-name}-server-0`, `{cluster-name}-server-1`, etc., using their full Kubernetes DNS FQDNs on port 6362.
-
-### RBAC
-
-The operator automatically creates a `neo4j-backup-sa` ServiceAccount in the same namespace as your backup resource. Backup Jobs run as this service account.
-
-**No Role or RoleBinding is created** — backup Jobs invoke `neo4j-admin` directly against the backup port; no Kubernetes API access is needed by the backup process itself.
-
-If you are using **Workload Identity** (AWS IRSA, GKE Workload Identity, or Azure Workload Identity), you attach annotations to the `neo4j-backup-sa` ServiceAccount via the `cloud.identity.autoCreate.annotations` field (see [Cloud Storage Authentication](#cloud-storage-authentication)).
+Backup Jobs run as the auto-created `neo4j-backup-sa` ServiceAccount in the same namespace. For Workload Identity (IRSA / GKE WI / Azure WI), annotate the SA via `cloud.identity.autoCreate.annotations` — see [Cloud Storage Authentication](#cloud-storage-authentication).
 
 ### Backup Types
 
@@ -432,7 +366,7 @@ spec:
   options:
     compress: true
     verify: true
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
   retention:
     maxAge: "30d"
@@ -465,7 +399,7 @@ spec:
   options:
     compress: true
     verify: true
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
   retention:
     maxAge: "30d"
@@ -495,7 +429,7 @@ spec:
   options:
     compress: true
     verify: true
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
   retention:
     maxAge: "30d"
@@ -523,7 +457,7 @@ spec:
   options:
     compress: true
     verify: true
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
 ```
 
@@ -553,7 +487,7 @@ spec:
   options:
     compress: true
     verify: true
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
     encryption:
       enabled: true
@@ -583,7 +517,7 @@ spec:
   options:
     compress: true
     verify: true
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
 ```
 
@@ -611,7 +545,7 @@ spec:
     backupType: DIFF
     compress: true
     verify: true
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
 ```
 
@@ -623,7 +557,7 @@ By default, differential backups use the most recent **full** backup as their pa
 options:
   backupType: DIFF
   preferDiffAsParent: true  # CalVer 2025.04+ only
-  tempStorage:\
+  tempStorage:
     size: "50Gi"
 ```
 
@@ -635,7 +569,7 @@ For cloud storage destinations, `neo4j-admin` may use local disk space during st
 
 ```yaml
 options:
-  tempStorage:\
+  tempStorage:
     size: "50Gi"
 ```
 
@@ -667,7 +601,7 @@ spec:
   options:
     compress: true
     verify: true
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
   retention:
     maxAge: "168h"
@@ -708,7 +642,7 @@ spec:
   options:
     compress: true
     verify: true
-    tempStorage:\
+    tempStorage:
       size: "50Gi"
     encryption:
       enabled: true
@@ -1023,54 +957,6 @@ spec:
 
 ---
 
-## Decision Guide: Choose Your Backup Strategy
-
-### Quick Decision Tree
-
-```
-Are you just getting started?
-├── YES → PVC backup (beginner)
-└── NO ↓
-
-Do you need production-grade cloud durability?
-├── YES → Cloud storage (S3 / GCS / Azure)
-└── NO → PVC backup is sufficient
-
-Are you on a managed Kubernetes service (EKS, GKE, AKS)?
-├── YES → Use Workload Identity (no long-lived credentials)
-└── NO → Use explicit credentialsSecretRef
-
-Do you need compliance / precise recovery points?
-├── YES → Point-in-Time Recovery (PITR)
-└── NO → Regular backup / restore is sufficient
-
-Do you need smaller, faster incremental backups?
-├── YES → Differential backups (DIFF)
-└── NO → Full backups suffice
-```
-
-### Storage Backend Comparison
-
-| Factor | PVC | S3 | GCS | Azure |
-|--------|-----|----|----|-------|
-| **Setup Complexity** | Simple | Medium | Medium | Medium |
-| **Cost** | Low | Medium | Medium | Medium |
-| **Durability** | Cluster-dependent | 99.999999999% | 99.999999999% | 99.999999999% |
-| **Multi-region** | No | Yes | Yes | Yes |
-| **Encryption at rest** | Optional | Built-in | Built-in | Built-in |
-| **Best For** | Dev/Test | AWS prod | GCP prod | Azure prod |
-
-### Backup Frequency Recommendations
-
-| Environment | Frequency | Retention | Storage |
-|-------------|-----------|-----------|---------|
-| **Development** | Manual | 3–5 backups | PVC |
-| **Staging** | Daily | 7 days | Cloud |
-| **Production** | Daily + Weekly | 30d + 90d | Cloud |
-| **Critical Systems** | Daily + PITR | 90d + compliance | Multi-region cloud |
-
----
-
 ## Monitoring Backup and Restore Operations
 
 ### Checking Backup Status
@@ -1117,34 +1003,14 @@ kubectl get events --field-selector involvedObject.name=restore-operation
 
 ---
 
-## Best Practices
+## Operational Notes
 
-### Backup Best Practices
-
-1. **Regular Testing**: Regularly run restore procedures in a test environment to verify your backups are usable.
-2. **Multiple Retention Tiers**: Use different retention policies for daily vs. weekly backups.
-3. **Encryption**: Enable encryption for sensitive data, especially in multi-tenant environments.
-4. **Verification**: Always enable `verify: true` to catch corrupted backups early.
-5. **Cross-Region**: Store backups in a different region from your cluster for disaster recovery.
-6. **tempPath for cloud**: Always set `tempPath` for cloud-destination backups to avoid filling the pod filesystem.
-7. **Lifecycle Rules**: Configure bucket lifecycle rules for cloud storage — the operator does not manage cloud object expiry directly.
-8. **Monitoring**: Set up alerting on `Neo4jBackup` status conditions.
-
-### Restore Best Practices
-
-1. **Stop the cluster**: Use `stopCluster: true` to ensure consistency during restore.
-2. **Verify before restoring**: Enable `verifyBackup: true`.
-3. **Test in non-production first**: Always validate the restore procedure on a non-production cluster before relying on it in an incident.
-4. **Document procedures**: Keep a written runbook for common recovery scenarios.
-5. **Automatic database creation**: The operator handles `CREATE DATABASE` and `START DATABASE` after restore — no manual Cypher needed.
-
-### Security Best Practices
-
-1. **Prefer Workload Identity**: Use IAM roles / Workload Identity in managed Kubernetes environments instead of long-lived static credentials.
-2. **Rotate credentials**: Rotate `credentialsSecretRef` Secrets regularly if you use explicit credentials.
-3. **Least-privilege IAM**: Grant only the bucket-level permissions actually needed (`PutObject`, `GetObject`, `ListBucket`, `DeleteObject`).
-4. **Network Policies**: Restrict egress from backup Job pods to the backup port (6362) and your cloud storage endpoints.
-5. **Encrypt backups**: Use backup encryption for sensitive databases, especially in regulated industries.
+- Always enable `verify: true` so corruption is caught at backup time, not at restore time.
+- For cloud destinations, set `tempStorage` (PVC for staging) on large databases — without it `neo4j-admin` buffers in the Pod's filesystem.
+- The operator doesn't manage cloud object expiry — configure bucket lifecycle rules to delete old backups.
+- Restore is non-trivial post-incident; rehearse it against a staging cluster at least once.
+- Prefer Workload Identity (IRSA / GKE WI / Azure WI) over static credentials. Rotate `credentialsSecretRef` Secrets if you do use them.
+- IAM permissions needed: `PutObject`, `GetObject`, `ListBucket`, `DeleteObject` on the backup bucket prefix.
 
 ---
 

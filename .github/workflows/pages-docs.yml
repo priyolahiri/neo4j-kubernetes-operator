@@ -41,6 +41,15 @@ concurrency:
   group: gh-pages
   cancel-in-progress: false
 
+# Silence the mkdocs-material team's MkDocs 2.0 deprecation banner on
+# every mkdocs/mike invocation. The banner is a vendor protest message
+# (https://squidfunk.github.io/mkdocs-material/blog/2026/02/18/mkdocs-2.0/)
+# unrelated to our docs and noisy in CI logs. The env var is the
+# officially documented suppression switch in mkdocs-material itself
+# (see material/templates/__init__.py).
+env:
+  NO_MKDOCS_2_WARNING: "true"
+
 jobs:
   publish:
     runs-on: ubuntu-latest
