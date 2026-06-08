@@ -378,8 +378,14 @@ gh release list --repo neo4j-partners/neo4j-kubernetes-operator
 
 - **Kubernetes**: Version 1.32 or higher
 - **Neo4j**: Version 5.26 LTS (the final SemVer release) or any CalVer release (2025.x, 2026.x, and onward)
-- **cert-manager**: Version 1.20+ (optional, only required for TLS-enabled Neo4j deployments)
+- **cert-manager**: Version 1.20+ (optional, only required for Neo4j deployments that use cert-manager TLS, i.e. `spec.tls.mode: cert-manager`)
 - **Permissions**: Cluster-admin access for CRD and RBAC installation
+
+> **cert-manager install order**: The operator installs and runs fine without cert-manager. It only watches cert-manager `Certificate` resources when the cert-manager CRDs are present *at operator startup*. If you install cert-manager **after** the operator, restart the operator so the watch becomes active:
+> ```
+> kubectl rollout restart deployment/neo4j-operator-controller-manager -n neo4j-operator-system
+> ```
+> If you know you'll use cert-manager TLS, install cert-manager **before** the operator to avoid the restart.
 
 > **OpenShift note**: Clusters enforcing SCCs with allocated UID/FSGroup ranges should disable the chart’s pod security context so SCC can inject IDs, then bind an appropriate SCC (e.g., `restricted`) to the operator service account:
 > ```
