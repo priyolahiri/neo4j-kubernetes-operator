@@ -357,6 +357,17 @@ spec:
 
 **Best for:** Development, testing, getting started, air-gapped environments.
 
+#### PVC ownership: auto-provision vs bring-your-own
+
+`storage.pvc.size` is the switch:
+
+| Pattern | YAML | Lifecycle |
+|---|---|---|
+| **Operator auto-provisions** | Set `name` + `size` (+ optional `storageClassName`) | PVC is owner-ref'd to the Neo4jBackup CR. Deleted when the CR is deleted (backups go with it). |
+| **Bring your own PVC** | Set `name` only; omit `size` | Operator just mounts the existing PVC. Survives CR deletion. Pre-create it however you like (kubectl, Helm, Velero, static binding, NFS, etc.). |
+
+Use bring-your-own when you want backups to survive `kubectl delete neo4jbackup`, or to share one PVC across multiple Neo4jBackup CRs (e.g. one daily + one weekly schedule writing to the same volume).
+
 #### Cluster Backup to S3 with Explicit Credentials
 
 ```yaml
