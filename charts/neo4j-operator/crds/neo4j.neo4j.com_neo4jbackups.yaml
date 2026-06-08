@@ -61,6 +61,31 @@ spec:
           spec:
             description: Neo4jBackupSpec defines the desired state of Neo4jBackup
             properties:
+              chainFromBackup:
+                description: |-
+                  ChainFromBackup names another Neo4jBackup CR in the same namespace
+                  whose `<base>/<cr-name>/` directory this CR should write into INSTEAD
+                  of its own. Use this to compose mixed-cadence backup workflows: a
+                  daily FULL backup CR plus an hourly DIFF backup CR that chains off
+                  the daily's artifacts. `neo4j-admin database backup --type=DIFF`
+                  auto-detects the prior full/diff in the shared directory and chains
+                  the new diff off it.
+
+                  Constraints (enforced by the validator):
+                    - Must reference a CR in the same namespace.
+                    - Cannot self-reference (`chainFromBackup: <this-cr-name>` is
+                      rejected).
+                    - Target (cluster + database) must match the referenced CR.
+                    - Storage backend (type + bucket/path) must match.
+
+                  Runtime: the operator labels every backup Job with
+                  `app.kubernetes.io/part-of: <chain-root-name>` and refuses to
+                  submit a new Job while another Job sharing the same `part-of`
+                  label is still active — prevents the daily FULL and hourly DIFF
+                  from racing against the same artifact directory.
+
+                  Empty (default): write to this CR's own per-name directory.
+                type: string
               cloud:
                 description: Cloud configuration for cloud storage
                 properties:

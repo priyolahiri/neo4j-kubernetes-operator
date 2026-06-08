@@ -72,6 +72,17 @@ func (v *BackupValidator) Validate(backup *neo4jv1beta1.Neo4jBackup) field.Error
 		allErrs = append(allErrs, v.validateBackupOptions(backup.Spec.Options)...)
 	}
 
+	// chainFromBackup self-reference check. Cross-CR consistency
+	// (target match + storage match) is enforced by the reconciler at
+	// reconcile time, because it requires a client lookup.
+	if backup.Spec.ChainFromBackup != "" && backup.Spec.ChainFromBackup == backup.Name {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "chainFromBackup"),
+			backup.Spec.ChainFromBackup,
+			"cannot chain to self",
+		))
+	}
+
 	return allErrs
 }
 

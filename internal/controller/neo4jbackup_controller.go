@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"os"
 	"sort"
@@ -271,7 +272,7 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 		shardArtifacts := r.expectedShardArtifactsForBackup(ctx, latest)
 		for i := range jobs.Items {
 			job := &jobs.Items[i]
-			run, ok := jobToBackupRun(job, latest.Name)
+			run, ok := jobToBackupRun(job, chainRoot(latest))
 			if !ok {
 				continue // still running
 			}
@@ -457,6 +458,14 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 	// Create backup job
 	job, err := r.createBackupJob(ctx, backup, cluster)
 	if err != nil {
+		// errChainBusy is transient — another CR sharing the chain
+		// (parent or sibling chainFromBackup) is still running. Route to
+		// Pending and requeue rather than terminal Failed.
+		if stderrors.Is(err, errChainBusy) {
+			logger.Info("Backup waiting for chained CR to finish", "error", err.Error())
+			r.updateBackupStatus(ctx, backup, "Pending", err.Error())
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
 		logger.Error(err, "Failed to create backup job")
 		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to create backup job: %v", err))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
@@ -558,7 +567,12 @@ func backupLabels(backup *neo4jv1beta1.Neo4jBackup, component string) map[string
 		"app.kubernetes.io/instance":   backup.Name,
 		"app.kubernetes.io/component":  component,
 		"app.kubernetes.io/managed-by": "neo4j-operator",
-		"neo4j.com/backup-target":      backupTargetName(backup),
+		// part-of identifies the chain root — same value for every CR
+		// chained off this one. Used by waitForChainConcurrencyClear to
+		// block a Job submission while another Job in the same chain is
+		// still active.
+		"app.kubernetes.io/part-of": chainRoot(backup),
+		"neo4j.com/backup-target":   backupTargetName(backup),
 	}
 }
 
@@ -655,11 +669,100 @@ func (r *Neo4jBackupReconciler) ensureBackupPVC(ctx context.Context, backup *neo
 	return r.Create(ctx, pvc)
 }
 
+// errChainBusy is returned by waitForChainConcurrencyClear when another
+// Job belonging to the same chain is still active. Callers route to
+// Pending+requeue rather than failing.
+var errChainBusy = fmt.Errorf("another backup in this chain is still running")
+
+// validateChainParent enforces cross-CR consistency for a backup with
+// spec.chainFromBackup set:
+//   - the named parent CR must exist in the same namespace
+//   - both CRs must target the same cluster + database (a chain that
+//     pulled artifacts from a different DB would be incoherent)
+//   - both CRs must use the same storage backend so the directory
+//     actually overlaps (s3 + s3, same bucket + path, etc.)
+//
+// Returns a permanent error (caller routes to Failed) when the parent
+// is missing or fields diverge. Returns nil when chainFromBackup is
+// empty (non-chained CR — no checks needed).
+func (r *Neo4jBackupReconciler) validateChainParent(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
+	if backup.Spec.ChainFromBackup == "" {
+		return nil
+	}
+	parent := &neo4jv1beta1.Neo4jBackup{}
+	key := types.NamespacedName{Name: backup.Spec.ChainFromBackup, Namespace: backup.Namespace}
+	if err := r.Get(ctx, key, parent); err != nil {
+		return fmt.Errorf("chainFromBackup %q not found in namespace %q: %w",
+			backup.Spec.ChainFromBackup, backup.Namespace, err)
+	}
+	if parent.Spec.Target.Kind != backup.Spec.Target.Kind ||
+		parent.Spec.Target.Name != backup.Spec.Target.Name ||
+		parent.Spec.Target.ClusterRef != backup.Spec.Target.ClusterRef {
+		return fmt.Errorf("chainFromBackup %q targets {kind=%q name=%q clusterRef=%q} but this backup targets {kind=%q name=%q clusterRef=%q}; chained backups must share the same target",
+			parent.Name, parent.Spec.Target.Kind, parent.Spec.Target.Name, parent.Spec.Target.ClusterRef,
+			backup.Spec.Target.Kind, backup.Spec.Target.Name, backup.Spec.Target.ClusterRef)
+	}
+	if parent.Spec.Storage.Type != backup.Spec.Storage.Type ||
+		parent.Spec.Storage.Bucket != backup.Spec.Storage.Bucket ||
+		parent.Spec.Storage.Path != backup.Spec.Storage.Path {
+		return fmt.Errorf("chainFromBackup %q uses storage {type=%q bucket=%q path=%q} but this backup uses {type=%q bucket=%q path=%q}; chained backups must share the same storage location",
+			parent.Name, parent.Spec.Storage.Type, parent.Spec.Storage.Bucket, parent.Spec.Storage.Path,
+			backup.Spec.Storage.Type, backup.Spec.Storage.Bucket, backup.Spec.Storage.Path)
+	}
+	return nil
+}
+
+// waitForChainConcurrencyClear lists Jobs in the namespace labeled
+// `app.kubernetes.io/part-of=<chain-root>` and reports errChainBusy if
+// any has status.active > 0. Used to coordinate concurrent runs across
+// chained CRs (e.g. daily FULL still running while hourly DIFF wants
+// to fire) — without this guard two backups can write to the same
+// directory simultaneously, which neo4j-admin's chain detection
+// doesn't tolerate.
+//
+// Single-CR concurrency is still handled by `CronJob.concurrencyPolicy:
+// Forbid` on the scheduled path; this helper covers the across-CR case
+// that Kubernetes doesn't natively coordinate.
+func (r *Neo4jBackupReconciler) waitForChainConcurrencyClear(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
+	jobs := &batchv1.JobList{}
+	if err := r.List(ctx, jobs,
+		client.InNamespace(backup.Namespace),
+		client.MatchingLabels{
+			"app.kubernetes.io/managed-by": "neo4j-operator",
+			"app.kubernetes.io/component":  "backup",
+			"app.kubernetes.io/part-of":    chainRoot(backup),
+		},
+	); err != nil {
+		return fmt.Errorf("list chained backup Jobs: %w", err)
+	}
+	for i := range jobs.Items {
+		if jobs.Items[i].Status.Active > 0 {
+			return fmt.Errorf("Job %q (chain root %q): %w",
+				jobs.Items[i].Name, chainRoot(backup), errChainBusy)
+		}
+	}
+	return nil
+}
+
 func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
 	// Glob-safety check for sharded backups: refuse to submit a Job whose
 	// `{name}*` neo4j-admin glob would also pull in unrelated databases. No-op
 	// for non-sharded kinds.
 	if err := r.shardedPreflightGlobSafety(ctx, backup, cluster); err != nil {
+		return nil, err
+	}
+
+	// Cross-CR consistency check for chainFromBackup. Returns a permanent
+	// error when the parent CR is missing or target/storage diverges —
+	// caller routes to Failed.
+	if err := r.validateChainParent(ctx, backup); err != nil {
+		return nil, err
+	}
+
+	// Refuse to start while another Job in the same chain (parent or
+	// sibling chained CR) is still running. The caller routes
+	// errChainBusy to Pending+requeue.
+	if err := r.waitForChainConcurrencyClear(ctx, backup); err != nil {
 		return nil, err
 	}
 
@@ -1026,19 +1129,20 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 // BackupRun.ArtifactFilename / ShardArtifacts.Filename so restores can
 // pin a specific run.
 //
-// The path embeds the CR name as a per-CR segment (`<base>/<cr-name>/`)
-// so multiple Neo4jBackup CRs sharing a storage location stay isolated.
-// Without this segment, two CRs (e.g. `daily-prod-backup` and
-// `weekly-prod-backup`) pointed at the same bucket+path would commingle
-// artifacts and break diff chaining for whichever CR's history doesn't
-// match the most-recent FULL on disk.
+// The path embeds a per-chain segment (`<base>/<chain-root>/`). The
+// chain root is `spec.chainFromBackup` if set (so e.g. a daily-DIFF CR
+// can chain into a daily-FULL CR's directory), otherwise the CR's own
+// name. This is what supports mixed-cadence FULL+DIFF workflows: two
+// CRs intentionally sharing one directory via the chainFromBackup link.
+// Two unrelated CRs still stay isolated because they each get their own
+// chain-root segment.
 func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1beta1.Neo4jBackup) string {
 	st := backup.Spec.Storage
 	p := st.Path
 	if p == "" {
 		p = "backups"
 	}
-	crSegment := backup.Name
+	crSegment := chainRoot(backup)
 	switch st.Type {
 	case "s3":
 		return fmt.Sprintf("s3://%s/%s/%s", st.Bucket, p, crSegment)
@@ -1049,6 +1153,20 @@ func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1beta1.Neo4jBackup) st
 	default: // pvc
 		return fmt.Sprintf("/backup/%s", crSegment)
 	}
+}
+
+// chainRoot returns the directory segment under spec.storage.path that
+// this backup writes into: the value of spec.chainFromBackup when set
+// (the parent CR's name), otherwise the CR's own name.
+//
+// All chained CRs of one chain return the same root, so they share a
+// `--to-path` directory and `neo4j-admin` can resolve the
+// full/diff chain across them at backup and restore time.
+func chainRoot(backup *neo4jv1beta1.Neo4jBackup) string {
+	if backup.Spec.ChainFromBackup != "" {
+		return backup.Spec.ChainFromBackup
+	}
+	return backup.Name
 }
 
 // backupRunIDEnvVar exposes the backing Job's name to the backup Pod as
@@ -1480,7 +1598,7 @@ func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *
 func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, job *batchv1.Job) {
 	logger := log.FromContext(ctx)
 
-	run, ok := jobToBackupRun(job, backup.Name)
+	run, ok := jobToBackupRun(job, chainRoot(backup))
 	if !ok {
 		// Job is neither Succeeded nor Failed — nothing terminal to record.
 		// handleExistingBackupJob only calls us once one branch is true, so

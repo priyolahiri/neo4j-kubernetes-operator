@@ -572,6 +572,46 @@ spec:
       size: "50Gi"
 ```
 
+#### Mixed-cadence backups: daily FULL + hourly DIFF
+
+`spec.chainFromBackup` composes two CRs into one backup chain — typically a daily FULL CR plus an hourly (or per-minute) DIFF CR that chains off it. Both CRs write to the **same directory** (`<base>/<daily-cr-name>/`); `neo4j-admin --type=DIFF` discovers the prior FULL and chains the diff off it.
+
+```yaml
+# Daily FULL (Sundays at 02:00 — or any cadence)
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jBackup
+metadata: { name: inventory-daily }
+spec:
+  target:    { kind: Database, name: inventory, clusterRef: my-cluster }
+  schedule:  "0 2 * * *"
+  storage:   { type: s3, bucket: backups, path: prod, cloud: {…} }
+  options:   { backupType: FULL }
+  retention: { maxCount: 30 }
+---
+# Hourly DIFF — chains into the daily's directory
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jBackup
+metadata: { name: inventory-hourly }
+spec:
+  target:          { kind: Database, name: inventory, clusterRef: my-cluster }
+  schedule:        "30 * * * *"      # offset 30 min to avoid racing the daily
+  chainFromBackup: inventory-daily   # ← shared directory
+  storage:         { type: s3, bucket: backups, path: prod, cloud: {…} }
+  options:         { backupType: DIFF }
+  retention:       { maxCount: 168 }
+```
+
+**Constraints** (validator-enforced; mismatches → `status.phase=Failed`):
+
+- The parent CR (`inventory-daily`) must exist in the same namespace.
+- Both CRs must have the same `target` (kind + name + clusterRef).
+- Both CRs must use the same storage backend (type + bucket + path).
+- `chainFromBackup` cannot point to self.
+
+**Concurrent runs across chained CRs are blocked automatically.** Each Job carries an `app.kubernetes.io/part-of: <chain-root>` label; the operator refuses to start a new backup Job while any other Job in the same chain is still active (`status.active>0`) — routes the new run to `Pending` and requeues. This prevents the hourly DIFF from firing while the daily FULL is still writing, which would corrupt the chain. Offsetting schedules (different minute on the hour) avoids the wait in practice.
+
+**Restore** via either CR (`Neo4jRestore.spec.source.backupRef: inventory-daily` or `inventory-hourly`) resolves to the same shared directory. `CloudSeedProvider` scans the directory and applies the full chain forward to the latest artifact — you get the state at the last successful DIFF.
+
 #### `preferDiffAsParent` (CalVer 2025.04+ only)
 
 By default, differential backups use the most recent **full** backup as their parent. On CalVer 2025.04 and later, you can instruct the operator to use the most recent **differential** backup as the parent instead, creating a chain of incrementally smaller backups:
