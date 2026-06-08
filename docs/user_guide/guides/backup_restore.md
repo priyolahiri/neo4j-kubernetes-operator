@@ -26,6 +26,18 @@ The operator spawns a Kubernetes Job that runs `neo4j-admin database backup` fro
 
 Backup Jobs run as the auto-created `neo4j-backup-sa` ServiceAccount in the same namespace. For Workload Identity (IRSA / GKE WI / Azure WI), annotate the SA via `cloud.identity.autoCreate.annotations` — see [Cloud Storage Authentication](#cloud-storage-authentication).
 
+### Storage Layout
+
+All runs of a single `Neo4jBackup` CR write to the **same directory**: `<storage.path>/<cr-name>/`. This is what `neo4j-admin` requires for differential backup chaining — every diff run reads the prior full from the same directory to compute the delta. Per-run identity is preserved by the timestamp `neo4j-admin` embeds in each artifact filename (`<dbname>-YYYY-MM-DDThh-mm-ss.backup`).
+
+Each scheduled run appends to `status.history[]` with a unique `runID` (Job UID) and the captured artifact filename. To list runs:
+
+```bash
+kubectl get neo4jbackup daily-backup -o jsonpath='{.status.history[*].runID}'
+```
+
+Two different `Neo4jBackup` CRs pointing at the same bucket+path stay isolated by the per-CR segment. To chain runs for diff support, you must reuse the same CR (typically via `spec.schedule`).
+
 ### Backup Types
 
 | Type | Description | `backupType` value |
@@ -33,7 +45,7 @@ Backup Jobs run as the auto-created `neo4j-backup-sa` ServiceAccount in the same
 | **Full** | Complete snapshot of all database files | `FULL` |
 | **Differential** | Only pages changed since the last full backup | `DIFF` |
 
-Differential backups are significantly smaller and faster for large databases. The operator selects the correct parent backup automatically (most recent full by default; or most recent differential if `preferDiffAsParent: true` is set — requires CalVer 2025.04+).
+Differential backups are significantly smaller and faster for large databases. Because all runs share a directory, `neo4j-admin` auto-detects the chain — set `backupType: DIFF` and the operator points `--to-path` at the directory containing the prior full. Set `preferDiffAsParent: true` (CalVer 2025.04+) to chain diffs off the latest diff instead of the latest full.
 
 ### Storage Backends
 
@@ -685,14 +697,25 @@ spec:
 
 ### How Restore Works
 
-When you create a `Neo4jRestore` resource:
+The operator picks the right restore method based on the target kind. The Neo4j docs flag `neo4j-admin database restore` as **unsafe on clusters** ("not safe on a cluster since clusters have additional state that would be inconsistent with the restored database"), so the operator uses different paths:
 
-1. The operator creates a Kubernetes Job that runs `neo4j-admin database restore` using the same Neo4j Enterprise image.
-2. The Job restores the database files from the specified source location.
-3. After the restore Job completes successfully, the operator **automatically creates or starts the database** via Bolt:
-   - If the database does not exist: runs `CREATE DATABASE <dbname>` automatically.
-   - If the database exists but is stopped: runs `START DATABASE <dbname>` automatically.
-4. **No manual post-restore Cypher is required** to bring the database online.
+| Target | Restore method | Backed by |
+|---|---|---|
+| `Neo4jEnterpriseCluster` (standard DB) | Cypher over Bolt — no Job | `dbms.recreateDatabase(name, {seedURI})` if the DB exists, otherwise `CREATE DATABASE name OPTIONS { seedURI } WAIT` |
+| `Neo4jEnterpriseStandalone` | Kubernetes Job | `neo4j-admin database restore --from-path=<latest-file-in-chain>` followed by `CREATE/START DATABASE` |
+| `Neo4jShardedDatabase` (sharded) | Rejected with actionable error | Use `Neo4jShardedDatabase.spec.replaceExisting: true` + `force: true` instead — see [Property Sharding](../property_sharding.md) |
+
+**Cluster path (Cypher)**:
+- The operator passes the backup directory URI (`s3://bucket/<path>/<backup-cr-name>/`) as `seedURI`. Neo4j's `CloudSeedProvider` scans the directory and applies the full + differential chain automatically.
+- `dbms.recreateDatabase` preserves user/role privileges on the existing database; no `DROP DATABASE` needed.
+- For new databases, the operator emits `CREATE DATABASE … OPTIONS { seedURI: '…' } WAIT`.
+- Both forms block until the new state is online — when the restore returns, the database is ready.
+
+**Standalone path (Job)**:
+- The operator spawns a Kubernetes Job that mounts the backup PVC (or streams from cloud storage), runs `neo4j-admin database restore --from-path=<latest-file>`, then automatically runs `CREATE DATABASE` or `START DATABASE` over Bolt.
+- The `<latest-file>` is resolved at Pod startup via shell substitution (`ls <dir>/<dbname>-*.backup | tail -1`), so the most recent run in the chain wins by default.
+
+**No manual post-restore Cypher is required** for either path.
 
 ### Simple Restore Examples
 
@@ -739,29 +762,24 @@ spec:
       cloud:
         provider: aws
         credentialsSecretRef: aws-backup-creds
-    # backupPath is the per-run subfolder recorded in
-    # Neo4jBackup.status.history[*].backupsPath. Get the value for
-    # the run you want to restore:
-    #
-    #   kubectl get neo4jbackup daily-backup \
-    #     -o jsonpath='{.status.history[?(@.runID=="<run-id>")].backupsPath}'
-    #
-    # neo4j-admin's --from-path auto-discovers .backup files inside the
-    # subfolder, so pointing at the folder (not a specific file) restores
-    # from that historical run.
-    backupPath: daily-backup-cron-1737028800
+    # backupPath is the per-CR shared directory recorded on
+    # Neo4jBackup.status.history[*].backupsPath. All runs of one CR
+    # live in the same directory; CloudSeedProvider scans it and
+    # applies the full + diff chain automatically (cluster targets).
+    # Standalone targets pick the latest file via `ls … | tail -1`.
+    backupPath: daily-backup
   options:
     verifyBackup: true
     replaceExisting: true
     tempStorage:
       size: "50Gi"
   force: true
-  stopCluster: true
+  stopCluster: true   # ignored on cluster targets (Cypher path); honored on standalone
 ```
 
-**Best for:** Cross-cluster recovery, disaster recovery from a specific historical backup run.
+**Best for:** Cross-cluster recovery, disaster recovery from a known directory in storage (no `Neo4jBackup` CR available in this namespace).
 
-> **Restoring from a specific historical run** (issue #129): every scheduled or one-shot backup run writes its `.backup` artifacts into a run-specific subfolder under `spec.storage.path`, named after the backing Job. The subfolder name is recorded on each history entry as `status.history[i].backupsPath`. To restore from any run in history, set `Neo4jRestore.spec.source.backupPath` to that subfolder name. Older runs predating this change (operator < v1.10) wrote artifacts flat into `spec.storage.path` and have an empty `backupsPath` — point `Neo4jRestore.spec.source.backupPath` directly at the `.backup` file for those.
+> **Restoring a specific historical run**: every run lives in the same shared directory; restore default behavior is "latest run in the chain wins" — cluster targets via `CloudSeedProvider` chain scan, standalone via `tail -1` of timestamped filenames. To pin to an earlier run, you'd need to keep a snapshot of the directory at that point in time (cloud lifecycle rules or versioning).
 
 #### Restore to a Standalone Instance
 

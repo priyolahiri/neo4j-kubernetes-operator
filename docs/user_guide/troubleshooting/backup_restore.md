@@ -301,27 +301,52 @@ kubectl logs target-cluster-server-0 | grep -i restore
    kubectl exec target-cluster-server-0 -- neo4j version
    ```
 
-#### Symptom: Restore Job succeeds but data isn't visible after restore (multi-server clusters)
+#### Symptom: Cluster restore reports `Failed` with "Cluster missing seed credentials projection"
 
-**Cause:** The restore Job writes to a single PVC (`data-{cluster}-server-0`). In a multi-server cluster, post-restart bootstrap can place the database's primary on any server. If the primary lands on a non-server-0 pod (which still has stale data), that server wins consensus and overwrites the restored data on re-sync.
+**Cause:** the cluster pods need the cloud credentials Secret projected via `spec.extraEnvFrom` so the JVM's AWS/GCP/Azure SDK can authenticate the `seedURI` fetch from `CloudSeedProvider`.
 
-The operator's post-restore step calls `dbms.[cluster.]recreateDatabase` with server-0 as the seed to force every server to re-sync from the restored data. Verify this ran:
+**Fix:**
 
-```bash
-# Look for the re-seed event in the operator log
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager \
-  | grep "Re-seeded restored database"
-# Expected log entry includes seedServerID (a UUID), seedHostname (e.g. mycluster-server-0),
-# and procedure (dbms.cluster.recreateDatabase or dbms.recreateDatabase).
+```yaml
+# On the Neo4jEnterpriseCluster CR:
+spec:
+  extraEnvFrom:
+    - secretRef:
+        name: <your-backup-creds-secret>
 ```
 
-**If the re-seed entry is absent:**
-- Check the Neo4j version. The procedure requires SemVer 5.24+ (including 5.26 LTS) or CalVer 2025.02+. Older versions skip the step and log `Skipping post-restore recreate`.
-- On unsupported versions, manually re-seed by running the recreate procedure yourself, or restore on a single-server cluster.
+Or, set the annotation `neo4j.com/auto-inherit-seed-creds=true` on the cluster CR — the operator will patch `extraEnvFrom` automatically (triggers a rolling restart so Neo4j picks up the env vars).
 
-**If the re-seed entry shows `seedServerID: ""`:** the operator couldn't match `{cluster}-server-0` against `SHOW SERVERS YIELD address`. The cluster fell back to Neo4j's auto-select which may pick the wrong server. File an issue with the operator logs and `SHOW SERVERS` output from `kubectl exec {cluster}-server-0 -- cypher-shell -u neo4j -p <pw> 'SHOW SERVERS'`.
+#### Symptom: Cluster restore stuck in `Running`, no Job created
 
-**If the re-seed entry shows a `Failed to recreate restored database` Event:** check the operator log for the underlying Cypher error. Most common causes are missing privileges (`CREATE DATABASE` + `DROP DATABASE` are required on the admin user) or the system DB being unavailable.
+**Expected.** Cluster Neo4jRestore targets use the Cypher path (`dbms.recreateDatabase` or `CREATE DATABASE OPTIONS{seedURI}`) — no Job is spawned. Check the operator log:
+
+```bash
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager \
+  | grep -E "Cluster Cypher restore|recreateDatabase|CREATE DATABASE"
+```
+
+If you see `No seed providers found to satisfy the provided uri 's3://...'`, the cluster doesn't have the cloud creds projected — see the section above.
+
+#### Symptom: Sharded DB restore rejected with "use Neo4jShardedDatabase.spec.replaceExisting"
+
+**Cause:** `Neo4jRestore` doesn't support sharded databases — the Cypher shape (`SET GRAPH SHARD` / `SET PROPERTY SHARDS`) only fits `CREATE DATABASE`, not `dbms.recreateDatabase`.
+
+**Fix:** restore via the `Neo4jShardedDatabase` CR's destructive-restore flow:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jShardedDatabase
+metadata:
+  name: products
+spec:
+  # … existing sharding fields …
+  seedBackupRef: products-backup
+  replaceExisting: true
+  force: true
+```
+
+See [Property Sharding](../property_sharding.md) for details.
 
 ### Point-in-Time Recovery (PITR) Issues
 
