@@ -1995,15 +1995,28 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		// Neo4j's CloudSeedProvider seeds a single database from the exact
 		// `.backup` FILE — it does NOT scan a directory. Pointing it at the
 		// per-CR directory makes it try to open the directory name as a file
-		// ("Can't open seed file: …/<chain-root>"). Append the captured
-		// artifact filename (same as the PVC path) so the URI is a file.
+		// ("Can't open seed file: …/<chain-root>").
 		if restore.Spec.Source.Type == SourceTypeBackup {
+			// type=backup: the operator knows the artifact filename from the
+			// backup's status.history — append it (same as the PVC path).
 			fname, ferr := r.latestSucceededArtifactFilename(ctx, restore.Spec.Source.BackupRef, restore.Namespace)
 			if ferr != nil {
 				r.updateRestoreStatus(ctx, restore, StatusFailed, ferr.Error())
 				return ctrl.Result{}, ferr
 			}
 			seedURI = strings.TrimRight(seedURI, "/") + "/" + fname
+		} else {
+			// type=storage: the operator has no Neo4jBackup history to read,
+			// so source.backupPath MUST be the exact `.backup` file path
+			// (e.g. "<chain-root>/<dbname>-<timestamp>.backup"). Strip the
+			// trailing slash buildSeedURIFromBackupStorage adds so the URI
+			// stays a file; reject a bare directory with an actionable error.
+			seedURI = strings.TrimRight(seedURI, "/")
+			if !strings.HasSuffix(seedURI, ".backup") {
+				msg := fmt.Sprintf("cluster restore with source.type=storage requires source.backupPath to be the exact .backup file (e.g. '<chain-root>/<dbname>-<timestamp>.backup'); got a non-file path resolving to %q. CloudSeedProvider cannot seed a single database from a directory.", seedURI)
+				r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+				return ctrl.Result{}, fmt.Errorf("%s", msg)
+			}
 		}
 		// Project cloud credentials onto cluster pods (envFrom) so the JVM's
 		// SDK default credential chain can authenticate the seed fetch.

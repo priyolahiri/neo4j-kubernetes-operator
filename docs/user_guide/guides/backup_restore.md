@@ -614,7 +614,7 @@ spec:
 
 **Concurrent runs across chained CRs are blocked automatically.** Each Job carries an `app.kubernetes.io/part-of: <chain-root>` label; the operator refuses to start a new backup Job while any other Job in the same chain is still active (`status.active>0`) — routes the new run to `Pending` and requeues. This prevents the hourly DIFF from firing while the daily FULL is still writing, which would corrupt the chain. Offsetting schedules (different minute on the hour) avoids the wait in practice.
 
-**Restore** via either CR (`Neo4jRestore.spec.source.backupRef: inventory-daily` or `inventory-hourly`) resolves to the same shared directory. `CloudSeedProvider` scans the directory and applies the full chain forward to the latest artifact — you get the state at the last successful DIFF.
+**Restore** via either CR (`Neo4jRestore.spec.source.backupRef: inventory-daily` or `inventory-hourly`) resolves to the latest `.backup` file in the shared directory. `CloudSeedProvider` seeds from that file and, when it's a differential, applies the full + differential chain from the same directory forward to that artifact — you get the state at the last successful DIFF.
 
 #### `preferDiffAsParent` (CalVer 2025.04+ only)
 
@@ -761,7 +761,7 @@ The operator picks the right restore method based on the target kind. The Neo4j 
 | `Neo4jShardedDatabase` (sharded) | Rejected with actionable error | Use `Neo4jShardedDatabase.spec.replaceExisting: true` + `force: true` instead — see [Property Sharding](../property_sharding.md) |
 
 **Cluster path (Cypher)** — works with both cloud and PVC backups:
-- **Cloud-backed backup** (S3 / GCS / Azure): the operator passes the backup directory URI (`s3://bucket/<path>/<backup-cr-name>/`) as `seedURI`. Neo4j's `CloudSeedProvider` scans the directory and applies the full + differential chain automatically. The cluster's pods must have the cloud credentials Secret projected via `spec.extraEnvFrom` — the operator emits an actionable error if they don't, or auto-patches under annotation `neo4j.com/auto-inherit-seed-creds=true`.
+- **Cloud-backed backup** (S3 / GCS / Azure): the operator passes the exact `.backup` **file** URI of the latest successful run (`s3://bucket/<path>/<backup-cr-name>/<dbname>-<timestamp>.backup`) as `seedURI` — `CloudSeedProvider` seeds a single database from one file, not a directory. When that file is a differential, Neo4j resolves and applies the full + differential chain from the same directory automatically. The cluster's pods must have the cloud credentials Secret projected via `spec.extraEnvFrom` — the operator emits an actionable error if they don't, or auto-patches under annotation `neo4j.com/auto-inherit-seed-creds=true`.
 - **PVC-backed backup**: the operator spawns an in-cluster busybox httpd proxy (`backup-seed-proxy-<restore-name>`) mounting the backup PVC RO at `/backup`, then passes the per-run `.backup` file URL as `seedURI` (`http://backup-seed-proxy-<restore-name>:8080/<backup-cr-name>/<filename>`). Neo4j's `URLConnectionSeedProvider` fetches it. The proxy Deployment + Service are owned by the `Neo4jRestore` CR and GC'd when it's deleted. No credentials required.
 - `dbms.recreateDatabase` preserves user/role privileges on the existing database; no `DROP DATABASE` needed.
 - For new databases, the operator emits `CREATE DATABASE … OPTIONS { seedURI: '…' } WAIT`.
@@ -818,12 +818,14 @@ spec:
       cloud:
         provider: aws
         credentialsSecretRef: aws-backup-creds
-    # backupPath is the per-CR shared directory recorded on
-    # Neo4jBackup.status.history[*].backupsPath. All runs of one CR
-    # live in the same directory; CloudSeedProvider scans it and
-    # applies the full + diff chain automatically (cluster targets).
-    # Standalone targets pick the latest file via `ls … | tail -1`.
-    backupPath: daily-backup
+    # For a CLUSTER target, backupPath must be the exact .backup FILE
+    # (CloudSeedProvider seeds a single DB from one file, not a directory).
+    # The chain root + filename are recorded on
+    # Neo4jBackup.status.history[*].{backupsPath,artifactFilename}; if it's a
+    # differential, Neo4j applies the full+diff chain from the same directory.
+    # Standalone targets may pass just the directory — the Job picks the
+    # latest file via `ls … | tail -1`.
+    backupPath: daily-backup/myapp-db-2025-06-01T02-00-00.backup
   options:
     verifyBackup: true
     replaceExisting: true
@@ -835,7 +837,7 @@ spec:
 
 **Best for:** Cross-cluster recovery, disaster recovery from a known directory in storage (no `Neo4jBackup` CR available in this namespace).
 
-> **Restoring a specific historical run**: every run lives in the same shared directory; restore default behavior is "latest run in the chain wins" — cluster targets via `CloudSeedProvider` chain scan, standalone via `tail -1` of timestamped filenames. To pin to an earlier run, you'd need to keep a snapshot of the directory at that point in time (cloud lifecycle rules or versioning).
+> **Restoring a specific historical run**: every run lives in the same shared directory; restore default behavior is "latest run in the chain wins" — cluster targets seed from the latest `.backup` file (Neo4j applies the chain from the same directory), standalone via `tail -1` of timestamped filenames. To pin to an earlier run, you'd need to keep a snapshot of the directory at that point in time (cloud lifecycle rules or versioning).
 
 #### Restore to a Standalone Instance
 

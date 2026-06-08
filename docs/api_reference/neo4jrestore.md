@@ -15,12 +15,12 @@ For practical examples and usage guidance, see the [Backup and Restore Guide](..
 The operator picks the restore method based on the target kind referenced by `clusterRef`. The Neo4j docs flag `neo4j-admin database restore` as **unsafe on clusters**, so the two paths diverge:
 
 **`Neo4jEnterpriseCluster` target** — Cypher over Bolt, no Job:
-1. Resolves `source.backupRef` (or `source.storage`) into a directory URI like `s3://bucket/path/<cr-name>/`. Neo4j's `CloudSeedProvider` scans this directory and applies the full + differential backup chain.
+1. Resolves `source.backupRef` (or `source.storage`) into the exact `.backup` **file** URI of the latest successful run, e.g. `s3://bucket/path/<cr-name>/<dbname>-<timestamp>.backup`. Neo4j's `CloudSeedProvider` seeds a single database from one file (a directory URI fails with `Can't open seed file`); when that file is a differential, Neo4j resolves and applies the full + differential chain from the same directory automatically.
 2. Projects cloud credentials onto cluster pods via `spec.extraEnvFrom` (cluster CR) — required so the JVM's AWS/GCP/Azure SDK can authenticate. The operator emits an actionable error if the Secret isn't projected; set the cluster annotation `neo4j.com/auto-inherit-seed-creds=true` to auto-patch.
 3. Opens a Bolt session and runs `SHOW DATABASES` to detect whether the target database already exists.
 4. Existing database → `CALL dbms.[cluster.]recreateDatabase($db, {seedURI: $uri})`. Preserves user/role privileges, atomically swaps the database on every server, no `DROP` needed.
-5. New database → `CREATE DATABASE $db OPTIONS { seedURI: '<dir>' } WAIT`.
-6. Both forms block until the new state is online — the operator marks the restore `Completed` on return.
+5. New database → `CREATE DATABASE $db OPTIONS { seedURI: '<file>' } WAIT`.
+6. `CREATE … WAIT` blocks until online, but `dbms.recreateDatabase` is **asynchronous** — it returns once the recreate is scheduled. The operator therefore polls `SHOW DATABASE` until every allocation reports `online` before marking the restore `Completed`; if the seed fails the restore goes `Failed` with the database's `statusMessage`.
 
 **`Neo4jEnterpriseStandalone` target** — Kubernetes Job:
 1. Spawns a restore Job that runs `neo4j-admin database restore --from-path=$(ls <dir>/<dbname>-*.backup | tail -1) <dbname>`. The shell substitution picks the latest run in the chain by default.
