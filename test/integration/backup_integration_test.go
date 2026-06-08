@@ -566,14 +566,16 @@ var _ = Describe("Backup Integration Tests", Ordered, func() {
 			// Find the run for THIS Job (not any earlier run from other tests).
 			for _, run := range latest.Status.History {
 				if run.RunID == string(job.UID) {
-					return run.Status == "Failed" && run.BackupsPath == expectedJobName
+					// BackupsPath is the chain root (CR name) under the
+					// shared-directory layout (rule 40), not the Job name.
+					return run.Status == "Failed" && run.BackupsPath == backup.Name
 				}
 			}
 			return false
 		}, backupTimeout, backupInterval).Should(BeTrue(),
-			"failed Jobs MUST land in status.history with Status=Failed and BackupsPath set; "+
-				"a regression in recordOneShotBackupRun's failure branch would let failed "+
-				"runs vanish with the Job's TTL — only a metric counter would remain")
+			"failed Jobs MUST land in status.history with Status=Failed and BackupsPath set to the "+
+				"chain root (CR name); a regression in recordOneShotBackupRun's failure branch would "+
+				"let failed runs vanish with the Job's TTL — only a metric counter would remain")
 
 		// Belt-and-braces: ensure status.stats is NOT updated by a
 		// failed run. Stats is the "latest succeeded run" summary; a
