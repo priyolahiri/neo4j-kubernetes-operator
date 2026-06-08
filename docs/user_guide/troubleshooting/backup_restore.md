@@ -65,7 +65,7 @@ kubectl annotate neo4jenterprisecluster production-cluster troubleshooting.neo4j
 **Diagnosis:**
 ```bash
 # Check backup Job's Pod log (one-shot: <neo4jbackup-name>-backup;
-# CronJob child: <neo4jbackup-name>-<unix-seconds>).
+# CronJob child: <neo4jbackup-name>-backup-cron-<unix-seconds>).
 kubectl logs -n <ns> job/<job-name>
 
 # Check Neo4j server logs for backup-related errors (which server
@@ -268,8 +268,8 @@ kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manag
 
 **Diagnosis:**
 ```bash
-# Check restore job logs
-kubectl logs job/production-restore-$(date +%Y%m%d)
+# Check restore job logs (standalone restore Job name: <neo4jrestore-name>-restore)
+kubectl logs job/production-restore-restore
 
 # Check target cluster logs during restore
 kubectl logs target-cluster-server-0 | grep -i restore
@@ -287,10 +287,12 @@ kubectl logs target-cluster-server-0 | grep -i restore
 
 2. **Database Already Exists**:
    ```yaml
-   # Use force option to overwrite
+   # Overwrite the existing same-named database. Use either the
+   # option-level replaceExisting flag or the top-level force flag.
    spec:
+     force: true              # top-level; adds --overwrite-destination=true
      options:
-       force: true
+       replaceExisting: true  # equivalent option-level flag
    ```
 
 3. **Version Incompatibility**:
@@ -349,26 +351,33 @@ See [Property Sharding](../property_sharding.md) for details.
 
 ### Point-in-Time Recovery (PITR) Issues
 
-#### Symptom: PITR restore fails with timestamp errors
+PITR via `Neo4jRestore` (`source.type: pitr`) runs the `neo4j-admin database restore --restore-until=…` Job and is supported **only for `Neo4jEnterpriseStandalone` targets**. For cluster point-in-time recovery, create a `Neo4jDatabase` with `spec.seedConfig.restoreUntil` instead — a `Neo4jRestore` with `source.type: pitr` pointing at a cluster `clusterRef` is rejected by the validator.
 
-**Diagnosis:**
-```bash
-# Check backup logs for transaction timestamps
-kubectl logs job/production-backup-latest | grep -i "restore-until"
+#### Symptom: PITR restore rejected for a cluster target
 
-# Verify PITR capability
-kubectl exec production-cluster-server-0 -- neo4j-admin database info system
 ```
+source.type=pitr is not supported for cluster targets … For cluster
+point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead
+```
+
+**Fix:** use the `Neo4jDatabase` seed-config path for clusters; reserve `Neo4jRestore` PITR for standalone.
+
+#### Symptom: PITR restore fails with timestamp errors
 
 **Solutions:**
 
-1. **Invalid Timestamp Format**:
+1. **Missing PITR source config**: `source.type: pitr` requires `source.pitr.baseBackup` or `source.pointInTime` (or both):
    ```yaml
-   # Correct ISO 8601 format
    spec:
-     restoreUntil: "2025-01-15T14:30:00Z"
-     # NOT: "2025-01-15 14:30:00"
+     source:
+       type: pitr
+       pointInTime: "2025-01-15T14:30:00Z"   # ISO 8601 (metav1.Time)
+       pitr:
+         baseBackup:
+           type: backup
+           backupRef: production-backup
    ```
+   The operator renders `pointInTime` into `neo4j-admin database restore --restore-until="2025-01-15 14:30:00"`.
 
 2. **Timestamp Outside Backup Range**:
    ```bash
@@ -511,7 +520,7 @@ validate_backup
 
 ## Emergency Recovery
 
-For full disaster recovery (corrupted primary, restore to a new cluster from latest backup), follow the standard restore flow in the [Backup & Restore guide § Restore Operations](../guides/backup_restore.md#restore-operations). The normal `Neo4jRestore` CR with `source.type: backup` + `clusterRef` pointing at a fresh cluster IS the emergency procedure — there's no separate path. Use `force: true` to overwrite existing data, and `source.type: pitr` with `pointInTime` if you need to roll back to a specific timestamp before the corruption.
+For full disaster recovery (corrupted primary, restore to a new cluster from latest backup), follow the standard restore flow in the [Backup & Restore guide § Restore Operations](../guides/backup_restore.md#restore-operations). The normal `Neo4jRestore` CR with `source.type: backup` + `clusterRef` pointing at a fresh cluster IS the emergency procedure — there's no separate path. Use `spec.force: true` (top-level) to overwrite existing data. To roll back to a specific timestamp before the corruption: on a standalone target use `Neo4jRestore` with `source.type: pitr` and `source.pointInTime`; on a cluster target use a `Neo4jDatabase` with `spec.seedConfig.restoreUntil` (cluster `Neo4jRestore` PITR is rejected — see [PITR Issues](#point-in-time-recovery-pitr-issues)).
 
 ## See Also
 

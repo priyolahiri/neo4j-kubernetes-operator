@@ -62,10 +62,12 @@ The operator includes comprehensive split-brain detection that runs automaticall
 
 ### Detection Process
 
-1. **Multi-Pod Analysis**: Connects to each server pod individually
+1. **Multi-Pod Analysis**: Connects to each server pod individually over Bolt and runs `SHOW SERVERS`
 2. **Cluster View Comparison**: Compares each server's view of cluster membership
-3. **Inconsistency Detection**: Identifies servers with conflicting cluster views
-4. **Automatic Repair**: Restarts orphaned pods to rejoin the main cluster
+3. **Inconsistency Detection**: Identifies pods that see servers outside the majority (largest) view
+4. **Automatic Repair**: Restarts those orphaned/minority pods to rejoin the main cluster
+
+Detection is **skipped** for single-server clusters (a single node cannot split-brain) and while the cluster has not yet reached `status.phase=Ready` (divergent views during initial formation are expected, not split-brain).
 
 ### Detection Logs
 
@@ -76,9 +78,9 @@ Monitor operator logs for split-brain detection:
 kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i "split.*brain"
 
 # Expected detection logs:
-# Starting split-brain detection for cluster production-cluster, expectedServers: 3
-# Split-brain analysis results: isSplitBrain: true, orphanedPods: 1, repairAction: RestartPods
-# Split-brain automatically repaired by restarting orphaned pods: [production-cluster-server-2]
+# Starting split-brain detection   cluster=production-cluster expectedServers=3
+# Split-brain analysis complete    isSplitBrain=true repairAction=restart_pods orphanedPods=1
+# Restarting orphaned pods to repair split-brain   pods=[production-cluster-server-2]
 ```
 
 ### Kubernetes Events
@@ -89,10 +91,11 @@ The operator generates events for split-brain scenarios:
 # Check for split-brain events
 kubectl get events --field-selector reason=SplitBrainDetected
 kubectl get events --field-selector reason=SplitBrainRepaired
+kubectl get events --field-selector reason=SplitBrainRepairFailed   # manual intervention needed
 
 # Example events:
-# Warning   SplitBrainDetected   Neo4jEnterpriseCluster/production-cluster   Split-brain detected: 1 orphaned servers
-# Normal    SplitBrainRepaired   Neo4jEnterpriseCluster/production-cluster   Split-brain repaired: restarted orphaned pods
+# Warning   SplitBrainDetected   Neo4jEnterpriseCluster/production-cluster   Split-brain detected: 2 cluster groups found, 1 orphaned pods
+# Normal    SplitBrainRepaired   Neo4jEnterpriseCluster/production-cluster   Split-brain automatically repaired by restarting orphaned pods
 ```
 
 ## Manual Split-Brain Detection
