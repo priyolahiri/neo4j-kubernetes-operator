@@ -178,17 +178,24 @@ kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
 
 Expected output:
 ```bash
-# Pod should be Running
-NAME                                        READY   STATUS    RESTARTS   AGE
-neo4j-operator-controller-manager-xxx       2/2     Running   0          1m
+# Pod should be Running (single manager container — 1/1).
+# Helm installs (Methods 1, 2, 4) name the pod neo4j-operator-xxx;
+# kubectl-apply / make installs (Methods 3, 5) name it neo4j-operator-controller-manager-xxx.
+NAME                              READY   STATUS    RESTARTS   AGE
+neo4j-operator-xxx                1/1     Running   0          1m
 
-# CRDs should be present
+# CRDs should be present (11 total)
+neo4jauthrules.neo4j.neo4j.com
 neo4jbackups.neo4j.neo4j.com
 neo4jdatabases.neo4j.neo4j.com
 neo4jenterpriseclusters.neo4j.neo4j.com
 neo4jenterprisestandalones.neo4j.neo4j.com
 neo4jplugins.neo4j.neo4j.com
 neo4jrestores.neo4j.neo4j.com
+neo4jrolebindings.neo4j.neo4j.com
+neo4jroles.neo4j.neo4j.com
+neo4jshardeddatabases.neo4j.neo4j.com
+neo4jusers.neo4j.neo4j.com
 ```
 
 ## Available Make Targets
@@ -230,17 +237,13 @@ After cloning the repository, you have access to these make targets:
 
 After installing the operator, you can deploy your first Neo4j instance using examples.
 
-### Option 1: Using Examples from GitHub Release
+### Option 1: Apply an Example Directly from GitHub
 
-Download example configurations from the release:
+If you haven't cloned the repository, apply an example straight from the raw
+file URL at a release tag (no download or extract step needed):
 
 ```bash
-# Download examples archive
-RELEASE_VERSION=v1.0.0  # Replace with your installed version
-curl -LO https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/${RELEASE_VERSION}/examples-${RELEASE_VERSION#v}.tar.gz
-
-# Extract examples
-tar -xzf examples-${RELEASE_VERSION#v}.tar.gz
+RELEASE_VERSION=v1.10.2  # Replace with your installed version
 
 # Create admin secret (required for Neo4j authentication)
 kubectl create secret generic neo4j-admin-secret \
@@ -248,7 +251,7 @@ kubectl create secret generic neo4j-admin-secret \
   --from-literal=password=your-secure-password
 
 # Deploy your first Neo4j instance
-kubectl apply -f examples/standalone/single-node-standalone.yaml
+kubectl apply -f https://raw.githubusercontent.com/priyolahiri/neo4j-kubernetes-operator/${RELEASE_VERSION}/examples/standalone/single-node-standalone.yaml
 
 # Check deployment status
 kubectl get neo4jenterprisestandalone
@@ -257,6 +260,9 @@ kubectl get pods
 # Access Neo4j Browser
 kubectl port-forward svc/standalone-neo4j-service 7474:7474 7687:7687
 ```
+
+Browse all available examples at
+<https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples>.
 
 ### Option 2: Using Examples from Cloned Repository
 
