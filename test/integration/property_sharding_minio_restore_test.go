@@ -11,6 +11,8 @@ You may obtain a copy of the License at
 package integration_test
 
 import (
+	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -222,6 +224,27 @@ var _ = Describe("Property Sharding Restore (MinIO) Integration Tests", Serial, 
 			return shardedDB.Status.ShardingReady != nil && *shardedDB.Status.ShardingReady
 		}, shardedDBReadyTimeout, pollInterval).Should(BeTrue())
 
+		By("Writing test data to the source sharded DB so the restore is data-meaningful")
+		// Without real data the test only proves seed PLUMBING; writing
+		// nodes (with properties that land on the property shards) and
+		// verifying them after restore proves the seedURI actually carried
+		// the data across all shards.
+		hostPod := fmt.Sprintf("%s-server-0", cluster.Name)
+		writeCypher := "CREATE (:Item {sku: 'A-100', count: 42}), (:Item {sku: 'A-200', count: 13}) RETURN count(*) AS n;"
+		Eventually(func() error {
+			cmd := exec.CommandContext(ctx, "kubectl", "exec",
+				hostPod, "-n", testNamespace, "--",
+				"cypher-shell", "--format", "plain", "--database", "products",
+				"-u", "neo4j", "-p", "password123",
+				writeCypher,
+			)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				GinkgoWriter.Printf("sharded data-write cypher-shell err=%v out=%s\n", err, string(out))
+			}
+			return err
+		}, 2*time.Minute, pollInterval).Should(Succeed())
+
 		By("Backing up the sharded DB to MinIO via Neo4jBackup")
 		backup = &neo4jv1beta1.Neo4jBackup{
 			ObjectMeta: metav1.ObjectMeta{Name: "products-backup", Namespace: testNamespace},
@@ -276,6 +299,25 @@ var _ = Describe("Property Sharding Restore (MinIO) Integration Tests", Serial, 
 			return shardedDB2.Status.ShardingReady != nil && *shardedDB2.Status.ShardingReady
 		}, shardedDBReadyTimeout, pollInterval).Should(BeTrue(),
 			"products-restored failed to reach Ready — likely Neo4j couldn't reach MinIO or auth failed; check cluster pod logs for `Unable to start database` + debug.log")
+
+		By("Verifying the restored sharded DB actually contains the backed-up data (not just an empty Ready DB)")
+		// Mirrors the standard-DB restore test: query the restored sharded
+		// DB for the specific Item written to the source. This proves the
+		// cloud directory seedURI carried the data across the graph +
+		// property shards, not merely that CREATE … WAIT returned.
+		Eventually(func() string {
+			cmd := exec.CommandContext(ctx, "kubectl", "exec",
+				hostPod, "-n", testNamespace, "--",
+				"cypher-shell", "--format", "plain", "--database", "products-restored",
+				"-u", "neo4j", "-p", "password123",
+				"MATCH (i:Item {sku: 'A-100'}) RETURN i.count AS count;",
+			)
+			out, err := cmd.CombinedOutput()
+			outStr := string(out)
+			GinkgoWriter.Printf("sharded restore verify err=%v out=%s\n", err, outStr)
+			return outStr
+		}, 2*time.Minute, pollInterval).Should(ContainSubstring("42"),
+			"restored sharded DB 'products-restored' must contain the Item{sku:'A-100',count:42} seeded from the source backup")
 	})
 
 	It("destructively replaces an existing sharded DB via replaceExisting+force", func() {
