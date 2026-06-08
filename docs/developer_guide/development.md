@@ -390,7 +390,7 @@ kubectl get neo4jenterprisestandalone
 kubectl get pods -l app=standalone-neo4j
 
 # Test database creation
-kubectl apply -f examples/database/database-standalone.yaml
+kubectl apply -f examples/databases/database-standalone.yaml
 ```
 
 #### Test Plugin Installation
