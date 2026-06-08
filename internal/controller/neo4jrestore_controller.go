@@ -242,6 +242,24 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		return ctrl.Result{}, err
 	}
 
+	// Cluster targets bypass the Job + `neo4j-admin restore` path entirely
+	// (the docs flag it as unsafe on clusters — `--overwrite-destination`
+	// "is not safe on a cluster since clusters have additional state that
+	// would be inconsistent with the restored database"). Use the Cypher
+	// path documented at:
+	//   https://neo4j.com/docs/operations-manual/current/clustering/databases/#restore-database-using-uri-approach
+	//   https://neo4j.com/docs/operations-manual/current/clustering/databases/#restore-database-using-recreate-procedure
+	// Standalone targets keep the existing Job-based flow.
+	isTrueCluster, _, lookupErr := r.isRestoreTargetTrueCluster(ctx, restore)
+	if lookupErr != nil {
+		logger.Error(lookupErr, "Failed to determine target type")
+		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Target lookup failed: %v", lookupErr))
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, lookupErr
+	}
+	if isTrueCluster {
+		return r.startClusterCypherRestore(ctx, restore, cluster)
+	}
+
 	// Check if database exists and handle accordingly
 	if !restore.Spec.Force {
 		if err := r.checkDatabaseExists(ctx, restore, cluster); err != nil {
@@ -582,6 +600,26 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 
 	if restore.Spec.DatabaseName == "" {
 		return fmt.Errorf("databaseName is required")
+	}
+
+	// Sharded databases must NOT be restored via Neo4jRestore — the Cypher
+	// shape (`CREATE DATABASE … SET GRAPH SHARD … SET PROPERTY SHARDS …`)
+	// is owned by Neo4jShardedDatabase, and the destructive restore path
+	// is gated by `replaceExisting=true` + `force=true` (rule 63) on that
+	// CR. Detect via Neo4jShardedDatabase lookup in the same namespace.
+	shardedDB := &neo4jv1beta1.Neo4jShardedDatabase{}
+	if err := r.Get(ctx, types.NamespacedName{Name: restore.Spec.DatabaseName, Namespace: restore.Namespace}, shardedDB); err == nil {
+		return fmt.Errorf(
+			"database %q is a Neo4jShardedDatabase — use the Neo4jShardedDatabase restore path instead:\n"+
+				"  spec:\n"+
+				"    seedBackupRef: %q\n"+
+				"    replaceExisting: true\n"+
+				"    force: true\n"+
+				"Sharded restores require the SET GRAPH SHARD / SET PROPERTY SHARDS clauses that only CREATE DATABASE accepts; dbms.recreateDatabase doesn't support sharded topology",
+			restore.Spec.DatabaseName, restore.Spec.Source.BackupRef,
+		)
+	} else if !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to check whether %q is a Neo4jShardedDatabase: %w", restore.Spec.DatabaseName, err)
 	}
 
 	return nil
@@ -1882,6 +1920,179 @@ func (r *Neo4jRestoreReconciler) getClusterRef(ctx context.Context, restore *neo
 			restore.Spec.ClusterRef, err)
 	}
 	return standaloneAsCluster(standalone), nil
+}
+
+// startClusterCypherRestore is the cluster-native restore path: skip the
+// `neo4j-admin database restore` Job entirely (unsafe on clusters per the
+// docs) and use Cypher against the live cluster instead.
+//
+// Decision matrix:
+//   - Database EXISTS  → `CALL dbms.recreateDatabase($db, {seedURI: $uri})`
+//     (preserves user/role privileges; no DROP needed; per-server atomic
+//     swap from the seed chain).
+//   - Database ABSENT  → `CREATE DATABASE $db OPTIONS { seedURI: $uri } WAIT`
+//     (the modern OPTIONS syntax; CloudSeedProvider scans the directory
+//     for the backup chain).
+//
+// In both forms the URI points at a DIRECTORY (with trailing slash)
+// containing the chain — CloudSeedProvider applies the full + diffs in
+// order. The `WAIT` clause + Neo4j's blocking semantics mean the call
+// returns after the new state is online; we then mark the restore
+// Completed.
+//
+// Sharded databases are NOT supported by this path — they require the
+// `Neo4jShardedDatabase.spec.replaceExisting` flow (rule 63). The
+// validator rejects sharded restores with an actionable error.
+func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
+	ctx context.Context,
+	restore *neo4jv1beta1.Neo4jRestore,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
+) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	// Resolve backupRef → storage + per-CR shared directory.
+	storage, backupPath, err := ResolveBackupRef(ctx, r.Client, restore.Spec.Source.BackupRef, restore.Namespace)
+	if err != nil {
+		if stderrors.Is(err, ErrBackupNotReady) {
+			logger.Info("Cluster Cypher restore waiting for backup to complete", "error", err.Error())
+			r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Waiting for backup to complete: %v", err))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
+		// `storage` and `backupPath` are only used for type=backup. For
+		// type=storage we read directly from spec.source.
+		if restore.Spec.Source.Type != SourceTypeBackup {
+			storage = neo4jv1beta1.StorageLocation{}
+			backupPath = ""
+		} else {
+			logger.Error(err, "Failed to resolve backupRef")
+			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to resolve backupRef: %v", err))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		}
+	}
+	if restore.Spec.Source.Type == "storage" {
+		if restore.Spec.Source.Storage == nil {
+			r.updateRestoreStatus(ctx, restore, StatusFailed, "source.storage is required when type=storage")
+			return ctrl.Result{}, fmt.Errorf("source.storage required for type=storage")
+		}
+		storage = *restore.Spec.Source.Storage
+		backupPath = restore.Spec.Source.BackupPath
+	}
+
+	seedURI, err := buildSeedURIFromBackupStorage(storage, backupPath)
+	if err != nil {
+		logger.Error(err, "Cluster Cypher restore requires a cloud-backed seed URI")
+		r.updateRestoreStatus(ctx, restore, StatusFailed, err.Error())
+		return ctrl.Result{}, err
+	}
+
+	// Project cloud credentials onto cluster pods (envFrom) so the JVM's
+	// SDK default credential chain can authenticate the seed fetch.
+	if storage.Cloud != nil && storage.Cloud.CredentialsSecretRef != "" {
+		autoInherited, credsErr := EnsureClusterHasSeedCreds(ctx, r.Client, cluster, storage.Cloud.CredentialsSecretRef)
+		if credsErr != nil {
+			logger.Error(credsErr, "Cluster missing seed credentials projection")
+			r.updateRestoreStatus(ctx, restore, StatusFailed, credsErr.Error())
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
+		if autoInherited {
+			logger.Info("Auto-inherited seed credentials onto cluster; waiting for rolling restart",
+				"cluster", cluster.Name)
+			r.updateRestoreStatus(ctx, restore, StatusPending,
+				fmt.Sprintf("Auto-inherited seed credentials Secret %q onto cluster %q; waiting for rolling restart", storage.Cloud.CredentialsSecretRef, cluster.Name))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
+	}
+
+	// Open a Bolt connection to the cluster.
+	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
+	if err != nil {
+		logger.Error(err, "Failed to create Neo4j client for cluster Cypher restore")
+		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to connect to cluster: %v", err))
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+	}
+	defer func() { _ = neo4jClient.Close() }()
+
+	exists, err := neo4jClient.DatabaseExists(ctx, restore.Spec.DatabaseName)
+	if err != nil {
+		logger.Error(err, "Failed to check database existence")
+		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Database existence check failed: %v", err))
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+	}
+
+	imageTag := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
+	version, vErr := neo4j.GetImageVersion(imageTag)
+	if vErr != nil {
+		version = &neo4j.Version{Major: 5, Minor: 26, Patch: 0}
+	}
+
+	r.updateRestoreStatus(ctx, restore, StatusRunning, fmt.Sprintf("Cluster Cypher restore in progress (seedURI=%s, exists=%v)", seedURI, exists))
+	r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
+		fmt.Sprintf("Cluster Cypher restore: database %q (%s), seedURI=%s",
+			restore.Spec.DatabaseName, ternaryString(exists, "recreate", "create"), seedURI))
+
+	if exists {
+		applied, recreateErr := neo4jClient.RecreateDatabaseWithSeedURI(ctx, version, restore.Spec.DatabaseName, seedURI)
+		if recreateErr != nil {
+			logger.Error(recreateErr, "dbms.recreateDatabase with seedURI failed")
+			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("recreateDatabase failed: %v", recreateErr))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, recreateErr
+		}
+		if !applied {
+			// Version doesn't support recreate. CREATE DATABASE OPTIONS{seedURI}
+			// only works on absent databases — for an existing one we'd need
+			// DROP + CREATE. Surface as actionable failure.
+			msg := fmt.Sprintf("Neo4j version %d.%d doesn't support dbms.recreateDatabase; DROP DATABASE %q manually and re-run the restore",
+				version.Major, version.Minor, restore.Spec.DatabaseName)
+			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+			return ctrl.Result{}, fmt.Errorf("%s", msg)
+		}
+	} else {
+		if createErr := neo4jClient.CreateDatabaseWithSeedURIOptions(ctx, restore.Spec.DatabaseName, seedURI, false); createErr != nil {
+			logger.Error(createErr, "CREATE DATABASE OPTIONS{seedURI} failed")
+			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("CREATE DATABASE OPTIONS{seedURI} failed: %v", createErr))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, createErr
+		}
+	}
+
+	// Both CREATE DATABASE … WAIT and dbms.recreateDatabase block until
+	// the new state is online; reaching this point means the restore
+	// succeeded. Mark Completed.
+	completion := metav1.Now()
+	restore.Status.CompletionTime = &completion
+	r.updateRestoreStatus(ctx, restore, StatusCompleted,
+		fmt.Sprintf("Database %q restored via cluster Cypher path (seedURI=%s)", restore.Spec.DatabaseName, seedURI))
+	r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreCompleted,
+		fmt.Sprintf("Cluster Cypher restore completed for database %q", restore.Spec.DatabaseName))
+	return ctrl.Result{}, nil
+}
+
+func ternaryString(cond bool, ifTrue, ifFalse string) string {
+	if cond {
+		return ifTrue
+	}
+	return ifFalse
+}
+
+// isRestoreTargetTrueCluster returns true when spec.clusterRef points at an
+// actual Neo4jEnterpriseCluster (not a Neo4jEnterpriseStandalone). The
+// cluster restore path uses Cypher (`dbms.recreateDatabase` or
+// `CREATE DATABASE OPTIONS{seedURI}`) per the Neo4j cluster restore docs;
+// standalone uses the Job + `neo4j-admin restore` path. We can't use
+// `getClusterRef` directly because it transparently wraps a Standalone as
+// a synthetic Cluster.
+func (r *Neo4jRestoreReconciler) isRestoreTargetTrueCluster(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) (bool, *neo4jv1beta1.Neo4jEnterpriseCluster, error) {
+	key := types.NamespacedName{Name: restore.Spec.ClusterRef, Namespace: restore.Namespace}
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	if err := r.Get(ctx, key, cluster); err == nil {
+		return true, cluster, nil
+	} else if !errors.IsNotFound(err) {
+		return false, nil, err
+	}
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+	if err := r.Get(ctx, key, standalone); err != nil {
+		return false, nil, fmt.Errorf("target %q not found as Cluster or Standalone: %w", restore.Spec.ClusterRef, err)
+	}
+	return false, nil, nil
 }
 
 func (r *Neo4jRestoreReconciler) createNeo4jClient(_ context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
