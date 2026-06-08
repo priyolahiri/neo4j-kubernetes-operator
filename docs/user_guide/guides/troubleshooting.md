@@ -29,7 +29,7 @@ kubectl logs -l app=<standalone-name>
 kubectl get events --sort-by=.metadata.creationTimestamp
 
 # Check operator logs
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
 ```
 
 ### Common Port Forwarding Commands
@@ -272,8 +272,8 @@ kubectl logs <cluster-name>-server-1
 
 4. **Verify Discovery Labels:**
    ```bash
-   # Check that only the discovery service has clustering label
-kubectl get svc -l neo4j.com/cluster=<cluster-name> -o yaml | grep -A 3 -B 3 "neo4j.com/clustering"
+   # Check that only the discovery (headless) service carries the clustering label
+   kubectl get svc -l neo4j.com/cluster=<cluster-name> -o yaml | grep -A 3 -B 3 "neo4j.com/clustering"
    ```
 
 #### Problem: Scaling Issues
@@ -289,8 +289,7 @@ kubectl get events | grep -i scale
    # Scaling cannot violate minimum requirements
    spec:
      topology:
-       primaries: 1
-       secondaries: 1  # Cannot scale below this
+       servers: 2  # Minimum 2 servers; cannot scale below this
    ```
 
 2. **Check Resource Limits:**
@@ -349,9 +348,11 @@ kubectl apply -f restore.yaml
 kubectl top pods
 kubectl top nodes
 
-# Check Neo4j metrics
-kubectl port-forward svc/<service-name> 7474:7474
-# Access http://localhost:7474/metrics
+# Check Neo4j Prometheus metrics. Requires spec.monitoring.enabled: true,
+# which creates a dedicated <cluster-name>-metrics service exposing port 2004.
+# Metrics live on port 2004 at /metrics, not on the 7474 HTTP port.
+kubectl port-forward svc/<cluster-name>-metrics 2004:2004
+# Access http://localhost:2004/metrics
 ```
 
 **Solutions:**
@@ -370,7 +371,7 @@ kubectl port-forward svc/<service-name> 7474:7474
    spec:
      config:
        db.logs.query.enabled: "true"
-       dbms.logs.query.threshold: "1s"
+       db.logs.query.threshold: "1s"
    ```
 
 3. **Check Storage Performance:**
@@ -410,14 +411,14 @@ kubectl get storageclass
 #### Problem: Data Corruption
 ```bash
 # Check Neo4j consistency
-kubectl exec -it <pod-name> -- neo4j-admin check-consistency
+kubectl exec -it <pod-name> -- neo4j-admin database check neo4j
 ```
 
 **Solutions:**
 
 1. **Run Consistency Check:**
    ```bash
-   kubectl exec -it <pod-name> -- neo4j-admin check-consistency --database=neo4j
+   kubectl exec -it <pod-name> -- neo4j-admin database check neo4j
    ```
 
 2. **Restore from Backup:**
@@ -427,22 +428,19 @@ kubectl exec -it <pod-name> -- neo4j-admin check-consistency
 
 ### 8. Backup and Restore Issues
 
-#### Problem: Backup failing with permission denied
-Backup jobs fail with "permission denied" or "cannot exec into pod" errors.
+#### Problem: Backup Job fails to start (ServiceAccount / permission errors)
+Backups run as Kubernetes Jobs that execute `neo4j-admin` directly against a database — they do NOT exec into the Neo4j pods. Each Job runs under the `neo4j-backup-sa` ServiceAccount, which the operator creates automatically in the backup's namespace (and stamps with any workload-identity annotations from `spec.cloud.identity`).
 
-**Solution**: The operator now automatically creates RBAC resources. If you're upgrading:
+**Solution**: Confirm the ServiceAccount exists and inspect the Job:
 ```bash
-# Ensure operator has latest permissions
-make install  # After cloning the repository
+# The operator auto-creates this ServiceAccount; no Role/RoleBinding is needed
+# because the Job runs neo4j-admin directly, not via pods/exec.
+kubectl get serviceaccount neo4j-backup-sa -n <ns>
 
-# Check operator has pods/exec and pods/log permissions
-kubectl describe clusterrole neo4j-operator-manager-role | grep -E "pods/exec|pods/log"
+# Inspect the backup Job and its pod
+kubectl describe neo4jbackup <backup-name> -n <ns>
+kubectl get jobs -n <ns> -l app.kubernetes.io/part-of=<backup-name>
 ```
-
-**Note**: Starting with the latest version, the operator automatically creates:
-- Service accounts for backup jobs
-- Roles with `pods/exec` and `pods/log` permissions
-- Role bindings for secure backup execution
 
 #### Problem: Backup path not found
 Neo4j 5.26+ requires backup destination path to exist. The operator's backup Job creates the directory automatically (`mkdir -p` is prepended to the command for PVC targets; cloud targets get a trailing slash for directory semantics).
@@ -584,7 +582,7 @@ kubectl get events --field-selector involvedObject.name=<database-name>
 kubectl describe neo4jdatabase <database-name>
 
 # Check operator logs for seed URI specific errors
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager | grep -i seed
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i seed
 ```
 
 **Common seed URI issues:**
@@ -658,7 +656,7 @@ kubectl get events -w --field-selector involvedObject.name=<database-name>
 1. **Check Cluster Connectivity:**
    ```bash
    # Ensure operator can connect to Neo4j cluster
-   kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager | grep -i "connection failed"
+   kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i "connection failed"
    ```
 
 2. **Large Backup Restoration:**
@@ -690,7 +688,7 @@ kubectl exec -it <cluster-pod> -- cypher-shell -u neo4j -p <password> -d <databa
    kubectl get neo4jdatabase <database-name> -o jsonpath='{.status.dataImported}'
 
    # Check for import errors in operator logs
-   kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager | grep -i "initial data\|import"
+   kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i "initial data\|import"
    ```
 
 2. **Seed URI Data Not Restored:**
@@ -708,7 +706,7 @@ kubectl exec -it <cluster-pod> -- cypher-shell -u neo4j -p <password> -d <databa
 Enable debug logging in the operator:
 ```bash
 kubectl patch deployment neo4j-operator-controller-manager \
-  -n neo4j-operator \
+  -n neo4j-operator-system \
   -p '{"spec":{"template":{"spec":{"containers":[{"name":"manager","args":["--zap-log-level=debug"]}]}}}}'
 ```
 
@@ -747,7 +745,7 @@ When filing an issue, include the output of:
 kubectl get neo4jenterprisecluster,neo4jenterprisestandalone -A
 kubectl get pods,svc,pvc -l app.kubernetes.io/name=neo4j
 kubectl get events --sort-by=.metadata.creationTimestamp | tail -30
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager --tail=200
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager --tail=200
 kubectl describe nodes | grep -A 5 "Allocated resources:"
 ```
 
