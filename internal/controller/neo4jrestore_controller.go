@@ -118,6 +118,23 @@ func hardenedRestoreContainerSecurityContext() *corev1.SecurityContext {
 const (
 	// RestoreFinalizer is the finalizer for Neo4j restore resources
 	RestoreFinalizer = "neo4j.com/restore-finalizer"
+
+	// AnnotationCypherRestoreIssued marks that the cluster-native Cypher
+	// restore (the asynchronous `dbms.recreateDatabase` path) has already been
+	// issued against the live cluster. Its value is the RFC3339 timestamp of
+	// the issue. The annotation serves two purposes:
+	//   1. Guard: re-entering startClusterCypherRestore must NOT re-issue the
+	//      recreate (that would wipe the partially-seeded database and restart
+	//      the seed from scratch).
+	//   2. Deadline: pollClusterRestoreOnline derives the online-wait deadline
+	//      from this timestamp so the worker is never held blocking — it polls
+	//      one SHOW DATABASE per reconcile and requeues.
+	AnnotationCypherRestoreIssued = "neo4j.com/cypher-restore-issued"
+
+	// cypherRestoreOnlineTimeout bounds how long pollClusterRestoreOnline will
+	// wait (across requeues) for an asynchronously-recreated database to
+	// converge to online before marking the restore Failed.
+	cypherRestoreOnlineTimeout = 5 * time.Minute
 )
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jrestores,verbs=get;list;watch;create;update;patch;delete
@@ -341,6 +358,14 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 
 func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+
+	// Cluster-native Cypher restores have no Job — the asynchronous
+	// `dbms.recreateDatabase` was issued in a prior reconcile (marked by the
+	// cypher-restore-issued annotation). Poll the live database's online state
+	// instead of looking for a Job.
+	if _, issued := restore.Annotations[AnnotationCypherRestoreIssued]; issued {
+		return r.pollClusterRestoreOnline(ctx, restore, cluster)
+	}
 
 	// Get restore job
 	jobName := restore.Name + "-restore"
@@ -1952,6 +1977,16 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	// If the asynchronous recreate was already issued in a prior reconcile
+	// (e.g. the status update to Running failed after the recreate landed and
+	// the annotation was stamped), re-running the setup here would re-issue
+	// the recreate — wiping the partially-seeded database and restarting from
+	// scratch, and re-spawning the proxy / re-emitting chain-parent warnings.
+	// Hand straight off to the requeue-driven poll phase instead.
+	if _, issued := restore.Annotations[AnnotationCypherRestoreIssued]; issued {
+		return r.pollClusterRestoreOnline(ctx, restore, cluster)
+	}
+
 	// Resolve backupRef → storage + per-CR shared directory.
 	storage, backupPath, err := ResolveBackupRef(ctx, r.Client, restore.Spec.Source.BackupRef, restore.Namespace)
 	if err != nil {
@@ -2093,6 +2128,16 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 			restore.Spec.DatabaseName, ternaryString(exists, "recreate", "create"), seedURI))
 
 	if exists {
+		// `dbms.recreateDatabase` is ASYNCHRONOUS — it returns as soon as the
+		// recreate is scheduled, long before the per-server seed-from-URI
+		// finishes. We therefore must NOT block the reconcile worker on a
+		// 5-minute online-wait here: MaxConcurrentReconciles is small, and a
+		// blocking wait starves every other restore (a single un-seedable
+		// restore would hold the worker for the full timeout). Instead, issue
+		// the recreate exactly ONCE (guarded by the cypher-restore-issued
+		// annotation — re-issuing would wipe the partially-seeded database and
+		// restart the seed), then hand off to the requeue-driven poll phase
+		// (checkRestoreProgress → pollClusterRestoreOnline).
 		applied, recreateErr := neo4jClient.RecreateDatabaseWithSeedURI(ctx, version, restore.Spec.DatabaseName, seedURI)
 		if recreateErr != nil {
 			logger.Error(recreateErr, "dbms.recreateDatabase with seedURI failed")
@@ -2108,29 +2153,29 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
 			return ctrl.Result{}, fmt.Errorf("%s", msg)
 		}
-	} else {
-		if createErr := neo4jClient.CreateDatabaseWithSeedURIOptions(ctx, restore.Spec.DatabaseName, seedURI, false); createErr != nil {
-			logger.Error(createErr, "CREATE DATABASE OPTIONS{seedURI} failed")
-			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("CREATE DATABASE OPTIONS{seedURI} failed: %v", createErr))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, createErr
+		// Mark the recreate issued (annotation = issue timestamp → poll
+		// deadline) and move to Running. The next reconcile routes to
+		// pollClusterRestoreOnline, which polls SHOW DATABASE per requeue
+		// rather than holding the worker.
+		if err := r.markCypherRestoreIssued(ctx, restore); err != nil {
+			logger.Error(err, "Failed to mark cypher restore issued")
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 		}
+		r.updateRestoreStatus(ctx, restore, StatusRunning,
+			fmt.Sprintf("Database %q recreate issued; waiting for seed to converge online (seedURI=%s)", restore.Spec.DatabaseName, seedURI))
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
-	// CREATE DATABASE … WAIT blocks until online, but dbms.recreateDatabase
-	// is ASYNCHRONOUS — it returns as soon as the recreate is scheduled,
-	// before the per-server seed-from-URI finishes. Without an explicit wait
-	// we'd mark the restore Completed while the database is still offline (or
-	// has failed to seed), which is exactly the false-success seen in CI.
-	// Poll SHOW DATABASE until every allocation is online; surface the seed
-	// error (statusMessage) if it doesn't converge.
-	if waitErr := neo4jClient.WaitForDatabaseOnline(ctx, restore.Spec.DatabaseName, 5*time.Minute); waitErr != nil {
-		logger.Error(waitErr, "Database did not come online after cluster Cypher restore")
-		r.updateRestoreStatus(ctx, restore, StatusFailed,
-			fmt.Sprintf("Restore did not converge to online: %v", waitErr))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, waitErr
+	// Database ABSENT: `CREATE DATABASE … OPTIONS{seedURI} WAIT` is
+	// SYNCHRONOUS — it blocks until the database is online (or fails fast on a
+	// bad/unreachable seed). It's a single atomic operation, so we keep it
+	// inline and mark Completed directly on success.
+	if createErr := neo4jClient.CreateDatabaseWithSeedURIOptions(ctx, restore.Spec.DatabaseName, seedURI, false); createErr != nil {
+		logger.Error(createErr, "CREATE DATABASE OPTIONS{seedURI} failed")
+		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("CREATE DATABASE OPTIONS{seedURI} failed: %v", createErr))
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, createErr
 	}
 
-	// Database is online on every allocation; the restore succeeded. Mark Completed.
 	completion := metav1.Now()
 	restore.Status.CompletionTime = &completion
 	r.updateRestoreStatus(ctx, restore, StatusCompleted,
@@ -2138,6 +2183,108 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 	r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreCompleted,
 		fmt.Sprintf("Cluster Cypher restore completed for database %q", restore.Spec.DatabaseName))
 	return ctrl.Result{}, nil
+}
+
+// markCypherRestoreIssued stamps the cypher-restore-issued annotation with the
+// current RFC3339 timestamp via a conflict-retried metadata Update. The
+// annotation guards against re-issuing the asynchronous recreate and anchors
+// the online-wait deadline used by pollClusterRestoreOnline.
+func (r *Neo4jRestoreReconciler) markCypherRestoreIssued(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
+	stamp := metav1.Now().UTC().Format(time.RFC3339)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		if latest.Annotations == nil {
+			latest.Annotations = map[string]string{}
+		}
+		if _, ok := latest.Annotations[AnnotationCypherRestoreIssued]; ok {
+			return nil // already stamped — preserve the original timestamp
+		}
+		latest.Annotations[AnnotationCypherRestoreIssued] = stamp
+		return r.Update(ctx, latest)
+	})
+	if err != nil {
+		return err
+	}
+	// Reflect the annotation onto the in-memory object so the caller's
+	// subsequent status update / requeue sees it.
+	if restore.Annotations == nil {
+		restore.Annotations = map[string]string{}
+	}
+	if _, ok := restore.Annotations[AnnotationCypherRestoreIssued]; !ok {
+		restore.Annotations[AnnotationCypherRestoreIssued] = stamp
+	}
+	return nil
+}
+
+// pollClusterRestoreOnline is the requeue-driven poll phase for the
+// cluster-native Cypher restore. The asynchronous `dbms.recreateDatabase` was
+// already issued (cypher-restore-issued annotation present); here we open a
+// short-lived Bolt connection, run ONE SHOW DATABASE, and either:
+//   - mark Completed once every allocation is online,
+//   - mark Failed once the online-wait deadline (annotation timestamp +
+//     cypherRestoreOnlineTimeout) has passed without convergence,
+//   - otherwise requeue.
+//
+// Crucially this never blocks the worker for the full timeout — each reconcile
+// does a single bounded SHOW DATABASE and returns, so other restores keep
+// progressing under a small MaxConcurrentReconciles.
+func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	// Derive the deadline from the issue timestamp. A malformed/missing stamp
+	// falls back to "now" so a single extra requeue re-stamps via the wait.
+	deadline := time.Now().Add(cypherRestoreOnlineTimeout)
+	if raw, ok := restore.Annotations[AnnotationCypherRestoreIssued]; ok {
+		if issuedAt, perr := time.Parse(time.RFC3339, raw); perr == nil {
+			deadline = issuedAt.Add(cypherRestoreOnlineTimeout)
+		}
+	}
+	expired := time.Now().After(deadline)
+
+	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
+	if err != nil {
+		// The cluster may be mid roll/unreachable transiently. Tolerate until
+		// the deadline, then fail.
+		if expired {
+			r.updateRestoreStatus(ctx, restore, StatusFailed,
+				fmt.Sprintf("Restore did not converge to online within %s: connect failed: %v", cypherRestoreOnlineTimeout, err))
+			return ctrl.Result{}, nil
+		}
+		logger.V(1).Info("Poll: cluster not yet reachable, requeueing", "error", err.Error())
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+	}
+	defer func() { _ = neo4jClient.Close() }()
+
+	online, total, diag, stateErr := neo4jClient.DatabaseOnlineState(ctx, restore.Spec.DatabaseName)
+	if stateErr == nil && total > 0 && online == total {
+		completion := metav1.Now()
+		restore.Status.CompletionTime = &completion
+		r.updateRestoreStatus(ctx, restore, StatusCompleted,
+			fmt.Sprintf("Database %q restored via cluster Cypher path (%d/%d allocations online)", restore.Spec.DatabaseName, online, total))
+		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreCompleted,
+			fmt.Sprintf("Cluster Cypher restore completed for database %q", restore.Spec.DatabaseName))
+		return ctrl.Result{}, nil
+	}
+
+	if expired {
+		detail := diag
+		if stateErr != nil {
+			detail = stateErr.Error()
+		}
+		r.updateRestoreStatus(ctx, restore, StatusFailed,
+			fmt.Sprintf("Restore did not converge to online within %s (%d/%d allocations online); last status: %s",
+				cypherRestoreOnlineTimeout, online, total, detail))
+		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed,
+			fmt.Sprintf("Cluster Cypher restore for database %q did not converge online", restore.Spec.DatabaseName))
+		return ctrl.Result{}, nil
+	}
+
+	logger.V(1).Info("Poll: database not yet online, requeueing",
+		"database", restore.Spec.DatabaseName, "online", online, "total", total, "diag", diag)
+	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
 // resolveClusterPVCRestoreURI spawns the in-cluster HTTP seed proxy for a

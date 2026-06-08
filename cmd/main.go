@@ -364,6 +364,12 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
 				RequeueAfter: controller.GetTestRequeueAfter(),
+				// Cluster-native Cypher restores poll database online-state
+				// across requeues (pollClusterRestoreOnline) rather than
+				// blocking a worker, but >1 worker still keeps independent
+				// restores (and any inline CREATE…WAIT) from head-of-line
+				// blocking each other.
+				MaxConcurrentReconciles: 4,
 			},
 		},
 		{
@@ -488,6 +494,9 @@ func setupDevelopmentControllers(mgr ctrl.Manager, controllers []string) error {
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
 				RequeueAfter: controller.GetTestRequeueAfter(),
+				// See dev-mode wiring above: poll-based online wait + multiple
+				// workers prevents one slow restore from starving the rest.
+				MaxConcurrentReconciles: 4,
 			}, "Neo4jRestore"
 		},
 		"plugin": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {

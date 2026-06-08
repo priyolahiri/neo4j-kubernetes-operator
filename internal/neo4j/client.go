@@ -1876,49 +1876,12 @@ func (c *Client) RecreateDatabaseWithSeedURI(
 	return true, nil
 }
 
-// WaitForDatabaseOnline blocks until every allocation of databaseName reports
-// currentStatus=online (i.e. converged to its requestedStatus), or returns an
-// error on timeout / terminal failure.
-//
-// This is REQUIRED after RecreateDatabaseWithSeedURI: unlike
-// `CREATE DATABASE … WAIT`, the `dbms.recreateDatabase` procedure is
-// asynchronous — it returns as soon as the recreate is scheduled, long before
-// the per-server seed-from-URI finishes. Marking a restore Completed on the
-// bare procedure return reports success while the database is still offline
-// (or has failed to seed). Polling SHOW DATABASE until online closes that gap
-// and surfaces the seed error (via statusMessage) when the seed fails.
-func (c *Client) WaitForDatabaseOnline(ctx context.Context, databaseName string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	var lastDiag string
-	for {
-		online, total, diag, err := c.databaseOnlineState(ctx, databaseName)
-		if err != nil {
-			// SHOW DATABASE can blip transiently while the recreate drops and
-			// re-allocates the database; tolerate until the deadline.
-			lastDiag = err.Error()
-		} else {
-			lastDiag = diag
-			// total>0 AND every allocation online → converged.
-			if total > 0 && online == total {
-				return nil
-			}
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("database %q did not come online within %s (%d/%d allocations online); last status: %s",
-				databaseName, timeout, online, total, lastDiag)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(3 * time.Second):
-		}
-	}
-}
-
-// databaseOnlineState returns how many allocations of databaseName are online,
+// DatabaseOnlineState returns how many allocations of databaseName are online,
 // the total allocation count, and a human-readable diagnostic string
-// (currentStatus + statusMessage per row) for logging on timeout.
-func (c *Client) databaseOnlineState(ctx context.Context, databaseName string) (online, total int, diag string, err error) {
+// (currentStatus + statusMessage per row) for logging on timeout. It runs a
+// single bounded SHOW DATABASE, so callers can poll it across reconciles
+// without holding a worker (see pollClusterRestoreOnline).
+func (c *Client) DatabaseOnlineState(ctx context.Context, databaseName string) (online, total int, diag string, err error) {
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
 		AccessMode:   neo4j.AccessModeRead,
 		DatabaseName: "system",
