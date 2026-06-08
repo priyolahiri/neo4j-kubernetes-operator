@@ -271,7 +271,7 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 		shardArtifacts := r.expectedShardArtifactsForBackup(ctx, latest)
 		for i := range jobs.Items {
 			job := &jobs.Items[i]
-			run, ok := jobToBackupRun(job)
+			run, ok := jobToBackupRun(job, latest.Name)
 			if !ok {
 				continue // still running
 			}
@@ -367,10 +367,16 @@ func sortBackupRunsNewestFirst(runs []neo4jv1beta1.BackupRun) {
 
 // jobToBackupRun builds a BackupRun for a completed Job. Returns ok=false if
 // the Job has not finished (neither Succeeded nor Failed > 0).
-func jobToBackupRun(job *batchv1.Job) (neo4jv1beta1.BackupRun, bool) {
+//
+// `backupsPath` is the per-CR artifact directory (relative to storage
+// root) — same for every run of one CR under the shared-directory layout
+// (rule 40). Pass the Neo4jBackup CR name; jobToBackupRun records it as
+// `BackupRun.BackupsPath` for audit + sharded-seed-proxy URL building.
+// The Job UID still uniquely identifies the run via `BackupRun.RunID`.
+func jobToBackupRun(job *batchv1.Job, backupsPath string) (neo4jv1beta1.BackupRun, bool) {
 	run := neo4jv1beta1.BackupRun{
 		RunID:       string(job.UID),
-		BackupsPath: job.Name,
+		BackupsPath: backupsPath,
 	}
 	if job.Status.StartTime != nil {
 		run.StartTime = *job.Status.StartTime
@@ -824,18 +830,19 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 		}
 	}
 
-	// Append the per-run subfolder so every backup execution writes into
-	// its own directory (see backupRunIDEnvVar). The env var is set on the
-	// Pod via the downward API; the shell expands it at command-execution
-	// time. status.history.BackupsPath records the same Job name so each
-	// history entry deterministically points at its artifact directory.
-	// Trailing slash matters for cloud targets: neo4j-admin rejects
-	// "s3://bucket/path/run-id" with "The path … is not a directory - please
-	// add a terminal '/' to your path". The runtime-evaluated ${BACKUP_RUN_ID}
-	// is a per-run subdirectory, so we always want directory semantics.
-	// Harmless for PVC targets — the `mkdir -p` prelude tolerates a trailing
-	// slash and the local filesystem treats both forms identically.
-	toPath := r.buildToPath(backup) + "/${BACKUP_RUN_ID}/"
+	// All runs for one Neo4jBackup CR share a single --to-path directory
+	// (NOT per-run subfolders). This is what neo4j-admin expects for
+	// `--type=DIFF` chaining — diff backups read the prior FULL artifact
+	// from the same directory to compute the delta. Per-run isolation is
+	// preserved at the FILENAME level: neo4j-admin embeds a timestamp in
+	// each artifact, and our F3 Pod-log parser captures it into
+	// BackupRun.ArtifactFilename / ShardArtifacts.Filename so restores
+	// can pin a specific run when needed. Trailing slash matters for
+	// cloud targets: neo4j-admin rejects "s3://bucket/path" with "The
+	// path … is not a directory - please add a terminal '/' to your
+	// path". Harmless for PVC targets — the local filesystem treats
+	// both forms identically.
+	toPath := r.buildToPath(backup) + "/"
 	// The --from FQDN differs between cluster and standalone targets;
 	// resolve the type from the live API so the FQDN matches reality.
 	// Falls back to the cluster shape on any lookup error so the
@@ -915,12 +922,22 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 	// succeeded, validate is informational. The operator parses the
 	// stdout into BackupRun.Validation after the Job completes (see the
 	// post-Job hook in recordOneShotBackupRun / reconcileScheduledHistory).
-	// dbArg matches the backup command's database argument so validate
-	// runs against the same scope (one DB / glob / all-DBs).
+	//
+	// **Sharded validate takes the LITERAL DB name, not the backup-side glob**:
+	// per the sharded admin-operations docs, `neo4j-admin backup validate
+	// --database="foo"` auto-discovers and validates every shard (foo-g000,
+	// foo-p000, …) under the parent name. Passing the `foo*` glob (which
+	// the backup command needs to capture all shards in one invocation)
+	// makes validate try to evaluate `foo*-g000` literally and emit
+	//   "Unable to find valid backup chain for database 'foo*-g000'"
+	// — unparseable. Strip the trailing `*` here so validate sees the
+	// canonical parent name.
 	if backup.Spec.Options != nil && backup.Spec.Options.Validate != nil && *backup.Spec.Options.Validate {
 		validateDBArg := dbName
 		if allDatabases {
 			validateDBArg = "*"
+		} else {
+			validateDBArg = strings.TrimSuffix(validateDBArg, "*")
 		}
 		cmd += fmt.Sprintf(` && (neo4j-admin backup validate --from-path=%s --database="%s" || true)`, toPath, validateDBArg)
 	}
@@ -932,39 +949,45 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 	return cmd, nil
 }
 
-// buildToPath returns the BASE --to-path value (storage root). The actual
-// --to-path passed to neo4j-admin appends a per-run subfolder
-// ("${BACKUP_RUN_ID}") at command-execution time, see buildBackupCommand and
-// backupRunIDEnvVar. Keeping each run in its own subfolder is what lets
-// status.history.BackupsPath unambiguously identify the artifacts a given
-// BackupRun produced — the previous flat layout had every scheduled run
-// dumping into the same directory with no way to map run-to-artifact (see
-// issue #129).
+// buildToPath returns the --to-path value passed to neo4j-admin. All runs
+// of a single Neo4jBackup CR share this directory — it's how neo4j-admin
+// chains `--type=DIFF` backups off the prior FULL. Per-run identity is
+// preserved via the timestamp neo4j-admin embeds in each artifact
+// filename; F3 Pod-log parsing captures that into
+// BackupRun.ArtifactFilename / ShardArtifacts.Filename so restores can
+// pin a specific run.
+//
+// The path embeds the CR name as a per-CR segment (`<base>/<cr-name>/`)
+// so multiple Neo4jBackup CRs sharing a storage location stay isolated.
+// Without this segment, two CRs (e.g. `daily-prod-backup` and
+// `weekly-prod-backup`) pointed at the same bucket+path would commingle
+// artifacts and break diff chaining for whichever CR's history doesn't
+// match the most-recent FULL on disk.
 func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1beta1.Neo4jBackup) string {
 	st := backup.Spec.Storage
 	p := st.Path
 	if p == "" {
 		p = "backups"
 	}
+	crSegment := backup.Name
 	switch st.Type {
 	case "s3":
-		return fmt.Sprintf("s3://%s/%s", st.Bucket, p)
+		return fmt.Sprintf("s3://%s/%s/%s", st.Bucket, p, crSegment)
 	case "gcs":
-		return fmt.Sprintf("gs://%s/%s", st.Bucket, p)
+		return fmt.Sprintf("gs://%s/%s/%s", st.Bucket, p, crSegment)
 	case "azure":
-		return fmt.Sprintf("azb://%s/%s", st.Bucket, p)
+		return fmt.Sprintf("azb://%s/%s/%s", st.Bucket, p, crSegment)
 	default: // pvc
-		return "/backup"
+		return fmt.Sprintf("/backup/%s", crSegment)
 	}
 }
 
 // backupRunIDEnvVar exposes the backing Job's name to the backup Pod as
-// BACKUP_RUN_ID via the downward API. The shell command in buildBackupCommand
-// appends "/${BACKUP_RUN_ID}/" to --to-path so every run isolates its
-// artifacts in its own subfolder. The operator records the same value in
-// BackupRun.BackupsPath when populating status.history, so each history
-// entry deterministically identifies its artifact directory without log
-// parsing or out-of-band coordination.
+// BACKUP_RUN_ID via the downward API. The value is retained for log
+// correlation (operator logs reference the Job name; Pod logs surface
+// the same name) and for status.history.BackupsPath audit reference,
+// even though --to-path no longer appends it as a subfolder (runs now
+// share a directory so neo4j-admin can chain `--type=DIFF` backups).
 //
 // For one-shot Neo4jBackup CRs the value is "<backup>-backup". For
 // CronJob-spawned scheduled runs Kubernetes names each child Job
@@ -1388,7 +1411,7 @@ func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *
 func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, job *batchv1.Job) {
 	logger := log.FromContext(ctx)
 
-	run, ok := jobToBackupRun(job)
+	run, ok := jobToBackupRun(job, backup.Name)
 	if !ok {
 		// Job is neither Succeeded nor Failed — nothing terminal to record.
 		// handleExistingBackupJob only calls us once one branch is true, so

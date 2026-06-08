@@ -181,18 +181,45 @@ func (r *Neo4jBackupReconciler) fetchBackupPodLog(ctx context.Context, jobName, 
 	return string(buf), nil
 }
 
-// shardValidationStatusRegex matches per-shard rows in `neo4j-admin backup
-// validate` output. Format isn't versioned-stable, so this is permissive:
-// looks for a shard-shaped name followed by an OK / Ahead / Behind / Unknown
-// status, with flexible separators (spaces, colons, dashes).
+// shardValidationStatusRegex matches a per-shard row in `neo4j-admin backup
+// validate` output. Format per the sharded admin-operations docs:
+//
+//	| foo-g000 | /bucket/backups/foo-g000-2025-…-T21-04-42.backup |     OK |
+//	| foo-p000 | /backups/foo-p000-…-T21-04-37.backup             | Backup is behind (3 < 5) the graph shard backup chain |
+//
+// Three pipe-separated columns: shard name, path, status. Status is free-text
+// — "OK" alone for healthy, "Backup is behind …"/"Backup is ahead …" for lag.
+// The (?m) flag anchors ^ / $ per line so the regex matches one row at a time.
 //
 // Capture groups:
 //
 //	[1] = shard name (e.g. "products-g000")
-//	[2] = status keyword
+//	[2] = full status text (trimmed by the caller)
 var shardValidationStatusRegex = regexp.MustCompile(
-	`([a-zA-Z][\w.-]*-(?:g|p)\d{3})[^A-Za-z]+\b(OK|Ahead|Behind|Unknown)\b`,
+	`(?m)^\s*\|\s*([a-zA-Z][\w.-]*-(?:g|p)\d{3})\s*\|[^|]+\|\s*([^|]+?)\s*\|\s*$`,
 )
+
+// classifyShardValidationStatus maps the free-text status column to the
+// canonical enum stored on `BackupRun.Validation.PerShard[].Status`.
+// Recognises "OK" exactly; "Backup is ahead …" / "Backup is behind …"
+// substring matches (case-insensitive — the docs vary on capitalisation
+// across versions); everything else is "Unknown" so the raw text remains
+// visible via RawOutput.
+func classifyShardValidationStatus(statusText string) string {
+	trimmed := strings.TrimSpace(statusText)
+	if trimmed == "OK" {
+		return "OK"
+	}
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.Contains(lower, "ahead"):
+		return "Ahead"
+	case strings.Contains(lower, "behind"):
+		return "Behind"
+	default:
+		return "Unknown"
+	}
+}
 
 // validateRawOutputCap is the maximum number of bytes of raw validate
 // stdout stored on `BackupRun.Validation.RawOutput`. The full log can be
@@ -235,10 +262,10 @@ func parseValidationFromLog(logBody string) *neo4jv1beta1.BackupValidationResult
 	// recent one is the authoritative state.
 	perShardByName := map[string]neo4jv1beta1.ShardValidationStatus{}
 	for _, m := range matches {
-		shardName, status := m[1], m[2]
+		shardName, statusText := m[1], m[2]
 		perShardByName[shardName] = neo4jv1beta1.ShardValidationStatus{
 			ShardName: shardName,
-			Status:    status,
+			Status:    classifyShardValidationStatus(statusText),
 		}
 	}
 

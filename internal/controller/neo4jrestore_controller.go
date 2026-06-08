@@ -1050,11 +1050,20 @@ func resolveLocalPVCFromPath(backupPath, databaseName string) string {
 	if databaseName == "" || !strings.HasPrefix(backupPath, "/backup") {
 		return backupPath
 	}
-	// `ls ... | head -1` picks the single matching file (per-run subfolder
-	// holds at most one `<dbname>-*.backup`). If no match exists, ls prints
-	// to stderr and head returns nothing, so --from-path= becomes empty and
-	// neo4j-admin errors with a clear "missing argument" message.
-	return fmt.Sprintf("$(ls %s/%s-*.backup | head -1)",
+	// `ls ... | tail -1` picks the LATEST matching file. neo4j-admin embeds
+	// an ISO-8601 timestamp in each artifact's filename
+	// (`<dbname>-YYYY-MM-DDThh-mm-ss.backup`), and ISO-8601 sorts
+	// lexicographically into chronological order — so `ls` (default
+	// alphabetical) | `tail -1` reliably returns the most-recent run when
+	// multiple runs share the directory (the canonical layout for
+	// `--type=DIFF` chaining). Callers that need a specific run pin it via
+	// spec.source.backupRunID → the resolver pre-substitutes the captured
+	// ArtifactFilename into backupPath, in which case backupPath is already
+	// a file path and `resolveLocalPVCFromPath` is not used. If no match
+	// exists, ls prints to stderr and tail returns nothing, so --from-path=
+	// becomes empty and neo4j-admin errors with a clear "missing argument"
+	// message.
+	return fmt.Sprintf("$(ls %s/%s-*.backup | tail -1)",
 		shellQuote(backupPath), shellQuote(databaseName))
 }
 

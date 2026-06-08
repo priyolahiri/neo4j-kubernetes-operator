@@ -140,12 +140,13 @@ func TestParseValidationFromLog_Matrix(t *testing.T) {
 		wantPerShard []neo4jv1beta1.ShardValidationStatus
 	}{
 		{
-			name: "all shards OK → Overall=OK",
+			name: "all shards OK → Overall=OK (canonical table format)",
 			logBody: strings.Join([]string{
-				"Running: neo4j-admin backup validate --from-path=s3://b/p/ --database=\"products*\"",
-				"products-g000: OK",
-				"products-p000: OK",
-				"products-p001: OK",
+				"Running: neo4j-admin backup validate --from-path=s3://b/p/ --database=\"products\"",
+				"| DATABASE     | PATH                                                | STATUS |",
+				"| products-g000 | /bucket/backups/products-g000-2025-06-11T21-04-42.backup |     OK |",
+				"| products-p000 | /bucket/backups/products-p000-2025-06-11T21-04-37.backup |     OK |",
+				"| products-p001 | /bucket/backups/products-p001-2025-06-11T21-04-40.backup |     OK |",
 			}, "\n"),
 			wantOverall: "OK",
 			wantPerShard: []neo4jv1beta1.ShardValidationStatus{
@@ -155,11 +156,12 @@ func TestParseValidationFromLog_Matrix(t *testing.T) {
 			},
 		},
 		{
-			name: "one shard Behind → Overall=Degraded",
+			name: "one shard Behind → Overall=Degraded (real validate output format)",
 			logBody: strings.Join([]string{
-				"products-g000: OK",
-				"products-p000: Behind",
-				"products-p001: OK",
+				"Running: neo4j-admin backup validate --from-path=/backup/p/ --database=\"products\"",
+				"| products-g000 | /backups/products-g000-T21-04-42.backup |                                                          OK |",
+				"| products-p000 | /backups/products-p000-T21-04-37.backup | Backup is behind (3 < 5) the graph shard backup chain    |",
+				"| products-p001 | /backups/products-p001-T21-04-40.backup |                                                          OK |",
 			}, "\n"),
 			wantOverall: "Degraded",
 			wantPerShard: []neo4jv1beta1.ShardValidationStatus{
@@ -171,8 +173,9 @@ func TestParseValidationFromLog_Matrix(t *testing.T) {
 		{
 			name: "Ahead also counts as Degraded",
 			logBody: strings.Join([]string{
-				"products-g000: Ahead",
-				"products-p000: OK",
+				"Running: neo4j-admin backup validate --from-path=/backup/p/ --database=\"products\"",
+				"| products-g000 | /backups/products-g000-T21-04-42.backup | Backup is ahead (12 > 8) of the graph shard backup chain |",
+				"| products-p000 | /backups/products-p000-T21-04-37.backup |                                                       OK |",
 			}, "\n"),
 			wantOverall: "Degraded",
 			wantPerShard: []neo4jv1beta1.ShardValidationStatus{
@@ -198,9 +201,10 @@ func TestParseValidationFromLog_Matrix(t *testing.T) {
 		{
 			name: "last-occurrence-wins per shard",
 			logBody: strings.Join([]string{
-				"products-g000: Behind",
-				// later, validate retried or summary section reported OK:
-				"products-g000: OK",
+				"Running: neo4j-admin backup validate --from-path=/backup/p/ --database=\"products\"",
+				"| products-g000 | /a-T21-04-42.backup | Backup is behind (3 < 5) the graph shard backup chain |",
+				// later, validate re-emitted final summary with OK:
+				"| products-g000 | /a-T21-04-42.backup |                                                    OK |",
 			}, "\n"),
 			wantOverall: "OK",
 			wantPerShard: []neo4jv1beta1.ShardValidationStatus{
