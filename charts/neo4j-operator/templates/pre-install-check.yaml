@@ -34,13 +34,15 @@ spec:
           echo "Checking prerequisites for Neo4j Operator..."
           FAILED=0
 
-          # Check cert-manager CRDs
+          # cert-manager is OPTIONAL — required only for deployments that use
+          # cert-manager TLS (spec.tls.mode: cert-manager). The operator runs
+          # fine without it, so this is a WARNING, not a hard failure.
           if kubectl get crd certificates.cert-manager.io > /dev/null 2>&1; then
             echo "✓ cert-manager CRDs found"
           else
-            echo "✗ cert-manager CRDs not found — install cert-manager before deploying the operator"
-            echo "  See: https://cert-manager.io/docs/installation/"
-            FAILED=1
+            echo "⚠ cert-manager CRDs not found — the operator will still install and run."
+            echo "  Install cert-manager only if you plan to use cert-manager TLS"
+            echo "  (spec.tls.mode: cert-manager). See: https://cert-manager.io/docs/installation/"
           fi
 
           if [ "$FAILED" -eq 1 ]; then
@@ -50,5 +52,5 @@ spec:
           fi
 
           echo ""
-          echo "All pre-install checks passed."
+          echo "All required pre-install checks passed."
 {{- end }}

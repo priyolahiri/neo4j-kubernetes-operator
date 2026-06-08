@@ -15,10 +15,10 @@ This Helm chart deploys the Neo4j Enterprise Operator for Kubernetes, which mana
 ### From the Helm chart repository (recommended, available from v1.8.0 onwards)
 
 ```bash
-helm repo add neo4j https://neo4j-partners.github.io/neo4j-kubernetes-operator/charts
+helm repo add neo4j-operator https://neo4j-partners.github.io/neo4j-kubernetes-operator/charts
 helm repo update
 
-helm install neo4j-operator neo4j/neo4j-operator \
+helm install neo4j-operator neo4j-operator/neo4j-operator \
   --namespace neo4j-operator-system \
   --create-namespace
 ```

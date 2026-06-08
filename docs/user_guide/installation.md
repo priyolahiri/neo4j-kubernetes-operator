@@ -11,17 +11,17 @@ This guide provides detailed instructions for installing the Neo4j Enterprise Op
 > updated automatically on every operator release.
 
 ```bash
-helm repo add neo4j https://neo4j-partners.github.io/neo4j-kubernetes-operator/charts
+helm repo add neo4j-operator https://neo4j-partners.github.io/neo4j-kubernetes-operator/charts
 helm repo update
 
-helm install neo4j-operator neo4j/neo4j-operator \
+helm install neo4j-operator neo4j-operator/neo4j-operator \
   --namespace neo4j-operator-system \
   --create-namespace
 ```
 
 **Pin to a specific version**:
 ```bash
-helm install neo4j-operator neo4j/neo4j-operator \
+helm install neo4j-operator neo4j-operator/neo4j-operator \
   --version 1.8.0 \
   --namespace neo4j-operator-system \
   --create-namespace
@@ -30,9 +30,9 @@ helm install neo4j-operator neo4j/neo4j-operator \
 **Customise installation values**:
 ```bash
 # View available configuration options
-helm show values neo4j/neo4j-operator
+helm show values neo4j-operator/neo4j-operator
 
-helm install neo4j-operator neo4j/neo4j-operator \
+helm install neo4j-operator neo4j-operator/neo4j-operator \
   --namespace neo4j-operator-system \
   --create-namespace \
   --set resources.limits.memory=512Mi
@@ -41,7 +41,7 @@ helm install neo4j-operator neo4j/neo4j-operator \
 **Upgrade**:
 ```bash
 helm repo update
-helm upgrade neo4j-operator neo4j/neo4j-operator \
+helm upgrade neo4j-operator neo4j-operator/neo4j-operator \
   --namespace neo4j-operator-system
 ```
 
