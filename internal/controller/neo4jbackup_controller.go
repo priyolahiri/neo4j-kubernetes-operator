@@ -602,6 +602,59 @@ func (r *Neo4jBackupReconciler) ensureTempStagingPVC(ctx context.Context, backup
 	return r.Create(ctx, pvc)
 }
 
+// ensureBackupPVC provisions the destination backup PVC for storage.type=pvc
+// when the user has specified `storage.pvc.size` (and optionally
+// `storage.pvc.storageClassName`). If the PVC already exists (or `size` is
+// empty — user is referencing a pre-existing PVC), this is a no-op.
+//
+// The PVC is owned by the Neo4jBackup CR so it's GC'd when the CR is
+// deleted. To retain backups beyond CR lifetime, users should either
+// (a) pre-create the PVC themselves so the operator finds it existing,
+// or (b) leave `size` empty and provision externally.
+func (r *Neo4jBackupReconciler) ensureBackupPVC(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
+	if backup.Spec.Storage.Type != "pvc" {
+		return nil
+	}
+	if backup.Spec.Storage.PVC == nil || backup.Spec.Storage.PVC.Name == "" {
+		return nil
+	}
+	if backup.Spec.Storage.PVC.Size == "" {
+		// User is referencing an externally-provisioned PVC; nothing for
+		// the operator to do.
+		return nil
+	}
+
+	pvcName := backup.Spec.Storage.PVC.Name
+	existing := &corev1.PersistentVolumeClaim{}
+	if err := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: backup.Namespace}, existing); err == nil {
+		return nil // PVC already exists
+	} else if !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to get backup PVC %s/%s: %w", backup.Namespace, pvcName, err)
+	}
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvcName,
+			Namespace: backup.Namespace,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse(backup.Spec.Storage.PVC.Size),
+				},
+			},
+		},
+	}
+	if backup.Spec.Storage.PVC.StorageClassName != "" {
+		pvc.Spec.StorageClassName = &backup.Spec.Storage.PVC.StorageClassName
+	}
+	if err := controllerutil.SetControllerReference(backup, pvc, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set owner reference on backup PVC: %w", err)
+	}
+	return r.Create(ctx, pvc)
+}
+
 func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
 	// Glob-safety check for sharded backups: refuse to submit a Job whose
 	// `{name}*` neo4j-admin glob would also pull in unrelated databases. No-op
@@ -613,6 +666,13 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 	// Create temp staging PVC if configured
 	if err := r.ensureTempStagingPVC(ctx, backup); err != nil {
 		return nil, fmt.Errorf("failed to create temp staging PVC: %w", err)
+	}
+
+	// Provision the destination backup PVC when storage.type=pvc and the
+	// user has specified `storage.pvc.size`. Skipped (no-op) when the PVC
+	// already exists or size is empty (user is referencing an external PVC).
+	if err := r.ensureBackupPVC(ctx, backup); err != nil {
+		return nil, fmt.Errorf("failed to create backup PVC: %w", err)
 	}
 
 	jobName := backup.Name + "-backup"
@@ -695,6 +755,11 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 	// scheduled path was skipping it (recheck bug #4).
 	if err := r.ensureTempStagingPVC(ctx, backup); err != nil {
 		return nil, fmt.Errorf("failed to create temp staging PVC: %w", err)
+	}
+	// Same for the destination backup PVC — provision before the CronJob's
+	// first scheduled run fires.
+	if err := r.ensureBackupPVC(ctx, backup); err != nil {
+		return nil, fmt.Errorf("failed to create backup PVC: %w", err)
 	}
 
 	backupCmd, err := r.buildBackupCommand(ctx, backup, cluster)

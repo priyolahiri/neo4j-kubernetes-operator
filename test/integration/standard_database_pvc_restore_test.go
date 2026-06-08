@@ -80,24 +80,6 @@ var _ = Describe("Standard Database PVC Restore Integration Tests", Serial, func
 			Type: corev1.SecretTypeOpaque,
 		})).To(Succeed())
 
-		// Pre-create the backup PVC — the operator references it by name in
-		// the backup Job's volume mount but does NOT auto-provision when
-		// storage.type=pvc. Tests pre-create; production users typically do
-		// too (via their own provisioning workflow).
-		storageClassName := "standard"
-		Expect(k8sClient.Create(ctx, &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{Name: "inventory-backup-pvc", Namespace: testNamespace},
-			Spec: corev1.PersistentVolumeClaimSpec{
-				AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-				StorageClassName: &storageClassName,
-				Resources: corev1.VolumeResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: resource.MustParse("1Gi"),
-					},
-				},
-			},
-		})).To(Succeed())
-
 		SetDefaultEventuallyTimeout(300 * time.Second)
 		SetDefaultEventuallyPollingInterval(pollInterval)
 	})
