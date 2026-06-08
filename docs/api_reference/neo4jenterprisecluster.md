@@ -18,7 +18,7 @@ The `Neo4jEnterpriseCluster` Custom Resource Definition (CRD) manages Neo4j Ente
 - **Single StatefulSet**: `{cluster-name}-server` with configurable replica count
 - **Server Pods**: Named `{cluster-name}-server-0`, `{cluster-name}-server-1`, etc.
 - **Self-Organization**: Servers automatically organize into primary/secondary roles for databases
-- **Centralized Backup**: Optional `{cluster-name}-backup-0` pod for centralized backup operations
+- **Backup**: Use the [`Neo4jBackup` CRD](neo4jbackup.md) — each CR spawns a Kubernetes Job. The legacy `spec.backups` field still emits a `{cluster-name}-backup-0` StatefulSet for back-compat but is deprecated for new deployments.
 - **Role Flexibility**: Servers can host multiple databases with different roles
 
 **When to Use**:
@@ -1339,7 +1339,7 @@ spec:
 4. **Storage**: Use fast SSD storage classes (`fast-ssd`, `premium-ssd`) for production workloads
 5. **Security**: Always enable TLS and use strong password policies in production
 6. **Monitoring**: Enable query monitoring and centralized logging for performance insights
-7. **Backup Strategy**: Use centralized backup with appropriate retention policies
+7. **Backup Strategy**: Define a `Neo4jBackup` CR per backup target (one-shot or scheduled via `spec.schedule`) with appropriate `retention` policies
 8. **Scaling**: Plan for growth - scaling up is easier than scaling down
 
 ## Troubleshooting

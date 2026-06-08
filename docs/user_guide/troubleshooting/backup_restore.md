@@ -64,25 +64,23 @@ kubectl annotate neo4jenterprisecluster production-cluster troubleshooting.neo4j
 
 **Diagnosis:**
 ```bash
-# Check backup job logs
-kubectl logs job/production-backup-$(date +%Y%m%d)-001
+# Check backup Job's Pod log (one-shot: <neo4jbackup-name>-backup;
+# CronJob child: <neo4jbackup-name>-<unix-seconds>).
+kubectl logs -n <ns> job/<job-name>
 
-# Check centralized backup pod logs (clusters)
-kubectl logs production-cluster-backup-0 -c backup
-
-# Check Neo4j server logs for backup-related errors
-kubectl logs production-cluster-server-0 -c neo4j | grep -i backup
+# Check Neo4j server logs for backup-related errors (which server
+# was the leader at backup time).
+kubectl logs <cluster>-server-0 -c neo4j | grep -i backup
 ```
 
 **Common Solutions:**
 
-1. **Insufficient Disk Space**:
+1. **Insufficient Disk Space** (PVC storage):
    ```bash
-   # Check available storage
-   kubectl exec production-cluster-backup-0 -c backup -- df -h /backups
-
-   # Solution: Increase backup storage or cleanup old backups
+   # `kubectl exec` into any server pod to inspect the bound PVC.
+   kubectl exec <cluster>-server-0 -c neo4j -- df -h /data
    ```
+   Increase `Neo4jBackup.spec.storage.pvc.size` (only effective when the operator provisions the PVC — see [bring-your-own PVC](../guides/backup_restore.md#pvc-ownership-auto-provision-vs-bring-your-own) otherwise) or set `retention.maxCount` / `retention.maxAge` to prune old runs.
 
 2. **Database Lock Issues**:
    ```bash
@@ -260,9 +258,10 @@ kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manag
 
 3. **Storage Access Problems**:
    ```bash
-   # Test access to backup storage location
-   kubectl exec target-cluster-backup-0 -c backup -- \
-     aws s3 ls s3://backup-bucket/path/to/backup/
+   # Run a transient pod to test S3 access from inside the cluster.
+   kubectl run -it --rm s3-test --image=amazon/aws-cli \
+     --restart=Never --env-from=secretRef/aws-backup-creds -- \
+     s3 ls s3://backup-bucket/path/to/backup/
    ```
 
 #### Symptom: Restore job fails during execution
