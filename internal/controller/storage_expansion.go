@@ -138,7 +138,8 @@ func (r *Neo4jEnterpriseClusterReconciler) checkStorageExpansionNeeded(ctx conte
 	}
 	result.dataExpansion = (state == pvcSizeExpand)
 
-	// Check backup volumes
+	// Check backup volumes (legacy spec.backups path).
+	//nolint:staticcheck // SA1019: deprecation surface; user-facing signal lives in the cluster controller.
 	if cluster.Spec.Backups != nil {
 		backupSize := cluster.Spec.Storage.Size
 		if cluster.Spec.Storage.BackupStorage != nil && cluster.Spec.Storage.BackupStorage.Size != "" {

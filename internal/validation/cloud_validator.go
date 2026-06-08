@@ -30,7 +30,11 @@ func NewCloudValidator() *CloudValidator {
 	return &CloudValidator{}
 }
 
-// Validate validates the cloud identity configuration
+// Validate validates the cloud identity configuration on the legacy
+// spec.backups field (deprecated; see Neo4jEnterpriseClusterSpec.Backups).
+// New users should use the Neo4jBackup CRD instead.
+//
+//nolint:staticcheck // SA1019: legacy spec.backups back-compat path.
 func (v *CloudValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 

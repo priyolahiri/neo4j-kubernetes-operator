@@ -237,14 +237,19 @@ func BuildStandaloneBackupFromAddress(standalone *neo4jv1beta1.Neo4jEnterpriseSt
 		standalone.Name, standalone.Name, standalone.Namespace, BackupPort)
 }
 
-// BuildBackupStatefulSet creates a single, centralized backup StatefulSet for the cluster
-// This is more efficient than having backup sidecars in each server pod
+// BuildBackupStatefulSet creates a single, centralized backup StatefulSet
+// for the cluster when spec.backups is set.
+//
+// Deprecated: backups are now driven by the Neo4jBackup CRD. This builder
+// + the centralized StatefulSet path remain for back-compat with existing
+// CRs that set spec.backups; new clusters should rely entirely on
+// Neo4jBackup CRs. The legacy path will be removed in a future release.
+//
+//nolint:staticcheck // SA1019: legacy spec.backups back-compat path.
 func BuildBackupStatefulSet(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *appsv1.StatefulSet {
-	// Only create backup StatefulSet if backups are configured
 	if cluster.Spec.Backups == nil {
 		return nil
 	}
-
 	return buildCentralizedBackupStatefulSet(cluster)
 }
 
@@ -1298,6 +1303,9 @@ done`
 }
 
 // buildBackupVolumeClaimTemplates creates PVC templates for backup storage
+// on the legacy spec.backups path (deprecated; see BuildBackupStatefulSet).
+//
+//nolint:staticcheck // SA1019: legacy spec.backups back-compat path.
 func buildBackupVolumeClaimTemplates(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []corev1.PersistentVolumeClaim {
 	if cluster.Spec.Backups == nil {
 		return nil
@@ -1751,6 +1759,10 @@ func buildVolumeClaimTemplatesForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpris
 	}
 }
 
+// getServiceAccountNameForEnterprise resolves the ServiceAccount used by
+// legacy spec.backups (deprecated; see BuildBackupStatefulSet).
+//
+//nolint:staticcheck // SA1019: legacy spec.backups back-compat path.
 func getServiceAccountNameForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	if cluster.Spec.Backups != nil &&
 		cluster.Spec.Backups.Cloud != nil &&

@@ -62,6 +62,18 @@ type Neo4jEnterpriseClusterSpec struct {
 
 	Service *ServiceSpec `json:"service,omitempty"`
 
+	// Backups configures the legacy centralized backup StatefulSet
+	// (`{cluster}-backup-0`) — superseded by the `Neo4jBackup` CRD.
+	//
+	// Deprecated: use Neo4jBackup CRs instead. Each Neo4jBackup CR spawns
+	// a Kubernetes Job per run (one-shot or scheduled) with first-class
+	// CronJob retention, suspend, status.history, sharded-DB targets,
+	// and chainFromBackup. The centralized StatefulSet built from this
+	// field will be removed in a future release.
+	//
+	// When this field is set, the operator emits a Warning event
+	// `LegacyBackupsDeprecated` on every reconcile and sets
+	// `status.conditions[type=LegacyBackupsInUse]=True`.
 	Backups *BackupsSpec `json:"backups,omitempty"`
 
 	// UpgradeStrategy specifies how to handle rolling upgrades

@@ -20,6 +20,14 @@ Watch for `status.phase: Completed`. Logs at `kubectl logs job/simple-backup-bac
 - Admin credentials Secret
 - Storage backend: PVC, S3, GCS, or Azure
 
+## Migrating from legacy `spec.backups`
+
+If you have existing `Neo4jEnterpriseCluster` CRs with the legacy `spec.backups` field set, the operator still provisions the `{cluster}-backup-0` centralized StatefulSet for back-compat but emits a Warning Event `LegacyBackupsDeprecated` on every reconcile and stamps `status.conditions[type=LegacyBackupsInUse].status=True`. The field will be removed in a future release.
+
+**Migration**: replace `spec.backups: { … }` on the cluster with one or more `Neo4jBackup` CRs. The Neo4jBackup CRD covers every legacy capability plus more — one-shot or scheduled (`spec.schedule`) backups, native CronJob retention/suspend, status.history, sharded-DB targets, mixed-cadence chains via `chainFromBackup` (rule 78), and per-Job pod resource control (`spec.options.resources`).
+
+After migrating, remove `spec.backups` from the cluster CR. The centralized StatefulSet is deleted on the next reconcile.
+
 ## Backup Architecture
 
 The operator spawns a Kubernetes Job that runs `neo4j-admin database backup` from the same Neo4j Enterprise image as the cluster (no sidecar containers). The Job connects to each `{cluster}-server-N` Pod on port 6362 (`server.backup.listen_address=0.0.0.0:6362`, configured automatically). For cloud destinations, `neo4j-admin` streams directly to the bucket — set `tempStorage` for large databases that need a PVC for staging.

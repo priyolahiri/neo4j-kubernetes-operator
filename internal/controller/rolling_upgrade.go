@@ -679,7 +679,8 @@ func (r *RollingUpgradeOrchestrator) validateStatefulSetsReady(
 			serverSts.Status.ReadyReplicas, *serverSts.Spec.Replicas)
 	}
 
-	// Check backup sidecar StatefulSet if configured
+	// Check backup sidecar StatefulSet (legacy spec.backups path).
+	//nolint:staticcheck // SA1019: deprecation surface; user-facing signal lives in the cluster controller.
 	if cluster.Spec.Backups != nil {
 		backupSts := &appsv1.StatefulSet{}
 		if err := r.Get(ctx, types.NamespacedName{
