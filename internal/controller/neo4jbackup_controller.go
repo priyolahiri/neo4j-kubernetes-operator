@@ -822,6 +822,7 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 							Env:             append([]corev1.EnvVar{backupRunIDEnvVar()}, r.buildCloudEnvVars(backup)...),
 							VolumeMounts:    r.buildVolumeMounts(backup),
 							SecurityContext: resources.DefaultNeo4jContainerSecurityContext(),
+							Resources:       resolveJobResources(backup.Spec.Options),
 						},
 					},
 					Volumes: r.buildVolumes(backup),
@@ -935,6 +936,7 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 								Env:             append([]corev1.EnvVar{backupRunIDEnvVar()}, r.buildCloudEnvVars(backup)...),
 								VolumeMounts:    r.buildVolumeMounts(backup),
 								SecurityContext: resources.DefaultNeo4jContainerSecurityContext(),
+								Resources:       resolveJobResources(backup.Spec.Options),
 							},
 						},
 						Volumes: r.buildVolumes(backup),
@@ -1153,6 +1155,44 @@ func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1beta1.Neo4jBackup) st
 	default: // pvc
 		return fmt.Sprintf("/backup/%s", crSegment)
 	}
+}
+
+// defaultJobResources is the Burstable default applied to backup and
+// restore Job containers when the user doesn't supply
+// `spec.options.resources`. Memory floor (512Mi request) keeps the pod
+// out of BestEffort QoS so the kernel OOM-killer doesn't pick it under
+// node pressure; ceiling (2Gi limit) is generous for empty/small DBs
+// and CI-friendly (GitHub-hosted runner ~5Gi usable). Production users
+// with hundreds-of-GB databases should override via spec.options.resources.
+func defaultJobResources() corev1.ResourceRequirements {
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("512Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("1000m"),
+			corev1.ResourceMemory: resource.MustParse("2Gi"),
+		},
+	}
+}
+
+// resolveJobResources returns the user-supplied resources from
+// spec.options.resources, falling back to defaultJobResources().
+func resolveJobResources(opt *neo4jv1beta1.BackupOptions) corev1.ResourceRequirements {
+	if opt != nil && opt.Resources != nil {
+		return *opt.Resources
+	}
+	return defaultJobResources()
+}
+
+// resolveRestoreJobResources is the Neo4jRestore equivalent of
+// resolveJobResources. Same default policy.
+func resolveRestoreJobResources(opt *neo4jv1beta1.RestoreOptionsSpec) corev1.ResourceRequirements {
+	if opt != nil && opt.Resources != nil {
+		return *opt.Resources
+	}
+	return defaultJobResources()
 }
 
 // chainRoot returns the directory segment under spec.storage.path that

@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -126,6 +127,16 @@ type RetentionPolicy struct {
 
 // BackupOptions defines backup-specific options
 type BackupOptions struct {
+	// Resources sets CPU/memory requests + limits on the backup Job's
+	// container. When unset, the operator applies a Burstable default
+	// (request 100m CPU / 512Mi memory, limit 1 CPU / 2Gi memory) sized
+	// for empty/small databases and CI environments. Tune upward for
+	// large production databases (rule of thumb: limit memory should
+	// exceed the largest store file by ~30% to give `neo4j-admin`
+	// breathing room during compaction).
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+
 	// Compress the backup (default: true)
 	// +kubebuilder:default=true
 	Compress bool `json:"compress,omitempty"`

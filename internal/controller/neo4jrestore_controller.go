@@ -778,6 +778,7 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 								return envs
 							}(),
 							VolumeMounts: r.buildRestoreVolumeMounts(&resolvedRestore),
+							Resources:    resolveRestoreJobResources(restore.Spec.Options),
 						},
 					},
 					Volumes: r.buildRestoreVolumes(ctx, &resolvedRestore),
