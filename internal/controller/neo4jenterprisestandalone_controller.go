@@ -743,6 +743,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv
 		"server.metrics.jmx.enabled=false",
 		"server.metrics.csv.enabled=false",
 		"",
+		"# Seed-from-URI providers — register modern providers so every",
+		"# documented URI scheme resolves. ServerSeedProvider is version-gated",
+		"# (Neo4j 2026.04+); S3SeedProvider deliberately excluded — CloudSeedProvider",
+		"# handles s3:// via SDK default credentials.",
+		fmt.Sprintf("dbms.databases.seed_from_uri_providers=%s", resources.SeedFromURIProvidersConfigValue(standalone.Spec.Image.Tag)),
+		"",
 	)
 
 	if standalone.Spec.Monitoring != nil && standalone.Spec.Monitoring.Enabled {

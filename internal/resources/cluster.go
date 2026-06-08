@@ -1897,6 +1897,13 @@ server.metrics.jmx.enabled=false
 server.metrics.csv.enabled=false
 
 `
+	// Seed-from-URI providers — register every modern provider so all
+	// documented URI schemes resolve out of the box. ServerSeedProvider
+	// is version-gated (introduced in Neo4j 2026.04); deprecated
+	// S3SeedProvider is always excluded — CloudSeedProvider handles s3://
+	// via the SDK default credential chain, so legacy `seedCredentials`
+	// is unnecessary. Users override via spec.config.
+	config += fmt.Sprintf("# Seed-from-URI providers (S3SeedProvider deliberately excluded — use CloudSeedProvider)\ndbms.databases.seed_from_uri_providers=%s\n\n", SeedFromURIProvidersConfigValue(cluster.Spec.Image.Tag))
 
 	if cluster.Spec.Monitoring != nil && cluster.Spec.Monitoring.Enabled {
 		config += "\n# Query Monitoring and Metrics\n"
@@ -2119,6 +2126,54 @@ func IsNeo4jVersion202512OrHigher(imageTag string) bool {
 	}
 
 	return version.Major == 2025 && version.Minor >= 12
+}
+
+// IsNeo4jVersion202604OrHigher checks if the Neo4j version ships ServerSeedProvider
+// (the `server://` URI-scheme seed provider for catchup-style seeding from an
+// existing server). Introduced in 2026.04; CalVer-only. Older versions either
+// don't have the class or registered it under a different name, so adding
+// "ServerSeedProvider" to `dbms.databases.seed_from_uri_providers` on a pre-2026.04
+// install can cause Neo4j to log a warning (or refuse to start, depending on the
+// release).
+func IsNeo4jVersion202604OrHigher(imageTag string) bool {
+	if imageTag == "" {
+		return false
+	}
+
+	version, err := neo4j.ParseVersion(imageTag)
+	if err != nil || !version.IsCalver {
+		return false
+	}
+
+	if version.Major > 2026 {
+		return true
+	}
+
+	return version.Major == 2026 && version.Minor >= 4
+}
+
+// SeedFromURIProvidersConfigValue returns the value the operator should emit for
+// `dbms.databases.seed_from_uri_providers` given a Neo4j image tag. The base
+// list registers every modern provider so all documented URI schemes
+// (s3/gs/azb via CloudSeedProvider; file:// via FileSeedProvider;
+// ftp/http/https via URLConnectionSeedProvider) resolve out of the box.
+//
+// `ServerSeedProvider` is appended only on Neo4j 2026.04+ — it was introduced
+// in that release; pre-2026.04 the class isn't registered in
+// META-INF/services and Neo4j will log "provider not found" warnings or
+// refuse to bootstrap. Deprecated `S3SeedProvider` is deliberately excluded
+// across all versions — CloudSeedProvider handles s3:// via the SDK default
+// credential chain, making the legacy `seedCredentials` field unnecessary.
+//
+// Users can override the entire list via spec.config (cluster) or via
+// configLines spec equivalent (standalone) — both builders append user keys
+// last so anything the user sets wins.
+func SeedFromURIProvidersConfigValue(imageTag string) string {
+	providers := "CloudSeedProvider,FileSeedProvider,URLConnectionSeedProvider"
+	if IsNeo4jVersion202604OrHigher(imageTag) {
+		providers += ",ServerSeedProvider"
+	}
+	return providers
 }
 
 // buildPropertyShardingConfig merges required property sharding settings with user overrides
