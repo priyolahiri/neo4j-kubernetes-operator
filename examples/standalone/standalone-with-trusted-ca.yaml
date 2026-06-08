@@ -3,6 +3,12 @@
 #
 # Same pattern as examples/clusters/cluster-with-trusted-cas.yaml but for
 # the simpler standalone case.
+#
+# Prerequisites (create BEFORE applying — this manifest does NOT create them):
+#   kubectl create namespace neo4j-dev
+#   kubectl create secret generic neo4j-admin-secret --namespace neo4j-dev \
+#     --from-literal=username=neo4j --from-literal=password='<your-secure-password>'
+# Also requires the ClusterIssuer referenced below to already exist.
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate

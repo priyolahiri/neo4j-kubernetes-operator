@@ -109,18 +109,17 @@ spec:
     weekly: 4    # Keep weekly backups for 4 weeks
     monthly: 6   # Keep monthly backups for 6 months
 
----
-# Backup credentials
-apiVersion: v1
-kind: Secret
-metadata:
-  name: backup-credentials
-  namespace: default
-type: Opaque
-data:
-  # Replace with actual base64-encoded credentials
-  access-key-id: QUNFRVNTX0tFWV9JRA==
-  secret-access-key: U0VDUkVUX0FDQ0VTU19LRVk=
+# ── Backup credentials Secret (create this BEFORE you apply this manifest) ─────
+# Not defined inline: `kubectl apply -f` would re-apply it every run and OVERWRITE
+# the values with the placeholders, clobbering real credentials. Create it
+# out-of-band:
+#
+#   kubectl create secret generic backup-credentials \
+#     --namespace default \
+#     --from-literal=access-key-id='<your-access-key>' \
+#     --from-literal=secret-access-key='<your-secret-key>'
+#
+# Referenced via spec.storage.credentials.secretRef: backup-credentials
 
 # ── Admin credentials Secret (create this BEFORE you apply this manifest) ──────
 # This Secret is intentionally NOT defined inline. If it were, `kubectl apply -f`

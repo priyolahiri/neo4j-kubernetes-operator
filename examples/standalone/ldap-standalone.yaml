@@ -12,16 +12,18 @@
 #     --from-literal=password='<your-secure-password>'
 #
 # The resource above references it via spec.auth.adminSecret: neo4j-admin-secret
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ldap-bind-secret
-  namespace: default
-type: Opaque
-data:
-  username: Y249c3ZjLGRjPWV4YW1wbGUsZGM9Y29t # cn=svc,dc=example,dc=com
-  password: c2VjcmV0MTIz                       # secret123
+
+# ── LDAP bind credentials Secret (create this BEFORE you apply this manifest) ──
+# Not defined inline: `kubectl apply -f` would re-apply it every run and OVERWRITE
+# the values with the placeholders, clobbering real credentials. Create it
+# out-of-band:
+#
+#   kubectl create secret generic ldap-bind-secret \
+#     --namespace default \
+#     --from-literal=username='cn=svc,dc=example,dc=com' \
+#     --from-literal=password='<ldap-bind-password>'
+#
+# Referenced via spec.auth.ldap.authorization.systemAccountSecretRef: ldap-bind-secret
 ---
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone

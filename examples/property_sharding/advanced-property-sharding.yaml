@@ -130,18 +130,17 @@ spec:
   seedCredentials:
     secretRef: "s3-credentials"
 
----
-# Secret for seed URI access
-apiVersion: v1
-kind: Secret
-metadata:
-  name: s3-credentials
-  namespace: default
-type: Opaque
-data:
-  # Base64 encoded credentials
-  access-key-id: <base64-encoded-access-key>
-  secret-access-key: <base64-encoded-secret-key>
+# ── S3 backup credentials Secret (create this BEFORE you apply this manifest) ──
+# Not defined inline: `kubectl apply -f` would re-apply it every run and OVERWRITE
+# the values with the placeholders, clobbering real credentials. Create it
+# out-of-band:
+#
+#   kubectl create secret generic s3-credentials \
+#     --namespace default \
+#     --from-literal=access-key-id='<your-access-key>' \
+#     --from-literal=secret-access-key='<your-secret-key>'
+#
+# Referenced via spec.seedCredentials.secretRef: s3-credentials
 
 # ── Admin credentials Secret (create this BEFORE you apply this manifest) ──────
 # This Secret is intentionally NOT defined inline. If it were, `kubectl apply -f`

@@ -135,11 +135,12 @@ spec:
   stopCluster: true
   timeout: "4h"
 
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: log-encryption-key
-type: Opaque
-data:
-  key: <base64-encoded-encryption-key-for-transaction-logs>
+# ── Transaction-log encryption key Secret (create this BEFORE you apply this manifest) ─
+# Not defined inline: `kubectl apply -f` would re-apply it every run and OVERWRITE
+# the values with the placeholders, clobbering real credentials. Create it
+# out-of-band:
+#
+#   kubectl create secret generic log-encryption-key \
+#     --from-literal=key='<encryption-key-for-transaction-logs>'
+#
+# Referenced via spec.source.pitr.encryption.keySecret: log-encryption-key

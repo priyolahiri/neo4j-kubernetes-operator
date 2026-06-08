@@ -27,36 +27,20 @@ metadata:
 #
 # The resource above references it via spec.auth.adminSecret: cluster-admin-secret
 ---
-# Tenant credentials
-apiVersion: v1
-kind: Secret
-metadata:
-  name: tenant-a-secret
-  namespace: neo4j-multi-tenant
-type: Opaque
-stringData:
-  username: tenant_a_admin
-  password: tenantA123!
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: tenant-b-secret
-  namespace: neo4j-multi-tenant
-type: Opaque
-stringData:
-  username: tenant_b_admin
-  password: tenantB123!
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: tenant-c-secret
-  namespace: neo4j-multi-tenant
-type: Opaque
-stringData:
-  username: tenant_c_admin
-  password: tenantC123!
+# ── Tenant Secrets (create these BEFORE you apply this manifest) ───────────────
+# Per-tenant credentials are intentionally NOT defined inline: `kubectl apply -f`
+# would re-apply them every run and OVERWRITE real values with placeholders. The
+# namespace is defined by this manifest, so create it first, then the Secrets:
+#
+#   kubectl create namespace neo4j-multi-tenant
+#
+#   # Per-tenant S3 backup credentials — REQUIRED: the Neo4jBackup resources below
+#   # reference these via spec.storage.cloud.credentialsSecretRef and will fail to
+#   # authenticate to S3 without them:
+#   kubectl create secret generic tenant-a-s3-credentials --namespace neo4j-multi-tenant \
+#     --from-literal=AWS_ACCESS_KEY_ID='<tenant-a-access-key>' \
+#     --from-literal=AWS_SECRET_ACCESS_KEY='<tenant-a-secret-key>'
+#   # ...repeat for tenant-b-s3-credentials and tenant-c-s3-credentials.
 ---
 # Multi-tenant Neo4j Cluster
 apiVersion: neo4j.neo4j.com/v1beta1

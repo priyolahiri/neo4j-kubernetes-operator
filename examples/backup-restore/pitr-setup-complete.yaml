@@ -61,27 +61,26 @@ data:
     dbms.backup.transaction_log_archive.compression=true
     dbms.backup.transaction_log_archive.encryption=true
 
----
-# Encryption key for PITR backups and transaction logs
-apiVersion: v1
-kind: Secret
-metadata:
-  name: pitr-encryption-key
-type: Opaque
-data:
-  # Generate with: openssl rand -base64 32
-  key: <base64-encoded-32-byte-encryption-key>
+# ── PITR encryption key Secret (create this BEFORE you apply this manifest) ────
+# Not defined inline: `kubectl apply -f` would re-apply it every run and OVERWRITE
+# the values with the placeholders, clobbering real credentials. Create it
+# out-of-band:
+#
+#   kubectl create secret generic pitr-encryption-key \
+#     --from-literal=key='<32-byte-encryption-key>'
+#
+# Referenced via spec.options.encryption.keySecret: pitr-encryption-key
 
----
-# AWS credentials for PITR storage access
-apiVersion: v1
-kind: Secret
-metadata:
-  name: pitr-aws-credentials
-type: Opaque
-data:
-  AWS_ACCESS_KEY_ID: <base64-encoded-access-key>
-  AWS_SECRET_ACCESS_KEY: <base64-encoded-secret-key>
+# ── PITR AWS credentials Secret (create this BEFORE you apply this manifest) ───
+# Not defined inline: `kubectl apply -f` would re-apply it every run and OVERWRITE
+# the values with the placeholders, clobbering real credentials. Create it
+# out-of-band:
+#
+#   kubectl create secret generic pitr-aws-credentials \
+#     --from-literal=AWS_ACCESS_KEY_ID='<your-access-key-id>' \
+#     --from-literal=AWS_SECRET_ACCESS_KEY='<your-secret-access-key>'
+#
+# Referenced via the PITR storage credentials for the backup/restore resources above
 
 ---
 # Example PITR restore configuration
@@ -194,15 +193,16 @@ spec:
   timeout: "4h"
 
 ---
-# Recovery cluster admin secret (create this for your recovery environment)
-apiVersion: v1
-kind: Secret
-metadata:
-  name: recovery-cluster-admin-secret
-type: Opaque
-data:
-  username: bmVvNGo=  # neo4j
-  password: <base64-encoded-admin-password>
+# ── Recovery cluster admin credentials Secret (create this BEFORE you apply this manifest) ─
+# Not defined inline: `kubectl apply -f` would re-apply it every run and OVERWRITE
+# the values with the placeholders, clobbering real credentials. Create it
+# out-of-band:
+#
+#   kubectl create secret generic recovery-cluster-admin-secret \
+#     --from-literal=username='neo4j' \
+#     --from-literal=password='<your-secure-password>'
+#
+# Referenced via the postRestore job's NEO4J_PASSWORD secretKeyRef: recovery-cluster-admin-secret
 
 ---
 # Service account for PITR operations with appropriate permissions

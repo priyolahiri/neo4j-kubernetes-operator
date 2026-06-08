@@ -13,6 +13,12 @@
 #   4. spec.extraVolumes + spec.extraVolumeMounts mount any other content the
 #      Neo4j pod needs at a specific path — used here for a per-policy
 #      truststore that a custom dbms.ssl.policy.* references via truststore_path.
+#
+# Prerequisites (create BEFORE applying — this manifest does NOT create them):
+#   kubectl create namespace neo4j-prod
+#   kubectl create secret generic neo4j-admin-secret --namespace neo4j-prod \
+#     --from-literal=username=neo4j --from-literal=password='<your-secure-password>'
+# Also requires the corp-ca-cluster-issuer ClusterIssuer referenced below to exist.
 ---
 # A separate Issuer/ClusterIssuer is assumed to exist; this Certificate just
 # produces the Secret the operator references.
