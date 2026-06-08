@@ -78,9 +78,6 @@ var _ = Describe("Standard Database Restore (MinIO) Integration Tests", Serial, 
 	)
 
 	BeforeEach(func() {
-		if isRunningInCI() {
-			Skip("Skipping cluster Cypher restore test in CI - large resource footprint")
-		}
 		testNamespace = createTestNamespace("standard-db-cypher-restore")
 
 		Expect(k8sClient.Create(ctx, &corev1.Secret{

@@ -66,9 +66,6 @@ var _ = Describe("Standard Database PVC Restore Integration Tests", Serial, func
 	)
 
 	BeforeEach(func() {
-		if isRunningInCI() {
-			Skip("Skipping cluster + PVC restore test in CI - large resource footprint")
-		}
 		testNamespace = createTestNamespace("standard-db-pvc-restore")
 
 		Expect(k8sClient.Create(ctx, &corev1.Secret{

@@ -70,9 +70,6 @@ var _ = Describe("Backup Chain Integration Tests", Serial, func() {
 	)
 
 	BeforeEach(func() {
-		if isRunningInCI() {
-			Skip("Skipping backup-chain test in CI - large resource footprint")
-		}
 		testNamespace = createTestNamespace("backup-chain")
 
 		Expect(k8sClient.Create(ctx, &corev1.Secret{
