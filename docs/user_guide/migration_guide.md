@@ -41,9 +41,9 @@ No effect on `Neo4jEnterpriseStandalone` (single-server, no intra-cluster TLS).
 > **Single-node Cluster CRDs**: removed in v1.6-alpha. If you still have a `Neo4jEnterpriseCluster` with `topology.servers: 1`, migrate to `Neo4jEnterpriseStandalone` — same data via a backup/restore round-trip. For step-by-step alpha-era guidance, see the [v1.6-alpha migration section](#upgrading-to-v160-alpha-api-stabilization) below or the older versions of this doc in git history.
 
 
-## Upgrading from v1.9.x to the next release (Unreleased)
+## Upgrading from v1.10.x to v1.11.x
 
-This section covers the breaking and behavioural changes on `main` since `v1.9.0`. Replace the heading with the actual version when the next release is tagged.
+This section covers the breaking and behavioural changes landing in v1.11.x (since `v1.10.0`).
 
 ### 1. Removed spec fields (CRD validation will reject manifests using them)
 
