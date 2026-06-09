@@ -70,6 +70,37 @@ func TestDedupeNeo4jConf_MergesAdditiveKeys(t *testing.T) {
 	assert.Contains(t, out, "dbms.security.procedures.unrestricted=fleetManagement.*,gds.*,apoc.*")
 }
 
+func TestUpsertNeo4jConfSettings(t *testing.T) {
+	conf := strings.Join([]string{
+		"# base",
+		"server.bolt.listen_address=:7687",
+		"dbms.security.procedures.unrestricted=gds.*", // operator/user already set
+	}, "\n")
+
+	// Plugin (e.g. APOC) needs apoc.* unrestricted + a scalar setting.
+	out := resources.UpsertNeo4jConfSettings(conf, map[string]string{
+		"dbms.security.procedures.unrestricted": "apoc.*",
+		"apoc.export.file.enabled":              "true",
+	})
+
+	// Additive key is MERGED in place — no duplicate, nothing lost.
+	assert.Equal(t, 1, strings.Count(out, "dbms.security.procedures.unrestricted="))
+	assert.Contains(t, out, "dbms.security.procedures.unrestricted=gds.*,apoc.*")
+	// New scalar key appended.
+	assert.Contains(t, out, "apoc.export.file.enabled=true")
+
+	// Idempotent: re-applying the same settings yields identical output (no churn).
+	assert.Equal(t, out, resources.UpsertNeo4jConfSettings(out, map[string]string{
+		"dbms.security.procedures.unrestricted": "apoc.*",
+		"apoc.export.file.enabled":              "true",
+	}))
+
+	// Scalar key already present is NOT clobbered.
+	out2 := resources.UpsertNeo4jConfSettings(conf, map[string]string{"server.bolt.listen_address": ":9999"})
+	assert.Contains(t, out2, "server.bolt.listen_address=:7687")
+	assert.NotContains(t, out2, ":9999")
+}
+
 func TestStorageClassNamePtr(t *testing.T) {
 	assert.Nil(t, resources.StorageClassNamePtr(""),
 		"empty className must map to nil so the PVC inherits the cluster default StorageClass")

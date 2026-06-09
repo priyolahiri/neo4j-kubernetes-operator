@@ -1299,19 +1299,15 @@ func (r *Neo4jPluginReconciler) updateStandaloneConfigMapForPlugin(ctx context.C
 		return fmt.Errorf("neo4j.conf not found in ConfigMap %s", configMapName)
 	}
 
-	// Add plugin settings to neo4j.conf if they don't already exist
-	updatedConf := currentConf
-	for key, value := range allSettings {
-		settingLine := fmt.Sprintf("%s=%s", key, value)
-		if !strings.Contains(updatedConf, settingLine) {
-			// Add a comment and the setting
-			comment := fmt.Sprintf("\n# %s plugin configuration", plugin.Spec.Name)
-			updatedConf += comment + "\n" + settingLine + "\n"
-			logger.Info("Adding plugin setting to ConfigMap", "setting", settingLine)
-		} else {
-			logger.Info("Plugin setting already present in ConfigMap", "setting", settingLine)
-		}
-	}
+	// Merge plugin settings into neo4j.conf without creating duplicate keys.
+	// The previous approach appended a line guarded only by an exact-substring
+	// check, so a plugin allowlist (e.g. dbms.security.procedures.unrestricted=
+	// apoc.*) was added as a SECOND declaration when the conf already had that
+	// key (e.g. =gds.*) — CalVer Neo4j then refuses to start ("declared multiple
+	// times"). UpsertNeo4jConfSettings unions additive keys and adds scalar keys
+	// only when absent; it is idempotent, so a no-op won't churn the ConfigMap
+	// or restart the pod.
+	updatedConf := resources.UpsertNeo4jConfSettings(currentConf, allSettings)
 
 	// Update the ConfigMap if changes were made
 	if updatedConf != currentConf {

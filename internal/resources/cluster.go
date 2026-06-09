@@ -1836,6 +1836,88 @@ func DedupeNeo4jConf(conf string) string {
 	return strings.Join(out, "\n")
 }
 
+// UpsertNeo4jConfSettings merges externally-provided settings (e.g. a
+// Neo4jPlugin's required security settings) into an already-rendered neo4j.conf
+// WITHOUT creating duplicate keys — CalVer Neo4j refuses to start on a duplicate
+// declaration. It is idempotent (re-applying the same settings yields identical
+// output) so it doesn't churn the ConfigMap:
+//
+//   - Additive list keys (additiveConfKeys, e.g. dbms.security.procedures.*):
+//     the setting's tokens are unioned into the existing line in place, so the
+//     operator/user allowlist is preserved and the plugin's entries are added;
+//     appended if the key is absent.
+//   - Other (scalar) keys: added only if absent, so an operator/user value is
+//     never clobbered (matching the plugin path's "add if not present" intent).
+//
+// Keys are processed in sorted order for deterministic output.
+func UpsertNeo4jConfSettings(conf string, settings map[string]string) string {
+	if len(settings) == 0 {
+		return conf
+	}
+	lines := strings.Split(conf, "\n")
+
+	keyIdx := make(map[string]int)
+	keyVal := make(map[string]string)
+	for i, line := range lines {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		eq := strings.IndexByte(t, '=')
+		if eq <= 0 {
+			continue
+		}
+		k := strings.TrimSpace(t[:eq])
+		if k == "server.jvm.additional" || k == "dbms.jvm.additional" {
+			continue // repeatable — leave untouched
+		}
+		keyIdx[k] = i
+		keyVal[k] = strings.TrimSpace(t[eq+1:])
+	}
+
+	keys := make([]string, 0, len(settings))
+	for k := range settings {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		v := settings[k]
+		idx, present := keyIdx[k]
+		switch {
+		case additiveConfKeys[k] && present:
+			merged := unionCSV(keyVal[k], v)
+			lines[idx] = fmt.Sprintf("%s=%s", k, merged)
+			keyVal[k] = merged
+		case !present:
+			lines = append(lines, fmt.Sprintf("%s=%s", k, v))
+			keyIdx[k] = len(lines) - 1
+			keyVal[k] = v
+		default:
+			// scalar key already present — preserve the existing value
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// unionCSV returns the comma-separated union of a and b, de-duplicated and in
+// first-seen order (a's tokens first, then b's new tokens).
+func unionCSV(a, b string) string {
+	seen := make(map[string]bool)
+	var toks []string
+	for _, s := range []string{a, b} {
+		for _, tok := range strings.Split(s, ",") {
+			tok = strings.TrimSpace(tok)
+			if tok == "" || seen[tok] {
+				continue
+			}
+			seen[tok] = true
+			toks = append(toks, tok)
+		}
+	}
+	return strings.Join(toks, ",")
+}
+
 // BuildMonitoringConfig generates Neo4j config lines for monitoring, metrics exposure, and query logging.
 func BuildMonitoringConfig(mon *neo4jv1beta1.MonitoringSpec) string {
 	slowThreshold := "5s"
