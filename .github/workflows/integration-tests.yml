@@ -41,10 +41,13 @@ jobs:
   extended-integration-tests:
     name: Extended Integration Tests
     runs-on: ubuntu-latest
-    # Give the job 15 min more than the Ginkgo suite timeout below, so Ginkgo
-    # hits its own --timeout first and exits gracefully (writes the failure
-    # report + uploads artifacts) instead of the runner hard-killing the job.
-    timeout-minutes: ${{ fromJson(github.event.inputs.timeout-minutes || '120') + 15 }}
+    # Fixed safety backstop, well above the Ginkgo --timeout below (the real gate,
+    # driven by the timeout-minutes input; default 120, bump to ~150 for 2026.x).
+    # GitHub expressions can't do arithmetic, so this is a generous constant rather
+    # than input+buffer: Ginkgo self-terminates at its own timeout first and exits
+    # gracefully (writes the report + uploads artifacts); this only kills a wedged
+    # runner. Keep it comfortably above any timeout-minutes you'd dispatch.
+    timeout-minutes: 240
     permissions:
       contents: read
       packages: read
