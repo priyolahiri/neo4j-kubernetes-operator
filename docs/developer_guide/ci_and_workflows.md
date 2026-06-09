@@ -30,6 +30,37 @@ gate that blocks merge. Jobs:
    commit message, or manual dispatch with the toggle on. When skipped, the
    `integration-tests-info` job prints how to enable it.
 
+## Branch protection
+
+`main` is a protected branch. The rules enforce the gates above:
+
+- **No direct pushes** — all changes land via pull request.
+- **1 approval, from a [CODEOWNER](collaboration.md#code-owners-and-review)**;
+  stale approvals are dismissed on new commits; review threads must be resolved.
+- **Required status checks** (strict / branch must be up to date), matching the
+  CI job display names exactly:
+  - `Generated Artifacts In Sync`
+  - `Unit Tests`
+- **Linear history** (squash/rebase merges); force-pushes and deletion blocked.
+
+Two things to know:
+
+- **The integration checks are intentionally *not* required.** `Integration
+  Tests` (CI) and the Extended Integration Tests workflow run conditionally; a
+  required check that doesn't run on a given PR would leave it stuck at
+  "Expected — waiting for status." Reviewers gate on them manually for
+  controller changes.
+- **`enforce_admins` is currently off** so the maintainer can merge during the
+  solo→team transition (GitHub forbids approving your own PR, and the sole
+  CODEOWNER would otherwise be unable to merge anything). Turn it on once a
+  second reviewer is onboarded:
+  ```bash
+  gh api -X PUT repos/neo4j-partners/neo4j-kubernetes-operator/branches/main/protection/enforce_admins
+  ```
+
+If you rename a required CI job in `ci.yml`, update the protection contexts to
+match or every merge will block.
+
 ## Extended Integration Tests
 
 **`integration-tests.yml` — the long (≈90-minute) suite against a real Kind
