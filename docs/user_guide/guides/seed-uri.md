@@ -86,16 +86,19 @@ When a seed source resolves to a backup stored on a PVC, the operator spawns a s
 Use cloud-native authentication mechanisms that don't require explicit credentials:
 
 **AWS S3:**
+
 - IAM roles for service accounts (IRSA)
 - EC2 instance profiles
 - Environment variables on nodes
 
 **Google Cloud Storage:**
+
 - Workload Identity
 - Service account keys via mounted volumes
 - Compute Engine default service accounts
 
 **Azure Blob Storage:**
+
 - Managed identities
 - Service principal environment variables
 
@@ -144,27 +147,33 @@ spec:
 
 ### Amazon S3
 **Required:**
+
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
 
 **Optional:**
+
 - `AWS_SESSION_TOKEN` (for temporary credentials)
 - `AWS_REGION`
 
 ### Google Cloud Storage
 **Required:**
+
 - `GOOGLE_APPLICATION_CREDENTIALS` (service account JSON key)
 
 **Optional:**
+
 - `GOOGLE_CLOUD_PROJECT`
 
 ### Azure Blob Storage
 **Required:**
+
 - `AZURE_STORAGE_ACCOUNT`
 - Either `AZURE_STORAGE_KEY` OR `AZURE_STORAGE_SAS_TOKEN`
 
 ### HTTP/HTTPS/FTP
 **Optional:**
+
 - `USERNAME`
 - `PASSWORD`
 - `AUTH_HEADER` (for custom authentication)
@@ -247,11 +256,13 @@ When `seedURI` is specified, `initialData` is ignored since the seed provides th
 The operator provides detailed status and events during seed restoration:
 
 **Events:**
+
 - `DatabaseCreatedFromSeed`: Database successfully created from seed URI
 - `DataSeeded`: Database seeded from URI successfully
 - `ValidationWarning`: Validation warnings (e.g., suboptimal topology)
 
 **Status Conditions:**
+
 - `Ready`: Database is ready and available
 - `ValidationFailed`: Configuration validation failed
 - `CreationFailed`: Database creation failed

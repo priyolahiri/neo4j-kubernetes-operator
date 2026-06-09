@@ -110,6 +110,7 @@ make manifests generate
 ```
 
 This command generates:
+
 - **CRDs**: Custom Resource Definitions in `config/crd/bases/`
 - **RBAC**: Role-based access control manifests in `config/rbac/`
 - **DeepCopy Methods**: Go code generation for CRD types
@@ -124,6 +125,7 @@ make dev-cluster
 ```
 
 This creates a Kind cluster with:
+
 - **Cert-Manager**: v1.20.0 with `ca-cluster-issuer`
 - **Development-Optimized**: Fast cluster creation for development
 - **Neo4j CRDs**: Automatically installed
@@ -154,6 +156,7 @@ make deploy-prod-registry  # Deploy prod overlay with ghcr.io image
 **⚠️ CRITICAL:** The operator must run in-cluster to avoid DNS resolution issues and ensure proper Neo4j cluster formation.
 
 **Benefits of local image development**:
+
 - **Complete Control**: Use exact code you're working on
 - **No Registry Dependencies**: No need for ghcr.io access or authentication
 - **Rapid Testing**: Build and deploy changes quickly
@@ -321,6 +324,7 @@ make test-ci-local
 ```
 
 **What it does:**
+
 1. **Environment Setup**: Sets `CI=true GITHUB_ACTIONS=true` environment variables
 2. **Unit Tests**: Runs unit tests with CI constraints and logging
 3. **Integration Tests**: Creates test cluster with 512Mi memory limits (same as CI)
@@ -328,17 +332,20 @@ make test-ci-local
 5. **Cleanup**: Complete environment cleanup
 
 **Generated Debug Files:**
+
 - `logs/ci-local-unit.log` - Unit test output with environment info
 - `logs/ci-local-integration.log` - Integration test output with cluster setup
 - `logs/ci-local-cleanup.log` - Environment cleanup output
 
 **Key Benefits:**
+
 - **Identical CI Environment**: Same memory constraints (512Mi vs 1.5Gi local)
 - **Resource Constraint Testing**: Tests memory limits that cause CI failures
 - **Debug Information**: Comprehensive logging for troubleshooting
 - **Complete Workflow**: Unit → Integration → Cleanup (like CI)
 
 **Usage Scenarios:**
+
 - Debugging CI failures locally
 - Testing memory-constrained environments
 - Validating resource requirements
@@ -408,6 +415,7 @@ kubectl describe neo4jplugin cluster-apoc-plugin
 ### When to Regenerate Code
 
 Run code generation after:
+
 - Adding/modifying CRD fields
 - Changing CRD validation tags
 - Adding new CRDs

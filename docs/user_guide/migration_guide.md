@@ -16,6 +16,7 @@ The Neo4j Kubernetes Operator now separates single-node and clustered deployment
 **What changed.** The operator used to emit `dbms.ssl.policy.cluster.trust_all=true` and `client_auth=NONE` for TLS-enabled clusters. Neo4j's own documentation flags `trust_all=true` as *"debugging only, since it does not offer security."* The default now matches the canonical production posture: `trust_all=false` + `client_auth=REQUIRE` (mutual TLS) + `verify_hostname=true`, with the cert-manager Secret's `ca.crt` projected to `/ssl/trusted/ca.crt` as the trust anchor.
 
 **Who is affected.** Existing `Neo4jEnterpriseCluster` resources with `spec.tls.mode=cert-manager`. On the next reconcile after the operator upgrade:
+
 1. The StatefulSet template changes (new Secret projection + new config keys), triggering a rolling restart of the server pods.
 2. Restarted pods run with the strict configuration. The rolling restart is safe because old pods (loose) still accept any cert presented by new pods, and new pods validate old pods' certs against the same CA — RAFT quorum survives the mixed-state window.
 
@@ -213,6 +214,7 @@ apiVersion: neo4j.neo4j.com/v1beta1
 ```
 
 This applies to **all** operator CRDs:
+
 - `Neo4jEnterpriseCluster`
 - `Neo4jEnterpriseStandalone`
 - `Neo4jDatabase`
@@ -226,6 +228,7 @@ This applies to **all** operator CRDs:
 When TLS is enabled (`tls.mode: cert-manager`), the operator now sets `server.bolt.tls_level=REQUIRED` on both cluster and standalone deployments. Previously this was `OPTIONAL`, meaning plain `bolt://` connections were silently accepted even with TLS configured.
 
 **Action required** if you have clients connecting via plain `bolt://` to TLS-enabled deployments:
+
 - Update connection strings from `bolt://` to `bolt+s://` (with CA verification) or `bolt+ssc://` (self-signed certs)
 - Update `cypher-shell` commands to use `-a bolt+ssc://host:7687`
 - Update application driver configurations to enable TLS
@@ -237,6 +240,7 @@ When TLS is enabled (`tls.mode: cert-manager`), the operator now sets `server.bo
 ### Standalone health probes
 
 Standalone deployments now include readiness, liveness, and startup probes using `/conf/health.sh`. This means:
+
 - Pods are no longer marked Ready until Neo4j is actually accepting connections
 - The `status.phase` transition to `Ready` now reflects true Neo4j readiness
 - Existing deployments will see a rolling update when the operator is upgraded (new probe spec on the StatefulSet)
@@ -406,6 +410,7 @@ After completing your migration:
 5. **Implement proper backup** strategies for your deployment type
 
 For more information, see:
+
 - [Neo4jEnterpriseCluster API Reference](../api_reference/neo4jenterprisecluster.md)
 - [Neo4jEnterpriseStandalone API Reference](../api_reference/neo4jenterprisestandalone.md)
 - [Getting Started Guide](getting_started.md)

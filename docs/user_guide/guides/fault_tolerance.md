@@ -26,12 +26,14 @@ spec:
 ```
 
 **Characteristics:**
+
 - ✅ **Simplicity**: Easiest to manage and deploy
 - ✅ **Resource Efficiency**: Minimal resource requirements
 - ❌ **No Fault Tolerance**: Any failure results in downtime
 - ❌ **No High Availability**: Not suitable for production
 
 **Use Cases:**
+
 - Development environments
 - Testing and prototyping
 - Non-critical applications
@@ -47,6 +49,7 @@ spec:
 ```
 
 **Characteristics:**
+
 - ⚠️ **Split-Brain Risk**: In network partition, neither node can form quorum
 - ❌ **Single Point of Failure**: If one node fails, cluster becomes read-only
 - ⚠️ **Manual Intervention Required**: Recovery often requires operator intervention
@@ -59,6 +62,7 @@ spec:
 | Network Split | 1+1 | ❌ Not Met | Both Partitions Read-Only |
 
 **When to Consider:**
+
 - Development environments requiring some clustering features
 - Cost-constrained environments with manual failover capability
 - Temporary configurations during cluster expansion
@@ -74,6 +78,7 @@ spec:
 ```
 
 **Characteristics:**
+
 - ✅ **True Fault Tolerance**: Can survive one node failure
 - ✅ **Automatic Recovery**: Cluster remains operational with 2/3 nodes
 - ✅ **Split-Brain Protection**: Minority partition becomes read-only
@@ -87,6 +92,7 @@ spec:
 | Network Split (2+1) | 2 vs 1 | ✅/❌ Met/Not Met | Majority Operational |
 
 **Best For:**
+
 - Production environments
 - Applications requiring high availability
 - Balanced performance and fault tolerance
@@ -102,6 +108,7 @@ spec:
 ```
 
 **Characteristics:**
+
 - ⚠️ **Same Fault Tolerance as 3**: Can still only survive one failure
 - ❌ **Resource Inefficiency**: Extra node provides no additional fault tolerance
 - ⚠️ **Increased Consensus Overhead**: More nodes participating in consensus
@@ -126,6 +133,7 @@ spec:
 ```
 
 **Characteristics:**
+
 - ✅ **Enhanced Fault Tolerance**: Can survive two simultaneous failures
 - ✅ **Complex Partition Tolerance**: Better handling of network partitions
 - ⚠️ **Increased Complexity**: More nodes to manage and monitor
@@ -139,6 +147,7 @@ spec:
 | 3 Nodes Down | 2 | ❌ Not Met | Read-Only Mode |
 
 **Best For:**
+
 - Mission-critical applications
 - Environments with higher failure rates
 - Multi-zone deployments with zone failures
@@ -154,6 +163,7 @@ spec:
 ```
 
 **Characteristics:**
+
 - ⚠️ **Same Fault Tolerance as 5**: Can still only survive two failures
 - ❌ **Significant Resource Overhead**: Extra node with no fault tolerance benefit
 - ❌ **Increased Consensus Latency**: More nodes slow down consensus
@@ -171,6 +181,7 @@ spec:
 ```
 
 **Characteristics:**
+
 - ✅ **Maximum Fault Tolerance**: Can survive three simultaneous failures
 - ⚠️ **High Resource Requirements**: Significant infrastructure investment
 - ⚠️ **Performance Impact**: Consensus overhead becomes noticeable
@@ -185,6 +196,7 @@ spec:
 | 4 Nodes Down | 3 | ❌ Not Met | Read-Only Mode |
 
 **Best For:**
+
 - Extremely critical applications
 - Large-scale deployments across multiple regions
 - Environments with very high availability requirements (99.99%+)
@@ -206,6 +218,7 @@ spec:
     primaries: 1
     secondaries: 0
 ```
+
 - **Rationale**: Simplicity and resource efficiency
 - **Trade-off**: No fault tolerance for development speed
 
@@ -222,6 +235,7 @@ spec:
     primaries: 3
     secondaries: 1
 ```
+
 - **Rationale**: Tests production-like behavior with fault tolerance
 - **Trade-off**: Moderate resource usage for realistic testing
 
@@ -238,6 +252,7 @@ spec:
     primaries: 3
     secondaries: 2
 ```
+
 - **Rationale**: Good balance of fault tolerance and performance
 - **Trade-off**: One node failure tolerance with read scaling
 
@@ -254,6 +269,7 @@ spec:
     primaries: 5
     secondaries: 3
 ```
+
 - **Rationale**: Two node failure tolerance with significant read capacity
 - **Trade-off**: Higher resource requirements for enhanced availability
 
@@ -270,6 +286,7 @@ spec:
     primaries: 7
     secondaries: 5
 ```
+
 - **Rationale**: Maximum fault tolerance with extensive read scaling
 - **Trade-off**: Significant resource investment for maximum availability
 

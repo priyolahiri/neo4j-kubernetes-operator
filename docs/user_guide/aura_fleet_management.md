@@ -78,6 +78,7 @@ spec:
 ```
 
 The operator will:
+
 - Merge `"fleet-management"` into `NEO4J_PLUGINS` on the next reconcile (causes a rolling pod restart to load the jar)
 - Register the token once the cluster reaches `Ready` phase
 
@@ -191,6 +192,7 @@ kubectl get events --field-selector reason=AuraFleetManagementFailed
 ```
 
 Common causes:
+
 - Token Secret not found in the correct namespace
 - Incorrect key name in the Secret (default is `token`)
 - Token has expired — generate a new one in the Aura console and update the Secret

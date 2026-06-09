@@ -33,6 +33,7 @@ One of the most important factors for performance is resource allocation. You ca
 ### Memory Validation and Recommendations
 
 The operator includes intelligent memory validation that:
+
 - Ensures Neo4j heap settings don't exceed available container memory
 - Provides automatic recommendations for optimal memory allocation
 - Validates memory ratios between heap, page cache, and system overhead

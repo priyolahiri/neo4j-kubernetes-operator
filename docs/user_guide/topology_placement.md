@@ -15,6 +15,7 @@ The Neo4j Kubernetes Operator provides sophisticated topology placement capabili
 
 ### Topology Keys
 Standard Kubernetes topology labels used for placement:
+
 - `topology.kubernetes.io/zone` - Availability zone placement
 - `kubernetes.io/hostname` - Node-level anti-affinity
 - `topology.kubernetes.io/region` - Regional placement
@@ -43,6 +44,7 @@ spec:
 ```
 
 This configuration ensures:
+
 - Server pods are evenly distributed across availability zones
 - Maximum difference of 1 pod between any two zones
 - Pods won't be scheduled if distribution requirements can't be met
@@ -64,6 +66,7 @@ spec:
 ```
 
 Anti-affinity types:
+
 - `preferred`: Best effort - scheduler tries to avoid co-location
 - `required`: Strict - pods will remain unscheduled if constraints can't be met
 

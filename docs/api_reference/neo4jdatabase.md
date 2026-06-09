@@ -57,6 +57,7 @@ The `Neo4jDatabase` Custom Resource Definition (CRD) provides declarative databa
 | `secondaries` | `int32` | Number of secondary servers (minimum: `0`) |
 
 **Validation**:
+
 - `primaries + secondaries` must not exceed cluster's `spec.topology.servers`
 - Servers are selected based on role constraints (if configured)
 - For standalone deployments, topology is automatically managed
@@ -81,10 +82,12 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 | `config` | `map[string]string` | CloudSeedProvider configuration options |
 
 **Point-in-Time Recovery Formats** (Neo4j 2025.x only):
+
 - **RFC3339 Timestamp**: `"2025-01-15T10:30:00Z"`
 - **Transaction ID**: `"txId:12345"`
 
 **Configuration Options**:
+
 - `compression`: `"gzip"`, `"lz4"`, `"none"`
 - `validation`: `"strict"`, `"lenient"`
 - `bufferSize`: Buffer size (e.g., `"64MB"`, `"128MB"`)
@@ -150,20 +153,24 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 #### Required Secret Keys by URI Scheme
 
 **Amazon S3 (`s3://`)**:
+
 - `AWS_ACCESS_KEY_ID` (required)
 - `AWS_SECRET_ACCESS_KEY` (required)
 - `AWS_SESSION_TOKEN` (optional, for temporary credentials)
 - `AWS_REGION` (optional)
 
 **Google Cloud Storage (`gs://`)**:
+
 - `GOOGLE_APPLICATION_CREDENTIALS` (required, service account JSON key)
 - `GOOGLE_CLOUD_PROJECT` (optional)
 
 **Azure Blob Storage (`azb://`)**:
+
 - `AZURE_STORAGE_ACCOUNT` (required)
 - Either `AZURE_STORAGE_KEY` or `AZURE_STORAGE_SAS_TOKEN` (required)
 
 **HTTP/HTTPS/FTP**:
+
 - `USERNAME` (optional)
 - `PASSWORD` (optional)
 - `AUTH_HEADER` (optional, for custom authentication)
@@ -572,6 +579,7 @@ To control the default database topology at cluster creation time without using 
 ### Database Creation Process
 
 **Standard Database Creation**:
+
 1. Discover target deployment (cluster or standalone)
 2. Check if database exists (if `ifNotExists: true`)
 3. Validate topology constraints (cluster only)
@@ -582,6 +590,7 @@ To control the default database topology at cluster creation time without using 
 8. Update status with current state
 
 **Seed URI Database Creation**:
+
 1. Discover target deployment and validate seed URI format
 2. Prepare cloud authentication (if `seedCredentials` specified)
 3. Construct CREATE DATABASE FROM URI command with CloudSeedProvider
@@ -592,12 +601,14 @@ To control the default database topology at cluster creation time without using 
 ### Version-Specific Behavior
 
 **Neo4j 5.26.x**:
+
 - Standard `CREATE DATABASE` syntax with `TOPOLOGY` clause
 - Seed URI support via CloudSeedProvider
 - No Cypher language version support
 - Compatible with both cluster and standalone deployments
 
 **Neo4j 2025.x**:
+
 - Enhanced `CREATE DATABASE` with `DEFAULT LANGUAGE CYPHER` support
 - Point-in-time recovery for seed URIs (`restoreUntil`)
 - Advanced seed configuration options
@@ -606,6 +617,7 @@ To control the default database topology at cluster creation time without using 
 ### Version-Specific Behavior
 
 **Neo4j 5.26.x**:
+
 - Standard CREATE DATABASE syntax
 - Seed URI support with CloudSeedProvider
 - No Cypher language version support
@@ -613,6 +625,7 @@ To control the default database topology at cluster creation time without using 
 - Supports all topology and option features
 
 **Neo4j 2025.x**:
+
 - Supports `defaultCypherLanguage` field
 - Enhanced seed URI support with point-in-time recovery (`restoreUntil`)
 - Enhanced topology management
@@ -621,6 +634,7 @@ To control the default database topology at cluster creation time without using 
 ### Reconciliation
 
 The operator continuously reconciles the database state:
+
 - If database doesn't exist and `ifNotExists: true`, creates it
 - If database exists and state differs, updates it (start/stop)
 - If topology changes, redistributes database (Neo4j 5.20+)
@@ -654,6 +668,7 @@ kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager
 ```
 
 **Common Issues**:
+
 - **Target Not Found**: `clusterRef` doesn't match any cluster or standalone
 - **Topology Validation**: Insufficient servers for requested topology (cluster only)
 - **Name Conflicts**: Database name already exists
@@ -662,10 +677,12 @@ kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager
 - **Version Compatibility**: Using 2025.x features with 5.26.x Neo4j
 
 **Cluster-Specific Issues**:
+
 - Server capacity exceeded (primaries + secondaries > cluster servers)
 - Role constraint conflicts (e.g., requesting primaries from SECONDARY-only servers)
 
 **Standalone-Specific Issues**:
+
 - Topology specified for standalone deployment (will be ignored)
 - Authentication configuration missing (`adminSecret` not configured)
 
@@ -687,6 +704,7 @@ kubectl get events --field-selector involvedObject.name=<database-name>
 ```
 
 **Common Causes**:
+
 - Target deployment not ready or in failed state
 - Neo4j authentication issues
 - Network connectivity problems
@@ -706,12 +724,14 @@ kubectl run test-pod --rm -it --image=amazon/aws-cli \
 ```
 
 **URI Access Issues:**
+
 - Verify the backup file exists at the specified URI
 - Check network connectivity from Neo4j pods to the URI
 - Ensure firewall rules allow outbound access
 - Test URI format: `scheme://host/path/file.backup`
 
 **Performance Issues:**
+
 - Use `.backup` format instead of `.dump` for large datasets
 - Increase `bufferSize` in `seedConfig.config`
 - Use `compression: "lz4"` for faster processing
@@ -746,6 +766,7 @@ kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager | gr
 ```
 
 **Common Issues**:
+
 - Invalid Cypher syntax in statements
 - Constraint/index name conflicts
 - Database not fully online before import
@@ -769,6 +790,7 @@ kubectl run test-uri --rm -it --image=curlimages/curl -- \
 ```
 
 **Key Events**:
+
 - `DatabaseCreatedFromSeed`: Successful seed URI restoration
 - `DataSeeded`: Database seeding completed
 - `ValidationWarning`: Configuration or URI format warnings
@@ -786,6 +808,7 @@ kubectl run aws-test --rm -it --image=amazon/aws-cli -- \
 ```
 
 **Performance Issues**:
+
 - Use `.backup` format instead of `.dump` for large datasets
 - Increase `bufferSize` in seed configuration
 - Use faster compression (`lz4` instead of `gzip`)

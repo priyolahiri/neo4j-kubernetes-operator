@@ -40,6 +40,7 @@ make operator-setup
 ```
 
 The operator always runs **in-cluster** — never `make dev-run` (DNS resolution fails when the operator runs outside the cluster). For a fast inner loop after code changes:
+
 - **`make deploy-dev-local`**: Rebuild image + redeploy to Kind (~60s).
 - **`make dev-watch`**: Auto-rebuild and redeploy on file changes.
 - **`tilt up`**: Live reload (~5s, requires Tilt).
@@ -50,19 +51,23 @@ The operator always runs **in-cluster** — never `make dev-run` (DNS resolution
 The operator follows a well-defined architecture. Key areas for contributions:
 
 **Controllers** (`internal/controller/`):
+
 - Neo4jEnterpriseCluster controller for clustered deployments
 - Neo4jEnterpriseStandalone controller for single-node deployments
 - Database, Plugin, Backup, and Restore controllers
 
 **Custom Resources** (`api/v1beta1/`):
+
 - CRD type definitions for all Neo4j resources
 - Validation tags and documentation
 
 **Resource Builders** (`internal/resources/`):
+
 - Kubernetes resource generation logic
 - ConfigMap, Service, and StatefulSet builders
 
 **Validation Framework** (`internal/validation/`):
+
 - Input validation and recommendations
 - Error handling and user guidance
 
@@ -212,6 +217,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", func() {
 
 #### User Documentation
 For user-facing features, update:
+
 - **Examples**: Add example configurations in `examples/`
 - **User Guide**: Update relevant user guide sections
 - **API Reference**: Update CRD documentation if API changes
@@ -285,6 +291,7 @@ git commit -m "feat!: change topology field structure for server-based architect
 **Format**: `<type>[optional scope]: <description>`
 
 **Types**:
+
 - `feat`: New features
 - `fix`: Bug fixes
 - `docs`: Documentation changes
@@ -383,12 +390,14 @@ CI's `check-drift` job runs `make sync-all bundle` and fails the PR if anything 
 ### Performance Considerations
 
 **Controller Optimization**:
+
 - Use `client.Reader` for read-only operations
 - Implement proper caching strategies
 - Minimize API calls with efficient resource queries
 - Use `controllerutil.CreateOrUpdate` for idempotent operations
 
 **Resource Management**:
+
 - Set appropriate resource requests/limits
 - Use owner references for automatic cleanup
 - Implement proper finalizer handling
@@ -446,6 +455,7 @@ We follow the [Contributor Covenant Code of Conduct](https://www.contributor-cov
 ### Recognition
 
 Contributors are recognized in:
+
 - Release notes for significant contributions
 - GitHub contributors list
 - Project documentation acknowledgments

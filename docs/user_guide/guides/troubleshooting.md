@@ -119,6 +119,7 @@ spec:
 ```
 
 **Supported versions:**
+
 - **Semver**: 5.26.0, 5.26.1 (5.26.x is the last semver LTS — no 5.27+ exists)
 - **Calver**: 2025.01.0, 2025.06.1, 2026.01.0+
 
@@ -757,6 +758,7 @@ kubectl describe nodes | grep -A 5 "Allocated resources:"
 ### When to Contact Support
 
 Contact support when:
+
 - Data corruption is suspected
 - Cluster formation consistently fails
 - Performance is significantly degraded

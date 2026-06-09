@@ -5,6 +5,7 @@ Property Sharding is an advanced Neo4j feature that separates graph structure (n
 ## Overview
 
 Property Sharding decouples data into:
+
 - **Graph Shard**: Single database containing nodes and relationships WITHOUT properties
 - **Property Shards**: Multiple databases containing properties distributed via hash function
 - **Virtual Database**: Logical database presenting unified view of graph + property shards
@@ -14,11 +15,13 @@ Property Sharding decouples data into:
 ### System Requirements
 
 **Neo4j Version Requirements:**
+
 - **Minimum**: Neo4j 2025.12-enterprise (introduced in 2025.12)
 - **Note**: Property sharding is an enterprise-only feature and requires valid licensing
 - **Not available on Aura**
 
 **Cluster Infrastructure Requirements:**
+
 - **Minimum Servers**: 2 servers minimum (3+ recommended for HA graph shard primaries)
 - **Recommended Servers**: 3-7 servers (odd numbers provide better consensus characteristics)
 - **Maximum Recommended**: 20+ servers for very large deployments
@@ -33,6 +36,7 @@ Property Sharding decouples data into:
 | **Network** | 1Gbps | 10Gbps+ | Low latency critical for transaction log sync |
 
 **Additional Requirements:**
+
 - **Authentication**: Admin secret required (property sharding requires authenticated cluster access)
 - **Storage Class**: Persistent storage class must be specified (e.g., `standard`, `fast-ssd`)
 - **Kubernetes Version**: 1.24+ for full operator compatibility
@@ -40,6 +44,7 @@ Property Sharding decouples data into:
 - **Cypher Version**: Must use Cypher 25 for sharded database operations
 
 **Performance Considerations:**
+
 - **Memory Overhead**: 20-30% additional memory required for shard coordination
 - **CPU Overhead**: 20-30% additional CPU required for cross-shard operations
 - **Storage Growth**: Linear growth with number of property shards
@@ -259,12 +264,14 @@ config:
 ### Cluster Sizing
 
 **Development/Testing**:
+
 - 2 servers minimum (3+ recommended for HA graph shard primaries)
 - 4GB heap per server (absolute minimum for property sharding)
 - 8GB+ total RAM per server (recommended for stable production operation)
 - Property shards: 2-4
 
 **Production**:
+
 - 3+ servers recommended (HA graph shard primaries)
 - 4-8GB+ heap per server (4GB minimum, 8GB for production)
 - 20GB+ total RAM per server (accounting for system overhead)

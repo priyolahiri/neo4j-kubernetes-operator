@@ -5,6 +5,7 @@ This guide explains how to expose your Neo4j deployments for access from outside
 ## Overview
 
 The Neo4j Kubernetes Operator supports multiple methods for external access:
+
 - **Port Forwarding** - Quick access for development/testing
 - **LoadBalancer** - Cloud provider managed load balancers
 - **NodePort** - Direct node access (on-premise/development)

@@ -282,6 +282,7 @@ make test-coverage
 **Dependencies**: `manifests generate test-cluster ginkgo kustomize` — the `manifests`/`generate` prereqs guarantee CRDs and RBAC deployed to the test cluster match the current controller source. Skipping `manifests` (e.g., by calling kustomize directly) silently deploys stale schemas.
 **Duration**: ~10-15 minutes
 **Features**:
+
 - Auto-creates test cluster if needed
 - Deploys operator automatically
 - Tests real Neo4j deployments
@@ -303,6 +304,7 @@ make test-integration
 **Dependencies**: Existing test cluster and deployed operator
 **Duration**: ~5-8 minutes
 **Features**:
+
 - Assumes cluster and operator already deployed
 - Skips resource-intensive tests
 - Focuses on core functionality
@@ -359,6 +361,7 @@ make test-setup
 **Description**: Clean up test environment artifacts while keeping cluster
 **Usage**: `make test-cleanup`
 **Features**:
+
 - Removes test results and logs
 - Cleans coverage files
 - Preserves cluster for reuse
@@ -376,12 +379,14 @@ make test-cleanup
 **Dependencies**: Kind installed
 **Cluster Name**: `neo4j-operator-test`
 **Variables** (Makefile defaults, overridable via `make VAR=...`):
+
 - `KIND_NODE_IMAGE ?= kindest/node:v1.34.0` — pins the K8s version. Kept in sync with `ENVTEST_K8S_VERSION` so unit tests, dev cluster, and integration tests all run on the same K8s.
 - `CERT_MANAGER_VERSION ?= v1.20.0` — pins the cert-manager release.
 
 Both are threaded into `scripts/test-env.sh` via environment variables; the script enforces them as required (no fallback) so direct invocations can't drift from the Makefile defaults.
 
 **Features**:
+
 - Pre-configured with self-signed issuer
 - Optimized for testing workloads
 
@@ -455,6 +460,7 @@ make test
 **Usage**: `make test-ci-local`
 **Duration**: ~20-25 minutes
 **Features**:
+
 - **Complete CI emulation**: Uses `CI=true GITHUB_ACTIONS=true` environment
 - **Resource constraints**: Tests with 512Mi memory limits (same as CI)
 - **Debug logging**: Comprehensive logs saved to `logs/` directory
@@ -462,6 +468,7 @@ make test
 - **Self-contained**: Creates, tests, and destroys environment
 
 **Output Files**:
+
 - `logs/ci-local-unit.log` - Unit test output with environment info
 - `logs/ci-local-integration.log` - Integration test execution
 - `logs/ci-local-cleanup.log` - Environment cleanup
@@ -476,6 +483,7 @@ make test-ci-local
 ```
 
 **When to use**:
+
 - Debugging CI failures locally
 - Testing resource-constrained scenarios
 - Validating changes before CI push
@@ -556,6 +564,7 @@ make uninstall
 **Namespace**: `neo4j-operator-dev`
 **Image**: `neo4j-operator:dev` (built locally)
 **Features**:
+
 - Auto-loads image to Kind cluster
 - Development-friendly settings
 - Enhanced logging
@@ -575,6 +584,7 @@ make deploy-dev
 **Namespace**: `neo4j-operator-system`
 **Image**: `neo4j-operator:latest` (built locally)
 **Features**:
+
 - Production-grade settings
 - Resource limits applied
 - Standard logging levels
@@ -592,6 +602,7 @@ make deploy-prod
 **Usage**: `make deploy-dev-local`
 **Dependencies**: `manifests`, `kustomize`, `docker-build`
 **Features**:
+
 - Builds `neo4j-operator:dev` image locally
 - Auto-detects and loads to available Kind cluster
 - Deploys to `neo4j-operator-dev` namespace
@@ -607,6 +618,7 @@ make deploy-dev-local
 **Usage**: `make deploy-prod-local`
 **Dependencies**: `manifests`, `kustomize`, `docker-build`
 **Features**:
+
 - Builds `neo4j-operator:latest` image locally
 - Auto-detects and loads to available Kind cluster
 - Deploys to production namespace
@@ -705,6 +717,7 @@ make undeploy-prod
 **Cluster Name**: `neo4j-operator-dev`
 **Dependencies**: Kind installed
 **Features**:
+
 - Includes cert-manager v1.20.0
 - Self-signed ClusterIssuer for TLS
 - Development-optimized configuration
@@ -777,6 +790,7 @@ make dev-destroy
 **Description**: Automated operator deployment to available Kind cluster
 **Usage**: `make operator-setup`
 **Features**:
+
 - **Auto-detection**: Finds available Kind cluster (dev or test)
 - **Smart deployment**: Chooses appropriate configuration
 - **Status verification**: Confirms successful deployment
@@ -981,6 +995,7 @@ make catalog-push CATALOG_IMG=ghcr.io/my-org/catalog:v1.0
 **Description**: Run security analysis with gosec
 **Usage**: `make security`
 **Features**:
+
 - Auto-installs gosec if needed
 - Scans for security vulnerabilities
 - Reports potential issues
@@ -1006,6 +1021,7 @@ make tidy
 **Description**: Clean all build artifacts and temporary files
 **Usage**: `make clean`
 **Removes**:
+
 - `bin/`, `tmp/`, and `dist/` directories
 - `cover.out`, `coverage.html`
 - `results.sarif`, `build-errors.log`, `.air.toml`

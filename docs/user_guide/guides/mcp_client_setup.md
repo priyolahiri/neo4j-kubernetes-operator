@@ -44,6 +44,7 @@ The `mcp/neo4j` image uses **different authentication for each transport**:
 | **STDIO** | `NEO4J_USERNAME` and `NEO4J_PASSWORD` env vars injected by the operator from the admin secret (or a custom secret via `spec.mcp.auth`). |
 
 This means:
+
 - **HTTP mode**: each client request carries its own credentials — ideal for multi-user or shared deployments.
 - **STDIO mode**: the operator manages a single set of credentials — ideal for in-cluster automation.
 

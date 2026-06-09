@@ -5,6 +5,7 @@ This comprehensive guide covers performance optimization strategies for Neo4j cl
 ## Overview
 
 Neo4j performance in Kubernetes environments depends on several key factors:
+
 - **Resource allocation** (CPU, memory, storage)
 - **Cluster topology** and database distribution
 - **Storage configuration** and I/O optimization
@@ -351,6 +352,7 @@ spec:
 7. **Optimization**: Continuously tune configuration based on workload patterns
 
 For additional performance guidance, see:
+
 - [Configuration Best Practices](configuration.md#best-practices-for-specconfig)
 - [Resource Sizing Guide](guides/resource_sizing.md)
 - [Monitoring Guide](guides/monitoring.md)

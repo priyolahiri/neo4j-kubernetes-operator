@@ -121,6 +121,7 @@ Production mode is the default when `--mode` is not set. Use it for real workloa
 Explicit flags and Helm values always override the mode defaults.
 
 **Key behavior (binary defaults):**
+
 - **Mode**: `production`
 - **Metrics bind**: `:8080` (unless overridden)
 - **Health bind**: `:8081` (unless overridden)
@@ -129,6 +130,7 @@ Explicit flags and Helm values always override the mode defaults.
 - **Controllers loaded**: all controllers — cluster, standalone, database, backup, restore, plugin, shardeddatabase, user, role, rolebinding, authrule
 
 **Helm defaults that matter:**
+
 - `leaderElection.enabled: true` (passes `--leader-elect=true`)
 - `logLevel: info`
 - `metrics.enabled: true` with port `8080`
@@ -139,10 +141,12 @@ Explicit flags and Helm values always override the mode defaults.
 Development mode is optimized for faster iteration, but it **must run in-cluster**. Use Kind for dev and test clusters.
 
 **How to enable:**
+
 - **CLI/Kustomize**: add `--mode=dev`
 - **Helm**: set `developmentMode: true`
 
 **Default behavior in dev mode:**
+
 - **Metrics bind**: `:8082` (unless overridden)
 - **Health bind**: `:8083` (unless overridden)
 - **Cache strategy**: `on-demand` (or `none` if `--ultra-fast`)
@@ -197,6 +201,7 @@ Scope determines where the operator watches CRs, and RBAC determines what it can
 - **Adding namespaces**: update `watchNamespaces` (or `WATCH_NAMESPACE`) and upgrade/redeploy the operator.
 
 **Pattern support (dynamic):**
+
 - **Globs**: `glob:team-*` or `team-*`
 - **Regex**: `regex:^team-.*$`
 - **Labels**: `label:{env=prod,tier=backend}` (braces allow commas)
@@ -250,6 +255,7 @@ helm upgrade --install neo4j-operator neo4j-operator/neo4j-operator \
 If you deploy with Kustomize or raw manifests, configure scope and mode explicitly:
 
 **Recommended Kustomize targets:**
+
 - `config/overlays/prod` (production)
 - `config/overlays/dev` (development, Kind only)
 - `config/overlays/namespace-scoped` (single namespace)
@@ -272,6 +278,7 @@ args:
 ```
 
 Reference overlays:
+
 - `config/overlays/prod`
 - `config/overlays/dev`
 - `config/overlays/namespace-scoped`
@@ -306,6 +313,7 @@ In development mode, you can load only a subset of controllers:
 ```
 
 Valid controller names:
+
 - `cluster`
 - `standalone`
 - `database`
@@ -323,12 +331,14 @@ The default dev `--controllers` value is the full list above; override with `--c
 ## Logging and Metrics
 
 **Logging (zap):**
+
 - `--zap-log-level=debug|info|warn|error|dpanic|panic|fatal`
 - `--zap-devel=true|false`
 - `--zap-encoder=json|console`
 - `--zap-stacktrace-level=debug|info|warn|error|dpanic|panic|fatal`
 
 **Operator metrics endpoint:**
+
 - `--metrics-bind-address=:8080` (set to `0` to disable)
 - `--metrics-secure=true` (TLS, production mode only)
 
@@ -337,15 +347,18 @@ Helm sets `--metrics-bind-address` based on `metrics.enabled` and `metrics.servi
 ## Troubleshooting
 
 **Operator sees no CRs:**
+
 - Verify `WATCH_NAMESPACE` (empty for cluster scope).
 - Confirm `operatorMode` in Helm matches your intent.
 
 **RBAC forbidden errors:**
+
 - Cluster scope or multi-namespace requires ClusterRole/ClusterRoleBinding.
 - Namespace scope requires Role/RoleBinding in the operator namespace.
 - Validate with `kubectl auth can-i` using the operator ServiceAccount.
 
 **Metrics not reachable:**
+
 - Ensure `metrics.enabled: true` or `--metrics-bind-address` is not `0`.
 - Confirm the Service port matches the bind address.
 

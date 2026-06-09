@@ -31,6 +31,7 @@ make demo
 ```
 
 This will:
+
 1. Ask before destroying any existing Kind clusters
 2. Create a fresh `neo4j-operator-dev` Kind cluster
 3. Install cert-manager and self-signed ClusterIssuer
@@ -107,6 +108,7 @@ Options:
 ### Part 1: TLS Standalone
 
 Creates a `Neo4jEnterpriseStandalone` with:
+
 - `tls.mode: cert-manager` using `ca-cluster-issuer`
 - 1.5Gi memory, 10Gi storage
 - Readiness/liveness/startup health probes
@@ -115,6 +117,7 @@ Creates a `Neo4jEnterpriseStandalone` with:
 ### Part 2: TLS HA Cluster
 
 Creates a `Neo4jEnterpriseCluster` with:
+
 - 3 servers, `tls.mode: cert-manager`
 - `monitoring.enabled: true` for live diagnostics
 - Verifies cluster formation with `SHOW SERVERS`
@@ -122,18 +125,21 @@ Creates a `Neo4jEnterpriseCluster` with:
 ### Part 3: External Access
 
 Demonstrates `kubectl port-forward` for both deployments:
+
 - Standalone: `https://localhost:7473` (HTTPS) and `bolt+ssc://localhost:7687`
 - Cluster: same ports via the client service
 
 ### Part 4: Database Management
 
 Creates databases on both deployment types:
+
 - **Standalone**: `products` database with schema constraints and sample data
 - **Cluster**: `orders` database with 2 primaries + 1 secondary topology
 
 ### Part 5: Plugin Management
 
 Installs APOC on the cluster via `Neo4jPlugin` CRD:
+
 - Operator adds `NEO4J_PLUGINS=["apoc"]` to the StatefulSet
 - Rolling restart preserves cluster availability
 - Verified with `RETURN apoc.version()`
@@ -141,6 +147,7 @@ Installs APOC on the cluster via `Neo4jPlugin` CRD:
 ### Part 6: Multi-Database Topologies
 
 Creates two additional databases on the same cluster:
+
 - `analytics`: 1 primary, 2 secondaries (optimized for reads)
 - `sessions`: 2 primaries, 0 secondaries (optimized for writes)
 - Verified with `SHOW DATABASES` showing role distribution
@@ -163,6 +170,7 @@ Key design rules surfaced in this part:
 ### Part 8: Live Diagnostics
 
 Reads `status.diagnostics` from the cluster CR:
+
 - `status.diagnostics.servers` — name, address, state, health for each server
 - `status.diagnostics.databases` — name, status, role for each database replica
 - `status.diagnostics.users` / `status.diagnostics.roles` — capped at 50 entries each, with full counts in `userCount` / `roleCount`

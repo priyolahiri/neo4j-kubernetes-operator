@@ -52,6 +52,7 @@ spec:
 ```
 
 **Key Concepts:**
+
 - **Requests**: Kubernetes guarantees these resources are available
 - **Limits**: Pod is throttled/killed if it exceeds these
 - **Memory**: Should have requests = limits (Neo4j doesn't handle swapping well)
@@ -271,6 +272,7 @@ spec:
 ```
 
 **JVM Best Practices:**
+
 - Use G1GC for heaps > 4GB (default in modern JVMs)
 - Enable compressed OOPs for heaps up to 31GB (saves ~30% memory)
 - Set heap initial = max to avoid resize pauses
@@ -380,12 +382,14 @@ spec:
 ```
 
 **Vector Index Memory Calculation Example:**
+
 - 10M vectors with 1536 dimensions (float32)
 - Index size: ~60GB on disk
 - Required OS memory: 0.25 * 60GB = 15GB
 - Total container memory: 8GB (heap) + 10GB (page cache) + 15GB (vector) + 2GB (OS) = 35GB
 
 **Best Practices for Vector Workloads:**
+
 1. Use 1:4 memory-to-storage ratio for optimal performance
 2. Pre-warm indexes with random queries after startup
 3. Monitor OS memory usage (vector indexes use OS cache, not Neo4j page cache)
