@@ -114,10 +114,17 @@ func teardownSharedNativeCluster(ctx context.Context) {
 		}
 		_ = k8sClient.Delete(ctx, c)
 	}
-	// Best-effort wait so the namespace delete in cleanupTestNamespaces isn't
-	// blocked on the cluster's dependents.
-	Eventually(func() bool {
-		err := k8sClient.Get(ctx, types.NamespacedName{Name: sharedNativeName, Namespace: sharedNativeNS}, &neo4jv1beta1.Neo4jEnterpriseCluster{})
-		return err != nil
-	}, 60*time.Second, 2*time.Second).Should(BeTrue())
+	// Best-effort, NON-asserting wait so the namespace delete in
+	// cleanupTestNamespaces isn't blocked on the cluster's dependents. This must
+	// NOT use a Gomega assertion: this runs in AfterSuite, and a slow
+	// finalizer/dependent removal on CalVer or under load would otherwise fail
+	// teardown and red a suite whose specs all passed. If the cluster is still
+	// around after the window, namespace GC finishes the job — we don't care here.
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if k8sClient.Get(ctx, types.NamespacedName{Name: sharedNativeName, Namespace: sharedNativeNS}, &neo4jv1beta1.Neo4jEnterpriseCluster{}) != nil {
+			return // gone
+		}
+		time.Sleep(2 * time.Second)
+	}
 }
