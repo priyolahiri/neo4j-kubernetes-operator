@@ -138,9 +138,9 @@ func TestConfigValidator_ValidateDiscoveryRestrictions(t *testing.T) {
 // SSL surface end-to-end via spec.tls.* and the new
 // spec.tls.strictPeerValidation toggle. Without this rejection, a user
 // could put e.g. dbms.ssl.policy.cluster.trust_all=true in spec.config
-// and — because server.config.strict_validation.enabled=false elsewhere
-// lets Neo4j silently honour duplicate-key overrides — silently downgrade
-// the strict-by-default cluster TLS posture.
+// and — because the operator de-duplicates the rendered conf (last
+// occurrence wins, collapsing to one line invisible to strict validation) —
+// silently downgrade the strict-by-default cluster TLS posture.
 func TestConfigValidator_RejectsManagedSSLKeys(t *testing.T) {
 	validator := NewConfigValidator()
 

@@ -129,13 +129,15 @@ func (v *ConfigValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 
 		// SSL policies are managed end-to-end by the operator via spec.tls.
 		// The operator emits dbms.ssl.policy.{bolt,https,cluster}.* and
-		// server.bolt.tls_level / server.directories.certificates with
-		// values driven by spec.tls.mode and spec.tls.strictPeerValidation.
+		// server.bolt.tls_level with values driven by spec.tls.mode and
+		// spec.tls.strictPeerValidation (server.directories.certificates is a
+		// removed 4.x key and is rejected here, never emitted).
 		//
-		// Because server.config.strict_validation.enabled is set to false
-		// (to allow experimental settings elsewhere), Neo4j silently lets
-		// duplicate keys later in neo4j.conf override earlier ones. Without
-		// this rejection a user could put e.g.
+		// The operator de-duplicates the rendered neo4j.conf (DedupeNeo4jConf,
+		// last occurrence wins for scalars), so a user spec.config line would
+		// override the operator-managed value AND collapse to a single line —
+		// invisible even to Neo4j's strict validation. Without this rejection a
+		// user could put e.g.
 		// `dbms.ssl.policy.cluster.trust_all: "true"` in spec.config and
 		// silently downgrade the strict-by-default cluster SSL posture to
 		// Neo4j's documented debugging-only configuration. Reject loudly

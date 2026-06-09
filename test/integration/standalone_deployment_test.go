@@ -206,7 +206,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", Label("core"), f
 					Config: map[string]string{
 						"server.memory.heap.initial_size": "1G",
 						"server.memory.heap.max_size":     "2G",
-						"db.logs.query.enabled":           "true",
+						"db.logs.query.enabled":           "INFO",
 					},
 					Env: []corev1.EnvVar{{Name: "NEO4J_ACCEPT_LICENSE_AGREEMENT", Value: "eval"}},
 				},
@@ -229,7 +229,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", Label("core"), f
 				for _, s := range []string{
 					"server.memory.heap.initial_size=1G",
 					"server.memory.heap.max_size=2G",
-					"db.logs.query.enabled=true",
+					"db.logs.query.enabled=INFO",
 				} {
 					if !strings.Contains(neo4jConf, s) {
 						return fmt.Errorf("missing config: %s", s)

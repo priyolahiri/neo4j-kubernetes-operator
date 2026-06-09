@@ -38,6 +38,23 @@ spec:
 
 No effect on `Neo4jEnterpriseStandalone` (single-server, no intra-cluster TLS).
 
+### Cluster `neo4j.conf` is now strictly validated
+
+**What changed.** The operator previously emitted `server.config.strict_validation.enabled=false` for clusters, so Neo4j **silently ignored** unknown or invalid keys in `spec.config`. It now emits `true` (matching the Neo4j default that `Neo4jEnterpriseStandalone` already used) — an unrecognized or invalid setting key/value makes Neo4j **fail to start** instead of being dropped.
+
+**Who is affected.** Existing `Neo4jEnterpriseCluster` resources whose `spec.config` contains a key or value that Neo4j 5.26+/CalVer doesn't accept (a typo, a removed 4.x key, or a wrong value such as `db.logs.query.enabled: "true"` — it's an enum: `OFF`/`INFO`/`VERBOSE`). These were no-ops before and will now CrashLoop the server pods after the operator upgrade.
+
+**Action required.** Before upgrading, audit each cluster's `spec.config` for invalid keys/values. A quick way to check what a server thinks is invalid:
+
+```bash
+kubectl exec <cluster>-server-0 -c neo4j -- \
+  neo4j-admin server validate-config   # reports "Unrecognized setting" / value errors
+```
+
+Remove or correct any flagged keys. (The operator's own rendered config is fully valid under strict validation — only user-supplied `spec.config` keys are at risk. The `server.directories.certificates` key the operator used to emit for TLS clusters — a removed 4.x setting — is no longer emitted.)
+
+**Opt-out.** If you need the old lenient behavior temporarily, set `server.config.strict_validation.enabled: "false"` in `spec.config` (a user value is appended last and wins). Prefer fixing the invalid keys.
+
 
 > **Single-node Cluster CRDs**: removed in v1.6-alpha. If you still have a `Neo4jEnterpriseCluster` with `topology.servers: 1`, migrate to `Neo4jEnterpriseStandalone` — same data via a backup/restore round-trip. For step-by-step alpha-era guidance, see the [v1.6-alpha migration section](#upgrading-to-v160-alpha-api-stabilization) below or the older versions of this doc in git history.
 

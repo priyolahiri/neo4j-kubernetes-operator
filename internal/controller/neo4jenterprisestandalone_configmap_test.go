@@ -176,3 +176,40 @@ func TestReconcileConfigMap_AdditiveForeignTokensPreserved(t *testing.T) {
 		t.Errorf("procedures.unrestricted should be declared exactly once, got %d; conf:\n%s", n, got)
 	}
 }
+
+// TestReconcileConfigMap_Idempotent guards the #1 regression risk of the #151
+// fix: re-rendering on every reconcile must NOT churn the ConfigMap, or the
+// config-hash would change each loop and roll the pod perpetually. A second
+// reconcile with unchanged spec must not bump the ConfigMap's resourceVersion
+// (controllerutil.CreateOrUpdate skips the Update when nothing changed).
+func TestReconcileConfigMap_Idempotent(t *testing.T) {
+	r, c := standaloneCMTestReconciler(t)
+	ctx := context.Background()
+	sa := standaloneForConf(map[string]string{
+		"dbms.security.procedures.unrestricted": "gds.*,apoc.*",
+		"db.transaction.timeout":                "30s",
+	})
+
+	if err := r.reconcileConfigMap(ctx, sa); err != nil {
+		t.Fatalf("reconcile 1: %v", err)
+	}
+	cm1 := &corev1.ConfigMap{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "sa-config", Namespace: "default"}, cm1); err != nil {
+		t.Fatalf("get 1: %v", err)
+	}
+
+	// Reconcile twice more with the SAME spec.
+	for i := 0; i < 2; i++ {
+		if err := r.reconcileConfigMap(ctx, sa); err != nil {
+			t.Fatalf("reconcile repeat %d: %v", i, err)
+		}
+	}
+	cm2 := &corev1.ConfigMap{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "sa-config", Namespace: "default"}, cm2); err != nil {
+		t.Fatalf("get 2: %v", err)
+	}
+	if cm1.ResourceVersion != cm2.ResourceVersion {
+		t.Errorf("ConfigMap changed on repeat reconcile (rv %s -> %s) — would churn/restart the pod",
+			cm1.ResourceVersion, cm2.ResourceVersion)
+	}
+}

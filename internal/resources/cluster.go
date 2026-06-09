@@ -1534,8 +1534,13 @@ server.memory.pagecache.size=%s
 
 # Basic logging (using default settings)
 
-# Disable strict validation to allow experimental settings
-server.config.strict_validation.enabled=false
+# Strict config validation: reject unknown/invalid neo4j.conf settings at startup
+# instead of silently ignoring them (consistent with standalone, which keeps the
+# Neo4j default). The operator emits only valid keys, de-duplicates the rendered
+# conf (DedupeNeo4jConf), and the config validator rejects operator-managed keys
+# in spec.config — so a user's invalid/typo'd key now fails fast with a clear
+# error rather than being silently dropped.
+server.config.strict_validation.enabled=true
 
 # Cloud storage integration settings (5.26+ / 2025.x.x)
 # dbms.integrations.cloud_storage.azb.blob_endpoint_suffix=blob.core.windows.net
@@ -1590,8 +1595,8 @@ server.https.listen_address=0.0.0.0:7473
 server.https.advertised_address=${HOSTNAME}:7473
 
 # SSL Policy Configuration
-# Base certificate directory
-server.directories.certificates=/ssl
+# Each policy sets its own base_directory=/ssl below; server.directories.certificates
+# is a removed Neo4j 4.x setting (unrecognized in 5.x+) and is intentionally NOT emitted.
 
 # Bolt SSL Policy
 dbms.ssl.policy.bolt.enabled=true
@@ -1697,11 +1702,10 @@ server.metrics.csv.enabled=false
 			// controller that bypasses our reconcile-time validation), we
 			// still must not let user values for these keys override the
 			// operator-managed TLS posture. Skip every dbms.ssl.policy.*
-			// key. Note that server.config.strict_validation.enabled=false
-			// is set elsewhere in this file, so without this filter Neo4j
-			// would silently let a later spec.config line shadow our
-			// strict-mode emission (issue: spec.config could override
-			// strict TLS defaults).
+			// key. DedupeNeo4jConf keeps the LAST occurrence of a scalar key, so
+			// a user spec.config line would otherwise shadow the operator-managed
+			// SSL policy — and the dedup collapses it to a single line, so even
+			// strict validation wouldn't flag it.
 			if strings.HasPrefix(key, "dbms.ssl.policy.") {
 				continue
 			}
