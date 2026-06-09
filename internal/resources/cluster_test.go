@@ -16,6 +16,60 @@ import (
 	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/resources"
 )
 
+func TestDedupeNeo4jConf(t *testing.T) {
+	in := strings.Join([]string{
+		"# Query Monitoring",
+		"db.logs.query.enabled=true",
+		"db.logs.query.threshold=5s", // from monitoring
+		"",
+		"server.jvm.additional=-Done=1",
+		"server.jvm.additional=-Dtwo=2", // repeatable — must survive
+		"# user spec.config",
+		"db.logs.query.threshold=1s", // user override (appended last)
+		"db.logs.query.enabled=true",
+	}, "\n")
+
+	out := resources.DedupeNeo4jConf(in)
+
+	// Each non-repeatable key appears exactly once, with the LAST (user) value.
+	assert.Equal(t, 1, strings.Count(out, "db.logs.query.threshold="), "threshold must be de-duplicated")
+	assert.Contains(t, out, "db.logs.query.threshold=1s", "last (user) value wins")
+	assert.NotContains(t, out, "db.logs.query.threshold=5s", "earlier monitoring value dropped")
+	assert.Equal(t, 1, strings.Count(out, "db.logs.query.enabled="))
+	// Repeatable JVM key keeps every occurrence.
+	assert.Equal(t, 2, strings.Count(out, "server.jvm.additional="))
+	// Comments/blank lines preserved.
+	assert.Contains(t, out, "# Query Monitoring")
+	assert.Contains(t, out, "# user spec.config")
+}
+
+func TestDedupeNeo4jConf_NoDuplicatesUnchanged(t *testing.T) {
+	in := "# c\nserver.bolt.listen_address=0.0.0.0:7687\ndb.logs.query.enabled=true\n"
+	assert.Equal(t, in, resources.DedupeNeo4jConf(in))
+}
+
+// Additive list keys must MERGE, not last-wins, so operator-set procedure
+// allowlists (plugins / Aura Fleet Management) aren't lost to a user override.
+func TestDedupeNeo4jConf_MergesAdditiveKeys(t *testing.T) {
+	in := strings.Join([]string{
+		"dbms.security.procedures.unrestricted=fleetManagement.*", // operator (Aura)
+		"dbms.security.procedures.allowlist=fleetManagement.*",
+		"dbms.security.procedures.unrestricted=gds.*,apoc.*", // user spec.config
+		"dbms.security.procedures.allowlist=gds.*,apoc.*",
+	}, "\n")
+
+	out := resources.DedupeNeo4jConf(in)
+
+	assert.Equal(t, 1, strings.Count(out, "dbms.security.procedures.unrestricted="), "declared once")
+	assert.Equal(t, 1, strings.Count(out, "dbms.security.procedures.allowlist="), "declared once")
+	// Union of operator + user — nothing lost.
+	for _, want := range []string{"fleetManagement.*", "gds.*", "apoc.*"} {
+		assert.Contains(t, out, want)
+	}
+	// Deterministic union order (operator tokens first, then user).
+	assert.Contains(t, out, "dbms.security.procedures.unrestricted=fleetManagement.*,gds.*,apoc.*")
+}
+
 func TestStorageClassNamePtr(t *testing.T) {
 	assert.Nil(t, resources.StorageClassNamePtr(""),
 		"empty className must map to nil so the PVC inherits the cluster default StorageClass")

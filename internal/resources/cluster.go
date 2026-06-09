@@ -1742,7 +1742,98 @@ server.metrics.csv.enabled=false
 		}
 	}
 
-	return config
+	return DedupeNeo4jConf(config)
+}
+
+// Additive list keys: the operator emits these for plugins (GDS/Bloom/APOC) and
+// Aura Fleet Management, and the user may also set them in spec.config. A plain
+// last-wins dedupe would DROP the operator's contribution (e.g. Aura's
+// fleetManagement.* lost when the user sets gds.*,apoc.*), so DedupeNeo4jConf
+// MERGES all occurrences into the union of their comma-separated tokens instead.
+var additiveConfKeys = map[string]bool{
+	"dbms.security.procedures.unrestricted": true,
+	"dbms.security.procedures.allowlist":    true,
+}
+
+// DedupeNeo4jConf collapses duplicate setting keys in a rendered neo4j.conf so
+// the same key is never declared twice. The operator assembles the conf from
+// several sections (base → monitoring → audit → auth → user spec.config), and a
+// key emitted by more than one section (classically db.logs.query.enabled /
+// db.logs.query.threshold, from monitoring AND user spec.config) would appear
+// twice. Neo4j 5.26 tolerated that (last wins); CalVer (2025.x+) FAILS to start
+// with "<key> declared multiple times".
+//
+// Resolution rules (so operator-set config is never silently lost):
+//   - Scalar keys: keep the LAST occurrence — matching the documented precedence
+//     (audit over monitoring; user spec.config over operator defaults) and the
+//     old 5.26 last-wins behavior. An operator key with no user duplicate is
+//     never dropped (it has no later occurrence).
+//   - Additive list keys (additiveConfKeys): MERGE the union of all occurrences'
+//     tokens, so the operator's allowlist isn't lost to a user override.
+//   - server.jvm.additional / dbms.jvm.additional: left untouched — Neo4j
+//     intentionally accepts repeated occurrences and concatenates them.
+//
+// Comment and blank lines are preserved in place.
+func DedupeNeo4jConf(conf string) string {
+	lines := strings.Split(conf, "\n")
+
+	settingKV := func(line string) (key, value string, ok bool) {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "#") {
+			return "", "", false
+		}
+		eq := strings.IndexByte(t, '=')
+		if eq <= 0 {
+			return "", "", false
+		}
+		k := strings.TrimSpace(t[:eq])
+		if k == "server.jvm.additional" || k == "dbms.jvm.additional" {
+			return "", "", false // repeatable — never dedupe
+		}
+		return k, strings.TrimSpace(t[eq+1:]), true
+	}
+
+	lastIdx := make(map[string]int)
+	mergedTokens := make(map[string][]string)
+	seenToken := make(map[string]map[string]bool)
+	for i, line := range lines {
+		k, v, ok := settingKV(line)
+		if !ok {
+			continue
+		}
+		lastIdx[k] = i
+		if additiveConfKeys[k] {
+			if seenToken[k] == nil {
+				seenToken[k] = map[string]bool{}
+			}
+			for _, tok := range strings.Split(v, ",") {
+				tok = strings.TrimSpace(tok)
+				if tok == "" || seenToken[k][tok] {
+					continue
+				}
+				seenToken[k][tok] = true
+				mergedTokens[k] = append(mergedTokens[k], tok)
+			}
+		}
+	}
+
+	out := lines[:0:0]
+	for i, line := range lines {
+		k, _, ok := settingKV(line)
+		if !ok {
+			out = append(out, line)
+			continue
+		}
+		if lastIdx[k] != i {
+			continue // earlier occurrence of a key resolved later — drop it
+		}
+		if additiveConfKeys[k] {
+			out = append(out, fmt.Sprintf("%s=%s", k, strings.Join(mergedTokens[k], ",")))
+		} else {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // BuildMonitoringConfig generates Neo4j config lines for monitoring, metrics exposure, and query logging.

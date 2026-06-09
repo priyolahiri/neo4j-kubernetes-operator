@@ -841,8 +841,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv
 		)
 	}
 
-	// Join all lines
-	neo4jConf := strings.Join(configLines, "\n")
+	// Join all lines, then de-duplicate setting keys (keep last occurrence).
+	// Without this, a key emitted by both monitoring and user spec.config
+	// (e.g. db.logs.query.threshold) appears twice and CalVer Neo4j refuses to
+	// start ("declared multiple times"). See resources.DedupeNeo4jConf.
+	neo4jConf := resources.DedupeNeo4jConf(strings.Join(configLines, "\n"))
 
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
