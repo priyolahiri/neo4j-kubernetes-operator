@@ -9,15 +9,17 @@ on:
         default: '5.26-enterprise'
         type: string
       timeout-minutes:
-        description: 'Test timeout in minutes'
+        description: 'Ginkgo suite timeout in minutes. CalVer (2026.x) images are
+          ~2x slower per spec than 5.26, so the full suite needs more headroom —
+          bump this (e.g. 150) when dispatching against a 2026.x version.'
         required: false
-        default: '90'
+        default: '120'
         type: string
   # Auto-run on PRs that touch the restore or cluster controllers, or
   # the integration suite itself. These are the code paths whose bugs
   # (issue #117, #129) silently slipped past unit-test coverage and
   # were only caught after release. Path filter is intentionally
-  # narrow — running the full 90-min suite on every PR would slow
+  # narrow — running the full (multi-hour on CalVer) suite on every PR would slow
   # delivery; running it on the specific controllers most likely to
   # silently break the cluster-coordination contract is the cheap
   # signal that catches the bug-shaped regressions.
@@ -39,7 +41,10 @@ jobs:
   extended-integration-tests:
     name: Extended Integration Tests
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ fromJson(github.event.inputs.timeout-minutes || '90') }}
+    # Give the job 15 min more than the Ginkgo suite timeout below, so Ginkgo
+    # hits its own --timeout first and exits gracefully (writes the failure
+    # report + uploads artifacts) instead of the runner hard-killing the job.
+    timeout-minutes: ${{ fromJson(github.event.inputs.timeout-minutes || '120') + 15 }}
     permissions:
       contents: read
       packages: read
@@ -141,10 +146,14 @@ jobs:
         make ginkgo
 
         set -o pipefail
-        ./bin/ginkgo run -v --timeout=90m ./test/integration/... | tee integration-test-output.log
+        # Honor the dispatch input (was hardcoded 90m, which ignored the input and
+        # truncated the suite on slower CalVer images). Defaults to 120m for PR-
+        # triggered runs (no inputs).
+        ./bin/ginkgo run -v --timeout="${GINKGO_TIMEOUT_MIN}m" ./test/integration/... | tee integration-test-output.log
       env:
         KUBECONFIG: /home/runner/.kube/config
         NEO4J_VERSION: ${{ github.event.inputs.neo4j-version || '5.26-enterprise' }}
+        GINKGO_TIMEOUT_MIN: ${{ github.event.inputs.timeout-minutes || '120' }}
         FORCE_COLOR: 1
 
     - name: Collect cluster state
@@ -224,7 +233,7 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Test Configuration:" >> $GITHUB_STEP_SUMMARY
         echo "- **Neo4j Version**: ${{ github.event.inputs.neo4j-version || '5.26-enterprise' }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Timeout**: ${{ github.event.inputs.timeout-minutes || '90' }} minutes" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timeout**: ${{ github.event.inputs.timeout-minutes || '120' }} minutes" >> $GITHUB_STEP_SUMMARY
         echo "- **Test Suite**: Full integration suite with custom Neo4j version" >> $GITHUB_STEP_SUMMARY
 
         echo "" >> $GITHUB_STEP_SUMMARY
