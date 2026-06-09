@@ -1753,7 +1753,21 @@ server.metrics.csv.enabled=false
 var additiveConfKeys = map[string]bool{
 	"dbms.security.procedures.unrestricted": true,
 	"dbms.security.procedures.allowlist":    true,
+	"dbms.security.procedures.denylist":     true,
+	"dbms.security.http_auth_allowlist":     true,
+	"server.unmanaged_extension_classes":    true,
 }
+
+// IsAdditiveConfKey reports whether a neo4j.conf setting is an additive,
+// comma-separated list (e.g. dbms.security.procedures.unrestricted) whose values
+// from multiple sources (operator, user, several plugins) must be unioned rather
+// than overwritten — overwriting silently drops the other sources' entries.
+func IsAdditiveConfKey(key string) bool { return additiveConfKeys[key] }
+
+// MergeConfListValues returns the comma-separated union of two list values,
+// de-duplicated and in first-seen order (a's tokens first, then b's new tokens).
+// Used for additive keys both in neo4j.conf and in NEO4J_*-style env vars.
+func MergeConfListValues(a, b string) string { return unionCSV(a, b) }
 
 // DedupeNeo4jConf collapses duplicate setting keys in a rendered neo4j.conf so
 // the same key is never declared twice. The operator assembles the conf from

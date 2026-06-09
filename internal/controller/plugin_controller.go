@@ -997,25 +997,9 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 
 		}
 
-		// Apply security settings as environment variables (both automatic and user-provided)
-		for key, value := range userSecuritySettings {
-			envVarName := fmt.Sprintf("NEO4J_%s", strings.ToUpper(strings.ReplaceAll(key, ".", "_")))
-			// Check if environment variable already exists
-			exists := false
-			for i := range currentNeo4jContainer.Env {
-				if currentNeo4jContainer.Env[i].Name == envVarName {
-					currentNeo4jContainer.Env[i].Value = value
-					exists = true
-					break
-				}
-			}
-			if !exists {
-				currentNeo4jContainer.Env = append(currentNeo4jContainer.Env, corev1.EnvVar{
-					Name:  envVarName,
-					Value: value,
-				})
-			}
-		}
+		// Apply security settings as environment variables, unioning additive
+		// allowlists across plugins (see mergePluginSecurityEnv).
+		currentNeo4jContainer.Env = mergePluginSecurityEnv(currentNeo4jContainer.Env, userSecuritySettings)
 
 		return r.Update(ctx, currentSts)
 	})
@@ -1040,6 +1024,44 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 	// before connectivity checks to ensure security settings are applied before Neo4j starts
 
 	return nil
+}
+
+// mergePluginSecurityEnv applies a plugin's security settings to a container's
+// env vars without clobbering across plugins. For additive list keys
+// (resources.IsAdditiveConfKey — e.g. dbms.security.procedures.unrestricted /
+// allowlist), the value is UNIONED with any existing env value, so GDS's `gds.*`
+// and APOC's `apoc.*` both survive instead of the last-reconciled plugin
+// overwriting the first. Scalar keys are set in place. Deterministic (keys
+// processed sorted) and idempotent (re-applying the same settings is a no-op).
+//
+// NOTE: this accumulates tokens; tokens from an *uninstalled* plugin are not
+// pruned here — that needs the authoritative recompute tracked in issue #146.
+func mergePluginSecurityEnv(env []corev1.EnvVar, settings map[string]string) []corev1.EnvVar {
+	keys := make([]string, 0, len(settings))
+	for k := range settings {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		envName := fmt.Sprintf("NEO4J_%s", strings.ToUpper(strings.ReplaceAll(key, ".", "_")))
+		idx := -1
+		for i := range env {
+			if env[i].Name == envName {
+				idx = i
+				break
+			}
+		}
+		switch {
+		case idx >= 0 && resources.IsAdditiveConfKey(key):
+			env[idx].Value = resources.MergeConfListValues(env[idx].Value, settings[key])
+		case idx >= 0:
+			env[idx].Value = settings[key]
+		default:
+			env = append(env, corev1.EnvVar{Name: envName, Value: settings[key]})
+		}
+	}
+	return env
 }
 
 // injectVerifiedDownloadInitContainer adds (or updates) the plugin's
