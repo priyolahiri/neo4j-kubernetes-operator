@@ -106,8 +106,20 @@ git checkout $LATEST_TAG    # or omit to test main
 
 helm install neo4j-operator ./charts/neo4j-operator \
   --namespace neo4j-operator-system \
-  --create-namespace
+  --create-namespace \
+  --set image.tag="${LATEST_TAG#v}"   # e.g. 1.11.0 — see note below
 ```
+
+> **You must set `image.tag` for a from-clone install.** In the repository,
+> `Chart.yaml`'s `version`/`appVersion` are a `0.0.1` placeholder that the
+> release pipeline stamps from the git tag at publish time. Without
+> `--set image.tag`, the chart resolves the image to
+> `ghcr.io/priyolahiri/neo4j-kubernetes-operator:0.0.1`, which doesn't exist
+> (`ImagePullBackOff`). Set it to a released version (the `LATEST_TAG` above with
+> the `v` stripped), or build and load a local image and point `image.repository`
+> / `image.tag` at it — see the [developer guide](../developer_guide/development.md).
+> (Installing the *published* chart via Methods 1–2 doesn't need this — the
+> released chart already carries the real version.)
 
 ### Method 5: Git Clone with Make Targets
 
