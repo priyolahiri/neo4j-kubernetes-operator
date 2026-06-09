@@ -69,41 +69,23 @@ jobs:
 
     - name: Run unit tests
       run: |
-        # Enable line-buffered output for real-time progress
         export PYTHONUNBUFFERED=1
         export FORCE_COLOR=1
-
-        echo "Running unit tests with enhanced progress output..."
-        # Use pipefail to ensure the exit code from make test-unit is propagated
         set -o pipefail
-        make test-unit | tee unit-test-output.log
+
+        # gotestsum runs `go test -json` under the hood and renders a clean
+        # per-test view, while emitting a JUnit report + the JSON event stream the
+        # summary step parses for failed/slowest tests. Pinned, ./bin-cached.
+        make gotestsum
+        make test-unit \
+          GO_TEST_CMD="./bin/gotestsum --format=testname --junitfile=unit-junit.xml --jsonfile=unit-tests.json --" \
+          | tee unit-test-output.log
       env:
         GOMAXPROCS: 2
 
     - name: Generate test summary
       if: always()
-      run: |
-        echo "## Unit Test Results" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-
-        if [ -f unit-test-output.log ]; then
-          # Count passed/failed tests from the output
-          PASSED=$(grep -c "PASS:" unit-test-output.log || echo "0")
-          FAILED=$(grep -c "FAIL:" unit-test-output.log || echo "0")
-
-          if [ "$FAILED" = "0" ]; then
-            echo "✅ **Status**: All unit tests passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Status**: $FAILED test(s) failed" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "📊 **Summary**: $PASSED passed, $FAILED failed" >> $GITHUB_STEP_SUMMARY
-        else
-          echo "⚠️ **Status**: Test output not available" >> $GITHUB_STEP_SUMMARY
-        fi
-
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "📁 **Artifacts**: Test logs and coverage reports available for download" >> $GITHUB_STEP_SUMMARY
+      run: ./scripts/gotest-summary.sh unit-tests.json 20 || true
 
     - name: Archive test results
       uses: actions/upload-artifact@v7
@@ -114,4 +96,6 @@ jobs:
           coverage/
           *.out
           unit-test-output.log
+          unit-tests.json
+          unit-junit.xml
         if-no-files-found: warn
