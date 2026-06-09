@@ -159,6 +159,53 @@ Each spec's top-level `Describe` carries a Ginkgo `Label`:
 `Label("extended")`) — an unlabeled spec runs in neither CI lane. See
 [CI/CD & Workflows](ci_and_workflows.md#test-tiers-core-vs-extended).
 
+### Two gates: the label selects the lane, a runtime `Skip` decides if it can run there
+
+A spec's **tier label** only decides which CI lane *selects* it. Whether it
+actually *executes* in that lane is a second, independent gate — a `Skip(...)`
+evaluated at run time:
+
+- **Operator present** — most suites `Skip` unless the operator is deployed
+  in-cluster (`isOperatorRunning()`). Always true in CI; false if you run the
+  suite against a bare cluster locally.
+- **Neo4j version** — version-gated features self-skip on older images
+  (`isPropertyShardingCompatible()` needs 2025.12+; ABAC needs 2026.03+). On the
+  CalVer lane these pass; on the 5.26 cell they skip.
+- **Resources** — the resource-heavy specs `Skip` when `isRunningInCI()` is true,
+  because a GitHub-hosted runner can't give them the production floor.
+
+So **`Label("extended")` does *not* mean "runs in the Extended CI lane."** It
+means "the Extended lane is the only lane that will *consider* it" — a runtime
+`Skip` may still exclude it there.
+
+### What runs where (coverage map)
+
+| Suite(s) | Verifies | Tier | Where it actually runs |
+|---|---|---|---|
+| `standalone_deployment`, `cluster_lifecycle`, `neo4j{user,role,rolebinding}`, `database_neo4j_verification`, `enterprise_features`, `plugin`, `tls_cluster_lifecycle` | Core reconcile contracts: Ready, formation, RBAC/DB CRUD, config rendering, plugin install, TLS | `core` | **Integration Tests** lane — both 5.26 + CalVer, every runtime-path PR |
+| `multi_node_cluster`, `splitbrain_detection`, `rolling_upgrade`, `backup_*`, `restore_*`, `standard_database_*_restore`, `database_seed_uri`, `mcp_integration` | Multi-node, coordination, backup/restore matrix, MCP | `extended` | **Extended** lane — CalVer, nightly + coordination-critical PRs + dispatch |
+| `neo4jauthrule` | ABAC / OIDC | `extended` | Extended lane, **CalVer only** (self-skips < 2026.03) |
+| `property_sharding_ci_smoke` | One minimal sharded DB (1 graph + 1 property shard) | `extended` | Extended lane on CalVer, **via `NEO4J_SHARDING_RELAX_MEMORY_MIN`** (the integration-test overlay relaxes the 4Gi floor to fit a runner) |
+| `property_sharding`, `property_sharding_backup`, `property_sharding_minio_restore`, `property_sharding_pvc_seed` | Full sharding: F3/F4/F5, multi-property-shard topology, sharded backup/restore | `extended` | **Local only** — `Skip` in CI (`isRunningInCI()`). They need the production **4Gi/server** floor a hosted runner can't provide |
+
+#### Running the local-only sharding suites
+
+The richer property-sharding suites are the one block of coverage **no CI lane
+exercises** — they self-skip in CI and run only on a machine (or larger Kind
+node) that can satisfy the 4Gi-per-server floor:
+
+```bash
+# Local run on a host with enough RAM (no isRunningInCI()/CI env set):
+make test-cluster && make operator-setup
+NEO4J_VERSION=2026.04-enterprise \
+  ginkgo run --label-filter='extended' -focus "Property Sharding" ./test/integration/...
+```
+
+Because they don't run in CI, **a change to the sharding controllers/builders
+should be validated locally with these suites before merge** — the nightly
+Extended lane only covers the minimal CI smoke path, not F3/F4/F5 or sharded
+backup/restore.
+
 ### Integration Test Structure
 
 Integration tests are located in `test/integration/` and follow consistent patterns:

@@ -130,6 +130,14 @@ Triggers:
 It builds and deploys the operator, runs the full suite, uploads
 logs/cluster-state artifacts, and tears the cluster down.
 
+> **Not everything labelled `extended` runs in this lane.** The tier label only
+> selects the lane; a runtime `Skip` can still exclude a spec there. The
+> resource-heavy property-sharding suites self-skip in CI (they need the
+> production 4Gi/server floor) and are **local-only** — only the minimal
+> `property_sharding_ci_smoke` runs here. See
+> [Testing → What runs where](testing.md#what-runs-where-coverage-map) for the
+> full map and how to run the local-only suites.
+
 **Bumping the CalVer pin:** the version is pinned (not floating) for
 deterministic CI. When a newer stable CalVer ships, bump `CALVER_VERSION` in
 `integration.yml` and the `neo4j-version` default in `integration-tests.yml` in
