@@ -66,6 +66,7 @@ env:
 ```
 
 **Notes**:
+
 - APOC settings are applied via environment variables in Neo4j 5.26+
 - Bloom/GDS/GenAI settings are applied via ConfigMap (standalone) or runtime configuration (cluster)
 - Automatic dependency resolution and security defaults are applied as needed
@@ -278,6 +279,7 @@ via the Helm chart's `pluginInitContainer.image` value when installing
 into air-gapped clusters that need a mirrored image.
 
 **Limitations**:
+
 - `spec.source.type` must be `url` or `custom` — the entrypoint's
   `official`/`community` types resolve via an internal manifest the
   user can't point at a verifiable URL, so they're rejected at admission.
@@ -350,6 +352,7 @@ spec:
 ```
 
 **Result**: Updates `my-cluster-server` StatefulSet with:
+
 - `NEO4J_PLUGINS=["apoc"]`
 - `NEO4J_APOC_EXPORT_FILE_ENABLED=true`
 - `NEO4J_APOC_IMPORT_FILE_ENABLED=true`
@@ -409,6 +412,7 @@ spec:
 ```
 
 **Result**: Updates `my-standalone` StatefulSet with:
+
 - `NEO4J_PLUGINS=["apoc", "graph-data-science"]` (dependencies included)
 - GDS-specific environment variables
 - Security settings for both APOC and GDS procedures
@@ -489,6 +493,7 @@ spec:
 ### Plugins with Automatic Security
 
 **Bloom Plugin**:
+
 - Automatically applies required security settings for proper operation
 - No manual configuration needed for basic functionality
 - Automatically configured settings:
@@ -497,6 +502,7 @@ spec:
   - `NEO4J_SERVER_UNMANAGED_EXTENSION_CLASSES=com.neo4j.bloom.server=/bloom`
 
 **Graph Data Science Plugin**:
+
 - Automatically applies default security settings
 - User security configuration can override defaults
 - Automatically configured settings:
@@ -599,12 +605,14 @@ config:
 
 ### Official Repository
 Neo4j's official plugin repository (recommended for production):
+
 - APOC (Awesome Procedures On Cypher)
 - Neo4j Streams
 - Neo4j GraphQL
 
 ### Community Repository
 Community-maintained plugins:
+
 - Graph Data Science (GDS)
 - Additional APOC extensions
 - Third-party plugins
@@ -973,6 +981,7 @@ kubectl describe neo4jplugin <plugin-name> | grep -A 10 "Health:"
 10. **Troubleshooting**: Enable debug logging for plugin installation issues
 
 For detailed plugin-specific guides, see:
+
 - [Plugin Examples](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/plugins)
 - [Troubleshooting Guide](../user_guide/guides/troubleshooting.md)
 - [Performance Tuning](../user_guide/guides/performance.md)

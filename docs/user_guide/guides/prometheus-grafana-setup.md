@@ -40,6 +40,7 @@ spec:
 ```
 
 When `monitoring.enabled: true`, the operator automatically:
+
 - Sets `server.metrics.prometheus.enabled=true` and binds to `0.0.0.0:2004`
 - Exposes container port 2004 on every Neo4j pod
 - Adds `prometheus.io/*` annotations for annotation-based scraping

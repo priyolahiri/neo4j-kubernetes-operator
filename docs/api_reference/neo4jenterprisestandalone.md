@@ -34,6 +34,7 @@ The `Neo4jEnterpriseStandalone` custom resource manages single-node Neo4j Enterp
 ## When to Use Neo4jEnterpriseStandalone
 
 Use `Neo4jEnterpriseStandalone` when you need:
+
 - **Development environments** with a single Neo4j instance
 - **Testing scenarios** that don't require clustering
 - **Simple production workloads** with basic availability requirements
@@ -122,6 +123,7 @@ config:
 ```
 
 **Automatically Managed**: The following configurations are managed by the operator and must not be set in `spec.config`:
+
 - `dbms.cluster.discovery.*` - Discovery settings (LIST resolver with pod FQDNs, injected by startup script)
 - `dbms.cluster.endpoints` - CalVer endpoint list (injected by startup script)
 - `server.bolt.listen_address` - Network listeners
@@ -260,6 +262,7 @@ spec:
 ```
 
 **Plugin Installation**: The Neo4jPlugin controller automatically:
+
 1. Updates the standalone StatefulSet with `NEO4J_PLUGINS` environment variable
 2. Adds plugin-specific configuration as `NEO4J_*` environment variables
 3. Triggers a rolling restart to apply plugin changes
@@ -398,6 +401,7 @@ The `Neo4jEnterpriseStandalone` status provides information about the current st
 
 #### `phase` (string)
 Current deployment phase:
+
 - `Pending`: Deployment is being created
 - `Ready`: Deployment is running and ready for connections
 - `Failed`: Deployment has failed
@@ -1113,6 +1117,7 @@ Consider migrating to [`Neo4jEnterpriseCluster`](neo4jenterprisecluster.md) when
 - **Load Distribution**: Separation of read and write workloads
 
 For more information:
+
 - [Neo4jEnterpriseCluster API Reference](neo4jenterprisecluster.md)
 - [Neo4jDatabase API Reference](neo4jdatabase.md)
 - [Neo4jPlugin API Reference](neo4jplugin.md)

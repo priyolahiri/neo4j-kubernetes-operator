@@ -5,6 +5,7 @@ This guide explains how to configure TLS for Neo4j deployments and work with the
 ## Overview
 
 When you enable TLS using cert-manager, the Neo4j operator automatically:
+
 - Creates certificate requests
 - Stores certificates in Kubernetes secrets
 - Mounts certificates in Neo4j pods
@@ -102,6 +103,7 @@ Bolt and HTTPS SSL policies are managed with `client_auth=NONE` so standard Neo4
 
 ### Certificate Files
 Inside the secret, you'll find:
+
 - `tls.crt` - The server certificate
 - `tls.key` - The private key (DO NOT SHARE)
 - `ca.crt` - The Certificate Authority certificate

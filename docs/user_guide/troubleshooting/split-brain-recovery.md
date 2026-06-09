@@ -43,6 +43,7 @@ The Neo4j Kubernetes Operator includes **automatic split-brain detection and rep
 ### What is Split-Brain?
 
 Split-brain happens when:
+
 1. Network partitions separate cluster servers
 2. Servers cannot communicate with each other
 3. Multiple independent "clusters" form within the same deployment
@@ -126,6 +127,7 @@ kubectl get events --field-selector reason=SplitBrainRepairFailed   # manual int
 ### Identify Split-Brain Symptoms
 
 **Indicators of Split-Brain:**
+
 - Different server counts reported by different pods
 - Inconsistent database allocations across servers
 - Some servers showing as "offline" from others' perspectives
@@ -476,6 +478,7 @@ kubectl exec recovery-cluster-server-0 -- cypher-shell -u neo4j -p password \
    - Track cluster consistency metrics
 
 For additional troubleshooting help, see:
+
 - [General Troubleshooting Guide](../guides/troubleshooting.md)
 - [TLS Configuration Issues](../tls_configuration.md)
 - [Performance Troubleshooting](../performance.md)

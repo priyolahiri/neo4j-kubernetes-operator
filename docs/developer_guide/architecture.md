@@ -162,18 +162,21 @@ type Neo4jDatabaseSpec struct {
 **Primary cluster management controller with server-based architecture:**
 
 **Performance Optimizations**:
+
 - **Efficient Reconciliation**: Reduced from ~18,000 to ~34 reconciliations per minute
 - **Smart Status Updates**: Only updates when cluster state changes
 - **ConfigMap Debouncing**: 2-minute debounce prevents restart loops
 - **Resource Version Conflict Handling**: Retry logic for concurrent updates
 
 **Server-Based Implementation**:
+
 - **Single StatefulSet**: Creates `{cluster-name}-server` instead of separate primary/secondary
 - **Self-Organizing Servers**: Neo4j servers automatically assign database hosting roles
 - **Simplified Resource Management**: Unified pod templates and configuration
 - **Certificate DNS**: Includes all server pod names in TLS certificates
 
 **Split-Brain Detection**:
+
 - **Location**: `internal/controller/splitbrain_detector.go`
 - **Multi-Pod Analysis**: Connects to each server to compare cluster views
 - **Automatic Repair**: Restarts orphaned pods to rejoin main cluster
@@ -183,6 +186,7 @@ type Neo4jDatabaseSpec struct {
 **Single-node deployment controller:**
 
 **Key Features**:
+
 - **Clustering Infrastructure**: Uses same infrastructure as clusters (Neo4j 5.26+ approach)
 - **Single Member Configuration**: Sets up clustering with single server
 - **Resource Management**: Handles ConfigMap, Service, and StatefulSet
@@ -190,6 +194,7 @@ type Neo4jDatabaseSpec struct {
 
 #### Database Controller (`neo4jdatabase_controller.go`)
 **Enhanced for dual deployment support:**
+
 - **Automatic Detection**: Tries cluster lookup first, then standalone fallback
 - **Neo4j Client Creation**: `NewClientForEnterprise()` vs `NewClientForEnterpriseStandalone()`
 - **Authentication Handling**: Manages NEO4J_AUTH for standalone deployments
@@ -197,6 +202,7 @@ type Neo4jDatabaseSpec struct {
 
 #### Plugin Controller (`plugin_controller.go`)
 **Manages plugin lifecycle with architecture compatibility:**
+
 - **DeploymentInfo Abstraction**: Unified handling of cluster/standalone types
 - **Resource Naming**: Correct StatefulSet names (`{cluster-name}-server` vs `{standalone-name}`)
 - **Pod Labels**: Applies appropriate labels for each deployment type
@@ -204,12 +210,14 @@ type Neo4jDatabaseSpec struct {
 
 #### Backup Controller (`neo4jbackup_controller.go`)
 **Backup management:**
+
 - **Architecture**: Job-per-`Neo4jBackup`-CR. No persistent backup pod or sidecars.
 - **Cross-Deployment Support**: Backs up both clusters and standalone deployments
 - **Modern Syntax**: Neo4j 5.26+ compatible backup commands
 
 #### Restore Controller (`neo4jrestore_controller.go`)
 **Database restoration management:**
+
 - **Point-in-Time Recovery**: Supports precise timestamp restoration via `--restore-until`
 - **Flexible Targets**: Cluster OR standalone (auto-detected through `getClusterRef`; standalone is converted into a synthetic cluster representation with `Topology.Servers=1` via `standaloneAsCluster`)
 - **Validation**: Ensures target deployment compatibility
@@ -254,6 +262,7 @@ Standalone targets are auto-detected: `getClusterRef` accepts a standalone name 
 
 #### Neo4jUser / Neo4jRole / Neo4jRoleBinding Controllers (`neo4juser_controller.go`, `neo4jrole_controller.go`, `neo4jrolebinding_controller.go`)
 **Identity & access management:**
+
 - **Shared cluster resolver**: `cluster_resolver.go` — `ResolveClusterRef` handles cluster + standalone lookup
 - **Watches**: the user controller watches `Neo4jRole` so users referencing missing custom roles re-reconcile when the role lands (sets `PendingDependencies` condition meanwhile, not terminal-fail)
 - **Source-of-truth model**: Privileges live on `Neo4jRole` (never on users). Built-in roles require `adoptBuiltin: true` to be managed; never dropped on CR delete
@@ -261,12 +270,14 @@ Standalone targets are auto-detected: `getClusterRef` accepts a standalone name 
 
 #### Neo4jAuthRule Controller (`neo4jauthrule_controller.go`)
 **ABAC / attribute-based access control:**
+
 - **Version requirement**: refuses to reconcile against Neo4j versions where `SupportsAuthRules()` returns false (pre-2026.03)
 - **Production wiring**: always present in `setupProductionControllers`; dev mode (`--controllers`) MUST list `authrule` or local deployments will silently accept `Neo4jAuthRule` CRs without reconciling them
 - **Cypher prefix**: every AUTH RULE DDL prepends `CYPHER 25` (system DB defaults to Cypher 5 on 2026.x, which can't parse `AUTH` keywords)
 
 #### Neo4jShardedDatabase Controller (`neo4jshardeddatabase_controller.go`)
 **Property-sharding management:**
+
 - **Version-gated**: requires Neo4j 2025.12+ images
 - **Resource requirements**: 5+ servers, 4-8Gi memory per server, 2+ CPU per server
 
@@ -363,6 +374,7 @@ CREATE DATABASE name [IF NOT EXISTS]
 
 #### Resource Builders (`internal/resources/`):
 These are free `Build*ForEnterprise` / `Build*ForStandalone` functions, not stateful builder types. The standalone path reuses the `cluster.go` builders (StatefulSet, ConfigMap, Services) via the `standaloneAsCluster` synthetic representation rather than a dedicated `standalone.go` file.
+
 - **StatefulSet / Services / ConfigMap** (`cluster.go`): `BuildServerStatefulSetForEnterprise`, `BuildClientServiceForEnterprise`, `BuildDiscoveryServiceForEnterprise`, `BuildConfigMapForEnterprise` — server-based resources for both clusters and (via the synthetic cluster) standalone.
 - **NetworkPolicy / Route / MCP** (`networkpolicy.go`, `route.go`, `mcp.go`): include `*ForStandalone` variants for standalone-specific wiring.
 - **Backup Job**: built inline by `neo4jbackup_controller.go` (per-`Neo4jBackup`-CR Kubernetes Job — no persistent backup pod, no sidecars, no dedicated `resources/` builder).
@@ -401,6 +413,7 @@ These are free `Build*ForEnterprise` / `Build*ForStandalone` functions, not stat
 
 #### Discovery RBAC (Critical):
 Each cluster gets automatic RBAC creation:
+
 - **ServiceAccount**: `{cluster-name}-discovery`
 - **Role**: Services and endpoints permissions
 - **RoleBinding**: Links account to role
@@ -513,6 +526,7 @@ behavior is equivalent to direct connection.
 
 **Driver timeouts.** `NewClientForEnterprise` /
 `NewClientForEnterpriseStandalone` configure:
+
 - `ConnectionAcquisitionTimeout = 10s` — full budget for getting a
   connection (includes routing-table fetch retries under `neo4j://`)
 - `SocketConnectTimeout = 5s` — TCP connect to a router member
@@ -652,6 +666,7 @@ responsibilities inside the cluster controller:
 
 **1. Infrastructure setup** (`ReconcileMonitoring`):
 Creates Kubernetes resources for metrics collection:
+
 - `{cluster-name}-metrics` Service — exposes port 2004 for Prometheus scraping
 - `{cluster-name}-monitoring` ServiceMonitor — tells the Prometheus Operator to scrape the metrics service
 - Neo4j config flags (`server.metrics.prometheus.enabled=true`, `prometheus.io/*` annotations)
@@ -660,6 +675,7 @@ Runs on every reconcile regardless of cluster phase.
 
 **2. Live diagnostics** (`CollectDiagnostics`):
 Runs `SHOW SERVERS` and `SHOW DATABASES` via the Bolt client when the cluster is `Ready`:
+
 - Writes results to `status.diagnostics` (`ClusterDiagnosticsStatus`)
 - Sets `ServersHealthy` condition (`True` when all servers are `state=Enabled` and `health=Available`)
 - Sets `DatabasesHealthy` condition (`True` when all user databases have `status=online`; the `system` database is excluded)
@@ -673,6 +689,7 @@ never shares state with the cluster formation or upgrade clients.
 `retry.RetryOnConflict` to handle concurrent updates without panicking.
 
 **Condition constants** (defined in `internal/controller/conditions.go`):
+
 - `ConditionTypeServersHealthy = "ServersHealthy"`
 - `ConditionTypeDatabasesHealthy = "DatabasesHealthy"`
 - Reason values: `AllServersHealthy`, `ServerDegraded`, `AllDatabasesOnline`, `DatabaseOffline`, `DiagnosticsUnavailable`

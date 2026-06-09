@@ -5,6 +5,7 @@ This guide provides a comprehensive overview of the configuration options availa
 ## CRD Specification
 
 The full CRD specifications, which detail every possible configuration field, can be found in the API Reference:
+
 - [Neo4jEnterpriseCluster](../api_reference/neo4jenterprisecluster.md) - For clustered deployments
 - [Neo4jEnterpriseStandalone](../api_reference/neo4jenterprisestandalone.md) - For single-node deployments
 
@@ -38,6 +39,7 @@ spec:
 The `pullSecrets` field accepts a list of secret names. Secrets must exist in the same namespace as the cluster. The operator automatically propagates the secrets to the StatefulSet's `imagePullSecrets` field.
 
 **Cloud-managed registries**: For ECR (AWS), GCR (Google Cloud), or ACR (Azure), use workload identity / IRSA to avoid long-lived credentials where possible. The `pullSecrets` field supports any Kubernetes `kubernetes.io/dockerconfigjson` secret.
+
 *   `spec.topology`: (Cluster only) Defines the architecture of your cluster. Specify the total number of servers (minimum 2) that will self-organize into primary and secondary roles based on database requirements. You can optionally configure server role constraints.
 *   `spec.storage`: Configures the persistent storage for the cluster, including storage class, size, and [retention policy](#storage-and-pvc-retention).
 *   `spec.auth`: Manages authentication, allowing you to specify the provider (native, LDAP, etc.) and the secret containing credentials.
@@ -89,12 +91,14 @@ This applies identically to both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseSt
 ### What happens with each policy
 
 **With `Delete` (default):**
+
 1. You run `kubectl delete neo4jenterprisecluster my-cluster`
 2. The operator deletes the StatefulSet and all associated PVCs
 3. The underlying PersistentVolumes are released and reclaimed per the StorageClass `reclaimPolicy`
 4. Data is gone
 
 **With `Retain`:**
+
 1. You run `kubectl delete neo4jenterprisecluster my-cluster`
 2. The operator deletes the StatefulSet but **leaves PVCs intact**
 3. PVCs remain in the namespace with their data
@@ -330,6 +334,7 @@ spec:
 You don't need to set these yourself — the operator injects them at pod startup based on `spec.topology` and the Neo4j version:
 
 **Cluster deployments**
+
 - LIST discovery with static pod FQDNs (`{cluster}-server-{n}.{cluster}-headless.{ns}.svc.cluster.local:6000`)
 - Version-specific endpoint key (`dbms.cluster.discovery.v2.endpoints` for 5.26.x, `dbms.cluster.endpoints` for 2025.x+)
 - `dbms.cluster.discovery.version=V2_ONLY` (5.26.x only — V2 is the only protocol in CalVer)
@@ -337,6 +342,7 @@ You don't need to set these yourself — the operator injects them at pod startu
 - RAFT and routing port advertisement
 
 **Standalone deployments**
+
 - Unified clustering infrastructure (no `dbms.mode=SINGLE`)
 - Single-member cluster configuration
 - Listen-address bindings

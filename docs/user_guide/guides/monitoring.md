@@ -22,6 +22,7 @@ spec:
 ```
 
 For clusters, the operator also creates:
+
 - A `Service` named `<cluster>-metrics` (port 2004)
 - A `ServiceMonitor` named `<cluster>-monitoring` (if Prometheus Operator CRDs are available)
 
@@ -153,6 +154,7 @@ Neo4j metric names are identical across 5.26.x and 2025.x+ CalVer releases, but 
 Neo4j converts metric names for Prometheus: dots become underscores, counter metrics get a `_total` suffix. The `# HELP` comment preserves the original name.
 
 Examples:
+
 - `neo4j.dbms.bolt.connections_running` → `neo4j_dbms_bolt_connections_running`
 - `neo4j.database.<db>.transaction.committed` → `neo4j_database_<db>_transaction_committed_total`
 - `neo4j.page_cache.hit_ratio` → `neo4j_page_cache_hit_ratio`

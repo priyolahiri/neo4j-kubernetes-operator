@@ -93,6 +93,7 @@ spec:
 The operator provides first-class, typed configuration for external authentication providers. When you use the typed fields (described below), the operator automatically generates the correct `neo4j.conf` entries — you do not need to manually place `dbms.security.*` keys in `spec.config`.
 
 **Where to start:**
+
 - **Most deployments**: [Native Authentication](#native-authentication) — just create an admin secret and go.
 - **Corporate SSO**: [OIDC / SSO Integration](#oidc-sso-integration) — Okta, Azure AD, Google, or any OIDC provider.
 - **Active Directory / LDAP**: [LDAP Integration](#ldap-integration) — bind templates, group mapping, nested groups.
@@ -1215,6 +1216,7 @@ Operator-specific posture for production deployments:
    ```
 
 For additional security guidance, see:
+
 - [Configuration Best Practices](configuration.md#best-practices-for-specconfig)
 - [TLS Configuration Guide](tls_configuration.md)
 - [Backup & Restore](guides/backup_restore.md)

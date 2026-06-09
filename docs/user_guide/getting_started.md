@@ -249,6 +249,7 @@ EOF
 For large datasets that need horizontal scaling, see the [Property Sharding guide](property_sharding.md) (Neo4j 2025.12+, via `Neo4jShardedDatabase`).
 
 See also:
+
 - [Neo4jDatabase API Reference](../api_reference/neo4jdatabase.md)
 - [Database Seed URI Guide](guides/seed-uri.md)
 - [Database Examples](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/databases)
@@ -280,6 +281,7 @@ Ready-to-apply YAML manifests for every CRD live under [`examples/`](https://git
 | [`security/`](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/security) | NetworkPolicy + Kyverno conformance policies |
 
 For more advanced topics, see:
+
 - [Configuration Guide](configuration.md) - Advanced configuration options
 - [Security Guide](security.md) - Authentication, TLS, and security best practices
 - [Performance Guide](performance.md) - Optimization and scaling strategies

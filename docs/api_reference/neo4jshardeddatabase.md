@@ -165,6 +165,7 @@ spec:
 | `txLogEnrichment` | `string` | No | - | Transaction log enrichment option |
 
 **Seed URI Notes**:
+
 - `seedURI` is for a single backup location (expects shard-suffixed artifacts).
 - `seedURIs` is for per-shard URIs (e.g., dump files or multi-location backups).
 - `seedBackupRef` is mutually exclusive with both `seedURI` and `seedURIs`; the operator materialises it into a seed URI at reconcile time.
@@ -214,10 +215,12 @@ propertyShardTopology:
 #### Topology Guidelines
 
 **Graph Shard** (stores nodes/relationships):
+
 - Recommended: 3+ primaries for high availability
 - Uses Raft consensus for consistency
 
 **Property Shards** (store properties):
+
 - Recommended: 2+ replicas for fault tolerance
 - Uses replica-based replication
 

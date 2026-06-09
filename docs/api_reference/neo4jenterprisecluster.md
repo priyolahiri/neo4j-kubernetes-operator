@@ -126,6 +126,7 @@ Defines the cluster server topology and role constraints.
 | `enforceDistribution` | `bool` | Enforce server distribution across topology domains |
 
 **Server Role Management**:
+
 - Servers self-organize into primary/secondary roles at the **database level**
 - Role constraints influence which databases a server can host:
   - `NONE`: Server can host databases in any mode (default)
@@ -134,6 +135,7 @@ Defines the cluster server topology and role constraints.
 - Use `serverRoles` for granular per-server control
 
 **Validation**:
+
 - Minimum 2 servers required for clustering
 - Cannot configure all servers as `SECONDARY` (cluster needs primaries)
 - Server indices in `serverRoles` must be within range (0 to servers-1)

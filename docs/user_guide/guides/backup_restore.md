@@ -767,6 +767,7 @@ The operator picks the right restore method based on the target kind. The Neo4j 
 | `Neo4jShardedDatabase` (sharded) | Rejected with actionable error | Use `Neo4jShardedDatabase.spec.replaceExisting: true` + `force: true` instead — see [Property Sharding](../property_sharding.md) |
 
 **Cluster path (Cypher)** — works with both cloud and PVC backups:
+
 - **Cloud-backed backup** (S3 / GCS / Azure): the operator passes the exact `.backup` **file** URI of the latest successful run (`s3://bucket/<path>/<backup-cr-name>/<dbname>-<timestamp>.backup`) as `seedURI` — `CloudSeedProvider` seeds a single database from one file, not a directory. When that file is a differential, Neo4j resolves and applies the full + differential chain from the same directory automatically. The cluster's pods must have the cloud credentials Secret projected via `spec.extraEnvFrom` — the operator emits an actionable error if they don't, or auto-patches under annotation `neo4j.com/auto-inherit-seed-creds=true`.
 - **PVC-backed backup**: the operator spawns an in-cluster busybox httpd proxy (`backup-seed-proxy-<restore-name>`) mounting the backup PVC RO at `/backup`, then passes the per-run `.backup` file URL as `seedURI` (`http://backup-seed-proxy-<restore-name>:8080/<backup-cr-name>/<filename>`). Neo4j's `URLConnectionSeedProvider` fetches it. The proxy Deployment + Service are owned by the `Neo4jRestore` CR and GC'd when it's deleted. No credentials required.
 - `dbms.recreateDatabase` preserves user/role privileges on the existing database; no `DROP DATABASE` needed.
@@ -774,6 +775,7 @@ The operator picks the right restore method based on the target kind. The Neo4j 
 - Both forms block until the new state is online — when the restore returns, the database is ready.
 
 **Standalone path (Job)**:
+
 - The operator spawns a Kubernetes Job that mounts the backup PVC (or streams from cloud storage), runs `neo4j-admin database restore --from-path=<latest-file>`, then automatically runs `CREATE DATABASE` or `START DATABASE` over Bolt.
 - The `<latest-file>` is resolved at Pod startup via shell substitution (`ls <dir>/<dbname>-*.backup | tail -1`), so the most recent run in the chain wins by default.
 
@@ -1136,6 +1138,7 @@ spec:
 ```
 
 The operator:
+
 1. Creates a PVC named `{backup-name}-temp-staging` (or `{restore-name}-temp-staging`)
 2. Sets the CR as owner — the PVC is garbage-collected when the backup/restore CR is deleted
 3. Mounts the PVC at `/tmp/neo4j-staging` in the Job pod

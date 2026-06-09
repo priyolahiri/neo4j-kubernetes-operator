@@ -74,6 +74,7 @@ kubectl apply -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releas
 ```
 
 **What this installs**:
+
 - Custom Resource Definitions (CRDs)
 - Operator Deployment (multi-arch images from ghcr.io)
 - All required RBAC permissions (ClusterRole, ClusterRoleBinding, ServiceAccount)
@@ -144,6 +145,7 @@ make deploy-prod-registry  # Deploy from ghcr.io registry (requires authenticati
 ```
 
 **What this installs**:
+
 - Custom Resource Definitions (CRDs)
 - Operator Deployment
 - All required RBAC permissions
@@ -421,6 +423,7 @@ gh release list --repo priyolahiri/neo4j-kubernetes-operator
 ### Next Steps
 
 Once installed, see:
+
 - [Getting Started Guide](getting_started.md) - Deploy your first Neo4j instance
 - [Configuration Guide](configuration.md) - Detailed configuration options
 - [Examples](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples) - Ready-to-use configurations

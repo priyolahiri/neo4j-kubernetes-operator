@@ -27,12 +27,14 @@ The operator uses the **LIST resolver** with pre-computed pod FQDNs from the Sta
 > **Note**: Do not confuse this with the Neo4j `K8S` resolver type, which queries the Kubernetes API directly. This operator always uses the `LIST` resolver.
 
 **Discovery ports**:
+
 - Port **6000** (`tcp-tx`): V2 cluster communication — used by this operator for discovery endpoints
 - Port **5000** (`tcp-discovery`): V1 discovery — deprecated, **never used by this operator**
 
 ### Kubernetes Services Created
 
 The operator automatically creates:
+
 - `{cluster-name}-headless` — StatefulSet headless service (pod FQDNs)
 - `{cluster-name}-internals` — cluster-internal routing
 - `{cluster-name}-client` — external Bolt/HTTP access
@@ -159,6 +161,7 @@ spec:
 ```
 
 **Note**: The operator automatically handles all clustering configuration including:
+
 - LIST discovery setup with pod FQDNs on port 6000 (`tcp-tx`)
 - RBAC resource creation
 - Service creation for cluster communication
@@ -252,6 +255,7 @@ spec:
 ```
 
 **Validation rules** (enforced by the controller, not a webhook):
+
 - `servers` must be between 2 and 100 (the 100 cap is an operator safety rail, not a Neo4j limit; realistic deployments rarely exceed ~10).
 - Each `serverRoles[].serverIndex` must be in the range `[0, servers-1]`.
 - `serverRoles[].serverIndex` values must be unique (no duplicates).

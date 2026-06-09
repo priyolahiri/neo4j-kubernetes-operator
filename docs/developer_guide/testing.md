@@ -290,6 +290,7 @@ forming its own:
 **When you add a spec:** if it needs a plain native cluster and only touches the
 system/user DBs, **reuse `useSharedNativeCluster`** — don't create a new cluster.
 Then:
+
 - give your CRs **unique names** (the shared system DB is sequential state across
   specs);
 - in `AfterEach`, delete **only your own** CRs — never the shared cluster, and
@@ -496,6 +497,7 @@ AfterEach(func() {
 ```
 
 **Why This Pattern Is Critical:**
+
 - **Prevents resource accumulation** that causes "Insufficient memory" errors
 - **Ensures cleanup even if tests fail** (inline cleanup won't run on failure)
 - **Removes finalizers** to prevent resources stuck in Terminating state
@@ -586,6 +588,7 @@ Resources: &corev1.ResourceRequirements{
 ```
 
 **Why 1.5Gi is required**:
+
 - Neo4j Enterprise needs minimum memory for database operations
 - Lower values cause Out of Memory kills (exit code 137)
 - Database creation and topology operations fail with insufficient memory
@@ -655,6 +658,7 @@ It("Should use optimal resource patterns", func() {
 ### GitHub Actions Integration
 
 Tests run automatically in CI with:
+
 - **Parallel Execution**: Multiple test suites run concurrently
 - **Resource Constraints**: CI-optimized resource limits
 - **Timeout Handling**: Extended timeouts for image pull delays
@@ -715,6 +719,7 @@ kubectl top pod <pod-name> --containers
 ```
 
 **Solutions**:
+
 - Increase memory limits to minimum 1.5Gi for Neo4j Enterprise
 - Reduce concurrent test execution
 - Use minimal storage and CPU allocations
@@ -724,6 +729,7 @@ kubectl top pod <pod-name> --containers
 **Symptoms**: Tests fail with "Timed out after 300s"
 
 **Common Causes**:
+
 - Image pull delays in CI environments
 - Insufficient resources for cluster formation
 - Missing RBAC permissions
@@ -779,6 +785,7 @@ go tool cover -html=coverage.out
 ### Quality Checks
 
 Integration tests should verify:
+
 - **Resource Creation**: All expected Kubernetes resources created
 - **Status Updates**: Proper status conditions and phase transitions
 - **Error Handling**: Graceful handling of failure scenarios
@@ -931,6 +938,7 @@ grep -E "PHASE|✅|❌" logs/ci-local-integration.log
 ### Test Documentation
 
 Document test scenarios:
+
 - **Purpose**: What functionality is being tested
 - **Setup**: Required resources and configuration
 - **Expected Results**: What should happen in success case

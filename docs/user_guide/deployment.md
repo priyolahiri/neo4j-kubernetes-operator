@@ -28,6 +28,7 @@ make deploy-prod  # for production
 ```
 
 This approach:
+
 - ✅ Builds operator from your current code automatically
 - ✅ No registry authentication required
 - ✅ Fast iteration cycle
@@ -59,12 +60,14 @@ make deploy-prod-registry
 `make deploy-dev` and `make deploy-prod` are aliases for the `-local` targets below — the same local-build path shown in the overview table above. Use whichever name you prefer; the `-local` variants are the explicit form.
 
 **`make deploy-dev-local`** (alias: `make deploy-dev`):
+
 - Builds `neo4j-operator:dev` image locally
 - Loads image into Kind cluster automatically
 - Deploys to `neo4j-operator-dev` namespace
 - Runs the operator with `--mode=dev`
 
 **`make deploy-prod-local`** (alias: `make deploy-prod`):
+
 - Builds `neo4j-operator:latest` image locally
 - Loads image into Kind cluster automatically
 - Deploys to `neo4j-operator-system` namespace
@@ -76,12 +79,14 @@ make deploy-prod-registry
 These variants skip the local image build and pull from a registry instead. Use them when you have a pre-built image and want to deploy without rebuilding from source.
 
 **`make deploy-prod-registry`**:
+
 - Uses `ghcr.io/priyolahiri/neo4j-kubernetes-operator:latest` (via the `config/overlays/prod-registry` kustomize overlay)
 - Requires authenticated access to ghcr.io
 - Suitable for production environments with registry access
 - Automatic updates when new versions are released
 
 **`make deploy-dev-registry`**:
+
 - Uses the `config/overlays/dev` overlay without rebuilding the image
 - The `neo4j-operator:dev` image must already be present in the cluster (pre-loaded into Kind, or pullable from a configured registry)
 - Development namespace with debug features
