@@ -30,6 +30,14 @@ Every change lands through a PR. Keep PRs focused — one logical change per PR.
    Address feedback by pushing follow-up commits.
 6. Merge once required checks pass and the PR is approved.
 
+> **Pushing cancels in-flight test runs.** The integration lanes use per-PR
+> concurrency with `cancel-in-progress`, so a new push **terminates the currently
+> running integration run** and restarts it on the new head — the old run is
+> marked "cancelled", not failed. If you're waiting on a green integration
+> result, let the run finish before pushing again (or batch fixes into one
+> push) rather than pushing on top of an in-flight run. See
+> [CI/CD & Workflows → Integration Tests](ci_and_workflows.md#integration-tests).
+
 ### Commit messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`,

@@ -25,11 +25,32 @@ gate that blocks merge. Jobs:
    CRD, RBAC, deepcopy, Helm CRD, or OLM bundle file is stale. Fix locally with
    `make sync-all` and commit the result.
 2. **Unit Tests** — `make test-unit` (race-enabled, envtest-backed controller
-   suite + plain unit tests). No external cluster required.
+   suite + plain unit tests). No external cluster required. The job runs the
+   suite through [gotestsum](makefile_reference.md#make-gotestsum)
+   (`make test-unit GO_TEST_CMD="./bin/gotestsum …"`), which emits a JUnit XML +
+   test2json report; a summary step (`scripts/gotest-summary.sh`) writes the
+   failed and slowest tests to the GitHub step summary.
 
 Integration coverage lives in its own workflows, not in `ci.yml`: the fast
 contributor lane is [Integration Tests](#integration-tests); the full matrix is
 [Extended Integration Tests](#extended-integration-tests).
+
+## Caching
+
+The workflows cache the expensive, slowly-changing inputs so reruns stay fast:
+
+- **`./bin` tools + envtest assets** — cached by the `.github/actions/setup-go`
+  composite action, keyed on `hashFiles('Makefile')` (the tool versions are
+  pinned there), so `kustomize`/`controller-gen`/`ginkgo`/`setup-envtest` aren't
+  re-downloaded every run.
+- **Go build/module cache (`GOCACHE`)** — restored via `actions/setup-go`'s
+  built-in caching, keyed on `go.sum`.
+- **Operator image layers** — the integration lanes build with Buildx and a
+  GitHub Actions layer cache (`cache-from/to: type=gha`), so unchanged build
+  stages are reused.
+- **Neo4j image tarball** — the pulled `neo4j:<tag>-enterprise` image is saved to
+  `/tmp/neo4j-image.tar` and restored with `actions/cache`, avoiding a Docker Hub
+  pull on every integration run.
 
 ## Branch protection
 
@@ -96,10 +117,22 @@ Because it's the core subset and the two cells run in parallel, wall-clock ≈ t
 slower (CalVer) cell, not the sum. Triggers on `pull_request` + `push` to `main`
 when **runtime paths** change (`internal/**`, `api/**`, `cmd/**`,
 `test/integration/**`, `Makefile`, `go.{mod,sum}`, the workflow itself) — never
-on docs-only changes. A new push cancels the PR's in-flight run.
+on docs-only changes.
 
 This is the lane that should give a contributor a fast, legible yes/no on the
 contracts they touched, on the versions users actually run.
+
+> **Caveat — a new push cancels the in-flight run.** Each integration lane uses a
+> per-PR [concurrency group](https://docs.github.com/actions/using-jobs/using-concurrency)
+> with `cancel-in-progress: true`, keyed on the PR number (`integration-core-${{
+> github.event.pull_request.number || github.run_id }}` and the Extended
+> equivalent). Pushing a new commit while a run is still going **terminates that
+> run** and starts a fresh one on the new head — even a docs-only or trivial
+> push (on `pull_request` the path filter is evaluated against the cumulative
+> base→head diff, so any push re-fires the lane if the PR has *ever* touched a
+> runtime path). The cancelled run shows up as red/"cancelled", not a failure.
+> If you're waiting on a green integration result, **let it finish before pushing
+> again**, or batch your changes into one push.
 
 ## Extended Integration Tests
 
