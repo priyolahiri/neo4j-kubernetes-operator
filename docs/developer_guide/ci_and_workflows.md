@@ -113,13 +113,26 @@ built-in `GITHUB_TOKEN` — no extra secrets.
 
 ### Pages — Docs
 
-**`pages-docs.yml`** publishes the MkDocs site as **versioned** docs using
-[`mike`](https://github.com/jimporter/mike):
+**`pages-docs.yml`** publishes the MkDocs (Material) site as **versioned** docs
+using [`mike`](https://github.com/jimporter/mike). It first runs
+`mkdocs build --strict`, so a broken internal link or a nav entry pointing at a
+missing page **fails the publish** — treat it as a docs gate on `main` and tags.
 
-- **Push to `main`** → publishes the `/main/` alias (rolling preview).
-- **Push of a `v*` tag** → publishes `/vX.Y/` and updates the `/latest/` alias.
+What gets published where:
+
+- **Push to `main`** → the `/main/` alias, a rolling preview of unreleased docs.
+  Does not touch `latest`.
+- **Push of a `vX.Y.Z` tag** → published as `/vX.Y/` (the patch is dropped, so a
+  later `vX.Y.Z+1` overwrites the same `/vX.Y/`), and `/latest/` is moved to it.
+  `mike set-default latest` also points the site **root** at `/latest/`.
 - **Manual dispatch** → publish under an arbitrary `version-alias`, optionally
   updating `latest`.
+
+For readers: the site **root redirects to `/latest/`** (newest release), and the
+**version dropdown** at the top of every page (`extra.version.provider: mike` in
+`mkdocs.yml`) switches between `latest`, each released `/vX.Y/`, and the `/main/`
+preview. A page added on `main` appears under `/main/` immediately and lands in
+`/vX.Y/` + `/latest/` automatically on the next release tag — no manual step.
 
 (The rolling-preview alias was historically called `dev`; it is now `main`.)
 
