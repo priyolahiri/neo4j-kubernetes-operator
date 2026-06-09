@@ -50,6 +50,40 @@ go test ./internal/controller -run TestGetStatefulSetName -v
 go test ./internal/validation -run TestTopologyValidator -v
 ```
 
+### Reporting, gotchas & guards
+
+Unit tests aren't tiered or version-gated like the integration suite (they all run
+on every push, no cluster), so there's no coverage matrix — but a few things are
+worth knowing in the same spirit:
+
+- **CI reporting (gotestsum).** The CI unit job runs `make test-unit` through
+  **gotestsum** (`GO_TEST_CMD` override), which emits a **failed-test list** and a
+  **slowest-test** breakdown to the job summary, plus JUnit + JSON artifacts. Local
+  `make test-unit` uses plain `go test` (the `GO_TEST_CMD` default) — unchanged.
+- **envtest seam.** Only the `internal/controller` suite needs a real API server
+  (`KUBEBUILDER_ASSETS`, via setup-envtest); `make test-unit` provisions it. Other
+  packages (`internal/validation`, `internal/resources`, `api/...`) are pure and
+  need no cluster.
+- **Wall-clock mental model.** `go test` runs packages **in parallel**, so the
+  unit suite's wall-clock ≈ the **slowest package** — currently the envtest
+  `TestControllers` (~37s). Within a package, Ginkgo specs run serially.
+- **Gotcha — bound network-touching unit specs with a context deadline.** Specs
+  that exercise the Bolt client against a non-existent endpoint (e.g.
+  `internal/neo4j` `TestClient`) must use a **short-deadline context**, not
+  `context.Background()` — otherwise each "expected to fail" call waits out the
+  driver's real retry windows (`ConnectionAcquisitionTimeout` 10s /
+  `MaxTransactionRetryTime` 15s). That mistake once made `TestClient` ~160s and
+  gated the whole suite; a 2s deadline cut it to ~13s. The production timeouts in
+  `client.go` are load-bearing (pinned by `uri_test.go`) — never relax those to
+  speed a test; bound the **test's** context instead.
+- **Config-assembly invariants.** `TestStandaloneCreateConfigMap_NoDuplicateKeys`
+  and `TestBuildConfigMapForEnterprise_NoDuplicateKeys` render the real conf
+  builders across realistic layerings (monitoring + audit + auth + user overrides)
+  and assert **no neo4j.conf key is declared twice** — the duplicate-key class that
+  CrashLoops CalVer Neo4j (NEO3-16). When you add config layering, these catch
+  collisions at unit speed, at every version. Keep them green rather than relying
+  on an integration boot to surface a duplicate key.
+
 ### Unit Test Structure
 
 Unit tests are located alongside the code they test:
@@ -205,6 +239,38 @@ Because they don't run in CI, **a change to the sharding controllers/builders
 should be validated locally with these suites before merge** — the nightly
 Extended lane only covers the minimal CI smoke path, not F3/F4/F5 or sharded
 backup/restore.
+
+### Shared vs per-spec clusters
+
+Cluster formation is the dominant cost of the integration suite (minutes each,
+~2× on CalVer), so specs that need the **same** cluster share one instead of each
+forming its own:
+
+- **Shared.** The `Neo4jUser` / `Neo4jRole` / `Neo4jRoleBinding` / `Neo4jDatabase`
+  e2e specs all need an identical vanilla cluster (native auth, TLS off, 2 servers)
+  and only operate on the system/user databases. They reuse a single cluster via
+  **`useSharedNativeCluster`** (`shared_cluster_test.go`, `sync.Once`), formed once
+  and torn down in `AfterSuite`. This collapsed ~5 formations → 1 and removed the
+  per-spec "form a cluster within the SpecTimeout" gamble that was timing out on
+  CalVer.
+- **Per-spec (own cluster).** Specs whose cluster config **diverges** (TLS/
+  cert-manager, OIDC/ABAC, property sharding, non-default topology, image upgrade)
+  or that **mutate/destroy** cluster state (plugin install → rolling restart,
+  split-brain pod kills, destructive restore) keep their own cluster — sharing
+  would conflict with their required config.
+
+**When you add a spec:** if it needs a plain native cluster and only touches the
+system/user DBs, **reuse `useSharedNativeCluster`** — don't create a new cluster.
+Then:
+- give your CRs **unique names** (the shared system DB is sequential state across
+  specs);
+- in `AfterEach`, delete **only your own** CRs — never the shared cluster, and
+  never `cleanupCustomResourcesInNamespace` on the shared namespace (it would nuke
+  other specs' resources).
+
+This is safe only because the suite runs **serially** (`--procs=1`): specs mutate
+the shared system DB one at a time. Reusing the cluster is incompatible with
+Ginkgo `-p` for that reason.
 
 ### Integration Test Structure
 
