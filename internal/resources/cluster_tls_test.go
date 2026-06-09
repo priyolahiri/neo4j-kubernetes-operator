@@ -158,9 +158,9 @@ func TestBuildConfigMapForEnterprise_TLSStrictPeerValidationOptOut(t *testing.T)
 // certificates in spec.config. Even if a CR slips past the validator
 // (e.g. a future custom admission controller bypasses our
 // reconcile-time validation), the rendered neo4j.conf must NOT contain
-// user values for these keys — because server.config.strict_validation.
-// enabled=false elsewhere lets Neo4j silently honour a duplicate-key
-// override and downgrade the strict cluster SSL posture.
+// user values for these keys — DedupeNeo4jConf collapses a duplicate to the
+// last (user) occurrence, which would silently downgrade the strict cluster
+// SSL posture even under strict validation.
 func TestBuildConfigMap_SSLPolicyKeysInSpecConfigAreDropped(t *testing.T) {
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "evil", Namespace: "default"},
@@ -197,8 +197,7 @@ func TestBuildConfigMap_SSLPolicyKeysInSpecConfigAreDropped(t *testing.T) {
 	assert.Contains(t, neo4jConf, "server.bolt.tls_level=REQUIRED")
 
 	// The hostile spec.config values must NOT appear as standalone lines.
-	// (Each is filtered out at merge time even though strict_validation is
-	// disabled.)
+	// (Each is filtered out at merge time, before dedup could collapse it.)
 	assert.NotContains(t, neo4jConf, "dbms.ssl.policy.cluster.trust_all=true")
 	assert.NotContains(t, neo4jConf, "dbms.ssl.policy.cluster.client_auth=NONE")
 	assert.NotContains(t, neo4jConf, "dbms.ssl.policy.cluster.verify_hostname=false")
