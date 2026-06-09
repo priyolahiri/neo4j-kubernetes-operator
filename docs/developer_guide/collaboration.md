@@ -45,20 +45,26 @@ These run automatically on every PR (see [CI/CD & Workflows](ci_and_workflows.md
 |---|---|
 | **Generated Artifacts In Sync** (`check-drift`) | CRDs, RBAC, deepcopy, Helm CRDs, and the OLM bundle match the source. |
 | **Unit Tests** | `make test-unit` (race-enabled) passes. |
-| **Extended Integration Tests** | Runs automatically only when the PR touches the cluster/restore/backup controllers or the integration suite; otherwise on-demand (see below). |
+| **Integration Tests** | The `core` subset on 5.26 + CalVer (parallel). Runs automatically when the PR touches runtime paths (`internal/**`, `api/**`, `cmd/**`, `test/integration/**`, `Makefile`, `go.{mod,sum}`). |
+| **Extended Integration Tests** | The full suite on CalVer. Runs nightly, and automatically when the PR touches the cluster/restore/backup controllers or the suite; otherwise on-demand (see below). |
 
 Lint (`golangci-lint`, `staticcheck`) runs via the pre-commit hooks locally; run
 `make lint` before pushing.
 
+See [CI/CD & Workflows → Test tiers](ci_and_workflows.md#test-tiers-core-vs-extended)
+for the `core` vs `extended` label convention and how to run each tier locally.
+
 ### Running the Extended Integration Tests on demand
 
-The 90-minute suite doesn't run on every PR. Trigger it when your change could
-affect cluster coordination:
+The full (~90–150 min) CalVer suite doesn't run on every PR. Trigger it when your
+change could affect cluster coordination, backup/restore, or sharding:
 
-- **PR label:** add `run-integration-tests`, or
-- **Commit message:** include `[run-integration]`, or
 - **Manually:** run the *Extended Integration Tests* workflow from the Actions
-  tab (lets you pick the Neo4j version).
+  tab **against your branch** (lets you pick the Neo4j version). This is the way
+  to get full-suite coverage on a backup/restore/sharding PR before merge.
+
+The fast `core` lane (*Integration Tests*) runs automatically on any
+runtime-path PR — no opt-in needed.
 
 ## Code owners and review
 

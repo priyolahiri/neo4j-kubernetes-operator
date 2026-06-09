@@ -128,6 +128,11 @@ make test-cluster         # Create test cluster
 make test-integration     # Run tests (uses existing cluster)
 make test-cluster-delete  # Clean up cluster
 
+# Run by tier label (matches what CI selects — see below)
+ginkgo run --label-filter='core'     ./test/integration/...  # fast contributor subset
+ginkgo run --label-filter='extended' ./test/integration/...  # heavy / release subset
+ginkgo run --label-filter='core || extended' ./test/integration/...  # everything
+
 # Run specific test suites
 ginkgo run -focus "Neo4jEnterpriseCluster" ./test/integration
 ginkgo run -focus "should create backup" ./test/integration
@@ -138,12 +143,28 @@ make test-integration-ci     # Assumes cluster and operator already deployed
 make test-integration-ci-full # Full suite in CI environment
 ```
 
+### Tier labels (`core` / `extended`)
+
+Each spec's top-level `Describe` carries a Ginkgo `Label`:
+
+- **`core`** — reconcile contracts a routine change is most likely to break
+  (standalone Ready, cluster formation, DB/user/role CRUD, config rendering,
+  plugin install, basic TLS). The *Integration Tests* CI lane runs this subset
+  on both 5.26 and CalVer on every runtime-path PR.
+- **`extended`** — multi-node, split-brain, rolling upgrade, backup/restore,
+  sharding, MinIO, MCP, ABAC. The *Extended Integration Tests* workflow runs the
+  full suite on CalVer nightly + on release prep.
+
+**When you add a spec file, label its `Describe`** (`Label("core")` or
+`Label("extended")`) — an unlabeled spec runs in neither CI lane. See
+[CI/CD & Workflows](ci_and_workflows.md#test-tiers-core-vs-extended).
+
 ### Integration Test Structure
 
 Integration tests are located in `test/integration/` and follow consistent patterns:
 
 ```go
-var _ = Describe("Neo4jPlugin Integration Tests", func() {
+var _ = Describe("Neo4jPlugin Integration Tests", Label("core"), func() {
     const (
         timeout  = time.Second * 300  // 5-minute timeout for CI
         interval = time.Second * 5

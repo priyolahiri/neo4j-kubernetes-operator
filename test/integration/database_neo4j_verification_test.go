@@ -32,7 +32,7 @@ import (
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
-var _ = Describe("Neo4jDatabase Neo4j-Level Verification", func() {
+var _ = Describe("Neo4jDatabase Neo4j-Level Verification", Label("core"), func() {
 	const (
 		testTimeout = time.Second * 300
 		adminPass   = "password123"

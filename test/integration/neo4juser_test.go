@@ -40,7 +40,7 @@ import (
 //  3. Deleting the Neo4jUser drops the user from Neo4j (deletionPolicy
 //     defaults to Delete).
 
-var _ = Describe("Neo4jUser end-to-end", func() {
+var _ = Describe("Neo4jUser end-to-end", Label("core"), func() {
 	const (
 		testTimeout = time.Second * 600
 	)

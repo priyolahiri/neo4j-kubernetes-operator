@@ -37,7 +37,7 @@ import (
 // cypher-shell to simulate SSO/LDAP first-login provisioning, then asserts
 // that the binding grants and (on delete) revokes the listed roles.
 
-var _ = Describe("Neo4jRoleBinding end-to-end", func() {
+var _ = Describe("Neo4jRoleBinding end-to-end", Label("core"), func() {
 	const (
 		testTimeout = time.Second * 600
 	)

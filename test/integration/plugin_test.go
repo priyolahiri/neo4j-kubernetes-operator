@@ -34,7 +34,7 @@ import (
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
-var _ = Describe("Neo4jPlugin Integration Tests", func() {
+var _ = Describe("Neo4jPlugin Integration Tests", Label("core"), func() {
 	const (
 		timeout  = time.Second * 300 // 5 minutes for initial resource creation / cluster ready
 		interval = time.Second * 5

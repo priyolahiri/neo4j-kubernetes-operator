@@ -4,25 +4,31 @@ on:
   workflow_dispatch:
     inputs:
       neo4j-version:
-        description: 'Neo4j version to test against'
+        description: 'Neo4j image tag to test against. Defaults to the pinned
+          CalVer track — the strict ceiling new users run. Pass 5.26-enterprise
+          to verify the LTS floor on the full suite.'
         required: false
-        default: '5.26-enterprise'
+        default: '2026.04-enterprise'
         type: string
       timeout-minutes:
-        description: 'Ginkgo suite timeout in minutes. CalVer (2026.x) images are
-          ~2x slower per spec than 5.26, so the full suite needs more headroom —
-          bump this (e.g. 150) when dispatching against a 2026.x version.'
+        description: 'Ginkgo suite timeout in minutes. CalVer images are ~2x
+          slower per spec than 5.26, so the full suite needs ~150 of headroom.'
         required: false
-        default: '120'
+        default: '150'
         type: string
-  # Auto-run on PRs that touch the restore or cluster controllers, or
-  # the integration suite itself. These are the code paths whose bugs
-  # (issue #117, #129) silently slipped past unit-test coverage and
-  # were only caught after release. Path filter is intentionally
-  # narrow — running the full (multi-hour on CalVer) suite on every PR would slow
-  # delivery; running it on the specific controllers most likely to
-  # silently break the cluster-coordination contract is the cheap
-  # signal that catches the bug-shaped regressions.
+  # Nightly run on main against the pinned CalVer track. This is what keeps main
+  # continuously known-good on the version users actually deploy, so a regression
+  # is caught the day it merges (cheap, attributable) rather than at release time.
+  # It also means tagging a release ships a commit whose CalVer health is already
+  # established — the tag is too late to be the gate (it IS the release trigger).
+  schedule:
+    - cron: '0 3 * * *'  # 03:00 UTC daily
+  # Also auto-run on PRs that touch the coordination-critical controllers or the
+  # suite itself. The core "Integration Tests" lane runs on every PR but only the
+  # `core` subset — it does NOT include backup/restore/coordination specs, so a
+  # PR to these files still needs the full suite. These are the exact paths whose
+  # bugs (#117, #129) slipped past unit coverage and were only caught after
+  # release. Narrow on purpose: the full suite is multi-hour on CalVer.
   pull_request:
     paths:
       - 'internal/controller/neo4jrestore_controller.go'
@@ -51,7 +57,7 @@ jobs:
     name: Extended Integration Tests
     runs-on: ubuntu-latest
     # Fixed safety backstop, well above the Ginkgo --timeout below (the real gate,
-    # driven by the timeout-minutes input; default 120, bump to ~150 for 2026.x).
+    # driven by the timeout-minutes input; default 150 for the CalVer full suite).
     # GitHub expressions can't do arithmetic, so this is a generous constant rather
     # than input+buffer: Ginkgo self-terminates at its own timeout first and exits
     # gracefully (writes the report + uploads artifacts); this only kills a wedged
@@ -77,7 +83,7 @@ jobs:
 
     - name: Create cluster and deploy operator
       run: |
-        NEO4J_VERSION="${{ github.event.inputs.neo4j-version || '5.26-enterprise' }}"
+        NEO4J_VERSION="${{ github.event.inputs.neo4j-version || '2026.04-enterprise' }}"
 
         echo "▶ Creating test cluster..."
         make test-cluster
@@ -151,7 +157,7 @@ jobs:
     - name: Run extended integration tests
       run: |
         export FORCE_COLOR=1
-        echo "📊 Neo4j version: ${{ github.event.inputs.neo4j-version || '5.26-enterprise' }}"
+        echo "📊 Neo4j version: ${{ github.event.inputs.neo4j-version || '2026.04-enterprise' }}"
         echo "🔗 Running full integration test suite..."
 
         # Use the project-pinned ginkgo binary (make ginkgo downloads to ./bin/ginkgo)
@@ -159,13 +165,13 @@ jobs:
 
         set -o pipefail
         # Honor the dispatch input (was hardcoded 90m, which ignored the input and
-        # truncated the suite on slower CalVer images). Defaults to 120m for PR-
-        # triggered runs (no inputs).
+        # truncated the suite on slower CalVer images). Defaults to 150m for
+        # PR-triggered / scheduled runs (no inputs) on the CalVer full suite.
         ./bin/ginkgo run -v --timeout="${GINKGO_TIMEOUT_MIN}m" ./test/integration/... | tee integration-test-output.log
       env:
         KUBECONFIG: /home/runner/.kube/config
-        NEO4J_VERSION: ${{ github.event.inputs.neo4j-version || '5.26-enterprise' }}
-        GINKGO_TIMEOUT_MIN: ${{ github.event.inputs.timeout-minutes || '120' }}
+        NEO4J_VERSION: ${{ github.event.inputs.neo4j-version || '2026.04-enterprise' }}
+        GINKGO_TIMEOUT_MIN: ${{ github.event.inputs.timeout-minutes || '150' }}
         FORCE_COLOR: 1
 
     - name: Collect cluster state
@@ -244,8 +250,8 @@ jobs:
 
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Test Configuration:" >> $GITHUB_STEP_SUMMARY
-        echo "- **Neo4j Version**: ${{ github.event.inputs.neo4j-version || '5.26-enterprise' }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Timeout**: ${{ github.event.inputs.timeout-minutes || '120' }} minutes" >> $GITHUB_STEP_SUMMARY
+        echo "- **Neo4j Version**: ${{ github.event.inputs.neo4j-version || '2026.04-enterprise' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timeout**: ${{ github.event.inputs.timeout-minutes || '150' }} minutes" >> $GITHUB_STEP_SUMMARY
         echo "- **Test Suite**: Full integration suite with custom Neo4j version" >> $GITHUB_STEP_SUMMARY
 
         echo "" >> $GITHUB_STEP_SUMMARY

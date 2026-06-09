@@ -7,7 +7,8 @@ in-repo `.github/workflows/README.md` is a short pointer back here.
 | Workflow | File | Triggers |
 |---|---|---|
 | [CI](#ci) | `ci.yml` | push/PR to `main`/`develop`, manual dispatch |
-| [Extended Integration Tests](#extended-integration-tests) | `integration-tests.yml` | PRs touching key controllers/suite, manual dispatch |
+| [Integration Tests](#integration-tests) | `integration.yml` | PR + push to `main` on runtime paths |
+| [Extended Integration Tests](#extended-integration-tests) | `integration-tests.yml` | nightly; PRs touching coordination-critical controllers/suite; manual dispatch |
 | [Release](#release) | `release.yml` | push of a `vX.Y.Z` tag, manual dispatch |
 | [Pages — Docs](#pages-docs) | `pages-docs.yml` | push to `main`, push of a `v*` tag, manual dispatch |
 | [Pages — Helm Repo](#pages-helm-repo) | `pages-helm.yml` | push of a `v*` tag, manual dispatch |
@@ -25,10 +26,10 @@ gate that blocks merge. Jobs:
    `make sync-all` and commit the result.
 2. **Unit Tests** — `make test-unit` (race-enabled, envtest-backed controller
    suite + plain unit tests). No external cluster required.
-3. **Integration Tests** — the standard integration suite, but **only** when
-   opted in: a `run-integration-tests` PR label, `[run-integration]` in the
-   commit message, or manual dispatch with the toggle on. When skipped, the
-   `integration-tests-info` job prints how to enable it.
+
+Integration coverage lives in its own workflows, not in `ci.yml`: the fast
+contributor lane is [Integration Tests](#integration-tests); the full matrix is
+[Extended Integration Tests](#extended-integration-tests).
 
 ## Branch protection
 
@@ -45,11 +46,12 @@ gate that blocks merge. Jobs:
 
 Two things to know:
 
-- **The integration checks are intentionally *not* required.** `Integration
-  Tests` (CI) and the Extended Integration Tests workflow run conditionally; a
+- **The integration checks are intentionally *not* required.** Both the
+  Integration Tests lane and the Extended Integration Tests workflow are
+  path-filtered, so they don't run on every PR (e.g. a docs-only change); a
   required check that doesn't run on a given PR would leave it stuck at
-  "Expected — waiting for status." Reviewers gate on them manually for
-  controller changes.
+  "Expected — waiting for status." Reviewers gate on them manually for code
+  changes.
 - **`enforce_admins` is currently off** so the maintainer can merge during the
   solo→team transition (GitHub forbids approving your own PR, and the sole
   CODEOWNER would otherwise be unable to merge anything). Turn it on once a
@@ -61,29 +63,77 @@ Two things to know:
 If you rename a required CI job in `ci.yml`, update the protection contexts to
 match or every merge will block.
 
+## Test tiers: `core` vs `extended`
+
+Every integration spec carries a Ginkgo label on its top-level `Describe`:
+
+- **`core`** — reconcile contracts a routine change is most likely to break:
+  standalone → Ready, cluster formation, `Neo4jDatabase`/`Neo4jUser`/`Neo4jRole`/
+  `Neo4jRoleBinding` CRUD, config rendering, plugin install, basic TLS. Small,
+  fast, deterministic on both tracks.
+- **`extended`** — multi-node scaling, split-brain, rolling upgrade, the full
+  backup/restore matrix, property sharding, MinIO/cloud, MCP, ABAC/OIDC. Slow,
+  resource-heavy, or version-gated; high value before a release, low marginal
+  value per PR.
+
+The two workflows below select by label. Run a tier locally with
+`ginkgo run --label-filter='core' ./test/integration/...` (or `'extended'`, or
+`'core || extended'` for everything). When you add a spec file, **label its
+`Describe`** or it runs in neither lane.
+
+## Integration Tests
+
+**`integration.yml` — the fast contributor lane.** Runs the **`core`** subset
+against **both supported Neo4j tracks in parallel**:
+
+- `5.26-enterprise` — the last SemVer LTS; exercises the SemVer-only operator
+  paths (V2_ONLY discovery, `system_bootstrapping_strategy`).
+- the pinned CalVer tag (currently `2026.04-enterprise`) — the track new users
+  deploy; catches strict-mode fatals (duplicate conf keys, Cypher-25 defaults)
+  that 5.26 tolerates.
+
+Because it's the core subset and the two cells run in parallel, wall-clock ≈ the
+slower (CalVer) cell, not the sum. Triggers on `pull_request` + `push` to `main`
+when **runtime paths** change (`internal/**`, `api/**`, `cmd/**`,
+`test/integration/**`, `Makefile`, `go.{mod,sum}`, the workflow itself) — never
+on docs-only changes. A new push cancels the PR's in-flight run.
+
+This is the lane that should give a contributor a fast, legible yes/no on the
+contracts they touched, on the versions users actually run.
+
 ## Extended Integration Tests
 
-**`integration-tests.yml` — the long (≈90-minute) suite against a real Kind
-cluster with the operator deployed.** Distinct from CI's opt-in integration job:
-this is the comprehensive run.
+**`integration-tests.yml` — the full suite (`core` + `extended`, ≈90–150 min)
+against a real Kind cluster, on the pinned CalVer track.** This is the
+release-readiness and deep-coverage run.
 
-**Runs automatically on PRs** that touch the controllers most likely to silently
-break cluster coordination, or the suite itself:
+Triggers:
 
-- `internal/controller/neo4jrestore_controller.go`, `neo4jrestore_coordination*.go`
-- `internal/controller/neo4jbackup_controller.go`
-- `internal/controller/neo4jenterprisecluster_controller.go`, `neo4jenterprisestandalone_controller.go`
-- `test/integration/**`
-- `.github/workflows/integration-tests.yml`
+- **Nightly** (`cron: 0 3 * * *`) on `main` — keeps `main` continuously
+  known-good on the CalVer track, so a regression is caught the day it merges
+  and a release tag ships a commit whose CalVer health is already established
+  (the tag is the release trigger — too late to be the gate itself).
+- **PRs** touching the coordination-critical controllers or the suite, since the
+  core lane does *not* include backup/restore/coordination specs:
+  - `internal/controller/neo4jrestore_controller.go`, `neo4jrestore_coordination*.go`
+  - `internal/controller/neo4jbackup_controller.go`
+  - `internal/controller/neo4jenterprisecluster_controller.go`, `neo4jenterprisestandalone_controller.go`
+  - `test/integration/**`, `.github/workflows/integration-tests.yml`
+- **Manual dispatch** (Actions tab) with inputs:
+  - `neo4j-version` — image tag (default the pinned CalVer; pass `5.26-enterprise`
+    to verify the LTS floor on the full suite, or `2025.12-enterprise+` for the
+    property-sharding paths). **To run the full suite against your branch before
+    merging a backup/restore/sharding change, dispatch this workflow on your
+    branch.**
+  - `timeout-minutes` — default `150` (CalVer is ~2× slower per spec).
 
-**Manual dispatch** (Actions tab) accepts inputs:
+It builds and deploys the operator, runs the full suite, uploads
+logs/cluster-state artifacts, and tears the cluster down.
 
-- `neo4j-version` — image tag to test against (default `5.26-enterprise`). Use a
-  `2025.12-enterprise+` tag to exercise the property-sharding CI smoke path.
-- `timeout-minutes` — default `90`.
-
-It builds and deploys the operator, runs `ginkgo ./test/integration/...`,
-uploads logs/cluster-state artifacts, and tears the cluster down.
+**Bumping the CalVer pin:** the version is pinned (not floating) for
+deterministic CI. When a newer stable CalVer ships, bump `CALVER_VERSION` in
+`integration.yml` and the `neo4j-version` default in `integration-tests.yml` in
+one PR — the bump is itself a tested change.
 
 ## Release
 
