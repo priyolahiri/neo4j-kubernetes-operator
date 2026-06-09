@@ -70,6 +70,18 @@ func TestDedupeNeo4jConf_MergesAdditiveKeys(t *testing.T) {
 	assert.Contains(t, out, "dbms.security.procedures.unrestricted=fleetManagement.*,gds.*,apoc.*")
 }
 
+func TestNeo4jSettingEnvVarName(t *testing.T) {
+	// Dots -> underscores, case preserved (NOT upper-cased).
+	assert.Equal(t, "NEO4J_dbms_security_procedures_unrestricted",
+		resources.Neo4jSettingEnvVarName("dbms.security.procedures.unrestricted"))
+	// Literal underscores must be doubled so Neo4j's entrypoint maps them back
+	// to a single underscore rather than a dot.
+	assert.Equal(t, "NEO4J_dbms_security_http__auth__allowlist",
+		resources.Neo4jSettingEnvVarName("dbms.security.http_auth_allowlist"))
+	assert.Equal(t, "NEO4J_server_unmanaged__extension__classes",
+		resources.Neo4jSettingEnvVarName("server.unmanaged_extension_classes"))
+}
+
 func TestUpsertNeo4jConfSettings(t *testing.T) {
 	conf := strings.Join([]string{
 		"# base",

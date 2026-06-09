@@ -1,39 +1,41 @@
 package controller
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/neo4j-partners/neo4j-kubernetes-operator/internal/resources"
 )
 
-// mergePluginSecurityEnv must UNION additive allowlists across plugins so one
-// plugin's procedures aren't silently lost when another plugin reconciles
-// (e.g. GDS then APOC). Scalar keys are set in place. Idempotent.
-func TestMergePluginSecurityEnv_UnionsAllowlistsAcrossPlugins(t *testing.T) {
-	envName := func(k string) string {
-		return "NEO4J_" + strings.ToUpper(strings.ReplaceAll(k, ".", "_"))
-	}
-	get := func(env []corev1.EnvVar, name string) string {
-		for _, e := range env {
-			if e.Name == name {
-				return e.Value
-			}
+func envValue(env []corev1.EnvVar, name string) string {
+	for _, e := range env {
+		if e.Name == name {
+			return e.Value
 		}
-		return ""
 	}
-	count := func(env []corev1.EnvVar, name string) int {
-		n := 0
-		for _, e := range env {
-			if e.Name == name {
-				n++
-			}
-		}
-		return n
-	}
+	return ""
+}
 
-	// GDS reconcile, then APOC reconcile.
+func envCount(env []corev1.EnvVar, name string) int {
+	n := 0
+	for _, e := range env {
+		if e.Name == name {
+			n++
+		}
+	}
+	return n
+}
+
+// mergePluginSecurityEnv must UNION additive allowlists across plugins (so GDS
+// and APOC both survive) and use the correct Neo4j env-var name form.
+func TestMergePluginSecurityEnv_UnionsAllowlistsAcrossPlugins(t *testing.T) {
+	unrestricted := resources.Neo4jSettingEnvVarName("dbms.security.procedures.unrestricted")
+	allowlist := resources.Neo4jSettingEnvVarName("dbms.security.procedures.allowlist")
+	// Correct convention: lowercase, dots->underscores (no upper-casing).
+	assert.Equal(t, "NEO4J_dbms_security_procedures_unrestricted", unrestricted)
+
 	env := mergePluginSecurityEnv(nil, map[string]string{
 		"dbms.security.procedures.unrestricted": "gds.*",
 		"dbms.security.procedures.allowlist":    "gds.*",
@@ -43,18 +45,37 @@ func TestMergePluginSecurityEnv_UnionsAllowlistsAcrossPlugins(t *testing.T) {
 		"dbms.security.procedures.allowlist":    "apoc.*",
 	})
 
-	unrestricted := envName("dbms.security.procedures.unrestricted")
-	assert.Equal(t, "gds.*,apoc.*", get(env, unrestricted), "GDS allowlist must not be clobbered by APOC")
-	assert.Equal(t, "gds.*,apoc.*", get(env, envName("dbms.security.procedures.allowlist")))
-	assert.Equal(t, 1, count(env, unrestricted), "exactly one env var per key (no duplicates)")
+	assert.Equal(t, "gds.*,apoc.*", envValue(env, unrestricted), "GDS allowlist must not be clobbered by APOC")
+	assert.Equal(t, "gds.*,apoc.*", envValue(env, allowlist))
+	assert.Equal(t, 1, envCount(env, unrestricted), "exactly one env var per key")
 
-	// Idempotent: re-applying GDS changes nothing.
-	before := get(env, unrestricted)
+	// Idempotent.
+	before := envValue(env, unrestricted)
 	env = mergePluginSecurityEnv(env, map[string]string{"dbms.security.procedures.unrestricted": "gds.*"})
-	assert.Equal(t, before, get(env, unrestricted))
+	assert.Equal(t, before, envValue(env, unrestricted))
 
-	// Scalar (non-additive) key is overwritten in place, not unioned.
+	// Scalar key overwritten in place.
+	scalar := resources.Neo4jSettingEnvVarName("apoc.export.file.enabled")
 	env = mergePluginSecurityEnv(env, map[string]string{"apoc.export.file.enabled": "true"})
 	env = mergePluginSecurityEnv(env, map[string]string{"apoc.export.file.enabled": "false"})
-	assert.Equal(t, "false", get(env, envName("apoc.export.file.enabled")))
+	assert.Equal(t, "false", envValue(env, scalar))
+}
+
+// removePluginSecurityEnv must subtract only the uninstalled plugin's tokens,
+// keep other plugins' tokens, and drop the env var when nothing remains.
+func TestRemovePluginSecurityEnv_PrunesOnUninstall(t *testing.T) {
+	unrestricted := resources.Neo4jSettingEnvVarName("dbms.security.procedures.unrestricted")
+
+	// GDS + APOC installed.
+	env := mergePluginSecurityEnv(nil, map[string]string{"dbms.security.procedures.unrestricted": "gds.*"})
+	env = mergePluginSecurityEnv(env, map[string]string{"dbms.security.procedures.unrestricted": "apoc.*"})
+	assert.Equal(t, "gds.*,apoc.*", envValue(env, unrestricted))
+
+	// Uninstall APOC → only gds.* remains (GDS not lost).
+	env = removePluginSecurityEnv(env, map[string]string{"dbms.security.procedures.unrestricted": "apoc.*"})
+	assert.Equal(t, "gds.*", envValue(env, unrestricted))
+
+	// Uninstall GDS → env var dropped entirely.
+	env = removePluginSecurityEnv(env, map[string]string{"dbms.security.procedures.unrestricted": "gds.*"})
+	assert.Equal(t, 0, envCount(env, unrestricted), "env var removed when no tokens remain")
 }

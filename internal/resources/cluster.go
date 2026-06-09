@@ -1758,6 +1758,19 @@ var additiveConfKeys = map[string]bool{
 	"server.unmanaged_extension_classes":    true,
 }
 
+// Neo4jSettingEnvVarName converts a neo4j.conf setting key to its Neo4j Docker
+// environment-variable form: the NEO4J_ prefix, a literal '_' doubled to '__',
+// then '.' replaced with '_', with case preserved. E.g.
+// dbms.security.procedures.unrestricted -> NEO4J_dbms_security_procedures_unrestricted
+// and dbms.security.http_auth_allowlist  -> NEO4J_dbms_security_http__auth__allowlist.
+// The Neo4j entrypoint reverses this ('__' -> '_', then '_' -> '.'), so the casing
+// and underscore escaping both matter — an upper-cased name maps to an invalid
+// (upper-cased) setting and is silently ignored. Matches the convention the
+// operator already uses for the LDAP system-account env vars.
+func Neo4jSettingEnvVarName(key string) string {
+	return "NEO4J_" + strings.ReplaceAll(strings.ReplaceAll(key, "_", "__"), ".", "_")
+}
+
 // IsAdditiveConfKey reports whether a neo4j.conf setting is an additive,
 // comma-separated list (e.g. dbms.security.procedures.unrestricted) whose values
 // from multiple sources (operator, user, several plugins) must be unioned rather

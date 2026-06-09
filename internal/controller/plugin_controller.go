@@ -726,8 +726,58 @@ func (r *Neo4jPluginReconciler) removePluginFromDeployment(ctx context.Context, 
 		return fmt.Errorf("failed to create plugin removal job: %w", err)
 	}
 
+	// Prune this plugin's additive security tokens from the StatefulSet env vars
+	// so an uninstalled plugin's allowlist (e.g. gds.*) doesn't linger — the
+	// install path only ever unions tokens in, so removal must happen here.
+	// Best-effort: a failure here shouldn't block the finalizer / removal job.
+	if err := r.prunePluginSecurityEnv(ctx, plugin, deployment); err != nil {
+		logger.Error(err, "Failed to prune plugin security env vars from StatefulSet; continuing", "plugin", plugin.Spec.Name)
+	}
+
 	// Wait for job completion
 	return r.waitForJobCompletion(ctx, removeJob)
+}
+
+// prunePluginSecurityEnv removes the uninstalled plugin's additive security
+// tokens from the target StatefulSet's neo4j container env vars. No-op when the
+// StatefulSet is gone or the plugin contributed no additive env vars (e.g. a
+// standalone, which carries plugin security in neo4j.conf rather than env vars).
+func (r *Neo4jPluginReconciler) prunePluginSecurityEnv(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
+	stsKey := types.NamespacedName{Name: r.getStatefulSetName(deployment), Namespace: deployment.Namespace}
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		sts := &appsv1.StatefulSet{}
+		if err := r.Get(ctx, stsKey, sts); err != nil {
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		for i := range sts.Spec.Template.Spec.Containers {
+			c := &sts.Spec.Template.Spec.Containers[i]
+			if c.Name != "neo4j" {
+				continue
+			}
+			pruned := removePluginSecurityEnv(c.Env, r.pluginSecuritySettings(plugin))
+			if len(pruned) == len(c.Env) {
+				// Recompute equality cheaply: lengths match AND values unchanged?
+				// removePluginSecurityEnv only ever shrinks or rewrites values, so
+				// compare to avoid a no-op Update (which would needlessly restart).
+				same := true
+				for j := range pruned {
+					if pruned[j] != c.Env[j] {
+						same = false
+						break
+					}
+				}
+				if same {
+					return nil
+				}
+			}
+			c.Env = pruned
+			return r.Update(ctx, sts)
+		}
+		return nil
+	})
 }
 
 func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, phase, message string) {
@@ -838,7 +888,7 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 
 	// Add plugin configuration as environment variables
 	for key, value := range plugin.Spec.Config {
-		envVarName := fmt.Sprintf("NEO4J_%s", strings.ToUpper(strings.ReplaceAll(key, ".", "_")))
+		envVarName := resources.Neo4jSettingEnvVarName(key)
 		neo4jContainer.Env = append(neo4jContainer.Env, corev1.EnvVar{
 			Name:  envVarName,
 			Value: value,
@@ -849,7 +899,7 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 	if r.getPluginType(plugin.Spec.Name) != PluginTypeEnvironmentOnly {
 		requiredSettings := r.getRequiredProcedureSecuritySettings(plugin.Spec.Name)
 		for key, value := range requiredSettings {
-			envVarName := fmt.Sprintf("NEO4J_%s", strings.ToUpper(strings.ReplaceAll(key, ".", "_")))
+			envVarName := resources.Neo4jSettingEnvVarName(key)
 
 			// Check if this environment variable already exists
 			exists := false
@@ -948,7 +998,7 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 
 		// Add plugin-specific configuration as environment variables
 		for key, value := range plugin.Spec.Config {
-			envVarName := fmt.Sprintf("NEO4J_%s", strings.ToUpper(strings.ReplaceAll(key, ".", "_")))
+			envVarName := resources.Neo4jSettingEnvVarName(key)
 			// Check if environment variable already exists
 			exists := false
 			for i := range currentNeo4jContainer.Env {
@@ -966,40 +1016,9 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 			}
 		}
 
-		// Start with automatic security settings for plugins that require them
-		userSecuritySettings := r.getAutomaticSecuritySettings(plugin.Spec.Name)
-
-		// Add user-provided security settings as environment variables (non-dynamic settings only)
-		if plugin.Spec.Security != nil {
-
-			// Convert allowed procedures to allowlist setting
-			if len(plugin.Spec.Security.AllowedProcedures) > 0 {
-				allowedList := strings.Join(plugin.Spec.Security.AllowedProcedures, ",")
-				userSecuritySettings["dbms.security.procedures.allowlist"] = allowedList
-			}
-
-			// Convert denied procedures to denylist setting
-			if len(plugin.Spec.Security.DeniedProcedures) > 0 {
-				deniedList := strings.Join(plugin.Spec.Security.DeniedProcedures, ",")
-				userSecuritySettings["dbms.security.procedures.denylist"] = deniedList
-			}
-
-			// Convert sandbox setting to unrestricted (inverted logic)
-			if plugin.Spec.Security.Sandbox {
-				// Sandbox mode means restricted procedures - use allowlist only, no unrestricted
-			} else {
-				// Non-sandbox mode may need unrestricted procedures (use allowed list as unrestricted)
-				if len(plugin.Spec.Security.AllowedProcedures) > 0 {
-					allowedList := strings.Join(plugin.Spec.Security.AllowedProcedures, ",")
-					userSecuritySettings["dbms.security.procedures.unrestricted"] = allowedList
-				}
-			}
-
-		}
-
 		// Apply security settings as environment variables, unioning additive
 		// allowlists across plugins (see mergePluginSecurityEnv).
-		currentNeo4jContainer.Env = mergePluginSecurityEnv(currentNeo4jContainer.Env, userSecuritySettings)
+		currentNeo4jContainer.Env = mergePluginSecurityEnv(currentNeo4jContainer.Env, r.pluginSecuritySettings(plugin))
 
 		return r.Update(ctx, currentSts)
 	})
@@ -1036,6 +1055,77 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 //
 // NOTE: this accumulates tokens; tokens from an *uninstalled* plugin are not
 // pruned here — that needs the authoritative recompute tracked in issue #146.
+// pluginSecuritySettings returns the Neo4j security settings a plugin
+// contributes (automatic per-plugin defaults plus any user-provided
+// spec.security). Used both when applying settings at install and when removing
+// them on uninstall, so the two paths can't diverge.
+func (r *Neo4jPluginReconciler) pluginSecuritySettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
+	settings := r.getAutomaticSecuritySettings(plugin.Spec.Name)
+	if plugin.Spec.Security != nil {
+		if len(plugin.Spec.Security.AllowedProcedures) > 0 {
+			allowedList := strings.Join(plugin.Spec.Security.AllowedProcedures, ",")
+			settings["dbms.security.procedures.allowlist"] = allowedList
+			// Non-sandbox mode also runs the allowed procedures unrestricted.
+			if !plugin.Spec.Security.Sandbox {
+				settings["dbms.security.procedures.unrestricted"] = allowedList
+			}
+		}
+		if len(plugin.Spec.Security.DeniedProcedures) > 0 {
+			settings["dbms.security.procedures.denylist"] = strings.Join(plugin.Spec.Security.DeniedProcedures, ",")
+		}
+	}
+	return settings
+}
+
+// removePluginSecurityEnv reverses mergePluginSecurityEnv for a single plugin on
+// uninstall: for additive list keys it subtracts that plugin's tokens from the
+// env var (dropping the var entirely if nothing remains), so another plugin's
+// allowlist is preserved while the uninstalled plugin's entries are pruned.
+// Non-additive (scalar) keys are left untouched — they may be shared, and the
+// accumulation problem this prunes is specific to the additive lists. Plugin
+// token sets are disjoint (gds.*, apoc.*, …), so subtraction is exact.
+func removePluginSecurityEnv(env []corev1.EnvVar, settings map[string]string) []corev1.EnvVar {
+	remove := make(map[string]string) // env var name -> tokens to subtract
+	for key, value := range settings {
+		if resources.IsAdditiveConfKey(key) {
+			remove[resources.Neo4jSettingEnvVarName(key)] = value
+		}
+	}
+	if len(remove) == 0 {
+		return env
+	}
+
+	out := env[:0:0]
+	for _, e := range env {
+		if toks, ok := remove[e.Name]; ok {
+			e.Value = subtractCSV(e.Value, toks)
+			if e.Value == "" {
+				continue // nothing left for this key — drop it
+			}
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// subtractCSV returns value's comma-separated tokens with remove's tokens taken
+// out, preserving order.
+func subtractCSV(value, remove string) string {
+	rm := make(map[string]bool)
+	for _, t := range strings.Split(remove, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			rm[t] = true
+		}
+	}
+	var keep []string
+	for _, t := range strings.Split(value, ",") {
+		if t = strings.TrimSpace(t); t != "" && !rm[t] {
+			keep = append(keep, t)
+		}
+	}
+	return strings.Join(keep, ",")
+}
+
 func mergePluginSecurityEnv(env []corev1.EnvVar, settings map[string]string) []corev1.EnvVar {
 	keys := make([]string, 0, len(settings))
 	for k := range settings {
@@ -1044,7 +1134,7 @@ func mergePluginSecurityEnv(env []corev1.EnvVar, settings map[string]string) []c
 	sort.Strings(keys)
 
 	for _, key := range keys {
-		envName := fmt.Sprintf("NEO4J_%s", strings.ToUpper(strings.ReplaceAll(key, ".", "_")))
+		envName := resources.Neo4jSettingEnvVarName(key)
 		idx := -1
 		for i := range env {
 			if env[i].Name == envName {
