@@ -19,6 +19,8 @@ on:
       - 'api/**'
       - 'cmd/**'
       - 'test/integration/**'
+      - 'config/**'        # the lane deploys from config/ (ci-temp overlay over config/default)
+      - 'Dockerfile'       # the lane builds the operator image the tests run against
       - 'Makefile'
       - 'go.mod'
       - 'go.sum'
@@ -30,6 +32,8 @@ on:
       - 'api/**'
       - 'cmd/**'
       - 'test/integration/**'
+      - 'config/**'
+      - 'Dockerfile'
       - 'Makefile'
       - 'go.mod'
       - 'go.sum'

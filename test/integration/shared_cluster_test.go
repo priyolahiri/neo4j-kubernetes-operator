@@ -46,6 +46,14 @@ var (
 // password), provisioning it on first call and waiting for phase=Ready. Call from
 // a spec's BeforeEach (it uses Gomega assertions). The generous clusterTimeout is
 // paid once here, not per spec.
+//
+// Failure is deliberately fail-fast, NOT retry-per-spec: sync.Once does not re-run
+// after the first provisioning attempt (even if it failed), so if formation fails
+// the first RBAC spec reports the real Eventually error and the rest fail fast on
+// the empty-name guard below, pointing at it. This is intentional — retrying
+// formation in each subsequent spec would reintroduce the N× per-spec cluster
+// formations (and their CalVer timeouts) that this shared fixture exists to
+// eliminate. A genuine "cluster can't form" should fail the group fast, not N×20m.
 func useSharedNativeCluster(ctx context.Context) (name, namespace, adminPassword string) {
 	sharedNativeOnce.Do(func() {
 		ns := createTestNamespace("rbac-shared")
