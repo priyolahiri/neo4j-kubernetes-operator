@@ -136,12 +136,18 @@ jobs:
 
         set -o pipefail
         # Core is the small subset; 60m is ample even on the slower CalVer cell.
+        # --json-report feeds the per-spec failure/timing summary below.
         ./bin/ginkgo run -v --timeout=60m --label-filter='core' \
+          --json-report=ginkgo-report.json \
           ./test/integration/... | tee integration-test-output.log
       env:
         KUBECONFIG: /home/runner/.kube/config
         NEO4J_VERSION: ${{ matrix.neo4j-version }}
         FORCE_COLOR: 1
+
+    - name: Ginkgo report summary (failed specs + timings)
+      if: always()
+      run: ./scripts/ginkgo-report-summary.sh ginkgo-report.json 30 || true
 
     - name: Collect cluster state
       if: always()
@@ -168,6 +174,7 @@ jobs:
           coverage/
           *.out
           integration-test-output.log
+          ginkgo-report.json
         if-no-files-found: warn
 
     - name: Cleanup test cluster

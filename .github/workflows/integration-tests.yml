@@ -167,12 +167,19 @@ jobs:
         # Honor the dispatch input (was hardcoded 90m, which ignored the input and
         # truncated the suite on slower CalVer images). Defaults to 150m for
         # PR-triggered / scheduled runs (no inputs) on the CalVer full suite.
-        ./bin/ginkgo run -v --timeout="${GINKGO_TIMEOUT_MIN}m" ./test/integration/... | tee integration-test-output.log
+        # --json-report feeds the per-spec failure/timing summary below.
+        ./bin/ginkgo run -v --timeout="${GINKGO_TIMEOUT_MIN}m" \
+          --json-report=ginkgo-report.json \
+          ./test/integration/... | tee integration-test-output.log
       env:
         KUBECONFIG: /home/runner/.kube/config
         NEO4J_VERSION: ${{ github.event.inputs.neo4j-version || '2026.04-enterprise' }}
         GINKGO_TIMEOUT_MIN: ${{ github.event.inputs.timeout-minutes || '150' }}
         FORCE_COLOR: 1
+
+    - name: Ginkgo report summary (failed specs + timings)
+      if: always()
+      run: ./scripts/ginkgo-report-summary.sh ginkgo-report.json 30 || true
 
     - name: Collect cluster state
       if: always()
@@ -204,15 +211,7 @@ jobs:
           coverage/
           *.out
           integration-test-output.log
-        if-no-files-found: warn
-
-    - name: Archive cluster state dump
-      uses: actions/upload-artifact@v7
-      if: always()
-      with:
-        name: cluster-state-dump
-        path: |
-          /tmp/cluster-logs/
+          ginkgo-report.json
         if-no-files-found: warn
 
     - name: Cleanup test cluster
