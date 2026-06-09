@@ -79,6 +79,34 @@ jobs:
       with:
         kind-version: ${{ env.KIND_VERSION }}
 
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # Build the operator image with a GitHub Actions layer cache so unchanged
+    # layers (base image, go mod download) are reused; only changed Go code
+    # rebuilds. load:true puts it in the daemon for the kind load below.
+    - name: Build operator image (gha layer cache)
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        load: true
+        tags: neo4j-operator:integration-test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          VERSION=integration-test
+          BUILD_DATE=ci
+          VCS_REF=${{ github.sha }}
+
+    # Cache the Neo4j Enterprise image as a tarball, keyed on the tag. On a hit we
+    # skip the Docker Hub pull entirely (faster + dodges anonymous rate limits)
+    # and import the tarball straight into kind's containerd.
+    - name: Cache Neo4j image tarball
+      uses: actions/cache@v4
+      with:
+        path: /tmp/neo4j-image.tar
+        key: neo4j-image-${{ matrix.neo4j-version }}
+
     - name: Create cluster and deploy operator
       run: |
         NEO4J_VERSION="${{ matrix.neo4j-version }}"
@@ -89,8 +117,7 @@ jobs:
         echo "▶ Installing CRDs..."
         make manifests install
 
-        echo "▶ Building operator image..."
-        make docker-build IMG=neo4j-operator:integration-test
+        echo "▶ Loading pre-built operator image into Kind..."
         kind load docker-image neo4j-operator:integration-test --name neo4j-operator-test
 
         echo "▶ Deploying operator to neo4j-operator-system..."
@@ -113,18 +140,23 @@ jobs:
         kubectl wait --for=condition=available --timeout=120s \
           deployment/neo4j-operator-controller-manager -n neo4j-operator-system
 
-        echo "▶ Pre-loading Neo4j image: neo4j:${NEO4J_VERSION}"
-        # Bypass Kind's loader (which imports --all-platforms and fails on blobs
-        # for other platforms not pulled locally); ctr import without
-        # --all-platforms takes only the linux/amd64 manifest. See the Extended
-        # workflow for the full rationale.
-        if ! docker pull --platform linux/amd64 neo4j:${NEO4J_VERSION}; then
-          echo "❌ Failed to pull neo4j:${NEO4J_VERSION} — image is required for tests"
-          exit 1
+        echo "▶ Loading Neo4j image: neo4j:${NEO4J_VERSION}"
+        # Use the cached tarball when present (cache hit); otherwise pull once and
+        # save it for the cache to persist. Either way, import straight into kind's
+        # containerd via ctr WITHOUT --all-platforms (the multi-arch index would
+        # fail on absent foreign-platform blobs). See the Extended workflow notes.
+        if [ ! -f /tmp/neo4j-image.tar ]; then
+          echo "cache miss — pulling neo4j:${NEO4J_VERSION}"
+          if ! docker pull --platform linux/amd64 neo4j:${NEO4J_VERSION}; then
+            echo "❌ Failed to pull neo4j:${NEO4J_VERSION} — image is required for tests"
+            exit 1
+          fi
+          docker save neo4j:${NEO4J_VERSION} -o /tmp/neo4j-image.tar
+        else
+          echo "cache hit — using /tmp/neo4j-image.tar"
         fi
-        docker save neo4j:${NEO4J_VERSION} | \
-          docker exec --privileged -i neo4j-operator-test-control-plane \
-          ctr --namespace=k8s.io images import --snapshotter=overlayfs -
+        docker exec --privileged -i neo4j-operator-test-control-plane \
+          ctr --namespace=k8s.io images import --snapshotter=overlayfs - < /tmp/neo4j-image.tar
         echo "✅ neo4j:${NEO4J_VERSION} loaded into Kind"
 
     - name: Run core integration tests
