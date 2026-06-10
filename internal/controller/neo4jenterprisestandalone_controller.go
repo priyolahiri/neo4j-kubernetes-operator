@@ -768,6 +768,16 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 
 			mergedAnnotations := map[string]string{}
 			for k, v := range statefulSet.Spec.Template.Annotations {
+				// Operator-managed annotations (the Prometheus scrape hints) are
+				// re-derived from the desired template below — NOT carried forward
+				// — so disabling spec.monitoring actually removes them. Carrying the
+				// existing value would leave stale prometheus.io/* keys scraping a
+				// port that no longer exists. Foreign annotations (conf-restart
+				// stamp, plugin-init-containers, service-mesh injection) are not in
+				// this managed set, so they're preserved.
+				if _, managed := standaloneOperatorManagedPodAnnotations[k]; managed {
+					continue
+				}
 				mergedAnnotations[k] = v
 			}
 			for k, v := range desiredSpec.Template.Annotations {
@@ -1361,14 +1371,37 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createService(standalone *neo4jv1b
 	return svc
 }
 
+// standalonePrometheusAnnotations returns the Prometheus scrape hints the
+// operator adds to the pod template when monitoring is enabled (nil otherwise).
+// Single source of truth for these operator-owned annotations.
+func standalonePrometheusAnnotations(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) map[string]string {
+	if standalone.Spec.Monitoring == nil || !standalone.Spec.Monitoring.Enabled {
+		return nil
+	}
+	return map[string]string{
+		"prometheus.io/scrape": "true",
+		"prometheus.io/port":   fmt.Sprintf("%d", resources.MetricsPort),
+		"prometheus.io/path":   "/metrics",
+	}
+}
+
+// standaloneOperatorManagedPodAnnotations is the KEY set the operator owns on
+// the pod template (the Prometheus hints above). On a template apply these are
+// re-derived from the desired template — never carried forward from the existing
+// one — so disabling monitoring removes them, while foreign annotations are
+// preserved. Keep in sync with standalonePrometheusAnnotations' keys.
+var standaloneOperatorManagedPodAnnotations = map[string]struct{}{
+	"prometheus.io/scrape": {},
+	"prometheus.io/port":   {},
+	"prometheus.io/path":   {},
+}
+
 // createStatefulSet creates a StatefulSet for the standalone deployment
 func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *appsv1.StatefulSet {
 	replicas := int32(1)
 	annotations := map[string]string{}
-	if standalone.Spec.Monitoring != nil && standalone.Spec.Monitoring.Enabled {
-		annotations["prometheus.io/scrape"] = "true"
-		annotations["prometheus.io/port"] = fmt.Sprintf("%d", resources.MetricsPort)
-		annotations["prometheus.io/path"] = "/metrics"
+	for k, v := range standalonePrometheusAnnotations(standalone) {
+		annotations[k] = v
 	}
 
 	ports := []corev1.ContainerPort{

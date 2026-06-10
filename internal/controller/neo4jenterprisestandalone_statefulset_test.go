@@ -286,6 +286,47 @@ func TestReconcileStatefulSet_PreservesForeignInitContainersAndVolumes(t *testin
 	}
 }
 
+// TestReconcileStatefulSet_MonitoringOffRemovesScrapeAnnotations: disabling
+// spec.monitoring must remove the operator-managed prometheus.io/* pod-template
+// annotations (not leave them scraping a port that's gone), while preserving
+// foreign annotations. Regression for Bugbot "Monitoring off keeps scrape
+// annotations".
+func TestReconcileStatefulSet_MonitoringOffRemovesScrapeAnnotations(t *testing.T) {
+	r, _ := standaloneCMTestReconciler(t)
+	ctx := context.Background()
+
+	sa := standaloneForSTS("5.26.0-enterprise")
+	sa.Spec.Monitoring = &neo4jv1beta1.MonitoringSpec{Enabled: true}
+	if err := r.reconcileStatefulSet(ctx, sa); err != nil {
+		t.Fatalf("reconcile 1: %v", err)
+	}
+	sts := getSTS(t, r)
+	if sts.Spec.Template.Annotations["prometheus.io/scrape"] != "true" {
+		t.Fatalf("expected prometheus.io/scrape=true with monitoring on; got %+v", sts.Spec.Template.Annotations)
+	}
+
+	// Stamp a foreign annotation (as the conf-restart path would).
+	sts.Spec.Template.Annotations["neo4j.com/config-restarted-at"] = "2026-06-10T00:00:00Z"
+	if err := r.Update(ctx, sts); err != nil {
+		t.Fatalf("stamp foreign annotation: %v", err)
+	}
+
+	// Disable monitoring → template changes (annotations + metrics port) → apply.
+	sa.Spec.Monitoring.Enabled = false
+	if err := r.reconcileStatefulSet(ctx, sa); err != nil {
+		t.Fatalf("reconcile 2: %v", err)
+	}
+	sts = getSTS(t, r)
+	for _, k := range []string{"prometheus.io/scrape", "prometheus.io/port", "prometheus.io/path"} {
+		if _, ok := sts.Spec.Template.Annotations[k]; ok {
+			t.Errorf("%s should be removed after monitoring disabled; got %+v", k, sts.Spec.Template.Annotations)
+		}
+	}
+	if sts.Spec.Template.Annotations["neo4j.com/config-restarted-at"] != "2026-06-10T00:00:00Z" {
+		t.Errorf("foreign annotation must be preserved across the apply; got %+v", sts.Spec.Template.Annotations)
+	}
+}
+
 func hasInitContainer(cs []corev1.Container, name string) bool {
 	for _, c := range cs {
 		if c.Name == name {
