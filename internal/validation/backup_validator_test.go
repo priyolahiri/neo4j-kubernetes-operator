@@ -569,6 +569,8 @@ func TestValidateSchedule(t *testing.T) {
 		{"0 0 2 * * *", true},         // 6-field — K8s CronJob rejects (was wrongly accepted before)
 		{"* * * *", true},             // 4-field
 		{"not-a-cron", true},
+		{"CRON_TZ=UTC 0 0 * * *", false}, // CRON_TZ= prefix is supported by ParseStandard
+		{"", true},                       // empty → error (and must not panic; validateSchedule recovers)
 	}
 	for _, tc := range cases {
 		t.Run(tc.schedule, func(t *testing.T) {

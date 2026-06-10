@@ -385,9 +385,19 @@ func (v *BackupValidator) validateStorageProvider(storage *neo4jv1beta1.StorageL
 // macros ("@daily"). A hand-rolled check previously rejected several of those
 // valid forms and, conversely, accepted 6-field expressions that the CronJob
 // then rejected at create time — so we defer to the canonical parser.
-func (v *BackupValidator) validateSchedule(schedule string) error {
-	if _, err := cron.ParseStandard(schedule); err != nil {
-		return fmt.Errorf("invalid cron schedule %q: %v (Kubernetes CronJob expects standard 5-field cron, e.g. \"0 2 * * *\", or a macro like \"@daily\")", schedule, err)
+func (v *BackupValidator) validateSchedule(schedule string) (err error) {
+	// robfig/cron's parser can panic on some malformed inputs (e.g. certain
+	// TZ=/CRON_TZ= forms) instead of returning an error. Kubernetes wraps the
+	// same parser with a recover; do the same so a bad user-supplied schedule
+	// is reported as a validation error rather than crashing the reconcile
+	// worker.
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("invalid cron schedule %q: %v", schedule, r)
+		}
+	}()
+	if _, perr := cron.ParseStandard(schedule); perr != nil {
+		return fmt.Errorf("invalid cron schedule %q: %v (Kubernetes CronJob expects standard 5-field cron, e.g. \"0 2 * * *\", or a macro like \"@daily\")", schedule, perr)
 	}
 	return nil
 }
