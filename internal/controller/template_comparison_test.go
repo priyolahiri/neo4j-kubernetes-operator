@@ -659,7 +659,15 @@ func TestIsTemplateChangeSignificant_PluginAddedEnvVars(t *testing.T) {
 		corev1.EnvVar{Name: "NEO4J_APOC_EXPORT_FILE_ENABLED", Value: "true"},
 	)
 
+	// Simulate the controller having already applied & stamped this desired
+	// template — so the hash term in isTemplateChangeSignificant is satisfied
+	// and only the (foreign-tolerant) field-by-field check governs the result.
 	stableCluster := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				clusterTemplateHashAnnotation: podTemplateSpecHash(desired),
+			},
+		},
 		Spec:   appsv1.StatefulSetSpec{Replicas: int32Ptr(3)},
 		Status: appsv1.StatefulSetStatus{ReadyReplicas: 3},
 	}
@@ -672,4 +680,90 @@ func TestIsTemplateChangeSignificant_PluginAddedEnvVars(t *testing.T) {
 // Helper function
 func int32Ptr(i int32) *int32 {
 	return &i
+}
+
+// TestClusterTemplateHash_ClosesBlindSpots pins the drift fix: changes to pod-
+// template fields the field-by-field check never compared (nodeSelector,
+// affinity, tolerations, probes, resource requests, volume sources) must flip
+// the template hash so a stable cluster re-applies them. Without the hash these
+// were silently dropped on a live cluster.
+func TestClusterTemplateHash_ClosesBlindSpots(t *testing.T) {
+	base := corev1.PodTemplateSpec{
+		Spec: corev1.PodSpec{
+			NodeSelector: map[string]string{"disktype": "ssd"},
+			Tolerations:  []corev1.Toleration{{Key: "a", Operator: corev1.TolerationOpExists}},
+			Affinity: &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{{MatchExpressions: []corev1.NodeSelectorRequirement{
+						{Key: "zone", Operator: corev1.NodeSelectorOpIn, Values: []string{"a"}},
+					}}},
+				},
+			}},
+			Containers: []corev1.Container{{
+				Name:  "neo4j",
+				Image: "neo4j:5.26.0-enterprise",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+				},
+				ReadinessProbe: &corev1.Probe{InitialDelaySeconds: 10},
+				VolumeMounts:   []corev1.VolumeMount{{Name: "conf", MountPath: "/conf"}},
+			}},
+			Volumes: []corev1.Volume{{
+				Name:         "conf",
+				VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "cm-a"}}},
+			}},
+		},
+	}
+
+	baseHash := podTemplateSpecHash(base)
+
+	mutators := map[string]func(*corev1.PodTemplateSpec){
+		"nodeSelector": func(t *corev1.PodTemplateSpec) { t.Spec.NodeSelector["disktype"] = "nvme" },
+		"tolerations":  func(t *corev1.PodTemplateSpec) { t.Spec.Tolerations[0].Key = "b" },
+		"affinity": func(t *corev1.PodTemplateSpec) {
+			t.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[0].MatchExpressions[0].Values = []string{"b"}
+		},
+		"resourceRequests": func(t *corev1.PodTemplateSpec) {
+			t.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory] = resource.MustParse("2Gi")
+		},
+		"probe":        func(t *corev1.PodTemplateSpec) { t.Spec.Containers[0].ReadinessProbe.InitialDelaySeconds = 30 },
+		"volumeSource": func(t *corev1.PodTemplateSpec) { t.Spec.Volumes[0].ConfigMap.Name = "cm-b" },
+	}
+
+	for name, mutate := range mutators {
+		t.Run(name, func(t *testing.T) {
+			mutated := *base.DeepCopy()
+			mutate(&mutated)
+			if podTemplateSpecHash(mutated) == baseHash {
+				t.Fatalf("changing %s did not change the template hash — blind spot not closed", name)
+			}
+		})
+	}
+}
+
+// TestClusterTemplateHash_StableAndForeignTolerant ensures the hash is a fixed
+// point for an unchanged template (no spurious rolls) and that foreign env vars
+// added to a separate (live) template do not change the desired-template hash.
+func TestClusterTemplateHash_StableAndForeignTolerant(t *testing.T) {
+	desired := corev1.PodTemplateSpec{
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Name:  "neo4j",
+			Image: "neo4j:5.26.0-enterprise",
+			Env:   []corev1.EnvVar{{Name: "NEO4J_EDITION", Value: "enterprise"}},
+		}}},
+	}
+	h1 := podTemplateSpecHash(desired)
+	if h2 := podTemplateSpecHash(*desired.DeepCopy()); h1 != h2 {
+		t.Fatalf("hash not stable across identical templates: %q vs %q", h1, h2)
+	}
+
+	// A live template with plugin/fleet-added env vars is a different object;
+	// the desired-template hash (what the controller stamps and compares) is
+	// computed only over the desired template, so it is unaffected.
+	live := *desired.DeepCopy()
+	live.Spec.Containers[0].Env = append(live.Spec.Containers[0].Env,
+		corev1.EnvVar{Name: "NEO4J_PLUGINS", Value: `["apoc"]`})
+	if podTemplateSpecHash(desired) != h1 {
+		t.Fatal("desired-template hash changed unexpectedly")
+	}
 }

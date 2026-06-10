@@ -649,12 +649,12 @@ const (
 // reconcile look like a change and roll the pod in a loop.
 const standaloneTemplateHashAnnotation = "neo4j.com/standalone-template-hash"
 
-// standalonePodTemplateHash returns a stable hash of a pod template. JSON
+// podTemplateSpecHash returns a stable hash of a pod template. JSON
 // marshalling sorts map keys, so the hash is deterministic across reconciles
 // for an unchanged template (no spurious rolls). Returns "" on the (practically
 // impossible) marshal error, which the caller treats as "changed" — converge
-// rather than silently skip.
-func standalonePodTemplateHash(t corev1.PodTemplateSpec) string {
+// rather than silently skip. Shared by the standalone and cluster controllers.
+func podTemplateSpecHash(t corev1.PodTemplateSpec) string {
 	data, err := json.Marshal(t)
 	if err != nil {
 		return ""
@@ -762,7 +762,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 	// Capture the desired spec + its template hash BEFORE CreateOrUpdate's Get
 	// clobbers `statefulSet` with the existing cluster object on update.
 	desiredSpec := *statefulSet.Spec.DeepCopy()
-	desiredHash := standalonePodTemplateHash(desiredSpec.Template)
+	desiredHash := podTemplateSpecHash(desiredSpec.Template)
 	desiredEnv := []corev1.EnvVar{}
 	if len(desiredSpec.Template.Spec.Containers) > 0 {
 		desiredEnv = desiredSpec.Template.Spec.Containers[0].Env
