@@ -28,6 +28,35 @@ import (
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
+// maxScheduledBackupNameLength bounds a scheduled Neo4jBackup's name so the
+// generated CronJob name ("<name>-backup-cron") stays within Kubernetes'
+// 52-character CronJob-name limit. Kubernetes caps CronJob names at 52
+// (DNS-1035 label max 63 minus the 11-char "-<timestamp>" suffix the CronJob
+// controller appends to child Jobs); "-backup-cron" is 12 chars, so
+// 52 - 12 = 40. Without this check a longer name fails only at CronJob
+// creation time with an opaque apiserver error and the scheduled backup
+// never runs. One-shot backups are unaffected: their Job ("<name>-backup")
+// and temp PVC ("<name>-temp-staging") names are bounded by the 253-char
+// limit, so they don't hard-fail.
+const maxScheduledBackupNameLength = 40
+
+// ValidateScheduledBackupName returns an error if a scheduled Neo4jBackup's
+// name is too long for the CronJob the operator generates from it
+// ("<name>-backup-cron"). It is called inline from the backup reconciler
+// before the CronJob is created (the operator has no admission webhooks), so
+// an over-long name fails fast with this clear message rather than at
+// CronJob-create time with an opaque apiserver error — at which point the
+// scheduled backup would silently never run. One-shot (unscheduled) backups
+// don't need this: their Job/PVC names are bounded by the 253-char limit.
+func ValidateScheduledBackupName(name string) error {
+	if len(name) > maxScheduledBackupNameLength {
+		return fmt.Errorf(
+			"backup name %q is too long for a scheduled backup (%d chars): the generated CronJob name %q would exceed Kubernetes' 52-character CronJob name limit; use a name of at most %d characters",
+			name, len(name), name+"-backup-cron", maxScheduledBackupNameLength)
+	}
+	return nil
+}
+
 // BackupValidator validates Neo4j backup configuration for Neo4j 5.26+ compatibility
 type BackupValidator struct{}
 
@@ -52,6 +81,18 @@ func (v *BackupValidator) Validate(backup *neo4jv1beta1.Neo4jBackup) field.Error
 			allErrs = append(allErrs, field.Invalid(
 				field.NewPath("spec", "schedule"),
 				backup.Spec.Schedule,
+				err.Error(),
+			))
+		}
+
+		// A scheduled backup generates a CronJob named "<name>-backup-cron".
+		// Kubernetes caps CronJob names at 52 chars; catch an over-long name
+		// here instead of letting the CronJob create fail opaquely at
+		// reconcile time (the backup would never run).
+		if err := ValidateScheduledBackupName(backup.Name); err != nil {
+			allErrs = append(allErrs, field.Invalid(
+				field.NewPath("metadata", "name"),
+				backup.Name,
 				err.Error(),
 			))
 		}
