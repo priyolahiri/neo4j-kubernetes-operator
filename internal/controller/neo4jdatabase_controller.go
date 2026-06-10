@@ -124,40 +124,19 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Get referenced cluster or standalone
-	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
-	clusterKey := types.NamespacedName{
-		Name:      database.Spec.ClusterRef,
-		Namespace: database.Namespace,
+	// Get referenced cluster or standalone (shared with handleDeletion via
+	// resolveDatabaseHost so the create and delete paths can't drift).
+	cluster, standalone, isStandalone, found, err := r.resolveDatabaseHost(ctx, database)
+	if err != nil {
+		logger.Error(err, "Failed to get referenced cluster/standalone")
+		return ctrl.Result{}, err
 	}
-
-	clusterErr := r.Get(ctx, clusterKey, cluster)
-	var standalone *neo4jv1beta1.Neo4jEnterpriseStandalone
-	var isStandalone bool
-
-	// If cluster not found, try to get standalone
-	if errors.IsNotFound(clusterErr) {
-		standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{}
-		standaloneKey := types.NamespacedName{
-			Name:      database.Spec.ClusterRef,
-			Namespace: database.Namespace,
-		}
-
-		if err := r.Get(ctx, standaloneKey, standalone); err != nil {
-			if errors.IsNotFound(err) {
-				r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonClusterNotFound,
-					fmt.Sprintf("Referenced cluster %s not found", database.Spec.ClusterRef))
-				r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonClusterNotFound,
-					"Referenced cluster %s not found", database.Spec.ClusterRef)
-				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
-			}
-			logger.Error(err, "Failed to get referenced standalone")
-			return ctrl.Result{}, err
-		}
-		isStandalone = true
-	} else if clusterErr != nil {
-		logger.Error(clusterErr, "Failed to get referenced cluster")
-		return ctrl.Result{}, clusterErr
+	if !found {
+		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonClusterNotFound,
+			fmt.Sprintf("Referenced cluster %s not found", database.Spec.ClusterRef))
+		r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonClusterNotFound,
+			"Referenced cluster %s not found", database.Spec.ClusterRef)
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
 	// Check if cluster/standalone is ready
@@ -176,7 +155,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Create Neo4j client with retry for transient connection issues
 	var neo4jClient *neo4j.Client
-	err := retry.OnError(retry.DefaultBackoff, func(err error) bool {
+	err = retry.OnError(retry.DefaultBackoff, func(err error) bool {
 		// Retry on connection errors
 		return strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "timeout")
 	}, func() error {
@@ -300,37 +279,36 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 
 	logger.Info("Starting deletion handler", "finalizers", database.Finalizers, "deletionTimestamp", database.DeletionTimestamp)
 
-	// Get referenced cluster
-	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
-	clusterKey := types.NamespacedName{
-		Name:      database.Spec.ClusterRef,
-		Namespace: database.Namespace,
-	}
-	if err := r.Get(ctx, clusterKey, cluster); err != nil {
-		if errors.IsNotFound(err) {
-			logger.Info("Referenced cluster not found, removing finalizer", "clusterKey", clusterKey)
-			controllerutil.RemoveFinalizer(database, DatabaseFinalizer)
-			err := r.Update(ctx, database)
-			if err != nil {
-				logger.Error(err, "Failed to update database after removing finalizer")
-			}
-			return ctrl.Result{}, err
-		}
-		logger.Error(err, "Failed to get referenced cluster during deletion")
+	// Resolve the referenced host — cluster first, then standalone. A
+	// standalone-targeted database previously failed to drop here because this
+	// path only looked up clusters: the cluster Get returned NotFound, the
+	// finalizer was removed, and DropDatabase was never called — orphaning the
+	// database in Neo4j. resolveDatabaseHost (shared with Reconcile) fixes that.
+	cluster, standalone, isStandalone, found, err := r.resolveDatabaseHost(ctx, database)
+	if err != nil {
+		logger.Error(err, "Failed to resolve referenced host during deletion")
 		return ctrl.Result{}, err
+	}
+	if !found {
+		// Neither cluster nor standalone exists — the host (and its databases)
+		// are gone, so there is nothing to drop. Release the finalizer.
+		logger.Info("Referenced cluster/standalone not found, removing finalizer", "clusterRef", database.Spec.ClusterRef)
+		controllerutil.RemoveFinalizer(database, DatabaseFinalizer)
+		return ctrl.Result{}, r.Update(ctx, database)
 	}
 
-	// Create Neo4j client
-	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
+	// Create the Neo4j client for the resolved host (cluster or standalone).
+	var neo4jClient *neo4j.Client
+	if isStandalone {
+		neo4jClient, err = r.createNeo4jClientForStandalone(ctx, standalone)
+	} else {
+		neo4jClient, err = r.createNeo4jClient(ctx, cluster)
+	}
 	if err != nil {
 		logger.Error(err, "Failed to create Neo4j client during deletion")
-		// If we can't connect, assume database is already gone
+		// If we can't connect, assume the database is already gone.
 		controllerutil.RemoveFinalizer(database, DatabaseFinalizer)
-		err := r.Update(ctx, database)
-		if err != nil {
-			logger.Error(err, "Failed to update database after removing finalizer")
-		}
-		return ctrl.Result{}, err
+		return ctrl.Result{}, r.Update(ctx, database)
 	}
 	defer func() {
 		if err := neo4jClient.Close(); err != nil {
@@ -357,6 +335,37 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 	}
 	logger.Info("Successfully removed finalizer and updated database", "finalizers", database.Finalizers, "deletionTimestamp", database.DeletionTimestamp)
 	return ctrl.Result{}, nil
+}
+
+// resolveDatabaseHost looks up the Neo4jDatabase's referenced host, trying a
+// Neo4jEnterpriseCluster first and then a Neo4jEnterpriseStandalone of the same
+// name (same precedence as DatabaseValidator). found is false (with a nil
+// error) when neither exists; err is non-nil only on an unexpected
+// (non-NotFound) API error. Both Reconcile and handleDeletion use this so the
+// create and delete paths can't drift on host resolution — a
+// standalone-targeted database previously failed to drop on delete because
+// handleDeletion only looked up clusters.
+func (r *Neo4jDatabaseReconciler) resolveDatabaseHost(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase) (cluster *neo4jv1beta1.Neo4jEnterpriseCluster, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, isStandalone, found bool, err error) {
+	key := types.NamespacedName{Name: database.Spec.ClusterRef, Namespace: database.Namespace}
+
+	cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	cErr := r.Get(ctx, key, cluster)
+	if cErr == nil {
+		return cluster, nil, false, true, nil
+	}
+	if !errors.IsNotFound(cErr) {
+		return nil, nil, false, false, cErr
+	}
+
+	standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+	sErr := r.Get(ctx, key, standalone)
+	if sErr == nil {
+		return nil, standalone, true, true, nil
+	}
+	if errors.IsNotFound(sErr) {
+		return nil, nil, false, false, nil
+	}
+	return nil, nil, false, false, sErr
 }
 
 func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *neo4j.Client, database *neo4jv1beta1.Neo4jDatabase) error {
