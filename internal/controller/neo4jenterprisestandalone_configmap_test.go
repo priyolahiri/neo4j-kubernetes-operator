@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -298,5 +300,65 @@ func TestReconcileConfigMap_PluginUnionRenderedAndPruned(t *testing.T) {
 	}
 	if !strings.Contains(conf2, "bloom.*") {
 		t.Errorf("bloom.* should remain after GDS uninstall; conf:\n%s", conf2)
+	}
+}
+
+// TestReconcileConfigMap_PluginListFailureIsFatal: if listing Neo4jPlugin fails,
+// reconcileConfigMap must error (→ requeue) rather than render a plugin-pruned
+// conf and roll the pod with security settings stripped. Regression for Bugbot
+// "Plugin list failure prunes config".
+func TestReconcileConfigMap_PluginListFailureIsFatal(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+	if err := neo4jv1beta1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+	listErr := errors.New("apiserver unavailable")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(interceptor.Funcs{
+		List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*neo4jv1beta1.Neo4jPluginList); ok {
+				return listErr
+			}
+			return cl.List(ctx, list, opts...)
+		},
+	}).Build()
+	r := &Neo4jEnterpriseStandaloneReconciler{Client: c, Scheme: scheme}
+
+	sa := standaloneForConf(map[string]string{"db.transaction.timeout": "30s"})
+	if err := r.reconcileConfigMap(context.Background(), sa); err == nil {
+		t.Fatal("expected reconcileConfigMap to fail when the plugin List fails, got nil")
+	}
+}
+
+// TestReconcileConfigMap_SameNamedClusterPluginsNotFolded: a Neo4jPlugin whose
+// clusterRef matches a Neo4jEnterpriseCluster of the same name targets the
+// CLUSTER (plugin controller resolves cluster-first), so its settings must NOT
+// be folded into a same-named standalone's neo4j.conf. Regression for Bugbot
+// "Cluster plugins merged into standalone".
+func TestReconcileConfigMap_SameNamedClusterPluginsNotFolded(t *testing.T) {
+	r, c := standaloneCMTestReconciler(t)
+	ctx := context.Background()
+
+	// A cluster shares the standalone's name "sa".
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: "default"},
+	}
+	if err := c.Create(ctx, cluster); err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+	// A GDS plugin referencing "sa" — intended for the cluster.
+	if err := c.Create(ctx, pluginCR("gds", "gds", "sa", true, nil)); err != nil {
+		t.Fatalf("create plugin: %v", err)
+	}
+
+	sa := standaloneForConf(map[string]string{"db.transaction.timeout": "30s"})
+	if err := r.reconcileConfigMap(ctx, sa); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	conf := renderedConf(t, c)
+	if strings.Contains(conf, "gds.*") {
+		t.Errorf("cluster-targeted plugin must not be folded into the same-named standalone; conf:\n%s", conf)
 	}
 }

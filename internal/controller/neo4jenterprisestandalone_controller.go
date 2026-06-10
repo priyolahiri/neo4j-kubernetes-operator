@@ -367,7 +367,16 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 	// in the annotation below), so an uninstalled plugin's keys are PRUNED on the
 	// next reconcile, and there's no after-the-fact ConfigMap patching by the
 	// plugin controller to fight with.
-	if pluginConf := r.collectPluginConfSettings(ctx, standalone); len(pluginConf) > 0 {
+	//
+	// A LISTING FAILURE MUST BE FATAL here: treating it as "no plugins" would
+	// prune the plugin-owned security keys from neo4j.conf and roll the pod with
+	// those settings stripped. Returning the error requeues without rewriting the
+	// ConfigMap, so the existing (correct) conf is preserved.
+	pluginConf, err := r.collectPluginConfSettings(ctx, standalone)
+	if err != nil {
+		return fmt.Errorf("failed to collect plugin-derived config: %w", err)
+	}
+	if len(pluginConf) > 0 {
 		desiredConf = resources.DedupeNeo4jConf(resources.UpsertNeo4jConfSettings(desiredConf, pluginConf))
 	}
 	desiredKeys := resources.Neo4jConfSettings(desiredConf) // operator-owned keys this reconcile
@@ -378,7 +387,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 
 	// Create or update ConfigMap with retry logic to handle resource version conflicts.
 	var opResult controllerutil.OperationResult
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var err error
 		opResult, err = controllerutil.CreateOrUpdate(ctx, r.Client, configMap, func() error {
 			// controllerutil.CreateOrUpdate's Get overwrites configMap with the
@@ -448,15 +457,28 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 }
 
 // collectPluginConfSettings returns the union of neo4j.conf settings derived from
-// every enabled Neo4jPlugin targeting this standalone (#146). Non-fatal: a list
-// error yields no plugin settings rather than failing the reconcile.
-func (r *Neo4jEnterpriseStandaloneReconciler) collectPluginConfSettings(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) map[string]string {
+// every enabled Neo4jPlugin targeting this standalone (#146). A list error is
+// returned (not swallowed) so the caller can requeue without pruning plugin-owned
+// keys from neo4j.conf.
+func (r *Neo4jEnterpriseStandaloneReconciler) collectPluginConfSettings(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (map[string]string, error) {
+	// Cluster-first target resolution, mirroring the plugin controller's
+	// getTargetDeployment: a Neo4jPlugin's clusterRef resolves to a same-named
+	// Neo4jEnterpriseCluster when one exists, otherwise to the standalone. So if a
+	// cluster of this name coexists in the namespace, plugins referencing the name
+	// target the CLUSTER — fold none of them into this standalone's neo4j.conf.
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	switch err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, cluster); {
+	case err == nil:
+		return nil, nil // a same-named cluster owns these plugins
+	case !errors.IsNotFound(err):
+		return nil, fmt.Errorf("checking for a same-named cluster: %w", err)
+	}
+
 	plugins := &neo4jv1beta1.Neo4jPluginList{}
 	if err := r.List(ctx, plugins, client.InNamespace(standalone.Namespace)); err != nil {
-		log.FromContext(ctx).V(1).Info("Unable to list plugins for ConfigMap render; proceeding without plugin-derived config", "error", err)
-		return nil
+		return nil, fmt.Errorf("listing Neo4jPlugins in %s: %w", standalone.Namespace, err)
 	}
-	return unionPluginConfSettings(plugins.Items, standalone.Name)
+	return unionPluginConfSettings(plugins.Items, standalone.Name), nil
 }
 
 // restartStandalonePod rolls the standalone's pod by bumping a restart annotation
@@ -627,6 +649,27 @@ func standalonePodTemplateHash(t corev1.PodTemplateSpec) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// mergeForeignByName returns desired followed by every item in current whose
+// name (per nameOf) is NOT in desired — i.e. desired wins on a name collision
+// and foreign items added by another controller (the plugin controller's
+// VerifiedDownload init container and its auth/CA volumes) are preserved across
+// a template apply. Order is stable: desired first (operator-owned), then
+// preserved foreign items in their existing relative order.
+func mergeForeignByName[T any](current, desired []T, nameOf func(T) string) []T {
+	desiredNames := make(map[string]struct{}, len(desired))
+	for _, d := range desired {
+		desiredNames[nameOf(d)] = struct{}{}
+	}
+	out := make([]T, 0, len(current)+len(desired))
+	out = append(out, desired...)
+	for _, c := range current {
+		if _, ok := desiredNames[nameOf(c)]; !ok {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // standaloneEnvVarNames returns the env-var names sorted and comma-joined, for
 // the owned-env-vars annotation (stable so it doesn't churn the StatefulSet).
 func standaloneEnvVarNames(env []corev1.EnvVar) string {
@@ -702,18 +745,26 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 				return nil
 			}
 
-			// Apply the desired template, preserving:
-			//   - foreign env vars (plugin / fleet additions) via mergeEnvVars,
-			//     which also drops vars the operator previously owned but no longer
-			//     does (e.g. a removed spec.config key);
-			//   - foreign pod-template annotations (conf-path config-restart stamp,
-			//     mesh injection) by overlaying the desired annotations onto them.
+			// Apply the desired template, preserving foreign additions that other
+			// controllers patch directly onto the StatefulSet:
+			//   - env vars (plugin / fleet) via mergeEnvVars, which also drops vars
+			//     the operator previously owned but no longer does (a removed
+			//     spec.config key);
+			//   - pod-template annotations (conf-path config-restart stamp, mesh
+			//     injection, the plugin controller's neo4j.com/plugin-init-containers
+			//     ownership annotation) by overlaying desired onto existing;
+			//   - init containers and volumes (the plugin controller's
+			//     VerifiedDownload init container + its auth/CA volumes) by name —
+			//     otherwise an image/resource upgrade would drop them and the pod
+			//     would roll without the verified plugin JAR.
 			previousOwned := splitCSVSet(statefulSet.Annotations[standaloneOwnedEnvVarsAnnotation])
 			currentEnv := []corev1.EnvVar{}
 			if len(statefulSet.Spec.Template.Spec.Containers) > 0 {
 				currentEnv = statefulSet.Spec.Template.Spec.Containers[0].Env
 			}
 			mergedEnv := mergeEnvVars(currentEnv, desiredEnv, previousOwned)
+			currentInit := statefulSet.Spec.Template.Spec.InitContainers
+			currentVolumes := statefulSet.Spec.Template.Spec.Volumes
 
 			mergedAnnotations := map[string]string{}
 			for k, v := range statefulSet.Spec.Template.Annotations {
@@ -723,11 +774,18 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 				mergedAnnotations[k] = v
 			}
 
-			statefulSet.Spec.Template = *desiredSpec.Template.DeepCopy()
+			desiredTemplate := desiredSpec.Template.DeepCopy()
+			statefulSet.Spec.Template = *desiredTemplate
 			statefulSet.Spec.Template.Annotations = mergedAnnotations
 			if len(statefulSet.Spec.Template.Spec.Containers) > 0 {
 				statefulSet.Spec.Template.Spec.Containers[0].Env = mergedEnv
 			}
+			statefulSet.Spec.Template.Spec.InitContainers = mergeForeignByName(
+				currentInit, desiredTemplate.Spec.InitContainers,
+				func(c corev1.Container) string { return c.Name })
+			statefulSet.Spec.Template.Spec.Volumes = mergeForeignByName(
+				currentVolumes, desiredTemplate.Spec.Volumes,
+				func(v corev1.Volume) string { return v.Name })
 
 			r.stampStandaloneStatefulSetTracking(statefulSet, desiredHash, desiredEnv)
 			return nil

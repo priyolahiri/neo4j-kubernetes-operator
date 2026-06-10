@@ -243,3 +243,63 @@ func hasEnvVarName(env []corev1.EnvVar, name string) bool {
 	}
 	return false
 }
+
+// TestReconcileStatefulSet_PreservesForeignInitContainersAndVolumes: the plugin
+// controller's VerifiedDownload mode patches an init container (and auth/CA
+// volumes) onto the StatefulSet. A template-changing reconcile (image bump) must
+// preserve them by name — otherwise the upgraded pod rolls without the verified
+// plugin JAR. Regression for Bugbot "Template apply drops plugin inits".
+func TestReconcileStatefulSet_PreservesForeignInitContainersAndVolumes(t *testing.T) {
+	r, _ := standaloneCMTestReconciler(t)
+	ctx := context.Background()
+
+	sa := standaloneForSTS("5.26.0-enterprise")
+	if err := r.reconcileStatefulSet(ctx, sa); err != nil {
+		t.Fatalf("reconcile 1: %v", err)
+	}
+
+	// Simulate the plugin controller injecting a verified-download init container
+	// plus its volume, exactly as injectVerifiedDownloadInitContainer does.
+	sts := getSTS(t, r)
+	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers,
+		corev1.Container{Name: "plugin-download-gds", Image: "plugin-init:latest"})
+	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes,
+		corev1.Volume{Name: "plugin-auth-gds", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}})
+	if err := r.Update(ctx, sts); err != nil {
+		t.Fatalf("inject foreign init/volume: %v", err)
+	}
+
+	// Image bump → template apply.
+	sa.Spec.Image.Tag = "2025.01.0-enterprise"
+	if err := r.reconcileStatefulSet(ctx, sa); err != nil {
+		t.Fatalf("reconcile 2: %v", err)
+	}
+	sts = getSTS(t, r)
+	if got := neo4jContainerImage(sts); got != "neo4j:2025.01.0-enterprise" {
+		t.Errorf("image not upgraded: %q", got)
+	}
+	if !hasInitContainer(sts.Spec.Template.Spec.InitContainers, "plugin-download-gds") {
+		t.Errorf("foreign init container was dropped: %+v", sts.Spec.Template.Spec.InitContainers)
+	}
+	if !hasVolume(sts.Spec.Template.Spec.Volumes, "plugin-auth-gds") {
+		t.Errorf("foreign volume was dropped: %+v", sts.Spec.Template.Spec.Volumes)
+	}
+}
+
+func hasInitContainer(cs []corev1.Container, name string) bool {
+	for _, c := range cs {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func hasVolume(vs []corev1.Volume, name string) bool {
+	for _, v := range vs {
+		if v.Name == name {
+			return true
+		}
+	}
+	return false
+}
