@@ -400,6 +400,42 @@ func TestBackupValidator_Validate(t *testing.T) {
 			expectError: false,
 			errorCount:  0,
 		},
+		{
+			// 41 chars + a schedule → generated CronJob "<name>-backup-cron"
+			// is 53 chars, over Kubernetes' 52-char CronJob name limit.
+			name: "scheduled backup name too long for CronJob",
+			backup: &neo4jv1beta1.Neo4jBackup{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.Repeat("a", 41)},
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{Kind: "Cluster", Name: "test-cluster"},
+					Storage: neo4jv1beta1.StorageLocation{
+						Type: "pvc",
+						PVC:  &neo4jv1beta1.PVCSpec{Name: "backup-pvc"},
+					},
+					Schedule: "0 2 * * *",
+				},
+			},
+			expectError:           true,
+			errorCount:            1,
+			expectedErrorContains: []string{"metadata.name", "52-character CronJob"},
+		},
+		{
+			// 41 chars at the boundary is fine for a one-shot backup — the
+			// CronJob-name limit only applies when a schedule is set.
+			name: "long name without schedule is allowed (one-shot)",
+			backup: &neo4jv1beta1.Neo4jBackup{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.Repeat("a", 41)},
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					Target: neo4jv1beta1.BackupTarget{Kind: "Cluster", Name: "test-cluster"},
+					Storage: neo4jv1beta1.StorageLocation{
+						Type: "pvc",
+						PVC:  &neo4jv1beta1.PVCSpec{Name: "backup-pvc"},
+					},
+				},
+			},
+			expectError: false,
+			errorCount:  0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -488,6 +524,32 @@ func TestBackupValidator_validateStorageType(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected no error but got: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestValidateScheduledBackupName(t *testing.T) {
+	cases := []struct {
+		name      string
+		input     string
+		expectErr bool
+	}{
+		{"boundary 40 chars ok", strings.Repeat("a", 40), false},
+		{"41 chars rejected", strings.Repeat("a", 41), true},
+		{"typical short name ok", "nightly-backup", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateScheduledBackupName(tc.input)
+			if tc.expectErr && err == nil {
+				t.Fatalf("expected an error for a %d-char name", len(tc.input))
+			}
+			if !tc.expectErr && err != nil {
+				t.Fatalf("unexpected error for a %d-char name: %v", len(tc.input), err)
+			}
+			if tc.expectErr && !strings.Contains(err.Error(), "52-character CronJob") {
+				t.Errorf("error message should explain the CronJob limit, got: %v", err)
 			}
 		})
 	}
