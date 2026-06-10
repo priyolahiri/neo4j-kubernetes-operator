@@ -210,6 +210,18 @@ func (r *Neo4jBackupReconciler) handleDeletion(ctx context.Context, backup *neo4
 func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	// A scheduled backup generates a CronJob named "<name>-backup-cron".
+	// Reject an over-long name here with a clear message — otherwise the
+	// CronJob create below fails with an opaque apiserver error and the
+	// scheduled backup silently never runs. This is a spec problem the user
+	// must fix (rename), so don't requeue; a spec edit re-triggers reconcile.
+	if err := validation.ValidateScheduledBackupName(backup.Name); err != nil {
+		logger.Info("Scheduled backup name too long", "error", err.Error())
+		r.updateBackupStatus(ctx, backup, "Failed", err.Error())
+		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, err.Error())
+		return ctrl.Result{}, nil
+	}
+
 	// Ensure backup ServiceAccount exists (and carries workload-identity annotations).
 	if err := r.ensureBackupServiceAccount(ctx, backup); err != nil {
 		logger.Error(err, "Failed to ensure backup ServiceAccount")

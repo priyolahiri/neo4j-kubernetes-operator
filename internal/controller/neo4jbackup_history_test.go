@@ -12,6 +12,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -439,4 +440,41 @@ func TestRecordOneShotBackupRun_FailedJobAppendsToHistory(t *testing.T) {
 	// NOT overwrite it. If no prior success exists, it stays nil.
 	assert.Nil(t, got.Status.Stats,
 		"a failed run must not write to status.stats (Stats is the latest-succeeded summary)")
+}
+
+// TestHandleScheduledBackup_RejectsLongName pins the reconciler guard added
+// for the scheduled-backup CronJob name-length gap: a name that would make
+// "<name>-backup-cron" exceed Kubernetes' 52-char CronJob limit must fail
+// fast with a clear status (and create no CronJob) instead of letting the
+// CronJob create fail opaquely at apiserver time.
+func TestHandleScheduledBackup_RejectsLongName(t *testing.T) {
+	ctx := context.Background()
+	ns := "default"
+	longName := strings.Repeat("a", 41) // "<name>-backup-cron" = 53 chars > 52
+
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: longName, Namespace: ns},
+		Spec: neo4jv1beta1.Neo4jBackupSpec{
+			Target:   neo4jv1beta1.BackupTarget{Kind: "Cluster", Name: "c"},
+			Storage:  neo4jv1beta1.StorageLocation{Type: "pvc", PVC: &neo4jv1beta1.PVCSpec{Name: "pvc"}},
+			Schedule: "0 2 * * *",
+		},
+	}
+	r := newBackupTestReconcilerWithStatus(t, backup)
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: ns},
+	}
+
+	_, err := r.handleScheduledBackup(ctx, backup, cluster)
+	require.NoError(t, err, "name-length rejection is a spec error, not a reconcile error")
+
+	got := &neo4jv1beta1.Neo4jBackup{}
+	require.NoError(t, r.Get(ctx, client.ObjectKey{Name: longName, Namespace: ns}, got))
+	assert.Equal(t, "Failed", got.Status.Phase)
+	assert.Contains(t, got.Status.Message, "52-character CronJob")
+
+	// No CronJob should have been created for the invalid name.
+	var cronjobs batchv1.CronJobList
+	require.NoError(t, r.List(ctx, &cronjobs, client.InNamespace(ns)))
+	assert.Empty(t, cronjobs.Items, "no CronJob should be created when the name is rejected")
 }
