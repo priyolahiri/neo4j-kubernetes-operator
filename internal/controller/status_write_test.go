@@ -54,9 +54,8 @@ func TestSetFleetManagementStatus_Cluster_RefetchesAndPersists(t *testing.T) {
 }
 
 // TestSetFailedStatus_Standalone pins the failure-path fix: a refetched write
-// with phase=Failed, Ready=false, and ObservedGeneration set to the current
-// generation (it was previously dropped, and one path used an event-reason
-// constant as the phase).
+// with phase=Failed, Ready=false, and ObservedGeneration set (it was previously
+// dropped, and one path used an event-reason constant as the phase).
 func TestSetFailedStatus_Standalone(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, neo4jv1beta1.AddToScheme(scheme))
@@ -73,8 +72,40 @@ func TestSetFailedStatus_Standalone(t *testing.T) {
 	assert.Equal(t, "Failed", latest.Status.Phase)
 	assert.Equal(t, "boom", latest.Status.Message)
 	assert.False(t, latest.Status.Ready)
-	assert.Equal(t, latest.Generation, latest.Status.ObservedGeneration,
-		"ObservedGeneration must track the object's generation")
+	assert.Equal(t, int64(7), latest.Status.ObservedGeneration,
+		"ObservedGeneration must track the reconciled generation")
 	// In-memory mirror.
 	assert.Equal(t, "Failed", sa.Status.Phase)
+}
+
+// TestSetFailedStatus_Standalone_StaleGeneration pins that the failure is
+// stamped against the generation we actually reconciled, not the newer
+// generation a concurrent spec edit left in the store. Otherwise a failure
+// derived from generation N would mark generation N+1 as observed and suppress
+// the re-reconcile the new spec deserves.
+func TestSetFailedStatus_Standalone_StaleGeneration(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, neo4jv1beta1.AddToScheme(scheme))
+	// The object in the store has advanced to generation 8 (spec changed
+	// mid-reconcile).
+	stored := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+		ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "default", Generation: 8},
+	}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stored).WithStatusSubresource(stored).Build()
+	r := &Neo4jEnterpriseStandaloneReconciler{Client: fc}
+
+	// We reconciled generation 7.
+	reconcileStart := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+		ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "default", Generation: 7},
+	}
+	r.setFailedStatus(context.Background(), reconcileStart, "boom")
+
+	latest := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+	require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Name: "s", Namespace: "default"}, latest))
+	assert.Equal(t, int64(8), latest.Generation, "store still holds the newer generation")
+	assert.Equal(t, int64(7), latest.Status.ObservedGeneration,
+		"must stamp the reconciled generation (7), not the stored latest (8)")
+	require.NotEmpty(t, latest.Status.Conditions)
+	assert.Equal(t, int64(7), latest.Status.Conditions[0].ObservedGeneration,
+		"the Ready condition's observedGeneration must also track the reconciled generation")
 }

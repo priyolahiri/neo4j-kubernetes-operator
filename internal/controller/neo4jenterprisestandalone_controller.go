@@ -1590,8 +1590,17 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(standalone *neo4
 // object and retrying on conflict. The early-return failure paths previously
 // wrote the stale reconcile-start object directly (no refetch/retry), dropped
 // ObservedGeneration, and one used an event-reason constant as the phase.
+//
+// ObservedGeneration is stamped from the generation we actually reconciled
+// (the reconcile-start object), NOT the refetched latest.Generation. If the
+// spec changed mid-reconcile, latest.Generation is newer than what produced
+// this failure; claiming we observed it would suppress the re-reconcile the
+// new generation deserves. Stamping the older generation leaves
+// observedGeneration < generation, the correct "status is stale, reconcile
+// pending" signal — and the refetch is purely to win the resourceVersion race.
 func (r *Neo4jEnterpriseStandaloneReconciler) setFailedStatus(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, message string) {
 	logger := log.FromContext(ctx)
+	reconciledGen := standalone.Generation
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 		if getErr := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, latest); getErr != nil {
@@ -1600,9 +1609,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) setFailedStatus(ctx context.Contex
 		latest.Status.Phase = "Failed"
 		latest.Status.Message = message
 		latest.Status.Ready = false
-		latest.Status.ObservedGeneration = latest.Generation
+		latest.Status.ObservedGeneration = reconciledGen
 		condStatus, condReason := PhaseToConditionStatus("Failed")
-		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
+		SetReadyCondition(&latest.Status.Conditions, reconciledGen, condStatus, condReason, message)
 		// Mirror onto the in-memory object for the rest of the reconcile.
 		standalone.Status.Phase = "Failed"
 		standalone.Status.Message = message
