@@ -49,7 +49,7 @@ Verify CRDs are installed:
        repo: {{ $repo | quote }}
        tag: {{ $tag | quote }}
      storage:
-       size: 10Gi
+       size: {{ .Values.neo4j.defaultStorageSize | quote }}
      auth:
        adminSecret: neo4j-admin-secret
    EOF
@@ -67,7 +67,7 @@ Verify CRDs are installed:
      topology:
        servers: 3
      storage:
-       size: 10Gi
+       size: {{ .Values.neo4j.defaultStorageSize | quote }}
      auth:
        adminSecret: neo4j-admin-secret
    EOF
