@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,6 +68,20 @@ const MaxDatabaseNameLength = maxDatabaseNameLength
 // restoreUntilTxIDPattern matches the transaction-id form of seedConfig
 // restoreUntil ("txId:<positive integer>").
 var restoreUntilTxIDPattern = regexp.MustCompile(`^[0-9]+$`)
+
+// isValidRestoreUntilTxID reports whether s is an acceptable seedRestoreUntil
+// transaction id: digits only AND within int64. Neo4j transaction ids are
+// int64, and the OPTIONS builders pass the value via strconv.ParseInt(_, 10,
+// 64) — a digit-only value that overflows int64 makes ParseInt fail and the
+// builder SILENTLY drops the seedRestoreUntil option, so CREATE DATABASE seeds
+// past the requested point with no error. Reject overflow here at the gate.
+func isValidRestoreUntilTxID(s string) bool {
+	if !restoreUntilTxIDPattern.MatchString(s) {
+		return false
+	}
+	_, err := strconv.ParseInt(s, 10, 64)
+	return err == nil
+}
 
 // seedConfigKeyPattern constrains seedConfig.Config keys: they are serialised
 // into the comma/`=`-delimited seedConfig OPTIONS string (e.g. "region=..."),
@@ -445,11 +460,11 @@ func (v *DatabaseValidator) validateSeedConfiguration(database *neo4jv1beta1.Neo
 		switch {
 		case strings.HasPrefix(restoreUntil, "txId:"):
 			txId := strings.TrimPrefix(restoreUntil, "txId:")
-			if !restoreUntilTxIDPattern.MatchString(txId) {
+			if !isValidRestoreUntilTxID(txId) {
 				result.Errors = append(result.Errors, field.Invalid(
 					restoreUntilPath,
 					restoreUntil,
-					"txId: format requires a positive integer (e.g., 'txId:12345')"))
+					"txId: format requires a positive integer within int64 range (e.g., 'txId:12345')"))
 			}
 		case isRFC3339Timestamp(restoreUntil):
 			// ok

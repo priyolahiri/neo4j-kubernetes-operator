@@ -231,10 +231,10 @@ func (v *ShardedDatabaseValidator) validatePropertyShardingConfig(shardedDB *neo
 		if ru := shardedDB.Spec.SeedConfig.RestoreUntil; ru != "" {
 			switch {
 			case strings.HasPrefix(ru, "txId:"):
-				if !restoreUntilTxIDPattern.MatchString(strings.TrimPrefix(ru, "txId:")) {
+				if !isValidRestoreUntilTxID(strings.TrimPrefix(ru, "txId:")) {
 					result.Errors = append(result.Errors, field.Invalid(
 						scPath.Child("restoreUntil"), ru,
-						"txId: format requires a positive integer (e.g., 'txId:12345')"))
+						"txId: format requires a positive integer within int64 range (e.g., 'txId:12345')"))
 				}
 			case isRFC3339Timestamp(ru):
 			default:
