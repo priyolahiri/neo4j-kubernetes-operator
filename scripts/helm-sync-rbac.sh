@@ -86,6 +86,51 @@ EOF
 
 echo "Wrote $DST from $SRC"
 
+# --- Namespaced manager Role ------------------------------------------------
+# operatorMode: namespace watches only .Release.Namespace, so the manager
+# permissions are granted via a namespaced Role + RoleBinding instead of a
+# ClusterRole. This Role MUST carry the SAME rules as the ClusterRole above —
+# the manager's cache builds informers (LIST/WATCH) for every reconciled CRD
+# AND the label-filtered Job/CronJob/Certificate caches; if any of those is
+# missing from the Role, WaitForCacheSync times out and the operator exits at
+# startup (issue #199). Generating it from the same CORE_RULES keeps it
+# complete and drift-proof — check-drift fails if it falls behind.
+#
+# Note: a handful of CORE_RULES entries name cluster-scoped resources (nodes,
+# cert-manager clusterissuers/issuers, external-secrets cluster*stores). In a
+# namespaced Role these are inert — they neither error nor grant anything — so
+# features that read them directly (zone-aware scheduling, ClusterIssuer TLS)
+# remain a documented namespace-mode limitation (#197), distinct from the
+# startup crash this Role fixes.
+ROLE_DST="${ROOT}/charts/neo4j-operator/templates/role.yaml"
+cat > "$ROLE_DST" <<EOF
+# This file is GENERATED. DO NOT EDIT.
+#
+# Source of truth: +kubebuilder:rbac:* markers in internal/controller/*.go.
+# To change the operator's permissions:
+#   1. Edit the relevant +kubebuilder:rbac:groups=...,resources=...,verbs=... marker
+#   2. Run 'make manifests' (regenerates config/rbac/role.yaml)
+#   3. Run 'make helm-sync-rbac' (regenerates this file)
+#
+# CI's 'make check-drift' fails if these are out of sync.
+{{- if and .Values.rbac.create (eq .Values.operatorMode "namespace") }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "neo4j-operator.fullname" . }}-manager-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "neo4j-operator.labels" . | nindent 4 }}
+rules:
+${CORE_RULES}
+{{- if .Values.rbac.externalSecretsIntegration }}
+${EXT_SECRETS_RULES}
+{{- end }}
+{{- end }}
+EOF
+
+echo "Wrote $ROLE_DST from $SRC"
+
 # --- Metrics RBAC -----------------------------------------------------------
 # controller-runtime's secure metrics endpoint authenticates scrapers via
 # TokenReview and authorizes them via SubjectAccessReview. That requires the
