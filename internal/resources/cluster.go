@@ -1717,7 +1717,7 @@ server.metrics.csv.enabled=false
 
 		// Add configuration in sorted order
 		for _, key := range keys {
-			config += fmt.Sprintf("%s=%s\n", key, cluster.Spec.Config[key])
+			config += fmt.Sprintf("%s=%s\n", key, sanitizeConfValue(cluster.Spec.Config[key]))
 		}
 	}
 
@@ -1882,6 +1882,19 @@ func DedupeNeo4jConf(conf string) string {
 //     never clobbered (matching the plugin path's "add if not present" intent).
 //
 // Keys are processed in sorted order for deterministic output.
+// sanitizeConfValue strips newline and carriage-return characters from a
+// neo4j.conf value. Defense-in-depth: validators reject control characters in
+// user config on admission (ConfigValueHasControlChars), but stripping at the
+// render sink guarantees a single value can never forge an extra config line
+// even if a validation gap is introduced. neo4j.conf values are single-line by
+// definition, so this never alters a legitimate value.
+func sanitizeConfValue(v string) string {
+	if !strings.ContainsAny(v, "\n\r") {
+		return v
+	}
+	return strings.NewReplacer("\n", "", "\r", "").Replace(v)
+}
+
 func UpsertNeo4jConfSettings(conf string, settings map[string]string) string {
 	if len(settings) == 0 {
 		return conf
@@ -1914,7 +1927,7 @@ func UpsertNeo4jConfSettings(conf string, settings map[string]string) string {
 	sort.Strings(keys)
 
 	for _, k := range keys {
-		v := settings[k]
+		v := sanitizeConfValue(settings[k])
 		idx, present := keyIdx[k]
 		switch {
 		case additiveConfKeys[k] && present:
