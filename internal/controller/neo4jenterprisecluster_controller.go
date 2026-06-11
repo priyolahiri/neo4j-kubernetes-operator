@@ -1703,8 +1703,13 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("rolling-upgrade-handler")
 
-	// Check if upgrade strategy allows rolling upgrades
-	if cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.Strategy == "Recreate" {
+	// The Recreate strategy opts out of orchestrated upgrades — but only as a
+	// gate on STARTING one. A machine already mid-flight finishes its roll
+	// even if the user flips the strategy: abandoning it here would leave the
+	// StatefulSet partition frozen (and the active-phase preservation in
+	// createOrUpdateResource would keep it frozen) with no driver to finish.
+	if !upgradeStateMachineActive(cluster) &&
+		cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.Strategy == "Recreate" {
 		logger.Info("Using recreate strategy, falling back to regular reconciliation")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
