@@ -25,9 +25,11 @@ import (
 	"strings"
 	"time"
 
+	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	"golang.org/x/time/rate"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -759,6 +761,20 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 		return err
 	}
 
+	// Non-StatefulSet resources whose spec must stay in sync on a live cluster.
+	// These previously flowed through CreateOrUpdate below with a
+	// StatefulSet-only mutate closure, so the closure was a no-op for them and
+	// spec edits (service type/annotations/loadBalancerIP, ingress host,
+	// network-policy rules, certificate DNS names) were silently dropped on
+	// existing clusters. Handle them with an explicit get-then-update.
+	// RBAC and the MCP Deployment intentionally stay on the create-only path
+	// (RoleBinding.RoleRef and Deployment.Spec.Selector are immutable and rarely
+	// change for this operator).
+	switch obj.(type) {
+	case *corev1.Service, *networkingv1.NetworkPolicy, *networkingv1.Ingress, *certmanagerv1.Certificate:
+		return r.reconcileMutableResource(ctx, obj)
+	}
+
 	// Capture the desired spec if this is a StatefulSet
 	var desiredSpec appsv1.StatefulSetSpec
 	if sts, ok := obj.(*appsv1.StatefulSet); ok {
@@ -842,11 +858,22 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 						}
 						merged := mergeEnvVars(currentEnv, desiredEnv, previousOwned)
 
+						// Capture foreign pod-template annotations before the
+						// wholesale replace so the config-restart/config-hash stamps
+						// and any mesh/plugin pod annotations survive (only env vars
+						// are merged otherwise). Mirrors the standalone controller.
+						livePodAnnotations := sts.Spec.Template.Annotations
 						sts.Spec.Template = *updatedTemplate
 						if len(sts.Spec.Template.Spec.Containers) > 0 {
 							sts.Spec.Template.Spec.Containers[0].Env = merged
 						}
+						sts.Spec.Template.Annotations = mergePodTemplateAnnotations(livePodAnnotations, updatedTemplate.Annotations)
 						writeOwnedEnvVarNames(sts, desiredEnv)
+						// Record the desired template hash so the next stable
+						// reconcile can detect drift in fields the field-by-field
+						// check omits. updatedTemplate keeps cluster-owned env only
+						// (the foreign-merge above wrote to sts, not updatedTemplate).
+						setClusterTemplateHash(sts, *updatedTemplate)
 					} else {
 						logger := log.FromContext(ctx)
 						logger.V(1).Info("Skipping StatefulSet template update - no significant changes detected",
@@ -859,10 +886,14 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 					}
 				} else {
 					// If no selector exists, just use the desired template
+					// (preserving foreign pod-template annotations as above).
+					livePodAnnotations := sts.Spec.Template.Annotations
 					sts.Spec.Template = desiredSpec.Template
+					sts.Spec.Template.Annotations = mergePodTemplateAnnotations(livePodAnnotations, desiredSpec.Template.Annotations)
 					if len(desiredSpec.Template.Spec.Containers) > 0 {
 						writeOwnedEnvVarNames(sts, desiredSpec.Template.Spec.Containers[0].Env)
 					}
+					setClusterTemplateHash(sts, desiredSpec.Template)
 				}
 			} else {
 				// This is a new StatefulSet, use the desired spec as-is
@@ -898,8 +929,23 @@ func (r *Neo4jEnterpriseClusterReconciler) isTemplateChangeSignificant(ctx conte
 		return r.hasCriticalTemplateChanges(currentTemplate, desiredTemplate)
 	}
 
-	// For stable clusters, allow more template changes
-	return r.hasSignificantTemplateChanges(currentTemplate, desiredTemplate, readOwnedEnvVarNames(sts))
+	// For a stable cluster a change is significant if EITHER:
+	//   - a cluster-owned core field drifted from desired (env/volumes/init
+	//     containers/image/resources/securityContext/SA — foreign-tolerant via
+	//     envVarsEqual so plugin/fleet/Aura-owned env vars don't trip it), OR
+	//   - the desired template's hash differs from the one we last applied.
+	// The hash closes the fields the field-by-field check omits (nodeSelector,
+	// affinity, tolerations, probes, resource requests, volume sources,
+	// initContainer args/env). It is computed over the *desired* template
+	// (cluster-owned env only) and compared to a stored annotation, never to
+	// the live template — so foreign env vars and the config-restart annotation
+	// never enter it and cannot cause oscillation against the env-ownership
+	// protocol. A missing annotation (first reconcile after an operator
+	// upgrade) reads as changed, converging once.
+	if r.hasSignificantTemplateChanges(currentTemplate, desiredTemplate, readOwnedEnvVarNames(sts)) {
+		return true
+	}
+	return podTemplateSpecHash(desiredTemplate) != sts.Annotations[clusterTemplateHashAnnotation]
 }
 
 // hasCriticalTemplateChanges checks for changes that are essential during cluster formation
@@ -1016,6 +1062,23 @@ func (r *Neo4jEnterpriseClusterReconciler) containerSecurityContextEqual(current
 // disturbing plugin / fleet additions. Names are stored sorted, comma-
 // separated. Same shape as kubectl's last-applied-configuration tracking.
 const ownedEnvVarsAnnotation = "neo4j.com/cluster-controller-env-vars"
+
+// clusterTemplateHashAnnotation stores the hash of the desired pod template the
+// cluster controller last applied. A stable-phase reconcile treats the template
+// as changed when this differs from the current desired hash, which catches the
+// fields hasSignificantTemplateChanges does not compare (nodeSelector, affinity,
+// tolerations, probes, resource requests, volume sources, initContainer
+// args/env). See isTemplateChangeSignificant.
+const clusterTemplateHashAnnotation = "neo4j.com/cluster-template-hash"
+
+// setClusterTemplateHash records the hash of the just-applied desired pod
+// template on the StatefulSet's annotations.
+func setClusterTemplateHash(sts *appsv1.StatefulSet, desired corev1.PodTemplateSpec) {
+	if sts.Annotations == nil {
+		sts.Annotations = map[string]string{}
+	}
+	sts.Annotations[clusterTemplateHashAnnotation] = podTemplateSpecHash(desired)
+}
 
 // readOwnedEnvVarNames returns the set of env-var names this controller
 // recorded as owned on the StatefulSet's previous reconcile. An empty set is
@@ -1366,6 +1429,151 @@ func (r *Neo4jEnterpriseClusterReconciler) createExternalSecretForAuth(ctx conte
 	obj.SetUnstructuredContent(esData)
 
 	return r.createOrUpdateUnstructuredResource(ctx, obj, cluster)
+}
+
+// reconcileMutableResource creates desired if absent, otherwise updates the
+// live object's mutable fields from desired and writes it back — preserving the
+// live ResourceVersion and any server-assigned immutable fields. Each Update is
+// gated on an actual drift so unchanged resources don't churn ResourceVersion.
+func (r *Neo4jEnterpriseClusterReconciler) reconcileMutableResource(ctx context.Context, desired client.Object) error {
+	logger := log.FromContext(ctx)
+	existing, ok := desired.DeepCopyObject().(client.Object)
+	if !ok {
+		return fmt.Errorf("object %T is not a client.Object", desired)
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(desired), existing); err != nil {
+		if errors.IsNotFound(err) {
+			return r.Create(ctx, desired)
+		}
+		return err
+	}
+
+	switch d := desired.(type) {
+	case *corev1.Service:
+		e := existing.(*corev1.Service)
+		if applyDesiredServiceFields(e, d) {
+			logger.Info("Updating Service", "name", e.Name)
+			return r.Update(ctx, e)
+		}
+	case *networkingv1.NetworkPolicy:
+		e := existing.(*networkingv1.NetworkPolicy)
+		changed := false
+		if !equality.Semantic.DeepEqual(e.Spec, d.Spec) {
+			e.Spec = d.Spec
+			changed = true
+		}
+		if applyOwnedMetadata(e, d.Annotations, d.Labels) {
+			changed = true
+		}
+		if changed {
+			logger.Info("Updating NetworkPolicy", "name", e.Name)
+			return r.Update(ctx, e)
+		}
+	case *networkingv1.Ingress:
+		e := existing.(*networkingv1.Ingress)
+		changed := false
+		if !equality.Semantic.DeepEqual(e.Spec, d.Spec) {
+			e.Spec = d.Spec
+			changed = true
+		}
+		if applyOwnedMetadata(e, d.Annotations, d.Labels) {
+			changed = true
+		}
+		if changed {
+			logger.Info("Updating Ingress", "name", e.Name)
+			return r.Update(ctx, e)
+		}
+	case *certmanagerv1.Certificate:
+		e := existing.(*certmanagerv1.Certificate)
+		changed := false
+		if !equality.Semantic.DeepEqual(e.Spec, d.Spec) {
+			e.Spec = d.Spec
+			changed = true
+		}
+		if applyOwnedMetadata(e, d.Annotations, d.Labels) {
+			changed = true
+		}
+		if changed {
+			logger.Info("Updating Certificate", "name", e.Name)
+			return r.Update(ctx, e)
+		}
+	}
+	return nil
+}
+
+// applyDesiredServiceFields copies the mutable fields of desired onto existing,
+// preserving API-server-assigned immutable fields (ClusterIP/ClusterIPs/
+// IPFamilies/IPFamilyPolicy/HealthCheckNodePort) so the Update is not rejected,
+// and carrying over allocated NodePorts the desired spec leaves unset. Returns
+// true when any field changed.
+func applyDesiredServiceFields(existing, desired *corev1.Service) bool {
+	changed := false
+	if existing.Spec.Type != desired.Spec.Type {
+		existing.Spec.Type = desired.Spec.Type
+		changed = true
+	}
+	if mergedPorts := mergeServicePorts(existing.Spec.Ports, desired.Spec.Ports); !equality.Semantic.DeepEqual(existing.Spec.Ports, mergedPorts) {
+		existing.Spec.Ports = mergedPorts
+		changed = true
+	}
+	if !equality.Semantic.DeepEqual(existing.Spec.Selector, desired.Spec.Selector) {
+		existing.Spec.Selector = desired.Spec.Selector
+		changed = true
+	}
+	if existing.Spec.LoadBalancerIP != desired.Spec.LoadBalancerIP {
+		existing.Spec.LoadBalancerIP = desired.Spec.LoadBalancerIP
+		changed = true
+	}
+	if !equality.Semantic.DeepEqual(existing.Spec.LoadBalancerSourceRanges, desired.Spec.LoadBalancerSourceRanges) {
+		existing.Spec.LoadBalancerSourceRanges = desired.Spec.LoadBalancerSourceRanges
+		changed = true
+	}
+	if existing.Spec.ExternalTrafficPolicy != desired.Spec.ExternalTrafficPolicy {
+		existing.Spec.ExternalTrafficPolicy = desired.Spec.ExternalTrafficPolicy
+		changed = true
+	}
+	if existing.Spec.SessionAffinity != desired.Spec.SessionAffinity {
+		existing.Spec.SessionAffinity = desired.Spec.SessionAffinity
+		changed = true
+	}
+	if existing.Spec.PublishNotReadyAddresses != desired.Spec.PublishNotReadyAddresses {
+		existing.Spec.PublishNotReadyAddresses = desired.Spec.PublishNotReadyAddresses
+		changed = true
+	}
+	if applyOwnedMetadata(existing, desired.Annotations, desired.Labels) {
+		changed = true
+	}
+	return changed
+}
+
+// mergeServicePorts returns desired ports with allocated NodePorts carried over
+// from existing for matching ports (by Name, else by Port) when desired leaves
+// NodePort unset — so a ClusterIP→NodePort/LoadBalancer transition or a routine
+// reconcile doesn't ask the API to reassign node ports.
+func mergeServicePorts(existing, desired []corev1.ServicePort) []corev1.ServicePort {
+	byName := make(map[string]int32, len(existing))
+	byPort := make(map[int32]int32, len(existing))
+	for _, p := range existing {
+		if p.NodePort != 0 {
+			if p.Name != "" {
+				byName[p.Name] = p.NodePort
+			}
+			byPort[p.Port] = p.NodePort
+		}
+	}
+	out := make([]corev1.ServicePort, len(desired))
+	copy(out, desired)
+	for i := range out {
+		if out[i].NodePort != 0 {
+			continue
+		}
+		if np, ok := byName[out[i].Name]; ok && out[i].Name != "" {
+			out[i].NodePort = np
+		} else if np, ok := byPort[out[i].Port]; ok {
+			out[i].NodePort = np
+		}
+	}
+	return out
 }
 
 // createOrUpdateUnstructuredResource handles unstructured resources like ExternalSecrets
