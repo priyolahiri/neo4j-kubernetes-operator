@@ -636,6 +636,14 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 	if restore.Spec.DatabaseName == "" {
 		return fmt.Errorf("databaseName is required")
 	}
+	// The database name is interpolated into the restore Job's shell command
+	// and Cypher; restrict it to the Neo4j database-name grammar (no shell or
+	// Cypher metacharacters) so it can't inject either. Defense-in-depth on top
+	// of the CRD Pattern marker.
+	if !validation.IsValidDatabaseName(restore.Spec.DatabaseName) {
+		return fmt.Errorf("databaseName %q is invalid: must start with a letter, contain only letters, digits, dots or dashes, and be at most %d characters",
+			restore.Spec.DatabaseName, validation.MaxDatabaseNameLength)
+	}
 
 	// Sharded databases must NOT be restored via Neo4jRestore — the Cypher
 	// shape (`CREATE DATABASE … SET GRAPH SHARD … SET PROPERTY SHARDS …`)
@@ -1181,6 +1189,12 @@ func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restor
 	// glob naturally selects only the requested DB's file.
 	if resolved := buildLocalRestoreFilePath(restore, backupPath); resolved != "" {
 		backupPath = resolved
+	} else if !isLocalPVCRestoreSource(restore) && backupPath != "" {
+		// Cloud --from-path (s3://, gs://, azb://): quote the whole URI so a
+		// crafted spec.source.{bucket,path,backupPath} can't break out of
+		// /bin/sh -c. PVC sources take the branch above ($(ls …)), which must
+		// stay unquoted to execute the command substitution.
+		backupPath = shellQuote(backupPath)
 	}
 
 	// Extract Neo4j version from cluster image
@@ -1213,7 +1227,7 @@ func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restor
 	case restore.Spec.Options != nil && restore.Spec.Options.TempStorage != nil:
 		cmd += " --temp-path=/tmp/neo4j-staging"
 	case restore.Spec.Options != nil && restore.Spec.Options.TempPath != "":
-		cmd += " --temp-path=" + restore.Spec.Options.TempPath
+		cmd += " --temp-path=" + shellQuote(restore.Spec.Options.TempPath)
 	case isLocalPVCRestoreSource(restore):
 		// Default for PVC sources. neo4j-admin's restore needs a
 		// writable scratch dir to extract the artifact; if not told
@@ -1235,9 +1249,13 @@ func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restor
 		cmd += fmt.Sprintf(` --restore-until="%s"`, t.Format("2006-01-02 15:04:05"))
 	}
 
-	// Add additional arguments if specified
+	// Add additional arguments if specified. Each arg is shell-quoted (the
+	// pod runs the command via /bin/sh -c and holds the admin password), as
+	// the backup path already does.
 	if restore.Spec.Options != nil && len(restore.Spec.Options.AdditionalArgs) > 0 {
-		cmd += " " + strings.Join(restore.Spec.Options.AdditionalArgs, " ")
+		for _, arg := range restore.Spec.Options.AdditionalArgs {
+			cmd += " " + shellQuote(arg)
+		}
 	}
 
 	return cmd, nil
@@ -1331,6 +1349,10 @@ func (r *Neo4jRestoreReconciler) buildPITRRestoreCommand(ctx context.Context, re
 	isPVC := isPVCBackupPath(backupPath)
 	if isPVC {
 		backupPath = resolveLocalPVCFromPath(backupPath, restore.Spec.DatabaseName)
+	} else if backupPath != "" {
+		// Cloud --from-path URI: quote so spec.source.{bucket,path,backupPath}
+		// can't break out of /bin/sh -c (PVC takes the $(ls …) branch above).
+		backupPath = shellQuote(backupPath)
 	}
 	preludeCmd := ""
 	if isPVC {
@@ -1352,7 +1374,7 @@ func (r *Neo4jRestoreReconciler) buildPITRRestoreCommand(ctx context.Context, re
 	case restore.Spec.Options != nil && restore.Spec.Options.TempStorage != nil:
 		cmd += " --temp-path=/tmp/neo4j-staging"
 	case restore.Spec.Options != nil && restore.Spec.Options.TempPath != "":
-		cmd += " --temp-path=" + restore.Spec.Options.TempPath
+		cmd += " --temp-path=" + shellQuote(restore.Spec.Options.TempPath)
 	case isPVC:
 		cmd += " --temp-path=/tmp/restore-tmp"
 	}

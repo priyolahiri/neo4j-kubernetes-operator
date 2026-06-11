@@ -69,7 +69,12 @@ spec:
                   to
                 type: string
               databaseName:
-                description: Database to restore to
+                description: |-
+                  Database to restore to. Must be a valid Neo4j database name (starts with a
+                  letter; letters, digits, dots, dashes only) — the name is interpolated
+                  into the restore Job's shell command and Cypher.
+                maxLength: 65
+                pattern: ^[a-zA-Z][a-zA-Z0-9.\-]*$
                 type: string
               force:
                 description: Force restore even if database exists

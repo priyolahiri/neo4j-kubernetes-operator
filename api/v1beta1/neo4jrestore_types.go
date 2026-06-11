@@ -32,7 +32,11 @@ type Neo4jRestoreSpec struct {
 	Source RestoreSource `json:"source"`
 
 	// +kubebuilder:validation:Required
-	// Database to restore to
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z][a-zA-Z0-9.\-]*$`
+	// +kubebuilder:validation:MaxLength=65
+	// Database to restore to. Must be a valid Neo4j database name (starts with a
+	// letter; letters, digits, dots, dashes only) — the name is interpolated
+	// into the restore Job's shell command and Cypher.
 	DatabaseName string `json:"databaseName"`
 
 	// Restore options

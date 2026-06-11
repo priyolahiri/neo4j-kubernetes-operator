@@ -32,6 +32,11 @@ import (
 // against a malicious upstream demands a collision-resistant hash.
 var checksumPattern = regexp.MustCompile(`^(sha256:[a-fA-F0-9]{64}|sha512:[a-fA-F0-9]{128})$`)
 
+// pluginConfigKeyPattern constrains Neo4jPlugin.spec.config keys: they become
+// neo4j.conf keys / env-var names, so only letters, digits, dots, underscores
+// and dashes are allowed.
+var pluginConfigKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
 // PluginValidator validates Neo4j plugin configuration for Neo4j 5.26+ compatibility
 type PluginValidator struct{}
 
@@ -101,6 +106,29 @@ func (v *PluginValidator) Validate(plugin *neo4jv1beta1.Neo4jPlugin) *PluginVali
 
 	// Cross-field gates for installMode: VerifiedDownload.
 	result.Errors = append(result.Errors, v.validateVerifiedDownloadMode(plugin)...)
+
+	// Validate plugin config: keys become neo4j.conf keys / env-var names and
+	// values are rendered into neo4j.conf as `key=value` (standalone) or env
+	// vars, so constrain keys to a safe identifier set and reject control
+	// characters in values that could forge an extra config line. This map was
+	// previously unvalidated entirely.
+	configPath := field.NewPath("spec", "config")
+	for key, value := range plugin.Spec.Config {
+		if !pluginConfigKeyPattern.MatchString(key) {
+			result.Errors = append(result.Errors, field.Invalid(
+				configPath.Key(key),
+				key,
+				"config key may contain only letters, digits, dots, underscores and dashes",
+			))
+		}
+		if ConfigValueHasControlChars(value) {
+			result.Errors = append(result.Errors, field.Invalid(
+				configPath.Key(key),
+				value,
+				"value may not contain newline or carriage-return characters",
+			))
+		}
+	}
 
 	return result
 }

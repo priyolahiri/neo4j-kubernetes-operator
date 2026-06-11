@@ -325,7 +325,7 @@ var _ = Describe("Neo4jDatabase Controller", func() {
 			foundValidationError := false
 
 			for _, msg := range errorMessages {
-				if Contains(msg, "restoreUntil must be RFC3339 timestamp") {
+				if Contains(msg, "restoreUntil must be an RFC3339 timestamp") {
 					foundRestoreUntilError = true
 				}
 				if Contains(msg, "compression") && Contains(msg, "supported values") {

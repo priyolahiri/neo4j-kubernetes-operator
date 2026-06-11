@@ -469,3 +469,20 @@ func containsStr(s, sub string) bool {
 		return false
 	}()
 }
+
+// TestGetRestoreCommand_QuotesDatabaseName pins the shell-injection defense:
+// the database name is the positional arg to neo4j-admin in a /bin/sh -c
+// command, so it must be single-quoted.
+func TestGetRestoreCommand_QuotesDatabaseName(t *testing.T) {
+	v, _ := ParseVersion("5.26.0-enterprise")
+	cmd := GetRestoreCommand(v, "mydb", "/backups/mydb")
+	if !containsStr(cmd, "'mydb'") {
+		t.Errorf("expected single-quoted database name, got: %q", cmd)
+	}
+	// A name with shell metacharacters (which validation rejects upstream)
+	// must still be neutralised by quoting at this sink.
+	evil := GetRestoreCommand(v, "db; rm -rf /data", "/backups/x")
+	if !containsStr(evil, `'db; rm -rf /data'`) {
+		t.Errorf("expected metacharacters contained within quotes, got: %q", evil)
+	}
+}

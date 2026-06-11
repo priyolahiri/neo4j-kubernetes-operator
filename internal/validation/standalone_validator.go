@@ -282,13 +282,22 @@ func (v *StandaloneValidator) validateConfig(standalone *neo4jv1beta1.Neo4jEnter
 	// ConfigValidator — server.config.strict_validation.enabled=false
 	// means Neo4j silently honours later duplicates, so without this
 	// rejection a user could silently downgrade TLS posture via spec.config.
-	for key := range standalone.Spec.Config {
+	for key, value := range standalone.Spec.Config {
 		if strings.HasPrefix(key, "dbms.ssl.policy.") ||
 			key == "server.bolt.tls_level" ||
 			key == "server.directories.certificates" {
 			allErrs = append(allErrs, field.Forbidden(
 				configPath.Key(key),
 				"TLS / SSL policy is managed by the operator via spec.tls; do not set dbms.ssl.policy.*, server.bolt.tls_level, or server.directories.certificates in spec.config",
+			))
+		}
+		// Reject control characters: spec.config is rendered into neo4j.conf as
+		// `key=value\n`; a newline in a value would forge an extra config line.
+		if ConfigValueHasControlChars(value) {
+			allErrs = append(allErrs, field.Invalid(
+				configPath.Key(key),
+				value,
+				"value may not contain newline or carriage-return characters",
 			))
 		}
 	}
