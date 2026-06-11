@@ -858,10 +858,16 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 						}
 						merged := mergeEnvVars(currentEnv, desiredEnv, previousOwned)
 
+						// Capture foreign pod-template annotations before the
+						// wholesale replace so the config-restart/config-hash stamps
+						// and any mesh/plugin pod annotations survive (only env vars
+						// are merged otherwise). Mirrors the standalone controller.
+						livePodAnnotations := sts.Spec.Template.Annotations
 						sts.Spec.Template = *updatedTemplate
 						if len(sts.Spec.Template.Spec.Containers) > 0 {
 							sts.Spec.Template.Spec.Containers[0].Env = merged
 						}
+						sts.Spec.Template.Annotations = mergePodTemplateAnnotations(livePodAnnotations, updatedTemplate.Annotations)
 						writeOwnedEnvVarNames(sts, desiredEnv)
 						// Record the desired template hash so the next stable
 						// reconcile can detect drift in fields the field-by-field
@@ -880,7 +886,10 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 					}
 				} else {
 					// If no selector exists, just use the desired template
+					// (preserving foreign pod-template annotations as above).
+					livePodAnnotations := sts.Spec.Template.Annotations
 					sts.Spec.Template = desiredSpec.Template
+					sts.Spec.Template.Annotations = mergePodTemplateAnnotations(livePodAnnotations, desiredSpec.Template.Annotations)
 					if len(desiredSpec.Template.Spec.Containers) > 0 {
 						writeOwnedEnvVarNames(sts, desiredSpec.Template.Spec.Containers[0].Env)
 					}

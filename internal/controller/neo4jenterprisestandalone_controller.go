@@ -820,23 +820,10 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 			currentInit := statefulSet.Spec.Template.Spec.InitContainers
 			currentVolumes := statefulSet.Spec.Template.Spec.Volumes
 
-			mergedAnnotations := map[string]string{}
-			for k, v := range statefulSet.Spec.Template.Annotations {
-				// Operator-managed annotations (the Prometheus scrape hints) are
-				// re-derived from the desired template below — NOT carried forward
-				// — so disabling spec.monitoring actually removes them. Carrying the
-				// existing value would leave stale prometheus.io/* keys scraping a
-				// port that no longer exists. Foreign annotations (conf-restart
-				// stamp, plugin-init-containers, service-mesh injection) are not in
-				// this managed set, so they're preserved.
-				if _, managed := standaloneOperatorManagedPodAnnotations[k]; managed {
-					continue
-				}
-				mergedAnnotations[k] = v
-			}
-			for k, v := range desiredSpec.Template.Annotations {
-				mergedAnnotations[k] = v
-			}
+			// Re-derive operator-managed pod annotations (Prometheus hints) from
+			// the desired template while preserving foreign ones (conf-restart
+			// stamp, plugin-init markers, service-mesh injection).
+			mergedAnnotations := mergePodTemplateAnnotations(statefulSet.Spec.Template.Annotations, desiredSpec.Template.Annotations)
 
 			desiredTemplate := desiredSpec.Template.DeepCopy()
 			statefulSet.Spec.Template = *desiredTemplate
@@ -1463,17 +1450,6 @@ func standalonePrometheusAnnotations(standalone *neo4jv1beta1.Neo4jEnterpriseSta
 		"prometheus.io/port":   fmt.Sprintf("%d", resources.MetricsPort),
 		"prometheus.io/path":   "/metrics",
 	}
-}
-
-// standaloneOperatorManagedPodAnnotations is the KEY set the operator owns on
-// the pod template (the Prometheus hints above). On a template apply these are
-// re-derived from the desired template — never carried forward from the existing
-// one — so disabling monitoring removes them, while foreign annotations are
-// preserved. Keep in sync with standalonePrometheusAnnotations' keys.
-var standaloneOperatorManagedPodAnnotations = map[string]struct{}{
-	"prometheus.io/scrape": {},
-	"prometheus.io/port":   {},
-	"prometheus.io/path":   {},
 }
 
 // createStatefulSet creates a StatefulSet for the standalone deployment

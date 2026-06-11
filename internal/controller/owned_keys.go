@@ -136,6 +136,37 @@ func applyOwnedMetadata(obj client.Object, desiredAnnotations, desiredLabels map
 	return changed
 }
 
+// operatorManagedPodAnnotations are the pod-template annotation keys the
+// operator owns (the Prometheus scrape hints). On a StatefulSet template apply
+// these are re-derived from the desired template — never carried forward — so
+// disabling monitoring removes them, while foreign annotations (ConfigMapManager's
+// config-restart/config-hash stamps, plugin-init markers, service-mesh
+// injection) are preserved. Shared by the cluster and standalone controllers.
+var operatorManagedPodAnnotations = map[string]struct{}{
+	"prometheus.io/scrape": {},
+	"prometheus.io/port":   {},
+	"prometheus.io/path":   {},
+}
+
+// mergePodTemplateAnnotations preserves foreign pod-template annotations from
+// live (keys the operator does not manage) and overlays the desired
+// operator-managed set. Used on a wholesale template replace, which otherwise
+// only merges container env vars and would drop the config-restart stamp and
+// any mesh/plugin pod annotations.
+func mergePodTemplateAnnotations(live, desired map[string]string) map[string]string {
+	out := make(map[string]string, len(live)+len(desired))
+	for k, v := range live {
+		if _, managed := operatorManagedPodAnnotations[k]; managed {
+			continue
+		}
+		out[k] = v
+	}
+	for k, v := range desired {
+		out[k] = v
+	}
+	return out
+}
+
 // stringMapsEqual treats nil and empty maps as equal.
 func stringMapsEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {

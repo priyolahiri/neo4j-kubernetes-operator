@@ -100,3 +100,39 @@ func TestApplyOwnedMetadata_NoManagedKeysNoChurn(t *testing.T) {
 	assert.Empty(t, obj.Annotations)
 	assert.Empty(t, obj.Labels)
 }
+
+// TestMergePodTemplateAnnotations pins the fix for the "hash apply drops pod
+// annotations" finding: a wholesale template apply must preserve foreign
+// pod-template annotations (config-restart/config-hash stamps, mesh/plugin
+// markers) while re-deriving the operator-managed Prometheus hints from desired.
+func TestMergePodTemplateAnnotations(t *testing.T) {
+	live := map[string]string{
+		"neo4j.neo4j.com/config-restart": "2026-06-11T00:00:00Z", // foreign (ConfigMapManager)
+		"neo4j.neo4j.com/config-hash":    "abc123",               // foreign
+		"linkerd.io/inject":              "enabled",              // foreign (mesh)
+		"prometheus.io/scrape":           "true",                 // operator-managed, stale value
+		"prometheus.io/port":             "9999",                 // operator-managed, stale value
+	}
+	desired := map[string]string{
+		"prometheus.io/scrape": "true",
+		"prometheus.io/port":   "2004",
+		"prometheus.io/path":   "/metrics",
+	}
+
+	out := mergePodTemplateAnnotations(live, desired)
+
+	// Foreign annotations preserved.
+	assert.Equal(t, "2026-06-11T00:00:00Z", out["neo4j.neo4j.com/config-restart"])
+	assert.Equal(t, "abc123", out["neo4j.neo4j.com/config-hash"])
+	assert.Equal(t, "enabled", out["linkerd.io/inject"])
+	// Operator-managed hints re-derived from desired (stale port replaced).
+	assert.Equal(t, "2004", out["prometheus.io/port"])
+	assert.Equal(t, "/metrics", out["prometheus.io/path"])
+
+	// Disabling monitoring (no desired prometheus keys) removes the managed
+	// hints but keeps foreign annotations.
+	out2 := mergePodTemplateAnnotations(live, nil)
+	_, hasScrape := out2["prometheus.io/scrape"]
+	assert.False(t, hasScrape, "managed prometheus hint removed when not desired")
+	assert.Equal(t, "abc123", out2["neo4j.neo4j.com/config-hash"], "foreign still preserved")
+}
