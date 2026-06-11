@@ -15,6 +15,7 @@ const (
 	EventReasonRouteAPINotFound              = "RouteAPINotFound"
 	EventReasonMCPApocMissing                = "MCPApocMissing"
 	EventReasonReconcileFailed               = "ReconcileFailed"
+	EventReasonScaleDownPendingDrain         = "ScaleDownPendingDrain"
 )
 
 // Rolling upgrade events
