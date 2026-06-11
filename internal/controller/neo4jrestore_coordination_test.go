@@ -357,6 +357,19 @@ func TestReplicasReconciliationPaused(t *testing.T) {
 			assert.Equal(t, tc.expected, replicasReconciliationPaused(tc.owner))
 		})
 	}
+
+	// The gate must also pause a Neo4jEnterpriseStandalone owner — the standalone
+	// controller honours it so a stopCluster=true standalone restore can quiesce
+	// (it scales the STS to 0) without the controller racing it back to 1.
+	t.Run("standalone with restore-in-progress annotation pauses", func(t *testing.T) {
+		sa := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+			ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{RestoreInProgressAnnotation: "r1"}},
+		}
+		assert.True(t, replicasReconciliationPaused(sa))
+	})
+	t.Run("standalone without the annotation is not paused", func(t *testing.T) {
+		assert.False(t, replicasReconciliationPaused(&neo4jv1beta1.Neo4jEnterpriseStandalone{}))
+	})
 }
 
 func TestBuildRestoreVolumesAlwaysMountsDataPVC(t *testing.T) {

@@ -483,9 +483,9 @@ func (r *Neo4jRestoreReconciler) handleRestoreSuccess(ctx context.Context, resto
 			// Non-fatal — the finalizer path will clean it up if needed.
 		}
 
-		// Wait for cluster to be ready
-		if err := r.waitForClusterReady(ctx, cluster); err != nil {
-			logger.Error(err, "Cluster not ready after restore")
+		// Wait for the standalone to be ready
+		if err := r.waitForClusterReady(ctx, restore, cluster); err != nil {
+			logger.Error(err, "Standalone not ready after restore")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Cluster not ready after restore: %v", err))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 		}
@@ -1847,9 +1847,9 @@ func (r *Neo4jRestoreReconciler) startCluster(ctx context.Context, cluster *neo4
 	return nil
 }
 
-func (r *Neo4jRestoreReconciler) waitForClusterReady(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
+func (r *Neo4jRestoreReconciler) waitForClusterReady(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
-	logger.Info("Waiting for cluster to be ready", "cluster", cluster.Name)
+	logger.Info("Waiting for standalone to be ready", "standalone", cluster.Name)
 
 	timeout := time.After(10 * time.Minute)
 	ticker := time.NewTicker(30 * time.Second)
@@ -1883,8 +1883,11 @@ func (r *Neo4jRestoreReconciler) waitForClusterReady(ctx context.Context, cluste
 			}
 
 			if allReady {
-				// Verify Neo4j connectivity
-				neo4jClient, err := r.createNeo4jClient(ctx, cluster)
+				// Verify Neo4j connectivity over the standalone's `<name>-service`
+				// (this readiness wait is on the standalone Job path); the cluster
+				// `<name>-client` routing service doesn't exist for a standalone
+				// (#187), so the cluster client would never connect.
+				neo4jClient, err := r.newStandaloneRestoreClient(ctx, restore)
 				if err != nil {
 					logger.Info("Failed to create Neo4j client, retrying...")
 					continue
