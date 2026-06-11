@@ -130,10 +130,10 @@ func TestBuildOptionsClause_SeedConfigAndRestoreUntil(t *testing.T) {
 }
 
 func TestSerializeSeedConfig(t *testing.T) {
-	if got := serializeSeedConfig(nil); got != "" {
+	if got := SerializeSeedConfig(nil); got != "" {
 		t.Errorf("nil → %q", got)
 	}
-	if got := serializeSeedConfig(map[string]string{"b": "2", "a": "1"}); got != "a=1,b=2" {
+	if got := SerializeSeedConfig(map[string]string{"b": "2", "a": "1"}); got != "a=1,b=2" {
 		t.Errorf("sorted serialisation = %q, want a=1,b=2", got)
 	}
 }
