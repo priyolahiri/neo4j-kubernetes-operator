@@ -2,18 +2,19 @@ package controller
 
 // Cluster formation events
 const (
-	EventReasonClusterFormationStarted = "ClusterFormationStarted"
-	EventReasonClusterFormationFailed  = "ClusterFormationFailed"
-	EventReasonClusterReady            = "ClusterReady"
-	EventReasonTopologyWarning         = "TopologyWarning"
-	EventReasonValidationFailed        = "ValidationFailed"
-	EventReasonTopologyPlacementFailed = "TopologyPlacementFailed"
-	EventReasonTopologyPlacementCalc   = "TopologyPlacementCalculated"
-	EventReasonPropertyShardingFailed  = "PropertyShardingValidationFailed"
-	EventReasonServerRoleFailed        = "ServerRoleValidationFailed"
-	EventReasonRouteAPINotFound        = "RouteAPINotFound"
-	EventReasonMCPApocMissing          = "MCPApocMissing"
-	EventReasonReconcileFailed         = "ReconcileFailed"
+	EventReasonClusterFormationStarted       = "ClusterFormationStarted"
+	EventReasonClusterFormationFailed        = "ClusterFormationFailed"
+	EventReasonClusterReady                  = "ClusterReady"
+	EventReasonTopologyWarning               = "TopologyWarning"
+	EventReasonValidationFailed              = "ValidationFailed"
+	EventReasonTopologyPlacementFailed       = "TopologyPlacementFailed"
+	EventReasonTopologyPlacementCalc         = "TopologyPlacementCalculated"
+	EventReasonTopologyZoneDiscoveryDegraded = "TopologyZoneDiscoveryDegraded"
+	EventReasonPropertyShardingFailed        = "PropertyShardingValidationFailed"
+	EventReasonServerRoleFailed              = "ServerRoleValidationFailed"
+	EventReasonRouteAPINotFound              = "RouteAPINotFound"
+	EventReasonMCPApocMissing                = "MCPApocMissing"
+	EventReasonReconcileFailed               = "ReconcileFailed"
 )
 
 // Rolling upgrade events

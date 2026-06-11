@@ -186,6 +186,16 @@ Scope determines where the operator watches CRs, and RBAC determines what it can
 - **Non-Helm**: set `WATCH_NAMESPACE=<namespace>`.
 - **Adding namespaces**: deploy another operator in that namespace or switch to multi-namespace/cluster scope.
 
+**Cluster-scoped feature limitations.** A namespaced Role cannot grant access to cluster-scoped resources, so a few features that read them behave differently in namespace scope (they work normally in cluster / multi-namespace scope, which use a ClusterRole):
+
+| Feature | Reads (cluster-scoped) | Behavior in namespace scope | Workaround |
+|---|---|---|---|
+| Zone-aware scheduling (`spec.topology.placement` topology-spread / anti-affinity) | `nodes` | AZ auto-discovery is skipped; the operator applies **best-effort** zone spread via the zone label key and emits a `TopologyZoneDiscoveryDegraded` warning event. **Exception:** `spec.topology.enforceDistribution: true` is a hard guarantee the operator can't verify blind, so it fails with an actionable error. | Set `spec.topology.availabilityZones` explicitly (no node read needed), or use cluster/multi-namespace scope. |
+| TLS via a `ClusterIssuer` | `clusterissuers` | The cert-manager `ClusterIssuer` reference can't be read. | Use a namespaced `Issuer` (`issuerRef.kind: Issuer`). |
+| External Secrets via a `ClusterSecretStore` | `clustersecretstores` | The cluster-scoped store can't be read. | Use a namespaced `SecretStore`. |
+
+These are inherent to namespace-scoped RBAC, not bugs — the operator degrades gracefully (no stuck reconcile) and points you at the workaround. See [#202](https://github.com/neo4j-partners/neo4j-kubernetes-operator/issues/202).
+
 ### Multi-Namespace Scope
 
 - **RBAC**: ClusterRole + ClusterRoleBinding
