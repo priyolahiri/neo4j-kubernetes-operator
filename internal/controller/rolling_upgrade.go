@@ -336,6 +336,14 @@ func (r *RollingUpgradeOrchestrator) validateStatefulSetsReady(
 	return nil
 }
 
+// verifyVersionUpgrade confirms every enabled server reports the target
+// version. Source of truth is `SHOW SERVERS YIELD version` (via ListServers):
+// it returns one row PER SERVER in a single query — unlike the previous
+// dbms.components() approach, which went through the routing driver and
+// actually sampled whichever server routing picked, once per member. SHOW
+// SERVERS also reports the calendar version for ALL CalVer releases (2025.01
+// included), whereas dbms.components() reports the pre-rebrand kernel
+// "5.27.0" there; the versionsMatch kernel alias is kept as belt-and-braces.
 func (r *RollingUpgradeOrchestrator) verifyVersionUpgrade(
 	ctx context.Context,
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
@@ -351,40 +359,18 @@ func (r *RollingUpgradeOrchestrator) verifyVersionUpgrade(
 
 	logger.Info("Verifying cluster version after upgrade", "targetVersion", targetVersion)
 
-	// Get cluster overview to check versions of all members
-	members, err := neo4jClient.GetClusterOverview(ctx)
+	servers, err := neo4jClient.ListServers(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get cluster overview for version verification: %w", err)
+		return fmt.Errorf("failed to list servers for version verification: %w", err)
 	}
 
-	if len(members) == 0 {
-		return fmt.Errorf("no cluster members found during version verification")
+	mismatches, verified := r.versionMismatchesFromServers(servers, targetVersion)
+	if verified == 0 {
+		return fmt.Errorf("no enabled servers found during version verification")
 	}
-
-	// Verify each member is running the target version
-	var versionMismatches []string
-	for _, member := range members {
-		// Query the specific member for its version
-		memberVersion, err := r.getMemberVersion(ctx, neo4jClient, member.ID)
-		if err != nil {
-			logger.Error(err, "Failed to get version for member", "memberID", member.ID)
-			versionMismatches = append(versionMismatches, member.ID+": version query failed")
-			continue
-		}
-
-		// Compare versions (normalize for comparison)
-		if !r.versionsMatch(memberVersion, targetVersion) {
-			versionMismatches = append(versionMismatches,
-				fmt.Sprintf("%s: running %s, expected %s", member.ID, memberVersion, targetVersion))
-		} else {
-			logger.Info("Member version verified", "memberID", member.ID, "version", memberVersion)
-		}
-	}
-
-	// If there are version mismatches, report them
-	if len(versionMismatches) > 0 {
-		return fmt.Errorf("version verification failed for %d members: %s",
-			len(versionMismatches), strings.Join(versionMismatches, "; "))
+	if len(mismatches) > 0 {
+		return fmt.Errorf("version verification failed for %d servers: %s",
+			len(mismatches), strings.Join(mismatches, "; "))
 	}
 
 	// NOTE: Status.Version is intentionally NOT written here. The Completed
@@ -392,91 +378,38 @@ func (r *RollingUpgradeOrchestrator) verifyVersionUpgrade(
 	// Status().Update on the reconcile-start object would silently 409.
 
 	logger.Info("Version verification completed successfully",
-		"targetVersion", targetVersion, "verifiedMembers", len(members))
+		"targetVersion", targetVersion, "verifiedServers", verified)
 	return nil
 }
 
-// getMemberVersion queries a specific cluster member for its Neo4j version
-func (r *RollingUpgradeOrchestrator) getMemberVersion(ctx context.Context, neo4jClient *neo4jclient.Client, memberID string) (string, error) {
-	// Query Neo4j for version information
-	// This uses a system query to get the version
-	query := "CALL dbms.components() YIELD name, versions, edition WHERE name = 'Neo4j Kernel' RETURN versions[0] as version"
-	result, err := neo4jClient.ExecuteQuery(ctx, query)
-	if err != nil {
-		return "", fmt.Errorf("failed to query version from member %s: %w", memberID, err)
-	}
-
-	// Parse the result to extract version
-	version := r.parseVersionFromQueryResult(result)
-	if version == "" {
-		return "", fmt.Errorf("could not parse version from query result for member %s", memberID)
-	}
-
-	return version, nil
-}
-
-// parseVersionFromQueryResult extracts version string from Neo4j query result
-func (r *RollingUpgradeOrchestrator) parseVersionFromQueryResult(result string) string {
-	// In a real implementation, this would properly parse the JSON/tabular result
-	// For now, use a simple approach to extract version patterns
-	lines := strings.Split(result, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		// Look for version patterns like "5.26.0", "2025.01.0", etc.
-		if r.isVersionString(line) {
-			return line
+// versionMismatchesFromServers compares each ENABLED server's self-reported
+// SHOW SERVERS version against the target tag. Non-enabled servers (e.g. a
+// leftover Cordoned entry from an aborted drain, or a Free server) are not
+// the upgrade's concern — the Rolling phase already gated every cluster
+// member on Enabled+Available — and must not wedge verification. Returns the
+// mismatch descriptions and the number of enabled servers checked.
+func (r *RollingUpgradeOrchestrator) versionMismatchesFromServers(
+	servers []neo4jclient.ServerInfo,
+	targetVersion string,
+) (mismatches []string, verified int) {
+	for _, s := range servers {
+		if s.State != "Enabled" {
+			continue
 		}
-
-		// Also check if the line contains a version (e.g., "version: 5.26.0")
-		if strings.Contains(line, ":") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				potentialVersion := strings.TrimSpace(parts[1])
-				if r.isVersionString(potentialVersion) {
-					return potentialVersion
-				}
-			}
+		verified++
+		label := s.Name
+		if label == "" {
+			label = s.Address
+		}
+		switch {
+		case s.Version == "":
+			mismatches = append(mismatches, fmt.Sprintf("%s: no version reported by SHOW SERVERS", label))
+		case !r.versionsMatch(s.Version, targetVersion):
+			mismatches = append(mismatches,
+				fmt.Sprintf("%s: running %s, expected %s", label, s.Version, targetVersion))
 		}
 	}
-
-	// If no version found, try to extract from anywhere in the result
-	// This is a fallback for different result formats
-	words := strings.Fields(result)
-	for _, word := range words {
-		if r.isVersionString(word) {
-			return word
-		}
-	}
-
-	return ""
-}
-
-// isVersionString checks if a string looks like a version number
-func (r *RollingUpgradeOrchestrator) isVersionString(s string) bool {
-	if s == "" {
-		return false
-	}
-
-	// Remove quotes if present
-	s = strings.Trim(s, `"'`)
-
-	// Check for semantic version pattern (X.Y.Z)
-	parts := strings.Split(s, ".")
-	if len(parts) >= 2 && len(parts) <= 4 {
-		for _, part := range parts {
-			if part == "" {
-				return false
-			}
-			// Check if each part is numeric (allowing for pre-release suffixes)
-			numPart := strings.Split(part, "-")[0] // Remove pre-release suffix
-			if _, err := strconv.Atoi(numPart); err != nil {
-				return false
-			}
-		}
-		return true
-	}
-
-	return false
+	return mismatches, verified
 }
 
 // normalizeKernelAlias translates the one CalVer release that self-reports a
