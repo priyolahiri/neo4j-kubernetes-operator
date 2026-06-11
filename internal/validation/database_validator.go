@@ -57,6 +57,19 @@ var neo4jDatabaseNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9.\-]*$`)
 
 const maxDatabaseNameLength = 65
 
+// MaxDatabaseNameLength is the maximum length of a Neo4j database name, exported
+// for callers (e.g. the restore validator) that enforce the same constraint.
+const MaxDatabaseNameLength = maxDatabaseNameLength
+
+// IsValidDatabaseName reports whether name is a syntactically valid Neo4j
+// database name (starts with a letter; only letters, digits, dots, dashes; at
+// most MaxDatabaseNameLength chars). The character set contains no shell or
+// Cypher metacharacters, so a name that passes is safe to interpolate into
+// either context. Exported for the inline Neo4jRestore validator.
+func IsValidDatabaseName(name string) bool {
+	return name != "" && len(name) <= maxDatabaseNameLength && neo4jDatabaseNamePattern.MatchString(name)
+}
+
 // validateDatabaseName checks that the database name follows Neo4j naming rules.
 func validateDatabaseName(name string, fldPath *field.Path) (field.ErrorList, []string) {
 	var allErrs field.ErrorList

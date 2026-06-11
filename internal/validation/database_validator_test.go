@@ -1033,3 +1033,37 @@ func TestValidateDatabaseName(t *testing.T) {
 		})
 	}
 }
+
+// TestIsValidDatabaseName covers the exported helper the Neo4jRestore validator
+// uses to reject shell/Cypher-injecting database names.
+func TestIsValidDatabaseName(t *testing.T) {
+	valid := []string{"neo4j", "mydb", "my.db", "my-db", "Db123"}
+	for _, n := range valid {
+		if !IsValidDatabaseName(n) {
+			t.Errorf("expected %q to be valid", n)
+		}
+	}
+	invalid := []string{
+		"",                 // empty
+		"1db",              // leading digit
+		"db; rm -rf /data", // shell injection
+		"db' OR '1'='1",    // quote
+		"db`whoami`",       // backtick
+		"db\nmore",         // newline
+		"db$(curl evil)",   // command substitution
+		"db with space",
+	}
+	for _, n := range invalid {
+		if IsValidDatabaseName(n) {
+			t.Errorf("expected %q to be rejected", n)
+		}
+	}
+	// Over-length is rejected.
+	long := "a"
+	for i := 0; i < MaxDatabaseNameLength; i++ {
+		long += "a"
+	}
+	if IsValidDatabaseName(long) {
+		t.Errorf("expected over-length name to be rejected")
+	}
+}

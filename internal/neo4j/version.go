@@ -189,7 +189,12 @@ func GetBackupCommand(version *Version, databaseName string, backupPath string, 
 	return cmd
 }
 
-// GetRestoreCommand generates the correct restore command based on version
+// GetRestoreCommand generates the correct restore command based on version.
+// The database name is shell-quoted as defense-in-depth (callers also validate
+// it against the Neo4j database-name pattern). backupPath is NOT quoted here: it
+// is sometimes a deliberate `$(ls … | tail -1)` command substitution for PVC
+// sources (rule 44) and sometimes a pre-quoted cloud URI — the caller owns that
+// quoting decision.
 func GetRestoreCommand(version *Version, databaseName string, backupPath string) string {
 	// Base command is the same for both versions
 	cmd := "neo4j-admin database restore"
@@ -198,9 +203,16 @@ func GetRestoreCommand(version *Version, databaseName string, backupPath string)
 	cmd += " --from-path=" + backupPath
 
 	// Add database name
-	cmd += " " + databaseName
+	cmd += " " + shellQuoteArg(databaseName)
 
 	return cmd
+}
+
+// shellQuoteArg wraps s in single quotes for safe use inside `/bin/sh -c`,
+// escaping any embedded single quotes. Mirrors the controller's shellQuote;
+// duplicated here to keep the neo4j package free of a controller import.
+func shellQuoteArg(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // SupportsMetadataOption checks if version supports --include-metadata option
