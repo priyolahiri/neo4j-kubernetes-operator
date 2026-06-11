@@ -186,15 +186,14 @@ Scope determines where the operator watches CRs, and RBAC determines what it can
 - **Non-Helm**: set `WATCH_NAMESPACE=<namespace>`.
 - **Adding namespaces**: deploy another operator in that namespace or switch to multi-namespace/cluster scope.
 
-**Cluster-scoped feature limitations.** A namespaced Role cannot grant access to cluster-scoped resources, so a few features that read them behave differently in namespace scope (they work normally in cluster / multi-namespace scope, which use a ClusterRole):
+**What works in namespace scope.** Almost everything — including the features people often assume need cluster-wide RBAC:
 
-| Feature | Reads (cluster-scoped) | Behavior in namespace scope | Workaround |
-|---|---|---|---|
-| Zone-aware scheduling (`spec.topology.placement` topology-spread / anti-affinity) | `nodes` | AZ auto-discovery is skipped; the operator applies **best-effort** zone spread via the zone label key and emits a `TopologyZoneDiscoveryDegraded` warning event. **Exception:** `spec.topology.enforceDistribution: true` is a hard guarantee the operator can't verify blind, so it fails with an actionable error. | Set `spec.topology.availabilityZones` explicitly (no node read needed), or use cluster/multi-namespace scope. |
-| TLS via a `ClusterIssuer` | `clusterissuers` | The cert-manager `ClusterIssuer` reference can't be read. | Use a namespaced `Issuer` (`issuerRef.kind: Issuer`). |
-| External Secrets via a `ClusterSecretStore` | `clustersecretstores` | The cluster-scoped store can't be read. | Use a namespaced `SecretStore`. |
+- **TLS via a `ClusterIssuer`** (incl. the default `issuerRef.kind: ClusterIssuer`) — fully supported. The operator only *references* the issuer in the `Certificate` it creates; **cert-manager** resolves the `ClusterIssuer` and issues the cert using its own permissions. The operator never reads the issuer itself, so no cluster-scoped RBAC is required on the operator. A namespaced `Issuer` works too.
+- **External Secrets via a `ClusterSecretStore`** — fully supported, for the same reason: the operator only references the store in the `ExternalSecret` it creates; the **external-secrets operator** does the cluster-scoped resolution. A namespaced `SecretStore` works too.
 
-These are inherent to namespace-scoped RBAC, not bugs — the operator degrades gracefully (no stuck reconcile) and points you at the workaround. See [#202](https://github.com/neo4j-partners/neo4j-kubernetes-operator/issues/202).
+**The one behavioral difference: availability-zone auto-discovery.** Listing cluster nodes is the only cluster-scoped read the operator itself performs, and a namespaced Role can't grant it. It's used solely to *enumerate* zones for `spec.topology.placement` (topology-spread / anti-affinity). In namespace scope the operator skips enumeration and applies **best-effort zone spread via the zone label key** (the Kubernetes scheduler still spreads across zones), emitting a `TopologyZoneDiscoveryDegraded` warning event — no stuck reconcile.
+
+The only case that needs action from you is `spec.topology.enforceDistribution: true` — a hard "N servers across ≥N zones" guarantee the operator can't verify without seeing the nodes. Set `spec.topology.availabilityZones` explicitly (no node read needed) and enforced distribution works in namespace scope too. See [#202](https://github.com/neo4j-partners/neo4j-kubernetes-operator/issues/202).
 
 ### Multi-Namespace Scope
 
