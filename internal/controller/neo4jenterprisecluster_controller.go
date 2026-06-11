@@ -611,11 +611,10 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// Note: Split-brain detection is already performed in verifyNeo4jClusterFormation
 	statusChanged := r.updateClusterStatus(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready")
 
-	// Surface any servers still registered beyond spec.topology.servers after a
-	// scale-down (not yet deallocated/dropped) as a condition + Warning event.
-	// The Ready check above compares against the new, smaller server count, so
-	// without this an incomplete scale-down silently looks healthy (#173).
-	r.reconcileScaleDownDrainStatus(ctx, cluster)
+	// Scale-down draining (server cordon→deallocate→drop) is driven earlier in
+	// the reconcile by reconcileScaleDownDrain, which owns the
+	// ServersPendingDrain condition + events and holds replicas until the drain
+	// completes (#173).
 
 	// Update property sharding readiness status if enabled
 	if cluster.Spec.PropertySharding != nil && cluster.Spec.PropertySharding.Enabled {

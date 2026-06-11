@@ -7,9 +7,11 @@ you may not use this file except in compliance with the License.
 
 package controller
 
-// Unit tests for the #173 scale-down drain detection (PR1: honest status). The
-// detection is pure over a SHOW SERVERS result + desired server count, so it's
-// verified without a live cluster.
+// Unit tests for the #173 scale-down drain decision layer. These are pure over
+// a SHOW SERVERS result + desired server count, so they're verified without a
+// live cluster. (The live procedure calls + replica gating are exercised on Kind
+// — that's where the "address goes NULL during Deallocating" id-tracking
+// requirement was found.)
 
 import (
 	"strconv"
@@ -44,69 +46,28 @@ func TestParseServerOrdinal(t *testing.T) {
 	}
 }
 
-func srv(addr, state string) neo4jclient.ServerInfo {
-	return neo4jclient.ServerInfo{Name: addr, Address: addr, State: state, Health: "Available"}
-}
-
-func TestServersPendingDrain(t *testing.T) {
-	cluster := "c"
-	addr := func(n int) string { return "c-server-" + strconv.Itoa(n) + ".c-headless.ns.svc.cluster.local:7687" }
-
-	t.Run("no scale-down: all ordinals < desired", func(t *testing.T) {
-		servers := []neo4jclient.ServerInfo{srv(addr(0), "Enabled"), srv(addr(1), "Enabled"), srv(addr(2), "Enabled")}
-		assert.Empty(t, serversPendingDrain(servers, cluster, 3))
-	})
-
-	t.Run("5->3 scale-down: ordinals 3,4 still Enabled are pending", func(t *testing.T) {
-		servers := []neo4jclient.ServerInfo{
-			srv(addr(0), "Enabled"), srv(addr(1), "Enabled"), srv(addr(2), "Enabled"),
-			srv(addr(3), "Enabled"), srv(addr(4), "Enabled"),
-		}
-		pending := serversPendingDrain(servers, cluster, 3)
-		assert.ElementsMatch(t, []string{addr(3), addr(4)}, pending)
-	})
-
-	t.Run("servers already Dropped/Deallocated are excluded", func(t *testing.T) {
-		servers := []neo4jclient.ServerInfo{
-			srv(addr(0), "Enabled"), srv(addr(1), "Enabled"), srv(addr(2), "Enabled"),
-			srv(addr(3), "Dropped"), srv(addr(4), "Deallocated"),
-		}
-		assert.Empty(t, serversPendingDrain(servers, cluster, 3), "terminal-state servers are being handled, not pending")
-	})
-
-	t.Run("unmatched addresses are ignored", func(t *testing.T) {
-		servers := []neo4jclient.ServerInfo{srv("10.0.0.9:7687", "Enabled"), srv(addr(3), "Enabled")}
-		assert.Equal(t, []string{addr(3)}, serversPendingDrain(servers, cluster, 3))
-	})
-
-	t.Run("reports serverId (not name/address) — name often empty", func(t *testing.T) {
-		// Matches the real shape: ordinal lives in the address, the reportable
-		// identifier is the serverId, and name is blank.
-		servers := []neo4jclient.ServerInfo{
-			{ID: "uuid-3", Name: "", Address: addr(3), State: "Enabled"},
-		}
-		assert.Equal(t, []string{"uuid-3"}, serversPendingDrain(servers, cluster, 3),
-			"DEALLOCATE/DROP SERVER take the serverId, not the bolt address")
-	})
-}
-
 func sv(addr, state string) neo4jclient.ServerInfo {
 	return neo4jclient.ServerInfo{ID: "id-" + addr, Name: addr, Address: addr, State: state}
 }
 
-func TestRemovedServers(t *testing.T) {
+func TestInitialRemovedServerIDs(t *testing.T) {
 	a := func(n int) string { return "c-server-" + strconv.Itoa(n) }
 	servers := []neo4jclient.ServerInfo{
 		sv(a(0), "Enabled"), sv(a(1), "Enabled"), sv(a(2), "Enabled"),
-		sv(a(3), "Cordoned"), sv(a(4), "Dropped"),
+		sv(a(3), "Enabled"), sv(a(4), "Dropped"),
 	}
-	removed := removedServers(servers, "c", 3)
-	// ordinal 3 (Cordoned) included; ordinal 4 (Dropped) excluded; 0-2 below desired.
-	got := make([]string, len(removed))
-	for i, s := range removed {
-		got[i] = s.Address
-	}
-	assert.Equal(t, []string{a(3)}, got)
+	// ordinals 3,4 are >= desired 3; ordinal 4 is Dropped (excluded).
+	got := initialRemovedServerIDs(servers, "c", 3)
+	assert.Equal(t, []string{"id-" + a(3)}, got)
+
+	// No scale-down: nothing removable.
+	assert.Empty(t, initialRemovedServerIDs(servers[:3], "c", 3))
+}
+
+func TestServerIdentifierPrefersID(t *testing.T) {
+	assert.Equal(t, "uuid-x", serverIdentifier(neo4jclient.ServerInfo{ID: "uuid-x", Name: "", Address: "a:7687"}))
+	assert.Equal(t, "name-x", serverIdentifier(neo4jclient.ServerInfo{Name: "name-x", Address: "a:7687"}))
+	assert.Equal(t, "a:7687", serverIdentifier(neo4jclient.ServerInfo{Address: "a:7687"}))
 }
 
 func TestPlanScaleDownStep(t *testing.T) {
@@ -128,20 +89,28 @@ func TestPlanScaleDownStep(t *testing.T) {
 		assert.ElementsMatch(t, []string{"id-" + a(3), "id-" + a(4)}, step.serverIDs)
 	})
 
-	t.Run("wait while deallocating", func(t *testing.T) {
-		step := planScaleDownStep([]neo4jclient.ServerInfo{sv(a(3), "Deallocating")})
+	t.Run("wait while deallocating and still hosting user dbs", func(t *testing.T) {
+		// Still hosting a user db (neo4j) → not yet droppable.
+		step := planScaleDownStep([]neo4jclient.ServerInfo{{ID: "id-x", State: "Deallocating", Hosting: []string{"neo4j", "system"}}})
 		assert.Equal(t, scaleDownWaitDeallocating, step.phase)
 	})
 
-	t.Run("drop when deallocated", func(t *testing.T) {
-		step := planScaleDownStep([]neo4jclient.ServerInfo{sv(a(3), "Deallocated")})
+	t.Run("drop when deallocating hosts only system (never reaches Deallocated)", func(t *testing.T) {
+		// The key fix: a system-primary server stays "Deallocating" forever, so
+		// gate DROP on hosting only `system`, not on the Deallocated state.
+		step := planScaleDownStep([]neo4jclient.ServerInfo{{ID: "id-x", State: "Deallocating", Hosting: []string{"system"}}})
 		assert.Equal(t, scaleDownDrop, step.phase)
-		assert.Equal(t, []string{"id-" + a(3)}, step.serverIDs)
+		assert.Equal(t, []string{"id-x"}, step.serverIDs)
+	})
+
+	t.Run("drop when deallocated (hosting empty)", func(t *testing.T) {
+		step := planScaleDownStep([]neo4jclient.ServerInfo{{ID: "id-x", State: "Deallocated"}})
+		assert.Equal(t, scaleDownDrop, step.phase)
+		assert.Equal(t, []string{"id-x"}, step.serverIDs)
 	})
 
 	t.Run("cordon takes priority over later phases", func(t *testing.T) {
-		// mixed: one still enabled => cordon it before progressing the others.
-		step := planScaleDownStep([]neo4jclient.ServerInfo{sv(a(3), "Enabled"), sv(a(4), "Deallocated")})
+		step := planScaleDownStep([]neo4jclient.ServerInfo{sv(a(3), "Enabled"), {ID: "id-y", State: "Deallocated"}})
 		assert.Equal(t, scaleDownCordon, step.phase)
 	})
 }

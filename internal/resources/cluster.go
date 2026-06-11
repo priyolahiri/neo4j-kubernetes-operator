@@ -2261,8 +2261,8 @@ EOF
 # On pod restarts (data already exists), skip this so the server rejoins immediately
 # without waiting for all peers to be visible (avoids blocking StatefulSet rolling updates).
 if [ ! -d "/data/databases/system" ]; then
-    echo "Initial formation: setting ` + getMinInitialPrimariesSetting(cluster) + `=${TOTAL_SERVERS}"
-    echo "` + getMinInitialPrimariesSetting(cluster) + `=${TOTAL_SERVERS}" >> /tmp/neo4j-config/neo4j.conf
+    echo "Initial formation: setting ` + getMinInitialPrimariesSetting(cluster) + `=` + fmt.Sprintf("%d", cluster.EffectiveMinSystemPrimaries()) + `"
+    echo "` + getMinInitialPrimariesSetting(cluster) + `=` + fmt.Sprintf("%d", cluster.EffectiveMinSystemPrimaries()) + `" >> /tmp/neo4j-config/neo4j.conf
 else
     echo "Restart detected (/data/databases/system exists) - skipping minimum primaries count"
 fi

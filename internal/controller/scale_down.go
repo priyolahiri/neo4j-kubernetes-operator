@@ -150,16 +150,24 @@ func planScaleDownStep(active []neo4jclient.ServerInfo) scaleDownStep {
 	if len(active) == 0 {
 		return scaleDownStep{phase: scaleDownNone}
 	}
-	var toCordon, toDeallocate, deallocating, toDrop []string
+	var toCordon, toDeallocate, waiting, toDrop []string
 	for _, s := range active {
 		id := serverIdentifier(s)
 		switch strings.ToLower(s.State) {
 		case "cordoned":
 			toDeallocate = append(toDeallocate, id)
-		case "deallocating":
-			deallocating = append(deallocating, id)
-		case "deallocated":
-			toDrop = append(toDrop, id)
+		case "deallocating", "deallocated":
+			// A draining server is droppable once it hosts ONLY `system` (all
+			// user databases relocated). It often never leaves the
+			// "Deallocating" state — a system-primary server's `system` copy is
+			// only released by DROP itself — so we must NOT wait for the
+			// "Deallocated" state; gate on hosting instead. DROP enforces the
+			// system voting-member floor and refuses if the result is below it.
+			if hostsOnlySystem(s) {
+				toDrop = append(toDrop, id)
+			} else {
+				waiting = append(waiting, id)
+			}
 		default: // enabled / free / unknown → not yet cordoned
 			toCordon = append(toCordon, id)
 		}
@@ -169,13 +177,24 @@ func planScaleDownStep(active []neo4jclient.ServerInfo) scaleDownStep {
 		return scaleDownStep{phase: scaleDownCordon, serverIDs: toCordon}
 	case len(toDeallocate) > 0:
 		return scaleDownStep{phase: scaleDownDeallocate, serverIDs: toDeallocate}
-	case len(deallocating) > 0:
-		return scaleDownStep{phase: scaleDownWaitDeallocating, serverIDs: deallocating}
 	case len(toDrop) > 0:
 		return scaleDownStep{phase: scaleDownDrop, serverIDs: toDrop}
+	case len(waiting) > 0:
+		return scaleDownStep{phase: scaleDownWaitDeallocating, serverIDs: waiting}
 	default:
 		return scaleDownStep{phase: scaleDownNone}
 	}
+}
+
+// hostsOnlySystem reports whether a server hosts no user databases — only the
+// `system` database (or nothing). Such a draining server is safe to DROP.
+func hostsOnlySystem(s neo4jclient.ServerInfo) bool {
+	for _, h := range s.Hosting {
+		if !strings.EqualFold(h, "system") {
+			return false
+		}
+	}
+	return true
 }
 
 // reconcileScaleDownDrain drives the automated drain. It runs BEFORE the
@@ -283,6 +302,34 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 		}
 		r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonScaleDownBlocked, msg)
 		return nil
+	}
+
+	// Fail fast: while no target has started deallocating yet, dry-run the whole
+	// set up front so an infeasible scale-down (e.g. a single-primary database on
+	// a removed server, or a topology the survivors can't satisfy) blocks
+	// IMMEDIATELY — before we cordon anything (cordon is a visible side-effect)
+	// and without a reconcile round-trip. The per-phase dry-run below still
+	// guards the moment of the real deallocate.
+	preDeallocate := true
+	for _, s := range active {
+		if st := strings.ToLower(s.State); st == "deallocating" || st == "deallocated" {
+			preDeallocate = false
+			break
+		}
+	}
+	if preDeallocate {
+		activeIDs := make([]string, 0, len(active))
+		for _, s := range active {
+			activeIDs = append(activeIDs, serverIdentifier(s))
+		}
+		if derr := nc.DeallocateServers(ctx, activeIDs, true); derr != nil {
+			msg := fmt.Sprintf("Scale-down to %d server(s) is blocked: DEALLOCATE dry-run failed: %v. Give single-primary databases an additional primary (ALTER DATABASE ... SET TOPOLOGY) or keep the servers — the operator will not auto-reduce topology. No server has been cordoned; replicas are held until this is resolvable.", desired, derr)
+			if !scaleDownConditionIs(cluster, ConditionReasonScaleDownBlocked) {
+				r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonScaleDownBlocked, msg)
+			}
+			r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonScaleDownBlocked, msg)
+			return nil
+		}
 	}
 
 	step := planScaleDownStep(active)
