@@ -2183,6 +2183,27 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 					fmt.Sprintf("Auto-inherited seed credentials Secret %q onto cluster %q; waiting for rolling restart", storage.Cloud.CredentialsSecretRef, cluster.Name))
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
+			// The creds are in spec.extraEnvFrom, but the cluster controller
+			// rolls the StatefulSet asynchronously to apply them. Issuing the
+			// seedURI restore before that rollout finishes seeds against pods
+			// that still lack the creds — the JVM's AWS/GCP/Azure SDK then
+			// fails ("Unable to load region …"), and the restore terminal-fails
+			// with no retry (#190). Gate on the rollout: stay Pending+requeue
+			// until the STS pod template carries the creds Secret AND every pod
+			// is updated to that template and Ready.
+			rolledOut, rolloutErr := r.seedCredsRolledOut(ctx, cluster, storage.Cloud.CredentialsSecretRef)
+			if rolloutErr != nil {
+				logger.Error(rolloutErr, "Failed to check seed-creds rollout status")
+				r.updateRestoreStatus(ctx, restore, StatusPending,
+					fmt.Sprintf("Waiting to verify seed-credentials rollout on cluster %q: %v", cluster.Name, rolloutErr))
+				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+			}
+			if !rolledOut {
+				logger.Info("Waiting for StatefulSet to roll out seed credentials before restoring", "cluster", cluster.Name)
+				r.updateRestoreStatus(ctx, restore, StatusPending,
+					fmt.Sprintf("Waiting for cluster %q server pods to roll out seed credentials Secret %q", cluster.Name, storage.Cloud.CredentialsSecretRef))
+				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+			}
 		}
 	case "pvc":
 		// Cluster + PVC restore: spawn the in-cluster HTTP proxy in front
@@ -2602,6 +2623,47 @@ func (r *Neo4jRestoreReconciler) newStandaloneRestoreClient(ctx context.Context,
 		return nil, fmt.Errorf("failed to get standalone %q for restore: %w", restore.Spec.ClusterRef, err)
 	}
 	return neo4j.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
+}
+
+// seedCredsRolledOut reports whether the cluster's StatefulSet has fully rolled
+// out the seed-credentials Secret (projected via spec.extraEnvFrom) onto its
+// server pods — i.e. the pod template's container references the Secret in
+// envFrom AND every replica is updated to that template and Ready. Until then a
+// seedURI restore runs against pods that still lack the creds, so the seed
+// fetch fails (#190). The template-has-Secret check is essential: a fully
+// rolled-out OLD template (without the creds) is also "ready", so readiness
+// alone is not enough.
+func (r *Neo4jRestoreReconciler) seedCredsRolledOut(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, secretName string) (bool, error) {
+	sts := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, types.NamespacedName{Name: cluster.Name + "-server", Namespace: cluster.Namespace}, sts); err != nil {
+		return false, err
+	}
+	if !podTemplateReferencesSecretEnvFrom(&sts.Spec.Template, secretName) {
+		return false, nil // cluster controller hasn't applied extraEnvFrom to the template yet
+	}
+	desired := int32(1)
+	if sts.Spec.Replicas != nil {
+		desired = *sts.Spec.Replicas
+	}
+	// Rollout complete: status reflects the current template, and every pod is
+	// on the updated revision and Ready.
+	return sts.Status.ObservedGeneration == sts.Generation &&
+		sts.Status.UpdatedReplicas == desired &&
+		sts.Status.ReadyReplicas == desired, nil
+}
+
+// podTemplateReferencesSecretEnvFrom reports whether any container in the pod
+// template projects the named Secret via envFrom (how spec.extraEnvFrom is
+// wired onto the neo4j container).
+func podTemplateReferencesSecretEnvFrom(tmpl *corev1.PodTemplateSpec, secretName string) bool {
+	for _, c := range tmpl.Spec.Containers {
+		for _, ef := range c.EnvFrom {
+			if ef.SecretRef != nil && ef.SecretRef.Name == secretName {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *Neo4jRestoreReconciler) cleanupRestoreJobs(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {

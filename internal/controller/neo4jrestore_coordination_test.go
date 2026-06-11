@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -190,6 +191,66 @@ func TestClearRestoreInProgressAnnotation(t *testing.T) {
 // The Job restore path is standalone-only, so the preflight lists standalone
 // pods via the `app=<name>` selector (StandalonePodSelector) — not the cluster
 // ServerPodSelector. This pins that swap (part of #196/#187).
+// TestSeedCredsRolledOut pins the #190 gate: a cluster Cypher restore must not
+// issue the seedURI recreate until the StatefulSet has rolled out the
+// seed-credentials Secret. The decisive check is "the pod template references
+// the Secret AND every pod is updated+ready" — a fully-ready OLD template
+// (without the creds) must NOT count as rolled out.
+func TestSeedCredsRolledOut(t *testing.T) {
+	ctx := context.Background()
+	ns := "default"
+	const secret = "s3-creds"
+
+	mkSTS := func(mut func(*appsv1.StatefulSet)) *appsv1.StatefulSet {
+		replicas := int32(2)
+		sts := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "c-server", Namespace: ns, Generation: 3},
+			Spec: appsv1.StatefulSetSpec{
+				Replicas: &replicas,
+				Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "neo4j"}}}},
+			},
+			Status: appsv1.StatefulSetStatus{ObservedGeneration: 3, UpdatedReplicas: 2, ReadyReplicas: 2},
+		}
+		if mut != nil {
+			mut(sts)
+		}
+		return sts
+	}
+	withCreds := func(sts *appsv1.StatefulSet) {
+		sts.Spec.Template.Spec.Containers[0].EnvFrom = []corev1.EnvFromSource{
+			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: secret}}},
+		}
+	}
+
+	cases := []struct {
+		name string
+		sts  *appsv1.StatefulSet
+		want bool
+	}{
+		{"creds rolled out + all pods ready", mkSTS(withCreds), true},
+		{"creds in spec but template not yet updated (the #190 window)", mkSTS(nil), false},
+		{"creds in template but mid-roll", mkSTS(func(s *appsv1.StatefulSet) { withCreds(s); s.Status.UpdatedReplicas = 1 }), false},
+		{"creds in template, ready, but observedGeneration stale", mkSTS(func(s *appsv1.StatefulSet) { withCreds(s); s.Status.ObservedGeneration = 2 }), false},
+		{"creds in template but not all ready", mkSTS(func(s *appsv1.StatefulSet) { withCreds(s); s.Status.ReadyReplicas = 1 }), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cluster := minimalClusterForRestore("c", ns)
+			r := newRestoreTestReconciler(t, cluster, tc.sts)
+			got, err := r.seedCredsRolledOut(ctx, cluster, secret)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	t.Run("StatefulSet missing returns error", func(t *testing.T) {
+		cluster := minimalClusterForRestore("c", ns)
+		r := newRestoreTestReconciler(t, cluster)
+		_, err := r.seedCredsRolledOut(ctx, cluster, secret)
+		require.Error(t, err)
+	})
+}
+
 func TestRefuseRestoreIfPodsRunning(t *testing.T) {
 	ctx := context.Background()
 	ns := "default"
