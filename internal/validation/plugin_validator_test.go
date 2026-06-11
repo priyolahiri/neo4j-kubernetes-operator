@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -647,4 +648,46 @@ func TestPluginValidator_VerifiedDownloadGates(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPluginValidator_ValidatesConfig(t *testing.T) {
+	v := NewPluginValidator()
+	base := func(cfg map[string]string) *neo4jv1beta1.Neo4jPlugin {
+		return &neo4jv1beta1.Neo4jPlugin{
+			Spec: neo4jv1beta1.Neo4jPluginSpec{
+				Name:    "apoc",
+				Version: "5.26.0",
+				Config:  cfg,
+			},
+		}
+	}
+
+	// Newline in a value forges an extra neo4j.conf line.
+	res := v.Validate(base(map[string]string{
+		"dbms.security.procedures.unrestricted": "apoc.*\ndbms.security.auth_enabled=false",
+	}))
+	if !hasErrContaining(res.Errors, "newline or carriage-return") {
+		t.Errorf("expected newline rejection, got: %v", res.Errors)
+	}
+
+	// Malicious key.
+	res = v.Validate(base(map[string]string{"bad key$(x)": "v"}))
+	if !hasErrContaining(res.Errors, "config key may contain only") {
+		t.Errorf("expected key rejection, got: %v", res.Errors)
+	}
+
+	// Clean config passes the config checks.
+	res = v.Validate(base(map[string]string{"dbms.security.procedures.unrestricted": "apoc.*"}))
+	if hasErrContaining(res.Errors, "newline or carriage-return") || hasErrContaining(res.Errors, "config key may contain only") {
+		t.Errorf("clean config should not trip config validation: %v", res.Errors)
+	}
+}
+
+func hasErrContaining(errs field.ErrorList, sub string) bool {
+	for _, e := range errs {
+		if strings.Contains(e.Error(), sub) {
+			return true
+		}
+	}
+	return false
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package validation
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -341,5 +342,39 @@ func TestConfigValidator_ValidDiscoveryVersion(t *testing.T) {
 			hasErrors := len(errors) > 0
 			assert.Equal(t, tt.expectErrors, hasErrors, "Error expectation mismatch for version %s: %v", tt.version, errors)
 		})
+	}
+}
+
+func TestConfigValueHasControlChars(t *testing.T) {
+	for _, s := range []string{"OFF\ndbms.security.auth_enabled=false", "x\r\ny", "line\nbreak"} {
+		if !ConfigValueHasControlChars(s) {
+			t.Errorf("expected %q to be flagged", s)
+		}
+	}
+	for _, s := range []string{"block", "true", "gds.*", "1.5", ""} {
+		if ConfigValueHasControlChars(s) {
+			t.Errorf("expected %q to be clean", s)
+		}
+	}
+}
+
+func TestConfigValidator_RejectsNewlineInValue(t *testing.T) {
+	v := NewConfigValidator()
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Config: map[string]string{
+				"db.logs.query.threshold": "0\ndbms.security.auth_enabled=false",
+			},
+		},
+	}
+	errs := v.Validate(cluster)
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e.Error(), "newline or carriage-return") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected newline rejection, got: %v", errs)
 	}
 }

@@ -25,6 +25,15 @@ import (
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
 
+// ConfigValueHasControlChars reports whether a neo4j.conf value contains a
+// newline or carriage return. Such characters would let a value forge an extra
+// config line when rendered as `key=value\n`, so they are rejected for every
+// user-supplied config map (cluster spec.config, standalone spec.config,
+// Neo4jPlugin spec.config).
+func ConfigValueHasControlChars(value string) bool {
+	return strings.ContainsAny(value, "\n\r")
+}
+
 // ConfigValidator validates Neo4j configuration settings
 type ConfigValidator struct{}
 
@@ -84,6 +93,17 @@ func (v *ConfigValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 	}
 
 	for configKey, configValue := range cluster.Spec.Config {
+		// Reject control characters: config is rendered into neo4j.conf as
+		// `key=value\n`, so a newline in a value would forge an additional
+		// config line (e.g. dbms.security.auth_enabled=false).
+		if ConfigValueHasControlChars(configValue) {
+			allErrs = append(allErrs, field.Invalid(
+				configPath.Child(configKey),
+				configValue,
+				"value may not contain newline or carriage-return characters",
+			))
+		}
+
 		// Special handling for dbms.cluster.discovery.version.
 		// In 5.26.x this setting controls the discovery protocol (V1 vs V2); the operator
 		// requires V2_ONLY. In 2025.x+ the setting does not exist (V2 is the only protocol).

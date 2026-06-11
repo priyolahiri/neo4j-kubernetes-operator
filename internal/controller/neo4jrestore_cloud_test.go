@@ -791,8 +791,8 @@ func TestBuildPITRRestoreCommand_CloudBaseBackupNoFixups(t *testing.T) {
 	cmd, err := r.buildPITRRestoreCommand(context.Background(), restore, cluster)
 	require.NoError(t, err)
 
-	assert.Contains(t, cmd, "--from-path=s3://my-bucket/neo4j-backups/neo4j-2026-01-01.backup",
-		"cloud PITR must pass the cloud URI unchanged")
+	assert.Contains(t, cmd, "--from-path='s3://my-bucket/neo4j-backups/neo4j-2026-01-01.backup'",
+		"cloud PITR must pass the cloud URI, shell-quoted to prevent injection")
 	assert.NotContains(t, cmd, "$(ls",
 		"cloud PITR must NOT use shell substitution")
 	assert.NotContains(t, cmd, "rm -rf /tmp/restore-tmp",

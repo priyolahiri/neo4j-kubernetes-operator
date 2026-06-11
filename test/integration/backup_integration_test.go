@@ -488,14 +488,14 @@ var _ = Describe("Backup Integration Tests", Label("extended"), Ordered, func() 
 				"A regression in jobToBackupRun (e.g. dropping `BackupsPath: chainRoot(backup)`) "+
 				"would silently leave this empty.")
 
-		By("Verifying the recorded RunID is the Job's UID (orthogonal contract from #118)")
+		By("Verifying the recorded RunID is the Job's name (#158/#160, rule 40)")
 		// Bonus assertion: while we're already verifying history, also
-		// pin the RunID = job.UID invariant. The two fields together
+		// pin the RunID = job.Name invariant. The two fields together
 		// give a user the full "which Job, where are its files" answer.
 		latest := &neo4jv1beta1.Neo4jBackup{}
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), latest)).To(Succeed())
-		Expect(latest.Status.History[0].RunID).To(Equal(string(job.UID)),
-			"RunID must equal job.UID — the per-attempt identifier for retry tracking")
+		Expect(latest.Status.History[0].RunID).To(Equal(job.Name),
+			"RunID must equal the Job's name (not its opaque UID) — see #158/#160 and rule 40")
 		Expect(latest.Status.History[0].Status).To(Equal("Succeeded"),
 			"a Job with Succeeded>0 must produce a history entry with Status=\"Succeeded\"")
 	})
@@ -564,8 +564,9 @@ var _ = Describe("Backup Integration Tests", Label("extended"), Ordered, func() 
 				return false
 			}
 			// Find the run for THIS Job (not any earlier run from other tests).
+			// RunID is the Job's name (#158/#160, rule 40).
 			for _, run := range latest.Status.History {
-				if run.RunID == string(job.UID) {
+				if run.RunID == job.Name {
 					// BackupsPath is the chain root (CR name) under the
 					// shared-directory layout (rule 40), not the Job name.
 					return run.Status == "Failed" && run.BackupsPath == backup.Name
