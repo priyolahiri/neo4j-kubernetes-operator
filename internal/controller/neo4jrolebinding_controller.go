@@ -277,17 +277,28 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 	// We never touch roles we did not add — that's the whole point of
 	// non-exclusive bindings.
 	for _, role := range rb.Status.GrantedRoles {
-		if err := nc.RevokeRoleFromUser(ctx, role, rb.Spec.Username); err != nil {
-			if classifyFinalizerCleanup(rb, err) == retryCleanup {
-				r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonBindingFailed,
-					"revoke %q from %q failed, will retry: %v", role, rb.Spec.Username, err)
-				return ctrl.Result{RequeueAfter: requeue}, nil
-			}
-			r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonBindingFailed,
-				"revoke %q from %q failed; releasing finalizer to avoid wedging deletion: %v", role, rb.Spec.Username, err)
-			controllerutil.RemoveFinalizer(rb, Neo4jRoleBindingFinalizer)
-			return ctrl.Result{}, r.Update(ctx, rb)
+		err := nc.RevokeRoleFromUser(ctx, role, rb.Spec.Username)
+		if err == nil {
+			continue
 		}
+		// A "not found" for this grant (the user lacks the role, or the
+		// role/user is already gone) means THIS revoke is satisfied. Skip it
+		// and keep revoking the rest — don't abandon the remaining grants the
+		// way a host-level failure would.
+		if isAlreadyGoneCleanup(err) {
+			continue
+		}
+		if classifyFinalizerCleanup(rb, err) == retryCleanup {
+			r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonBindingFailed,
+				"revoke %q from %q failed, will retry: %v", role, rb.Spec.Username, err)
+			return ctrl.Result{RequeueAfter: requeue}, nil
+		}
+		// Host gone or grace period exceeded: the remaining revokes would fail
+		// the same way, so release the finalizer rather than wedge deletion.
+		r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonBindingFailed,
+			"revoke %q from %q failed; releasing finalizer to avoid wedging deletion: %v", role, rb.Spec.Username, err)
+		controllerutil.RemoveFinalizer(rb, Neo4jRoleBindingFinalizer)
+		return ctrl.Result{}, r.Update(ctx, rb)
 	}
 	r.Recorder.Eventf(rb, corev1.EventTypeNormal, EventReasonBindingDeleted,
 		"revoked %d role(s) from user %q", len(rb.Status.GrantedRoles), rb.Spec.Username)

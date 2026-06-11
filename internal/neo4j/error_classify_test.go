@@ -33,10 +33,12 @@ func TestIsHostUnresolvableError(t *testing.T) {
 		want bool
 	}{
 		{"nil", nil, false},
-		{"no such host", errors.New("dial tcp: lookup my-cluster-server.ns.svc.cluster.local: no such host"), true},
-		{"name resolution", errors.New("temporary failure in name resolution"), true},
-		{"server misbehaving", errors.New("lookup foo: server misbehaving"), true},
+		{"no such host (NXDOMAIN)", errors.New("dial tcp: lookup my-cluster-server.ns.svc.cluster.local: no such host"), true},
 		{"wrapped no such host", fmt.Errorf("failed to drop user bob: %w", errors.New("no such host")), true},
+		// Transient resolver failures must NOT be treated as host-gone — they
+		// take the bounded-retry path so a DNS blip doesn't skip cleanup.
+		{"temporary name-resolution failure is transient", errors.New("temporary failure in name resolution"), false},
+		{"server misbehaving is transient", errors.New("lookup foo: server misbehaving"), false},
 		{"connection refused is not host-gone", errors.New("dial tcp 10.0.0.1:7687: connect: connection refused"), false},
 		{"not found is not host-gone", errors.New("user not found"), false},
 	}

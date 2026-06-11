@@ -77,6 +77,16 @@ func classifyFinalizerCleanup(obj metav1.Object, err error) finalizerCleanupDisp
 	return retryCleanup
 }
 
+// isAlreadyGoneCleanup reports whether err means the specific target of a
+// drop/revoke is already gone — i.e. that one operation is idempotently
+// satisfied. Multi-step cleanup (e.g. revoking several role grants in a loop)
+// uses this to skip a satisfied item and keep going with the rest, instead of
+// routing it through classifyFinalizerCleanup, which would release the
+// finalizer and abandon the remaining items on the first not-found.
+func isAlreadyGoneCleanup(err error) bool {
+	return neo4j.IsNotFoundError(err)
+}
+
 // deletionGracePeriodExceeded reports whether finalizerDeletionGracePeriod has
 // elapsed since the object's deletion was requested.
 func deletionGracePeriodExceeded(obj metav1.Object) bool {

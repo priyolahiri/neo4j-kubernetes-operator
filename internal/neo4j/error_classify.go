@@ -32,26 +32,22 @@ func IsTransientError(err error) bool {
 }
 
 // IsHostUnresolvableError reports whether err indicates the Neo4j host's DNS
-// name no longer resolves — the signal that the Service (and almost always the
-// whole cluster/standalone) has been deleted. Distinct from a transient
-// connect failure (IsConnectivityError): a vanished DNS name will not come
-// back on its own, so finalizer cleanup against it is a permanent no-op and the
-// finalizer can be released immediately.
+// name authoritatively does not exist — the signal that the Service (and almost
+// always the whole cluster/standalone) has been deleted. Distinct from a
+// transient connect failure (IsConnectivityError): a vanished DNS name will not
+// come back on its own, so finalizer cleanup against it is a permanent no-op and
+// the finalizer can be released immediately.
+//
+// Matches ONLY "no such host" — Go's rendering of an NXDOMAIN (the name does not
+// exist). It deliberately excludes "temporary failure in name resolution"
+// (SERVFAIL) and "server misbehaving", which are transient resolver hiccups
+// while the cluster is still up; those fall through to the bounded-retry bucket
+// rather than releasing the finalizer prematurely.
 func IsHostUnresolvableError(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := strings.ToLower(err.Error())
-	for _, marker := range []string{
-		"no such host",
-		"name resolution",
-		"server misbehaving",
-	} {
-		if strings.Contains(msg, marker) {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(strings.ToLower(err.Error()), "no such host")
 }
 
 // IsConnectivityError reports whether err indicates the operator could not

@@ -70,3 +70,27 @@ func TestClassifyFinalizerCleanup(t *testing.T) {
 		})
 	}
 }
+
+// TestIsAlreadyGoneCleanup pins the per-item "already gone" check used by the
+// role-binding revoke loop to skip a satisfied grant (rather than abandon the
+// remaining ones) without releasing the finalizer on a host-level failure.
+func TestIsAlreadyGoneCleanup(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"not found is already gone", errors.New("role `auditor` does not exist"), true},
+		{"user not found is already gone", errors.New("user not found"), true},
+		{"connection refused is NOT already gone", errors.New("connection refused"), false},
+		{"no such host is NOT already gone", errors.New("no such host"), false},
+		{"nil is not", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isAlreadyGoneCleanup(tc.err); got != tc.want {
+				t.Fatalf("isAlreadyGoneCleanup(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
