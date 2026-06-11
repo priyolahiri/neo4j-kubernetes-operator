@@ -367,31 +367,92 @@ func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, resto
 		return r.pollClusterRestoreOnline(ctx, restore, cluster)
 	}
 
+	// Defense-in-depth: a true-cluster restore never creates a Job (rule 75) —
+	// it restores via Cypher. If we reach here in Running without the
+	// cypher-restore-issued annotation (e.g. an operator restart landed between
+	// persisting Running and stamping the annotation), the Job lookup below
+	// would NotFound and wrongly fail + tear down an active restore. Re-drive
+	// the cluster Cypher path instead — it is idempotent (guarded by the
+	// annotation) and re-issues the recreate / re-checks the database. The
+	// standalone path (which DOES use a Job) is unaffected: isRestoreTargetTrueCluster
+	// returns false for it, so a TTL-collected standalone Job still fails terminally.
+	if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && isCluster {
+		return r.startClusterCypherRestore(ctx, restore, cluster)
+	}
+
 	// Get restore job
 	jobName := restore.Name + "-restore"
 	job := &batchv1.Job{}
 	err := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: restore.Namespace}, job)
 
 	if err != nil {
+		if errors.IsNotFound(err) {
+			// The Job's TTLSecondsAfterFinished GC'd it before we observed a
+			// terminal state (e.g. the operator was down longer than the TTL).
+			// We can't tell success from failure, so fail safe: restore cluster
+			// availability and mark Failed rather than requeueing forever with
+			// the cluster scaled to 0.
+			logger.Info("Restore Job not found (likely TTL-collected before completion was observed); failing the restore", "job", jobName)
+			r.restoreClusterAfterFailure(ctx, restore, cluster)
+			r.updateRestoreStatus(ctx, restore, StatusFailed,
+				"restore Job disappeared before completion was observed (TTL-collected); re-create the Neo4jRestore to retry")
+			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed,
+				"restore Job disappeared before completion was observed")
+			return ctrl.Result{}, nil
+		}
 		logger.Error(err, "Failed to get restore job")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 	}
 
-	// Check job status
-	if job.Status.Succeeded > 0 {
-		// Restore completed successfully
+	// Decide on terminal Job CONDITIONS, not raw pod counts: with BackoffLimit>0
+	// `Status.Failed` counts failed pod attempts and can be >0 while Kubernetes
+	// is still retrying — which would flip the restore to a (pinned) terminal
+	// Failed before a retry that might succeed.
+	switch {
+	case jobConditionTrue(job, batchv1.JobComplete) || job.Status.Succeeded > 0:
 		return r.handleRestoreSuccess(ctx, restore, cluster, job)
-	}
-
-	if job.Status.Failed > 0 {
-		// Restore failed
+	case jobConditionTrue(job, batchv1.JobFailed):
+		// Terminal failure (BackoffLimit exhausted). Restore cluster
+		// availability BEFORE marking Failed — a StopCluster restore otherwise
+		// leaves the cluster scaled to 0 indefinitely (the cluster controller
+		// honours the restore-in-progress annotation until it is cleared).
+		r.restoreClusterAfterFailure(ctx, restore, cluster)
 		r.updateRestoreStatus(ctx, restore, StatusFailed, "Restore job failed")
 		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, "Restore job failed")
 		return ctrl.Result{}, nil
+	default:
+		// Job still running, or retrying within BackoffLimit.
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
+}
 
-	// Job is still running
-	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+// jobConditionTrue reports whether the Job has the given condition set to True.
+func jobConditionTrue(job *batchv1.Job, condType batchv1.JobConditionType) bool {
+	for _, c := range job.Status.Conditions {
+		if c.Type == condType && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+// restoreClusterAfterFailure scales the cluster back up and releases the
+// restore-in-progress hold after a terminal restore failure — mirroring the
+// teardown handleRestoreSuccess performs on success. Without it, a
+// StopCluster=true restore that fails leaves the cluster at 0 replicas until a
+// human deletes the CR. Both calls are idempotent and best-effort (logged, not
+// fatal) so the restore still reaches a terminal Failed state.
+func (r *Neo4jRestoreReconciler) restoreClusterAfterFailure(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
+	if !restore.Spec.StopCluster || cluster == nil {
+		return
+	}
+	logger := log.FromContext(ctx)
+	if err := r.startCluster(ctx, cluster); err != nil {
+		logger.Error(err, "Failed to scale cluster back up after restore failure")
+	}
+	if err := r.clearRestoreInProgressAnnotation(ctx, restore, cluster.Name, cluster.Namespace); err != nil {
+		logger.Error(err, "Failed to clear restore-in-progress annotation after restore failure")
+	}
 }
 
 func (r *Neo4jRestoreReconciler) handleRestoreSuccess(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, job *batchv1.Job) (ctrl.Result, error) {
@@ -2153,7 +2214,16 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		version = &neo4j.Version{Major: 5, Minor: 26, Patch: 0}
 	}
 
-	r.updateRestoreStatus(ctx, restore, StatusRunning, fmt.Sprintf("Cluster Cypher restore in progress (seedURI=%s, exists=%v)", seedURI, exists))
+	// Do NOT persist StatusRunning here. Setting Running BEFORE the recreate is
+	// issued + the cypher-restore-issued annotation is stamped (exists branch),
+	// or before CREATE…WAIT completes (absent branch), opens a window: an
+	// operator restart in between would route the Running CR to
+	// checkRestoreProgress, which — finding no annotation and no Job — would
+	// wrongly fail+tear-down an active cluster restore. The exists branch sets
+	// Running only AFTER the annotation; the absent branch goes straight to
+	// Completed. A crash before either leaves the CR in its prior phase, so
+	// re-entry flows through startRestore → startClusterCypherRestore (which is
+	// idempotent, guarded by the annotation).
 	r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
 		fmt.Sprintf("Cluster Cypher restore: database %q (%s), seedURI=%s",
 			restore.Spec.DatabaseName, ternaryString(exists, "recreate", "create"), seedURI))
