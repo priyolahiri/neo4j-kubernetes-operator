@@ -6012,6 +6012,14 @@ spec:
                     description: CompletionTime shows when the upgrade completed
                     format: date-time
                     type: string
+                  currentPartition:
+                    description: |-
+                      CurrentPartition is the StatefulSet RollingUpdate partition most
+                      recently applied by the upgrade state machine. Servers with ordinal
+                      >= partition have been rolled to the target version. Used to resume
+                      an interrupted upgrade after an operator restart.
+                    format: int32
+                    type: integer
                   currentStep:
                     description: CurrentStep describes the current upgrade step
                     type: string
@@ -6023,10 +6031,22 @@ spec:
                     description: Message provides additional details about the upgrade
                     type: string
                   phase:
-                    description: Phase represents the current phase of the upgrade
+                    description: |-
+                      Phase represents the current phase of the upgrade state machine:
+                      Staging (target pod template applied, all pod restarts frozen),
+                      Rolling (servers restarted one at a time, highest ordinal first),
+                      Stabilizing (cluster health + consensus + replication gate),
+                      Verifying (per-server version verification), then Completed.
+                      Paused and Failed are terminal until operator/user action.
+                      InProgress is a legacy value from older operator versions and is
+                      resumed as Staging. Pending is reserved.
                     enum:
                     - Pending
+                    - Staging
                     - InProgress
+                    - Rolling
+                    - Stabilizing
+                    - Verifying
                     - Paused
                     - Completed
                     - Failed
@@ -6079,6 +6099,14 @@ spec:
                     type: object
                   startTime:
                     description: StartTime shows when the upgrade started
+                    format: date-time
+                    type: string
+                  stepStartTime:
+                    description: |-
+                      StepStartTime anchors the per-step timeout: each partition step in the
+                      Rolling phase gets spec.upgradeStrategy.upgradeTimeout; Stabilizing gets
+                      stabilizationTimeout; Verifying gets healthCheckTimeout. Reset on every
+                      phase transition and partition advance.
                     format: date-time
                     type: string
                   targetVersion:

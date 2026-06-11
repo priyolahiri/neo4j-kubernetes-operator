@@ -92,10 +92,11 @@ func serverSTSForUpgrade(clusterName, ns, image string, replicas int32) *appsv1.
 }
 
 // ---------------------------------------------------------------------------
-// TestInitializeUpgradeStatus
+// TestPatchUpgradeStatus_InitializesAndPersists — the state machine's status
+// writer refetches + conflict-retries (#207 pattern) and mirrors in memory.
 // ---------------------------------------------------------------------------
 
-func TestInitializeUpgradeStatus(t *testing.T) {
+func TestPatchUpgradeStatus_InitializesAndPersists(t *testing.T) {
 	scheme := makeUpgradeScheme()
 	cluster := clusterForUpgrade("mycluster", "default", "5.26.0-enterprise", "2025.01.0-enterprise", 3)
 
@@ -105,32 +106,38 @@ func TestInitializeUpgradeStatus(t *testing.T) {
 		WithStatusSubresource(cluster).
 		Build()
 
-	orch := &RollingUpgradeOrchestrator{Client: fc}
+	r := &Neo4jEnterpriseClusterReconciler{Client: fc}
 
-	if err := orch.initializeUpgradeStatus(context.Background(), cluster); err != nil {
+	now := metav1.Now()
+	if err := r.patchUpgradeStatus(context.Background(), cluster, func(us *neo4jv1beta1.UpgradeStatus) {
+		*us = neo4jv1beta1.UpgradeStatus{
+			Phase:           upgradePhaseStaging,
+			StartTime:       &now,
+			StepStartTime:   &now,
+			PreviousVersion: "5.26.0-enterprise",
+			TargetVersion:   "2025.01.0-enterprise",
+			Progress:        &neo4jv1beta1.UpgradeProgress{Total: 3, Pending: 3},
+		}
+	}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cluster.Status.UpgradeStatus == nil {
-		t.Fatal("UpgradeStatus should be set after initialization")
+	latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	if err := fc.Get(context.Background(), types.NamespacedName{Name: "mycluster", Namespace: "default"}, latest); err != nil {
+		t.Fatalf("get: %v", err)
 	}
-	if cluster.Status.UpgradeStatus.Phase != "InProgress" {
-		t.Errorf("expected Phase=InProgress, got %q", cluster.Status.UpgradeStatus.Phase)
+	if latest.Status.UpgradeStatus == nil || latest.Status.UpgradeStatus.Phase != upgradePhaseStaging {
+		t.Fatalf("Staging phase not persisted: %+v", latest.Status.UpgradeStatus)
 	}
-	if cluster.Status.UpgradeStatus.PreviousVersion != "5.26.0-enterprise" {
-		t.Errorf("expected PreviousVersion=5.26.0-enterprise, got %q", cluster.Status.UpgradeStatus.PreviousVersion)
+	if latest.Status.UpgradeStatus.TargetVersion != "2025.01.0-enterprise" {
+		t.Errorf("TargetVersion = %q", latest.Status.UpgradeStatus.TargetVersion)
 	}
-	if cluster.Status.UpgradeStatus.TargetVersion != "2025.01.0-enterprise" {
-		t.Errorf("expected TargetVersion=2025.01.0-enterprise, got %q", cluster.Status.UpgradeStatus.TargetVersion)
+	if latest.Status.UpgradeStatus.Progress == nil || latest.Status.UpgradeStatus.Progress.Total != 3 {
+		t.Errorf("Progress not persisted: %+v", latest.Status.UpgradeStatus.Progress)
 	}
-	if cluster.Status.UpgradeStatus.Progress == nil {
-		t.Fatal("Progress should not be nil")
-	}
-	if cluster.Status.UpgradeStatus.Progress.Total != 3 {
-		t.Errorf("expected Total=3, got %d", cluster.Status.UpgradeStatus.Progress.Total)
-	}
-	if cluster.Status.UpgradeStatus.Progress.Pending != 3 {
-		t.Errorf("expected Pending=3, got %d", cluster.Status.UpgradeStatus.Progress.Pending)
+	// In-memory mirror for subsequent steps in the same reconcile.
+	if cluster.Status.UpgradeStatus.Phase != upgradePhaseStaging {
+		t.Errorf("in-memory mirror not updated: %q", cluster.Status.UpgradeStatus.Phase)
 	}
 }
 
