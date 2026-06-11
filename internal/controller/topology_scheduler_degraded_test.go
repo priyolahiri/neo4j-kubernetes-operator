@@ -93,6 +93,28 @@ func TestCalculateTopologyPlacement_NodeListDeniedWithEnforceDistributionErrors(
 	assert.Contains(t, err.Error(), "availabilityZones", "error must point at the explicit-AZ workaround")
 }
 
+func TestCalculateTopologyPlacement_NodeListDeniedNoConstraintsNoDegrade(t *testing.T) {
+	// spec.topology.placement is set but both topology-spread and anti-affinity
+	// are disabled, so no zone constraints are produced. A failed node list is
+	// then inconsequential — we must NOT flag degradation or warn (#205 review).
+	ts := controller.NewTopologyScheduler(nodeListForbiddenClient(t))
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{
+				Servers:   3,
+				Placement: &neo4jv1beta1.PlacementConfig{}, // both spread + anti-affinity off
+			},
+		},
+	}
+
+	placement, err := ts.CalculateTopologyPlacement(context.Background(), cluster)
+	require.NoError(t, err)
+	assert.False(t, placement.UseTopologySpread)
+	assert.False(t, placement.UseAntiAffinity)
+	assert.False(t, placement.ZoneDiscoveryDegraded, "no zone constraints applied -> no misleading degrade/warn")
+}
+
 func TestCalculateTopologyPlacement_ExplicitZonesSkipNodeList(t *testing.T) {
 	// With AZs listed explicitly, the scheduler never lists nodes, so even a
 	// node-denying client succeeds and there's no degradation.

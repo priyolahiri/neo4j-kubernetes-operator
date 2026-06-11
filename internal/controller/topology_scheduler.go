@@ -80,9 +80,16 @@ func (ts *TopologyScheduler) CalculateTopologyPlacement(ctx context.Context, clu
 			if placement.EnforceDistribution {
 				return placement, fmt.Errorf("cannot verify availability zones for enforceDistribution (listing nodes failed: %w). In namespace-scoped mode the operator cannot read cluster-scoped nodes — set spec.topology.availabilityZones explicitly, disable spec.topology.enforceDistribution, or run the operator in cluster mode", err)
 			}
-			logger.Info("Availability-zone auto-discovery unavailable; applying best-effort zone spread via the topology key. This is expected in namespace-scoped installs (operatorMode=namespace) where the operator cannot read cluster-scoped nodes; set spec.topology.availabilityZones to enumerate zones explicitly.",
-				"error", err.Error())
-			placement.ZoneDiscoveryDegraded = true
+			// A failed node list only matters when zone-based placement is
+			// actually applied. If neither topology-spread nor anti-affinity is
+			// enabled, the enumerated AZ list is unused — so don't flag
+			// degradation or emit the "best-effort zone spread" warning, which
+			// would be misleading when no zone constraints are produced.
+			if placement.UseTopologySpread || placement.UseAntiAffinity {
+				logger.Info("Availability-zone auto-discovery unavailable; applying best-effort zone spread via the topology key. This is expected in namespace-scoped installs (operatorMode=namespace) where the operator cannot read cluster-scoped nodes; set spec.topology.availabilityZones to enumerate zones explicitly.",
+					"error", err.Error())
+				placement.ZoneDiscoveryDegraded = true
+			}
 		} else {
 			placement.AvailabilityZones = azs
 		}
