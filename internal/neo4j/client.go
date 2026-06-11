@@ -519,6 +519,9 @@ func (c *Client) buildOptionsClause(options map[string]string, seedURI string, s
 	// either way, so it can't inject. Appended after the sorted entries.
 	if seedConfig != nil && seedConfig.RestoreUntil != "" {
 		if txid, ok := strings.CutPrefix(seedConfig.RestoreUntil, "txId:"); ok {
+			// The validator (isValidRestoreUntilTxID) rejects a txId that
+			// doesn't fit int64, so ParseInt succeeds for any spec that reached
+			// here; the err==nil guard never silently drops validated input.
 			if n, err := strconv.ParseInt(txid, 10, 64); err == nil {
 				parts = append(parts, "seedRestoreUntil: $opt_seedRestoreUntil")
 				params["opt_seedRestoreUntil"] = n

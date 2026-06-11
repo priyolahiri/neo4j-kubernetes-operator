@@ -615,6 +615,9 @@ func buildShardedDatabaseOptions(shardedDB *neo4jv1beta1.Neo4jShardedDatabase) (
 	if shardedDB.Spec.SeedConfig != nil {
 		if restoreUntil := shardedDB.Spec.SeedConfig.RestoreUntil; restoreUntil != "" {
 			if txid, ok := strings.CutPrefix(restoreUntil, "txId:"); ok {
+				// The sharded validator (isValidRestoreUntilTxID) rejects a txId
+				// that doesn't fit int64, so ParseInt succeeds for any spec that
+				// reached here; the err==nil guard never silently drops it.
 				if n, err := strconv.ParseInt(txid, 10, 64); err == nil {
 					options = append(options, "seedRestoreUntil: $seed_restore_until")
 					params["seed_restore_until"] = n

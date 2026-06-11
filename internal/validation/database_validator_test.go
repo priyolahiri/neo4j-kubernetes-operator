@@ -609,6 +609,18 @@ func TestDatabaseValidator_ValidateSeedConfiguration(t *testing.T) {
 			shouldContainError: "txId: format requires a positive integer",
 		},
 		{
+			// Digit-only but overflows int64: previously passed the regex,
+			// then ParseInt failed in the OPTIONS builder and the
+			// seedRestoreUntil option was silently dropped (PITR bound lost).
+			name: "transaction ID overflowing int64 is rejected",
+			seedConfig: &neo4jv1beta1.SeedConfiguration{
+				RestoreUntil: "txId:99999999999999999999999999",
+			},
+			expectedErrors:     1,
+			expectedWarnings:   2, // System auth warning + point-in-time recovery warning
+			shouldContainError: "within int64 range",
+		},
+		{
 			name: "arbitrary provider config keys accepted",
 			seedConfig: &neo4jv1beta1.SeedConfiguration{
 				Config: map[string]string{
