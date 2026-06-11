@@ -649,12 +649,12 @@ const (
 // reconcile look like a change and roll the pod in a loop.
 const standaloneTemplateHashAnnotation = "neo4j.com/standalone-template-hash"
 
-// standalonePodTemplateHash returns a stable hash of a pod template. JSON
+// podTemplateSpecHash returns a stable hash of a pod template. JSON
 // marshalling sorts map keys, so the hash is deterministic across reconciles
 // for an unchanged template (no spurious rolls). Returns "" on the (practically
 // impossible) marshal error, which the caller treats as "changed" — converge
-// rather than silently skip.
-func standalonePodTemplateHash(t corev1.PodTemplateSpec) string {
+// rather than silently skip. Shared by the standalone and cluster controllers.
+func podTemplateSpecHash(t corev1.PodTemplateSpec) string {
 	data, err := json.Marshal(t)
 	if err != nil {
 		return ""
@@ -762,7 +762,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 	// Capture the desired spec + its template hash BEFORE CreateOrUpdate's Get
 	// clobbers `statefulSet` with the existing cluster object on update.
 	desiredSpec := *statefulSet.Spec.DeepCopy()
-	desiredHash := standalonePodTemplateHash(desiredSpec.Template)
+	desiredHash := podTemplateSpecHash(desiredSpec.Template)
 	desiredEnv := []corev1.EnvVar{}
 	if len(desiredSpec.Template.Spec.Containers) > 0 {
 		desiredEnv = desiredSpec.Template.Spec.Containers[0].Env
@@ -820,23 +820,10 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 			currentInit := statefulSet.Spec.Template.Spec.InitContainers
 			currentVolumes := statefulSet.Spec.Template.Spec.Volumes
 
-			mergedAnnotations := map[string]string{}
-			for k, v := range statefulSet.Spec.Template.Annotations {
-				// Operator-managed annotations (the Prometheus scrape hints) are
-				// re-derived from the desired template below — NOT carried forward
-				// — so disabling spec.monitoring actually removes them. Carrying the
-				// existing value would leave stale prometheus.io/* keys scraping a
-				// port that no longer exists. Foreign annotations (conf-restart
-				// stamp, plugin-init-containers, service-mesh injection) are not in
-				// this managed set, so they're preserved.
-				if _, managed := standaloneOperatorManagedPodAnnotations[k]; managed {
-					continue
-				}
-				mergedAnnotations[k] = v
-			}
-			for k, v := range desiredSpec.Template.Annotations {
-				mergedAnnotations[k] = v
-			}
+			// Re-derive operator-managed pod annotations (Prometheus hints) from
+			// the desired template while preserving foreign ones (conf-restart
+			// stamp, plugin-init markers, service-mesh injection).
+			mergedAnnotations := mergePodTemplateAnnotations(statefulSet.Spec.Template.Annotations, desiredSpec.Template.Annotations)
 
 			desiredTemplate := desiredSpec.Template.DeepCopy()
 			statefulSet.Spec.Template = *desiredTemplate
@@ -906,11 +893,18 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileNetworkPolicy(ctx context
 		}
 		return fmt.Errorf("failed to get NetworkPolicy: %w", err)
 	}
-	// Update only when the spec actually drifted — avoids ResourceVersion
-	// churn on every reconcile.
+	// Update only when the spec or owned metadata actually drifted — avoids
+	// ResourceVersion churn, and applyOwnedMetadata preserves labels written by
+	// other controllers rather than stomping them.
+	changed := false
 	if !reflect.DeepEqual(existing.Spec, desired.Spec) {
 		existing.Spec = desired.Spec
-		existing.Labels = desired.Labels
+		changed = true
+	}
+	if applyOwnedMetadata(existing, desired.Annotations, desired.Labels) {
+		changed = true
+	}
+	if changed {
 		logger.Info("Updating NetworkPolicy", "name", desired.Name)
 		return r.Update(ctx, existing)
 	}
@@ -943,12 +937,22 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileIngress(ctx context.Conte
 			return fmt.Errorf("failed to get Ingress: %w", err)
 		}
 	} else {
-		// Update existing Ingress
-		existing.Spec = ingress.Spec
-		existing.Annotations = ingress.Annotations
-		logger.Info("Updating Ingress", "name", ingress.Name)
-		if err := r.Update(ctx, existing); err != nil {
-			return fmt.Errorf("failed to update Ingress: %w", err)
+		// Update only on real drift; applyOwnedMetadata merges desired
+		// annotations/labels while preserving keys written by cert-manager or
+		// the ingress controller (a wholesale replace would fight them).
+		changed := false
+		if !reflect.DeepEqual(existing.Spec, ingress.Spec) {
+			existing.Spec = ingress.Spec
+			changed = true
+		}
+		if applyOwnedMetadata(existing, ingress.Annotations, ingress.Labels) {
+			changed = true
+		}
+		if changed {
+			logger.Info("Updating Ingress", "name", ingress.Name)
+			if err := r.Update(ctx, existing); err != nil {
+				return fmt.Errorf("failed to update Ingress: %w", err)
+			}
 		}
 	}
 
@@ -1446,17 +1450,6 @@ func standalonePrometheusAnnotations(standalone *neo4jv1beta1.Neo4jEnterpriseSta
 		"prometheus.io/port":   fmt.Sprintf("%d", resources.MetricsPort),
 		"prometheus.io/path":   "/metrics",
 	}
-}
-
-// standaloneOperatorManagedPodAnnotations is the KEY set the operator owns on
-// the pod template (the Prometheus hints above). On a template apply these are
-// re-derived from the desired template — never carried forward from the existing
-// one — so disabling monitoring removes them, while foreign annotations are
-// preserved. Keep in sync with standalonePrometheusAnnotations' keys.
-var standaloneOperatorManagedPodAnnotations = map[string]struct{}{
-	"prometheus.io/scrape": {},
-	"prometheus.io/port":   {},
-	"prometheus.io/path":   {},
 }
 
 // createStatefulSet creates a StatefulSet for the standalone deployment
