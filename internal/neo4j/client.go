@@ -495,7 +495,7 @@ func (c *Client) buildOptionsClause(options map[string]string, seedURI string, s
 	// seedConfig: the documented comma-separated provider-config string
 	// (e.g. "region=eu-west-1"). Carried as a driver parameter.
 	if seedConfig != nil {
-		if cfg := serializeSeedConfig(seedConfig.Config); cfg != "" {
+		if cfg := SerializeSeedConfig(seedConfig.Config); cfg != "" {
 			merged["seedConfig"] = cfg
 		}
 	}
@@ -535,12 +535,12 @@ func (c *Client) buildOptionsClause(options map[string]string, seedURI string, s
 	return " OPTIONS {" + strings.Join(parts, ", ") + "}", params
 }
 
-// serializeSeedConfig renders a seed-provider config map as the documented
+// SerializeSeedConfig renders a seed-provider config map as the documented
 // comma-separated `key=value` string (e.g. "region=eu-west-1") used by the
 // seedConfig OPTIONS key. Keys are sorted for determinism. The result is passed
 // to Cypher as a driver parameter; the validator constrains keys/values so the
 // comma-separated form is unambiguous and injection-safe.
-func serializeSeedConfig(cfg map[string]string) string {
+func SerializeSeedConfig(cfg map[string]string) string {
 	if len(cfg) == 0 {
 		return ""
 	}
@@ -2037,13 +2037,20 @@ func (c *Client) DatabaseExists(ctx context.Context, databaseName string) (bool,
 
 // ExecuteCypher executes a cypher statement on a specific database
 func (c *Client) ExecuteCypher(ctx context.Context, databaseName, statement string) error {
+	return c.ExecuteCypherWithParams(ctx, databaseName, statement, nil)
+}
+
+// ExecuteCypherWithParams executes a write statement with driver parameters, so
+// user-controlled values (e.g. the seed URIs / config in the sharded CREATE
+// DATABASE) are bound rather than interpolated and cannot inject Cypher.
+func (c *Client) ExecuteCypherWithParams(ctx context.Context, databaseName, statement string, params map[string]any) error {
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
 		AccessMode:   neo4j.AccessModeWrite,
 		DatabaseName: databaseName,
 	})
 	defer session.Close(ctx)
 
-	_, err := session.Run(ctx, statement, nil)
+	_, err := session.Run(ctx, statement, params)
 	if err != nil {
 		return fmt.Errorf("failed to execute cypher: %w", err)
 	}
