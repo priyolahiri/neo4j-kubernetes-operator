@@ -100,4 +100,30 @@ func TestCheckRestoreProgress_TerminalDecisions(t *testing.T) {
 		require.NoError(t, err)
 		assert.Zero(t, res.RequeueAfter, "a TTL-collected Job must be terminal, not requeue forever")
 	})
+
+	// A true-cluster restore has NO Job (rule 75 — it restores via Cypher). If
+	// it reaches checkRestoreProgress in Running without the
+	// cypher-restore-issued annotation, the missing Job must NOT be treated as
+	// a TTL-collected failure (which would tear down an active restore). It
+	// re-drives the cluster Cypher path instead.
+	t.Run("true-cluster restore with no Job is not failed as TTL-collected", func(t *testing.T) {
+		clusterRestore := &neo4jv1beta1.Neo4jRestore{
+			ObjectMeta: metav1.ObjectMeta{Name: "r1", Namespace: "default"},
+			Spec:       neo4jv1beta1.Neo4jRestoreSpec{ClusterRef: "c1", DatabaseName: "db"},
+			Status:     neo4jv1beta1.Neo4jRestoreStatus{Phase: "Running"},
+		}
+		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "c1", Namespace: "default"},
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(clusterRestore, cluster).WithStatusSubresource(clusterRestore).Build()
+		rec := &Neo4jRestoreReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(16), RequeueAfter: 5 * time.Second}
+
+		_, _ = rec.checkRestoreProgress(ctx, clusterRestore, cluster)
+
+		got := &neo4jv1beta1.Neo4jRestore{}
+		require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(clusterRestore), got))
+		assert.NotContains(t, got.Status.Message, "Job disappeared",
+			"a true-cluster restore must not be failed via the Job-NotFound (TTL-collected) path")
+	})
 }

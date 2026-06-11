@@ -367,6 +367,19 @@ func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, resto
 		return r.pollClusterRestoreOnline(ctx, restore, cluster)
 	}
 
+	// Defense-in-depth: a true-cluster restore never creates a Job (rule 75) —
+	// it restores via Cypher. If we reach here in Running without the
+	// cypher-restore-issued annotation (e.g. an operator restart landed between
+	// persisting Running and stamping the annotation), the Job lookup below
+	// would NotFound and wrongly fail + tear down an active restore. Re-drive
+	// the cluster Cypher path instead — it is idempotent (guarded by the
+	// annotation) and re-issues the recreate / re-checks the database. The
+	// standalone path (which DOES use a Job) is unaffected: isRestoreTargetTrueCluster
+	// returns false for it, so a TTL-collected standalone Job still fails terminally.
+	if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && isCluster {
+		return r.startClusterCypherRestore(ctx, restore, cluster)
+	}
+
 	// Get restore job
 	jobName := restore.Name + "-restore"
 	job := &batchv1.Job{}
@@ -2201,7 +2214,16 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		version = &neo4j.Version{Major: 5, Minor: 26, Patch: 0}
 	}
 
-	r.updateRestoreStatus(ctx, restore, StatusRunning, fmt.Sprintf("Cluster Cypher restore in progress (seedURI=%s, exists=%v)", seedURI, exists))
+	// Do NOT persist StatusRunning here. Setting Running BEFORE the recreate is
+	// issued + the cypher-restore-issued annotation is stamped (exists branch),
+	// or before CREATE…WAIT completes (absent branch), opens a window: an
+	// operator restart in between would route the Running CR to
+	// checkRestoreProgress, which — finding no annotation and no Job — would
+	// wrongly fail+tear-down an active cluster restore. The exists branch sets
+	// Running only AFTER the annotation; the absent branch goes straight to
+	// Completed. A crash before either leaves the CR in its prior phase, so
+	// re-entry flows through startRestore → startClusterCypherRestore (which is
+	// idempotent, guarded by the annotation).
 	r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
 		fmt.Sprintf("Cluster Cypher restore: database %q (%s), seedURI=%s",
 			restore.Spec.DatabaseName, ternaryString(exists, "recreate", "create"), seedURI))
