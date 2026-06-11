@@ -1691,8 +1691,22 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 	}
 	currentImage := serverSts.Spec.Template.Spec.Containers[0].Image
 	desiredImage := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
+	if currentImage != desiredImage {
+		return true
+	}
 
-	return currentImage != desiredImage
+	// Failed-upgrade retry: once Staging has run, the template already carries
+	// the target image, so the drift check above can never re-fire — a Failed
+	// upgrade (e.g. a transient post-upgrade verification failure) would stay
+	// Failed forever with status.version never stamped. Re-enter while the
+	// spec still wants the same target the failed attempt was driving toward
+	// and the version was never verified. Level-based retry; users opt out via
+	// upgradeStrategy.autoPauseOnFailure (Paused is checked above and never
+	// auto-resumes).
+	us := cluster.Status.UpgradeStatus
+	return us != nil && us.Phase == upgradePhaseFailed &&
+		us.TargetVersion == cluster.Spec.Image.Tag &&
+		cluster.Status.Version != cluster.Spec.Image.Tag
 }
 
 // handleRollingUpgrade dispatches one state-machine step per reconcile (#174).

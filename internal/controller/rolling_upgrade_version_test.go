@@ -181,3 +181,28 @@ func TestGetStabilizationTimeout(t *testing.T) {
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	assert.Equal(t, 3*time.Minute, r.getStabilizationTimeout(cluster))
 }
+
+// TestVersionsMatch_CalVerKernelAlias pins the 2025.01 rebrand quirk: Neo4j
+// 2025.01.x self-reports kernel 5.27.x via dbms.components(), so post-upgrade
+// verification of a 2025.01.0-enterprise target must accept servers reporting
+// 5.27.0 (found live on Kind — without the alias a successful 5.26→2025.01
+// upgrade was declared Failed).
+func TestVersionsMatch_CalVerKernelAlias(t *testing.T) {
+	r := newOrchestrator()
+
+	tests := []struct {
+		actual, expected string
+		want             bool
+	}{
+		{"5.27.0", "2025.01.0-enterprise", true},    // the rebrand alias
+		{"2025.01.0", "2025.01.0-enterprise", true}, // direct CalVer report
+		{"5.26.1", "5.26.1-enterprise", true},
+		{"5.27.0", "2025.02.0-enterprise", false}, // alias only covers 2025.01
+		{"5.26.1", "2025.01.0-enterprise", false}, // old version still mismatches
+	}
+	for _, tt := range tests {
+		t.Run(tt.actual+" vs "+tt.expected, func(t *testing.T) {
+			assert.Equal(t, tt.want, r.versionsMatch(tt.actual, tt.expected))
+		})
+	}
+}

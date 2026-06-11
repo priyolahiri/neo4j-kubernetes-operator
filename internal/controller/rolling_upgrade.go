@@ -479,6 +479,19 @@ func (r *RollingUpgradeOrchestrator) isVersionString(s string) bool {
 	return false
 }
 
+// normalizeKernelAlias translates the one CalVer release that self-reports a
+// SemVer kernel: Neo4j 2025.01.x (the CalVer rebrand release) identifies as
+// kernel 5.27.x in dbms.components(). Later CalVers report the calendar
+// version directly. Without this alias, post-upgrade version verification for
+// a 2025.01.0-enterprise target can never match the servers' reported 5.27.0
+// and a SUCCESSFUL upgrade is declared Failed (found live on Kind, #174).
+func normalizeKernelAlias(v *VersionInfo) *VersionInfo {
+	if v != nil && v.Major == 2025 && v.Minor == 1 {
+		return &VersionInfo{Major: 5, Minor: 27, Patch: v.Patch}
+	}
+	return v
+}
+
 // versionsMatch compares two version strings for equality, handling various formats
 func (r *RollingUpgradeOrchestrator) versionsMatch(actual, expected string) bool {
 	// Normalize versions by removing quotes and whitespace
@@ -488,6 +501,15 @@ func (r *RollingUpgradeOrchestrator) versionsMatch(actual, expected string) bool
 	// Direct string comparison first
 	if actual == expected {
 		return true
+	}
+
+	// Kernel-alias comparison: parseVersion strips the "-enterprise" suffix,
+	// normalizeKernelAlias maps 2025.01.x <-> 5.27.x (see above).
+	if a, e := r.parseVersion(actual), r.parseVersion(expected); a != nil && e != nil {
+		na, ne := normalizeKernelAlias(a), normalizeKernelAlias(e)
+		if na.Major == ne.Major && na.Minor == ne.Minor && na.Patch == ne.Patch {
+			return true
+		}
 	}
 
 	// Try semantic version comparison (handle cases like "5.26" vs "5.26.0")

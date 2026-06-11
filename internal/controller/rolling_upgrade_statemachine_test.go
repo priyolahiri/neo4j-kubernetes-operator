@@ -289,3 +289,54 @@ func TestStartRollingUpgrade_DeferredWhileDrainInProgress(t *testing.T) {
 		t.Fatal("expected an UpgradeDeferred event")
 	}
 }
+
+// TestIsUpgradeRequired_FailedRetry pins the Failed-upgrade re-entry: after
+// Staging, the StatefulSet template already carries the target image, so plain
+// image drift can never re-fire. A Failed attempt toward the still-desired
+// target with the version never verified must re-enter; a verified version
+// (or a Paused hold) must not.
+func TestIsUpgradeRequired_FailedRetry(t *testing.T) {
+	scheme := makeUpgradeScheme()
+
+	mk := func(upgradePhase, statusVersion string) *neo4jv1beta1.Neo4jEnterpriseCluster {
+		c := clusterForUpgrade("retry", "default", statusVersion, "2025.01.0-enterprise", 3)
+		c.Status.Phase = "Ready"
+		c.Status.Version = statusVersion
+		c.Status.UpgradeStatus = &neo4jv1beta1.UpgradeStatus{
+			Phase:         upgradePhase,
+			TargetVersion: "2025.01.0-enterprise",
+		}
+		return c
+	}
+	// Template already staged to the target image — no plain drift.
+	sts := serverSTSForUpgrade("retry", "default", "neo4j:2025.01.0-enterprise", 3)
+
+	t.Run("failed attempt with unverified version re-enters", func(t *testing.T) {
+		c := mk(upgradePhaseFailed, "")
+		fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(c, sts.DeepCopy()).Build()
+		r := &Neo4jEnterpriseClusterReconciler{Client: fc}
+		assert.True(t, r.isUpgradeRequired(context.Background(), c))
+	})
+
+	t.Run("completed upgrade does not re-enter", func(t *testing.T) {
+		c := mk(upgradePhaseCompleted, "2025.01.0-enterprise")
+		fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(c, sts.DeepCopy()).Build()
+		r := &Neo4jEnterpriseClusterReconciler{Client: fc}
+		assert.False(t, r.isUpgradeRequired(context.Background(), c))
+	})
+
+	t.Run("paused never auto-resumes", func(t *testing.T) {
+		c := mk(upgradePhasePaused, "")
+		fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(c, sts.DeepCopy()).Build()
+		r := &Neo4jEnterpriseClusterReconciler{Client: fc}
+		assert.False(t, r.isUpgradeRequired(context.Background(), c))
+	})
+
+	t.Run("failed attempt toward an abandoned target does not re-enter", func(t *testing.T) {
+		c := mk(upgradePhaseFailed, "")
+		c.Status.UpgradeStatus.TargetVersion = "2025.02.0-enterprise" // spec moved on
+		fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(c, sts.DeepCopy()).Build()
+		r := &Neo4jEnterpriseClusterReconciler{Client: fc}
+		assert.False(t, r.isUpgradeRequired(context.Background(), c))
+	})
+}
