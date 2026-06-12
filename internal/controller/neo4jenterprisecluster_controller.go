@@ -23,6 +23,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -67,6 +68,10 @@ type Neo4jEnterpriseClusterReconciler struct {
 	Validator          *validation.ClusterValidator
 	ConfigMapManager   *ConfigMapManager
 	SplitBrainDetector *SplitBrainDetector
+	// deferredUpgradeTargets dedupes the UpgradeDeferred event per cluster
+	// (key ns/name → deferred image) so a held image change doesn't emit an
+	// event on every Forming-phase reconcile (#262 review).
+	deferredUpgradeTargets sync.Map
 }
 
 const (
@@ -310,6 +315,16 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	if upgradeStateMachineActive(cluster) || r.isUpgradeRequired(ctx, cluster) {
 		return r.handleRollingUpgrade(ctx, cluster)
 	}
+
+	// #262: image drift while the cluster is NOT Ready must never reach the
+	// normal path below — its builders would stomp the new image into the
+	// StatefulSet as a plain config change, performing the version change as
+	// a bare roll with none of the upgrade machine's gating (no partition
+	// staging, no per-pod SHOW SERVERS verification, no version stamping).
+	// Pin the in-memory spec to the image the StatefulSet currently runs;
+	// once the cluster reaches Ready, isUpgradeRequired fires on the drift
+	// and the state machine performs the upgrade properly.
+	r.holdImageDriftUntilReady(ctx, cluster)
 
 	// Neo4jEnterpriseCluster is always multi-node from the start
 	// (minimum 1 primary + 1 secondary OR 2+ primaries)
@@ -610,9 +625,30 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
+	// Never declare Ready while the server StatefulSet is mid-rollout: a
+	// half-rolled (possibly mixed-version) cluster that answers Bolt is
+	// converging, not Ready (#262).
+	if rolled, detail := r.serverStatefulSetFullyRolled(ctx, cluster); !rolled {
+		_ = r.updateClusterStatus(ctx, cluster, "Forming", "Waiting for server StatefulSet rollout to complete: "+detail)
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+	}
+
 	// Update status to "Ready" only if cluster formation is verified
 	// Note: Split-brain detection is already performed in verifyNeo4jClusterFormation
-	statusChanged := r.updateClusterStatus(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready")
+	//
+	// status.version backfill (#262): the upgrade machine stamps the version
+	// after verified upgrades, but a cluster that never upgraded (or whose
+	// version change happened before the machine existed) has it empty —
+	// which silently grants the NEXT upgrade the first-upgrade
+	// compatibility-check skip. At this point the StatefulSet is fully
+	// rolled to the template and the template matches spec (drift is held
+	// above), so spec.image.tag IS the running version.
+	var statusChanged bool
+	if cluster.Status.Version == "" {
+		statusChanged = r.updateClusterStatusWithVersion(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready", cluster.Spec.Image.Tag)
+	} else {
+		statusChanged = r.updateClusterStatus(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready")
+	}
 
 	// Scale-down draining (server cordon→deallocate→drop) is driven earlier in
 	// the reconcile by reconcileScaleDownDrain, which owns the
@@ -2792,4 +2828,70 @@ func (r *Neo4jEnterpriseClusterReconciler) SetupWithManager(mgr ctrl.Manager) er
 	}
 
 	return builder.Complete(r)
+}
+
+// holdImageDriftUntilReady neutralizes spec-vs-StatefulSet image drift on the
+// IN-MEMORY cluster object while the cluster is not Ready, so the normal
+// reconcile path keeps converging the cluster on its CURRENT image instead of
+// silently applying a version change outside the upgrade state machine
+// (#262). No-ops when the StatefulSet doesn't exist yet (initial install) or
+// there is no drift.
+func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
+	serverSts := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      fmt.Sprintf("%s-server", cluster.Name),
+		Namespace: cluster.Namespace,
+	}, serverSts); err != nil {
+		return
+	}
+	if len(serverSts.Spec.Template.Spec.Containers) == 0 {
+		return
+	}
+	currentImage := serverSts.Spec.Template.Spec.Containers[0].Image
+	desiredImage := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
+	if currentImage == desiredImage {
+		return
+	}
+	idx := strings.LastIndex(currentImage, ":")
+	if idx <= 0 {
+		return // unparseable image — leave the spec alone
+	}
+	log.FromContext(ctx).V(1).Info("Image change deferred until the cluster is Ready — the rolling-upgrade state machine will perform it",
+		"current", currentImage, "desired", desiredImage, "phase", cluster.Status.Phase)
+	// Event once per deferred target (not per reconcile — a Forming cluster
+	// reconciles every ~30s and would spam the event stream). In-memory
+	// dedupe: an operator restart re-emits a single event, which is fine.
+	key := cluster.Namespace + "/" + cluster.Name
+	if prev, _ := r.deferredUpgradeTargets.Load(key); prev != desiredImage {
+		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, "UpgradeDeferred",
+			"Image change to %s deferred until the cluster is Ready; the rolling-upgrade state machine will perform it", desiredImage)
+		r.deferredUpgradeTargets.Store(key, desiredImage)
+	}
+	cluster.Spec.Image.Repo = currentImage[:idx]
+	cluster.Spec.Image.Tag = currentImage[idx+1:]
+}
+
+// serverStatefulSetFullyRolled reports whether the server StatefulSet has no
+// rollout in flight: every replica updated to the current template revision
+// and ready. A false result carries a human-readable detail for the status
+// message.
+func (r *Neo4jEnterpriseClusterReconciler) serverStatefulSetFullyRolled(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (bool, string) {
+	serverSts := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      fmt.Sprintf("%s-server", cluster.Name),
+		Namespace: cluster.Namespace,
+	}, serverSts); err != nil {
+		return false, "server StatefulSet not found"
+	}
+	replicas := int32(1)
+	if serverSts.Spec.Replicas != nil {
+		replicas = *serverSts.Spec.Replicas
+	}
+	if serverSts.Status.UpdateRevision != "" && serverSts.Status.CurrentRevision != serverSts.Status.UpdateRevision {
+		return false, fmt.Sprintf("revision rollout in progress (%d/%d pods updated)", serverSts.Status.UpdatedReplicas, replicas)
+	}
+	if serverSts.Status.UpdatedReplicas < replicas || serverSts.Status.ReadyReplicas < replicas {
+		return false, fmt.Sprintf("%d/%d pods updated, %d/%d ready", serverSts.Status.UpdatedReplicas, replicas, serverSts.Status.ReadyReplicas, replicas)
+	}
+	return true, ""
 }

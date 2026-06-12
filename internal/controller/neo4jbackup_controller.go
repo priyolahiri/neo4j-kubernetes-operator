@@ -860,6 +860,19 @@ func (r *Neo4jBackupReconciler) waitForChainConcurrencyClear(ctx context.Context
 	return nil
 }
 
+// warnValidateUnsupported emits the one-time Warning that options.validate
+// has no effect on this Neo4j version. Called from Job/CronJob CREATION
+// paths only (never from buildBackupCommand, which runs every reconcile).
+func (r *Neo4jBackupReconciler) warnValidateUnsupported(backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
+	if backup.Spec.Options == nil || backup.Spec.Options.Validate == nil || !*backup.Spec.Options.Validate {
+		return
+	}
+	if v, err := neo4j.ParseVersion(cluster.Spec.Image.Tag); err == nil && !v.IsCalver {
+		r.Recorder.Event(backup, corev1.EventTypeWarning, "BackupValidateUnsupported",
+			fmt.Sprintf("options.validate requires a CalVer (2025.x+) Neo4j image — `neo4j-admin backup validate` does not exist on %s; skipping validation", cluster.Spec.Image.Tag))
+	}
+}
+
 func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
 	// Glob-safety check for sharded backups: refuse to submit a Job whose
 	// `{name}*` neo4j-admin glob would also pull in unrelated databases. No-op
@@ -950,6 +963,7 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 	if err := controllerutil.SetControllerReference(backup, job, r.Scheme); err != nil {
 		return nil, err
 	}
+	r.warnValidateUnsupported(backup, cluster)
 	if err := r.Create(ctx, job); err != nil {
 		// AlreadyExists = a previous reconcile created the Job but the
 		// informer cache hadn't caught up when handleOneTimeBackup looked it
@@ -1072,7 +1086,7 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 		},
 	}
 
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, cronJob, func() error {
+	opResult, err := controllerutil.CreateOrUpdate(ctx, r.Client, cronJob, func() error {
 		labels := backupLabels(backup, "backup-cron")
 		cronJob.Labels = labels
 		cronJob.Spec.Schedule = backup.Spec.Schedule
@@ -1125,6 +1139,13 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 		}
 		return controllerutil.SetControllerReference(backup, cronJob, r.Scheme)
 	})
+	if err == nil && (opResult == controllerutil.OperationResultCreated || opResult == controllerutil.OperationResultUpdated) {
+		// Warn when the CronJob is created OR actually changes (a user adding
+		// options.validate to an existing schedule lands here as Updated).
+		// CreateOrUpdate returns OperationResultNone for no-op passes, so
+		// steady-state reconciles stay silent.
+		r.warnValidateUnsupported(backup, cluster)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1232,6 +1253,12 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 		if backup.Spec.Options.TempPath != "" {
 			// User-controlled path into a /bin/sh -c command — quote (#219).
 			cmd += " --temp-path=" + shellQuote(backup.Spec.Options.TempPath)
+			// neo4j-admin refuses a staging path that doesn't exist
+			// ("Storage staging path does not exist") and nothing else
+			// creates a bare tempPath — the restore path has had this
+			// prelude since the wave hardening; the backup path didn't,
+			// which broke the shipped MinIO example (#256).
+			cmd = "mkdir -p " + shellQuote(backup.Spec.Options.TempPath) + " && " + cmd
 		} else if backup.Spec.Options.TempStorage != nil {
 			cmd += " --temp-path=/tmp/neo4j-staging"
 		}
@@ -1287,16 +1314,29 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 	// — unparseable. Strip the trailing `*` here so validate sees the
 	// canonical parent name.
 	if backup.Spec.Options != nil && backup.Spec.Options.Validate != nil && *backup.Spec.Options.Validate {
-		validateDBArg := dbName
-		if allDatabases {
-			validateDBArg = "*"
+		// `neo4j-admin backup validate` exists only on CalVer images — on
+		// 5.26 the CLI rejects the subcommand ("Unmatched arguments"), the
+		// `|| true` swallowed it, and the user silently got no validation
+		// (#255). Skip the clause and say so loudly instead.
+		if !version.IsCalver {
+			// Skip silently here — buildBackupCommand runs on EVERY
+			// scheduled-backup reconcile, so eventing from this spot
+			// spams Warning events while nothing changes. The event is
+			// emitted once at Job/CronJob creation via
+			// warnValidateUnsupported.
+			log.FromContext(ctx).Info("options.validate skipped: not supported on this Neo4j version", "tag", cluster.Spec.Image.Tag)
 		} else {
-			validateDBArg = strings.TrimSuffix(validateDBArg, "*")
+			validateDBArg := dbName
+			if allDatabases {
+				validateDBArg = "*"
+			} else {
+				validateDBArg = strings.TrimSuffix(validateDBArg, "*")
+			}
+			// toPath carries user-controlled spec fields — quote it (#219). The
+			// database arg is double-quoted by design (validated name or literal
+			// glob that neo4j-admin, not the shell, must expand).
+			cmd += fmt.Sprintf(` && (neo4j-admin backup validate --from-path=%s --database="%s" || true)`, shellQuote(toPath), validateDBArg)
 		}
-		// toPath carries user-controlled spec fields — quote it (#219). The
-		// database arg is double-quoted by design (validated name or literal
-		// glob that neo4j-admin, not the shell, must expand).
-		cmd += fmt.Sprintf(` && (neo4j-admin backup validate --from-path=%s --database="%s" || true)`, shellQuote(toPath), validateDBArg)
 	}
 
 	if backup.Spec.Storage.Type == "pvc" {
@@ -1726,9 +1766,10 @@ func (r *Neo4jBackupReconciler) cleanupBackupArtifacts(ctx context.Context, back
 		},
 	}
 
-	if err := controllerutil.SetControllerReference(backup, cleanupJob, r.Scheme); err != nil {
-		return err
-	}
+	// Deliberately NO owner reference: this Job is created while the CR's
+	// finalizer is completing — owner-ref'ing it to the dying CR hands it to
+	// the garbage collector immediately, which deletes the Job before (or
+	// while) the prune script runs. The 300s TTL is the cleanup mechanism.
 	if err := r.Create(ctx, cleanupJob); err != nil {
 		return fmt.Errorf("failed to create cleanup job: %w", err)
 	}
@@ -1772,7 +1813,10 @@ if [ "$FILE_COUNT" -gt "$MAX_COUNT" ]; then
     echo "Deleting $TO_DELETE oldest artifacts (keeping $MAX_COUNT)"
     # Oldest-first by filesystem mtime — never coupled to the filename's
     # timestamp format.
-    find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.backup' -printf '%%T@ %%p\n' | \
+    # busybox/alpine find lacks GNU printf-style output — stat -c '%%Y %%n'
+    # is the portable mtime listing (the previous GNU-only form made the
+    # whole script die under set -e, so retention never pruned anything).
+    find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.backup' -exec stat -c '%%Y %%n' {} + | \
         sort -n | \
         head -n "$TO_DELETE" | \
         cut -d' ' -f2- | \
@@ -1789,7 +1833,7 @@ fi
 # Delete backup artifacts older than %s — but always keep the newest one,
 # even if it has aged out (a retention policy must never delete the ONLY
 # remaining backup).
-NEWEST=$(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.backup' -printf '%%T@ %%p\n' | sort -rn | head -n1 | cut -d' ' -f2-)
+NEWEST=$(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.backup' -exec stat -c '%%Y %%n' {} + | sort -rn | head -n1 | cut -d' ' -f2-)
 find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.backup' %s -print | while IFS= read -r f; do
     [ "$f" = "$NEWEST" ] && continue
     rm -f "$f"

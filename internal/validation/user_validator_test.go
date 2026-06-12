@@ -125,8 +125,13 @@ func TestUserValidator_PasswordSecretMissing(t *testing.T) {
 		},
 	}
 	res := v.Validate(context.Background(), user)
-	if len(res.Errors) == 0 {
-		t.Fatalf("expected error for missing secret")
+	// #259: a not-yet-applied Secret is a transient dependency → Pending,
+	// never a validation Error (which would route the user to Failed).
+	if len(res.Errors) != 0 {
+		t.Fatalf("missing secret must not be an error: %v", res.Errors)
+	}
+	if len(res.Pending) == 0 {
+		t.Fatalf("expected Pending entry for missing secret")
 	}
 }
 
@@ -183,5 +188,37 @@ func TestUserValidator_PublicWarning(t *testing.T) {
 	res := v.Validate(context.Background(), user)
 	if len(res.Warnings) == 0 {
 		t.Fatalf("expected a warning about explicit PUBLIC, got %v", res.Warnings)
+	}
+}
+
+// TestUserValidator_MissingSecretIsPendingNotFailed pins #259: a not-yet-applied
+// password Secret is a TRANSIENT dependency — it must land in result.Pending
+// (routing the user to phase Pending, like missing roles) instead of
+// result.Errors (which routes to Failed and contradicts the documented
+// apply-order-is-irrelevant convergence).
+func TestUserValidator_MissingSecretIsPendingNotFailed(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "default"},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).Build()
+	v := NewUserValidator(c)
+
+	user := &neo4jv1beta1.Neo4jUser{
+		ObjectMeta: metav1.ObjectMeta{Name: "u", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jUserSpec{
+			ClusterRef:        "c",
+			Username:          "app_user",
+			PasswordSecretRef: &neo4jv1beta1.SecretKeyRef{Name: "not-applied-yet"},
+		},
+	}
+	res := v.Validate(context.Background(), user)
+	if len(res.Errors) != 0 {
+		t.Fatalf("missing Secret must not be a validation ERROR (routes to Failed); got: %v", res.Errors)
+	}
+	if len(res.Pending) != 1 || !strings.Contains(res.Pending[0], "not-applied-yet") {
+		t.Fatalf("missing Secret must be reported via Pending; got: %v", res.Pending)
 	}
 }
