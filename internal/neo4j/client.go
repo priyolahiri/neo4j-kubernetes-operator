@@ -23,6 +23,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -932,12 +933,27 @@ func (c *Client) AlterDatabase(ctx context.Context, databaseName string, options
 	defer session.Close(ctx)
 
 	query := fmt.Sprintf("ALTER DATABASE `%s`", databaseName)
+	params := map[string]any{}
 
-	// Add options if provided
+	// Add options if provided. Keys are identifier-validated (they cannot be
+	// driver parameters in Cypher), values go through driver parameters so
+	// user-controlled strings cannot inject Cypher — rule 19, mirroring
+	// buildOptionsClause. Sorted for deterministic statements.
 	if len(options) > 0 {
+		validOptionKey := regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+		keys := make([]string, 0, len(options))
+		for key := range options {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
 		var optionParts []string
-		for key, value := range options {
-			optionParts = append(optionParts, fmt.Sprintf("%s: '%s'", key, value))
+		for i, key := range keys {
+			if !validOptionKey.MatchString(key) {
+				return fmt.Errorf("invalid ALTER DATABASE option key %q", key)
+			}
+			paramName := fmt.Sprintf("alterDbOpt%d", i)
+			optionParts = append(optionParts, fmt.Sprintf("%s: $%s", key, paramName))
+			params[paramName] = options[key]
 		}
 		query += " SET OPTIONS {" + strings.Join(optionParts, ", ") + "}"
 	}
@@ -949,7 +965,7 @@ func (c *Client) AlterDatabase(ctx context.Context, databaseName string, options
 		query += " NOWAIT"
 	}
 
-	_, err := session.Run(ctx, query, nil)
+	_, err := session.Run(ctx, query, params)
 	if err != nil {
 		return fmt.Errorf("failed to alter database %s: %w", databaseName, err)
 	}
@@ -2247,8 +2263,10 @@ func (c *Client) SetConfiguration(ctx context.Context, key, value string) error 
 		defer session.Close(ctx)
 
 		// Note: Dynamic configuration changes may require restart
-		query := fmt.Sprintf("CALL dbms.setConfigValue('%s', '%s')", key, value)
-		_, err := session.Run(ctx, query, nil)
+		// Driver parameters — key/value are CR-derived (plugin controller),
+		// so interpolation was an injection vector (rule 19).
+		query := "CALL dbms.setConfigValue($key, $value)"
+		_, err := session.Run(ctx, query, map[string]any{"key": key, "value": value})
 		if err != nil {
 			return fmt.Errorf("failed to set configuration %s=%s: %w", key, value, err)
 		}
@@ -2268,8 +2286,8 @@ func (c *Client) SetAllowedProcedures(ctx context.Context, procedures []string) 
 
 		// Set dbms.security.procedures.allowlist
 		procedureList := strings.Join(procedures, ",")
-		query := fmt.Sprintf("CALL dbms.setConfigValue('dbms.security.procedures.allowlist', '%s')", procedureList)
-		_, err := session.Run(ctx, query, nil)
+		query := "CALL dbms.setConfigValue('dbms.security.procedures.allowlist', $value)"
+		_, err := session.Run(ctx, query, map[string]any{"value": procedureList})
 		if err != nil {
 			return fmt.Errorf("failed to set allowed procedures: %w", err)
 		}
@@ -2289,8 +2307,8 @@ func (c *Client) SetDeniedProcedures(ctx context.Context, procedures []string) e
 
 		// Set dbms.security.procedures.denylist
 		procedureList := strings.Join(procedures, ",")
-		query := fmt.Sprintf("CALL dbms.setConfigValue('dbms.security.procedures.denylist', '%s')", procedureList)
-		_, err := session.Run(ctx, query, nil)
+		query := "CALL dbms.setConfigValue('dbms.security.procedures.denylist', $value)"
+		_, err := session.Run(ctx, query, map[string]any{"value": procedureList})
 		if err != nil {
 			return fmt.Errorf("failed to set denied procedures: %w", err)
 		}
@@ -2313,8 +2331,8 @@ func (c *Client) EnableSandboxMode(ctx context.Context, enabled bool) error {
 			value = "true"
 		}
 
-		query := fmt.Sprintf("CALL dbms.setConfigValue('dbms.security.procedures.unrestricted', '%s')", value)
-		_, err := session.Run(ctx, query, nil)
+		query := "CALL dbms.setConfigValue('dbms.security.procedures.unrestricted', $value)"
+		_, err := session.Run(ctx, query, map[string]any{"value": value})
 		if err != nil {
 			return fmt.Errorf("failed to set sandbox mode: %w", err)
 		}
