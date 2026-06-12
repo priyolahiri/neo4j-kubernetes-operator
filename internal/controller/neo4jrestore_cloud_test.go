@@ -936,3 +936,56 @@ func TestRestoreAdminSecretName(t *testing.T) {
 	}
 	assert.Equal(t, "custom-secret", restoreAdminSecretName(withAuth))
 }
+
+// TestHookJobSpecForPhase pins #218: the phase strings used by callers and
+// the hook lookup must agree — the historical "pre-restore" vs "pre" mismatch
+// made every spec.options.*.job hook a silent no-op.
+func TestHookJobSpecForPhase(t *testing.T) {
+	pre := &neo4jv1beta1.RestoreHookJob{}
+	post := &neo4jv1beta1.RestoreHookJob{}
+	restore := &neo4jv1beta1.Neo4jRestore{
+		Spec: neo4jv1beta1.Neo4jRestoreSpec{
+			Options: &neo4jv1beta1.RestoreOptionsSpec{
+				PreRestore:  &neo4jv1beta1.RestoreHooks{Job: pre},
+				PostRestore: &neo4jv1beta1.RestoreHooks{Job: post},
+			},
+		},
+	}
+	assert.Same(t, pre, hookJobSpecForPhase(restore, hookPhasePreRestore))
+	assert.Same(t, post, hookJobSpecForPhase(restore, hookPhasePostRestore))
+	assert.Nil(t, hookJobSpecForPhase(restore, "pre"), "legacy short phase must not match")
+	assert.Nil(t, hookJobSpecForPhase(&neo4jv1beta1.Neo4jRestore{}, hookPhasePreRestore))
+}
+
+// TestClearStaleRestoreAttemptState pins the #218 retry-semantics helpers: a
+// fresh attempt clears the one-shot recreate marker and a retargeted
+// backupRef drops the pinned source.
+func TestClearStaleRestoreAttemptState(t *testing.T) {
+	restore := &neo4jv1beta1.Neo4jRestore{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "r", Namespace: "ns",
+			Annotations: map[string]string{AnnotationCypherRestoreIssued: "2026-01-01T00:00:00Z"},
+		},
+		Status: neo4jv1beta1.Neo4jRestoreStatus{
+			ResolvedSource: &neo4jv1beta1.ResolvedRestoreSource{
+				BackupRef: "old-backup",
+				Storage:   &neo4jv1beta1.StorageLocation{Type: "s3", Bucket: "b"},
+			},
+		},
+	}
+	fc := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(restore).WithStatusSubresource(restore).Build()
+	r := &Neo4jRestoreReconciler{Client: fc}
+
+	require.NoError(t, r.clearCypherRestoreIssued(context.Background(), restore))
+	require.NoError(t, r.clearResolvedSource(context.Background(), restore))
+
+	latest := &neo4jv1beta1.Neo4jRestore{}
+	require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Name: "r", Namespace: "ns"}, latest))
+	_, hasAnno := latest.Annotations[AnnotationCypherRestoreIssued]
+	assert.False(t, hasAnno, "stale recreate marker must be cleared for a fresh attempt")
+	assert.Nil(t, latest.Status.ResolvedSource, "pinned source for the old backupRef must be dropped")
+
+	// Idempotent on already-clean objects.
+	require.NoError(t, r.clearCypherRestoreIssued(context.Background(), restore))
+	require.NoError(t, r.clearResolvedSource(context.Background(), restore))
+}

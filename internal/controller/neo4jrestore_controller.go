@@ -248,6 +248,34 @@ func (r *Neo4jRestoreReconciler) handleDeletion(ctx context.Context, restore *ne
 func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	// Fresh attempt detection (#218). The documented retry path for a
+	// Completed/Failed restore is "bump the spec" (new generation), but two
+	// pieces of one-shot state from the PREVIOUS attempt survived and broke
+	// it:
+	//  1. The cypher-restore-issued annotation short-circuited the new
+	//     attempt straight into pollClusterRestoreOnline — which either
+	//     insta-Completed (the database is online from the previous restore;
+	//     nothing re-restored) or insta-Failed (deadline anchored at the old
+	//     timestamp, long expired).
+	//  2. A pinned status.resolvedSource for a DIFFERENT backupRef always won
+	//     over the new spec value, so retargeting the restore was silently
+	//     ignored.
+	if restore.Status.ObservedGeneration != 0 && restore.Status.ObservedGeneration != restore.Generation {
+		if err := r.clearCypherRestoreIssued(ctx, restore); err != nil {
+			logger.Error(err, "Failed to clear stale cypher-restore-issued annotation")
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		}
+	}
+	if snap := resolvedBackupSnapshot(restore); snap != nil &&
+		restore.Spec.Source.Type == SourceTypeBackup && snap.BackupRef != restore.Spec.Source.BackupRef {
+		logger.Info("spec.source.backupRef changed; invalidating the pinned resolved source",
+			"pinned", snap.BackupRef, "current", restore.Spec.Source.BackupRef)
+		if err := r.clearResolvedSource(ctx, restore); err != nil {
+			logger.Error(err, "Failed to clear stale resolved source")
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		}
+	}
+
 	// Set start time
 	now := metav1.Now()
 	restore.Status.StartTime = &now
@@ -300,6 +328,20 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		}
 	}
 
+	// Run pre-restore hooks BEFORE the instance is stopped (#218): Cypher
+	// hooks (e.g. CALL db.checkpoint()) need a live Bolt endpoint, and the
+	// previous post-stop placement made them fail unconditionally under
+	// stopCluster=true. Skipped on re-entry once THIS restore has already
+	// stopped the instance — they ran on the first pass.
+	if restore.Spec.Options != nil && restore.Spec.Options.PreRestore != nil &&
+		!r.restoreAlreadyStoppedInstance(ctx, restore, cluster) {
+		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PreRestore, hookPhasePreRestore); err != nil {
+			logger.Error(err, "Pre-restore hooks failed")
+			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Pre-restore hooks failed: %v", err))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		}
+	}
+
 	// Stop cluster if required
 	if restore.Spec.StopCluster {
 		// Mark the cluster as having a restore in progress BEFORE scaling
@@ -330,19 +372,6 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 			logger.Error(err, "Refusing restore against running cluster")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, err.Error())
 			return ctrl.Result{}, err
-		}
-	}
-
-	// Run pre-restore hooks
-	if restore.Spec.Options != nil && restore.Spec.Options.PreRestore != nil {
-		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PreRestore, "pre-restore"); err != nil {
-			logger.Error(err, "Pre-restore hooks failed")
-			// The instance may already be scaled to 0 by stopCluster above;
-			// a terminal Failed without recovery would strand it there with
-			// the restore-in-progress annotation held (#218).
-			r.restoreClusterAfterFailure(ctx, restore, cluster)
-			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Pre-restore hooks failed: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 		}
 	}
 
@@ -514,20 +543,22 @@ func (r *Neo4jRestoreReconciler) handleRestoreSuccess(ctx context.Context, resto
 		}
 	}
 
-	// Run post-restore hooks
-	if restore.Spec.Options != nil && restore.Spec.Options.PostRestore != nil {
-		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PostRestore, "post-restore"); err != nil {
-			logger.Error(err, "Post-restore hooks failed")
-			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Post-restore hooks failed: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
-		}
-	}
-
 	// Register the restored database with Neo4j so it becomes accessible
 	if err := r.createOrStartDatabase(ctx, restore, cluster); err != nil {
 		logger.Error(err, "Failed to create/start database after restore")
 		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonDatabaseCreateFailed,
 			fmt.Sprintf("Restore succeeded but failed to create database %q: %v", restore.Spec.DatabaseName, err))
+	}
+
+	// Run post-restore hooks AFTER the database is registered/started (#218):
+	// Cypher hooks (e.g. CALL db.awaitIndexes()) target the restored database
+	// — running them before createOrStartDatabase hit a stopped or absent DB.
+	if restore.Spec.Options != nil && restore.Spec.Options.PostRestore != nil {
+		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PostRestore, hookPhasePostRestore); err != nil {
+			logger.Error(err, "Post-restore hooks failed")
+			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Post-restore hooks failed: %v", err))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		}
 	}
 
 	// For multi-server clusters, force all servers to re-seed the
@@ -2087,9 +2118,14 @@ func (r *Neo4jRestoreReconciler) runRestoreHooks(ctx context.Context, restore *n
 	logger := log.FromContext(ctx)
 	logger.Info("Running restore hooks", "restore", restore.Name, "phase", phase)
 
-	// Execute Cypher statements if any
+	// Execute Cypher statements if any. Hooks only run on the standalone
+	// Job path (the cluster Cypher path never invokes them), so the Bolt
+	// client must target the standalone's service — createNeo4jClient
+	// builds the cluster "<name>-client" routing URI, which doesn't exist
+	// for a standalone target and made every Cypher hook fail (#218, the
+	// #187 service-naming class).
 	if len(hooks.CypherStatements) > 0 {
-		neo4jClient, err := r.createNeo4jClient(ctx, cluster)
+		neo4jClient, err := r.newStandaloneRestoreClient(ctx, restore)
 		if err != nil {
 			return fmt.Errorf("failed to create Neo4j client for hooks: %w", err)
 		}
@@ -2116,18 +2152,41 @@ func (r *Neo4jRestoreReconciler) runRestoreHooks(ctx context.Context, restore *n
 	return nil
 }
 
+// Hook phase identifiers. A single source of truth: callers and the
+// hookSpec lookup in runHookJob MUST agree — they previously didn't
+// (callers passed "pre-restore"/"post-restore", the lookup matched
+// "pre"/"post"), so hookSpec was always nil and spec.options.*.job hooks
+// were a silent no-op (#218).
+const (
+	hookPhasePreRestore  = "pre-restore"
+	hookPhasePostRestore = "post-restore"
+)
+
+// hookJobSpecForPhase resolves the Job hook configured for a phase. Pure so
+// the phase agreement between callers and this lookup stays pinned by a unit
+// test — the historical mismatch made all Job hooks a silent no-op (#218).
+func hookJobSpecForPhase(restore *neo4jv1beta1.Neo4jRestore, phase string) *neo4jv1beta1.RestoreHookJob {
+	if restore.Spec.Options == nil {
+		return nil
+	}
+	switch phase {
+	case hookPhasePreRestore:
+		if restore.Spec.Options.PreRestore != nil {
+			return restore.Spec.Options.PreRestore.Job
+		}
+	case hookPhasePostRestore:
+		if restore.Spec.Options.PostRestore != nil {
+			return restore.Spec.Options.PostRestore.Job
+		}
+	}
+	return nil
+}
+
 func (r *Neo4jRestoreReconciler) runHookJob(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, phase string) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Running hook job", "restore", restore.Name, "phase", phase)
 
-	// Get hook configuration based on phase
-	var hookSpec *neo4jv1beta1.RestoreHookJob
-	if phase == "pre" && restore.Spec.Options != nil && restore.Spec.Options.PreRestore != nil {
-		hookSpec = restore.Spec.Options.PreRestore.Job
-	} else if phase == "post" && restore.Spec.Options != nil && restore.Spec.Options.PostRestore != nil {
-		hookSpec = restore.Spec.Options.PostRestore.Job
-	}
-
+	hookSpec := hookJobSpecForPhase(restore, phase)
 	if hookSpec == nil {
 		return nil // No hook job configured
 	}
@@ -2168,8 +2227,22 @@ func (r *Neo4jRestoreReconciler) runHookJob(ctx context.Context, restore *neo4jv
 		job.Spec.BackoffLimit = ptr.To(int32(3))
 	}
 
+	// Owner-ref the hook Job to the restore CR so it is GC'd with it —
+	// cleanupRestoreJobs only matches component=restore, not hooks (#218).
+	if err := controllerutil.SetControllerReference(restore, job, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set hook job owner reference: %w", err)
+	}
+
 	if err := r.Create(ctx, job); err != nil {
-		return fmt.Errorf("failed to create hook job: %w", err)
+		if errors.IsAlreadyExists(err) {
+			// Re-entry (e.g. after a transient status-write failure): adopt
+			// the existing hook Job and wait on it.
+			if getErr := r.Get(ctx, client.ObjectKeyFromObject(job), job); getErr != nil {
+				return fmt.Errorf("failed to adopt existing hook job: %w", getErr)
+			}
+		} else {
+			return fmt.Errorf("failed to create hook job: %w", err)
+		}
 	}
 
 	// Determine timeout
@@ -2194,12 +2267,14 @@ func (r *Neo4jRestoreReconciler) runHookJob(ctx context.Context, restore *neo4jv
 				return fmt.Errorf("failed to get hook job status: %w", err)
 			}
 
-			if job.Status.Succeeded > 0 {
+			if jobConditionTrue(job, batchv1.JobComplete) || job.Status.Succeeded > 0 {
 				logger.Info("Hook job completed successfully")
 				return nil
 			}
 
-			if job.Status.Failed > 0 {
+			// JobFailed CONDITION, not the Failed pod counter — the counter is
+			// >0 while the Job retries a transient pod failure (#217 class).
+			if jobConditionTrue(job, batchv1.JobFailed) {
 				return fmt.Errorf("hook job failed")
 			}
 
@@ -2543,6 +2618,49 @@ func (r *Neo4jRestoreReconciler) markCypherRestoreIssued(ctx context.Context, re
 	if _, ok := restore.Annotations[AnnotationCypherRestoreIssued]; !ok {
 		restore.Annotations[AnnotationCypherRestoreIssued] = stamp
 	}
+	return nil
+}
+
+// clearCypherRestoreIssued removes the one-shot recreate marker so a fresh
+// attempt (spec bump after Completed/Failed) re-issues the restore instead of
+// short-circuiting into the poll phase with stale state (#218). Idempotent.
+func (r *Neo4jRestoreReconciler) clearCypherRestoreIssued(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		latest := &neo4jv1beta1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		if _, ok := latest.Annotations[AnnotationCypherRestoreIssued]; !ok {
+			return nil
+		}
+		delete(latest.Annotations, AnnotationCypherRestoreIssued)
+		return r.Update(ctx, latest)
+	})
+	if err != nil {
+		return err
+	}
+	delete(restore.Annotations, AnnotationCypherRestoreIssued)
+	return nil
+}
+
+// clearResolvedSource drops the pinned status.resolvedSource so the next
+// resolution re-dereferences the CURRENT spec.source.backupRef (#218).
+func (r *Neo4jRestoreReconciler) clearResolvedSource(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		latest := &neo4jv1beta1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		if latest.Status.ResolvedSource == nil {
+			return nil
+		}
+		latest.Status.ResolvedSource = nil
+		return r.Status().Update(ctx, latest)
+	})
+	if err != nil {
+		return err
+	}
+	restore.Status.ResolvedSource = nil
 	return nil
 }
 
