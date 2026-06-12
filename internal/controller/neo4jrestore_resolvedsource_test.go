@@ -365,3 +365,28 @@ func TestMarkCypherRestoreObservedOffline(t *testing.T) {
 	require.NoError(t, r.Get(ctx, client.ObjectKeyFromObject(restore), persisted))
 	assert.Equal(t, "true", persisted.Annotations[AnnotationCypherRestoreObservedOffline])
 }
+
+// #242: source.backupPath was the undiscoverable field — empty (or a bare
+// "/", which resolves to the storage root and fails opaquely downstream)
+// must produce an error that names where the value lives
+// (status.history[*].backupsPath on the originating Neo4jBackup) and the
+// backupRef alternative.
+func TestValidateRestore_StorageBackupPathActionable(t *testing.T) {
+	r := newResolvedSourceReconciler(t)
+	ctx := context.Background()
+
+	for _, bad := range []string{"", "/", "//", "  "} {
+		restore := restoreWithBackupRef("r1", "default", "")
+		restore.Spec.Source.Type = "storage"
+		restore.Spec.Source.BackupRef = ""
+		restore.Spec.Source.BackupPath = bad
+		restore.Spec.Source.Storage = pvcStorage("backup-pvc")
+
+		err := r.validateRestore(ctx, restore)
+		require.Error(t, err, "backupPath %q must be rejected", bad)
+		assert.Contains(t, err.Error(), "status.history[*].backupsPath",
+			"the error must tell the user WHERE to find the path")
+		assert.Contains(t, err.Error(), "backupRef",
+			"the error must mention the backupRef alternative")
+	}
+}

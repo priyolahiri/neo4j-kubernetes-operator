@@ -793,8 +793,11 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 		}
 
 	case "storage", SourceTypeS3, SourceTypeGCS, "azure":
-		if restore.Spec.Source.BackupPath == "" {
-			return fmt.Errorf("backupPath is required when source type is %q", restore.Spec.Source.Type)
+		// The undiscoverable field (#242): users don't know what to put here.
+		// Name the answer in the error — the operator records every run's
+		// directory in the originating Neo4jBackup's status.
+		if strings.TrimSpace(strings.Trim(restore.Spec.Source.BackupPath, "/")) == "" {
+			return fmt.Errorf("source.backupPath is required when source type is %q: set it to the directory holding the .backup artifacts (the operator records it per run in the originating Neo4jBackup's status.history[*].backupsPath — `kubectl get neo4jbackup <name> -o jsonpath='{.status.history[0].backupsPath}'`), or for cluster targets the exact .backup file path. If the Neo4jBackup CR still exists, source.type=backup with backupRef resolves the path automatically", restore.Spec.Source.Type)
 		}
 
 	case "pitr":
