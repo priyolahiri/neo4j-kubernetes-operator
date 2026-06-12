@@ -2935,7 +2935,11 @@ const connectivityFailureEventThreshold = 10
 func (r *Neo4jEnterpriseClusterReconciler) recordConnectivityFailure(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *connectivityFailureStreak {
 	key := cluster.Namespace + "/" + cluster.Name
 	v, _ := r.connectivityFailures.LoadOrStore(key, &connectivityFailureStreak{since: time.Now()})
-	streak := v.(*connectivityFailureStreak)
+	streak, ok := v.(*connectivityFailureStreak)
+	if !ok { // unreachable — the map only ever holds streaks
+		streak = &connectivityFailureStreak{since: time.Now()}
+		r.connectivityFailures.Store(key, streak)
+	}
 	streak.count++
 	return streak
 }
@@ -2946,8 +2950,8 @@ func (r *Neo4jEnterpriseClusterReconciler) recordConnectivityFailure(cluster *ne
 func (r *Neo4jEnterpriseClusterReconciler) clearConnectivityFailures(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
 	key := cluster.Namespace + "/" + cluster.Name
 	if v, loaded := r.connectivityFailures.LoadAndDelete(key); loaded {
-		streak := v.(*connectivityFailureStreak)
-		if streak.count >= connectivityFailureEventThreshold {
+		streak, ok := v.(*connectivityFailureStreak)
+		if ok && streak.count >= connectivityFailureEventThreshold {
 			log.FromContext(ctx).Info("Neo4j connectivity recovered after persistent failure streak",
 				"consecutiveFailures", streak.count,
 				"failingSince", streak.since.Format(time.RFC3339),

@@ -84,7 +84,8 @@ func TestEnsureRestoreServiceAccount_ConflictEmitsWarning(t *testing.T) {
 	r := newResolvedSourceReconciler(t, restore, existingSA)
 	require.NoError(t, r.ensureRestoreServiceAccount(context.Background(), restore))
 
-	rec := r.Recorder.(*record.FakeRecorder)
+	rec, ok := r.Recorder.(*record.FakeRecorder)
+	require.True(t, ok, "test reconciler must use a FakeRecorder")
 	select {
 	case ev := <-rec.Events:
 		assert.Contains(t, ev, EventReasonServiceAccountAnnotationConflict)
@@ -118,8 +119,10 @@ func TestWarnIfSeedEndpointNotProjected(t *testing.T) {
 	}
 	drainEvent := func(t *testing.T, r *Neo4jRestoreReconciler) (string, bool) {
 		t.Helper()
+		rec, ok := r.Recorder.(*record.FakeRecorder)
+		require.True(t, ok, "test reconciler must use a FakeRecorder")
 		select {
-		case ev := <-r.Recorder.(*record.FakeRecorder).Events:
+		case ev := <-rec.Events:
 			return ev, true
 		default:
 			return "", false
