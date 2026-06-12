@@ -184,7 +184,11 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// even after the target appears.
 	targetCluster, err := r.getClusterRef(ctx, restore)
 	if err != nil {
-		if errors.IsNotFound(err) || strings.Contains(err.Error(), "not found") {
+		// errors.IsNotFound unwraps %w chains — ONLY genuine NotFound waits;
+		// Forbidden/other API failures stay on the error path (#224 review:
+		// a substring match on the static "not found" message misclassified
+		// wrapped non-NotFound errors).
+		if errors.IsNotFound(err) {
 			logger.Info("Restore target not found yet; waiting", "error", err.Error())
 			r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Waiting for target to appear: %v", err))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil

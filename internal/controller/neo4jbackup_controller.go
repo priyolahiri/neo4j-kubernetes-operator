@@ -157,7 +157,10 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// guard never re-enters) even after the cluster appears moments later.
 	targetCluster, err := r.getTargetCluster(ctx, backup)
 	if err != nil {
-		if errors.IsNotFound(err) || strings.Contains(err.Error(), "not found") {
+		// errors.IsNotFound unwraps %w chains — ONLY genuine NotFound waits;
+		// RBAC denials and other API failures stay on the error path (#224
+		// review: a substring match on "not found" misclassified those).
+		if errors.IsNotFound(err) {
 			logger.Info("Backup target not found yet; waiting", "error", err.Error())
 			r.updateBackupStatus(ctx, backup, "Waiting", fmt.Sprintf("Waiting for target to appear: %v", err))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -1584,10 +1587,13 @@ func (r *Neo4jBackupReconciler) getTargetCluster(ctx context.Context, backup *ne
 		return cluster, nil
 	}
 
-	// Fall back to Neo4jEnterpriseStandalone.
+	// Fall back to Neo4jEnterpriseStandalone. Wrap the underlying API error
+	// (%w) so callers can classify NotFound (transient, wait for the target)
+	// vs Forbidden/other (permanent) — a fixed message swallowed that
+	// distinction (#224 review).
 	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 	if err := r.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: targetNamespace}, standalone); err != nil {
-		return nil, fmt.Errorf("target %q not found as Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone in namespace %q", clusterName, targetNamespace)
+		return nil, fmt.Errorf("target %q not usable as Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone in namespace %q: %w", clusterName, targetNamespace, err)
 	}
 	return standaloneAsCluster(standalone), nil
 }
