@@ -151,6 +151,15 @@ kubectl run backup-auth-check --rm -it --image=amazon/aws-cli --serviceaccount=<
    }
    ```
 
+3. **Identity conflicts between CRs** — backups that worked start failing
+   auth after another backup/restore CR was added: `neo4j-backup-sa` /
+   `neo4j-restore-sa` are shared per namespace, and two CRs declaring
+   different `identity.autoCreate.annotations` overwrite each other (last
+   writer wins). Look for a `ServiceAccountAnnotationConflict` Warning
+   event (`kubectl get events --field-selector reason=ServiceAccountAnnotationConflict`).
+   Fix: one identity per namespace with access to all backup locations, or
+   split the CRs across namespaces.
+
 #### Google Cloud Storage Issues
 
 **Service Account Problems:**
@@ -548,21 +557,25 @@ For full disaster recovery (corrupted primary, restore to a new cluster from lat
 - [Split-Brain Recovery](split-brain-recovery.md)
 
 
-## Restore reports Completed but the database is offline / unavailable
+## Cluster restore fails with "the seed FAILED: …"
 
-**Symptom:** `Neo4jRestore` shows `phase: Completed`, but connecting to the
-database fails with "database is unavailable", and:
+**Symptom:** a cluster-target `Neo4jRestore` goes `Failed` with a message like:
 
-```cypher
-SHOW DATABASE <name> YIELD name, currentStatus, requestedStatus, statusMessage;
+```
+Database "mydb" was created but the seed FAILED: Object not found at the
+path: s3://… — fix the cause, DROP DATABASE mydb IF EXISTS, and re-trigger
+the restore
 ```
 
-shows `currentStatus: offline` with a populated `statusMessage`.
+The quoted part is Neo4j's own `statusMessage` — it names the real cause.
 
-**Cause:** the seed download failed on the server pods; the `statusMessage`
-names the real cause. The most common one: `Object not found at the path:
-s3://…` on an **S3-compatible endpoint** (MinIO, on-prem) — the server JVMs
-are missing the endpoint configuration. Add to the cluster CR:
+**Most common cause:** `Object not found at the path: s3://…` on an
+**S3-compatible endpoint** (MinIO, on-prem) — the server JVMs are missing the
+endpoint configuration. The cluster Cypher restore makes the *server* pods
+fetch the seed, and the `endpointURL` field on the backup only reaches
+backup/restore *Job* pods. The operator emits a `SeedEndpointNotProjected`
+Warning event on the restore when it can verify the endpoint is missing.
+Add to the cluster CR:
 
 ```yaml
 spec:
@@ -576,21 +589,38 @@ spec:
 **Recovery:** fix the cause, `DROP DATABASE <name> IF EXISTS` (it holds no
 data), then re-trigger the restore (see the next section).
 
-## Retrying a Failed restore does nothing (or re-fails instantly)
+> Operator **v1.12.0 only**: a failed seed was reported as `phase: Completed`
+> with the database left `offline` — check `SHOW DATABASE <name> YIELD
+> statusMessage` for the cause. From v1.12.1 the restore fails fast with the
+> message above.
 
-**Symptom:** after a `Failed` restore you change the spec (new generation) to
-retry, but the restore immediately returns to `Failed` without a new Job pod
-running.
+## Retrying a finished restore
 
-**Cause:** the previous failed Job still exists under the same name, and the
-retry re-reads its Failed state.
-
-**Fix:** delete the old Job first, then bump the spec:
+`Completed`/`Failed` are terminal for the current spec generation. Any spec
+change that bumps the generation issues a fresh attempt:
 
 ```bash
-kubectl delete job <restore-name>-restore
 kubectl patch neo4jrestore <restore-name> --type=merge -p '{"spec":{"timeout":"10m"}}'
 ```
 
-(Cluster-target restores use the Cypher path — no Job — so a plain spec bump
-suffices there.)
+> Operator **v1.12.0 only**: on standalone (Job-based) targets the previous
+> failed Job blocked the retry — delete it first with
+> `kubectl delete job <restore-name>-restore`. From v1.12.1 the operator
+> replaces the stale Job itself; the spec bump alone suffices on all targets.
+
+## Restore stuck Pending on "Waiting for backup-seed-proxy"
+
+**Symptom:** a PVC-backed cluster restore stays `Pending` with
+`Waiting for backup-seed-proxy Deployment to become Ready (…)`, then goes
+`Failed` after the wait budget (3 minutes by default; `spec.timeout`
+overrides) with the proxy pod's condition in the message.
+
+**Cause:** the operator serves the backup PVC to the server pods through a
+small HTTP proxy Deployment, and that proxy can't start. The parenthesised
+diagnosis names the reason; the most common is the backup PVC being
+**ReadWriteOnce and still attached to another pod/node** (e.g. a backup Job
+pod that hasn't terminated, or a node that still holds the volume).
+
+**Fix:** release the PVC (wait for / delete the pod holding it), or move the
+backups to RWX storage or object storage. Then re-trigger the restore with a
+spec bump.

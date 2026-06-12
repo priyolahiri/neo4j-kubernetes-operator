@@ -18,6 +18,9 @@ const (
 	EventReasonScaleDownPendingDrain         = "ScaleDownPendingDrain"
 	EventReasonScaleDownDraining             = "ScaleDownDraining"
 	EventReasonScaleDownBlocked              = "ScaleDownBlocked"
+	// EventReasonConnectivityDegraded — the operator has failed to reach the
+	// cluster's Bolt endpoint for a sustained streak of reconciles (#263).
+	EventReasonConnectivityDegraded = "ConnectivityDegraded"
 )
 
 // Rolling upgrade events
@@ -38,15 +41,25 @@ const (
 	EventReasonBackupScheduled = "BackupScheduled"
 	// EventReasonBackupRetentionCaveat — retention pruning configured on a CR
 	// whose chain may contain differential artifacts (#217).
-	EventReasonBackupRetentionCaveat  = "BackupRetentionCaveat"
-	EventReasonBackupStarted          = "BackupStarted"
-	EventReasonBackupCompleted        = "BackupCompleted"
-	EventReasonBackupFailed           = "BackupFailed"
-	EventReasonRestoreStarted         = "RestoreStarted"
-	EventReasonRestoreCompleted       = "RestoreCompleted"
-	EventReasonRestoreFailed          = "RestoreFailed"
-	EventReasonRestoreFromChainParent = "RestoreFromChainParent"
-	EventReasonDatabaseCreateFailed   = "DatabaseCreateFailed"
+	EventReasonBackupRetentionCaveat = "BackupRetentionCaveat"
+	// EventReasonServiceAccountAnnotationConflict — a backup/restore CR
+	// overwrote DIFFERENT workload-identity annotations on the shared
+	// namespace ServiceAccount; last writer wins and the others' cloud
+	// access breaks (#227).
+	EventReasonServiceAccountAnnotationConflict = "ServiceAccountAnnotationConflict"
+	// EventReasonSeedEndpointNotProjected — a cluster Cypher restore
+	// resolved to a custom S3 endpoint (MinIO etc.) but the server pods
+	// verifiably lack AWS_ENDPOINT_URL_S3, so the server-side seed fetch
+	// will target s3.amazonaws.com and fail (#252).
+	EventReasonSeedEndpointNotProjected = "SeedEndpointNotProjected"
+	EventReasonBackupStarted            = "BackupStarted"
+	EventReasonBackupCompleted          = "BackupCompleted"
+	EventReasonBackupFailed             = "BackupFailed"
+	EventReasonRestoreStarted           = "RestoreStarted"
+	EventReasonRestoreCompleted         = "RestoreCompleted"
+	EventReasonRestoreFailed            = "RestoreFailed"
+	EventReasonRestoreFromChainParent   = "RestoreFromChainParent"
+	EventReasonDatabaseCreateFailed     = "DatabaseCreateFailed"
 )
 
 // Database events

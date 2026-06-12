@@ -135,10 +135,39 @@ const (
 	//      one SHOW DATABASE per reconcile and requeues.
 	AnnotationCypherRestoreIssued = "neo4j.com/cypher-restore-issued"
 
+	// AnnotationCypherRestoreObservedOffline records that a poll reconcile
+	// saw the database NOT fully online after the recreate was issued —
+	// i.e. the asynchronous recreate has visibly taken effect. Guards the
+	// stale-online race (#227): `dbms.recreateDatabase` returns before the
+	// old allocations transition offline, so a poll landing in that window
+	// would see the PRE-recreate database fully online and wrongly declare
+	// the restore Completed before the seed even started.
+	AnnotationCypherRestoreObservedOffline = "neo4j.com/cypher-restore-observed-offline"
+
 	// cypherRestoreOnlineTimeout bounds how long pollClusterRestoreOnline will
 	// wait (across requeues) for an asynchronously-recreated database to
 	// converge to online before marking the restore Failed.
 	cypherRestoreOnlineTimeout = 5 * time.Minute
+
+	// cypherRestoreStaleOnlineGrace is how long after the recreate was issued
+	// an all-online observation is treated as suspect when no poll has yet
+	// seen the database offline. Past this window an all-online answer is
+	// accepted even without an offline observation — covering small stores
+	// whose entire offline→seed→online cycle fits between two polls. Costs
+	// at most one extra requeue on tiny restores; prevents false Completed
+	// on every recreate that polls early.
+	cypherRestoreStaleOnlineGrace = 30 * time.Second
+
+	// AnnotationSeedProxyWaitStarted anchors the deadline for waiting on the
+	// backup-seed-proxy Deployment to become Ready (#227). Without it a
+	// proxy that can never start — e.g. an RWO backup PVC still attached to
+	// another node — kept the restore Pending forever with no diagnosis.
+	AnnotationSeedProxyWaitStarted = "neo4j.com/seed-proxy-wait-started"
+
+	// seedProxyWaitTimeout is the default budget for the seed proxy to come
+	// up: a single busybox pod, Ready in seconds normally — 3 minutes covers
+	// slow image pulls. spec.timeout, when set, overrides.
+	seedProxyWaitTimeout = 3 * time.Minute
 )
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jrestores,verbs=get;list;watch;create;update;patch;delete
@@ -285,6 +314,12 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	if restore.Status.ObservedGeneration != 0 && restore.Status.ObservedGeneration != restore.Generation {
 		if err := r.clearCypherRestoreIssued(ctx, restore); err != nil {
 			logger.Error(err, "Failed to clear stale cypher-restore-issued annotation")
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		}
+		// A stale seed-proxy wait anchor from the previous attempt would
+		// instantly expire the new attempt's proxy wait (#227).
+		if err := r.clearSeedProxyWaitStarted(ctx, restore); err != nil {
+			logger.Error(err, "Failed to clear stale seed-proxy wait anchor")
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 		}
 	}
@@ -758,8 +793,11 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 		}
 
 	case "storage", SourceTypeS3, SourceTypeGCS, "azure":
-		if restore.Spec.Source.BackupPath == "" {
-			return fmt.Errorf("backupPath is required when source type is %q", restore.Spec.Source.Type)
+		// The undiscoverable field (#242): users don't know what to put here.
+		// Name the answer in the error — the operator records every run's
+		// directory in the originating Neo4jBackup's status.
+		if strings.TrimSpace(strings.Trim(restore.Spec.Source.BackupPath, "/")) == "" {
+			return fmt.Errorf("source.backupPath is required when source type is %q: set it to the directory holding the .backup artifacts (the operator records it per run in the originating Neo4jBackup's status.history[*].backupsPath — `kubectl get neo4jbackup <name> -o jsonpath='{.status.history[0].backupsPath}'`), or for cluster targets the exact .backup file path. If the Neo4jBackup CR still exists, source.type=backup with backupRef resolves the path automatically", restore.Spec.Source.Type)
 		}
 
 	case "pitr":
@@ -1115,6 +1153,7 @@ func (r *Neo4jRestoreReconciler) ensureRestoreServiceAccount(ctx context.Context
 			Namespace: namespace,
 		},
 	}
+	var conflicts []string
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error {
 		// Apply workload-identity annotations; preserve any other
 		// annotations already present (e.g. set by cloud-controller or
@@ -1122,12 +1161,91 @@ func (r *Neo4jRestoreReconciler) ensureRestoreServiceAccount(ctx context.Context
 		if sa.Annotations == nil {
 			sa.Annotations = map[string]string{}
 		}
+		// The SA is SHARED namespace-wide (same constraint as the backup
+		// side — trust policies bind to the SA name, so per-CR SAs are a
+		// v1.13 design, #227). Make last-writer-wins overwrites visible.
+		conflicts = serviceAccountAnnotationConflicts(sa.Annotations, wiAnnotations)
 		for k, v := range wiAnnotations {
 			sa.Annotations[k] = v
 		}
 		return nil
 	})
+	if err == nil && len(conflicts) > 0 && r.Recorder != nil {
+		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonServiceAccountAnnotationConflict,
+			fmt.Sprintf("Overwrote workload-identity annotations on the SHARED ServiceAccount %s/%s: %s. Multiple backup/restore CRs in this namespace declare different identities; the last reconciled CR wins and the others' cloud access breaks. Use ONE identity per namespace (an IAM role/identity with access to all backup locations), or split the CRs across namespaces.",
+				namespace, restoreServiceAccountName, strings.Join(conflicts, "; ")))
+	}
 	return err
+}
+
+// warnIfSeedEndpointNotProjected emits a Warning event when the resolved
+// backup storage declares a custom S3 endpoint (MinIO, Ceph RGW, R2) but the
+// target cluster's server pods verifiably lack AWS_ENDPOINT_URL_S3 (#252).
+// The cluster Cypher restore makes the SERVER JVM fetch the seed; the
+// CloudBlock's endpointURL only ever reaches backup/restore JOB pods, so
+// without the env var the AWS SDK targets s3.amazonaws.com and the seed
+// fails ("Object not found" / region errors) — a confusing failure when the
+// backup itself succeeded against the same bucket.
+//
+// Warning, not Failed: the check inspects spec.env and the contents of
+// extraEnvFrom-referenced Secrets/ConfigMaps, and stays SILENT when any
+// referenced source is unreadable — exotic-but-valid setups must not be
+// blocked on an incomplete view. #251's fail-fast still surfaces the real
+// seed failure if the warning goes unheeded.
+func (r *Neo4jRestoreReconciler) warnIfSeedEndpointNotProjected(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, cloud *neo4jv1beta1.CloudBlock) {
+	const endpointEnvVar = "AWS_ENDPOINT_URL_S3"
+	if cloud == nil || cloud.EndpointURL == "" || r.Recorder == nil {
+		return
+	}
+	for _, e := range cluster.Spec.Env {
+		if e.Name == endpointEnvVar {
+			return
+		}
+	}
+	for _, ef := range cluster.Spec.ExtraEnvFrom {
+		prefix := ef.Prefix
+		if ef.SecretRef != nil {
+			s := &corev1.Secret{}
+			if err := r.Get(ctx, types.NamespacedName{Name: ef.SecretRef.Name, Namespace: cluster.Namespace}, s); err != nil {
+				return // can't disprove — stay silent
+			}
+			for k := range s.Data {
+				if prefix+k == endpointEnvVar {
+					return
+				}
+			}
+		}
+		if ef.ConfigMapRef != nil {
+			cm := &corev1.ConfigMap{}
+			if err := r.Get(ctx, types.NamespacedName{Name: ef.ConfigMapRef.Name, Namespace: cluster.Namespace}, cm); err != nil {
+				return
+			}
+			for k := range cm.Data {
+				if prefix+k == endpointEnvVar {
+					return
+				}
+			}
+		}
+	}
+	r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonSeedEndpointNotProjected,
+		fmt.Sprintf("The backup's storage uses a custom S3 endpoint (%s), but cluster %q's server pods have no %s in their environment. The cluster Cypher restore makes the server JVM fetch the seed itself — without the endpoint, the AWS SDK targets s3.amazonaws.com and the seed fails even though the backup succeeded. Add %s=%s as a key in the credentials Secret projected via the cluster's spec.extraEnvFrom (or as a spec.env entry).",
+			cloud.EndpointURL, cluster.Name, endpointEnvVar, endpointEnvVar, cloud.EndpointURL))
+}
+
+// serviceAccountAnnotationConflicts returns a description per annotation key
+// whose existing value on the shared ServiceAccount differs from the value
+// this CR is about to write — i.e. an overwrite that likely belongs to
+// ANOTHER CR's workload identity (#227). New keys and identical values are
+// not conflicts.
+func serviceAccountAnnotationConflicts(existing, desired map[string]string) []string {
+	var conflicts []string
+	for k, v := range desired {
+		if cur, ok := existing[k]; ok && cur != v {
+			conflicts = append(conflicts, fmt.Sprintf("%s: %q -> %q", k, cur, v))
+		}
+	}
+	sort.Strings(conflicts)
+	return conflicts
 }
 
 // resolveBackupRef delegates to the package-shared ResolveBackupRef. Kept as
@@ -2551,6 +2669,12 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
 		}
+		// Custom S3 endpoint (MinIO & friends): the SERVER JVM fetches the
+		// seed, and endpointURL only reaches Job pods — warn when the
+		// endpoint is verifiably absent from the server pods' env (#252).
+		if storage.Type == "s3" {
+			r.warnIfSeedEndpointNotProjected(ctx, restore, cluster, storage.Cloud)
+		}
 	case "pvc":
 		// Cluster + PVC restore: spawn the in-cluster HTTP proxy in front
 		// of the backup PVC, build a single-file seedURI against it. The
@@ -2741,25 +2865,83 @@ func (r *Neo4jRestoreReconciler) markCypherRestoreIssued(ctx context.Context, re
 	return nil
 }
 
-// clearCypherRestoreIssued removes the one-shot recreate marker so a fresh
-// attempt (spec bump after Completed/Failed) re-issues the restore instead of
-// short-circuiting into the poll phase with stale state (#218). Idempotent.
+// cypherRestoreOnlineAcceptable reports whether an all-online SHOW DATABASE
+// answer can be trusted as the restored database (vs. the pre-recreate
+// allocations the asynchronous recreate hasn't torn down yet, #227). True
+// when a prior poll already observed the database offline, or when the
+// stale-online grace window past the issue timestamp has elapsed. Missing or
+// malformed issue stamps fail open — the deadline logic already tolerates
+// them, and blocking acceptance forever would be worse than the race.
+func cypherRestoreOnlineAcceptable(restore *neo4jv1beta1.Neo4jRestore, now time.Time) bool {
+	if restore.Annotations[AnnotationCypherRestoreObservedOffline] == "true" {
+		return true
+	}
+	raw, ok := restore.Annotations[AnnotationCypherRestoreIssued]
+	if !ok {
+		return true
+	}
+	issuedAt, perr := time.Parse(time.RFC3339, raw)
+	if perr != nil {
+		return true
+	}
+	return now.Sub(issuedAt) >= cypherRestoreStaleOnlineGrace
+}
+
+// markCypherRestoreObservedOffline stamps the observed-offline annotation
+// (idempotent, conflict-retried) once a poll has seen the database not fully
+// online — proof the asynchronous recreate took effect.
+func (r *Neo4jRestoreReconciler) markCypherRestoreObservedOffline(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
+	if restore.Annotations[AnnotationCypherRestoreObservedOffline] == "true" {
+		return nil
+	}
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		if latest.Annotations == nil {
+			latest.Annotations = map[string]string{}
+		}
+		if latest.Annotations[AnnotationCypherRestoreObservedOffline] == "true" {
+			return nil
+		}
+		latest.Annotations[AnnotationCypherRestoreObservedOffline] = "true"
+		return r.Update(ctx, latest)
+	})
+	if err != nil {
+		return err
+	}
+	if restore.Annotations == nil {
+		restore.Annotations = map[string]string{}
+	}
+	restore.Annotations[AnnotationCypherRestoreObservedOffline] = "true"
+	return nil
+}
+
+// clearCypherRestoreIssued removes the one-shot recreate marker (and the
+// observed-offline marker that depends on it) so a fresh attempt (spec bump
+// after Completed/Failed) re-issues the restore instead of short-circuiting
+// into the poll phase with stale state (#218). Idempotent.
 func (r *Neo4jRestoreReconciler) clearCypherRestoreIssued(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		latest := &neo4jv1beta1.Neo4jRestore{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
 			return err
 		}
-		if _, ok := latest.Annotations[AnnotationCypherRestoreIssued]; !ok {
+		_, hasIssued := latest.Annotations[AnnotationCypherRestoreIssued]
+		_, hasOffline := latest.Annotations[AnnotationCypherRestoreObservedOffline]
+		if !hasIssued && !hasOffline {
 			return nil
 		}
 		delete(latest.Annotations, AnnotationCypherRestoreIssued)
+		delete(latest.Annotations, AnnotationCypherRestoreObservedOffline)
 		return r.Update(ctx, latest)
 	})
 	if err != nil {
 		return err
 	}
 	delete(restore.Annotations, AnnotationCypherRestoreIssued)
+	delete(restore.Annotations, AnnotationCypherRestoreObservedOffline)
 	return nil
 }
 
@@ -2848,6 +3030,16 @@ func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, r
 
 	online, total, diag, stateErr := neo4jClient.DatabaseOnlineState(ctx, restore.Spec.DatabaseName)
 	if stateErr == nil && total > 0 && online == total {
+		// Stale-online guard (#227): `dbms.recreateDatabase` is asynchronous —
+		// right after issue, SHOW DATABASE can still report the PRE-recreate
+		// allocations fully online. Accept all-online only once a prior poll
+		// observed the database offline (the recreate visibly took effect) or
+		// the grace window past issue has elapsed.
+		if !cypherRestoreOnlineAcceptable(restore, time.Now()) {
+			logger.V(1).Info("Poll: all-online within the stale-online grace window without an offline observation — likely the pre-recreate allocations; requeueing",
+				"database", restore.Spec.DatabaseName, "grace", cypherRestoreStaleOnlineGrace.String())
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
 		completion := metav1.Now()
 		restore.Status.CompletionTime = &completion
 		r.updateRestoreStatus(ctx, restore, StatusCompleted,
@@ -2855,6 +3047,17 @@ func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, r
 		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreCompleted,
 			fmt.Sprintf("Cluster Cypher restore completed for database %q", restore.Spec.DatabaseName))
 		return ctrl.Result{}, nil
+	}
+
+	// Stamp the offline observation ONLY on a positive answer from SHOW
+	// DATABASE saying the database is not fully online (or has no rows —
+	// mid-recreate drop). A query ERROR is not evidence the recreate took
+	// effect — stamping on it would let the next stale all-online answer
+	// bypass the grace guard (Bugbot, PR #265).
+	if stateErr == nil {
+		if merr := r.markCypherRestoreObservedOffline(ctx, restore); merr != nil {
+			logger.V(1).Info("Failed to stamp observed-offline annotation; the grace window still guards acceptance", "error", merr.Error())
+		}
 	}
 
 	if expired {
@@ -2971,14 +3174,124 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 		return "", ctrl.Result{}, fmt.Errorf("ensure PVC seed proxy: %w", err)
 	}
 	if !proxyAvailable {
+		// Bounded wait (#227): a proxy that can never start — RWO backup PVC
+		// attached to another node, unpullable image, crash loop — previously
+		// kept the restore Pending forever with no diagnosis. Anchor a
+		// deadline on the first wait and surface the proxy's live condition
+		// while waiting; fail with it once the budget is spent.
+		waitStart, haveAnchor := r.seedProxyWaitStart(ctx, restore)
+		diagnosis := pvcSeedProxyDiagnosis(ctx, r.Client, restore.Namespace, restore.Name)
+		budget := seedProxyWaitTimeout
+		if restore.Spec.Timeout != "" {
+			if d, perr := time.ParseDuration(restore.Spec.Timeout); perr == nil && d > 0 {
+				budget = d
+			}
+		}
+		if haveAnchor && time.Since(waitStart) > budget {
+			msg := fmt.Sprintf("backup-seed-proxy Deployment did not become Ready within %s: %s — a common cause is the backup PVC (%s) being ReadWriteOnce and still attached to another pod/node; fix the cause and re-trigger the restore by bumping the spec",
+				budget, diagnosis, storage.PVC.Name)
+			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
+			return "", ctrl.Result{}, fmt.Errorf("%s", msg)
+		}
 		logger.Info("PVC seed proxy not yet Ready; requeuing",
-			"backupPVC", storage.PVC.Name)
+			"backupPVC", storage.PVC.Name, "diagnosis", diagnosis)
 		r.updateRestoreStatus(ctx, restore, StatusPending,
-			"Waiting for backup-seed-proxy Deployment to become Ready")
+			fmt.Sprintf("Waiting for backup-seed-proxy Deployment to become Ready (%s)", diagnosis))
 		return "", ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+	}
+	// Proxy is up — drop the wait anchor so any later wait starts fresh.
+	if err := r.clearSeedProxyWaitStarted(ctx, restore); err != nil {
+		logger.V(1).Info("Failed to clear seed-proxy wait anchor (non-fatal)", "error", err.Error())
 	}
 
 	return pvcSeedProxyURL(restore.Name, restore.Namespace, backupsPath, filename), ctrl.Result{}, nil
+}
+
+// seedProxyWaitStart resolves the deadline anchor for the seed-proxy wait.
+// Normally the persisted annotation stamp; if persisting it keeps FAILING,
+// fall back to the PERSISTED status.startTime so a broken annotation write
+// can't reopen the unbounded wait #227 removed (Bugbot, PR #265). The
+// fallback must be read from the API, not the in-memory object: startRestore
+// resets the in-memory StartTime to "now" on every Pending requeue (the
+// persisted value is protected by updateRestoreStatus's earlier-wins rule),
+// so the in-memory copy slides and would never expire (Bugbot round 2).
+// Conservative either way — StartTime predates the proxy wait, so it can
+// only expire the wait EARLIER, never extend it. Returns (anchor, false)
+// only when no anchor is reachable at all (API fully unavailable — status
+// writes are failing too, so nothing is silently Pending).
+func (r *Neo4jRestoreReconciler) seedProxyWaitStart(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) (time.Time, bool) {
+	if t, err := r.markSeedProxyWaitStarted(ctx, restore); err == nil {
+		return t, true
+	} else {
+		log.FromContext(ctx).V(1).Info("Failed to persist seed-proxy wait anchor; falling back to the persisted status.startTime for the deadline", "error", err.Error())
+	}
+	latest := &neo4jv1beta1.Neo4jRestore{}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err == nil && latest.Status.StartTime != nil {
+		return latest.Status.StartTime.Time, true
+	}
+	return time.Time{}, false
+}
+
+// markSeedProxyWaitStarted stamps (idempotently, conflict-retried) the
+// seed-proxy wait anchor and returns the anchor time — the FIRST reconcile's
+// stamp, preserved across requeues so the deadline doesn't slide.
+func (r *Neo4jRestoreReconciler) markSeedProxyWaitStarted(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) (time.Time, error) {
+	if raw, ok := restore.Annotations[AnnotationSeedProxyWaitStarted]; ok {
+		if t, perr := time.Parse(time.RFC3339, raw); perr == nil {
+			return t, nil
+		}
+	}
+	stamp := metav1.Now().UTC().Format(time.RFC3339)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		if latest.Annotations == nil {
+			latest.Annotations = map[string]string{}
+		}
+		if raw, ok := latest.Annotations[AnnotationSeedProxyWaitStarted]; ok {
+			stamp = raw // preserve the original anchor
+			return nil
+		}
+		latest.Annotations[AnnotationSeedProxyWaitStarted] = stamp
+		return r.Update(ctx, latest)
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+	if restore.Annotations == nil {
+		restore.Annotations = map[string]string{}
+	}
+	restore.Annotations[AnnotationSeedProxyWaitStarted] = stamp
+	t, perr := time.Parse(time.RFC3339, stamp)
+	if perr != nil {
+		return time.Time{}, perr
+	}
+	return t, nil
+}
+
+// clearSeedProxyWaitStarted removes the wait anchor (idempotent) — called
+// once the proxy is Ready and on fresh attempts so a stale anchor can't
+// instantly expire a later wait.
+func (r *Neo4jRestoreReconciler) clearSeedProxyWaitStarted(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		latest := &neo4jv1beta1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		if _, ok := latest.Annotations[AnnotationSeedProxyWaitStarted]; !ok {
+			return nil
+		}
+		delete(latest.Annotations, AnnotationSeedProxyWaitStarted)
+		return r.Update(ctx, latest)
+	})
+	if err != nil {
+		return err
+	}
+	delete(restore.Annotations, AnnotationSeedProxyWaitStarted)
+	return nil
 }
 
 // latestSucceededArtifactFilename returns the captured `.backup` artifact
