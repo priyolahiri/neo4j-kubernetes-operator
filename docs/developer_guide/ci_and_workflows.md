@@ -219,6 +219,15 @@ The same matrix runs as a **blocking job in `release.yml`** — a release tag
 cannot publish an image or chart if any leg fails. Use the local run (or the
 dispatch workflow) to catch problems before tagging instead of failing the tag.
 
+**Output contract** (#247): every sub-step prints a `[HH:MM:SS +elapsed]`
+prefix and waits pre-announce their timeout (helm `--wait` 180s/300s,
+rollout 180s, smoke poll 60s) — so a watcher can always tell *slow* from
+*stuck*. The docker build logs to `/tmp/ic-build.log` (tailed on failure).
+On any failure the script dumps cluster diagnostics — pods, the operator
+Deployment + its logs, recent events, helm releases — before exiting, and in
+Actions a verdict table (every passed check + the failing one) lands in the
+step summary on both pass and fail.
+
 ## Release
 
 **`release.yml` — tag-driven release pipeline.** Push a `vX.Y.Z` tag (or dispatch

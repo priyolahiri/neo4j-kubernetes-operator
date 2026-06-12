@@ -163,7 +163,7 @@ spec:
 
 - `AWS_SESSION_TOKEN` (for temporary credentials)
 - `AWS_REGION`
-- `AWS_ENDPOINT_URL_S3` — required for **MinIO / S3-compatible** stores. The `endpointURL`/`forcePathStyle` fields on `Neo4jBackup`/`Neo4jRestore` only affect their **Job pods**; the server pods doing seedURI fetches read the SDK's standard env vars, so put the endpoint in the Secret you project via `spec.extraEnvFrom`.
+- `AWS_ENDPOINT_URL_S3` — required for **MinIO / S3-compatible** stores. The `endpointURL`/`forcePathStyle` fields on `Neo4jBackup`/`Neo4jRestore` only affect their **Job pods**; the server pods doing seedURI fetches read the SDK's standard env vars, so put the endpoint in the Secret you project via `spec.extraEnvFrom`. (Cluster restores that resolve to a custom-endpoint backup emit a `SeedEndpointNotProjected` Warning event when the operator can verify the endpoint is missing from the server pods.)
 
 ### Google Cloud Storage
 **Required:**
