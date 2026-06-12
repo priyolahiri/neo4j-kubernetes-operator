@@ -1500,6 +1500,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createAliasService(standalone *neo
 	if standalone.Spec.TLS != nil && standalone.Spec.TLS.Mode == "cert-manager" {
 		ports = append(ports, corev1.ServicePort{Name: "https", Port: 7473, TargetPort: intstr.FromInt(7473), Protocol: corev1.ProtocolTCP})
 	}
+	// Keep the metrics port on the alias too (#228 review): the monitoring
+	// docs promise legacy {name}-service scrape targets keep working for the
+	// deprecation release.
+	if standalone.Spec.Monitoring != nil && standalone.Spec.Monitoring.Enabled {
+		ports = append(ports, corev1.ServicePort{Name: "metrics", Port: resources.MetricsPort, TargetPort: intstr.FromInt(resources.MetricsPort), Protocol: corev1.ProtocolTCP})
+	}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-service", standalone.Name),
