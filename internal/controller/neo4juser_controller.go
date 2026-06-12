@@ -108,6 +108,14 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
+		if len(res.Pending) > 0 {
+			// Transient dependency gaps (e.g. password Secret not applied
+			// yet): Pending + requeue, like missing roles — apply order is
+			// documented as irrelevant (#259).
+			msg := strings.Join(res.Pending, "; ")
+			r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, "SecretPending", msg, nil, "", nil)
+			return ctrl.Result{RequeueAfter: requeue}, nil
+		}
 	}
 
 	// Resolve cluster
