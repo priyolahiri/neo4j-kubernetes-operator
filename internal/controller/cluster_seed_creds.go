@@ -145,14 +145,19 @@ func EnsureSeedCredsProjected(
 	// ownership annotation), so an Update from the reconcile-start object
 	// conflicts routinely — and the caller previously pinned that retryable
 	// conflict as terminal Failed.
+	patched := false
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		if err := c.Get(ctx, client.ObjectKeyFromObject(target), target); err != nil {
 			return err
 		}
 		// Re-check on the fresh copy: a concurrent reconcile may have
-		// already projected the Secret.
+		// already projected the Secret — then THIS reconcile didn't patch
+		// anything and must not claim it did (the caller routes
+		// autoInherited=true to a Pending requeue; an already-projected
+		// cluster should proceed straight to the rollout check instead).
 		for _, ef := range target.GetExtraEnvFrom() {
 			if ef.SecretRef != nil && ef.SecretRef.Name == credsSecretName {
+				patched = false
 				return nil
 			}
 		}
@@ -167,11 +172,12 @@ func EnsureSeedCredsProjected(
 		}
 		annotations[AutoInheritedFromAnnotation] = credsSecretName
 		target.SetAnnotations(annotations)
+		patched = true
 		return c.Update(ctx, target)
 	}); err != nil {
 		return false, fmt.Errorf("auto-inherit seed credentials Secret %q onto %s %q: %w", credsSecretName, target.TargetKindLabel(), target.GetName(), err)
 	}
-	return true, nil
+	return patched, nil
 }
 
 // EnsureClusterHasSeedCreds is the cluster-typed wrapper kept for callers
