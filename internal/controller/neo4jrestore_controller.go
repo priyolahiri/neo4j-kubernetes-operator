@@ -157,6 +157,17 @@ const (
 	// at most one extra requeue on tiny restores; prevents false Completed
 	// on every recreate that polls early.
 	cypherRestoreStaleOnlineGrace = 30 * time.Second
+
+	// AnnotationSeedProxyWaitStarted anchors the deadline for waiting on the
+	// backup-seed-proxy Deployment to become Ready (#227). Without it a
+	// proxy that can never start — e.g. an RWO backup PVC still attached to
+	// another node — kept the restore Pending forever with no diagnosis.
+	AnnotationSeedProxyWaitStarted = "neo4j.com/seed-proxy-wait-started"
+
+	// seedProxyWaitTimeout is the default budget for the seed proxy to come
+	// up: a single busybox pod, Ready in seconds normally — 3 minutes covers
+	// slow image pulls. spec.timeout, when set, overrides.
+	seedProxyWaitTimeout = 3 * time.Minute
 )
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jrestores,verbs=get;list;watch;create;update;patch;delete
@@ -303,6 +314,12 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	if restore.Status.ObservedGeneration != 0 && restore.Status.ObservedGeneration != restore.Generation {
 		if err := r.clearCypherRestoreIssued(ctx, restore); err != nil {
 			logger.Error(err, "Failed to clear stale cypher-restore-issued annotation")
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		}
+		// A stale seed-proxy wait anchor from the previous attempt would
+		// instantly expire the new attempt's proxy wait (#227).
+		if err := r.clearSeedProxyWaitStarted(ctx, restore); err != nil {
+			logger.Error(err, "Failed to clear stale seed-proxy wait anchor")
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 		}
 	}
@@ -3063,14 +3080,99 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 		return "", ctrl.Result{}, fmt.Errorf("ensure PVC seed proxy: %w", err)
 	}
 	if !proxyAvailable {
+		// Bounded wait (#227): a proxy that can never start — RWO backup PVC
+		// attached to another node, unpullable image, crash loop — previously
+		// kept the restore Pending forever with no diagnosis. Anchor a
+		// deadline on the first wait and surface the proxy's live condition
+		// while waiting; fail with it once the budget is spent.
+		waitStart, werr := r.markSeedProxyWaitStarted(ctx, restore)
+		diagnosis := pvcSeedProxyDiagnosis(ctx, r.Client, restore.Namespace, restore.Name)
+		budget := seedProxyWaitTimeout
+		if restore.Spec.Timeout != "" {
+			if d, perr := time.ParseDuration(restore.Spec.Timeout); perr == nil && d > 0 {
+				budget = d
+			}
+		}
+		if werr == nil && time.Since(waitStart) > budget {
+			msg := fmt.Sprintf("backup-seed-proxy Deployment did not become Ready within %s: %s — a common cause is the backup PVC (%s) being ReadWriteOnce and still attached to another pod/node; fix the cause and re-trigger the restore by bumping the spec",
+				budget, diagnosis, storage.PVC.Name)
+			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
+			return "", ctrl.Result{}, fmt.Errorf("%s", msg)
+		}
 		logger.Info("PVC seed proxy not yet Ready; requeuing",
-			"backupPVC", storage.PVC.Name)
+			"backupPVC", storage.PVC.Name, "diagnosis", diagnosis)
 		r.updateRestoreStatus(ctx, restore, StatusPending,
-			"Waiting for backup-seed-proxy Deployment to become Ready")
+			fmt.Sprintf("Waiting for backup-seed-proxy Deployment to become Ready (%s)", diagnosis))
 		return "", ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+	}
+	// Proxy is up — drop the wait anchor so any later wait starts fresh.
+	if err := r.clearSeedProxyWaitStarted(ctx, restore); err != nil {
+		logger.V(1).Info("Failed to clear seed-proxy wait anchor (non-fatal)", "error", err.Error())
 	}
 
 	return pvcSeedProxyURL(restore.Name, restore.Namespace, backupsPath, filename), ctrl.Result{}, nil
+}
+
+// markSeedProxyWaitStarted stamps (idempotently, conflict-retried) the
+// seed-proxy wait anchor and returns the anchor time — the FIRST reconcile's
+// stamp, preserved across requeues so the deadline doesn't slide.
+func (r *Neo4jRestoreReconciler) markSeedProxyWaitStarted(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) (time.Time, error) {
+	if raw, ok := restore.Annotations[AnnotationSeedProxyWaitStarted]; ok {
+		if t, perr := time.Parse(time.RFC3339, raw); perr == nil {
+			return t, nil
+		}
+	}
+	stamp := metav1.Now().UTC().Format(time.RFC3339)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		if latest.Annotations == nil {
+			latest.Annotations = map[string]string{}
+		}
+		if raw, ok := latest.Annotations[AnnotationSeedProxyWaitStarted]; ok {
+			stamp = raw // preserve the original anchor
+			return nil
+		}
+		latest.Annotations[AnnotationSeedProxyWaitStarted] = stamp
+		return r.Update(ctx, latest)
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+	if restore.Annotations == nil {
+		restore.Annotations = map[string]string{}
+	}
+	restore.Annotations[AnnotationSeedProxyWaitStarted] = stamp
+	t, perr := time.Parse(time.RFC3339, stamp)
+	if perr != nil {
+		return time.Time{}, perr
+	}
+	return t, nil
+}
+
+// clearSeedProxyWaitStarted removes the wait anchor (idempotent) — called
+// once the proxy is Ready and on fresh attempts so a stale anchor can't
+// instantly expire a later wait.
+func (r *Neo4jRestoreReconciler) clearSeedProxyWaitStarted(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		latest := &neo4jv1beta1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		if _, ok := latest.Annotations[AnnotationSeedProxyWaitStarted]; !ok {
+			return nil
+		}
+		delete(latest.Annotations, AnnotationSeedProxyWaitStarted)
+		return r.Update(ctx, latest)
+	})
+	if err != nil {
+		return err
+	}
+	delete(restore.Annotations, AnnotationSeedProxyWaitStarted)
+	return nil
 }
 
 // latestSucceededArtifactFilename returns the captured `.backup` artifact

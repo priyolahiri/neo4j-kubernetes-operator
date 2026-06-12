@@ -13,6 +13,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -61,15 +63,31 @@ func pvcSeedProxyName(ownerName string) string {
 //
 //	http://backup-seed-proxy-products.ns.svc.cluster.local:8080/products-backup/products-g000-T21-04-42.backup
 //	http://backup-seed-proxy-inventory-restore.ns.svc.cluster.local:8080/inventory-backup/inventory-2026-06-08T01-18-06.backup
+//
+// Both backupsPath and filename are percent-escaped per path segment:
+// type=storage restores feed user-supplied spec.source.backupPath through
+// here, and characters like spaces, '%', '?' or '#' would otherwise produce
+// a URL whose path Neo4j's URLConnectionSeedProvider resolves to the wrong
+// file (or whose query/fragment is silently dropped) (#227).
 func pvcSeedProxyURL(ownerName, namespace, backupsPath, filename string) string {
 	return fmt.Sprintf(
 		"http://%s.%s.svc.cluster.local:%d/%s/%s",
 		pvcSeedProxyName(ownerName),
 		namespace,
 		pvcSeedProxyPort,
-		backupsPath,
-		filename,
+		escapeURLPathSegments(backupsPath),
+		url.PathEscape(filename),
 	)
+}
+
+// escapeURLPathSegments percent-escapes each '/'-separated segment of a
+// relative path, preserving the separators.
+func escapeURLPathSegments(p string) string {
+	segments := strings.Split(p, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return strings.Join(segments, "/")
 }
 
 // ensurePVCSeedProxyResources creates (idempotently) the Deployment + Service
@@ -366,4 +384,51 @@ func buildPVCSeedProxyDeployment(owner client.Object, ownerName, backupPVCName s
 			},
 		},
 	}
+}
+
+// pvcSeedProxyDiagnosis assembles a human-actionable summary of WHY the
+// seed-proxy Deployment isn't Ready (#227): unschedulable pods (e.g. an RWO
+// backup PVC still attached to another node), image-pull failures, crash
+// loops, or the Deployment's own Progressing condition. Best-effort — any
+// lookup failure degrades to a generic message, never an error.
+func pvcSeedProxyDiagnosis(ctx context.Context, c client.Client, namespace, ownerName string) string {
+	var parts []string
+
+	dep := &appsv1.Deployment{}
+	if err := c.Get(ctx, types.NamespacedName{Name: pvcSeedProxyName(ownerName), Namespace: namespace}, dep); err == nil {
+		for _, cond := range dep.Status.Conditions {
+			if cond.Type == appsv1.DeploymentProgressing && cond.Status != corev1.ConditionTrue && cond.Message != "" {
+				parts = append(parts, fmt.Sprintf("Deployment %s: %s", cond.Reason, cond.Message))
+			}
+		}
+	}
+
+	pods := &corev1.PodList{}
+	if err := c.List(ctx, pods, client.InNamespace(namespace), client.MatchingLabels{
+		"app.kubernetes.io/name":     "backup-seed-proxy",
+		"app.kubernetes.io/instance": ownerName,
+	}); err == nil {
+		for i := range pods.Items {
+			pod := &pods.Items[i]
+			for _, cond := range pod.Status.Conditions {
+				if cond.Type == corev1.PodScheduled && cond.Status != corev1.ConditionTrue && cond.Message != "" {
+					parts = append(parts, fmt.Sprintf("Pod %s unschedulable: %s", pod.Name, cond.Message))
+				}
+			}
+			for _, cs := range pod.Status.ContainerStatuses {
+				if w := cs.State.Waiting; w != nil && w.Reason != "" && w.Reason != "ContainerCreating" {
+					msg := w.Reason
+					if w.Message != "" {
+						msg += ": " + w.Message
+					}
+					parts = append(parts, fmt.Sprintf("Pod %s container %s waiting: %s", pod.Name, cs.Name, msg))
+				}
+			}
+		}
+	}
+
+	if len(parts) == 0 {
+		return fmt.Sprintf("no diagnostic conditions on Deployment/Pods yet — inspect with: kubectl describe deployment %s -n %s", pvcSeedProxyName(ownerName), namespace)
+	}
+	return strings.Join(parts, "; ")
 }
