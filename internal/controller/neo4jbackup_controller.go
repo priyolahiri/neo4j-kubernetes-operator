@@ -860,6 +860,19 @@ func (r *Neo4jBackupReconciler) waitForChainConcurrencyClear(ctx context.Context
 	return nil
 }
 
+// warnValidateUnsupported emits the one-time Warning that options.validate
+// has no effect on this Neo4j version. Called from Job/CronJob CREATION
+// paths only (never from buildBackupCommand, which runs every reconcile).
+func (r *Neo4jBackupReconciler) warnValidateUnsupported(backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
+	if backup.Spec.Options == nil || backup.Spec.Options.Validate == nil || !*backup.Spec.Options.Validate {
+		return
+	}
+	if v, err := neo4j.ParseVersion(cluster.Spec.Image.Tag); err == nil && !v.IsCalver {
+		r.Recorder.Event(backup, corev1.EventTypeWarning, "BackupValidateUnsupported",
+			fmt.Sprintf("options.validate requires a CalVer (2025.x+) Neo4j image — `neo4j-admin backup validate` does not exist on %s; skipping validation", cluster.Spec.Image.Tag))
+	}
+}
+
 func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
 	// Glob-safety check for sharded backups: refuse to submit a Job whose
 	// `{name}*` neo4j-admin glob would also pull in unrelated databases. No-op
@@ -950,6 +963,7 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 	if err := controllerutil.SetControllerReference(backup, job, r.Scheme); err != nil {
 		return nil, err
 	}
+	r.warnValidateUnsupported(backup, cluster)
 	if err := r.Create(ctx, job); err != nil {
 		// AlreadyExists = a previous reconcile created the Job but the
 		// informer cache hadn't caught up when handleOneTimeBackup looked it
@@ -1072,7 +1086,7 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 		},
 	}
 
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, cronJob, func() error {
+	opResult, err := controllerutil.CreateOrUpdate(ctx, r.Client, cronJob, func() error {
 		labels := backupLabels(backup, "backup-cron")
 		cronJob.Labels = labels
 		cronJob.Spec.Schedule = backup.Spec.Schedule
@@ -1125,6 +1139,10 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 		}
 		return controllerutil.SetControllerReference(backup, cronJob, r.Scheme)
 	})
+	if err == nil && opResult == controllerutil.OperationResultCreated {
+		// Warn once, at CronJob creation — not on every reconcile pass.
+		r.warnValidateUnsupported(backup, cluster)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1298,8 +1316,12 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 		// `|| true` swallowed it, and the user silently got no validation
 		// (#255). Skip the clause and say so loudly instead.
 		if !version.IsCalver {
-			r.Recorder.Event(backup, corev1.EventTypeWarning, "BackupValidateUnsupported",
-				fmt.Sprintf("options.validate requires a CalVer (2025.x+) Neo4j image — `neo4j-admin backup validate` does not exist on %s; skipping validation", cluster.Spec.Image.Tag))
+			// Skip silently here — buildBackupCommand runs on EVERY
+			// scheduled-backup reconcile, so eventing from this spot
+			// spams Warning events while nothing changes. The event is
+			// emitted once at Job/CronJob creation via
+			// warnValidateUnsupported.
+			log.FromContext(ctx).Info("options.validate skipped: not supported on this Neo4j version", "tag", cluster.Spec.Image.Tag)
 		} else {
 			validateDBArg := dbName
 			if allDatabases {

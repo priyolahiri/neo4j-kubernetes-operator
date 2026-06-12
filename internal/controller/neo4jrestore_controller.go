@@ -69,6 +69,10 @@ const (
 // backup_resolver.go) directly.
 var errBackupNotReady = ErrBackupNotReady
 
+// errStaleRestoreJob: a fresh attempt's stale failed Job is still
+// terminating — transient; route to Pending + requeue, never Failed.
+var errStaleRestoreJob = stderrors.New("stale restore job still terminating")
+
 // restoreServiceAccountName is the ServiceAccount used by all restore Job
 // pods. Mirrors neo4j-backup-sa on the backup side; intentionally separate
 // so cluster operators can scope IAM permissions narrowly (read-only for
@@ -409,6 +413,11 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		if stderrors.Is(err, errBackupNotReady) {
 			logger.Info("Restore is waiting for the referenced backup to complete", "error", err.Error())
 			r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Waiting for backup to complete: %v", err))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
+		if stderrors.Is(err, errStaleRestoreJob) {
+			logger.Info("Previous attempt's Job still terminating; will retry", "error", err.Error())
+			r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Waiting for the previous attempt's Job to finish terminating: %v", err))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		logger.Error(err, "Failed to create restore job")
@@ -921,11 +930,20 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 				if delErr := r.Delete(ctx, stale, &client.DeleteOptions{PropagationPolicy: &policy}); delErr != nil && !errors.IsNotFound(delErr) {
 					return nil, fmt.Errorf("failed to delete stale restore Job %q for retry: %w", jobName, delErr)
 				}
+				freed := false
 				for i := 0; i < 20; i++ {
 					if getErr := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: restore.Namespace}, &batchv1.Job{}); errors.IsNotFound(getErr) {
+						freed = true
 						break
 					}
 					time.Sleep(500 * time.Millisecond)
+				}
+				if !freed {
+					// Don't fall through to Create — AlreadyExists would
+					// re-adopt the still-terminating failed Job and re-fail
+					// the fresh attempt (the exact #254 symptom). Transient:
+					// route to Pending and let the requeue retry.
+					return nil, fmt.Errorf("%w: stale restore Job %q is still terminating", errStaleRestoreJob, jobName)
 				}
 			}
 		}
