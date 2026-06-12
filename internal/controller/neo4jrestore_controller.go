@@ -1150,6 +1150,7 @@ func (r *Neo4jRestoreReconciler) ensureRestoreServiceAccount(ctx context.Context
 			Namespace: namespace,
 		},
 	}
+	var conflicts []string
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error {
 		// Apply workload-identity annotations; preserve any other
 		// annotations already present (e.g. set by cloud-controller or
@@ -1157,12 +1158,37 @@ func (r *Neo4jRestoreReconciler) ensureRestoreServiceAccount(ctx context.Context
 		if sa.Annotations == nil {
 			sa.Annotations = map[string]string{}
 		}
+		// The SA is SHARED namespace-wide (same constraint as the backup
+		// side — trust policies bind to the SA name, so per-CR SAs are a
+		// v1.13 design, #227). Make last-writer-wins overwrites visible.
+		conflicts = serviceAccountAnnotationConflicts(sa.Annotations, wiAnnotations)
 		for k, v := range wiAnnotations {
 			sa.Annotations[k] = v
 		}
 		return nil
 	})
+	if err == nil && len(conflicts) > 0 && r.Recorder != nil {
+		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonServiceAccountAnnotationConflict,
+			fmt.Sprintf("Overwrote workload-identity annotations on the SHARED ServiceAccount %s/%s: %s. Multiple backup/restore CRs in this namespace declare different identities; the last reconciled CR wins and the others' cloud access breaks. Use ONE identity per namespace (an IAM role/identity with access to all backup locations), or split the CRs across namespaces.",
+				namespace, restoreServiceAccountName, strings.Join(conflicts, "; ")))
+	}
 	return err
+}
+
+// serviceAccountAnnotationConflicts returns a description per annotation key
+// whose existing value on the shared ServiceAccount differs from the value
+// this CR is about to write — i.e. an overwrite that likely belongs to
+// ANOTHER CR's workload identity (#227). New keys and identical values are
+// not conflicts.
+func serviceAccountAnnotationConflicts(existing, desired map[string]string) []string {
+	var conflicts []string
+	for k, v := range desired {
+		if cur, ok := existing[k]; ok && cur != v {
+			conflicts = append(conflicts, fmt.Sprintf("%s: %q -> %q", k, cur, v))
+		}
+	}
+	sort.Strings(conflicts)
+	return conflicts
 }
 
 // resolveBackupRef delegates to the package-shared ResolveBackupRef. Kept as

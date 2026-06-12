@@ -41,15 +41,20 @@ const (
 	EventReasonBackupScheduled = "BackupScheduled"
 	// EventReasonBackupRetentionCaveat — retention pruning configured on a CR
 	// whose chain may contain differential artifacts (#217).
-	EventReasonBackupRetentionCaveat  = "BackupRetentionCaveat"
-	EventReasonBackupStarted          = "BackupStarted"
-	EventReasonBackupCompleted        = "BackupCompleted"
-	EventReasonBackupFailed           = "BackupFailed"
-	EventReasonRestoreStarted         = "RestoreStarted"
-	EventReasonRestoreCompleted       = "RestoreCompleted"
-	EventReasonRestoreFailed          = "RestoreFailed"
-	EventReasonRestoreFromChainParent = "RestoreFromChainParent"
-	EventReasonDatabaseCreateFailed   = "DatabaseCreateFailed"
+	EventReasonBackupRetentionCaveat = "BackupRetentionCaveat"
+	// EventReasonServiceAccountAnnotationConflict — a backup/restore CR
+	// overwrote DIFFERENT workload-identity annotations on the shared
+	// namespace ServiceAccount; last writer wins and the others' cloud
+	// access breaks (#227).
+	EventReasonServiceAccountAnnotationConflict = "ServiceAccountAnnotationConflict"
+	EventReasonBackupStarted                    = "BackupStarted"
+	EventReasonBackupCompleted                  = "BackupCompleted"
+	EventReasonBackupFailed                     = "BackupFailed"
+	EventReasonRestoreStarted                   = "RestoreStarted"
+	EventReasonRestoreCompleted                 = "RestoreCompleted"
+	EventReasonRestoreFailed                    = "RestoreFailed"
+	EventReasonRestoreFromChainParent           = "RestoreFromChainParent"
+	EventReasonDatabaseCreateFailed             = "DatabaseCreateFailed"
 )
 
 // Database events

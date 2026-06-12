@@ -2018,6 +2018,13 @@ const backupServiceAccountName = "neo4j-backup-sa"
 // and applies any workload-identity annotations declared in the backup spec.
 // No Role or RoleBinding is created: the backup Job runs neo4j-admin directly and
 // does not need any Kubernetes API access.
+//
+// The SA is SHARED by every backup (and restore) CR in the namespace, and
+// IRSA / Workload Identity trust policies bind to its NAME — renaming or
+// going per-CR would break every existing cloud-identity setup, so until a
+// per-CR design ships (v1.13, #227) conflicting annotations are
+// last-writer-wins. We at least make the fight visible: overwriting a
+// DIFFERENT existing value emits a Warning event naming both values.
 func (r *Neo4jBackupReconciler) ensureBackupServiceAccount(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
 	namespace := backup.Namespace
 
@@ -2036,17 +2043,24 @@ func (r *Neo4jBackupReconciler) ensureBackupServiceAccount(ctx context.Context, 
 			Namespace: namespace,
 		},
 	}
+	var conflicts []string
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error {
 		// Apply workload-identity annotations; preserve any other annotations
 		// already present (e.g. set by cloud-controller or the user directly).
 		if sa.Annotations == nil {
 			sa.Annotations = map[string]string{}
 		}
+		conflicts = serviceAccountAnnotationConflicts(sa.Annotations, wiAnnotations)
 		for k, v := range wiAnnotations {
 			sa.Annotations[k] = v
 		}
 		return nil
 	})
+	if err == nil && len(conflicts) > 0 && r.Recorder != nil {
+		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonServiceAccountAnnotationConflict,
+			fmt.Sprintf("Overwrote workload-identity annotations on the SHARED ServiceAccount %s/%s: %s. Multiple backup/restore CRs in this namespace declare different identities; the last reconciled CR wins and the others' cloud access breaks. Use ONE identity per namespace (an IAM role/identity with access to all backup locations), or split the CRs across namespaces.",
+				namespace, backupServiceAccountName, strings.Join(conflicts, "; ")))
+	}
 	return err
 }
 
