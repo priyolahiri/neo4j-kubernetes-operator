@@ -58,7 +58,7 @@ kubectl exec <instance>-server-0 -c neo4j -- bash -c \
 | `options` | [`RestoreOptionsSpec`](#restoreoptionsspec) | ❌ | Additional restore configuration options |
 | `force` | `bool` | ❌ | Confirm restoring **over an existing database** (default: `false`). Standalone targets: passes `--overwrite-destination` to `neo4j-admin`. Cluster targets: required (or `options.replaceExisting: true`) before the operator issues the destructive `dbms.recreateDatabase` against an existing database. |
 | `stopCluster` | `bool` | ❌ | **Standalone targets only** (cluster targets restore via Cypher and ignore it). `true` scales the instance down before the restore Job (mounting `data-{name}-server-0` directly) and scales it back up after. With `false`, the operator **refuses** to run the Job while any server pod is running — it never writes into a live data volume. |
-| `timeout` | `string` | ❌ | Go duration (e.g. `"30m"`, `"2h"`). For **cluster** targets this bounds the online-convergence wait after `dbms.recreateDatabase` is issued (default **5m** when unset) — raise it for multi-GB stores seeded from object storage. |
+| `timeout` | `string` | ❌ | Go duration (e.g. `"30m"`, `"2h"`). For **cluster** targets this bounds the online-convergence wait after `dbms.recreateDatabase` is issued (default **5m** when unset) — raise it for multi-GB stores seeded from object storage. For **PVC-backed cluster restores** it also bounds the wait for the backup-seed-proxy Deployment to become Ready (default **3m** when unset); on expiry the restore fails with the proxy pod's condition (e.g. an RWO backup PVC still attached elsewhere). |
 
 **Target compatibility**: `clusterRef` can reference either:
 

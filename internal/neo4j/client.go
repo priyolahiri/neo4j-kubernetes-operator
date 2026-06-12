@@ -2537,6 +2537,13 @@ func buildConnectionURIForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseSta
 //
 // See CLAUDE.md regression checklist item on routing scheme; do not revert
 // to `bolt://` without an explicit replacement for leader routing.
+// ConnectionURIForEnterprise exposes the cluster connection URI for
+// diagnostics (e.g. connectivity-failure logging in the cluster controller,
+// #263) without constructing a client.
+func ConnectionURIForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	return buildConnectionURIForEnterprise(cluster)
+}
+
 func buildConnectionURIForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	scheme := "neo4j"
 	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" {

@@ -1341,11 +1341,31 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 
 	if backup.Spec.Storage.Type == "pvc" {
 		// chainFromBackup feeds the PVC path segment — quote it too (#219).
-		cmd = fmt.Sprintf("mkdir -p %s && %s", shellQuote(toPath), cmd)
+		//
+		// flock on the chain directory (#227): the operator's
+		// waitForChainConcurrencyClear gate runs at Job-CREATION time, but
+		// two CronJobs (a FULL parent + a DIFF child sharing the dir via
+		// chainFromBackup) can still fire their children within the same
+		// reconcile gap and run concurrently — a DIFF reading the chain
+		// while the FULL rewrites it corrupts the chain. The lock is held
+		// by the Job shell (fd 9, auto-released on exit) for the backup AND
+		// the optional validate step; a contender waits up to
+		// chainLockWaitSeconds, then fails the Job (retried per
+		// backoffLimit). PVC-only: cloud chain dirs have no shared
+		// filesystem to lock — there the creation-time gate remains the
+		// only guard. The dot-file never matches the retention pruner's
+		// '*.backup' patterns.
+		lockPath := shellQuote(strings.TrimSuffix(toPath, "/") + "/.chain.lock")
+		cmd = fmt.Sprintf("mkdir -p %s && exec 9>%s && flock -w %d 9 && %s",
+			shellQuote(toPath), lockPath, chainLockWaitSeconds, cmd)
 	}
 
 	return cmd, nil
 }
+
+// chainLockWaitSeconds bounds how long a backup Job waits on the chain-dir
+// flock before giving up (1h — a DIFF queued behind a large in-flight FULL).
+const chainLockWaitSeconds = 3600
 
 // buildToPath returns the --to-path value passed to neo4j-admin. All runs
 // of a single Neo4jBackup CR share this directory — it's how neo4j-admin
@@ -2018,6 +2038,13 @@ const backupServiceAccountName = "neo4j-backup-sa"
 // and applies any workload-identity annotations declared in the backup spec.
 // No Role or RoleBinding is created: the backup Job runs neo4j-admin directly and
 // does not need any Kubernetes API access.
+//
+// The SA is SHARED by every backup (and restore) CR in the namespace, and
+// IRSA / Workload Identity trust policies bind to its NAME — renaming or
+// going per-CR would break every existing cloud-identity setup, so until a
+// per-CR design ships (v1.13, #227) conflicting annotations are
+// last-writer-wins. We at least make the fight visible: overwriting a
+// DIFFERENT existing value emits a Warning event naming both values.
 func (r *Neo4jBackupReconciler) ensureBackupServiceAccount(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
 	namespace := backup.Namespace
 
@@ -2036,17 +2063,24 @@ func (r *Neo4jBackupReconciler) ensureBackupServiceAccount(ctx context.Context, 
 			Namespace: namespace,
 		},
 	}
+	var conflicts []string
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, sa, func() error {
 		// Apply workload-identity annotations; preserve any other annotations
 		// already present (e.g. set by cloud-controller or the user directly).
 		if sa.Annotations == nil {
 			sa.Annotations = map[string]string{}
 		}
+		conflicts = serviceAccountAnnotationConflicts(sa.Annotations, wiAnnotations)
 		for k, v := range wiAnnotations {
 			sa.Annotations[k] = v
 		}
 		return nil
 	})
+	if err == nil && len(conflicts) > 0 && r.Recorder != nil {
+		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonServiceAccountAnnotationConflict,
+			fmt.Sprintf("Overwrote workload-identity annotations on the SHARED ServiceAccount %s/%s: %s. Multiple backup/restore CRs in this namespace declare different identities; the last reconciled CR wins and the others' cloud access breaks. Use ONE identity per namespace (an IAM role/identity with access to all backup locations), or split the CRs across namespaces.",
+				namespace, backupServiceAccountName, strings.Join(conflicts, "; ")))
+	}
 	return err
 }
 

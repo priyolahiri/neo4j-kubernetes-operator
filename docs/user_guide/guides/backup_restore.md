@@ -151,6 +151,15 @@ storage:
           eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/neo4j-backup-role
 ```
 
+> **One workload identity per namespace.** `neo4j-backup-sa` (and
+> `neo4j-restore-sa`) are **shared by every backup/restore CR in the
+> namespace** — workload-identity trust policies bind to the ServiceAccount
+> name. If two CRs declare *different* `autoCreate.annotations`, the last
+> one reconciled wins and the other's cloud access breaks; the operator
+> flags this with a `ServiceAccountAnnotationConflict` Warning event on the
+> overwriting CR. Use one IAM role/identity with access to **all** backup
+> locations in the namespace, or split the CRs across namespaces.
+
 The IAM role must allow these actions on your bucket:
 
 ```json
@@ -255,6 +264,12 @@ kubectl run minio-client --rm -it --restart=Never \
 >   --from-literal=AWS_REGION=us-east-1 \
 >   --from-literal=AWS_ENDPOINT_URL_S3=http://minio.minio.svc:9000
 > ```
+>
+> If a cluster restore resolves to a custom-endpoint backup and the operator
+> can verify the endpoint is missing from the server pods, it emits a
+> `SeedEndpointNotProjected` Warning event on the `Neo4jRestore` with this
+> exact fix — check `kubectl describe neo4jrestore <name>` before the seed
+> fails.
 
 Full examples with scheduled incremental backups: [`examples/backup-restore/backup-minio.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/backup-minio.yaml).
 
@@ -646,7 +661,7 @@ spec:
 - Both CRs must use the same storage backend (type + bucket + path).
 - `chainFromBackup` cannot point to self.
 
-**Concurrent runs across chained CRs are blocked automatically.** Each Job carries an `app.kubernetes.io/part-of: <chain-root>` label; the operator refuses to start a new backup Job while any other Job in the same chain is still active (`status.active>0`) — routes the new run to `Pending` and requeues. This prevents the hourly DIFF from firing while the daily FULL is still writing, which would corrupt the chain. Offsetting schedules (different minute on the hour) avoids the wait in practice.
+**Concurrent runs across chained CRs are blocked automatically.** Each Job carries an `app.kubernetes.io/part-of: <chain-root>` label; the operator refuses to start a new backup Job while any other Job in the same chain is still active (`status.active>0`) — routes the new run to `Pending` and requeues. On **PVC storage** there's a second, run-time guard: each backup Job takes a lock file (`<chain-root>/.chain.lock`) on the shared directory before running `neo4j-admin`, so two Jobs that slip past the creation-time check (e.g. CronJob children firing in the same instant) serialize instead of corrupting the chain — the second waits up to 1 hour, then fails for its normal retry. Offsetting schedules (different minute on the hour) avoids the wait in practice.
 
 **Restore** seeds from the **latest successful artifact of the CR you reference** — *not* the latest file in the shared directory. This selects your recovery point:
 
@@ -875,6 +890,17 @@ On a cluster target this runs entirely over Cypher (no Job, `stopCluster` is ign
 **Best for:** Quick recovery from an existing `Neo4jBackup` resource.
 
 #### Restore from a Storage Location
+
+**Finding `backupPath`:** the operator records every run's directory and
+artifact filename on the originating `Neo4jBackup`:
+
+```bash
+kubectl get neo4jbackup <name> -o jsonpath='{.status.history[0].backupsPath}'        # directory
+kubectl get neo4jbackup <name> -o jsonpath='{.status.history[0].artifactFilename}'   # exact .backup file
+```
+
+(If the Backup CR still exists, `source.type: backup` with `backupRef`
+resolves the path for you — prefer it.)
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
