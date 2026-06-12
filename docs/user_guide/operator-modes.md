@@ -172,6 +172,18 @@ Note: `config/overlays/dev` sets the dev image, namespace, and `--mode=dev`. If 
 
 Scope determines where the operator watches CRs, and RBAC determines what it can read/write.
 
+### Feature availability by RBAC shape
+
+| Feature | Manager ClusterRole (`cluster`, or `namespaces` default) | Namespaced Roles (`namespace`, or `namespaces` + `perNamespaceRoles`) |
+|---|---|---|
+| CR reconciliation (clusters, standalones, databases, backups, restores, users/roles, plugins) | ✅ | ✅ |
+| TLS via `ClusterIssuer` (or namespaced `Issuer`) | ✅ | ✅ — cert-manager does the cluster-scoped resolution |
+| External Secrets via `ClusterSecretStore` (or namespaced `SecretStore`) | ✅ | ✅ — the external-secrets operator does the resolution |
+| Pattern-based `watchNamespaces` (`glob:`/`regex:`/`label:`) | ✅ | ❌ — needs a cluster-scoped namespace list/watch; rejected at render time with `perNamespaceRoles` |
+| Availability-zone auto-discovery (`spec.topology.placement`) | ✅ | Degraded: best-effort zone spread + `TopologyZoneDiscoveryDegraded` event. ✅ with `rbac.clusterScopedReads: true` |
+| `spec.topology.enforceDistribution: true` | ✅ | ❌ unless `spec.topology.availabilityZones` is set explicitly, or `rbac.clusterScopedReads: true` |
+| Storage expansion (`allowVolumeExpansion` validation) | ✅ | ❌ — fails with an RBAC error. ✅ with `rbac.clusterScopedReads: true` |
+
 ### Cluster Scope
 
 - **RBAC**: ClusterRole + ClusterRoleBinding
@@ -192,9 +204,12 @@ Scope determines where the operator watches CRs, and RBAC determines what it can
 - **TLS via a `ClusterIssuer`** (incl. the default `issuerRef.kind: ClusterIssuer`) — fully supported. The operator only *references* the issuer in the `Certificate` it creates; **cert-manager** resolves the `ClusterIssuer` and issues the cert using its own permissions. The operator never reads the issuer itself, so no cluster-scoped RBAC is required on the operator. A namespaced `Issuer` works too.
 - **External Secrets via a `ClusterSecretStore`** — fully supported, for the same reason: the operator only references the store in the `ExternalSecret` it creates; the **external-secrets operator** does the cluster-scoped resolution. A namespaced `SecretStore` works too.
 
-**The one behavioral difference: availability-zone auto-discovery.** Listing cluster nodes is the only cluster-scoped read the operator itself performs, and a namespaced Role can't grant it. It's used solely to *enumerate* zones for `spec.topology.placement` (topology-spread / anti-affinity). In namespace scope the operator skips enumeration and applies **best-effort zone spread via the zone label key** (the Kubernetes scheduler still spreads across zones), emitting a `TopologyZoneDiscoveryDegraded` warning event — no stuck reconcile.
+**The two behavioral differences: availability-zone auto-discovery and storage-expansion validation.** The operator itself performs exactly two cluster-scoped reads, and a namespaced Role can't grant either:
 
-The only case that needs action from you is `spec.topology.enforceDistribution: true` — a hard "N servers across ≥N zones" guarantee the operator can't verify without seeing the nodes. Set `spec.topology.availabilityZones` explicitly (no node read needed) and enforced distribution works in namespace scope too. See [#202](https://github.com/neo4j-partners/neo4j-kubernetes-operator/issues/202).
+- **`nodes` (zone auto-discovery)** — used solely to *enumerate* zones for `spec.topology.placement` (topology-spread / anti-affinity). Degrades gracefully: the operator skips enumeration and applies **best-effort zone spread via the zone label key** (the Kubernetes scheduler still spreads across zones), emitting a `TopologyZoneDiscoveryDegraded` warning event — no stuck reconcile. The only case that needs action from you is `spec.topology.enforceDistribution: true` — a hard "N servers across ≥N zones" guarantee the operator can't verify without seeing the nodes. Set `spec.topology.availabilityZones` explicitly (no node read needed) and enforced distribution works in namespace scope too. See [#202](https://github.com/neo4j-partners/neo4j-kubernetes-operator/issues/202).
+- **`storageclasses` (storage expansion)** — before expanding PVCs the operator validates the StorageClass has `allowVolumeExpansion: true` (a deliberate safety check it will not skip). Without the read, growing `spec.storage.size` fails the reconcile with a clear RBAC error instead of patching PVCs blind.
+
+**Opt back in with `rbac.clusterScopedReads: true`** — a minimal read-only ClusterRole (`nodes` + `storageclasses`, get/list/watch only) bound to the operator's ServiceAccount, restoring both features while manager permissions stay namespaced. Default `false` so ClusterRole-free installs stay ClusterRole-free.
 
 ### Multi-Namespace Scope
 
@@ -239,7 +254,7 @@ Requirements (each enforced at `helm` render time — install fails fast with a 
 - **Every `watchNamespaces` entry must be a plain namespace name.** A glob/regex/label/prefix pattern (`team-*`, `regex:…`, `label:…`) is **rejected** — pattern matching needs a cluster-scoped namespace list/watch a Role cannot grant. Use `perNamespaceRoles=false` (ClusterRole) if you need patterns. You cannot have *no ClusterRole* **and** *pattern matching*.
 - **Each listed namespace must already exist** — Helm creates the `Role`+`RoleBinding` *in* each namespace but does not create the namespace.
 
-What you lose vs. the ClusterRole: only **availability-zone auto-discovery** (the same documented namespace-scope limitation — see "Namespace Scope" above; the operator falls back to best-effort zone spread and emits `TopologyZoneDiscoveryDegraded`). TLS via `ClusterIssuer`, external-secrets, backups, and all CR reconciliation work unchanged.
+What you lose vs. the ClusterRole: **availability-zone auto-discovery** and **storage-expansion validation** (the same two namespace-scope limitations — see "Namespace Scope" above), both restorable with `rbac.clusterScopedReads: true`. TLS via `ClusterIssuer`, external-secrets, backups, and all CR reconciliation work unchanged.
 
 > For a **completely** ClusterRole-free install, also set `preInstallChecks.enabled=false`. The optional pre-install check runs as a Helm hook that reads cluster-scoped CRDs via a transient ClusterRole (auto-deleted after the hook); the metrics endpoint's `metrics-auth`/`metrics-reader` ClusterRoles remain only when `metrics.secure=true`, because the Kubernetes authn/authz APIs they use are inherently cluster-scoped.
 

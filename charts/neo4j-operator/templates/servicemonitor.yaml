@@ -1,4 +1,7 @@
-{{- if and .Values.metrics.serviceMonitor.enabled .Values.metrics.secure (not .Values.metrics.serviceMonitor.bearerTokenSecret.name) }}
+{{/* metrics.enabled must be in the guard: the ServiceMonitor itself only
+     renders when metrics are on, so with metrics disabled there is nothing
+     to scrape and failing the render would block a valid install. */}}
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled .Values.metrics.secure (not .Values.metrics.serviceMonitor.bearerTokenSecret.name) }}
 {{- fail "metrics.secure=true requires metrics.serviceMonitor.bearerTokenSecret.name when the ServiceMonitor is enabled — the secured endpoint authenticates via TokenReview and an unauthenticated scrape gets 401. Create a service-account token Secret bound to the metrics-reader ClusterRole, or set metrics.secure=false." }}
 {{- end }}
 {{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled -}}

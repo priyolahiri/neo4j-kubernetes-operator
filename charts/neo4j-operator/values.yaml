@@ -81,6 +81,19 @@ rbac:
   #   * Each listed namespace MUST already exist — Helm creates the
   #     Role+RoleBinding in it but does not create the namespace itself.
   perNamespaceRoles: false
+  # Opt-in read-only ClusterRole (nodes + storageclasses, get/list/watch)
+  # for installs whose manager permissions are namespaced Roles —
+  # operatorMode=namespace, or namespaces with perNamespaceRoles=true.
+  # Restores the operator's only two cluster-scoped reads in those modes:
+  #   * nodes          — availability-zone auto-discovery for
+  #                      spec.topology.placement (otherwise best-effort
+  #                      spread + TopologyZoneDiscoveryDegraded event)
+  #   * storageclasses — allowVolumeExpansion validation (otherwise storage
+  #                      expansion fails with an RBAC error)
+  # Default off so ClusterRole-free installs stay ClusterRole-free. Ignored
+  # when the manager ClusterRole renders anyway (cluster mode, or namespaces
+  # mode without perNamespaceRoles) — that role is a superset of this one.
+  clusterScopedReads: false
 
 # Init container image used by Neo4jPlugin spec.installMode=VerifiedDownload.
 # When a Neo4jPlugin opts into VerifiedDownload, the operator injects this
@@ -209,6 +222,9 @@ leaderElection:
 #     discovery (6000) to workload namespaces — required for the
 #     operator to reconcile clusters it manages.
 # Set ingress and/or egress explicitly to override the defaults.
+# NOTE: the default egress assumes the API server listens on 443 or 6443.
+# If your cluster's API endpoint uses another port (some managed
+# offerings), set egress explicitly or the operator cannot reach the API.
 #
 # This policy covers the *operator* pod only. Neo4j workload pods live
 # in user namespaces; apply the per-cluster manifests in

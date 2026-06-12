@@ -38,6 +38,14 @@ jobs:
         # operator-sdk's createdAt: timestamp is ignored via -I in the diff.
         make check-drift
 
+    # Both were ship-prep-only, meaning a chart template error or a CSV
+    # missing a new CRD only surfaced at release time. Static, seconds-fast.
+    - name: Helm lint
+      run: make helm-lint
+
+    - name: OperatorHub CSV coverage
+      run: make check-csv-coverage
+
     - name: Surface failure details
       if: failure()
       run: |

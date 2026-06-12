@@ -106,6 +106,9 @@ The following table lists the configurable parameters of the Neo4j Operator char
 | `serviceAccount.annotations` | Service account annotations | `{}` |
 | `serviceAccount.name` | Service account name | `""` (generated) |
 | `rbac.create` | Create RBAC resources | `true` |
+| `rbac.externalSecretsIntegration` | Grant the operator RBAC for the external-secrets.io integration (only needed when a CR sets `externalSecrets.enabled`) | `false` |
+| `rbac.perNamespaceRoles` | Per-namespace Roles instead of a manager ClusterRole (`operatorMode: namespaces` with a static `watchNamespaces` list only) | `false` |
+| `rbac.clusterScopedReads` | Opt-in read-only ClusterRole (`nodes` + `storageclasses`) for installs without a manager ClusterRole — restores zone auto-discovery and storage-expansion validation in namespace-scoped modes | `false` |
 
 ### Security Configuration
 
@@ -135,8 +138,11 @@ The following table lists the configurable parameters of the Neo4j Operator char
 | `metrics.enabled` | Enable metrics endpoint | `true` |
 | `metrics.service.type` | Service type | `ClusterIP` |
 | `metrics.service.port` | Metrics port | `8080` |
+| `metrics.secure` | Serve `/metrics` over HTTPS with TokenReview authn + SubjectAccessReview authz (scrapers need a Bearer token bound to the `metrics-reader` ClusterRole) | `true` |
 | `metrics.serviceMonitor.enabled` | Create ServiceMonitor | `false` |
 | `metrics.serviceMonitor.interval` | Scrape interval | `30s` |
+| `metrics.serviceMonitor.bearerTokenSecret.name` | Secret (type `kubernetes.io/service-account-token`) holding the scrape token. REQUIRED when `metrics.secure=true` and the ServiceMonitor is enabled — the render fails without it | `""` |
+| `metrics.serviceMonitor.bearerTokenSecret.key` | Key inside that Secret | `token` |
 
 ### Neo4j Defaults
 
@@ -158,6 +164,12 @@ The following table lists the configurable parameters of the Neo4j Operator char
 | `networkPolicy.ingress` | Ingress rules (list of NetworkPolicyIngressRule) | `[]` |
 | `networkPolicy.egress` | Egress rules (list of NetworkPolicyEgressRule) | `[]` |
 
+When `networkPolicy.enabled=true` with empty rules, the chart ships defaults:
+ingress allows metrics/health scrapes; egress allows DNS (53), the Kubernetes
+API on **443/6443**, and Bolt/discovery to workload namespaces. If your
+cluster's API server listens on a non-standard port (some managed offerings),
+set `networkPolicy.egress` explicitly or the operator cannot reach the API.
+
 ### Pod Disruption Budget
 
 | Parameter | Description | Default |
@@ -175,6 +187,10 @@ The following table lists the configurable parameters of the Neo4j Operator char
 | `tolerations` | Pod tolerations | `[]` |
 | `affinity` | Pod affinity | `{}` |
 | `priorityClassName` | Priority class name | `""` |
+| `extraManifests` | Extra Kubernetes manifests to deploy with the release (templated with `tpl`) | `[]` |
+| `pluginInitContainer.image` | Image for `Neo4jPlugin` `installMode: VerifiedDownload` init containers; point at an internal mirror for air-gapped clusters | `""` (operator default `curlimages/curl:8.5.0`) |
+| `preInstallChecks.enabled` | Run pre-install hook validating prerequisites | `true` |
+| `preInstallChecks.image` | Image for the pre-install check Job (needs a shell + kubectl) | `alpine/k8s:1.32.0` |
 
 ## Deployment Modes
 
