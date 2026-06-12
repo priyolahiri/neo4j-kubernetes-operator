@@ -1169,7 +1169,8 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 			cmd += " --pagecache=" + backup.Spec.Options.PageCache
 		}
 		if backup.Spec.Options.TempPath != "" {
-			cmd += " --temp-path=" + backup.Spec.Options.TempPath
+			// User-controlled path into a /bin/sh -c command — quote (#219).
+			cmd += " --temp-path=" + shellQuote(backup.Spec.Options.TempPath)
 		} else if backup.Spec.Options.TempStorage != nil {
 			cmd += " --temp-path=/tmp/neo4j-staging"
 		}
@@ -1231,11 +1232,15 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 		} else {
 			validateDBArg = strings.TrimSuffix(validateDBArg, "*")
 		}
-		cmd += fmt.Sprintf(` && (neo4j-admin backup validate --from-path=%s --database="%s" || true)`, toPath, validateDBArg)
+		// toPath carries user-controlled spec fields — quote it (#219). The
+		// database arg is double-quoted by design (validated name or literal
+		// glob that neo4j-admin, not the shell, must expand).
+		cmd += fmt.Sprintf(` && (neo4j-admin backup validate --from-path=%s --database="%s" || true)`, shellQuote(toPath), validateDBArg)
 	}
 
 	if backup.Spec.Storage.Type == "pvc" {
-		cmd = fmt.Sprintf("mkdir -p %s && %s", toPath, cmd)
+		// chainFromBackup feeds the PVC path segment — quote it too (#219).
+		cmd = fmt.Sprintf("mkdir -p %s && %s", shellQuote(toPath), cmd)
 	}
 
 	return cmd, nil

