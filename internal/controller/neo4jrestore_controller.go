@@ -2717,10 +2717,19 @@ func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, r
 
 	// Derive the deadline from the issue timestamp. A malformed/missing stamp
 	// falls back to "now" so a single extra requeue re-stamps via the wait.
-	deadline := time.Now().Add(cypherRestoreOnlineTimeout)
+	// The budget comes from spec.timeout when set (#220 — the field existed
+	// but was never read; 5 minutes is far too small for multi-GB stores
+	// seeded from object storage), defaulting to cypherRestoreOnlineTimeout.
+	budget := cypherRestoreOnlineTimeout
+	if restore.Spec.Timeout != "" {
+		if d, perr := time.ParseDuration(restore.Spec.Timeout); perr == nil && d > 0 {
+			budget = d
+		}
+	}
+	deadline := time.Now().Add(budget)
 	if raw, ok := restore.Annotations[AnnotationCypherRestoreIssued]; ok {
 		if issuedAt, perr := time.Parse(time.RFC3339, raw); perr == nil {
-			deadline = issuedAt.Add(cypherRestoreOnlineTimeout)
+			deadline = issuedAt.Add(budget)
 		}
 	}
 	expired := time.Now().After(deadline)
@@ -2731,7 +2740,7 @@ func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, r
 		// the deadline, then fail.
 		if expired {
 			r.updateRestoreStatus(ctx, restore, StatusFailed,
-				fmt.Sprintf("Restore did not converge to online within %s: connect failed: %v", cypherRestoreOnlineTimeout, err))
+				fmt.Sprintf("Restore did not converge to online within %s: connect failed: %v", budget, err))
 			return ctrl.Result{}, nil
 		}
 		logger.V(1).Info("Poll: cluster not yet reachable, requeueing", "error", err.Error())
@@ -2756,8 +2765,8 @@ func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, r
 			detail = stateErr.Error()
 		}
 		r.updateRestoreStatus(ctx, restore, StatusFailed,
-			fmt.Sprintf("Restore did not converge to online within %s (%d/%d allocations online); last status: %s",
-				cypherRestoreOnlineTimeout, online, total, detail))
+			fmt.Sprintf("Restore did not converge to online within %s (%d/%d allocations online); last status: %s — increase spec.timeout for large stores",
+				budget, online, total, detail))
 		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed,
 			fmt.Sprintf("Cluster Cypher restore for database %q did not converge online", restore.Spec.DatabaseName))
 		return ctrl.Result{}, nil
