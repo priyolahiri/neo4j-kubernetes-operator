@@ -7,8 +7,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
@@ -865,4 +868,55 @@ func TestResolveRestoreSource_BackupRefEmptyStoragePathDefaulted(t *testing.T) {
 		"s3://prod-bucket/backups/defaulted",
 		r.buildRestoreFromPath(tmp),
 		"restore must read from the SAME location the backup Job wrote to")
+}
+
+// TestStopCluster_PreservesOriginalReplicasOnReEntry pins #218: startRestore
+// can re-enter after a successful stop (Pending route while the referenced
+// backup finishes). stopCluster must NOT overwrite the recorded original
+// replica count with the now-current 0 — startCluster would "restore" zero
+// replicas and the instance would never come back.
+func TestStopCluster_PreservesOriginalReplicasOnReEntry(t *testing.T) {
+	sts := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "sa",
+			Namespace: "ns",
+			Annotations: map[string]string{
+				// First pass already recorded the true original count.
+				"neo4j.neo4j.com/original-replicas": "3",
+			},
+		},
+		Spec: appsv1.StatefulSetSpec{Replicas: ptr.To(int32(0))}, // already stopped
+	}
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: "ns"}}
+	fc := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(sts, standalone).Build()
+	r := &Neo4jRestoreReconciler{Client: fc}
+
+	// stopCluster's pod-wait loop returns immediately: no pods exist.
+	cluster := standaloneAsCluster(standalone)
+	require.NoError(t, r.stopCluster(context.Background(), cluster))
+
+	latest := &appsv1.StatefulSet{}
+	require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Name: "sa", Namespace: "ns"}, latest))
+	assert.Equal(t, "3", latest.Annotations["neo4j.neo4j.com/original-replicas"],
+		"re-entry must not overwrite the original replica count with the current (0) value")
+}
+
+// TestRestoreAlreadyStoppedInstance pins the #218 re-entry guard for
+// checkDatabaseExists: only the restore that holds the in-progress marker
+// skips the Bolt preflight.
+func TestRestoreAlreadyStoppedInstance(t *testing.T) {
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sa", Namespace: "ns",
+			Annotations: map[string]string{RestoreInProgressAnnotation: "my-restore"},
+		},
+	}
+	fc := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(standalone).Build()
+	r := &Neo4jRestoreReconciler{Client: fc}
+	cluster := standaloneAsCluster(standalone)
+
+	mine := &neo4jv1beta1.Neo4jRestore{ObjectMeta: metav1.ObjectMeta{Name: "my-restore", Namespace: "ns"}}
+	other := &neo4jv1beta1.Neo4jRestore{ObjectMeta: metav1.ObjectMeta{Name: "other-restore", Namespace: "ns"}}
+	assert.True(t, r.restoreAlreadyStoppedInstance(context.Background(), mine, cluster))
+	assert.False(t, r.restoreAlreadyStoppedInstance(context.Background(), other, cluster))
 }

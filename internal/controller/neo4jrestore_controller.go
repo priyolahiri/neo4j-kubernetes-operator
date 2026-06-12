@@ -287,8 +287,12 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		return r.startClusterCypherRestore(ctx, restore, cluster)
 	}
 
-	// Check if database exists and handle accordingly
-	if !restore.Spec.Force {
+	// Check if database exists and handle accordingly. Skipped when THIS
+	// restore already stopped the instance on a previous reconcile (re-entry
+	// via a Pending route, #218): the Bolt connection would fail against the
+	// scaled-to-0 instance and pin a terminal Failed — and the check already
+	// passed before the stop.
+	if !restore.Spec.Force && !r.restoreAlreadyStoppedInstance(ctx, restore, cluster) {
 		if err := r.checkDatabaseExists(ctx, restore, cluster); err != nil {
 			logger.Error(err, "Database existence check failed")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Database check failed: %v", err))
@@ -333,6 +337,10 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	if restore.Spec.Options != nil && restore.Spec.Options.PreRestore != nil {
 		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PreRestore, "pre-restore"); err != nil {
 			logger.Error(err, "Pre-restore hooks failed")
+			// The instance may already be scaled to 0 by stopCluster above;
+			// a terminal Failed without recovery would strand it there with
+			// the restore-in-progress annotation held (#218).
+			r.restoreClusterAfterFailure(ctx, restore, cluster)
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Pre-restore hooks failed: %v", err))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 		}
@@ -347,13 +355,19 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		// requeues) instead of Failed (which the guard pins as
 		// terminal until the CR is recreated). The restore will
 		// auto-promote to Running once the backup's history gains a
-		// Succeeded entry on a future reconcile.
+		// Succeeded entry on a future reconcile. The instance stays
+		// stopped (stopCluster already ran); the eventual retry re-enters
+		// startRestore, where stopCluster's write-if-absent annotation
+		// handling keeps the original replica count intact (#218).
 		if stderrors.Is(err, errBackupNotReady) {
 			logger.Info("Restore is waiting for the referenced backup to complete", "error", err.Error())
 			r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Waiting for backup to complete: %v", err))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		logger.Error(err, "Failed to create restore job")
+		// Terminal failure after a successful stopCluster: scale the
+		// instance back up and release the annotation (#218).
+		r.restoreClusterAfterFailure(ctx, restore, cluster)
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to create restore job: %v", err))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 	}
@@ -1803,6 +1817,20 @@ func (r *Neo4jRestoreReconciler) refuseRestoreIfPodsRunning(ctx context.Context,
 // sts.Spec.Replicas (issue #117). If the annotation is already set to a
 // different restore, returns an error — two restores against the same cluster
 // cannot run concurrently.
+// restoreAlreadyStoppedInstance reports whether THIS restore already holds
+// the in-progress marker on the target standalone — i.e. a previous reconcile
+// stopped the instance and startRestore is re-entering (e.g. via a Pending
+// route while the referenced backup finishes). Bolt-based preflights are
+// impossible against the stopped instance — and unnecessary: they passed
+// before the stop (#218).
+func (r *Neo4jRestoreReconciler) restoreAlreadyStoppedInstance(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
+	sa := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), sa); err != nil {
+		return false
+	}
+	return sa.Annotations[RestoreInProgressAnnotation] == restore.Name
+}
+
 func (r *Neo4jRestoreReconciler) setRestoreInProgressAnnotation(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		// The Job restore path is standalone-only (clusters use the Cypher
@@ -1878,11 +1906,19 @@ func (r *Neo4jRestoreReconciler) stopCluster(ctx context.Context, cluster *neo4j
 	originalReplicas := *sts.Spec.Replicas
 	sts.Spec.Replicas = ptr.To(int32(0))
 
-	// Store original replica count in annotation for later restoration
+	// Store the original replica count for later restoration — but ONLY if
+	// not already recorded (#218). startRestore can re-enter after a
+	// successful stop (e.g. a Pending route while the referenced backup
+	// finishes); by then the live replica count is 0, and overwriting the
+	// annotation with "0" would make startCluster "restore" zero replicas —
+	// the instance never comes back. Mirrors startCluster's tolerance of a
+	// missing annotation (rule 46).
 	if sts.Annotations == nil {
 		sts.Annotations = make(map[string]string)
 	}
-	sts.Annotations["neo4j.neo4j.com/original-replicas"] = fmt.Sprintf("%d", originalReplicas)
+	if _, recorded := sts.Annotations["neo4j.neo4j.com/original-replicas"]; !recorded {
+		sts.Annotations["neo4j.neo4j.com/original-replicas"] = fmt.Sprintf("%d", originalReplicas)
+	}
 
 	if err := r.Update(ctx, sts); err != nil {
 		return fmt.Errorf("failed to scale down StatefulSet: %w", err)
