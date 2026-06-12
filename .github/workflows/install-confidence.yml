@@ -9,6 +9,8 @@ on:
         description: "Previous released chart version to upgrade from (empty = latest published)"
         required: false
         default: ""
+permissions:
+  contents: read
 jobs:
   install-confidence:
     runs-on: ubuntu-latest
