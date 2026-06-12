@@ -567,7 +567,18 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Conte
 				return err
 			}
 			clientSvc.Labels = desiredClient.Labels
-			clientSvc.Annotations = desiredClient.Annotations
+			// MERGE annotations rather than replace: cloud LB / ingress
+			// controllers stamp their own annotations on the Service, and a
+			// wholesale assign would strip them every reconcile (breaking
+			// provider-managed exposure). Trade-off: removing a key from
+			// spec.service.annotations doesn't remove it from the live
+			// Service — same semantics as the cluster path.
+			if clientSvc.Annotations == nil {
+				clientSvc.Annotations = map[string]string{}
+			}
+			for k, v := range desiredClient.Annotations {
+				clientSvc.Annotations[k] = v
+			}
 			clientSvc.Spec.Type = desiredClient.Spec.Type
 			clientSvc.Spec.Selector = desiredClient.Spec.Selector
 			clientSvc.Spec.Ports = desiredClient.Spec.Ports
@@ -1834,13 +1845,20 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 		ready = false
 	}
 
-	// Check if status actually needs to be updated
+	// Check if status actually needs to be updated. The endpoints check
+	// compares the canonical Bolt URL, not just non-nil-ness (#228 review):
+	// after the #215 rename, an already-Ready standalone would otherwise keep
+	// its pre-rename {name}-service URLs in status forever, because nothing
+	// else in this condition changes on an operator upgrade.
+	expectedBoltHost := fmt.Sprintf("%s-client.%s.svc.cluster.local:7687", standalone.Name, standalone.Namespace)
+	endpointsCurrent := latestStandalone.Status.Endpoints != nil &&
+		strings.HasSuffix(latestStandalone.Status.Endpoints.Bolt, expectedBoltHost)
 	if latestStandalone.Status.Phase == phase &&
 		latestStandalone.Status.Message == message &&
 		latestStandalone.Status.Ready == ready &&
 		latestStandalone.Status.Version == standalone.Spec.Image.Tag &&
 		latestStandalone.Status.ObservedGeneration == latestStandalone.Generation &&
-		latestStandalone.Status.Endpoints != nil {
+		endpointsCurrent {
 		logger.V(1).Info("Status unchanged, skipping update")
 		return nil
 	}
