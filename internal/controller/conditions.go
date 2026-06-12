@@ -53,6 +53,10 @@ const (
 	ConditionReasonServersPendingDrain    = "ServersPendingDrain"
 	ConditionReasonNoServersPendingDrain  = "NoServersPendingDrain"
 	ConditionReasonScaleDownBlocked       = "ScaleDownBlocked"
+	// ConditionReasonScaleDownDeferredByUpgrade — a topology shrink was
+	// requested while a rolling upgrade is mid-flight; the drain starts
+	// after the upgrade completes (#173/#174 mutual exclusion).
+	ConditionReasonScaleDownDeferredByUpgrade = "ScaleDownDeferredByUpgrade"
 )
 
 // SetReadyCondition sets the standard "Ready" condition on a conditions slice.

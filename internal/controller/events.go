@@ -27,6 +27,10 @@ const (
 	EventReasonUpgradePaused     = "UpgradePaused"
 	EventReasonUpgradeFailed     = "UpgradeFailed"
 	EventReasonUpgradeRolledBack = "UpgradeRolledBack"
+	// EventReasonUpgradeDeferred — an image upgrade was requested while a
+	// scale-down drain is in progress; the upgrade starts once the drain
+	// completes (#173/#174 mutual exclusion).
+	EventReasonUpgradeDeferred = "UpgradeDeferred"
 )
 
 // Backup and restore events
