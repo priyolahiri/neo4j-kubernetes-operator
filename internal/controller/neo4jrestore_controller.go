@@ -3210,19 +3210,25 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 
 // seedProxyWaitStart resolves the deadline anchor for the seed-proxy wait.
 // Normally the persisted annotation stamp; if persisting it keeps FAILING,
-// fall back to status.StartTime (set when the restore attempt began) so a
-// broken annotation write can't reopen the unbounded wait #227 removed
-// (Bugbot, PR #265). The fallback is conservative — StartTime predates the
-// proxy wait, so it can only expire the wait EARLIER, never extend it.
-// Returns (anchor, false) only when no anchor exists at all.
+// fall back to the PERSISTED status.startTime so a broken annotation write
+// can't reopen the unbounded wait #227 removed (Bugbot, PR #265). The
+// fallback must be read from the API, not the in-memory object: startRestore
+// resets the in-memory StartTime to "now" on every Pending requeue (the
+// persisted value is protected by updateRestoreStatus's earlier-wins rule),
+// so the in-memory copy slides and would never expire (Bugbot round 2).
+// Conservative either way — StartTime predates the proxy wait, so it can
+// only expire the wait EARLIER, never extend it. Returns (anchor, false)
+// only when no anchor is reachable at all (API fully unavailable — status
+// writes are failing too, so nothing is silently Pending).
 func (r *Neo4jRestoreReconciler) seedProxyWaitStart(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) (time.Time, bool) {
 	if t, err := r.markSeedProxyWaitStarted(ctx, restore); err == nil {
 		return t, true
 	} else {
-		log.FromContext(ctx).V(1).Info("Failed to persist seed-proxy wait anchor; falling back to status.startTime for the deadline", "error", err.Error())
+		log.FromContext(ctx).V(1).Info("Failed to persist seed-proxy wait anchor; falling back to the persisted status.startTime for the deadline", "error", err.Error())
 	}
-	if restore.Status.StartTime != nil {
-		return restore.Status.StartTime.Time, true
+	latest := &neo4jv1beta1.Neo4jRestore{}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err == nil && latest.Status.StartTime != nil {
+		return latest.Status.StartTime.Time, true
 	}
 	return time.Time{}, false
 }
