@@ -162,8 +162,8 @@ jobs:
 
         # OperatorHub submission
         PR=$(gh pr list --repo k8s-operatorhub/community-operators \
-              --search "neo4j-kubernetes-operator ${CLEAN} in:title" --state all \
-              --json number,state,url --jq '.[0] | "\(.state) \(.url)"' 2>/dev/null || true)
+              --search "\"neo4j-kubernetes-operator (${CLEAN})\" in:title" --state all \
+              --json number,state,url --jq 'if length > 0 then .[0] | "\(.state) \(.url)" else empty end' 2>/dev/null || true)
         probe "operatorhub PR" "${PR:-none found}"
         case "$PR" in
           MERGED*) closed="${closed} operatorhub(MERGED)";;
