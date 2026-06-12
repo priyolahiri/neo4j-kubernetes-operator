@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -291,7 +292,7 @@ func TestBackupValidator_Validate(t *testing.T) {
 						},
 					},
 					Options: &neo4jv1beta1.BackupOptions{
-						Compress: true,
+						Compress: ptr.To(true),
 						Verify:   true,
 					},
 				},
