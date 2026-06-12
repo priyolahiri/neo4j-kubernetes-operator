@@ -146,6 +146,13 @@ type ServerInfo struct {
 	State   string
 	Health  string
 	Hosting []string
+	// Version is the Neo4j version the server itself reports in SHOW
+	// SERVERS (e.g. "5.26.0", "2025.01.0"). Populated by ListServers.
+	// NOTE: unlike dbms.components(), this column reports the calendar
+	// version for ALL CalVer releases — 2025.01 included (components()
+	// reports its pre-rebrand kernel "5.27.0" there) — which makes it the
+	// right source for post-upgrade version verification.
+	Version string
 }
 
 // NewClientForPod creates a Neo4j client that connects to a specific pod
@@ -1796,7 +1803,7 @@ func (c *Client) ListServers(ctx context.Context) ([]ServerInfo, error) {
 	// includes the bolt port; we don't strip it because the column is
 	// purely diagnostic — only `id` is consumed by recreate.
 	result, err := session.Run(ctx,
-		"SHOW SERVERS YIELD serverId, name, address, state, health, hosting", nil)
+		"SHOW SERVERS YIELD serverId, name, address, state, health, hosting, version", nil)
 	if err != nil {
 		return nil, fmt.Errorf("SHOW SERVERS failed: %w", err)
 	}
@@ -1837,6 +1844,11 @@ func (c *Client) ListServers(ctx context.Context) ([]ServerInfo, error) {
 						s.Hosting = append(s.Hosting, str)
 					}
 				}
+			}
+		}
+		if v, ok := rec.Get("version"); ok {
+			if str, ok := v.(string); ok {
+				s.Version = str
 			}
 		}
 		servers = append(servers, s)

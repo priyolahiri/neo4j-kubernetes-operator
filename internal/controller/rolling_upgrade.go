@@ -50,312 +50,11 @@ func NewRollingUpgradeOrchestrator(c client.Client, clusterName, namespace strin
 	}
 }
 
-// ExecuteRollingUpgrade orchestrates a complete rolling upgrade
-func (r *RollingUpgradeOrchestrator) ExecuteRollingUpgrade(
-	ctx context.Context,
-	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
-	neo4jClient *neo4jclient.Client,
-) error {
-	logger := log.FromContext(ctx).WithName("rolling-upgrade")
-
-	// Initialize upgrade status
-	if err := r.initializeUpgradeStatus(ctx, cluster); err != nil {
-		return fmt.Errorf("failed to initialize upgrade status: %w", err)
-	}
-
-	startTime := time.Now()
-	defer func() {
-		success := cluster.Status.UpgradeStatus.Phase == "Completed"
-		r.upgradeMetrics.RecordUpgrade(ctx, success, time.Since(startTime))
-	}()
-
-	// Phase 1: Pre-upgrade validations
-	logger.Info("Starting pre-upgrade validations")
-	if err := r.preUpgradeValidations(ctx, cluster, neo4jClient); err != nil {
-		r.updateUpgradeStatus(ctx, cluster, "Failed", "Pre-upgrade validation failed", err.Error())
-		return fmt.Errorf("pre-upgrade validation failed: %w", err)
-	}
-
-	// Phase 2: Upgrade secondaries first (if any) - disabled in server architecture
-	if false { // No secondaries in server architecture
-		logger.Info("Upgrading secondary nodes")
-		if err := r.upgradeSecondaries(ctx, cluster, neo4jClient); err != nil {
-			r.updateUpgradeStatus(ctx, cluster, "Failed", "Secondary upgrade failed", err.Error())
-			return fmt.Errorf("secondary upgrade failed: %w", err)
-		}
-	}
-
-	// Phase 3: Upgrade primaries (leader-aware)
-	logger.Info("Upgrading primary nodes")
-	if err := r.upgradePrimaries(ctx, cluster, neo4jClient); err != nil {
-		r.updateUpgradeStatus(ctx, cluster, "Failed", "Primary upgrade failed", err.Error())
-		return fmt.Errorf("primary upgrade failed: %w", err)
-	}
-
-	// Phase 4: Post-upgrade validations
-	logger.Info("Performing post-upgrade validations")
-	if err := r.postUpgradeValidations(ctx, cluster, neo4jClient); err != nil {
-		r.updateUpgradeStatus(ctx, cluster, "Failed", "Post-upgrade validation failed", err.Error())
-		return fmt.Errorf("post-upgrade validation failed: %w", err)
-	}
-
-	// Mark upgrade as completed
-	r.updateUpgradeStatus(ctx, cluster, "Completed", "Rolling upgrade completed successfully", "")
-	logger.Info("Rolling upgrade completed successfully")
-
-	return nil
-}
-
-// Helper methods for upgrade orchestration
-func (r *RollingUpgradeOrchestrator) initializeUpgradeStatus(
-	ctx context.Context,
-	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
-) error {
-	now := metav1.Now()
-
-	cluster.Status.UpgradeStatus = &neo4jv1beta1.UpgradeStatus{
-		Phase:           "InProgress",
-		StartTime:       &now,
-		CurrentStep:     "Initializing upgrade",
-		PreviousVersion: cluster.Status.Version,
-		TargetVersion:   cluster.Spec.Image.Tag,
-		Progress: &neo4jv1beta1.UpgradeProgress{
-			Total:   cluster.Spec.Topology.Servers,
-			Pending: cluster.Spec.Topology.Servers,
-		},
-	}
-
-	return r.Status().Update(ctx, cluster)
-}
-
-func (r *RollingUpgradeOrchestrator) preUpgradeValidations(
-	ctx context.Context,
-	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
-	neo4jClient *neo4jclient.Client,
-) error {
-	logger := log.FromContext(ctx)
-
-	// Skip health check if disabled
-	if cluster.Spec.UpgradeStrategy == nil || cluster.Spec.UpgradeStrategy.PreUpgradeHealthCheck {
-		logger.Info("Validating cluster health before upgrade")
-
-		// Validate upgrade safety using Neo4j client
-		targetVersion := cluster.Spec.Image.Tag
-		if err := neo4jClient.ValidateUpgradeSafety(ctx, targetVersion); err != nil {
-			return fmt.Errorf("upgrade safety validation failed: %w", err)
-		}
-	}
-
-	// Validate version compatibility
-	if err := r.validateVersionCompatibility(cluster.Status.Version, cluster.Spec.Image.Tag); err != nil {
-		return fmt.Errorf("version compatibility check failed: %w", err)
-	}
-
-	// Check if StatefulSets are ready
-	if err := r.validateStatefulSetsReady(ctx, cluster); err != nil {
-		return fmt.Errorf("StatefulSets not ready: %w", err)
-	}
-
-	r.updateUpgradeStatus(ctx, cluster, "InProgress", "Pre-upgrade validations completed", "")
-	return nil
-}
-
-func (r *RollingUpgradeOrchestrator) upgradeSecondaries(
-	ctx context.Context,
-	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
-	_ *neo4jclient.Client,
-) error {
-	logger := log.FromContext(ctx)
-
-	// Secondaries don't exist in server architecture - always return
-	logger.Info("Skipping secondary upgrade - using server architecture")
-	return nil
-}
-
-func (r *RollingUpgradeOrchestrator) upgradePrimaries(
-	ctx context.Context,
-	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
-	neo4jClient *neo4jclient.Client,
-) error {
-	logger := log.FromContext(ctx)
-
-	r.updateUpgradeStatus(ctx, cluster, "InProgress", "Upgrading primary nodes", "")
-
-	if err := r.upgradeServers(ctx, cluster, neo4jClient); err != nil {
-		return fmt.Errorf("server upgrade failed: %w", err)
-	}
-
-	logger.Info("Primary nodes upgrade completed")
-	return nil
-}
-
-func (r *RollingUpgradeOrchestrator) upgradeServers(
-	ctx context.Context,
-	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
-	neo4jClient *neo4jclient.Client,
-) error {
-	logger := log.FromContext(ctx)
-
-	serverSts, err := r.getServerStatefulSet(ctx, cluster)
-	if err != nil {
-		return fmt.Errorf("failed to get server StatefulSet: %w", err)
-	}
-
-	if len(serverSts.Spec.Template.Spec.Containers) == 0 {
-		return fmt.Errorf("server StatefulSet has no containers defined")
-	}
-
-	replicas := int32(0)
-	if serverSts.Spec.Replicas != nil {
-		replicas = *serverSts.Spec.Replicas
-	}
-	if replicas == 0 {
-		return fmt.Errorf("server StatefulSet has zero replicas configured")
-	}
-
-	// Identify the system-database primary so it can be rolled last.
-	// With a partition-based StatefulSet RollingUpdate, Kubernetes always restarts
-	// pods from the highest ordinal down to the lowest.  The LAST pod restarted is
-	// therefore ordinal 0, making 0 the correct "roll-last" position.
-	//
-	// We try to detect the actual primary and use its ordinal if it equals 0; for
-	// any other ordinal we log a warning and keep ordinal 0 as the safe fallback so
-	// the partition sequence is always correct.
-	leaderOrdinal := 0 // safe default: ordinal 0 is always rolled last by K8s partition strategy
-	if primaryAddr, err := neo4jClient.FindSystemDatabasePrimaryAddress(ctx); err == nil && primaryAddr != "" {
-		for i := 0; i < int(replicas); i++ {
-			podPrefix := fmt.Sprintf("%s-server-%d", cluster.Name, i)
-			if strings.Contains(primaryAddr, podPrefix) {
-				if i == 0 {
-					logger.Info("System DB primary is ordinal 0 — will be rolled last as intended", "address", primaryAddr)
-				} else {
-					logger.Info("System DB primary is not ordinal 0; falling back to ordinal 0 as roll-last position",
-						"actualPrimaryOrdinal", i, "address", primaryAddr)
-				}
-				leaderOrdinal = 0 // always keep ordinal 0 as last — partition strategy enforces this
-				break
-			}
-		}
-	} else {
-		logger.Info("Could not determine system DB primary address, using ordinal 0 as roll-last position", "error", err)
-	}
-
-	newImage := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
-	if serverSts.Spec.Template.Spec.Containers[0].Image == newImage {
-		logger.Info("Server StatefulSet already has target image")
-		return nil
-	}
-	timeout := r.getUpgradeTimeout(cluster)
-	// Per-pod timeout for the Neo4j cluster-membership health check that follows
-	// each Kubernetes readiness gate.  5 minutes is generous; a server that can
-	// connect to the cluster at all should rejoin in well under a minute.
-	perPodHealthTimeout := 5 * time.Minute
-
-	// Prime the StatefulSet with the target image and freeze all pod restarts by
-	// setting partition = replicas.  No pod will restart until we lower the partition.
-	_, err = r.updateServerStatefulSet(ctx, cluster, func(sts *appsv1.StatefulSet) {
-		sts.Spec.Template.Spec.Containers[0].Image = newImage
-		if sts.Spec.Template.Annotations == nil {
-			sts.Spec.Template.Annotations = make(map[string]string)
-		}
-		sts.Spec.Template.Annotations["neo4j.com/upgrade-timestamp"] = time.Now().Format(time.RFC3339)
-
-		if sts.Spec.UpdateStrategy.RollingUpdate == nil {
-			sts.Spec.UpdateStrategy.RollingUpdate = &appsv1.RollingUpdateStatefulSetStrategy{}
-		}
-		partition := replicas
-		sts.Spec.UpdateStrategy.RollingUpdate.Partition = &partition
-	})
-	if err != nil {
-		return fmt.Errorf("failed to stage server StatefulSet for upgrade: %w", err)
-	}
-
-	// Roll pods from highest ordinal down to 1, skipping the leader (ordinal 0).
-	// Each step lowers the partition by one, causing exactly one new pod to restart.
-	for ord := replicas - 1; ord > int32(leaderOrdinal); ord-- {
-		if err := r.updatePartitionAndWait(ctx, cluster, ord, timeout); err != nil {
-			return fmt.Errorf("failed to roll ordinal %d: %w", ord, err)
-		}
-
-		// Verify the restarted pod has actually re-joined the Neo4j cluster before
-		// proceeding to the next pod.  Kubernetes readiness only checks port 7474;
-		// this confirms the server is Enabled+Available in SHOW SERVERS.
-		podName := fmt.Sprintf("%s-server-%d", cluster.Name, ord)
-		logger.Info("Waiting for server to rejoin cluster after restart", "pod", podName)
-		if err := neo4jClient.WaitForServerAvailable(ctx, podName, perPodHealthTimeout); err != nil {
-			return fmt.Errorf("pod %s did not rejoin cluster after restart: %w", podName, err)
-		}
-		logger.Info("Server rejoined cluster successfully", "pod", podName)
-	}
-
-	// Roll the leader (ordinal 0) last.
-	if err := r.updatePartitionAndWait(ctx, cluster, int32(leaderOrdinal), timeout); err != nil {
-		return fmt.Errorf("failed to roll leader ordinal %d: %w", leaderOrdinal, err)
-	}
-	leaderPodName := fmt.Sprintf("%s-server-%d", cluster.Name, leaderOrdinal)
-	logger.Info("Waiting for leader pod to rejoin cluster after restart", "pod", leaderPodName)
-	if err := neo4jClient.WaitForServerAvailable(ctx, leaderPodName, perPodHealthTimeout); err != nil {
-		return fmt.Errorf("leader pod %s did not rejoin cluster after restart: %w", leaderPodName, err)
-	}
-
-	// Clear the partition so future reconcile loops do not block normal StatefulSet updates.
-	_, err = r.updateServerStatefulSet(ctx, cluster, func(sts *appsv1.StatefulSet) {
-		if sts.Spec.UpdateStrategy.RollingUpdate != nil {
-			zero := int32(0)
-			sts.Spec.UpdateStrategy.RollingUpdate.Partition = &zero
-		}
-	})
-	if err != nil {
-		return fmt.Errorf("failed to clear partition after upgrade: %w", err)
-	}
-
-	// Final cluster stabilization — wait for health+consensus to be consistently true.
-	stabilizationTimeout := r.getStabilizationTimeout(cluster)
-	if err := neo4jClient.WaitForClusterStabilization(ctx, stabilizationTimeout); err != nil {
-		return fmt.Errorf("cluster failed to stabilize after server upgrade: %w", err)
-	}
-
-	// Verify replication is working before declaring the upgrade done.
-	// Uses dbms.cluster.statusCheck() (Neo4j 5.24+ / CalVer) — a stronger gate than
-	// SHOW SERVERS: confirms the cluster can still commit and replicate a dummy
-	// transaction to a majority, and that no member is UNAVAILABLE.
-	logger.Info("Verifying cluster replication health after all servers upgraded")
-	if err := neo4jClient.WaitForReplicationHealthy(ctx, stabilizationTimeout); err != nil {
-		return fmt.Errorf("cluster replication unhealthy after server upgrade: %w", err)
-	}
-	logger.Info("Cluster replication verified healthy after upgrade")
-
-	// Update progress — all servers upgraded.
-	cluster.Status.UpgradeStatus.Progress.Upgraded = replicas
-	cluster.Status.UpgradeStatus.Progress.Pending = 0
-
-	if err := r.Status().Update(ctx, cluster); err != nil {
-		logger.Error(err, "Failed to update cluster status after server upgrade")
-	}
-	logger.Info("Server StatefulSet upgrade completed", "leaderOrdinal", leaderOrdinal)
-
-	return nil
-}
-
-func (r *RollingUpgradeOrchestrator) updatePartitionAndWait(
-	ctx context.Context,
-	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
-	partition int32,
-	timeout time.Duration,
-) error {
-	sts, err := r.updateServerStatefulSet(ctx, cluster, func(sts *appsv1.StatefulSet) {
-		if sts.Spec.UpdateStrategy.RollingUpdate == nil {
-			sts.Spec.UpdateStrategy.RollingUpdate = &appsv1.RollingUpdateStatefulSetStrategy{}
-		}
-		p := partition
-		sts.Spec.UpdateStrategy.RollingUpdate.Partition = &p
-	})
-	if err != nil {
-		return err
-	}
-
-	return r.waitForPartialStatefulSetRollout(ctx, sts, partition, timeout)
-}
+// The blocking upgrade loop (ExecuteRollingUpgrade / upgradeServers /
+// updatePartitionAndWait) was replaced by the requeue-driven state machine in
+// rolling_upgrade_statemachine.go (#174). This file keeps the shared
+// orchestration helpers: status writes, version validation, StatefulSet
+// access, version verification and timeout configuration.
 
 func (r *RollingUpgradeOrchestrator) updateServerStatefulSet(
 	ctx context.Context,
@@ -400,73 +99,14 @@ func (r *RollingUpgradeOrchestrator) getServerStatefulSet(
 	return sts, nil
 }
 
-func (r *RollingUpgradeOrchestrator) postUpgradeValidations(
-	ctx context.Context,
-	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
-	neo4jClient *neo4jclient.Client,
-) error {
-	logger := log.FromContext(ctx)
-
-	r.updateUpgradeStatus(ctx, cluster, "InProgress", "Performing post-upgrade validations", "")
-
-	// Skip health check if disabled
-	if cluster.Spec.UpgradeStrategy == nil || cluster.Spec.UpgradeStrategy.PostUpgradeHealthCheck {
-		logger.Info("Validating cluster health after upgrade")
-
-		healthTimeout := r.getHealthCheckTimeout(cluster)
-		ctx, cancel := context.WithTimeout(ctx, healthTimeout)
-		defer cancel()
-
-		// Wait for cluster to be healthy (SHOW SERVERS gate — fast check).
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("timeout waiting for cluster health after upgrade")
-			case <-ticker.C:
-				healthy, err := neo4jClient.IsClusterHealthy(ctx)
-				if err != nil {
-					logger.V(1).Info("Health check error (retrying)", "error", err)
-					continue
-				}
-				if healthy {
-					logger.Info("Cluster is healthy after upgrade")
-					goto healthCheckComplete
-				}
-			}
-		}
-
-	healthCheckComplete:
-
-		// Replication gate — stronger check using dbms.cluster.statusCheck().
-		// Confirms a dummy transaction can be replicated to a majority and no
-		// member is UNAVAILABLE before the operator marks the upgrade complete.
-		logger.Info("Verifying cluster replication health post-upgrade")
-		if err := neo4jClient.WaitForReplicationHealthy(ctx, healthTimeout); err != nil {
-			return fmt.Errorf("cluster replication unhealthy after upgrade: %w", err)
-		}
-		logger.Info("Cluster replication healthy — post-upgrade validation complete")
-	}
-
-	// Verify version upgrade
-	if err := r.verifyVersionUpgrade(ctx, cluster, neo4jClient); err != nil {
-		return fmt.Errorf("version verification failed: %w", err)
-	}
-
-	logger.Info("Post-upgrade validations completed")
-	return nil
-}
-
 // Utility methods
 func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 	ctx context.Context,
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	phase, currentStep, lastError string,
-) {
+) error {
 	if cluster.Status.UpgradeStatus == nil {
-		return
+		return nil
 	}
 
 	// Refetch + RetryOnConflict on every status write. The upgrade runs across
@@ -502,6 +142,7 @@ func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update cluster status in updateUpgradeStatus")
 	}
+	return err
 }
 
 func (r *RollingUpgradeOrchestrator) validateVersionCompatibility(currentVersion, targetVersion string) error {
@@ -696,49 +337,14 @@ func (r *RollingUpgradeOrchestrator) validateStatefulSetsReady(
 	return nil
 }
 
-func (r *RollingUpgradeOrchestrator) waitForPartialStatefulSetRollout(
-	ctx context.Context,
-	sts *appsv1.StatefulSet,
-	partition int32,
-	timeout time.Duration,
-) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for partial StatefulSet rollout")
-		case <-ticker.C:
-			current := &appsv1.StatefulSet{}
-			if err := r.Get(ctx, types.NamespacedName{
-				Name:      sts.Name,
-				Namespace: sts.Namespace,
-			}, current); err != nil {
-				continue
-			}
-
-			// For partition updates, we expect UpdatedReplicas to be total - partition
-			if current.Spec.Replicas == nil {
-				continue
-			}
-			expectedUpdated := *current.Spec.Replicas - partition
-			if expectedUpdated < 0 {
-				expectedUpdated = 0
-			}
-
-			if current.Status.ObservedGeneration >= current.Generation &&
-				current.Status.ReadyReplicas == *current.Spec.Replicas &&
-				current.Status.UpdatedReplicas >= expectedUpdated {
-				return nil
-			}
-		}
-	}
-}
-
+// verifyVersionUpgrade confirms every enabled server reports the target
+// version. Source of truth is `SHOW SERVERS YIELD version` (via ListServers):
+// it returns one row PER SERVER in a single query — unlike the previous
+// dbms.components() approach, which went through the routing driver and
+// actually sampled whichever server routing picked, once per member. SHOW
+// SERVERS also reports the calendar version for ALL CalVer releases (2025.01
+// included), whereas dbms.components() reports the pre-rebrand kernel
+// "5.27.0" there; the versionsMatch kernel alias is kept as belt-and-braces.
 func (r *RollingUpgradeOrchestrator) verifyVersionUpgrade(
 	ctx context.Context,
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
@@ -754,135 +360,70 @@ func (r *RollingUpgradeOrchestrator) verifyVersionUpgrade(
 
 	logger.Info("Verifying cluster version after upgrade", "targetVersion", targetVersion)
 
-	// Get cluster overview to check versions of all members
-	members, err := neo4jClient.GetClusterOverview(ctx)
+	servers, err := neo4jClient.ListServers(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get cluster overview for version verification: %w", err)
+		return fmt.Errorf("failed to list servers for version verification: %w", err)
 	}
 
-	if len(members) == 0 {
-		return fmt.Errorf("no cluster members found during version verification")
+	mismatches, verified := r.versionMismatchesFromServers(servers, targetVersion)
+	if verified == 0 {
+		return fmt.Errorf("no enabled servers found during version verification")
+	}
+	if len(mismatches) > 0 {
+		return fmt.Errorf("version verification failed for %d servers: %s",
+			len(mismatches), strings.Join(mismatches, "; "))
 	}
 
-	// Verify each member is running the target version
-	var versionMismatches []string
-	for _, member := range members {
-		// Query the specific member for its version
-		memberVersion, err := r.getMemberVersion(ctx, neo4jClient, member.ID)
-		if err != nil {
-			logger.Error(err, "Failed to get version for member", "memberID", member.ID)
-			versionMismatches = append(versionMismatches, member.ID+": version query failed")
-			continue
-		}
-
-		// Compare versions (normalize for comparison)
-		if !r.versionsMatch(memberVersion, targetVersion) {
-			versionMismatches = append(versionMismatches,
-				fmt.Sprintf("%s: running %s, expected %s", member.ID, memberVersion, targetVersion))
-		} else {
-			logger.Info("Member version verified", "memberID", member.ID, "version", memberVersion)
-		}
-	}
-
-	// If there are version mismatches, report them
-	if len(versionMismatches) > 0 {
-		return fmt.Errorf("version verification failed for %d members: %s",
-			len(versionMismatches), strings.Join(versionMismatches, "; "))
-	}
-
-	// Update cluster status with verified version
-	cluster.Status.Version = targetVersion
-	if err := r.Status().Update(ctx, cluster); err != nil {
-		logger.Error(err, "Failed to update cluster status with verified version")
-		// Don't fail the upgrade for this, just log the error
-	}
+	// NOTE: Status.Version is intentionally NOT written here. The Completed
+	// transition persists it via refetch+RetryOnConflict (#207) — a bare
+	// Status().Update on the reconcile-start object would silently 409.
 
 	logger.Info("Version verification completed successfully",
-		"targetVersion", targetVersion, "verifiedMembers", len(members))
+		"targetVersion", targetVersion, "verifiedServers", verified)
 	return nil
 }
 
-// getMemberVersion queries a specific cluster member for its Neo4j version
-func (r *RollingUpgradeOrchestrator) getMemberVersion(ctx context.Context, neo4jClient *neo4jclient.Client, memberID string) (string, error) {
-	// Query Neo4j for version information
-	// This uses a system query to get the version
-	query := "CALL dbms.components() YIELD name, versions, edition WHERE name = 'Neo4j Kernel' RETURN versions[0] as version"
-	result, err := neo4jClient.ExecuteQuery(ctx, query)
-	if err != nil {
-		return "", fmt.Errorf("failed to query version from member %s: %w", memberID, err)
+// versionMismatchesFromServers compares each ENABLED server's self-reported
+// SHOW SERVERS version against the target tag. Non-enabled servers (e.g. a
+// leftover Cordoned entry from an aborted drain, or a Free server) are not
+// the upgrade's concern — the Rolling phase already gated every cluster
+// member on Enabled+Available — and must not wedge verification. Returns the
+// mismatch descriptions and the number of enabled servers checked.
+func (r *RollingUpgradeOrchestrator) versionMismatchesFromServers(
+	servers []neo4jclient.ServerInfo,
+	targetVersion string,
+) (mismatches []string, verified int) {
+	for _, s := range servers {
+		if s.State != "Enabled" {
+			continue
+		}
+		verified++
+		label := s.Name
+		if label == "" {
+			label = s.Address
+		}
+		switch {
+		case s.Version == "":
+			mismatches = append(mismatches, fmt.Sprintf("%s: no version reported by SHOW SERVERS", label))
+		case !r.versionsMatch(s.Version, targetVersion):
+			mismatches = append(mismatches,
+				fmt.Sprintf("%s: running %s, expected %s", label, s.Version, targetVersion))
+		}
 	}
-
-	// Parse the result to extract version
-	version := r.parseVersionFromQueryResult(result)
-	if version == "" {
-		return "", fmt.Errorf("could not parse version from query result for member %s", memberID)
-	}
-
-	return version, nil
+	return mismatches, verified
 }
 
-// parseVersionFromQueryResult extracts version string from Neo4j query result
-func (r *RollingUpgradeOrchestrator) parseVersionFromQueryResult(result string) string {
-	// In a real implementation, this would properly parse the JSON/tabular result
-	// For now, use a simple approach to extract version patterns
-	lines := strings.Split(result, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		// Look for version patterns like "5.26.0", "2025.01.0", etc.
-		if r.isVersionString(line) {
-			return line
-		}
-
-		// Also check if the line contains a version (e.g., "version: 5.26.0")
-		if strings.Contains(line, ":") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				potentialVersion := strings.TrimSpace(parts[1])
-				if r.isVersionString(potentialVersion) {
-					return potentialVersion
-				}
-			}
-		}
+// normalizeKernelAlias translates the one CalVer release that self-reports a
+// SemVer kernel: Neo4j 2025.01.x (the CalVer rebrand release) identifies as
+// kernel 5.27.x in dbms.components(). Later CalVers report the calendar
+// version directly. Without this alias, post-upgrade version verification for
+// a 2025.01.0-enterprise target can never match the servers' reported 5.27.0
+// and a SUCCESSFUL upgrade is declared Failed (found live on Kind, #174).
+func normalizeKernelAlias(v *VersionInfo) *VersionInfo {
+	if v != nil && v.Major == 2025 && v.Minor == 1 {
+		return &VersionInfo{Major: 5, Minor: 27, Patch: v.Patch}
 	}
-
-	// If no version found, try to extract from anywhere in the result
-	// This is a fallback for different result formats
-	words := strings.Fields(result)
-	for _, word := range words {
-		if r.isVersionString(word) {
-			return word
-		}
-	}
-
-	return ""
-}
-
-// isVersionString checks if a string looks like a version number
-func (r *RollingUpgradeOrchestrator) isVersionString(s string) bool {
-	if s == "" {
-		return false
-	}
-
-	// Remove quotes if present
-	s = strings.Trim(s, `"'`)
-
-	// Check for semantic version pattern (X.Y.Z)
-	parts := strings.Split(s, ".")
-	if len(parts) >= 2 && len(parts) <= 4 {
-		for _, part := range parts {
-			if part == "" {
-				return false
-			}
-			// Check if each part is numeric (allowing for pre-release suffixes)
-			numPart := strings.Split(part, "-")[0] // Remove pre-release suffix
-			if _, err := strconv.Atoi(numPart); err != nil {
-				return false
-			}
-		}
-		return true
-	}
-
-	return false
+	return v
 }
 
 // versionsMatch compares two version strings for equality, handling various formats
@@ -894,6 +435,15 @@ func (r *RollingUpgradeOrchestrator) versionsMatch(actual, expected string) bool
 	// Direct string comparison first
 	if actual == expected {
 		return true
+	}
+
+	// Kernel-alias comparison: parseVersion strips the "-enterprise" suffix,
+	// normalizeKernelAlias maps 2025.01.x <-> 5.27.x (see above).
+	if a, e := r.parseVersion(actual), r.parseVersion(expected); a != nil && e != nil {
+		na, ne := normalizeKernelAlias(a), normalizeKernelAlias(e)
+		if na.Major == ne.Major && na.Minor == ne.Minor && na.Patch == ne.Patch {
+			return true
+		}
 	}
 
 	// Try semantic version comparison (handle cases like "5.26" vs "5.26.0")

@@ -992,12 +992,31 @@ type DatabaseDiagnosticInfo struct {
 
 // UpgradeStatus tracks the progress of an ongoing upgrade
 type UpgradeStatus struct {
-	// Phase represents the current phase of the upgrade
-	// +kubebuilder:validation:Enum=Pending;InProgress;Paused;Completed;Failed
+	// Phase represents the current phase of the upgrade state machine:
+	// Staging (target pod template applied, all pod restarts frozen),
+	// Rolling (servers restarted one at a time, highest ordinal first),
+	// Stabilizing (cluster health + consensus + replication gate),
+	// Verifying (per-server version verification), then Completed.
+	// Paused and Failed are terminal until operator/user action.
+	// InProgress is a legacy value from older operator versions and is
+	// resumed as Staging. Pending is reserved.
+	// +kubebuilder:validation:Enum=Pending;Staging;InProgress;Rolling;Stabilizing;Verifying;Paused;Completed;Failed
 	Phase string `json:"phase,omitempty"`
 
 	// StartTime shows when the upgrade started
 	StartTime *metav1.Time `json:"startTime,omitempty"`
+
+	// StepStartTime anchors the per-step timeout: each partition step in the
+	// Rolling phase gets spec.upgradeStrategy.upgradeTimeout; Stabilizing gets
+	// stabilizationTimeout; Verifying gets healthCheckTimeout. Reset on every
+	// phase transition and partition advance.
+	StepStartTime *metav1.Time `json:"stepStartTime,omitempty"`
+
+	// CurrentPartition is the StatefulSet RollingUpdate partition most
+	// recently applied by the upgrade state machine. Servers with ordinal
+	// >= partition have been rolled to the target version. Used to resume
+	// an interrupted upgrade after an operator restart.
+	CurrentPartition *int32 `json:"currentPartition,omitempty"`
 
 	// CompletionTime shows when the upgrade completed
 	CompletionTime *metav1.Time `json:"completionTime,omitempty"`

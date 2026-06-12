@@ -302,9 +302,12 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Check if this is an upgrade scenario
-	if r.isUpgradeRequired(ctx, cluster) {
-		logger.Info("Image upgrade detected, initiating rolling upgrade")
+	// Check if this is an upgrade scenario. A mid-flight state machine
+	// (upgradeStateMachineActive) keeps driving regardless of image drift or
+	// cluster phase: the normal path below would stomp the partition freeze
+	// (line ~838 applies the builder's UpdateStrategy) and unfreeze a staged
+	// roll. isUpgradeRequired starts a NEW upgrade on image drift.
+	if upgradeStateMachineActive(cluster) || r.isUpgradeRequired(ctx, cluster) {
 		return r.handleRollingUpgrade(ctx, cluster)
 	}
 
@@ -835,7 +838,22 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 				if !replicasReconciliationPaused(owner) && !scaleDownDrainInProgress(owner) {
 					sts.Spec.Replicas = desiredSpec.Replicas
 				}
+				// While the rolling-upgrade state machine is mid-flight it owns
+				// RollingUpdate.Partition (#174); preserve the live partition so
+				// a concurrent normal-path apply can't unfreeze a staged roll.
+				// Defense-in-depth: the upgrade branch returns before this path
+				// during active phases, but races on stale reads happen.
+				livePartition := (*int32)(nil)
+				if sts.Spec.UpdateStrategy.RollingUpdate != nil {
+					livePartition = sts.Spec.UpdateStrategy.RollingUpdate.Partition
+				}
 				sts.Spec.UpdateStrategy = desiredSpec.UpdateStrategy
+				if ownerCluster, ok := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok &&
+					upgradeStateMachineActive(ownerCluster) && livePartition != nil &&
+					sts.Spec.UpdateStrategy.RollingUpdate != nil &&
+					sts.Spec.UpdateStrategy.RollingUpdate.Partition == nil {
+					sts.Spec.UpdateStrategy.RollingUpdate.Partition = livePartition
+				}
 				sts.Spec.PersistentVolumeClaimRetentionPolicy = desiredSpec.PersistentVolumeClaimRetentionPolicy
 				sts.Spec.MinReadySeconds = desiredSpec.MinReadySeconds
 				sts.Spec.Ordinals = desiredSpec.Ordinals
@@ -1653,11 +1671,10 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 	if cluster.Status.UpgradeStatus != nil && cluster.Status.UpgradeStatus.Phase == "Paused" {
 		return false
 	}
-	// A persisted "InProgress" no longer hard-blocks re-entry. If the operator
-	// restarted mid-upgrade, the image-drift check below is still true, so the
-	// upgrade resumes (ExecuteRollingUpgrade re-detects the current partition
-	// and continues) instead of wedging forever; once the upgrade has actually
-	// finished, the live image matches desired and the check returns false.
+	// Mid-flight phases (Staging/Rolling/Stabilizing/Verifying and the legacy
+	// "InProgress" marker) are handled by upgradeStateMachineActive at the
+	// Reconcile entry — this function only decides whether to START a new
+	// upgrade from image drift.
 
 	// Check the unified server StatefulSet for image drift
 	serverSts := &appsv1.StatefulSet{}
@@ -1674,67 +1691,101 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 	}
 	currentImage := serverSts.Spec.Template.Spec.Containers[0].Image
 	desiredImage := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
+	if currentImage != desiredImage {
+		return true
+	}
 
-	return currentImage != desiredImage
+	// Failed-upgrade retry: once Staging has run, the template already carries
+	// the target image, so the drift check above can never re-fire — a Failed
+	// upgrade (e.g. a transient post-upgrade verification failure) would stay
+	// Failed forever with status.version never stamped. Re-enter while the
+	// spec still wants the same target the failed attempt was driving toward
+	// and the version was never verified. Level-based retry; users opt out via
+	// upgradeStrategy.autoPauseOnFailure (Paused is checked above and never
+	// auto-resumes).
+	us := cluster.Status.UpgradeStatus
+	return us != nil && us.Phase == upgradePhaseFailed &&
+		us.TargetVersion == cluster.Spec.Image.Tag &&
+		cluster.Status.Version != cluster.Spec.Image.Tag
 }
 
-// handleRollingUpgrade manages the rolling upgrade process
+// handleRollingUpgrade dispatches one state-machine step per reconcile (#174).
+// Each step is non-blocking (single observation + at most one mutation +
+// RequeueAfter), so an upgrading cluster never starves reconciliation of other
+// clusters (the controller runs MaxConcurrentReconciles=1). The phases and
+// step implementations live in rolling_upgrade_statemachine.go.
 func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("rolling-upgrade-handler")
 
-	// Check if upgrade strategy allows rolling upgrades
-	if cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.Strategy == "Recreate" {
+	// The Recreate strategy opts out of orchestrated upgrades — but only as a
+	// gate on STARTING one. A machine already mid-flight finishes its roll
+	// even if the user flips the strategy: abandoning it here would leave the
+	// StatefulSet partition frozen (and the active-phase preservation in
+	// createOrUpdateResource would keep it frozen) with no driver to finish.
+	if !upgradeStateMachineActive(cluster) &&
+		cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.Strategy == "Recreate" {
 		logger.Info("Using recreate strategy, falling back to regular reconciliation")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
-	// Create Neo4j client for cluster health checks
-	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
-	if err != nil {
-		logger.Error(err, "Failed to create Neo4j client for upgrade")
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Neo4j client: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
-	}
-	defer func() {
-		if err := neo4jClient.Close(); err != nil {
-			logger.Error(err, "Failed to close Neo4j client")
-		}
-	}()
-
-	// Create rolling upgrade orchestrator
-	upgrader := NewRollingUpgradeOrchestrator(r.Client, cluster.Name, cluster.Namespace)
-
-	r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeStarted,
-		"Rolling upgrade started: %s -> %s", cluster.Status.Version, cluster.Spec.Image.Tag)
-
-	// Execute rolling upgrade
-	if err := upgrader.ExecuteRollingUpgrade(ctx, cluster, neo4jClient); err != nil {
-		logger.Error(err, "Rolling upgrade failed")
-
-		// Check if auto-pause is enabled
-		if cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.AutoPauseOnFailure {
-			_ = r.updateClusterStatus(ctx, cluster, "Paused", "Upgrade paused due to failure - manual intervention required")
-			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonUpgradePaused, fmt.Sprintf("Upgrade paused: %v", err))
-			return ctrl.Result{}, nil // Don't requeue automatically
-		}
-
-		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonUpgradeFailed,
-			"Rolling upgrade failed: %v", err)
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Rolling upgrade failed: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+	phase := ""
+	if cluster.Status.UpgradeStatus != nil {
+		phase = cluster.Status.UpgradeStatus.Phase
 	}
 
-	// Update cluster status and version in ONE refetch+RetryOnConflict write.
-	// Previously this set cluster.Status.Version then did a bare
-	// r.Status().Update(ctx, cluster) AFTER updateClusterStatus had already
-	// refetched + updated a fresh copy — so the second write used a stale
-	// resourceVersion, 409'd, and the version bump was silently lost (#207).
-	_ = r.updateClusterStatusWithVersion(ctx, cluster, "Ready", "Rolling upgrade completed successfully", cluster.Spec.Image.Tag)
+	// Target changed mid-flight (user edited the tag again): re-stage from ANY
+	// active phase, not just Rolling — a tag change during Stabilizing or
+	// Verifying would otherwise verify the new spec tag against servers
+	// running the old target, burning a full deadline cycle into Failed before
+	// converging. Staging is idempotent; already-on-target pods re-verify
+	// instantly during the walk. (LegacyInProgress is excluded: it routes to
+	// Staging below regardless, and its TargetVersion may predate the field.)
+	if upgradeStateMachineActive(cluster) && phase != upgradePhaseLegacyInProgress &&
+		cluster.Status.UpgradeStatus.TargetVersion != cluster.Spec.Image.Tag {
+		logger.Info("Upgrade target changed mid-flight; re-staging",
+			"previousTarget", cluster.Status.UpgradeStatus.TargetVersion, "newTarget", cluster.Spec.Image.Tag)
+		now := metav1.Now()
+		newTarget := cluster.Spec.Image.Tag
+		if err := r.patchUpgradeStatus(ctx, cluster, func(us *neo4jv1beta1.UpgradeStatus) {
+			us.Phase = upgradePhaseStaging
+			us.TargetVersion = newTarget
+			us.StepStartTime = &now
+			us.CurrentStep = "Re-staging: upgrade target changed mid-flight"
+			us.Message = us.CurrentStep
+		}); err != nil {
+			logger.Error(err, "Failed to persist re-staging transition")
+		}
+		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
+	}
 
-	r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonUpgradeCompleted, "Rolling upgrade completed successfully")
-	logger.Info("Rolling upgrade completed successfully")
-
-	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+	switch phase {
+	case upgradePhaseStaging:
+		return r.stepUpgradeStaging(ctx, cluster)
+	case upgradePhaseRolling:
+		return r.stepUpgradeRolling(ctx, cluster)
+	case upgradePhaseStabilizing:
+		return r.stepUpgradeStabilizing(ctx, cluster)
+	case upgradePhaseVerifying:
+		return r.stepUpgradeVerifying(ctx, cluster)
+	case upgradePhaseLegacyInProgress:
+		// An older operator version persisted its blocking-loop marker and was
+		// interrupted. Resume as Staging: it is idempotent (re-applies the
+		// target template, re-freezes the partition) and already-rolled pods
+		// re-verify instantly during the walk.
+		logger.Info("Resuming interrupted legacy upgrade as Staging")
+		now := metav1.Now()
+		if err := r.patchUpgradeStatus(ctx, cluster, func(us *neo4jv1beta1.UpgradeStatus) {
+			us.Phase = upgradePhaseStaging
+			us.StepStartTime = &now
+			us.CurrentStep = "Resuming interrupted upgrade"
+		}); err != nil {
+			logger.Error(err, "Failed to persist legacy upgrade resume")
+		}
+		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
+	default:
+		// No active state — image drift detected by isUpgradeRequired.
+		return r.startRollingUpgrade(ctx, cluster)
+	}
 }
 
 // createNeo4jClient creates a Neo4j client for cluster operations
