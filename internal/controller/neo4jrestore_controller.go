@@ -2616,9 +2616,6 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 
 	completion := metav1.Now()
 	restore.Status.CompletionTime = &completion
-	if terr := teardownPVCSeedProxyResources(ctx, r.Client, restore.Namespace, restore.Name); terr != nil {
-		logger.Error(terr, "Failed to tear down seed proxy after restore completion (non-fatal)")
-	}
 	r.updateRestoreStatus(ctx, restore, StatusCompleted,
 		fmt.Sprintf("Database %q restored via cluster Cypher path (seedURI=%s)", restore.Spec.DatabaseName, seedURI))
 	r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreCompleted,
@@ -2746,11 +2743,6 @@ func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, r
 	if stateErr == nil && total > 0 && online == total {
 		completion := metav1.Now()
 		restore.Status.CompletionTime = &completion
-		// The seed is done — tear down the PVC seed proxy (if any) so the
-		// backup PVC stops being served cluster-wide (#219). Idempotent.
-		if err := teardownPVCSeedProxyResources(ctx, r.Client, restore.Namespace, restore.Name); err != nil {
-			logger.Error(err, "Failed to tear down seed proxy after restore completion (non-fatal)")
-		}
 		r.updateRestoreStatus(ctx, restore, StatusCompleted,
 			fmt.Sprintf("Database %q restored via cluster Cypher path (%d/%d allocations online)", restore.Spec.DatabaseName, online, total))
 		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreCompleted,
@@ -2762,9 +2754,6 @@ func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, r
 		detail := diag
 		if stateErr != nil {
 			detail = stateErr.Error()
-		}
-		if err := teardownPVCSeedProxyResources(ctx, r.Client, restore.Namespace, restore.Name); err != nil {
-			logger.Error(err, "Failed to tear down seed proxy after restore failure (non-fatal)")
 		}
 		r.updateRestoreStatus(ctx, restore, StatusFailed,
 			fmt.Sprintf("Restore did not converge to online within %s (%d/%d allocations online); last status: %s",
@@ -3098,6 +3087,19 @@ func (r *Neo4jRestoreReconciler) updateRestoreStatus(ctx context.Context, restor
 	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update restore status")
+	}
+
+	// Terminal sink for the PVC seed proxy (#219/#224 review): every path
+	// that ends the restore — Completed OR Failed, from ANY call site —
+	// funnels through this status writer, so tearing the proxy down here
+	// guarantees the unauthenticated backup-PVC HTTP proxy never outlives
+	// the restore, without chasing each individual Failed exit in
+	// startClusterCypherRestore. Cheap idempotent no-op (3 NotFound deletes)
+	// when no proxy was ever created (cloud/Job paths).
+	if phase == StatusCompleted || phase == StatusFailed {
+		if terr := teardownPVCSeedProxyResources(ctx, r.Client, restore.Namespace, restore.Name); terr != nil {
+			log.FromContext(ctx).Error(terr, "Failed to tear down seed proxy on terminal restore phase (non-fatal)")
+		}
 	}
 }
 
