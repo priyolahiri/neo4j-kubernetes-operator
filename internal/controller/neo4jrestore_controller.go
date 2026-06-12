@@ -900,7 +900,8 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 										ValueFrom: &corev1.EnvVarSource{
 											SecretKeyRef: &corev1.SecretKeySelector{
 												LocalObjectReference: corev1.LocalObjectReference{
-													Name: cluster.Spec.Auth.AdminSecret,
+													// nil-safe: standalone targets may omit spec.auth (#218).
+													Name: restoreAdminSecretName(cluster),
 												},
 												Key: "password",
 											},
@@ -2441,6 +2442,19 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 			restore.Spec.DatabaseName, ternaryString(exists, "recreate", "create"), seedURI))
 
 	if exists {
+		// Recreating an EXISTING database wipes and replaces its contents —
+		// destructive by definition. Gate on the same explicit opt-in the
+		// standalone Job path requires (#218): without it, a typo'd
+		// databaseName against a cluster target silently overwrote a live
+		// database with backup contents.
+		if !restore.Spec.Force && (restore.Spec.Options == nil || !restore.Spec.Options.ReplaceExisting) {
+			msg := fmt.Sprintf(
+				"database %q already exists on the target cluster; a restore would WIPE and replace it. Set spec.force=true (or spec.options.replaceExisting=true) to confirm, or restore to a different databaseName",
+				restore.Spec.DatabaseName)
+			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
+			return ctrl.Result{}, fmt.Errorf("%s", msg)
+		}
 		// `dbms.recreateDatabase` is ASYNCHRONOUS — it returns as soon as the
 		// recreate is scheduled, long before the per-server seed-from-URI
 		// finishes. We therefore must NOT block the reconcile worker on a
@@ -2802,8 +2816,19 @@ func (r *Neo4jRestoreReconciler) isRestoreTargetTrueCluster(ctx context.Context,
 	return false, nil, nil
 }
 
+// restoreAdminSecretName resolves the admin Secret for a restore target.
+// `cluster` may be a standaloneAsCluster wrapper whose Auth block is nil
+// (legal on Neo4jEnterpriseStandalone — the secret name has a default
+// everywhere else); dereferencing it unguarded panicked the reconciler (#218).
+func restoreAdminSecretName(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	if cluster.Spec.Auth != nil && cluster.Spec.Auth.AdminSecret != "" {
+		return cluster.Spec.Auth.AdminSecret
+	}
+	return DefaultAdminSecretName
+}
+
 func (r *Neo4jRestoreReconciler) createNeo4jClient(_ context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
-	return neo4j.NewClientForEnterprise(cluster, r.Client, cluster.Spec.Auth.AdminSecret)
+	return neo4j.NewClientForEnterprise(cluster, r.Client, restoreAdminSecretName(cluster))
 }
 
 // newStandaloneRestoreClient builds a Bolt client for the Neo4jEnterpriseStandalone

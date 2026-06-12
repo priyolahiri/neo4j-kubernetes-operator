@@ -920,3 +920,19 @@ func TestRestoreAlreadyStoppedInstance(t *testing.T) {
 	assert.True(t, r.restoreAlreadyStoppedInstance(context.Background(), mine, cluster))
 	assert.False(t, r.restoreAlreadyStoppedInstance(context.Background(), other, cluster))
 }
+
+// TestRestoreAdminSecretName pins the #218 nil-Auth fix: a standalone target
+// without spec.auth must resolve the default secret name, not panic.
+func TestRestoreAdminSecretName(t *testing.T) {
+	noAuth := standaloneAsCluster(&neo4jv1beta1.Neo4jEnterpriseStandalone{
+		ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: "ns"},
+	})
+	assert.Equal(t, DefaultAdminSecretName, restoreAdminSecretName(noAuth))
+
+	withAuth := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Auth: &neo4jv1beta1.AuthSpec{AdminSecret: "custom-secret"},
+		},
+	}
+	assert.Equal(t, "custom-secret", restoreAdminSecretName(withAuth))
+}
