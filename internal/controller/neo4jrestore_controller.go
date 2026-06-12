@@ -786,6 +786,16 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 			restore.Spec.DatabaseName, validation.MaxDatabaseNameLength)
 	}
 
+	// spec.timeout must parse as a positive Go duration — silently falling
+	// back to the default and then telling the user to "increase
+	// spec.timeout" on expiry is misleading when they set a value the
+	// operator ignored (#225 review).
+	if restore.Spec.Timeout != "" {
+		if d, perr := time.ParseDuration(restore.Spec.Timeout); perr != nil || d <= 0 {
+			return fmt.Errorf("spec.timeout %q is not a valid positive Go duration (e.g. \"30m\", \"1h\")", restore.Spec.Timeout)
+		}
+	}
+
 	// spec.source.pointInTime is implemented by the standalone Job path
 	// (--restore-until) for EVERY source type — but the cluster Cypher path
 	// never reads it (#218). Silently returning latest-state when the user
@@ -2724,6 +2734,12 @@ func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, r
 	if restore.Spec.Timeout != "" {
 		if d, perr := time.ParseDuration(restore.Spec.Timeout); perr == nil && d > 0 {
 			budget = d
+		} else {
+			// validateRestore rejects this for new attempts; tolerate (with
+			// the default) for CRs admitted before that validation existed,
+			// but say so instead of silently ignoring the field.
+			logger.Info("Ignoring invalid spec.timeout; using default",
+				"timeout", restore.Spec.Timeout, "default", cypherRestoreOnlineTimeout.String())
 		}
 	}
 	deadline := time.Now().Add(budget)
