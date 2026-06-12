@@ -151,9 +151,20 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	// Get target cluster
+	// Get target cluster. NotFound is TRANSIENT (#217): `kubectl apply -f dir/`
+	// commonly creates the Neo4jBackup before (or alongside) its target CR —
+	// flipping to Failed here is permanent for one-shot backups (the terminal
+	// guard never re-enters) even after the cluster appears moments later.
 	targetCluster, err := r.getTargetCluster(ctx, backup)
 	if err != nil {
+		// errors.IsNotFound unwraps %w chains — ONLY genuine NotFound waits;
+		// RBAC denials and other API failures stay on the error path (#224
+		// review: a substring match on "not found" misclassified those).
+		if errors.IsNotFound(err) {
+			logger.Info("Backup target not found yet; waiting", "error", err.Error())
+			r.updateBackupStatus(ctx, backup, "Waiting", fmt.Sprintf("Waiting for target to appear: %v", err))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
 		logger.Error(err, "Failed to get target cluster")
 		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to get target cluster: %v", err))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
@@ -247,6 +258,11 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 	// Create or update CronJob for scheduled backups
 	cronJob, err := r.createBackupCronJob(ctx, backup, cluster)
 	if err != nil {
+		if stderrors.Is(err, errBackupTransient) {
+			logger.Info("Scheduled backup precondition not met yet; waiting", "error", err.Error())
+			r.updateBackupStatus(ctx, backup, "Pending", err.Error())
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
 		logger.Error(err, "Failed to create backup CronJob")
 		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to create CronJob: %v", err))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
@@ -536,6 +552,11 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 			r.updateBackupStatus(ctx, backup, "Pending", err.Error())
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
+		if stderrors.Is(err, errBackupTransient) {
+			logger.Info("Backup precondition not met yet; waiting", "error", err.Error())
+			r.updateBackupStatus(ctx, backup, "Pending", err.Error())
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
 		logger.Error(err, "Failed to create backup job")
 		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to create backup job: %v", err))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
@@ -558,14 +579,15 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 	// re-enters), so the Job's eventual success would never be recorded.
 	// Mirrors the restore controller's condition-based check.
 	if jobConditionTrue(job, batchv1.JobComplete) || job.Status.Succeeded > 0 {
-		// Backup completed successfully
+		// Record history BEFORE the terminal phase flip (#217): the terminal
+		// guard never re-enters after Completed, so a lost history write
+		// would leave a Completed backup with no Succeeded run — which
+		// ResolveBackupRef treats as not-ready FOREVER, wedging every
+		// backupRef restore/seed against a backup that succeeded.
+		r.recordOneShotBackupRun(ctx, backup, job)
 		r.updateBackupStatus(ctx, backup, "Completed", "Backup completed successfully")
 		r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupCompleted, "Backup completed successfully")
 		backupM.RecordBackup(ctx, true, jobDuration(job), 0)
-
-		// Append the run to status.history + refresh status.stats summary
-		r.recordOneShotBackupRun(ctx, backup, job)
-
 		return ctrl.Result{}, nil
 	}
 
@@ -745,6 +767,12 @@ func (r *Neo4jBackupReconciler) ensureBackupPVC(ctx context.Context, backup *neo
 	return r.Create(ctx, pvc)
 }
 
+// errBackupTransient wraps conditions that should route to a Waiting/Pending
+// phase + requeue instead of terminal Failed (#217): the chain parent CR not
+// created yet (apply-ordering), or a momentary Bolt connect/query failure
+// during the sharded glob-safety preflight. Detect with errors.Is.
+var errBackupTransient = fmt.Errorf("transient backup precondition")
+
 // errChainBusy is returned by waitForChainConcurrencyClear when another
 // Job belonging to the same chain is still active. Callers route to
 // Pending+requeue rather than failing.
@@ -768,7 +796,14 @@ func (r *Neo4jBackupReconciler) validateChainParent(ctx context.Context, backup 
 	parent := &neo4jv1beta1.Neo4jBackup{}
 	key := types.NamespacedName{Name: backup.Spec.ChainFromBackup, Namespace: backup.Namespace}
 	if err := r.Get(ctx, key, parent); err != nil {
-		return fmt.Errorf("chainFromBackup %q not found in namespace %q: %w",
+		if errors.IsNotFound(err) {
+			// Apply-ordering footgun: the parent CR may simply not be
+			// created yet. Transient (#217) — target/storage mismatches
+			// below stay terminal.
+			return fmt.Errorf("chainFromBackup %q not found in namespace %q (waiting for it to appear): %w",
+				backup.Spec.ChainFromBackup, backup.Namespace, errBackupTransient)
+		}
+		return fmt.Errorf("chainFromBackup %q lookup failed in namespace %q: %w",
 			backup.Spec.ChainFromBackup, backup.Namespace, err)
 	}
 	if parent.Spec.Target.Kind != backup.Spec.Target.Kind ||
@@ -801,11 +836,16 @@ func (r *Neo4jBackupReconciler) validateChainParent(ctx context.Context, backup 
 // that Kubernetes doesn't natively coordinate.
 func (r *Neo4jBackupReconciler) waitForChainConcurrencyClear(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
 	jobs := &batchv1.JobList{}
+	// NOTE: no app.kubernetes.io/component filter — one-shot Jobs carry
+	// component=backup but CronJob children carry component=backup-cron, and
+	// filtering on the former made scheduled runs invisible to the chain
+	// concurrency guard (#217): a daily-FULL CronJob child and an hourly
+	// DIFF could collide in the shared --to-path directory. managed-by +
+	// part-of are sufficient to scope to this chain.
 	if err := r.List(ctx, jobs,
 		client.InNamespace(backup.Namespace),
 		client.MatchingLabels{
 			"app.kubernetes.io/managed-by": "neo4j-operator",
-			"app.kubernetes.io/component":  "backup",
 			"app.kubernetes.io/part-of":    chainRoot(backup),
 		},
 	); err != nil {
@@ -911,6 +951,17 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 		return nil, err
 	}
 	if err := r.Create(ctx, job); err != nil {
+		// AlreadyExists = a previous reconcile created the Job but the
+		// informer cache hadn't caught up when handleOneTimeBackup looked it
+		// up (#217). Treating it as terminal Failed bricked a backup that is
+		// actually RUNNING. Adopt the existing Job instead — same tolerance
+		// the restore controller has (rule 46).
+		if errors.IsAlreadyExists(err) {
+			existing := &batchv1.Job{}
+			if getErr := r.Get(ctx, client.ObjectKeyFromObject(job), existing); getErr == nil {
+				return existing, nil
+			}
+		}
 		return nil, err
 	}
 	return job, nil
@@ -962,6 +1013,16 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 	// the user touches the CR. Phase 1 accepts this gap; Phase 3 observability
 	// can surface it via neo4j-admin backup validate output.
 	if err := r.shardedPreflightGlobSafety(ctx, backup, cluster); err != nil {
+		return nil, err
+	}
+
+	// Cross-CR consistency for chainFromBackup — previously only the one-shot
+	// path validated this (#217), so a scheduled DIFF chained to a mismatched
+	// or missing parent silently produced broken chains. Run-time exclusion
+	// between two CronJobs' children remains best-effort (ConcurrencyPolicy
+	// only guards within one CronJob); the chain concurrency check now at
+	// least sees scheduled children from the one-shot path.
+	if err := r.validateChainParent(ctx, backup); err != nil {
 		return nil, err
 	}
 
@@ -1526,10 +1587,13 @@ func (r *Neo4jBackupReconciler) getTargetCluster(ctx context.Context, backup *ne
 		return cluster, nil
 	}
 
-	// Fall back to Neo4jEnterpriseStandalone.
+	// Fall back to Neo4jEnterpriseStandalone. Wrap the underlying API error
+	// (%w) so callers can classify NotFound (transient, wait for the target)
+	// vs Forbidden/other (permanent) — a fixed message swallowed that
+	// distinction (#224 review).
 	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 	if err := r.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: targetNamespace}, standalone); err != nil {
-		return nil, fmt.Errorf("target %q not found as Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone in namespace %q", clusterName, targetNamespace)
+		return nil, fmt.Errorf("target %q not usable as Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone in namespace %q: %w", clusterName, targetNamespace, err)
 	}
 	return standaloneAsCluster(standalone), nil
 }
@@ -1575,7 +1639,10 @@ func (r *Neo4jBackupReconciler) cleanupBackupJobs(ctx context.Context, backup *n
 	}
 
 	for _, job := range jobList.Items {
-		if err := r.Delete(ctx, &job); err != nil && !errors.IsNotFound(err) {
+		// Background propagation: a bare API delete of a batch Job ORPHANS its
+		// pods — a running backup pod would keep writing to storage and
+		// holding the cluster's backup port after CR deletion (#217).
+		if err := r.Delete(ctx, &job, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !errors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -1613,8 +1680,14 @@ func (r *Neo4jBackupReconciler) cleanupBackupArtifacts(ctx context.Context, back
 		return nil
 	}
 
-	// PVC storage: create a cleanup Job using alpine.
-	script := buildRetentionScript(backup.Spec.Retention)
+	// PVC storage: create a cleanup Job using alpine. Warn when the CR can
+	// produce differential artifacts: filename-level pruning can orphan DIFFs
+	// whose parent FULL ages out (see buildRetentionScript).
+	if backup.Spec.Options == nil || backup.Spec.Options.BackupType != "FULL" {
+		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupRetentionCaveat,
+			"Retention pruning on a chain that may contain differential artifacts can orphan DIFFs whose parent FULL ages out; prefer backupType=FULL with retention, or prune via neo4j-admin backup aggregate")
+	}
+	script := buildRetentionScript(backup.Spec.Retention, chainRoot(backup))
 	cleanupJobName := fmt.Sprintf("%s-cleanup-%d", backup.Name, time.Now().Unix())
 	backoffLimit := int32(1)
 
@@ -1664,35 +1737,48 @@ func (r *Neo4jBackupReconciler) cleanupBackupArtifacts(ctx context.Context, back
 	return nil
 }
 
-// buildRetentionScript generates a shell script that enforces the given retention
-// policy against directories under /backup.
-func buildRetentionScript(policy *neo4jv1beta1.RetentionPolicy) string {
-	script := `#!/bin/sh
+// buildRetentionScript generates a shell script that enforces the given
+// retention policy against this CR's chain directory.
+//
+// Layout awareness (#217): since rule 40, all runs of one CR accumulate as
+// `<dbname>-<timestamp>.backup` FILES in the single shared
+// /backup/<chain-root>/ directory. The previous script still implemented the
+// pre-rule-40 per-run-SUBFOLDER model — it counted and rm -rf'd depth-1
+// DIRECTORIES under /backup, i.e. entire chain roots: maxAge deleted a whole
+// chain including the newest FULL, and on a shared PVC maxCount could delete
+// ANOTHER CR's chain.
+//
+// The rewritten script prunes `*.backup` files inside this CR's chain dir
+// only, oldest-first by mtime, and always keeps the newest file. Limitation
+// (documented): artifact filenames don't encode FULL vs DIFF, so pruning can
+// orphan differential artifacts whose parent FULL ages out — chain-aware
+// retention requires `neo4j-admin backup aggregate`. Prefer backupType=FULL
+// on CRs that use retention, or bucket lifecycle rules on cloud storage.
+func buildRetentionScript(policy *neo4jv1beta1.RetentionPolicy, chainDir string) string {
+	script := fmt.Sprintf(`#!/bin/sh
 set -e
-BACKUP_DIR="/backup"
+BACKUP_DIR=%s
 echo "Backup retention enforcement in $BACKUP_DIR"
-`
+[ -d "$BACKUP_DIR" ] || { echo "chain directory missing; nothing to prune"; exit 0; }
+`, shellQuote("/backup/"+chainDir))
 
 	if policy.MaxCount > 0 {
 		script += fmt.Sprintf(`
 MAX_COUNT=%d
-FILE_COUNT=$(find "$BACKUP_DIR" -maxdepth 1 -mindepth 1 -type d | wc -l)
-echo "Found $FILE_COUNT backup directories"
+FILE_COUNT=$(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.backup' | wc -l)
+echo "Found $FILE_COUNT backup artifacts"
 if [ "$FILE_COUNT" -gt "$MAX_COUNT" ]; then
     TO_DELETE=$((FILE_COUNT - MAX_COUNT))
-    echo "Deleting $TO_DELETE oldest backups (keeping $MAX_COUNT)"
-    # Sort by filesystem mtime, not by directory name. The directory name
-    # happens to encode a YYYYMMDD-HHMMSS timestamp today, but coupling
-    # retention's "oldest first" semantics to that naming convention is
-    # fragile — anyone who renames the timestamp format silently breaks
-    # retention. GNU find's -printf is available because the backup
-    # container is Linux-only.
-    find "$BACKUP_DIR" -maxdepth 1 -mindepth 1 -type d -printf '%%T@ %%p\n' | \
+    echo "Deleting $TO_DELETE oldest artifacts (keeping $MAX_COUNT)"
+    # Oldest-first by filesystem mtime — never coupled to the filename's
+    # timestamp format.
+    find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.backup' -printf '%%T@ %%p\n' | \
         sort -n | \
         head -n "$TO_DELETE" | \
         cut -d' ' -f2- | \
-        xargs -r rm -rf
-    echo "Deleted $TO_DELETE old backup directories"
+        tr '\n' '\0' | \
+        xargs -0 -r rm -f
+    echo "Deleted $TO_DELETE old backup artifacts"
 fi
 `, policy.MaxCount)
 	}
@@ -1700,9 +1786,15 @@ fi
 	if policy.MaxAge != "" {
 		findArg := parseFindTimeArg(policy.MaxAge)
 		script += fmt.Sprintf(`
-# Delete backup directories older than %s
-find "$BACKUP_DIR" -maxdepth 1 -mindepth 1 -type d %s -exec rm -rf {} +
-echo "Removed backup directories older than %s"
+# Delete backup artifacts older than %s — but always keep the newest one,
+# even if it has aged out (a retention policy must never delete the ONLY
+# remaining backup).
+NEWEST=$(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.backup' -printf '%%T@ %%p\n' | sort -rn | head -n1 | cut -d' ' -f2-)
+find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.backup' %s -print | while IFS= read -r f; do
+    [ "$f" = "$NEWEST" ] && continue
+    rm -f "$f"
+done
+echo "Removed backup artifacts older than %s"
 `, policy.MaxAge, findArg, policy.MaxAge)
 	}
 
@@ -1726,6 +1818,17 @@ func parseFindTimeArg(maxAge string) string {
 		return fmt.Sprintf("-mtime +%d", n)
 	case 'h':
 		return fmt.Sprintf("-mmin +%d", n*60)
+	case 'm':
+		// The validator accepts [dhms]; silently treating "90m" as 90 DAYS
+		// (the old default branch) violated the documented grammar (#217).
+		return fmt.Sprintf("-mmin +%d", n)
+	case 's':
+		// find(1) has no sub-minute predicate; round up to one minute.
+		mins := (n + 59) / 60
+		if mins < 1 {
+			mins = 1
+		}
+		return fmt.Sprintf("-mmin +%d", mins)
 	default:
 		return fmt.Sprintf("-mtime +%d", n)
 	}
