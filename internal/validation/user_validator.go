@@ -46,6 +46,11 @@ func NewUserValidator(c client.Client) *UserValidator {
 type UserValidationResult struct {
 	Errors   field.ErrorList
 	Warnings []string
+	// Pending collects TRANSIENT dependency gaps (e.g. the password Secret
+	// not created yet) that must route the user to phase Pending — the
+	// documented apply-order-is-irrelevant convergence — rather than
+	// Failed, mirroring how missing roles are handled (#259).
+	Pending []string
 }
 
 // neo4jUsernamePattern enforces Neo4j's username rules: ASCII letter
@@ -167,8 +172,11 @@ func (v *UserValidator) validatePasswordSecret(ctx context.Context, user *neo4jv
 	secretKey := types.NamespacedName{Name: ref.Name, Namespace: user.Namespace}
 	if err := v.client.Get(ctx, secretKey, secret); err != nil {
 		if errors.IsNotFound(err) {
-			result.Errors = append(result.Errors, field.NotFound(path.Child("name"),
-				fmt.Sprintf("Secret %q not found in namespace %q", ref.Name, user.Namespace)))
+			// Transient: the Secret may simply not have been applied yet.
+			// Pending (not Failed) so apply order genuinely doesn't matter,
+			// consistent with missing-role handling (#259).
+			result.Pending = append(result.Pending,
+				fmt.Sprintf("waiting for password Secret %q in namespace %q", ref.Name, user.Namespace))
 			return
 		}
 		result.Warnings = append(result.Warnings,
