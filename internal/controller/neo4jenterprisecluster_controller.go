@@ -72,6 +72,19 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// (key ns/name → deferred image) so a held image change doesn't emit an
 	// event on every Forming-phase reconcile (#262 review).
 	deferredUpgradeTargets sync.Map
+	// connectivityFailures tracks consecutive can't-connect reconciles per
+	// cluster (key ns/name → *connectivityFailureStreak) so a persistent
+	// outage is distinguishable from a transient blip in logs and events
+	// (#263 forensics). Cleared on the first successful connection.
+	connectivityFailures sync.Map
+}
+
+// connectivityFailureStreak records when a cluster's Bolt connectivity first
+// failed and how many consecutive reconciles have failed since. The Warning
+// event fires exactly once per streak, at count == threshold.
+type connectivityFailureStreak struct {
+	since time.Time
+	count int
 }
 
 const (
@@ -1871,11 +1884,26 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 	}
 
 	if !canConnect {
-		// Neo4j is not ready to accept connections yet, wait for it
+		// Neo4j is not ready to accept connections yet, wait for it.
+		// Log the resolved target and the consecutive-failure streak so a
+		// persistent outage (#263) is diagnosable from operator logs alone:
+		// a streak of 1-2 during a rolling restart is expected; a streak
+		// climbing for minutes against a settled cluster is the incident.
+		streak := r.recordConnectivityFailure(cluster)
 		logger.Info("Neo4j not ready to accept connections, waiting...",
-			"clientError", connectError, "testError", testError)
+			"targetURI", neo4jclient.ConnectionURIForEnterprise(cluster),
+			"clientError", connectError, "testError", testError,
+			"consecutiveFailures", streak.count,
+			"failingSince", streak.since.Format(time.RFC3339))
+		if streak.count == connectivityFailureEventThreshold && r.Recorder != nil {
+			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonConnectivityDegraded,
+				fmt.Sprintf("Operator has failed to reach Neo4j at %s for %d consecutive reconciles (since %s); last error: %v",
+					neo4jclient.ConnectionURIForEnterprise(cluster), streak.count,
+					streak.since.Format(time.RFC3339), firstNonNilErr(testError, connectError)))
+		}
 		return false, "Waiting for Neo4j to accept connections", nil
 	}
+	r.clearConnectivityFailures(ctx, cluster)
 
 	// Now perform split-brain detection since Neo4j is responsive
 	logger.Info("Neo4j is responsive, performing split-brain detection")
@@ -2894,4 +2922,47 @@ func (r *Neo4jEnterpriseClusterReconciler) serverStatefulSetFullyRolled(ctx cont
 		return false, fmt.Sprintf("%d/%d pods updated, %d/%d ready", serverSts.Status.UpdatedReplicas, replicas, serverSts.Status.ReadyReplicas, replicas)
 	}
 	return true, ""
+}
+
+// connectivityFailureEventThreshold is the consecutive-failure streak at
+// which a ConnectivityDegraded Warning event fires (once per streak). At the
+// controller's ~30s requeue cadence this is roughly five minutes — past any
+// normal rolling-restart blip, early enough to be actionable.
+const connectivityFailureEventThreshold = 10
+
+// recordConnectivityFailure increments the cluster's consecutive
+// connectivity-failure streak and returns it (#263 forensics).
+func (r *Neo4jEnterpriseClusterReconciler) recordConnectivityFailure(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *connectivityFailureStreak {
+	key := cluster.Namespace + "/" + cluster.Name
+	v, _ := r.connectivityFailures.LoadOrStore(key, &connectivityFailureStreak{since: time.Now()})
+	streak := v.(*connectivityFailureStreak)
+	streak.count++
+	return streak
+}
+
+// clearConnectivityFailures resets the streak after a successful connection,
+// logging a closing summary if a long streak just ended so the recovery is
+// visible next to the failures.
+func (r *Neo4jEnterpriseClusterReconciler) clearConnectivityFailures(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
+	key := cluster.Namespace + "/" + cluster.Name
+	if v, loaded := r.connectivityFailures.LoadAndDelete(key); loaded {
+		streak := v.(*connectivityFailureStreak)
+		if streak.count >= connectivityFailureEventThreshold {
+			log.FromContext(ctx).Info("Neo4j connectivity recovered after persistent failure streak",
+				"consecutiveFailures", streak.count,
+				"failingSince", streak.since.Format(time.RFC3339),
+				"outageDuration", time.Since(streak.since).Round(time.Second).String())
+		}
+	}
+}
+
+// firstNonNilErr returns the first non-nil error, for log/event messages
+// that want the most specific failure available.
+func firstNonNilErr(errs ...error) error {
+	for _, e := range errs {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
 }

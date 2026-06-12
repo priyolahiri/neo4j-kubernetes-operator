@@ -18,6 +18,9 @@ const (
 	EventReasonScaleDownPendingDrain         = "ScaleDownPendingDrain"
 	EventReasonScaleDownDraining             = "ScaleDownDraining"
 	EventReasonScaleDownBlocked              = "ScaleDownBlocked"
+	// EventReasonConnectivityDegraded — the operator has failed to reach the
+	// cluster's Bolt endpoint for a sustained streak of reconciles (#263).
+	EventReasonConnectivityDegraded = "ConnectivityDegraded"
 )
 
 // Rolling upgrade events
