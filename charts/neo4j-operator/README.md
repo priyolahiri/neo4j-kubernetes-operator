@@ -106,6 +106,9 @@ The following table lists the configurable parameters of the Neo4j Operator char
 | `serviceAccount.annotations` | Service account annotations | `{}` |
 | `serviceAccount.name` | Service account name | `""` (generated) |
 | `rbac.create` | Create RBAC resources | `true` |
+| `rbac.externalSecretsIntegration` | Grant the operator RBAC for the external-secrets.io integration (only needed when a CR sets `externalSecrets.enabled`) | `false` |
+| `rbac.perNamespaceRoles` | Per-namespace Roles instead of a manager ClusterRole (`operatorMode: namespaces` with a static `watchNamespaces` list only) | `false` |
+| `rbac.clusterScopedReads` | Opt-in read-only ClusterRole (`nodes` + `storageclasses`) for installs without a manager ClusterRole — restores zone auto-discovery and storage-expansion validation in namespace-scoped modes | `false` |
 
 ### Security Configuration
 
@@ -135,8 +138,11 @@ The following table lists the configurable parameters of the Neo4j Operator char
 | `metrics.enabled` | Enable metrics endpoint | `true` |
 | `metrics.service.type` | Service type | `ClusterIP` |
 | `metrics.service.port` | Metrics port | `8080` |
+| `metrics.secure` | Serve `/metrics` over HTTPS with TokenReview authn + SubjectAccessReview authz (scrapers need a Bearer token bound to the `metrics-reader` ClusterRole) | `true` |
 | `metrics.serviceMonitor.enabled` | Create ServiceMonitor | `false` |
 | `metrics.serviceMonitor.interval` | Scrape interval | `30s` |
+| `metrics.serviceMonitor.bearerTokenSecret.name` | Secret (type `kubernetes.io/service-account-token`) holding the scrape token. REQUIRED when `metrics.secure=true` and the ServiceMonitor is enabled — the render fails without it | `""` |
+| `metrics.serviceMonitor.bearerTokenSecret.key` | Key inside that Secret | `token` |
 
 ### Neo4j Defaults
 
@@ -158,6 +164,12 @@ The following table lists the configurable parameters of the Neo4j Operator char
 | `networkPolicy.ingress` | Ingress rules (list of NetworkPolicyIngressRule) | `[]` |
 | `networkPolicy.egress` | Egress rules (list of NetworkPolicyEgressRule) | `[]` |
 
+When `networkPolicy.enabled=true` with empty rules, the chart ships defaults:
+ingress allows metrics/health scrapes; egress allows DNS (53), the Kubernetes
+API on **443/6443**, and Bolt/discovery to workload namespaces. If your
+cluster's API server listens on a non-standard port (some managed offerings),
+set `networkPolicy.egress` explicitly or the operator cannot reach the API.
+
 ### Pod Disruption Budget
 
 | Parameter | Description | Default |
@@ -175,6 +187,10 @@ The following table lists the configurable parameters of the Neo4j Operator char
 | `tolerations` | Pod tolerations | `[]` |
 | `affinity` | Pod affinity | `{}` |
 | `priorityClassName` | Priority class name | `""` |
+| `extraManifests` | Extra Kubernetes manifests to deploy with the release (templated with `tpl`) | `[]` |
+| `pluginInitContainer.image` | Image for `Neo4jPlugin` `installMode: VerifiedDownload` init containers; point at an internal mirror for air-gapped clusters | `""` (operator default `curlimages/curl:8.5.0`) |
+| `preInstallChecks.enabled` | Run pre-install hook validating prerequisites | `true` |
+| `preInstallChecks.image` | Image for the pre-install check Job (needs a shell + kubectl) | `alpine/k8s:1.32.0` |
 
 ## Deployment Modes
 
@@ -188,7 +204,7 @@ operatorMode: cluster
 
 ### Namespace-scoped Mode
 
-The operator only watches its own namespace (requires only Role, not ClusterRole):
+The operator only watches its own namespace. Manager permissions are granted via a namespaced Role — no cluster-wide *manager* permissions — but the metrics and pre-install-check ClusterRoles still render by default unless you disable those features:
 
 ```yaml
 operatorMode: namespace
@@ -251,12 +267,20 @@ patches:
 
 ## Upgrading
 
+> **Apply the new release's CRDs before `helm upgrade` — this step is
+> mandatory.** Helm installs the chart's `crds/` directory only on first
+> install and never upgrades it. Without this refresh, fields added by the
+> new release are silently pruned from your manifests by the API server.
+
+```bash
+kubectl apply --server-side -f https://github.com/neo4j-partners/neo4j-kubernetes-operator/releases/download/<version>/neo4j-kubernetes-operator.yaml
+```
+
 ### Upgrade the Chart
 
 ```bash
 helm upgrade neo4j-operator ./charts/neo4j-operator \
-  --namespace neo4j-operator-system \
-  --reuse-values
+  --namespace neo4j-operator-system
 ```
 
 ### Upgrade with New Values
@@ -264,28 +288,49 @@ helm upgrade neo4j-operator ./charts/neo4j-operator \
 ```bash
 helm upgrade neo4j-operator ./charts/neo4j-operator \
   --namespace neo4j-operator-system \
-  --set image.tag=v0.2.0 \
-  --reuse-values
+  --set image.tag=<version>
 ```
+
+> Avoid `--reuse-values` as a blanket habit — it pins the previous release's
+> values and discards new chart defaults. Re-pass your overrides explicitly
+> (`-f my-values.yaml` / `--set ...`).
+
+### Removed values
+
+- **`webhook.*`** — removed. This project does not use admission webhooks (all validation is inline in the controllers); the old block rendered a `--webhook-port` flag the binary doesn't define.
+- **`leaderElection.namespace`** — removed. The leader-election lease always lives in the release namespace; a configurable namespace would move the RBAC away from where the lease actually is.
+
+The chart now also fails fast at render time on an invalid `operatorMode` and on `rbac.perNamespaceRoles=true` outside `operatorMode: namespaces`, and `extraManifests` entries are now actually rendered (previously the value was accepted but ignored).
 
 ## Uninstallation
 
+The order matters: Neo4j custom resources carry finalizers that only the
+**running** operator can remove. Delete the CRs first and wait for them to
+disappear — uninstalling the operator (or deleting CRDs) while CRs still
+exist wedges them in `Terminating` forever.
+
 ```bash
-# Delete the release
-helm delete neo4j-operator --namespace neo4j-operator-system
+# 1. Delete all Neo4j custom resources and WAIT until this list is empty
+kubectl get neo4jenterpriseclusters,neo4jenterprisestandalones,neo4jdatabases,neo4jshardeddatabases,neo4jbackups,neo4jrestores,neo4jusers,neo4jroles,neo4jrolebindings,neo4jauthrules,neo4jplugins -A
 
-# Optional: Delete CRDs (this will delete all Neo4j resources!)
-kubectl delete crds \
-  neo4jbackups.neo4j.neo4j.com \
-  neo4jdatabases.neo4j.neo4j.com \
-  neo4jenterpriseclusters.neo4j.neo4j.com \
-  neo4jenterprisestandalones.neo4j.neo4j.com \
-  neo4jplugins.neo4j.neo4j.com \
-  neo4jrestores.neo4j.neo4j.com \
-  neo4jshardeddatabases.neo4j.neo4j.com
+kubectl delete neo4jenterpriseclusters,neo4jenterprisestandalones,neo4jdatabases,neo4jshardeddatabases,neo4jbackups,neo4jrestores,neo4jusers,neo4jroles,neo4jrolebindings,neo4jauthrules,neo4jplugins --all -n <namespace>
 
-# Delete the namespace
+# 2. Delete the release (only once step 1 shows no remaining CRs)
+helm uninstall neo4j-operator --namespace neo4j-operator-system
+
+# 3. Optional: Delete CRDs (this destroys all remaining Neo4j resource definitions!)
+kubectl get crd -o name | grep neo4j.neo4j.com | xargs kubectl delete
+
+# 4. Optional: Delete the namespace
 kubectl delete namespace neo4j-operator-system
+```
+
+If a CR is already stuck in `Terminating` (operator removed too early), strip
+its finalizers manually — note the operator's cleanup is skipped, so data may
+be orphaned:
+
+```bash
+kubectl patch <kind>/<name> -n <namespace> -p '{"metadata":{"finalizers":[]}}' --type=merge
 ```
 
 ## Examples

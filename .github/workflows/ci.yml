@@ -33,13 +33,31 @@ jobs:
         go-version: ${{ env.GO_VERSION }}
 
     - name: Run make check-drift
+      id: drift
       run: |
         # check-drift = sync-all + bundle + git diff --exit-code
         # operator-sdk's createdAt: timestamp is ignored via -I in the diff.
         make check-drift
 
+    # Both were ship-prep-only, meaning a chart template error or a CSV
+    # missing a new CRD only surfaced at release time. Static, seconds-fast.
+    # Helm is preinstalled on ubuntu-latest, but pin it anyway so the lint
+    # doesn't silently track whatever version the runner image ships.
+    - name: Setup Helm
+      uses: azure/setup-helm@v5
+      with:
+        version: v3.16.0
+
+    - name: Helm lint
+      run: make helm-lint
+
+    - name: OperatorHub CSV coverage
+      run: make check-csv-coverage
+
+    # Scoped to the drift step — a helm-lint or CSV-coverage failure has its
+    # own error output and must not be misdiagnosed as stale artifacts.
     - name: Surface failure details
-      if: failure()
+      if: failure() && steps.drift.outcome == 'failure'
       run: |
         echo "## ❌ Generated artifacts are out of date" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
