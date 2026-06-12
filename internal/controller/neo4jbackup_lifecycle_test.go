@@ -162,3 +162,74 @@ func TestCompressEffective(t *testing.T) {
 	assert.False(t, (&neo4jv1beta1.BackupOptions{Compress: ptr.To(false)}).CompressEffective(),
 		"explicit false must survive — bool+omitempty+default silently re-applied true (rule 66)")
 }
+
+// TestChainConcurrency_SeesCronJobChildren pins the #217 label fix: CronJob
+// children carry component=backup-cron, and the old component=backup filter
+// made scheduled runs invisible to the chain concurrency guard.
+func TestChainConcurrency_SeesCronJobChildren(t *testing.T) {
+	scheme := backupLifecycleScheme(t)
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "hourly-diff", Namespace: "ns"},
+		Spec:       neo4jv1beta1.Neo4jBackupSpec{ChainFromBackup: "daily-full"},
+	}
+	cronChild := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "daily-full-backup-cron-1738000000", Namespace: "ns",
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "neo4j-operator",
+				"app.kubernetes.io/component":  "backup-cron", // scheduled child
+				"app.kubernetes.io/part-of":    "daily-full",
+			},
+		},
+		Status: batchv1.JobStatus{Active: 1},
+	}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backup, cronChild).Build()
+	r := &Neo4jBackupReconciler{Client: fc}
+
+	err := r.waitForChainConcurrencyClear(context.Background(), backup)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errChainBusy,
+		"an active scheduled child in the same chain must block a chained run")
+}
+
+// TestValidateChainParent_NotFoundIsTransient pins #217: the parent CR not
+// existing YET is an apply-ordering condition (Pending), not terminal.
+func TestValidateChainParent_NotFoundIsTransient(t *testing.T) {
+	scheme := backupLifecycleScheme(t)
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "diff", Namespace: "ns"},
+		Spec:       neo4jv1beta1.Neo4jBackupSpec{ChainFromBackup: "missing-parent"},
+	}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backup).Build()
+	r := &Neo4jBackupReconciler{Client: fc}
+
+	err := r.validateChainParent(context.Background(), backup)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errBackupTransient)
+}
+
+// TestParseFindTimeArg_Units pins #217: every unit the validator accepts is
+// honored — "90m" previously degraded to 90 DAYS.
+func TestParseFindTimeArg_Units(t *testing.T) {
+	assert.Equal(t, "-mtime +7", parseFindTimeArg("7d"))
+	assert.Equal(t, "-mmin +2880", parseFindTimeArg("48h"))
+	assert.Equal(t, "-mmin +90", parseFindTimeArg("90m"))
+	assert.Equal(t, "-mmin +2", parseFindTimeArg("90s"))
+	assert.Equal(t, "-mtime +7", parseFindTimeArg("bogus"))
+}
+
+// TestBuildRetentionScript_FileLevelChainScoped pins the #217 retention
+// rewrite: pruning operates on *.backup FILES inside THIS CR's chain dir —
+// the old script rm -rf'd depth-1 DIRECTORIES under /backup (entire chain
+// roots, including other CRs' chains on a shared PVC).
+func TestBuildRetentionScript_FileLevelChainScoped(t *testing.T) {
+	script := buildRetentionScript(&neo4jv1beta1.RetentionPolicy{MaxCount: 5, MaxAge: "7d"}, "daily-prod")
+
+	assert.Contains(t, script, "'/backup/daily-prod'", "pruning must be scoped to the CR's chain dir")
+	assert.Contains(t, script, "-name '*.backup'", "pruning must target artifact FILES, not directories")
+	assert.Contains(t, script, "-type f", "must never rm -rf directories")
+	assert.NotContains(t, script, "-type d", "the pre-rule-40 directory model must be gone")
+	assert.Contains(t, script, "NEWEST=", "maxAge must always keep the newest artifact")
+	assert.Contains(t, script, "rm -f", "file-level deletion only")
+	assert.NotContains(t, script, "rm -rf", "recursive deletion of chains must be gone")
+}
