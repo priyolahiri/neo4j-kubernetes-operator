@@ -1139,8 +1139,11 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 		}
 		return controllerutil.SetControllerReference(backup, cronJob, r.Scheme)
 	})
-	if err == nil && opResult == controllerutil.OperationResultCreated {
-		// Warn once, at CronJob creation — not on every reconcile pass.
+	if err == nil && (opResult == controllerutil.OperationResultCreated || opResult == controllerutil.OperationResultUpdated) {
+		// Warn when the CronJob is created OR actually changes (a user adding
+		// options.validate to an existing schedule lands here as Updated).
+		// CreateOrUpdate returns OperationResultNone for no-op passes, so
+		// steady-state reconciles stay silent.
 		r.warnValidateUnsupported(backup, cluster)
 	}
 	if err != nil {

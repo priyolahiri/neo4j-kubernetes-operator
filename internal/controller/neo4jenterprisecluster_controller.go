@@ -23,6 +23,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -67,6 +68,10 @@ type Neo4jEnterpriseClusterReconciler struct {
 	Validator          *validation.ClusterValidator
 	ConfigMapManager   *ConfigMapManager
 	SplitBrainDetector *SplitBrainDetector
+	// deferredUpgradeTargets dedupes the UpgradeDeferred event per cluster
+	// (key ns/name → deferred image) so a held image change doesn't emit an
+	// event on every Forming-phase reconcile (#262 review).
+	deferredUpgradeTargets sync.Map
 }
 
 const (
@@ -2851,10 +2856,17 @@ func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.
 	if idx <= 0 {
 		return // unparseable image — leave the spec alone
 	}
-	log.FromContext(ctx).Info("Image change deferred until the cluster is Ready — the rolling-upgrade state machine will perform it",
+	log.FromContext(ctx).V(1).Info("Image change deferred until the cluster is Ready — the rolling-upgrade state machine will perform it",
 		"current", currentImage, "desired", desiredImage, "phase", cluster.Status.Phase)
-	r.Recorder.Eventf(cluster, corev1.EventTypeNormal, "UpgradeDeferred",
-		"Image change to %s deferred until the cluster is Ready; the rolling-upgrade state machine will perform it", desiredImage)
+	// Event once per deferred target (not per reconcile — a Forming cluster
+	// reconciles every ~30s and would spam the event stream). In-memory
+	// dedupe: an operator restart re-emits a single event, which is fine.
+	key := cluster.Namespace + "/" + cluster.Name
+	if prev, _ := r.deferredUpgradeTargets.Load(key); prev != desiredImage {
+		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, "UpgradeDeferred",
+			"Image change to %s deferred until the cluster is Ready; the rolling-upgrade state machine will perform it", desiredImage)
+		r.deferredUpgradeTargets.Store(key, desiredImage)
+	}
 	cluster.Spec.Image.Repo = currentImage[:idx]
 	cluster.Spec.Image.Tag = currentImage[idx+1:]
 }
