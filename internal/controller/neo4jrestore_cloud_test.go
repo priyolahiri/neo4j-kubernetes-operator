@@ -819,3 +819,50 @@ func TestBuildLocalRestoreFilePath_EmptyDatabaseNameSkips(t *testing.T) {
 	got := buildLocalRestoreFilePath(restore, "/backup/x")
 	assert.Empty(t, got, "empty dbname must skip shell-side resolution")
 }
+
+// TestResolveRestoreSource_BackupRefEmptyStoragePathDefaulted pins #218: the
+// backup WRITE side (buildToPath) defaults an empty storage.path to
+// "backups", so the artifacts live at s3://bucket/backups/<chain>/. The
+// resolver must mirror that default — without it the restore read
+// s3://bucket/<chain>/ and every defaulted-path cloud backup was
+// unrestorable via backupRef (file-not-found with no hint).
+func TestResolveRestoreSource_BackupRefEmptyStoragePathDefaulted(t *testing.T) {
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "defaulted", Namespace: "neo4j"},
+		Spec: neo4jv1beta1.Neo4jBackupSpec{
+			Storage: neo4jv1beta1.StorageLocation{
+				Type:   "s3",
+				Bucket: "prod-bucket",
+				// Path deliberately empty — perfectly valid spec; the
+				// validator only requires bucket.
+				Cloud: &neo4jv1beta1.CloudBlock{Provider: "aws"},
+			},
+		},
+		Status: neo4jv1beta1.Neo4jBackupStatus{
+			History: []neo4jv1beta1.BackupRun{
+				{RunID: "run-1", Status: "Succeeded", BackupsPath: "defaulted"},
+			},
+		},
+	}
+	r := &Neo4jRestoreReconciler{
+		Client: fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(backup).Build(),
+	}
+	restore := &neo4jv1beta1.Neo4jRestore{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "neo4j"},
+		Spec: neo4jv1beta1.Neo4jRestoreSpec{
+			Source: neo4jv1beta1.RestoreSource{Type: "backup", BackupRef: "defaulted"},
+		},
+	}
+
+	src, err := r.resolveRestoreSource(context.Background(), restore)
+	require.NoError(t, err)
+	require.NotNil(t, src.Storage)
+	assert.Equal(t, "backups", src.Storage.Path,
+		"resolver must mirror buildToPath's empty-path default")
+
+	tmp := &neo4jv1beta1.Neo4jRestore{Spec: neo4jv1beta1.Neo4jRestoreSpec{Source: src}}
+	assert.Equal(t,
+		"s3://prod-bucket/backups/defaulted",
+		r.buildRestoreFromPath(tmp),
+		"restore must read from the SAME location the backup Job wrote to")
+}

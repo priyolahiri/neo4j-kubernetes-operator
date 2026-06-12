@@ -1261,11 +1261,18 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 // CRs intentionally sharing one directory via the chainFromBackup link.
 // Two unrelated CRs still stay isolated because they each get their own
 // chain-root segment.
+// defaultBackupStoragePath is the bucket-relative directory used when
+// spec.storage.path is empty. The SAME default must be applied wherever a
+// backup's StorageLocation is consumed (ResolveBackupRef) — a writer/reader
+// mismatch makes every defaulted-path cloud backup unrestorable via
+// backupRef (#218).
+const defaultBackupStoragePath = "backups"
+
 func (r *Neo4jBackupReconciler) buildToPath(backup *neo4jv1beta1.Neo4jBackup) string {
 	st := backup.Spec.Storage
 	p := st.Path
 	if p == "" {
-		p = "backups"
+		p = defaultBackupStoragePath
 	}
 	crSegment := chainRoot(backup)
 	switch st.Type {
