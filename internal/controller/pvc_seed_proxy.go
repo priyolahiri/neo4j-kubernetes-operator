@@ -306,8 +306,13 @@ func buildPVCSeedProxyDeployment(owner client.Object, ownerName, backupPVCName s
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
-						Name:    pvcSeedProxyContainerName,
-						Image:   "busybox:1.36",
+						Name: pvcSeedProxyContainerName,
+						// Digest-pinned (multi-arch manifest-list digest, resolved via
+						// `docker buildx imagetools inspect busybox:1.36.1`) so the
+						// proxy image is reproducible and can't be silently replaced
+						// upstream — same supply-chain rationale as the pinned alpine
+						// cleanup image.
+						Image:   "busybox:1.36.1@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
 						Command: []string{"sh", "-c", fmt.Sprintf("httpd -f -v -p %d -h /backup", pvcSeedProxyPort)},
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: pvcSeedProxyPort,

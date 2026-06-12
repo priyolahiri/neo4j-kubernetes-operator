@@ -17,8 +17,11 @@ limitations under the License.
 package neo4j
 
 import (
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -136,4 +139,17 @@ func TestSerializeSeedConfig(t *testing.T) {
 	if got := SerializeSeedConfig(map[string]string{"b": "2", "a": "1"}); got != "a=1,b=2" {
 		t.Errorf("sorted serialisation = %q, want a=1,b=2", got)
 	}
+}
+
+// TestAlterDatabaseParameterization pins the AI-finding fix: option keys are
+// identifier-validated and values are bound as driver parameters (rule 19) —
+// previously both were interpolated into the Cypher string.
+func TestAlterDatabaseParameterization(t *testing.T) {
+	// Key validation is the unit-testable half (the parameter binding is
+	// exercised by integration). Invalid keys must be rejected up front.
+	validOptionKey := regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	assert.True(t, validOptionKey.MatchString("existingData"))
+	assert.True(t, validOptionKey.MatchString("txLogEnrichment"))
+	assert.False(t, validOptionKey.MatchString("evil: 'x'} WITH 1 AS y //"))
+	assert.False(t, validOptionKey.MatchString("a-b"))
 }

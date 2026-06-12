@@ -395,7 +395,7 @@ point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil
 
 3. **Neo4j Version Compatibility**:
    ```yaml
-   # PITR only available in Neo4j 2025.x
+   # PITR via Neo4jRestore (standalone target) is supported on Neo4j 5.26.x and 2025.x+
    spec:
      image:
        repo: "neo4j"

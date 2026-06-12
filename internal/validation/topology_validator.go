@@ -43,8 +43,11 @@ func (v *TopologyValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluste
 	var allErrs field.ErrorList
 	topologyPath := field.NewPath("spec", "topology")
 
-	// Validate servers - enforce minimum clustering requirements
-	// Neo4j clusters require at least 2 servers
+	// Validate servers — also enforced by the CRD's Minimum=2 marker, kept
+	// here deliberately as defense-in-depth: the validators run in unit
+	// tests without an API server, and a CRD regen that lost the marker
+	// would otherwise silently drop the floor (no-webhooks architecture
+	// makes this layer the only programmatic guard).
 	if cluster.Spec.Topology.Servers < 2 {
 		allErrs = append(allErrs, field.Invalid(
 			topologyPath.Child("servers"),
@@ -53,9 +56,12 @@ func (v *TopologyValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluste
 		))
 	}
 
-	// Validate minSystemPrimaries: must be >= 2 (also enforced by the CRD) and
-	// must not exceed the server count — a floor higher than the number of
-	// servers can never be satisfied, so the cluster would never form.
+	// Validate minSystemPrimaries: must be >= 2 (also enforced by the CRD's
+	// Minimum=2 marker — duplicated here as defense-in-depth, same rationale
+	// as the servers check above) and must not exceed the server count — a
+	// floor higher than the number of servers can never be satisfied, so the
+	// cluster would never form. The cross-field ceiling is the part the CRD
+	// cannot express.
 	if mp := cluster.Spec.Topology.MinSystemPrimaries; mp != nil {
 		if *mp > cluster.Spec.Topology.Servers {
 			allErrs = append(allErrs, field.Invalid(
