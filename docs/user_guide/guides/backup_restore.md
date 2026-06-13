@@ -420,14 +420,14 @@ spec:
 
 #### PVC ownership: auto-provision vs bring-your-own
 
-`storage.pvc.size` is the switch:
+`storage.pvc.size` is the switch for **who creates the PVC** — but **either way the PVC (and your backups) survive `kubectl delete neo4jbackup`**:
 
-| Pattern | YAML | Lifecycle |
+| Pattern | YAML | Behavior |
 |---|---|---|
-| **Operator auto-provisions** | Set `name` + `size` (+ optional `storageClassName`) | PVC is owner-ref'd to the Neo4jBackup CR. Deleted when the CR is deleted (backups go with it). |
-| **Bring your own PVC** | Set `name` only; omit `size` | Operator just mounts the existing PVC. Survives CR deletion. Pre-create it however you like (kubectl, Helm, Velero, static binding, NFS, etc.). |
+| **Operator auto-provisions** | Set `name` + `size` (+ optional `storageClassName`) | Operator creates the PVC if it doesn't exist. It is **not** owner-ref'd to the CR — backups are durable; reclaim the storage with an explicit `kubectl delete pvc <name>`. |
+| **Bring your own PVC** | Set `name` only; omit `size` | Operator just mounts the existing PVC. Pre-create it however you like (kubectl, Helm, Velero, static binding, NFS, etc.). If a `name`-only PVC doesn't exist, the backup Job can't schedule — the operator surfaces the reason in `status` and fails after a short deadline rather than hanging. |
 
-Use bring-your-own when you want backups to survive `kubectl delete neo4jbackup`, or to share one PVC across multiple Neo4jBackup CRs (e.g. one daily + one weekly schedule writing to the same volume).
+> **Backups are never deleted by deleting the `Neo4jBackup` CR** (this changed in v1.12.1 — earlier versions cascade-deleted an operator-created PVC). Reclaim backup storage explicitly with `kubectl delete pvc`. One PVC can be shared across multiple Neo4jBackup CRs (e.g. a daily + a weekly schedule writing to the same volume).
 
 #### Cluster Backup to S3 with Explicit Credentials
 
