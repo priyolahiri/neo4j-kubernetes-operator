@@ -6,18 +6,19 @@ stop you, and which procedures to invoke.
 
 ## Start here
 
-Read [`AGENTS.md`](../../AGENTS.md) **FIRST** — it is the front door and the
-**single source of project invariants + Working principles**. When prose
-conflicts, `AGENTS.md`'s invariants win, and you trust the code and tests over
-any prose. Then read this guide, then the deep reference in
-[`CLAUDE.md`](../../CLAUDE.md).
+Read [`AGENTS.md`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/AGENTS.md) **FIRST** — it is the front door: the
+**canonical short list of invariants** and the home of the **Working principles**.
+(The detailed, enforcement-tagged invariants — with recovery — live in
+[`docs/knowledge/invariants.md`](../knowledge/invariants.md).) When prose
+conflicts, the invariants win, and you trust the code and tests over any prose.
+Then read this guide, then the deep reference in [`CLAUDE.md`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/CLAUDE.md).
 
 ## The 5 invariants & working principles
 
 The five hard invariants in one line — **no admission webhooks · Kind-only
 dev/test/CI · Enterprise images only · V2_ONLY discovery (port 6000) ·
 server-based architecture (single `{cluster}-server` STS + Job-per-`Neo4jBackup`-CR)**.
-Read the canonical short list in [`AGENTS.md`](../../AGENTS.md) and the full
+Read the canonical short list in [`AGENTS.md`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/AGENTS.md) and the full
 enforcement-tagged form — id, why, enforcement status, violation symptom,
 recovery — in [`docs/knowledge/invariants.md`](../knowledge/invariants.md). Don't
 re-derive them here.
@@ -54,11 +55,12 @@ inline validators, and a forbidden file/symbol reappearing will fail
 
 ## The skills catalog
 
-Invokable, step-by-step procedures live in `.claude/skills/`. Each ships an
-`AGENTS.md` + `SKILL.md` so any agent can load it. Invoke one when you need to
-*perform* the procedure rather than reason about it.
+Invokable, step-by-step procedures live in `.claude/skills/`. Each is a
+`SKILL.md` following the open `AGENTS.md`/`SKILL.md` convention, so any agent
+(Claude Code or otherwise) can load it. Invoke one when you need to *perform* the
+procedure rather than reason about it.
 
-See [`.claude/skills/README.md`](../../.claude/skills/README.md) for the grouped
+See [`.claude/skills/README.md`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/.claude/skills/README.md) for the grouped
 catalog. The full set:
 
 | Skill | Use when you need to… |
@@ -88,6 +90,11 @@ declaring done:
 3. **Grep before you cite.** Anti-hallucination is non-negotiable: before
    referencing any file path, Go symbol, test name, or make target, confirm it
    exists in the tree (`grep`/read). A fabricated citation is the worst failure.
+4. **Read the manual before you assert Neo4j behavior.** Training memory skews to
+   deprecated 4.x. For any config setting, Cypher, procedure, or topology, check
+   the version-correct operations manual — CalVer → `/current/`, LTS 5.26 → `/5/`
+   — not memory. The external sibling of "grep before you cite"; see the
+   `check-neo4j-docs` skill.
 
 ## Generated artifacts
 

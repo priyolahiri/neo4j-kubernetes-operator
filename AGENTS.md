@@ -83,6 +83,6 @@ pass unit tests but fail against a live modern database. Procedure + the full
 - **Invariants & regression rules** (the full enforcement-tagged checklist): `docs/knowledge/`.
 - **Procedures** (invokable skills): `.claude/skills/` — catalog + when-to-use in [`.claude/skills/README.md`](.claude/skills/README.md). Includes `check-neo4j-docs` (version-correct grounding), `add-crd-field` / `add-controller` / `add-inline-validator` / `regen-artifacts` (building features), `verify-journey` / `fix-knowledge-drift` / `run-extended-suite` (verify), `add-regression-rule` / `issue-hygiene` (process), `cut-release` / `retract-release` (release).
 - **Detailed domain reference** (deep architecture, Cypher syntax, plugin/TLS/backup specifics): `CLAUDE.md`.
-- **Contributor workflow**: `CONTRIBUTING.md` and `docs/developer_guide/`.
+- **Contributor workflow**: `CONTRIBUTING.md` and `docs/developer_guide/` — start with `docs/developer_guide/llm-contribution.md` (the agent on-ramp) and `docs/developer_guide/QUICKSTART.md` (Day-1 dev setup).
 
 AGENTS.md is the front door; CLAUDE.md is the deep reference. If they ever conflict, AGENTS.md's invariants win — and fix the drift.

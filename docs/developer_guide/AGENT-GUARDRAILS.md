@@ -3,7 +3,7 @@
 The five hard invariants themselves — rule, why, enforcement status, violation
 symptom, and **recovery** — live in
 **[`docs/knowledge/invariants.md`](../knowledge/invariants.md)** (the single
-detailed home; [`AGENTS.md`](../../AGENTS.md) has the canonical short list). This
+detailed home; [`AGENTS.md`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/AGENTS.md) has the canonical short list). This
 page is the *enforcement* companion: which checks block a merge, which are
 advisory, and the generic gates that apply to every change.
 

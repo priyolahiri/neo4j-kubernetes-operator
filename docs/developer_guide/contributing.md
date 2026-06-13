@@ -5,7 +5,7 @@ so the docs don't drift out of sync with the root guide.
 
 ## Start here
 
-- **[CONTRIBUTING.md](../../CONTRIBUTING.md)** (repository root) — the single
+- **[CONTRIBUTING.md](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/CONTRIBUTING.md)** (repository root) — the single
   source of truth for the full contribution workflow: prerequisites, dev
   environment, the inner dev loop (manual / `dev-watch` / Tilt), testing tiers,
   code quality, conventional commits, the generated-artifacts sync pipeline,
@@ -22,7 +22,7 @@ so the docs don't drift out of sync with the root guide.
   matters, how it's enforced, and how to recover. **[AGENT-GUARDRAILS.md](AGENT-GUARDRAILS.md)**
   is the enforcement/gates companion — which checks block a merge vs. are
   advisory. Especially important for LLM-assisted contributions.
-- **[CLAUDE.md](../../CLAUDE.md)** — the project constitution and index,
+- **[CLAUDE.md](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/CLAUDE.md)** — the project constitution and index,
   including the `## Generated artifacts` source→artifact map and the
   regression-prevention rules.
 

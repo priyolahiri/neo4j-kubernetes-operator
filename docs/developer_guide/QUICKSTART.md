@@ -2,7 +2,7 @@
 
 The single happy path from a fresh clone to your first iterated change. Follow
 it top to bottom; each step gates the next. For the full reference see
-[CONTRIBUTING.md](../../CONTRIBUTING.md) (root) and
+[CONTRIBUTING.md](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/CONTRIBUTING.md) (root) and
 [makefile_reference.md](makefile_reference.md).
 
 > **Kind only.** This project uses Kind (Kubernetes in Docker) for all
