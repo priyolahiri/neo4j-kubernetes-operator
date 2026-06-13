@@ -150,14 +150,28 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 	}
 
-	// Verify cluster supports property sharding
+	// Verify cluster supports property sharding. Capability (spec/version)
+	// and readiness (cluster still Forming) are DIFFERENT answers: the
+	// shipped examples apply the cluster and the sharded DB in one file, so
+	// every user reconciles this CR minutes before the cluster is Ready —
+	// reporting that as Failed/"does not support property sharding" sent
+	// them debugging the wrong thing. Not-ready waits in Waiting; only a
+	// genuine capability gap is Failed.
 	if !r.clusterSupportsPropertySharding(cluster) {
-		err := fmt.Errorf("cluster %s does not support property sharding (requires Neo4j 2025.12+ and propertySharding.enabled=true)", cluster.Name)
-		logger.Error(err, "Cluster does not support property sharding")
-		r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonClusterNotReady, err.Error())
+		if cluster.Spec.PropertySharding == nil || !cluster.Spec.PropertySharding.Enabled {
+			err := fmt.Errorf("cluster %s does not support property sharding (requires Neo4j 2025.12+ and propertySharding.enabled=true)", cluster.Name)
+			logger.Error(err, "Cluster does not support property sharding")
+			r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonClusterNotReady, err.Error())
 
-		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", err.Error(), nil); statusErr != nil {
-			logger.Error(statusErr, "Failed to update status after cluster readiness check")
+			if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", err.Error(), nil); statusErr != nil {
+				logger.Error(statusErr, "Failed to update status after cluster capability check")
+			}
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
+		msg := fmt.Sprintf("waiting for cluster %s to become Ready with property sharding operational (phase: %s)", cluster.Name, cluster.Status.Phase)
+		logger.Info("Cluster not ready for property sharding yet; waiting", "cluster", cluster.Name, "phase", cluster.Status.Phase)
+		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Waiting", msg, nil); statusErr != nil {
+			logger.Error(statusErr, "Failed to update status while waiting for cluster readiness")
 		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}

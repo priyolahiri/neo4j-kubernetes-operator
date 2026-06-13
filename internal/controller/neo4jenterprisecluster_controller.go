@@ -2880,6 +2880,17 @@ func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.
 	if currentImage == desiredImage {
 		return
 	}
+	// Escape hatch: with ZERO ready replicas there is no formed quorum for
+	// the hold to protect — and the held image may be the very thing
+	// blocking formation (an unpullable tag on a first deploy left the
+	// cluster wedged Forming forever: never Ready, so the user's corrected
+	// tag was deferred indefinitely). Let the spec image flow straight to
+	// the StatefulSet; pods that never came up are safe to re-roll.
+	if serverSts.Status.ReadyReplicas == 0 {
+		log.FromContext(ctx).Info("Applying image change without the Ready gate: no ready replicas exist to protect (formation blocked, possibly by the current image)",
+			"current", currentImage, "desired", desiredImage)
+		return
+	}
 	idx := strings.LastIndex(currentImage, ":")
 	if idx <= 0 {
 		return // unparseable image — leave the spec alone
