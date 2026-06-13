@@ -39,10 +39,19 @@ kubectl get neo4jenterprisecluster minimal-cluster -o jsonpath='{.status.phase}{
 # → Ready
 ```
 
-### 1. Create the admin secret
+### 1. Confirm the admin secret
 
-The backup Job authenticates to Neo4j with these credentials. Create it in the
-**same namespace as your cluster** — the Job can't start without it:
+The backup Job authenticates to Neo4j with the cluster's admin credentials —
+the **same `neo4j-admin-secret` your cluster already uses** (you created it
+when you deployed the cluster). It must live in the same namespace as the
+cluster. Confirm it's there:
+
+```bash
+kubectl get secret neo4j-admin-secret
+```
+
+If it's missing (e.g. your cluster references a differently-named secret),
+create it with your cluster's password:
 
 ```bash
 kubectl create secret generic neo4j-admin-secret \
