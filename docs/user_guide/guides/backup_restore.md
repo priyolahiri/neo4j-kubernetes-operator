@@ -1255,7 +1255,6 @@ spec:
       cypherStatements:
         - "CALL db.awaitIndexes()"
         - "CALL dbms.security.clearAuthCache()"
-  force: false
   stopCluster: true
 ```
 
