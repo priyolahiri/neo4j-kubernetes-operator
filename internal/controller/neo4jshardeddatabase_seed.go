@@ -30,7 +30,10 @@ type ResolvedShardedSeed struct {
 	URI string
 	// PerShardURIs maps shard name (e.g. "products-g000") to an HTTP URL
 	// served by the operator-managed PVC seed proxy. Populated when the
-	// backup is PVC-storage; consumed by `OPTIONS { seedURIs: { … } }`.
+	// backup is PVC-storage; consumed under the SINGULAR Cypher key with a
+	// map value: OPTIONS { seedURI: { <shard>: '<URL>', ... } } — the same
+	// seedURI key as the cloud single-URI case (only the CR spec field for
+	// the map is the plural seedURIs).
 	PerShardURIs map[string]string
 	// CredsSecretName is the cloud creds Secret to project onto cluster
 	// pods for cloud seedURIs. Empty for PVC (the proxy is in-cluster
