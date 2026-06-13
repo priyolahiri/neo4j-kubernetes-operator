@@ -1528,6 +1528,13 @@ func (in *Neo4jEnterpriseClusterSpec) DeepCopyInto(out *Neo4jEnterpriseClusterSp
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.PodServiceAccountAnnotations != nil {
+		in, out := &in.PodServiceAccountAnnotations, &out.PodServiceAccountAnnotations
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.TrustedCASecrets != nil {
 		in, out := &in.TrustedCASecrets, &out.TrustedCASecrets
 		*out = make([]TrustedCASecret, len(*in))

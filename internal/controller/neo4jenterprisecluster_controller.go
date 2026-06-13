@@ -844,7 +844,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 	// (RoleBinding.RoleRef and Deployment.Spec.Selector are immutable and rarely
 	// change for this operator).
 	switch obj.(type) {
-	case *corev1.Service, *networkingv1.NetworkPolicy, *networkingv1.Ingress, *certmanagerv1.Certificate:
+	case *corev1.Service, *networkingv1.NetworkPolicy, *networkingv1.Ingress, *certmanagerv1.Certificate, *corev1.ServiceAccount:
 		return r.reconcileMutableResource(ctx, obj)
 	}
 
@@ -1602,6 +1602,20 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMutableResource(ctx context.
 		}
 		if changed {
 			logger.Info("Updating Certificate", "name", e.Name)
+			return r.Update(ctx, e)
+		}
+	case *corev1.ServiceAccount:
+		// The discovery SA carries spec.podServiceAccountAnnotations (cloud
+		// Workload Identity). Merge additively: the operator owns only those
+		// keys (removals honored via the owned-keys bookkeeping) and preserves
+		// annotations added out-of-band — e.g. an IRSA annotation a user set
+		// manually before this field existed, or another controller's.
+		e, ok := existing.(*corev1.ServiceAccount)
+		if !ok {
+			return fmt.Errorf("expected *corev1.ServiceAccount, got %T", existing)
+		}
+		if applyOwnedMetadata(e, d.Annotations, d.Labels) {
+			logger.Info("Updating ServiceAccount annotations", "name", e.Name)
 			return r.Update(ctx, e)
 		}
 	}

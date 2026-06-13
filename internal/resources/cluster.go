@@ -885,13 +885,25 @@ func buildExternalSecret(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, esConfig 
 	}
 }
 
-// BuildDiscoveryServiceAccountForEnterprise creates a ServiceAccount for Kubernetes discovery
+// BuildDiscoveryServiceAccountForEnterprise creates the ServiceAccount the
+// Neo4j server pods run under. spec.podServiceAccountAnnotations are stamped
+// here so cloud Workload Identity (IRSA / GKE WI / Azure WI) annotations reach
+// the SA — the JVM assumes the cloud role for seed-URI fetches during cluster
+// restore and Neo4jDatabase/Neo4jShardedDatabase seeding.
 func BuildDiscoveryServiceAccountForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.ServiceAccount {
+	var annotations map[string]string
+	if len(cluster.Spec.PodServiceAccountAnnotations) > 0 {
+		annotations = make(map[string]string, len(cluster.Spec.PodServiceAccountAnnotations))
+		for k, v := range cluster.Spec.PodServiceAccountAnnotations {
+			annotations[k] = v
+		}
+	}
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getDiscoveryServiceAccountNameForEnterprise(cluster),
-			Namespace: cluster.Namespace,
-			Labels:    getLabelsForEnterprise(cluster, "discovery-service-account"),
+			Name:        getDiscoveryServiceAccountNameForEnterprise(cluster),
+			Namespace:   cluster.Namespace,
+			Labels:      getLabelsForEnterprise(cluster, "discovery-service-account"),
+			Annotations: annotations,
 		},
 	}
 }

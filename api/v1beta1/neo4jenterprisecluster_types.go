@@ -129,6 +129,24 @@ type Neo4jEnterpriseClusterSpec struct {
 	// +optional
 	ExtraEnvFrom []corev1.EnvFromSource `json:"extraEnvFrom,omitempty"`
 
+	// PodServiceAccountAnnotations are annotations applied to the
+	// operator-managed ServiceAccount that the Neo4j server pods run under.
+	// Use this for cloud Workload Identity so the Neo4j JVM can assume a
+	// cloud role when it fetches a seed URI (cluster restore via seedURI,
+	// Neo4jDatabase/Neo4jShardedDatabase seedBackupRef) — e.g.
+	// "eks.amazonaws.com/role-arn" (AWS IRSA), "iam.gke.io/gcp-service-account"
+	// (GKE Workload Identity), or the Azure Workload Identity labels/annotations.
+	//
+	// Merged additively onto the ServiceAccount: the operator owns only the
+	// keys listed here (tracked so removals are honored) and preserves any
+	// annotations added out-of-band. Changing this triggers a rolling restart
+	// of the server pods on the NEXT reconcile only if the pods must be
+	// recreated to pick up the identity (most webhooks inject at pod admission,
+	// so re-roll the StatefulSet after first adding these on an existing
+	// cluster).
+	// +optional
+	PodServiceAccountAnnotations map[string]string `json:"podServiceAccountAnnotations,omitempty"`
+
 	// TrustedCASecrets references Secrets containing additional CA certificates
 	// (key defaults to "ca.crt") that Neo4j-the-server should trust for outgoing
 	// TLS connections — e.g. OIDC providers behind a corporate CA, LDAPS, Aura
