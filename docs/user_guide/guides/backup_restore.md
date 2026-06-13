@@ -20,6 +20,132 @@ Watch for `status.phase: Completed`. Logs at `kubectl logs job/simple-backup-bac
 - Admin credentials Secret
 - Storage backend: PVC, S3, GCS, or Azure
 
+## Tutorial: Your First Backup and Restore (~10 minutes)
+
+A complete, copy-paste walk-through: from a running cluster to a verified
+backup and a verified restore, using a local PVC (no cloud account needed).
+Follow it top to bottom. Everything else in this guide (cloud storage,
+scheduling, differential chains, point-in-time recovery) is optional and comes
+after.
+
+### Before you start
+
+You need a `Neo4jEnterpriseCluster` (or `Neo4jEnterpriseStandalone`) already in
+phase `Ready` — deploy one from the [Getting Started](../getting_started.md)
+guide first. Verify, using the cluster name from that guide:
+
+```bash
+kubectl get neo4jenterprisecluster minimal-cluster -o jsonpath='{.status.phase}{"\n"}'
+# → Ready
+```
+
+### 1. Create the admin secret
+
+The backup Job authenticates to Neo4j with these credentials. Create it in the
+**same namespace as your cluster** — the Job can't start without it:
+
+```bash
+kubectl create secret generic neo4j-admin-secret \
+  --from-literal=username=neo4j --from-literal=password='<your-neo4j-password>'
+```
+
+### 2. (Optional) Add data, so you can prove the round-trip later
+
+```bash
+kubectl exec minimal-cluster-server-0 -c neo4j -- \
+  cypher-shell -u neo4j -p '<your-neo4j-password>' -d neo4j \
+  "CREATE (:Product {name: 'Widget'}) RETURN 1"
+```
+
+### 3. Take a backup
+
+This backs up the `neo4j` database to a PVC the operator creates for you.
+`backupType: AUTO` takes a full backup the first time, differentials after.
+
+```yaml
+cat <<'EOF' | kubectl apply -f -
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jBackup
+metadata:
+  name: first-backup
+spec:
+  target:
+    kind: Database          # one database → one restorable artifact
+    name: neo4j
+    clusterRef: minimal-cluster
+  storage:
+    type: pvc
+    pvc:
+      name: first-backup-pvc
+      size: 5Gi
+  options:
+    backupType: AUTO
+EOF
+```
+
+### 4. Verify the backup completed
+
+```bash
+kubectl get neo4jbackup first-backup -o jsonpath='{.status.phase}{"\n"}'
+# → Completed
+kubectl get neo4jbackup first-backup -o jsonpath='{.status.history[0].artifactFilename}{"\n"}'
+# → neo4j-2026-….backup   (the captured artifact)
+```
+
+> A **one-shot** backup reaches `Completed`. If you add a `schedule:` field it
+> becomes a recurring CronJob that stays in phase `Scheduled` — check
+> `status.history[]` for each run instead.
+>
+> The PVC (`first-backup-pvc`) and its backups **survive even if you delete the
+> `Neo4jBackup` CR** — reclaim the space with `kubectl delete pvc first-backup-pvc`.
+
+### 5. Restore into a new database
+
+Restore into a fresh database `neo4jrestored` on the same cluster. The operator
+seeds it from the backup over Cypher — online, no downtime, and your original
+`neo4j` database is untouched.
+
+```yaml
+cat <<'EOF' | kubectl apply -f -
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jRestore
+metadata:
+  name: first-restore
+spec:
+  clusterRef: minimal-cluster
+  databaseName: neo4jrestored
+  source:
+    type: backup
+    backupRef: first-backup
+EOF
+```
+
+### 6. Verify the restore — and your data
+
+```bash
+kubectl get neo4jrestore first-restore -o jsonpath='{.status.phase}{"\n"}'
+# → Completed
+kubectl exec minimal-cluster-server-0 -c neo4j -- \
+  cypher-shell -u neo4j -p '<your-neo4j-password>' \
+  "SHOW DATABASE neo4jrestored YIELD name, currentStatus"
+# → neo4jrestored   online
+kubectl exec minimal-cluster-server-0 -c neo4j -- \
+  cypher-shell -u neo4j -p '<your-neo4j-password>' -d neo4jrestored \
+  "MATCH (p:Product) RETURN p.name"
+# → "Widget"   (your step-2 data is back)
+```
+
+That's a full backup and restore. From here:
+
+- **Restoring into a cluster from a `kind: Cluster` (all-databases) backup?** You
+  can't seed a cluster from it — back up the specific database with
+  `kind: Database` (as above), or restore via `source.type: storage`. See
+  [Restore Operations](#restore-operations).
+- **Standalone targets** restore offline via a Job (set `stopCluster: true` and
+  `force: true`). See [Restore Operations](#restore-operations).
+- **Cloud storage** (S3/GCS/Azure/MinIO) → [Cloud Storage Authentication](#cloud-storage-authentication).
+- **Scheduled & differential backups** → [Backup Operations](#backup-operations).
+
 ## Migrating from legacy `spec.backups`
 
 The legacy `spec.backups` field (and its centralized `{cluster}-backup-0` StatefulSet), and the standalone backup sidecar, have been **removed** — `spec.backups` no longer exists in the CRD schema. Use one or more `Neo4jBackup` CRs instead. The Neo4jBackup CRD covers every legacy capability plus more — one-shot or scheduled (`spec.schedule`) backups, native CronJob retention/suspend, `status.history`, sharded-DB targets, mixed-cadence FULL+DIFF chains via `spec.chainFromBackup`, and per-Job pod resource control (`spec.options.resources`). See the [Migration Guide](../migration_guide.md#6-specbackups-and-the-backup-sidecar-are-removed) for upgrade steps.
@@ -833,6 +959,10 @@ The operator picks the right restore method based on the target kind. The Neo4j 
 | `Neo4jEnterpriseCluster` (standard DB) | Cypher over Bolt — no Job | `dbms.recreateDatabase(name, {seedURI})` if the DB exists, otherwise `CREATE DATABASE name OPTIONS { seedURI } WAIT` |
 | `Neo4jEnterpriseStandalone` | Kubernetes Job | `neo4j-admin database restore --from-path=<latest-file-in-chain>` followed by `CREATE/START DATABASE` |
 | `Neo4jShardedDatabase` (sharded) | Rejected with actionable error | Use `Neo4jShardedDatabase.spec.replaceExisting: true` + `force: true` instead — see [Property Sharding](../property_sharding.md) |
+
+> **You cannot restore into a cluster from a `kind: Cluster` (all-databases) backup.** That backup stores one `.backup` artifact *per database*, so there is no single artifact to seed one database from. The operator rejects it with an actionable error:
+> `Neo4jBackup "<name>" is a kind:Cluster (all-databases) backup — … To restore a database to a cluster, either reference a kind:Database backup of that database, or use source.type=storage with source.backupPath set to the exact <database>-<timestamp>.backup file.`
+> Back up the specific database with `kind: Database` (one artifact, as in the [tutorial](#tutorial-your-first-backup-and-restore-10-minutes)), or restore via `source.type: storage` pointing at the exact `.backup` file. (Standalone restores from a `kind: Cluster` backup work fine — the Job's filename glob selects the requested database.)
 
 **Cluster path (Cypher)** — works with both cloud and PVC backups:
 

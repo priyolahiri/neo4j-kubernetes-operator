@@ -28,7 +28,12 @@ spec:
     backupType: AUTO
     compress: true
     pageCache: "2G"
-    # tempPath recommended for cloud uploads to avoid partial writes
+    # tempPath stages in the pod's ephemeral /tmp (works out of the box; the
+    # operator creates the directory). For LARGE or production cloud backups,
+    # prefer tempStorage (a dedicated staging PVC) so staging can't fill the
+    # node's ephemeral disk:
+    #   tempStorage:
+    #     size: 50Gi
     tempPath: /tmp/neo4j-backup-temp
     # preferDiffAsParent: true  # CalVer 2025.04+ only — use latest DIFF as parent for chained diffs
   storage:
