@@ -15,6 +15,12 @@ exclude_docs: |
   /README.md
   /requirements.txt
   /plans/
+  # The granular regression-rule dumps + knowledge index stay in-repo reference
+  # for agents/maintainers (they read these from the tree, not the site). The
+  # foundational invariants ARE published (knowledge/invariants.md, in nav).
+  /knowledge/README.md
+  /knowledge/operations.md
+  /knowledge/backup-restore.md
 
 theme:
   name: material
@@ -164,6 +170,7 @@ nav:
       - GitOps Integration: gitops/README.md
 
   - Contribute:
+      - Developer Quickstart: developer_guide/QUICKSTART.md
       - Development: developer_guide/development.md
       - Contributing: developer_guide/contributing.md
       - Collaboration: developer_guide/collaboration.md
@@ -172,3 +179,7 @@ nav:
       - Testing: developer_guide/testing.md
       - Makefile Reference: developer_guide/makefile_reference.md
       - OpenShift OLM: developer_guide/openshift_olm.md
+      - AI-Assisted Contribution:
+          - Contributing with an LLM Agent: developer_guide/llm-contribution.md
+          - Agent Guardrails: developer_guide/AGENT-GUARDRAILS.md
+          - Project Invariants: knowledge/invariants.md
