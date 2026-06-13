@@ -124,3 +124,21 @@ func TestServerStatefulSetFullyRolled(t *testing.T) {
 		})
 	}
 }
+
+// Escape hatch: a first deploy wedged on an unpullable image (0 ready
+// replicas, every pod ImagePullBackOff) has no quorum for the hold to
+// protect — the user's corrected tag must flow to the StatefulSet instead
+// of being deferred until a Ready that can never come (found by the
+// v1.12.1 fresh-eyes journey: a bad example tag permanently wedged the
+// cluster even after fixing spec.image).
+func TestHoldImageDriftUntilReady_ZeroReadyReplicasEscapesHold(t *testing.T) {
+	sts := gateTestSTS("neo4j:2025.12.0-enterprise", 3, "rev1", "rev1", 0, 0)
+	cluster := gateTestCluster("2026.04-enterprise", "Forming")
+	r := gateTestReconciler(t, sts, cluster)
+
+	r.holdImageDriftUntilReady(context.Background(), cluster)
+
+	if cluster.Spec.Image.Tag != "2026.04-enterprise" {
+		t.Errorf("with zero ready replicas the corrected image must NOT be held; got %s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
+	}
+}
