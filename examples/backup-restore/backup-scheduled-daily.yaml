@@ -39,6 +39,9 @@ spec:
   options:
     compress: true
     backupType: AUTO   # FULL on first run, DIFF afterwards
+    # tempPath stages in the pod's ephemeral /tmp (works out of the box). For
+    # LARGE or production cloud backups, prefer tempStorage (a dedicated
+    # staging PVC) so staging can't fill the node's ephemeral disk.
     tempPath: /tmp/neo4j-backup-temp
   # Set suspend: true to temporarily pause this scheduled backup. The operator
   # propagates it to the underlying CronJob (no scheduled Jobs fire while
@@ -94,5 +97,7 @@ spec:
   options:
     compress: true
     backupType: FULL
+    # See the note above: tempPath uses ephemeral /tmp; use tempStorage for
+    # large/production cloud backups.
     tempPath: /tmp/neo4j-backup-temp
   suspend: false
