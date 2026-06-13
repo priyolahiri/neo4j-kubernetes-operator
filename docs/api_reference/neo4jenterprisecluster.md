@@ -100,6 +100,7 @@ cluster reaches `Ready` — see [`Neo4jRestore`](neo4jrestore.md).
 | `extraVolumes` | `[]corev1.Volume` | Arbitrary pod volumes mounted into the Neo4j pod; reference them via `extraVolumeMounts` |
 | `extraVolumeMounts` | `[]corev1.VolumeMount` | Mount points for `extraVolumes` (or, rarely, operator-managed volumes); operator-managed paths are rejected by the validator |
 | `extraEnvFrom` | `[]corev1.EnvFromSource` | Standard Kubernetes pass-through. Projects entire Secrets or ConfigMaps as environment variables onto the Neo4j container. Intended for credential bundles (e.g. cloud seed credentials for `seedURI`-based restores). |
+| `podServiceAccountAnnotations` | `map[string]string` | Annotations stamped onto the operator-managed ServiceAccount the Neo4j **server pods** run under. Use for cloud **Workload Identity** so the JVM can assume a cloud role when it fetches a seed URI (cluster restore, `Neo4jDatabase`/`Neo4jShardedDatabase` seeding) — e.g. `eks.amazonaws.com/role-arn` (AWS IRSA), `iam.gke.io/gcp-service-account` (GKE WI), or the Azure WI labels. Merged additively (operator owns only the keys you list; out-of-band annotations preserved). Set this **before** the pods start (or roll the StatefulSet after adding it) so the identity webhook injects the token at pod admission. |
 
 ## Type Definitions
 

@@ -105,6 +105,23 @@ Cloud backup Jobs need permission to write to your bucket. The operator supports
 | `Neo4jBackup` / standalone `Neo4jRestore` (Job paths) | a backup/restore **Job pod** | the operator-managed `neo4j-backup-sa` / `neo4j-restore-sa` — via `cloud.identity.autoCreate.annotations` on the CR |
 | Cluster `Neo4jRestore` (Cypher path), `Neo4jDatabase` `seedURI`, sharded `seedBackupRef` seeding | the Neo4j **server pods** (the JVM fetches the seed itself) | the **cluster's server pods' ServiceAccount** — the Job SA annotation does nothing here |
 
+**Annotating the server pods' ServiceAccount (Workload Identity):** set
+`spec.podServiceAccountAnnotations` on the `Neo4jEnterpriseCluster` — the
+operator stamps them onto the ServiceAccount the Neo4j pods run under, so the
+JVM assumes the role for the seed fetch:
+
+```yaml
+spec:
+  podServiceAccountAnnotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/neo4j-seed   # AWS IRSA
+    # iam.gke.io/gcp-service-account: neo4j-seed@my-project.iam.gserviceaccount.com   # GKE WI
+```
+
+Set it **before** the pods start (or roll the StatefulSet after adding it) so
+the identity webhook injects the credentials at pod admission. (Standalone
+pods don't yet support this — their seedURI seeding under Workload Identity is
+a known gap.)
+
 With **static credentials** the equivalent split applies: Job paths read the Secret referenced by `credentialsSecretRef`; the seedURI paths need the same Secret projected onto the server pods via the cluster/standalone CR's `spec.extraEnvFrom` (the operator checks this and emits a copy-pasteable fix, or auto-patches under the `neo4j.com/auto-inherit-seed-creds: "true"` annotation).
 
 ---
@@ -260,7 +277,7 @@ kubectl run minio-client --rm -it --restart=Never \
 | Path-style not working | `forcePathStyle` missing | Confirm `forcePathStyle: true` in spec |
 | `SSL handshake failed` | TLS mismatch | Use `http://` for in-cluster; mount CA for self-signed certs |
 
-> **Restoring from MinIO / S3-compatible storage uses the same two fields — but only on Job paths.** Set `endpointURL` and `forcePathStyle` on the `Neo4jRestore` `spec.source.storage.cloud` block: the operator injects `AWS_ENDPOINT_URL_S3` and the path-style JVM flag into backup and **standalone restore Job pods** only. They are **not** injected into the Neo4j server pods — so for the cluster Cypher restore path and `Neo4jDatabase`/`Neo4jShardedDatabase` `seedURI` seeding (where the server JVM fetches the seed itself), add `AWS_ENDPOINT_URL_S3` as an extra key in the credentials Secret you project via the cluster's `spec.extraEnvFrom`:
+> **Restoring from MinIO / S3-compatible storage.** Set `endpointURL` and `forcePathStyle` on the backup's `cloud` block; the operator injects `AWS_ENDPOINT_URL_S3` and the path-style JVM flag into the **backup and standalone-restore Job pods** automatically. The **cluster Cypher restore** path makes the *server* pods fetch the seed, so they need the endpoint too — for a cluster restore via `backupRef`, the operator now **auto-projects** `AWS_ENDPOINT_URL_S3` (and the path-style JVM opt) onto the cluster's `spec.env` when you opt in with the `neo4j.com/auto-inherit-seed-creds: "true"` annotation (the same gate as seed credentials), waiting for the rolling restart before it seeds. Without the annotation it fails with an actionable error telling you to add it or set the annotation. You can always provide it yourself instead — as a `spec.env` entry or a key in the projected credentials Secret:
 >
 > ```bash
 > kubectl create secret generic minio-backup-credentials \
@@ -270,11 +287,9 @@ kubectl run minio-client --rm -it --restart=Never \
 >   --from-literal=AWS_ENDPOINT_URL_S3=http://minio.minio.svc:9000
 > ```
 >
-> If a cluster restore resolves to a custom-endpoint backup and the operator
-> can verify the endpoint is missing from the server pods, it emits a
-> `SeedEndpointNotProjected` Warning event on the `Neo4jRestore` with this
-> exact fix — check `kubectl describe neo4jrestore <name>` before the seed
-> fails.
+> (`Neo4jDatabase`/`Neo4jShardedDatabase` `seedURI` seeding from a custom
+> endpoint is not auto-projected — provide the endpoint via the cluster's
+> `spec.env` or the projected Secret there.)
 
 Full examples with scheduled incremental backups: [`examples/backup-restore/backup-minio.yaml`](https://github.com/neo4j-partners/neo4j-kubernetes-operator/blob/main/examples/backup-restore/backup-minio.yaml).
 
