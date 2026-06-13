@@ -16,9 +16,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -266,4 +269,61 @@ func TestBackupJobStartupState(t *testing.T) {
 			t.Fatalf("running pod must report running with empty diag; got running=%v diag=%q", running, diag)
 		}
 	})
+}
+
+// Footgun B (v1.12.1 release-verify): an operator-created backup PVC must NOT
+// be owner-ref'd to the Neo4jBackup CR — otherwise `kubectl delete
+// neo4jbackup` cascade-deletes the PVC and every backup in it. Backups are
+// durable; reclaiming storage is an explicit `kubectl delete pvc`.
+func TestEnsureBackupPVC_CreatedWithoutOwnerRef(t *testing.T) {
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "nightly", Namespace: "default", UID: "uid-nightly"},
+		Spec: neo4jv1beta1.Neo4jBackupSpec{
+			Target:  neo4jv1beta1.BackupTarget{Kind: "Cluster", Name: "ec"},
+			Storage: neo4jv1beta1.StorageLocation{Type: "pvc", PVC: &neo4jv1beta1.PVCSpec{Name: "backup-pvc", Size: "5Gi"}},
+		},
+	}
+	r := newShardedTestReconciler(t, backup)
+	ctx := context.Background()
+
+	require.NoError(t, r.ensureBackupPVC(ctx, backup))
+
+	pvc := &corev1.PersistentVolumeClaim{}
+	require.NoError(t, r.Get(ctx, types.NamespacedName{Name: "backup-pvc", Namespace: "default"}, pvc))
+	assert.Empty(t, pvc.OwnerReferences, "operator-created backup PVC must have no owner reference (CR deletion must not eat backups)")
+}
+
+// Protective migration: a v1.12.0-created backup PVC that still carries the
+// CR's controller owner-ref must have it stripped on reconcile (removing an
+// owner-ref never triggers deletion), while unrelated owner-refs are kept.
+func TestEnsureBackupPVC_StripsStaleOwnerRef(t *testing.T) {
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "nightly", Namespace: "default", UID: "uid-nightly"},
+		Spec: neo4jv1beta1.Neo4jBackupSpec{
+			Target:  neo4jv1beta1.BackupTarget{Kind: "Cluster", Name: "ec"},
+			Storage: neo4jv1beta1.StorageLocation{Type: "pvc", PVC: &neo4jv1beta1.PVCSpec{Name: "backup-pvc", Size: "5Gi"}},
+		},
+	}
+	ctrlRef := true
+	owned := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "backup-pvc", Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{
+				{APIVersion: "v1", Kind: "ConfigMap", Name: "unrelated", UID: "uid-other"},
+				{APIVersion: "neo4j.neo4j.com/v1beta1", Kind: "Neo4jBackup", Name: "nightly", UID: "uid-nightly", Controller: &ctrlRef},
+			},
+		},
+	}
+	r := newShardedTestReconciler(t, backup, owned)
+	ctx := context.Background()
+
+	require.NoError(t, r.ensureBackupPVC(ctx, backup))
+
+	pvc := &corev1.PersistentVolumeClaim{}
+	require.NoError(t, r.Get(ctx, types.NamespacedName{Name: "backup-pvc", Namespace: "default"}, pvc))
+	for _, ref := range pvc.OwnerReferences {
+		assert.NotEqual(t, "uid-nightly", string(ref.UID), "the backup CR's owner-ref must be stripped")
+	}
+	require.Len(t, pvc.OwnerReferences, 1, "unrelated owner-refs must be preserved")
+	assert.Equal(t, "unrelated", pvc.OwnerReferences[0].Name)
 }

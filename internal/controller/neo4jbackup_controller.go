@@ -799,12 +799,18 @@ func (r *Neo4jBackupReconciler) ensureTempStagingPVC(ctx context.Context, backup
 // ensureBackupPVC provisions the destination backup PVC for storage.type=pvc
 // when the user has specified `storage.pvc.size` (and optionally
 // `storage.pvc.storageClassName`). If the PVC already exists (or `size` is
-// empty — user is referencing a pre-existing PVC), this is a no-op.
+// empty — user is referencing a pre-existing PVC), creation is a no-op.
 //
-// The PVC is owned by the Neo4jBackup CR so it's GC'd when the CR is
-// deleted. To retain backups beyond CR lifetime, users should either
-// (a) pre-create the PVC themselves so the operator finds it existing,
-// or (b) leave `size` empty and provision externally.
+// The operator-created PVC is DELIBERATELY NOT owner-referenced to the
+// Neo4jBackup CR: it holds backup DATA, and an owner-ref made
+// `kubectl delete neo4jbackup` silently cascade-delete the PVC and every
+// backup in it (a data-loss footgun, and self-contradictory — the
+// retention prune-on-delete Job in cleanupBackupArtifacts mounts this same
+// PVC, which only makes sense if it survives the CR). Backups are durable;
+// reclaiming the storage is an explicit `kubectl delete pvc`. For v1.12.0
+// installs that already have an operator-owned backup PVC, the owner-ref is
+// stripped on reconcile below (removing an owner-ref never triggers
+// deletion, so the migration is safe).
 func (r *Neo4jBackupReconciler) ensureBackupPVC(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
 	if backup.Spec.Storage.Type != "pvc" {
 		return nil
@@ -812,18 +818,25 @@ func (r *Neo4jBackupReconciler) ensureBackupPVC(ctx context.Context, backup *neo
 	if backup.Spec.Storage.PVC == nil || backup.Spec.Storage.PVC.Name == "" {
 		return nil
 	}
-	if backup.Spec.Storage.PVC.Size == "" {
-		// User is referencing an externally-provisioned PVC; nothing for
-		// the operator to do.
-		return nil
-	}
 
 	pvcName := backup.Spec.Storage.PVC.Name
 	existing := &corev1.PersistentVolumeClaim{}
-	if err := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: backup.Namespace}, existing); err == nil {
-		return nil // PVC already exists
-	} else if !errors.IsNotFound(err) {
+	switch err := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: backup.Namespace}, existing); {
+	case err == nil:
+		// PVC exists. Protective migration: strip a stale controller
+		// owner-ref pointing at THIS backup CR (set by v1.12.0) so deleting
+		// the CR no longer GC's the backups.
+		return r.stripBackupPVCOwnerRef(ctx, backup, existing)
+	case !errors.IsNotFound(err):
 		return fmt.Errorf("failed to get backup PVC %s/%s: %w", backup.Namespace, pvcName, err)
+	}
+
+	// PVC is absent. Only the operator creates it, and only when the user
+	// asked for provisioning by setting `size`. Without `size` the user is
+	// referencing an externally-provisioned PVC — nothing to create (a
+	// missing one then surfaces via the Job-startup diagnosis + deadline).
+	if backup.Spec.Storage.PVC.Size == "" {
+		return nil
 	}
 
 	pvc := &corev1.PersistentVolumeClaim{
@@ -843,10 +856,42 @@ func (r *Neo4jBackupReconciler) ensureBackupPVC(ctx context.Context, backup *neo
 	if backup.Spec.Storage.PVC.StorageClassName != "" {
 		pvc.Spec.StorageClassName = &backup.Spec.Storage.PVC.StorageClassName
 	}
-	if err := controllerutil.SetControllerReference(backup, pvc, r.Scheme); err != nil {
-		return fmt.Errorf("failed to set owner reference on backup PVC: %w", err)
-	}
+	// NO owner reference — see the doc comment above.
 	return r.Create(ctx, pvc)
+}
+
+// stripBackupPVCOwnerRef removes a controller owner-reference pointing at this
+// Neo4jBackup CR from an existing backup PVC, protecting v1.12.0-created PVCs
+// from cascade-deletion when the CR is removed. No-op when no such ref exists.
+func (r *Neo4jBackupReconciler) stripBackupPVCOwnerRef(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, pvc *corev1.PersistentVolumeClaim) error {
+	kept := make([]metav1.OwnerReference, 0, len(pvc.OwnerReferences))
+	stripped := false
+	for _, ref := range pvc.OwnerReferences {
+		if ref.UID == backup.UID && ref.Kind == "Neo4jBackup" {
+			stripped = true
+			continue
+		}
+		kept = append(kept, ref)
+	}
+	if !stripped {
+		return nil
+	}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &corev1.PersistentVolumeClaim{}
+		if err := r.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, latest); err != nil {
+			return err
+		}
+		filtered := latest.OwnerReferences[:0]
+		for _, ref := range latest.OwnerReferences {
+			if ref.UID == backup.UID && ref.Kind == "Neo4jBackup" {
+				continue
+			}
+			filtered = append(filtered, ref)
+		}
+		latest.OwnerReferences = filtered
+		log.FromContext(ctx).Info("Stripped stale controller owner-ref from backup PVC so it survives CR deletion", "pvc", pvc.Name)
+		return r.Update(ctx, latest)
+	})
 }
 
 // errBackupTransient wraps conditions that should route to a Waiting/Pending
