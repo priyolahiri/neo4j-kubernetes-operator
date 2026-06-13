@@ -338,6 +338,26 @@ func TestBuildDiscoveryServiceAccountForEnterprise(t *testing.T) {
 	for key, expectedValue := range expectedLabels {
 		assert.Equal(t, expectedValue, serviceAccount.Labels[key])
 	}
+
+	// No annotations when spec.podServiceAccountAnnotations is unset.
+	assert.Empty(t, serviceAccount.Annotations)
+}
+
+// spec.podServiceAccountAnnotations are stamped onto the discovery SA so cloud
+// Workload Identity (IRSA / GKE WI) reaches the Neo4j server pods for seed-URI
+// fetches during cluster restore.
+func TestBuildDiscoveryServiceAccountForEnterprise_PodSAAnnotations(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			PodServiceAccountAnnotations: map[string]string{
+				"eks.amazonaws.com/role-arn": "arn:aws:iam::111122223333:role/neo4j-seed",
+			},
+		},
+	}
+	sa := resources.BuildDiscoveryServiceAccountForEnterprise(cluster)
+	assert.Equal(t, "arn:aws:iam::111122223333:role/neo4j-seed", sa.Annotations["eks.amazonaws.com/role-arn"])
 }
 
 func TestBuildDiscoveryRoleForEnterprise(t *testing.T) {

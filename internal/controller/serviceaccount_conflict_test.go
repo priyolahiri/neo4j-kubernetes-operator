@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1beta1 "github.com/neo4j-partners/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -107,85 +108,87 @@ func TestEnsureRestoreServiceAccount_ConflictEmitsWarning(t *testing.T) {
 }
 
 // #252: a cluster Cypher restore from a custom-endpoint S3 store (MinIO)
-// warns when AWS_ENDPOINT_URL_S3 is verifiably absent from the server pods'
-// env — and stays silent when the endpoint IS provided via spec.env, via a
-// projected Secret key, or when a referenced source is unreadable.
-func TestWarnIfSeedEndpointNotProjected(t *testing.T) {
-	cloud := &neo4jv1beta1.CloudBlock{EndpointURL: "http://minio.minio.svc:9000"}
+// auto-projects AWS_ENDPOINT_URL_S3 onto the cluster (gated by the
+// auto-inherit annotation), and recognises an endpoint already supplied via
+// spec.env or a projected Secret.
+func TestReconcileClusterSeedEndpoint(t *testing.T) {
+	cloud := &neo4jv1beta1.CloudBlock{EndpointURL: "http://minio.minio.svc:9000", ForcePathStyle: true}
 	baseCluster := func() *neo4jv1beta1.Neo4jEnterpriseCluster {
 		return &neo4jv1beta1.Neo4jEnterpriseCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "ec", Namespace: "default"},
 		}
 	}
-	drainEvent := func(t *testing.T, r *Neo4jRestoreReconciler) (string, bool) {
-		t.Helper()
-		rec, ok := r.Recorder.(*record.FakeRecorder)
-		require.True(t, ok, "test reconciler must use a FakeRecorder")
-		select {
-		case ev := <-rec.Events:
-			return ev, true
-		default:
-			return "", false
-		}
-	}
 
-	t.Run("warns when absent everywhere", func(t *testing.T) {
+	t.Run("absent + no annotation -> Failed with actionable error", func(t *testing.T) {
 		restore := restoreWithBackupRef("r1", "default", "nightly")
-		r := newResolvedSourceReconciler(t, restore)
-		r.warnIfSeedEndpointNotProjected(context.Background(), restore, baseCluster(), cloud)
-		ev, ok := drainEvent(t, r)
-		require.True(t, ok, "expected a SeedEndpointNotProjected warning")
-		assert.Contains(t, ev, EventReasonSeedEndpointNotProjected)
-		assert.Contains(t, ev, "minio.minio.svc:9000")
-	})
-
-	t.Run("silent when in spec.env", func(t *testing.T) {
-		restore := restoreWithBackupRef("r1", "default", "nightly")
-		r := newResolvedSourceReconciler(t, restore)
 		cluster := baseCluster()
-		cluster.Spec.Env = []corev1.EnvVar{{Name: "AWS_ENDPOINT_URL_S3", Value: "http://minio.minio.svc:9000"}}
-		r.warnIfSeedEndpointNotProjected(context.Background(), restore, cluster, cloud)
-		if ev, ok := drainEvent(t, r); ok {
-			t.Fatalf("no event expected, got %s", ev)
-		}
+		r := newResolvedSourceReconciler(t, restore, cluster)
+		_, done, err := r.reconcileClusterSeedEndpoint(context.Background(), restore, cluster, cloud)
+		require.True(t, done)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "AWS_ENDPOINT_URL_S3")
+		assert.Contains(t, err.Error(), AutoInheritSeedCredsAnnotation)
 	})
 
-	t.Run("silent when projected via extraEnvFrom Secret key", func(t *testing.T) {
+	t.Run("absent + auto-inherit annotation -> patches spec.env + JVM opt, Pending", func(t *testing.T) {
+		restore := restoreWithBackupRef("r1", "default", "nightly")
+		cluster := baseCluster()
+		cluster.Annotations = map[string]string{AutoInheritSeedCredsAnnotation: "true"}
+		r := newResolvedSourceReconciler(t, restore, cluster)
+		_, done, err := r.reconcileClusterSeedEndpoint(context.Background(), restore, cluster, cloud)
+		require.True(t, done)
+		require.NoError(t, err)
+		got := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+		require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(cluster), got))
+		var endpoint, jto string
+		for _, e := range got.Spec.Env {
+			if e.Name == "AWS_ENDPOINT_URL_S3" {
+				endpoint = e.Value
+			}
+			if e.Name == "JAVA_TOOL_OPTIONS" {
+				jto = e.Value
+			}
+		}
+		assert.Equal(t, "http://minio.minio.svc:9000", endpoint, "endpoint must be projected to spec.env")
+		assert.Contains(t, jto, "aws.s3.forcePathStyle=true", "forcePathStyle must be projected as a JVM opt")
+	})
+
+	t.Run("in spec.env but not rolled out -> Pending (done)", func(t *testing.T) {
+		restore := restoreWithBackupRef("r1", "default", "nightly")
+		cluster := baseCluster()
+		cluster.Spec.Env = []corev1.EnvVar{{Name: "AWS_ENDPOINT_URL_S3", Value: cloud.EndpointURL}}
+		// No StatefulSet present -> specEnvEndpointRolledOut errors -> Pending.
+		r := newResolvedSourceReconciler(t, restore, cluster)
+		_, done, err := r.reconcileClusterSeedEndpoint(context.Background(), restore, cluster, cloud)
+		require.True(t, done)
+		require.NoError(t, err)
+	})
+
+	t.Run("reachable via projected Secret -> proceed (not done)", func(t *testing.T) {
 		restore := restoreWithBackupRef("r1", "default", "nightly")
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "minio-creds", Namespace: "default"},
-			Data:       map[string][]byte{"AWS_ENDPOINT_URL_S3": []byte("http://minio.minio.svc:9000")},
+			Data:       map[string][]byte{"AWS_ENDPOINT_URL_S3": []byte(cloud.EndpointURL)},
 		}
-		r := newResolvedSourceReconciler(t, restore, secret)
 		cluster := baseCluster()
 		cluster.Spec.ExtraEnvFrom = []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{
 			LocalObjectReference: corev1.LocalObjectReference{Name: "minio-creds"},
 		}}}
-		r.warnIfSeedEndpointNotProjected(context.Background(), restore, cluster, cloud)
-		if ev, ok := drainEvent(t, r); ok {
-			t.Fatalf("no event expected, got %s", ev)
-		}
+		r := newResolvedSourceReconciler(t, restore, cluster, secret)
+		_, done, err := r.reconcileClusterSeedEndpoint(context.Background(), restore, cluster, cloud)
+		require.False(t, done, "endpoint reachable via the projected creds Secret -> proceed")
+		require.NoError(t, err)
 	})
 
-	t.Run("silent when a referenced Secret is unreadable", func(t *testing.T) {
+	t.Run("unreadable referenced Secret -> assume present, proceed", func(t *testing.T) {
 		restore := restoreWithBackupRef("r1", "default", "nightly")
-		r := newResolvedSourceReconciler(t, restore) // Secret NOT in client
 		cluster := baseCluster()
 		cluster.Spec.ExtraEnvFrom = []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{
 			LocalObjectReference: corev1.LocalObjectReference{Name: "missing-secret"},
 		}}}
-		r.warnIfSeedEndpointNotProjected(context.Background(), restore, cluster, cloud)
-		if ev, ok := drainEvent(t, r); ok {
-			t.Fatalf("must stay silent on an incomplete view, got %s", ev)
-		}
-	})
-
-	t.Run("no-op without a custom endpoint", func(t *testing.T) {
-		restore := restoreWithBackupRef("r1", "default", "nightly")
-		r := newResolvedSourceReconciler(t, restore)
-		r.warnIfSeedEndpointNotProjected(context.Background(), restore, baseCluster(), &neo4jv1beta1.CloudBlock{})
-		if ev, ok := drainEvent(t, r); ok {
-			t.Fatalf("no event expected, got %s", ev)
-		}
+		r := newResolvedSourceReconciler(t, restore, cluster)
+		_, done, err := r.reconcileClusterSeedEndpoint(context.Background(), restore, cluster, cloud)
+		require.False(t, done, "incomplete view -> conservative proceed, no spurious restart")
+		require.NoError(t, err)
 	})
 }
