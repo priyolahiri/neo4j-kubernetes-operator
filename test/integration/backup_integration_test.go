@@ -273,6 +273,44 @@ var _ = Describe("Backup Integration Tests", Label("extended"), Ordered, func() 
 		}, backupTimeout, backupInterval).Should(Succeed())
 	})
 
+	It("should reconcile a backup using the v1.13 scope-based API (instanceRef + allDatabases)", func() {
+		By("Creating a backup with spec.instanceRef + spec.allDatabases and no legacy spec.target")
+		backup := &neo4jv1beta1.Neo4jBackup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "scope-alldb-backup",
+				Namespace: testNamespace,
+			},
+			Spec: neo4jv1beta1.Neo4jBackupSpec{
+				InstanceRef:  cluster.Name,
+				AllDatabases: true,
+				Storage: neo4jv1beta1.StorageLocation{
+					Type: "pvc",
+					PVC: &neo4jv1beta1.PVCSpec{
+						Name: "backup-pvc-scope",
+						Size: "5Gi",
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, backup)).Should(Succeed())
+
+		By("Verifying the backup ServiceAccount is created (the new fields drive reconcile)")
+		Eventually(func() error {
+			sa := &corev1.ServiceAccount{}
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "neo4j-backup-sa",
+				Namespace: testNamespace,
+			}, sa)
+		}, backupTimeout, backupInterval).Should(Succeed())
+
+		By("Confirming the scope fields pass validation (phase is never Invalid)")
+		Consistently(func() string {
+			var b neo4jv1beta1.Neo4jBackup
+			_ = k8sClient.Get(ctx, types.NamespacedName{Name: backup.Name, Namespace: testNamespace}, &b)
+			return b.Status.Phase
+		}, time.Second*10, backupInterval).ShouldNot(Equal("Invalid"))
+	})
+
 	It("should reuse existing RBAC resources", func() {
 		By("Getting the service account UID from previous tests")
 		sa := &corev1.ServiceAccount{}
