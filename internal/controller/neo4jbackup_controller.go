@@ -339,8 +339,9 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 			// outer call. Errors non-fatal — empty fields still leave the
 			// ShardName audit list populated.
 			isStandardDB := latest.Spec.Target.Kind == neo4jv1beta1.BackupTargetKindDatabase
+			isAllDatabases := latest.Spec.Target.Kind == neo4jv1beta1.BackupTargetKindCluster
 			var jobLog string
-			if len(shardArtifacts) > 0 || isStandardDB ||
+			if len(shardArtifacts) > 0 || isStandardDB || isAllDatabases ||
 				(latest.Spec.Options != nil && latest.Spec.Options.Validate != nil && *latest.Spec.Options.Validate) {
 				if got, logErr := r.fetchBackupPodLog(ctx, job.Name, job.Namespace); logErr == nil {
 					jobLog = got
@@ -355,6 +356,9 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 			}
 			if isStandardDB && jobLog != "" {
 				run.ArtifactFilename = parseStandardArtifactFromLog(jobLog, latest.Spec.Target.Name)
+			}
+			if isAllDatabases && jobLog != "" {
+				run.DatabaseArtifacts = parseAllDatabaseArtifactsFromLog(jobLog)
 			}
 			if jobLog != "" {
 				if validation := parseValidationFromLog(jobLog); validation != nil {
@@ -2093,8 +2097,9 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 	// single fetch is cheaper than separate calls. Non-fatal — log-fetch
 	// failures and parse misses leave the corresponding fields empty.
 	isStandardDB := backup.Spec.Target.Kind == neo4jv1beta1.BackupTargetKindDatabase
+	isAllDatabases := backup.Spec.Target.Kind == neo4jv1beta1.BackupTargetKindCluster
 	logContent := ""
-	if shouldFetchLog := r.expectedShardArtifactsForBackup(ctx, backup) != nil || isStandardDB ||
+	if shouldFetchLog := r.expectedShardArtifactsForBackup(ctx, backup) != nil || isStandardDB || isAllDatabases ||
 		(backup.Spec.Options != nil && backup.Spec.Options.Validate != nil && *backup.Spec.Options.Validate); shouldFetchLog {
 		if got, logErr := r.fetchBackupPodLog(ctx, job.Name, job.Namespace); logErr != nil {
 			logger.Info("Failed to fetch backup pod log; ShardArtifacts/ArtifactFilename/Validation may be incomplete",

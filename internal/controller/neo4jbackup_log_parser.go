@@ -114,6 +114,37 @@ func parseStandardArtifactFromLog(logContent, dbName string) string {
 	return winner
 }
 
+// parseAllDatabaseArtifactsFromLog scans neo4j-admin stdout from an
+// all-databases backup ("*") and returns the per-database `.backup` artifacts,
+// one entry per logical database (last occurrence wins, input order preserved).
+// Shard physical databases (…-g000 / …-p000) are skipped via shardSuffixRegex
+// (defined in neo4jshardeddatabase_seed.go) — they belong to a sharded family
+// and restore via the sharded path. Non-fatal: an empty/garbled log yields an
+// empty slice.
+func parseAllDatabaseArtifactsFromLog(logContent string) []neo4jv1beta1.DatabaseArtifact {
+	byDB := map[string]string{}
+	var order []string
+	scanner := bufio.NewScanner(strings.NewReader(logContent))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		for _, m := range standardArtifactFilenameRegex.FindAllStringSubmatch(scanner.Text(), -1) {
+			filename, db := m[1], m[2]
+			if shardSuffixRegex.MatchString(db) {
+				continue
+			}
+			if _, seen := byDB[db]; !seen {
+				order = append(order, db)
+			}
+			byDB[db] = filename
+		}
+	}
+	out := make([]neo4jv1beta1.DatabaseArtifact, 0, len(order))
+	for _, db := range order {
+		out = append(out, neo4jv1beta1.DatabaseArtifact{Database: db, Filename: byDB[db]})
+	}
+	return out
+}
+
 // parseShardArtifactsFromLog scans neo4j-admin stdout and returns a map
 // keyed by shard name (e.g. "products-g000") with Filename + Size set.
 // Filenames are deduplicated by shard name — if a shard appears multiple

@@ -423,6 +423,16 @@ type BackupRun struct {
 	// +optional
 	ShardArtifacts []ShardArtifact `json:"shardArtifacts,omitempty"`
 
+	// DatabaseArtifacts records the per-database `.backup` files produced by an
+	// all-databases backup run (instance-wide scope, i.e. spec.allDatabases /
+	// legacy target.kind=Cluster). Populated by parsing the Job's Pod log; one
+	// entry per user database. Shard physical databases (…-g000/…-p000) are
+	// excluded — they live in ShardArtifacts and restore via the sharded path.
+	// This is the authoritative map an all-databases restore (#222) consumes to
+	// seed each database. Empty for single-database and sharded runs.
+	// +optional
+	DatabaseArtifacts []DatabaseArtifact `json:"databaseArtifacts,omitempty"`
+
 	// Validation captures the per-shard outcome of an optional
 	// `neo4j-admin backup validate` step run after the backup completes.
 	// Populated only when the operator was able to run validate and parse
@@ -446,6 +456,21 @@ type ShardArtifact struct {
 	// Size is the artifact size in bytes as reported by `ls -la`. Zero if
 	// not parseable. Use `humanize.IBytes` or equivalent on the consumer
 	// side for display.
+	Size int64 `json:"size,omitempty"`
+}
+
+// DatabaseArtifact identifies one `.backup` file produced by an all-databases
+// backup, mapping a logical database to its artifact so a cluster-wide restore
+// (#222) can seed each database independently.
+type DatabaseArtifact struct {
+	// Database is the logical database name (e.g. "neo4j", "customers").
+	Database string `json:"database"`
+
+	// Filename is the on-disk `.backup` filename written by neo4j-admin
+	// (e.g. "customers-2026-06-08T01-18-06.backup").
+	Filename string `json:"filename,omitempty"`
+
+	// Size is the artifact size in bytes when parseable; 0 otherwise.
 	Size int64 `json:"size,omitempty"`
 }
 
