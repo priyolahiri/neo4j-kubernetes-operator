@@ -193,7 +193,7 @@ spec:
 
 **Cross-topology restore.** A backup is database-scoped, not topology-scoped — a database backed up from a **standalone** can be restored into a **cluster** (and vice-versa); the operator picks the engine from the *target*. Caveats: the target Neo4j version must be ≥ the source; the `system` database is never restored across topologies (`allDatabases` excludes it — carry users/roles via `options.includeMetadata` on the backup).
 
-**All-databases restore ([#222](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222)).** `Neo4jRestore.spec.allDatabases: true` restores every user database recorded in the source backup, one per reconcile pass, with per-database progress in `status.databaseResults`. Requires `source.type=backup`. Supported today for **cloud-backed cluster** targets; standalone and PVC-backed cluster all-databases restore are tracked in [#288](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/288).
+**All-databases restore ([#222](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222)).** `Neo4jRestore.spec.allDatabases: true` restores every user database recorded in the source backup, one per reconcile pass, with per-database progress in `status.databaseResults`. Requires `source.type=backup`. Supported for **cluster** targets (both cloud and PVC-backed backups); standalone all-databases restore is tracked in [#288](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/288).
 
 **Deprecation.** The legacy `spec.target` (backup) and `spec.clusterRef`/`spec.databaseName` (restore) fields still work in v1.13 behind a deprecation warning event and are **removed in v1.14**. Migrate to `instanceRef` + `database`/`allDatabases`.
 

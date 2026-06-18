@@ -21,6 +21,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,10 +41,10 @@ import (
 // pass and requeues — never blocking the worker on the asynchronous seed (the
 // same non-blocking contract the single-database cluster path holds, #218/#227).
 //
-// This release supports CLOUD-backed CLUSTER targets (the canonical #222 DR
-// case). Standalone all-databases restore and PVC-backed cluster all-databases
-// restore are rejected with an actionable message (tracked for a follow-up);
-// users can restore those databases individually with spec.database.
+// Supports CLUSTER targets with either cloud (s3/gcs/azure) or PVC-backed
+// backups (the PVC path uses the in-cluster seed proxy). Standalone
+// all-databases restore is rejected with an actionable message (tracked in
+// #288); restore standalone databases individually with spec.database.
 func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 	ctx context.Context,
 	restore *neo4jv1beta1.Neo4jRestore,
@@ -74,21 +75,38 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 		return ctrl.Result{}, fmt.Errorf("%s", msg)
 	}
 	storage := *snap.Storage
-	if storage.Type != "s3" && storage.Type != "gcs" && storage.Type != "azure" {
-		msg := fmt.Sprintf("all-databases restore currently supports cloud-backed backups (s3/gcs/azure); storage type %q is not yet supported — restore each database individually with spec.database", storage.Type)
-		r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
-		return ctrl.Result{}, fmt.Errorf("%s", msg)
-	}
 
 	// Initialize per-database results once (idempotent across reconciles).
 	r.ensureDatabaseResults(restore, dbs)
 
-	// ONE-TIME: the SERVER pods fetch each seed, so cloud credentials (and any
-	// custom S3 endpoint) must be projected onto the cluster and rolled out
-	// BEFORE we seed any database. This is per-cluster, not per-database, so it
-	// runs once and gates the whole all-databases restore (#190/#252).
-	if res, ready, err := r.ensureClusterSeedConfigReady(ctx, restore, cluster, storage); !ready {
-		return res, err
+	// ONE-TIME, storage-specific seed setup the per-database loop depends on,
+	// plus a per-database seedURI builder. The server pods fetch each seed, so
+	// this gates the whole restore until ready: one rolling restart for cloud
+	// credentials/endpoint (#190/#252), or one proxy rollout for PVC (#227).
+	var seedURIFor func(filename string) string
+	switch storage.Type {
+	case "s3", "gcs", "azure":
+		if res, ready, err := r.ensureClusterSeedConfigReady(ctx, restore, cluster, storage); !ready {
+			return res, err
+		}
+		dirURI, err := buildSeedURIFromBackupStorage(storage, snap.BackupPath)
+		if err != nil {
+			r.updateRestoreStatus(ctx, restore, StatusFailed, err.Error())
+			return ctrl.Result{}, err
+		}
+		dirURI = strings.TrimRight(dirURI, "/")
+		seedURIFor = func(filename string) string { return dirURI + "/" + filename }
+	case "pvc":
+		if res, ready, err := r.ensurePVCSeedProxyReady(ctx, restore, storage); !ready {
+			return res, err
+		}
+		seedURIFor = func(filename string) string {
+			return pvcSeedProxyURL(restore.Name, restore.Namespace, snap.BackupPath, filename)
+		}
+	default:
+		msg := fmt.Sprintf("all-databases restore does not support storage type %q (expected s3, gcs, azure, or pvc)", storage.Type)
+		r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+		return ctrl.Result{}, fmt.Errorf("%s", msg)
 	}
 
 	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
@@ -105,13 +123,6 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 		version = &neo4j.Version{Major: 5, Minor: 26, Patch: 0}
 	}
 
-	dirURI, err := buildSeedURIFromBackupStorage(storage, snap.BackupPath)
-	if err != nil {
-		r.updateRestoreStatus(ctx, restore, StatusFailed, err.Error())
-		return ctrl.Result{}, err
-	}
-	dirURI = strings.TrimRight(dirURI, "/")
-
 	// Drive ONE database action per pass, then requeue (non-blocking).
 	for i := range restore.Status.DatabaseResults {
 		res := &restore.Status.DatabaseResults[i]
@@ -125,7 +136,7 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 				"no .backup artifact filename recorded for this database in the source backup")
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
-		seedURI := dirURI + "/" + fname
+		seedURI := seedURIFor(fname)
 
 		switch res.Phase {
 		case "", StatusPending:
@@ -242,6 +253,64 @@ func (r *Neo4jRestoreReconciler) ensureClusterSeedConfigReady(
 				fmt.Sprintf("Waiting for cluster %q server pods to roll out the S3 endpoint", cluster.Name))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, false, nil
 		}
+	}
+	return ctrl.Result{}, true, nil
+}
+
+// ensurePVCSeedProxyReady spawns (idempotently) the in-cluster HTTP proxy in
+// front of the backup PVC and gates on its readiness, so the per-database loop
+// can build seedURIs against it via pvcSeedProxyURL. Mirrors the single-database
+// PVC setup in resolveClusterPVCRestoreURI (bounded wait + diagnosis on a proxy
+// that never starts, #227). Returns ready=false (with the result to return)
+// until the proxy Deployment is Ready.
+func (r *Neo4jRestoreReconciler) ensurePVCSeedProxyReady(
+	ctx context.Context,
+	restore *neo4jv1beta1.Neo4jRestore,
+	storage neo4jv1beta1.StorageLocation,
+) (ctrl.Result, bool, error) {
+	logger := log.FromContext(ctx)
+	if storage.PVC == nil || storage.PVC.Name == "" {
+		msg := "PVC-backed all-databases restore requires storage.pvc.name to be set"
+		r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+		return ctrl.Result{}, false, fmt.Errorf("%s", msg)
+	}
+
+	proxyAvailable, err := ensurePVCSeedProxyResources(ctx, r.Client, r.Scheme, restore, restore.Name, storage.PVC.Name)
+	if err != nil {
+		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("ensure PVC seed proxy: %v", err))
+		return ctrl.Result{}, false, fmt.Errorf("ensure PVC seed proxy: %w", err)
+	}
+	// Restrict the proxy (which serves the whole backup PVC) to the target
+	// cluster's server pods (#219). Best-effort: only enforcing CNIs apply it.
+	if npErr := ensurePVCSeedProxyNetworkPolicy(ctx, r.Client, r.Scheme, restore, restore.Name, restore.Spec.ClusterRef); npErr != nil {
+		logger.Error(npErr, "Failed to ensure seed-proxy NetworkPolicy (non-fatal)")
+	}
+
+	if !proxyAvailable {
+		// Bounded wait (#227): a proxy that can never start (RWO backup PVC
+		// attached elsewhere, unpullable image) must not requeue forever.
+		waitStart, haveAnchor := r.seedProxyWaitStart(ctx, restore)
+		diagnosis := pvcSeedProxyDiagnosis(ctx, r.Client, restore.Namespace, restore.Name)
+		budget := seedProxyWaitTimeout
+		if restore.Spec.Timeout != "" {
+			if d, perr := time.ParseDuration(restore.Spec.Timeout); perr == nil && d > 0 {
+				budget = d
+			}
+		}
+		if haveAnchor && time.Since(waitStart) > budget {
+			msg := fmt.Sprintf("backup-seed-proxy Deployment did not become Ready within %s: %s — a common cause is the backup PVC (%s) being ReadWriteOnce and still attached elsewhere; fix the cause and re-trigger by bumping the spec",
+				budget, diagnosis, storage.PVC.Name)
+			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
+			return ctrl.Result{}, false, nil
+		}
+		r.updateRestoreStatus(ctx, restore, StatusPending,
+			fmt.Sprintf("Waiting for backup-seed-proxy Deployment to become Ready (%s)", diagnosis))
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, false, nil
+	}
+	// Proxy is up — drop the wait anchor so any later wait starts fresh.
+	if err := r.clearSeedProxyWaitStarted(ctx, restore); err != nil {
+		logger.V(1).Info("Failed to clear seed-proxy wait anchor (non-fatal)", "error", err.Error())
 	}
 	return ctrl.Result{}, true, nil
 }
