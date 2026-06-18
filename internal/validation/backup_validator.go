@@ -84,8 +84,18 @@ func NewBackupValidator() *BackupValidator {
 func (v *BackupValidator) Validate(backup *neo4jv1beta1.Neo4jBackup) field.ErrorList {
 	var allErrs field.ErrorList
 
-	// Validate backup target
-	allErrs = append(allErrs, v.validateBackupTarget(&backup.Spec.Target, backup.Namespace)...)
+	// Validate the scope selector: the v1.13 spec.instanceRef + database/allDatabases
+	// API, or the deprecated spec.target block.
+	allErrs = append(allErrs, v.validateScopeSelection(&backup.Spec)...)
+
+	// Validate the legacy target block only when it is actually in use. The new
+	// instanceRef + scope API is fully validated by validateScopeSelection above;
+	// its synthesized target is valid by construction once the scope is valid, so
+	// running validateBackupTarget there would only emit confusing spec.target.*
+	// errors for fields the user never set.
+	if backup.Spec.InstanceRef == "" && backup.Spec.UsesLegacyTarget() {
+		allErrs = append(allErrs, v.validateBackupTarget(&backup.Spec.Target, backup.Namespace)...)
+	}
 
 	// Validate storage configuration
 	allErrs = append(allErrs, v.validateStorageConfiguration(&backup.Spec.Storage, backup.Spec.Cloud)...)
@@ -234,6 +244,38 @@ func (v *BackupValidator) validateBackupTarget(target *neo4jv1beta1.BackupTarget
 		}
 	}
 
+	return allErrs
+}
+
+// validateScopeSelection validates the v1.13 scope selector: spec.instanceRef
+// with exactly one of spec.database / spec.allDatabases, OR the deprecated
+// spec.target block. InstanceRef is authoritative — when it is set the target
+// block is ignored (the reconciler synthesizes target from instanceRef+scope).
+func (v *BackupValidator) validateScopeSelection(spec *neo4jv1beta1.Neo4jBackupSpec) field.ErrorList {
+	var allErrs field.ErrorList
+	specPath := field.NewPath("spec")
+
+	if spec.InstanceRef != "" {
+		hasDB := spec.Database != ""
+		if hasDB && spec.AllDatabases {
+			allErrs = append(allErrs, field.Invalid(
+				specPath.Child("allDatabases"), spec.AllDatabases,
+				"spec.database and spec.allDatabases are mutually exclusive — set exactly one"))
+		}
+		if !hasDB && !spec.AllDatabases {
+			allErrs = append(allErrs, field.Required(
+				specPath.Child("database"),
+				"set spec.database (single database) or spec.allDatabases (instance-wide) when spec.instanceRef is used"))
+		}
+		return allErrs
+	}
+
+	// No instanceRef: the spec must be using the deprecated target block.
+	if spec.Target.Kind == "" && spec.Target.Name == "" && spec.Target.ClusterRef == "" {
+		allErrs = append(allErrs, field.Required(
+			specPath.Child("instanceRef"),
+			"set spec.instanceRef + spec.database/allDatabases (or the deprecated spec.target)"))
+	}
 	return allErrs
 }
 

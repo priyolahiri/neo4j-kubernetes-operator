@@ -126,6 +126,16 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return r.handleDeletion(ctx, backup)
 	}
 
+	// Normalize the v1.13 scope-based API (spec.instanceRef + database/allDatabases)
+	// onto the internal target model so all downstream target-driven logic is
+	// unchanged. InstanceRef is authoritative; the legacy spec.target block is
+	// deprecated and removed in v1.14.
+	backup.Spec.NormalizeSpec()
+	if backup.Spec.UsesLegacyTarget() {
+		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupAPIDeprecated,
+			"spec.target is deprecated; use spec.instanceRef + spec.database/allDatabases (spec.target is removed in v1.14)")
+	}
+
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(backup, BackupFinalizer) {
 		controllerutil.AddFinalizer(backup, BackupFinalizer)
@@ -933,12 +943,14 @@ func (r *Neo4jBackupReconciler) validateChainParent(ctx context.Context, backup 
 		return fmt.Errorf("chainFromBackup %q lookup failed in namespace %q: %w",
 			backup.Spec.ChainFromBackup, backup.Namespace, err)
 	}
-	if parent.Spec.Target.Kind != backup.Spec.Target.Kind ||
-		parent.Spec.Target.Name != backup.Spec.Target.Name ||
-		parent.Spec.Target.ClusterRef != backup.Spec.Target.ClusterRef {
+	parentTarget := parent.Spec.ResolvedTarget()
+	thisTarget := backup.Spec.ResolvedTarget()
+	if parentTarget.Kind != thisTarget.Kind ||
+		parentTarget.Name != thisTarget.Name ||
+		parentTarget.ClusterRef != thisTarget.ClusterRef {
 		return fmt.Errorf("chainFromBackup %q targets {kind=%q name=%q clusterRef=%q} but this backup targets {kind=%q name=%q clusterRef=%q}; chained backups must share the same target",
-			parent.Name, parent.Spec.Target.Kind, parent.Spec.Target.Name, parent.Spec.Target.ClusterRef,
-			backup.Spec.Target.Kind, backup.Spec.Target.Name, backup.Spec.Target.ClusterRef)
+			parent.Name, parentTarget.Kind, parentTarget.Name, parentTarget.ClusterRef,
+			thisTarget.Kind, thisTarget.Name, thisTarget.ClusterRef)
 	}
 	if parent.Spec.Storage.Type != backup.Spec.Storage.Type ||
 		parent.Spec.Storage.Bucket != backup.Spec.Storage.Bucket ||

@@ -201,6 +201,21 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.handleDeletion(ctx, restore)
 	}
 
+	// Normalize the v1.13 scope-based API (spec.instanceRef/database) onto the
+	// internal clusterRef/databaseName model. InstanceRef/Database are
+	// authoritative; the legacy fields are deprecated and removed in v1.14.
+	restore.Spec.NormalizeSpec()
+	if restore.Spec.UsesLegacyRestoreFields() {
+		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreAPIDeprecated,
+			"spec.clusterRef/databaseName are deprecated; use spec.instanceRef/database (removed in v1.14)")
+	}
+	if restore.Spec.ClusterRef == "" {
+		msg := "spec.instanceRef (or the deprecated spec.clusterRef) is required"
+		logger.Info("Invalid Neo4jRestore spec", "error", msg)
+		r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+		return ctrl.Result{}, nil
+	}
+
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(restore, RestoreFinalizer) {
 		controllerutil.AddFinalizer(restore, RestoreFinalizer)
@@ -822,7 +837,7 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 	}
 
 	if restore.Spec.DatabaseName == "" {
-		return fmt.Errorf("databaseName is required")
+		return fmt.Errorf("spec.database (or the deprecated spec.databaseName) is required")
 	}
 	// The `system` database holds cluster topology, users, roles, and
 	// privileges — it is owned by Neo4j itself and is never a user-restorable
