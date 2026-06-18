@@ -64,6 +64,16 @@ spec:
           spec:
             description: Neo4jRestoreSpec defines the desired state of Neo4jRestore
             properties:
+              allDatabases:
+                description: |-
+                  AllDatabases restores EVERY user database recorded in the source backup
+                  (the system database is always excluded) — the restore counterpart of an
+                  all-databases (instance-wide) backup (#222). Mutually exclusive with
+                  Database/DatabaseName. Requires source.type=backup (the operator reads the
+                  backup's per-database artifact map). The operator restores one database
+                  per reconcile pass and reports per-database progress in
+                  status.databaseResults.
+                type: boolean
               clusterRef:
                 description: |-
                   ClusterRef references the Neo4j cluster or standalone to restore to.
@@ -1079,6 +1089,43 @@ spec:
                   - type
                   type: object
                 type: array
+              databaseResults:
+                description: |-
+                  DatabaseResults reports per-database progress for an all-databases restore
+                  (spec.allDatabases). One entry per user database discovered in the source;
+                  empty for single-database restores.
+                items:
+                  description: |-
+                    DatabaseRestoreResult reports the outcome of restoring one database within an
+                    all-databases restore (spec.allDatabases).
+                  properties:
+                    completionTime:
+                      description: CompletionTime is when this database reached a
+                        terminal phase.
+                      format: date-time
+                      type: string
+                    database:
+                      description: Database is the logical database name.
+                      type: string
+                    message:
+                      description: |-
+                        Message carries the latest detail for this database (e.g. a failure
+                        reason).
+                      type: string
+                    phase:
+                      description: |-
+                        Phase is the per-database restore phase: Pending, Running, Completed, or
+                        Failed.
+                      enum:
+                      - Pending
+                      - Running
+                      - Completed
+                      - Failed
+                      type: string
+                  required:
+                  - database
+                  type: object
+                type: array
               message:
                 description: Message provides additional information about the current
                   state
@@ -1119,6 +1166,36 @@ spec:
                       BackupRef is the Neo4jBackup name this source was resolved from
                       (provenance only).
                     type: string
+                  databaseArtifacts:
+                    description: |-
+                      DatabaseArtifacts is the per-database `.backup` map pinned for an
+                      all-databases restore (spec.allDatabases), copied from the resolved
+                      backup's latest Succeeded run so the restore no longer depends on the
+                      Neo4jBackup CR. Nil for single-database restores.
+                    items:
+                      description: |-
+                        DatabaseArtifact identifies one `.backup` file produced by an all-databases
+                        backup, mapping a logical database to its artifact so a cluster-wide restore
+                        (#222) can seed each database independently.
+                      properties:
+                        database:
+                          description: Database is the logical database name (e.g.
+                            "neo4j", "customers").
+                          type: string
+                        filename:
+                          description: |-
+                            Filename is the on-disk `.backup` filename written by neo4j-admin
+                            (e.g. "customers-2026-06-08T01-18-06.backup").
+                          type: string
+                        size:
+                          description: Size is the artifact size in bytes when parseable;
+                            0 otherwise.
+                          format: int64
+                          type: integer
+                      required:
+                      - database
+                      type: object
+                    type: array
                   resolvedAt:
                     description: ResolvedAt is when the backupRef was first dereferenced.
                     format: date-time

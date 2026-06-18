@@ -57,6 +57,16 @@ type Neo4jRestoreSpec struct {
 	// +optional
 	DatabaseName string `json:"databaseName,omitempty"`
 
+	// AllDatabases restores EVERY user database recorded in the source backup
+	// (the system database is always excluded) — the restore counterpart of an
+	// all-databases (instance-wide) backup (#222). Mutually exclusive with
+	// Database/DatabaseName. Requires source.type=backup (the operator reads the
+	// backup's per-database artifact map). The operator restores one database
+	// per reconcile pass and reports per-database progress in
+	// status.databaseResults.
+	// +optional
+	AllDatabases bool `json:"allDatabases,omitempty"`
+
 	// Restore options
 	Options *RestoreOptionsSpec `json:"options,omitempty"`
 
@@ -271,6 +281,12 @@ type Neo4jRestoreStatus struct {
 	// ObservedGeneration reflects the generation of the most recently observed Neo4jRestore
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
+	// DatabaseResults reports per-database progress for an all-databases restore
+	// (spec.allDatabases). One entry per user database discovered in the source;
+	// empty for single-database restores.
+	// +optional
+	DatabaseResults []DatabaseRestoreResult `json:"databaseResults,omitempty"`
+
 	// ResolvedSource pins the concrete backup location this restore resolved
 	// from a `source.type: backup` reference. Populated the first time the
 	// referenced Neo4jBackup is successfully dereferenced, then preferred on
@@ -307,6 +323,32 @@ type ResolvedRestoreSource struct {
 
 	// ResolvedAt is when the backupRef was first dereferenced.
 	ResolvedAt *metav1.Time `json:"resolvedAt,omitempty"`
+
+	// DatabaseArtifacts is the per-database `.backup` map pinned for an
+	// all-databases restore (spec.allDatabases), copied from the resolved
+	// backup's latest Succeeded run so the restore no longer depends on the
+	// Neo4jBackup CR. Nil for single-database restores.
+	// +optional
+	DatabaseArtifacts []DatabaseArtifact `json:"databaseArtifacts,omitempty"`
+}
+
+// DatabaseRestoreResult reports the outcome of restoring one database within an
+// all-databases restore (spec.allDatabases).
+type DatabaseRestoreResult struct {
+	// Database is the logical database name.
+	Database string `json:"database"`
+
+	// Phase is the per-database restore phase: Pending, Running, Completed, or
+	// Failed.
+	// +kubebuilder:validation:Enum=Pending;Running;Completed;Failed
+	Phase string `json:"phase,omitempty"`
+
+	// Message carries the latest detail for this database (e.g. a failure
+	// reason).
+	Message string `json:"message,omitempty"`
+
+	// CompletionTime is when this database reached a terminal phase.
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
 }
 
 // RestoreStats provides restore operation statistics

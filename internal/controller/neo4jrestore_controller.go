@@ -383,6 +383,13 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Target lookup failed: %v", lookupErr))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, lookupErr
 	}
+	// All-databases restore (#222) drives one per-database restore per pass via
+	// the resolved per-database artifact map; it does its own cluster/standalone
+	// handling.
+	if restore.Spec.AllDatabases {
+		return r.startAllDatabasesRestore(ctx, restore, cluster, isTrueCluster)
+	}
+
 	if isTrueCluster {
 		return r.startClusterCypherRestore(ctx, restore, cluster)
 	}
@@ -788,6 +795,18 @@ func (r *Neo4jRestoreReconciler) recreateRestoredDatabaseOnCluster(
 }
 
 func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
+	// All-databases restore (#222): mutually exclusive with a single database,
+	// and requires source.type=backup so the operator can read the backup's
+	// per-database artifact map (status.history[*].databaseArtifacts).
+	if restore.Spec.AllDatabases {
+		if restore.Spec.DatabaseName != "" {
+			return fmt.Errorf("spec.allDatabases is mutually exclusive with spec.database/databaseName")
+		}
+		if restore.Spec.Source.Type != SourceTypeBackup {
+			return fmt.Errorf("spec.allDatabases requires source.type=backup (the operator reads the backup's per-database artifact map); got source.type=%q", restore.Spec.Source.Type)
+		}
+	}
+
 	// Validate source
 	switch restore.Spec.Source.Type {
 	case SourceTypeBackup:
@@ -836,7 +855,7 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 		return fmt.Errorf("invalid source type %q: must be one of: backup, storage, s3, gcs, azure, pitr", restore.Spec.Source.Type)
 	}
 
-	if restore.Spec.DatabaseName == "" {
+	if !restore.Spec.AllDatabases && restore.Spec.DatabaseName == "" {
 		return fmt.Errorf("spec.database (or the deprecated spec.databaseName) is required")
 	}
 	// The `system` database holds cluster topology, users, roles, and
@@ -1517,11 +1536,14 @@ func (r *Neo4jRestoreReconciler) ensureResolvedBackupSource(ctx context.Context,
 	// a shell glob and don't need it, and older backups may not have captured
 	// it — those paths surface their own error later if the filename is needed.
 	artifact := ""
+	var dbArtifacts []neo4jv1beta1.DatabaseArtifact
 	backup := &neo4jv1beta1.Neo4jBackup{}
 	if gerr := r.Get(ctx, types.NamespacedName{Name: restore.Spec.Source.BackupRef, Namespace: restore.Namespace}, backup); gerr == nil {
 		for i := range backup.Status.History {
 			if backup.Status.History[i].Status == "Succeeded" {
 				artifact = backup.Status.History[i].ArtifactFilename
+				// Pin the per-database map too, for an all-databases restore (#222).
+				dbArtifacts = backup.Status.History[i].DatabaseArtifacts
 				break
 			}
 		}
@@ -1529,11 +1551,12 @@ func (r *Neo4jRestoreReconciler) ensureResolvedBackupSource(ctx context.Context,
 
 	now := metav1.Now()
 	snapshot := &neo4jv1beta1.ResolvedRestoreSource{
-		BackupRef:        restore.Spec.Source.BackupRef,
-		Storage:          &storage,
-		BackupPath:       backupPath,
-		ArtifactFilename: artifact,
-		ResolvedAt:       &now,
+		BackupRef:         restore.Spec.Source.BackupRef,
+		Storage:           &storage,
+		BackupPath:        backupPath,
+		ArtifactFilename:  artifact,
+		DatabaseArtifacts: dbArtifacts,
+		ResolvedAt:        &now,
 	}
 	if err := r.persistResolvedSource(ctx, restore, snapshot); err != nil {
 		// Persisting failed; retry on a later reconcile rather than proceeding
