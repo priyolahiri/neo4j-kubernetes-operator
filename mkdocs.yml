@@ -7,8 +7,9 @@ repo_url: https://github.com/priyolahiri/neo4j-kubernetes-operator
 repo_name: priyolahiri/neo4j-kubernetes-operator
 edit_uri: edit/main/docs/
 
-# docs/README.md duplicates docs/index.md for GitHub-flavoured directory
-# rendering; the dated planning docs in docs/plans/ are internal-only;
+# docs/README.md is a GitHub-only directory landing page (a thin pointer to
+# index.md + the site); index.md is the canonical landing page. The dated
+# planning docs in docs/plans/ are internal-only;
 # requirements.txt is consumed by the docs workflow, not part of the site.
 # Anchor with leading slash so nested READMEs (e.g. gitops/README.md) aren't matched.
 exclude_docs: |
