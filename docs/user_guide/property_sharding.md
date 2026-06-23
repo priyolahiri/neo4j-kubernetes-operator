@@ -453,12 +453,20 @@ kubectl exec property-sharding-cluster-server-0 -- \
 ## Backup and Recovery
 
 Note: There is no `backupConfig` on `Neo4jShardedDatabase`. Use an explicit `Neo4jBackup`
-resource with `spec.target.kind: ShardedDatabase` and `spec.target.name` set to the
+with `spec.instanceRef` (the cluster) + `spec.shardedDatabase` set to the
 **`Neo4jShardedDatabase` resource name** (e.g. `products-sharded-db`) — the operator
 resolves the logical database name (`spec.name`, e.g. `products`) from that resource.
 A single backup captures every shard consistently in one `neo4j-admin database backup`
 invocation via a `{logical-name}*` glob — you do **not** list the individual shard
-databases (`products-g000`, `products-p000`, …).
+databases (`products-g000`, `products-p000`, …). (The deprecated `spec.target.kind:
+ShardedDatabase` form still works; `instanceRef` + `shardedDatabase` is preferred and
+survives into v1.14.)
+
+> ⚠️ An **all-databases** backup (`spec.allDatabases`) does **not** produce a restorable
+> backup of a sharded database — it lists each excluded family in
+> `status.history[].shardedDatabasesExcluded` and warns. Back each sharded database up
+> with its own `shardedDatabase`-scoped `Neo4jBackup`, and restore it via
+> `Neo4jShardedDatabase.spec.seedBackupRef` — not `Neo4jRestore`.
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -467,10 +475,8 @@ metadata:
   name: sharded-backup
   namespace: default
 spec:
-  target:
-    kind: ShardedDatabase          # backs up all shards in one invocation
-    name: products-sharded-db      # the Neo4jShardedDatabase RESOURCE name
-    clusterRef: property-sharding-cluster
+  instanceRef: property-sharding-cluster   # the owning Neo4jEnterpriseCluster
+  shardedDatabase: products-sharded-db     # the Neo4jShardedDatabase RESOURCE name (all shards in one run)
 
   storage:
     type: pvc                      # one of: pvc | s3 | gcs | azure

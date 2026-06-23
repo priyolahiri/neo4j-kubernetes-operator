@@ -6,20 +6,15 @@ metadata:
     environment: development
     backup-type: one-time
 spec:
-  target:
-    # kind=Cluster backs up EVERY database on the instance. `name` is the
-    # Neo4jEnterpriseCluster *or* Neo4jEnterpriseStandalone name (the operator
-    # auto-detects which) — there is no `kind: Standalone`. Do NOT set
-    # `clusterRef` for kind=Cluster.
-    #
-    # To back up a SINGLE database instead, use:
-    #   kind: Database
-    #   name: <database-name>        # e.g. "neo4j"
-    #   clusterRef: <instance-name>  # the cluster/standalone that owns it
-    kind: Cluster
-    # Matches the CR created by examples/standalone/single-node-standalone.yaml —
-    # change to YOUR Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone name.
-    name: standalone-neo4j
+  # instanceRef is the Neo4jEnterpriseCluster *or* Neo4jEnterpriseStandalone name
+  # (the operator auto-detects which). allDatabases: true backs up EVERY database
+  # on the instance. Matches the CR created by
+  # examples/standalone/single-node-standalone.yaml — change to YOUR instance name.
+  #
+  # To back up a SINGLE database instead, drop allDatabases and set:
+  #   database: <database-name>    # e.g. "neo4j"
+  instanceRef: standalone-neo4j
+  allDatabases: true
   storage:
     type: pvc
     pvc:

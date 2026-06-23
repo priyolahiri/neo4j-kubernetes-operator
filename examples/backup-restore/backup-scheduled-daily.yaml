@@ -18,9 +18,8 @@ metadata:
     backup-type: scheduled
     schedule: daily
 spec:
-  target:
-    kind: Cluster
-    name: my-neo4j  # kind=Cluster: the Neo4jEnterpriseCluster OR Neo4jEnterpriseStandalone instance name (clusterRef unused; backs up all databases)
+  instanceRef: my-neo4j  # the Neo4jEnterpriseCluster OR Neo4jEnterpriseStandalone instance name (auto-detected)
+  allDatabases: true     # back up every database on the instance
   # schedule is a flat cron string — no nesting
   schedule: "0 2 * * *"  # Daily at 2 AM UTC
   storage:
@@ -76,9 +75,8 @@ metadata:
     backup-type: scheduled
     schedule: weekly
 spec:
-  target:
-    kind: Cluster
-    name: single-node-cluster
+  instanceRef: single-node-cluster
+  allDatabases: true
   schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM UTC
   storage:
     type: s3

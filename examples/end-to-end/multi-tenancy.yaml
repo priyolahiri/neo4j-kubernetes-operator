@@ -228,11 +228,8 @@ metadata:
   labels:
     tenant: tenant-a
 spec:
-  target:
-    kind: Database
-    name: tenant_a_prod
-    clusterRef: multi-tenant-cluster   # required for kind: Database
-    namespace: neo4j-multi-tenant
+  instanceRef: multi-tenant-cluster   # the cluster (same namespace) that owns the database
+  database: tenant_a_prod
 
   schedule: "0 1 * * *"  # Daily at 1 AM
 
@@ -256,11 +253,8 @@ metadata:
   labels:
     tenant: tenant-b
 spec:
-  target:
-    kind: Database
-    name: tenant_b_social
-    clusterRef: multi-tenant-cluster   # required for kind: Database
-    namespace: neo4j-multi-tenant
+  instanceRef: multi-tenant-cluster
+  database: tenant_b_social
 
   schedule: "0 * * * *"  # Hourly
 
@@ -288,11 +282,8 @@ metadata:
   labels:
     tenant: tenant-c
 spec:
-  target:
-    kind: Database
-    name: tenant_c_analytics
-    clusterRef: multi-tenant-cluster   # required for kind: Database
-    namespace: neo4j-multi-tenant
+  instanceRef: multi-tenant-cluster
+  database: tenant_c_analytics
 
   schedule: "0 3 * * 0"  # Weekly on Sunday at 3 AM
 

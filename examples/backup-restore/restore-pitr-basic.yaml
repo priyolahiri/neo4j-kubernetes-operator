@@ -3,7 +3,7 @@
 # IMPORTANT — target type matters:
 #   • Neo4jRestore `source.type: pitr` drives `neo4j-admin database restore
 #     --restore-until`, which the operator runs as a Job. This path applies ONLY
-#     to a Neo4jEnterpriseStandalone target (clusterRef → a standalone).
+#     to a Neo4jEnterpriseStandalone target (instanceRef → a standalone).
 #   • For a CLUSTER, point-in-time recovery is done the cluster-native way:
 #     create a Neo4jDatabase with spec.seedConfig.restoreUntil (the operator
 #     rejects source.type=pitr against a cluster target with an actionable error).
@@ -21,8 +21,8 @@ metadata:
     restore-type: pitr
 spec:
   # Must reference a Neo4jEnterpriseStandalone (PITR is standalone-only).
-  clusterRef: recovery-standalone
-  databaseName: production-db
+  instanceRef: recovery-standalone
+  database: production-db
   source:
     type: pitr
     pointInTime: "2025-01-04T12:30:00Z"  # roll forward to this instant
@@ -65,8 +65,8 @@ metadata:
     restore-type: pitr-advanced
 spec:
   # Must reference a Neo4jEnterpriseStandalone (PITR is standalone-only).
-  clusterRef: dr-standalone
-  databaseName: critical-app
+  instanceRef: dr-standalone
+  database: critical-app
   source:
     type: pitr
     pointInTime: "2025-01-04T14:45:30Z"

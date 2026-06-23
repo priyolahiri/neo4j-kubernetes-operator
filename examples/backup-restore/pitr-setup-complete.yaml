@@ -22,9 +22,8 @@ metadata:
     backup-type: pitr-base
     pitr: "true"
 spec:
-  target:
-    kind: Cluster
-    name: production-cluster
+  instanceRef: production-cluster
+  allDatabases: true
   schedule: "0 0 * * *"  # Daily base backup at midnight
   storage:
     type: s3
@@ -87,8 +86,8 @@ metadata:
     restore-type: pitr-example
 spec:
   # Must reference a Neo4jEnterpriseStandalone (PITR is standalone-only).
-  clusterRef: recovery-standalone
-  databaseName: production-db
+  instanceRef: recovery-standalone
+  database: production-db
   source:
     type: pitr
     pointInTime: "2025-01-04T12:00:00Z"  # Adjust to desired recovery point

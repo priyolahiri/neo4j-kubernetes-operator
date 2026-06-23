@@ -82,10 +82,8 @@ spec:
   # consistently — the operator backs up the whole `{name}*` shard set in one
   # neo4j-admin invocation (graph shard + every property shard). There is no
   # per-shard list.
-  target:
-    kind: ShardedDatabase
-    name: backed-up-sharded-db
-    clusterRef: backup-sharding-cluster   # required for ShardedDatabase targets
+  instanceRef: backup-sharding-cluster   # the owning Neo4jEnterpriseCluster
+  shardedDatabase: backed-up-sharded-db  # the Neo4jShardedDatabase CR name (all shards captured in one run)
 
   schedule: "0 3 * * *"   # daily at 03:00
 
@@ -94,6 +92,7 @@ spec:
     bucket: neo4j-backups
     path: manual-sharded
     cloud:
+      provider: aws        # required for s3 storage (the validator rejects s3 without it)
       credentialsSecretRef: backup-credentials
 
   options:

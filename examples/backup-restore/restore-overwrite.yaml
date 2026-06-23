@@ -21,8 +21,8 @@ metadata:
   name: restore-orders
   namespace: default
 spec:
-  clusterRef: my-neo4j-cluster
-  databaseName: orders
+  instanceRef: my-neo4j-cluster
+  database: orders
   # Confirm the destructive overwrite of the existing database
   force: true
   source:

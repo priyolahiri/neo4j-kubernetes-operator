@@ -23,10 +23,8 @@ metadata:
   name: cross-region-backup
   namespace: neo4j-production
 spec:
-  target:
-    kind: Cluster
-    name: production-cluster
-    namespace: neo4j-production
+  instanceRef: production-cluster   # the Neo4jEnterpriseCluster (same namespace)
+  allDatabases: true                # back up every database on the instance
   schedule: "0 */4 * * *"   # every 4 hours
   storage:
     type: s3
@@ -45,8 +43,8 @@ spec:
 #   kind: Neo4jRestore
 #   metadata: { name: restore-neo4j-db, namespace: neo4j-production }
 #   spec:
-#     clusterRef: production-cluster
-#     databaseName: neo4j
+#     instanceRef: production-cluster
+#     database: neo4j
 #     source: { type: backup, backupRef: cross-region-backup }
 #     force: true
 #
@@ -55,8 +53,8 @@ spec:
 #   kind: Neo4jRestore
 #   metadata: { name: cross-region-restore, namespace: neo4j-dr }
 #   spec:
-#     clusterRef: dr-cluster
-#     databaseName: neo4j
+#     instanceRef: dr-cluster
+#     database: neo4j
 #     source:
 #       type: storage
 #       backupPath: "production/neo4j-2025-01-20-0800.backup"   # exact .backup object key

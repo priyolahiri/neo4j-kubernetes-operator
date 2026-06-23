@@ -166,10 +166,8 @@ metadata:
   name: daily-backup
   namespace: neo4j-production
 spec:
-  target:
-    kind: Cluster
-    name: production-cluster
-    namespace: neo4j-production
+  instanceRef: production-cluster   # the Neo4jEnterpriseCluster (same namespace)
+  allDatabases: true                # back up every database on the instance
 
   # Daily at 2 AM UTC
   schedule: "0 2 * * *"
@@ -201,10 +199,8 @@ metadata:
   name: weekly-full-backup
   namespace: neo4j-production
 spec:
-  target:
-    kind: Cluster
-    name: production-cluster
-    namespace: neo4j-production
+  instanceRef: production-cluster
+  allDatabases: true
 
   # Weekly on Sunday at 3 AM UTC
   schedule: "0 3 * * 0"

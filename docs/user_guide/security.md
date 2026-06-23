@@ -856,9 +856,8 @@ kind: Neo4jBackup
 metadata:
   name: secure-backup
 spec:
-  target:
-    kind: Cluster
-    name: secure-cluster
+  instanceRef: secure-cluster
+  allDatabases: true
 
   # Secure backup storage configuration
   storage:

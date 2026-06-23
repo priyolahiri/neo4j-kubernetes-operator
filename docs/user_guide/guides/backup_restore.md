@@ -1,6 +1,6 @@
 # Backup and Restore
 
-Back up and restore Neo4j Enterprise clusters and standalone instances via the `Neo4jBackup` and `Neo4jRestore` CRDs. Both deployment kinds are auto-detected by the operator from `target.name` (backup) or `clusterRef` (restore).
+Back up and restore Neo4j Enterprise clusters and standalone instances via the `Neo4jBackup` and `Neo4jRestore` CRDs. Both deployment kinds are auto-detected by the operator from `instanceRef`.
 
 ## Quick Start
 
@@ -78,10 +78,8 @@ kind: Neo4jBackup
 metadata:
   name: first-backup
 spec:
-  target:
-    kind: Database          # one database → one restorable artifact
-    name: neo4j
-    clusterRef: minimal-cluster
+  instanceRef: minimal-cluster   # a cluster OR standalone — auto-detected
+  database: neo4j                # one database → one restorable artifact
   storage:
     type: pvc
     pvc:
@@ -121,8 +119,8 @@ kind: Neo4jRestore
 metadata:
   name: first-restore
 spec:
-  clusterRef: minimal-cluster
-  databaseName: neo4jrestored
+  instanceRef: minimal-cluster
+  database: neo4jrestored
   source:
     type: backup
     backupRef: first-backup
@@ -146,10 +144,10 @@ kubectl exec minimal-cluster-server-0 -c neo4j -- \
 
 That's a full backup and restore. From here:
 
-- **Restoring into a cluster from a `kind: Cluster` (all-databases) backup?** You
-  can't seed a cluster from it — back up the specific database with
-  `kind: Database` (as above), or restore via `source.type: storage`. See
-  [Restore Operations](#restore-operations).
+- **Restoring one database into a cluster from an instance-wide (`allDatabases`) backup?** You
+  can't seed a single database from it — back up the specific database with
+  `database: <name>` (as above), or restore via `source.type: storage`. To restore
+  them all, use `allDatabases: true`. See [Restore Operations](#restore-operations).
 - **Standalone targets** restore offline via a Job (set `stopCluster: true` and
   `force: true`). See [Restore Operations](#restore-operations).
 - **Cloud storage** (S3/GCS/Azure/MinIO) → [Cloud Storage Authentication](#cloud-storage-authentication).
@@ -195,7 +193,7 @@ spec:
 
 **All-databases restore ([#222](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222), [#288](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/288)).** `Neo4jRestore.spec.allDatabases: true` restores every user database recorded in the source backup, with per-database progress in `status.databaseResults`. Requires `source.type=backup`. On a **cluster** target the operator restores one database per reconcile pass via the in-place Cypher path (cloud and PVC-backed backups). On a **standalone** target it runs a single offline `neo4j-admin database restore` Job covering all user databases — set `stopCluster: true` (the instance is scaled to 0 for the offline restore) and `force: true` to overwrite existing databases — then brings each database online.
 
-**Deprecation.** The legacy `spec.target` (backup) and `spec.clusterRef`/`spec.databaseName` (restore) fields still work in v1.13 behind a deprecation warning event and are **removed in v1.14**. Migrate to `instanceRef` + `database`/`allDatabases`.
+**Deprecation.** The legacy `spec.target` (backup) and `spec.clusterRef`/`spec.databaseName` (restore) fields still work in v1.13 behind a deprecation warning event and are **removed in v1.14**. Migrate to `instanceRef` + `database`/`allDatabases`/`shardedDatabase`.
 
 ## Backup Architecture
 
@@ -203,22 +201,36 @@ The operator spawns a Kubernetes Job that runs `neo4j-admin database backup` fro
 
 Backup Jobs run as the auto-created `neo4j-backup-sa` ServiceAccount in the same namespace. For Workload Identity (IRSA / GKE WI / Azure WI), annotate the SA via `cloud.identity.autoCreate.annotations` — see [Cloud Storage Authentication](#cloud-storage-authentication).
 
-### Backup targets (`target.kind`)
+### Backup scope
 
-| `target.kind` | `target.name` | `target.clusterRef` | Backs up |
-|---|---|---|---|
-| `Cluster` | the **instance** name — a `Neo4jEnterpriseCluster` **or** `Neo4jEnterpriseStandalone` (auto-detected) | *(unused — leave unset)* | every database on the instance (`neo4j-admin database backup "*"` — one `.backup` artifact per database) |
-| `Database` | the **database** name (e.g. `neo4j`) | the owning instance name | a single database |
-| `ShardedDatabase` | the **`Neo4jShardedDatabase` CR (metadata) name** — the operator resolves the logical DB name from that CR's `spec.name` | the owning cluster | all shards in one `neo4j-admin` run |
+Set **`instanceRef`** to the deployment (a `Neo4jEnterpriseCluster` **or** `Neo4jEnterpriseStandalone` — the operator auto-detects which) and choose exactly one scope:
 
-There is **no `kind: Standalone`** — a standalone is just an instance. To back one up, use `kind: Cluster` with `name: <standalone-name>` (whole instance), or `kind: Database` with `name: <database>` + `clusterRef: <standalone-name>` (one database). Key gotcha: for `kind: Cluster`, `name` is the **instance** name and `clusterRef` is unused; for `kind: Database`, `name` is the **database** and `clusterRef` is the instance that owns it; for `kind: ShardedDatabase`, `name` is the **`Neo4jShardedDatabase` CR name** (the operator resolves the logical DB name from its `spec.name` — the two often differ) and `clusterRef` is the owning cluster.
+| Scope field | Backs up |
+|---|---|
+| `allDatabases: true` | every **standard** database on the instance (`neo4j-admin database backup "*"` — one `.backup` artifact per database; `system` excluded). **Does not recreate sharded databases on restore — see the note below.** |
+| `database: <name>` | a single standard database (e.g. `neo4j`) |
+| `shardedDatabase: <cr-name>` | a single property-sharded database, named by its `Neo4jShardedDatabase` CR (the operator resolves the logical DB name from that CR's `spec.name` — the two often differ). All shards (graph + property) are captured in one `neo4j-admin` run. |
 
-**Restore is single-database** even when the backup was cluster-wide: a `kind: Cluster` backup leaves one artifact per database in the chain directory, and you create one `Neo4jRestore` per database you want back. **How you reference it depends on the target:**
+```yaml
+# Back up a property-sharded database
+spec:
+  instanceRef: my-cluster
+  shardedDatabase: products-sharded   # the Neo4jShardedDatabase CR name
+  storage: { type: s3, bucket: backups }
+```
 
-- **Standalone target** (Job path): referencing a `kind: Cluster` backup works directly — the restore Job's filename glob (`<database>-*.backup | tail -1`) selects the requested database's artifact from the shared directory.
-- **Cluster target** (Cypher/seedURI path): reference a **`kind: Database`** backup of the database you're restoring. A `kind: Cluster` backup has no single artifact to seed one database from, so the operator rejects it with guidance to use a `kind: Database` backup or `source.type: storage` with `source.backupPath` set to the exact `<database>-<timestamp>.backup` file.
+There is **no `kind: Standalone`** — a standalone is just an instance; back it up with `instanceRef: <standalone-name>` + a scope, exactly like a cluster.
 
-An all-databases restore mode is tracked in [#222](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222).
+> ⚠️ **`allDatabases` does not cover property-sharded databases.** An instance-wide backup writes the sharded family's shard files to disk but does **not** catalogue them for restore — an all-databases **restore recreates standard databases only**. The operator makes this explicit rather than silent: the uncovered sharded databases are listed in `status.history[].shardedDatabasesExcluded` and raise a `BackupShardedDatabasesExcluded` warning event at backup time, and an all-databases restore re-warns (`RestoreShardedDatabasesNotCovered`). Back up each sharded database with `shardedDatabase:` and restore it through its `Neo4jShardedDatabase` CR (`spec.seedBackupRef`) — see [Property Sharding](../property_sharding.md). Recovering a mixed cluster therefore takes an all-databases restore **plus** a per-sharded-database restore.
+
+> **Deprecated `target` block.** The pre-v1.13 `target: {kind: Cluster|Database|ShardedDatabase, name, clusterRef}` form still works (emitting a deprecation warning event) and is **removed in v1.14** — migrate to `instanceRef` + `allDatabases`/`database`/`shardedDatabase`.
+
+**Restore is single-database** even when the backup was instance-wide (`allDatabases`, or the legacy `kind: Cluster`): the backup leaves one artifact per database in the chain directory. **How you reference it depends on the target:**
+
+- **Standalone target** (Job path): referencing an instance-wide backup works directly — the restore Job's filename glob (`<database>-*.backup | tail -1`) selects the requested database's artifact from the shared directory.
+- **Cluster target** (Cypher/seedURI path): reference a single-`database` backup of the database you're restoring. An instance-wide backup has no single artifact to seed one database from, so the operator rejects it with guidance to use a `database`-scoped backup or `source.type: storage` with `source.backupPath` set to the exact `<database>-<timestamp>.backup` file.
+
+To restore **every** database at once, set `allDatabases: true` on the `Neo4jRestore` (see [the v1.13 scope API](#backup-restore-api-v113-scope-not-topology) above).
 
 ### Storage Layout
 
@@ -410,9 +422,8 @@ kind: Neo4jBackup
 metadata:
   name: minio-backup
 spec:
-  target:
-    kind: Cluster
-    name: my-cluster
+  instanceRef: my-cluster
+  allDatabases: true
   storage:
     type: s3
     bucket: neo4j-backups        # bucket must already exist in MinIO
@@ -588,9 +599,8 @@ kind: Neo4jBackup
 metadata:
   name: simple-backup
 spec:
-  target:
-    kind: Cluster
-    name: single-node-cluster
+  instanceRef: single-node-cluster
+  allDatabases: true
   storage:
     type: pvc
     pvc:
@@ -625,9 +635,8 @@ kind: Neo4jBackup
 metadata:
   name: cluster-backup-s3
 spec:
-  target:
-    kind: Cluster
-    name: my-neo4j-cluster
+  instanceRef: my-neo4j-cluster
+  allDatabases: true
   storage:
     type: s3
     bucket: my-backup-bucket
@@ -655,9 +664,8 @@ kind: Neo4jBackup
 metadata:
   name: cluster-backup-s3-irsa
 spec:
-  target:
-    kind: Cluster
-    name: my-neo4j-cluster
+  instanceRef: my-neo4j-cluster
+  allDatabases: true
   storage:
     type: s3
     bucket: my-backup-bucket
@@ -689,9 +697,8 @@ kind: Neo4jBackup
 metadata:
   name: cluster-backup-gcs
 spec:
-  target:
-    kind: Cluster
-    name: my-neo4j-cluster
+  instanceRef: my-neo4j-cluster
+  allDatabases: true
   storage:
     type: gcs
     bucket: my-gcs-backup-bucket
@@ -717,9 +724,8 @@ kind: Neo4jBackup
 metadata:
   name: cluster-backup-azure
 spec:
-  target:
-    kind: Cluster
-    name: production-cluster
+  instanceRef: production-cluster
+  allDatabases: true
   storage:
     type: azure
     bucket: neo4j-backups   # Azure container name
@@ -736,7 +742,7 @@ spec:
 
 ### Database Backup Examples
 
-To back up a specific database rather than the whole cluster, use `kind: Database`. **`clusterRef` is required** when targeting a specific database — it identifies which cluster or standalone instance owns the database.
+To back up a specific database rather than the whole instance, set `database: <name>` alongside `instanceRef` — `instanceRef` identifies the cluster or standalone that owns the database.
 
 #### Database Backup to GCS
 
@@ -746,10 +752,8 @@ kind: Neo4jBackup
 metadata:
   name: database-backup-gcs
 spec:
-  target:
-    kind: Database
-    name: myapp-db          # The database name
-    clusterRef: my-cluster  # Required: the cluster that owns this database
+  instanceRef: my-cluster   # the cluster or standalone that owns the database
+  database: myapp-db        # the database to back up
   storage:
     type: gcs
     bucket: my-gcs-backup-bucket
@@ -772,10 +776,8 @@ kind: Neo4jBackup
 metadata:
   name: database-backup-s3
 spec:
-  target:
-    kind: Database
-    name: production-db
-    clusterRef: production-cluster
+  instanceRef: production-cluster
+  database: production-db
   storage:
     type: s3
     bucket: my-backup-bucket
@@ -800,9 +802,8 @@ kind: Neo4jBackup
 metadata:
   name: differential-backup
 spec:
-  target:
-    kind: Cluster
-    name: my-neo4j-cluster
+  instanceRef: my-neo4j-cluster
+  allDatabases: true
   storage:
     type: s3
     bucket: my-backup-bucket
@@ -828,7 +829,8 @@ apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata: { name: inventory-daily }
 spec:
-  target:    { kind: Database, name: inventory, clusterRef: my-cluster }
+  instanceRef: my-cluster
+  database:  inventory
   schedule:  "0 2 * * *"
   storage:   { type: s3, bucket: backups, path: prod, cloud: {…} }
   options:   { backupType: FULL }
@@ -839,7 +841,8 @@ apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata: { name: inventory-hourly }
 spec:
-  target:          { kind: Database, name: inventory, clusterRef: my-cluster }
+  instanceRef:     my-cluster
+  database:        inventory
   schedule:        "30 * * * *"      # offset 30 min to avoid racing the daily
   chainFromBackup: inventory-daily   # ← shared directory
   storage:         { type: s3, bucket: backups, path: prod, cloud: {…} }
@@ -850,7 +853,7 @@ spec:
 **Constraints** (validator-enforced; mismatches → `status.phase=Failed`):
 
 - The parent CR (`inventory-daily`) must exist in the same namespace.
-- Both CRs must have the same `target` (kind + name + clusterRef).
+- Both CRs must reference the same database (same `instanceRef` + `database`).
 - Both CRs must use the same storage backend (type + bucket + path).
 - `chainFromBackup` cannot point to self.
 
@@ -901,9 +904,8 @@ kind: Neo4jBackup
 metadata:
   name: daily-backup
 spec:
-  target:
-    kind: Cluster
-    name: production-cluster
+  instanceRef: production-cluster
+  allDatabases: true
   schedule: "0 2 * * *"  # Daily at 2 AM UTC
   storage:
     type: s3
@@ -942,9 +944,8 @@ kind: Neo4jBackup
 metadata:
   name: weekly-backup
 spec:
-  target:
-    kind: Cluster
-    name: production-cluster
+  instanceRef: production-cluster
+  allDatabases: true
   schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM UTC
   storage:
     type: gcs
@@ -979,9 +980,8 @@ kind: Neo4jBackup
 metadata:
   name: maintenance-backup
 spec:
-  target:
-    kind: Cluster
-    name: my-cluster
+  instanceRef: my-cluster
+  allDatabases: true
   schedule: "0 3 * * *"
   suspend: true  # Suspends the backup schedule
   storage:
@@ -1007,9 +1007,9 @@ The operator picks the right restore method based on the target kind. The Neo4j 
 | `Neo4jEnterpriseStandalone` | Kubernetes Job | `neo4j-admin database restore --from-path=<latest-file-in-chain>` followed by `CREATE/START DATABASE` |
 | `Neo4jShardedDatabase` (sharded) | Rejected with actionable error | Use `Neo4jShardedDatabase.spec.replaceExisting: true` + `force: true` instead — see [Property Sharding](../property_sharding.md) |
 
-> **You cannot restore into a cluster from a `kind: Cluster` (all-databases) backup.** That backup stores one `.backup` artifact *per database*, so there is no single artifact to seed one database from. The operator rejects it with an actionable error:
+> **You cannot restore one database into a cluster from an instance-wide backup** (`allDatabases: true`, or the legacy `target.kind: Cluster`). That backup stores one `.backup` artifact *per database*, so there is no single artifact to seed one database from. The operator rejects it with an actionable error (the message uses the internal `kind:Cluster`/`kind:Database` labels):
 > `Neo4jBackup "<name>" is a kind:Cluster (all-databases) backup — … To restore a database to a cluster, either reference a kind:Database backup of that database, or use source.type=storage with source.backupPath set to the exact <database>-<timestamp>.backup file.`
-> Back up the specific database with `kind: Database` (one artifact, as in the [tutorial](#tutorial-your-first-backup-and-restore-10-minutes)), or restore via `source.type: storage` pointing at the exact `.backup` file. (Standalone restores from a `kind: Cluster` backup work fine — the Job's filename glob selects the requested database.)
+> Back up the specific database with `database: <name>` (one artifact, as in the [tutorial](#tutorial-your-first-backup-and-restore-10-minutes)), or restore via `source.type: storage` pointing at the exact `.backup` file. (Standalone restores from an instance-wide backup work fine — the Job's filename glob selects the requested database.)
 
 **Cluster path (Cypher)** — works with both cloud and PVC backups:
 
@@ -1072,8 +1072,8 @@ kind: Neo4jRestore
 metadata:
   name: restore-from-backup
 spec:
-  clusterRef: my-neo4j-cluster
-  databaseName: neo4j
+  instanceRef: my-neo4j-cluster
+  database: neo4j
   source:
     type: backup
     backupRef: daily-backup
@@ -1105,8 +1105,8 @@ kind: Neo4jRestore
 metadata:
   name: restore-from-s3
 spec:
-  clusterRef: recovery-cluster
-  databaseName: myapp-db
+  instanceRef: recovery-cluster
+  database: myapp-db
   source:
     type: storage
     storage:
@@ -1144,7 +1144,7 @@ spec:
 
 #### Restore to a Standalone Instance
 
-`clusterRef` can reference a `Neo4jEnterpriseStandalone` as well as a
+`instanceRef` can reference a `Neo4jEnterpriseStandalone` as well as a
 `Neo4jEnterpriseCluster` — the operator auto-detects the kind and routes to the
 standalone path. Unlike the cluster path (Cypher `seedURI`, no downtime), a
 standalone restore is **Job-based and takes the instance offline**:
@@ -1167,8 +1167,8 @@ kind: Neo4jRestore
 metadata:
   name: restore-to-standalone
 spec:
-  clusterRef: my-standalone   # References Neo4jEnterpriseStandalone
-  databaseName: neo4j
+  instanceRef: my-standalone   # References Neo4jEnterpriseStandalone
+  database: neo4j
   source:
     type: backup
     backupRef: standalone-backup
@@ -1196,8 +1196,8 @@ kind: Neo4jRestore
 metadata:
   name: pitr-restore
 spec:
-  clusterRef: recovery-standalone   # Neo4jEnterpriseStandalone (PITR is standalone-only)
-  databaseName: production-db
+  instanceRef: recovery-standalone   # Neo4jEnterpriseStandalone (PITR is standalone-only)
+  database: production-db
   source:
     type: pitr
     pointInTime: "2025-01-04T12:30:00Z"
@@ -1229,8 +1229,8 @@ kind: Neo4jRestore
 metadata:
   name: pitr-storage-restore
 spec:
-  clusterRef: dr-standalone   # Neo4jEnterpriseStandalone (PITR is standalone-only)
-  databaseName: critical-app
+  instanceRef: dr-standalone   # Neo4jEnterpriseStandalone (PITR is standalone-only)
+  database: critical-app
   source:
     type: pitr
     pointInTime: "2025-01-04T14:45:30Z"
@@ -1279,8 +1279,8 @@ kind: Neo4jRestore
 metadata:
   name: restore-with-hooks
 spec:
-  clusterRef: my-standalone   # Neo4jEnterpriseStandalone — hooks are standalone-only
-  databaseName: myapp
+  instanceRef: my-standalone   # Neo4jEnterpriseStandalone — hooks are standalone-only
+  database: myapp
   source:
     type: backup
     backupRef: production-backup
@@ -1306,8 +1306,8 @@ kind: Neo4jRestore
 metadata:
   name: restore-with-job-hooks
 spec:
-  clusterRef: staging-standalone   # Neo4jEnterpriseStandalone — hooks are standalone-only
-  databaseName: app-data
+  instanceRef: staging-standalone   # Neo4jEnterpriseStandalone — hooks are standalone-only
+  database: app-data
   source:
     type: backup
     backupRef: staging-backup
@@ -1519,16 +1519,9 @@ spec:
       - "--parallel-recovery"
 ```
 
-### Cross-Namespace Operations
+### Namespace scoping
 
-```yaml
-# Backup a cluster in a different namespace
-spec:
-  target:
-    kind: Cluster
-    name: production-cluster
-    namespace: production
-```
+A `Neo4jBackup` backs up a deployment **in its own namespace**. Both `instanceRef` and the legacy `target` resolve within the backup CR's namespace; a cross-namespace `target.namespace` is **rejected** by the validator. This keeps each backup's blast radius inside a single namespace — the same boundary the operator enforces for users and roles. To back up a cluster that lives in another namespace, create the `Neo4jBackup` in **that** namespace.
 
 ---
 

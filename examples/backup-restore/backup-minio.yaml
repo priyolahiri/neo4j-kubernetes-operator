@@ -63,9 +63,8 @@ kind: Neo4jBackup
 metadata:
   name: minio-backup-full
 spec:
-  target:
-    kind: Cluster
-    name: my-cluster   # Your Neo4jEnterpriseCluster name
+  instanceRef: my-cluster   # Your Neo4jEnterpriseCluster (or Standalone) name
+  allDatabases: true        # back up every database on the instance
 
   storage:
     type: s3
@@ -103,9 +102,8 @@ kind: Neo4jBackup
 metadata:
   name: minio-backup-scheduled
 spec:
-  target:
-    kind: Cluster
-    name: my-cluster
+  instanceRef: my-cluster
+  allDatabases: true
 
   # Hourly backup. backupType AUTO self-bootstraps: the FIRST run on an empty
   # directory is a FULL, every subsequent run is a DIFF off it — so the
@@ -151,9 +149,8 @@ kind: Neo4jBackup
 metadata:
   name: minio-backup-external
 spec:
-  target:
-    kind: Cluster
-    name: my-cluster
+  instanceRef: my-cluster
+  allDatabases: true
 
   storage:
     type: s3

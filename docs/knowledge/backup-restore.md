@@ -332,6 +332,24 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 
 ---
 
+## Backup scope (v1.13): instanceRef, shardedDatabase, same-namespace
+
+### Rule 80 — Backup target is same-namespace for ALL kinds
+- **Scope:** `internal/validation/backup_validator.go` (`validateBackupTarget`)
+- **Rule:** A cross-namespace `target.namespace` (≠ the `Neo4jBackup` CR's namespace) is rejected for **every** kind (Cluster, Database, ShardedDatabase) — the check lives OUTSIDE the `IsDatabaseScopedBackupKind` branch. The `instanceRef` scope API has no namespace field; it always resolves within the backup CR's own namespace. To back up a cluster in another namespace, create the `Neo4jBackup` in that namespace.
+- **Why:** The check was previously scoped to database-scoped kinds only, silently allowing a `kind: Cluster` backup to target a cluster in another namespace — contradicting the operator's same-namespace blast-radius boundary (`docs/knowledge/operations.md`, the same rule enforced for user/role `clusterRef`). Never re-narrow the check back to database-scoped kinds.
+- **Pinned-by:** `internal/validation/backup_validator_test.go` ("Cluster with cross-namespace target.namespace is rejected" + "ShardedDatabase with cross-namespace target.namespace")
+- **Status:** Enforced
+
+### Rule 81 — `shardedDatabase` scope; all-databases EXCLUDES sharded families (surfaced, not silent)
+- **Scope:** `api/v1beta1/neo4jbackup_types.go` (`ShardedDatabase`, `ResolvedTarget`), `internal/validation/backup_validator.go` (`validateScopeSelection`), `internal/controller/neo4jbackup_log_parser.go` (`parseShardedFamiliesExcludedFromLog`), `internal/controller/neo4jbackup_controller.go` (`recordShardedExclusion`), `internal/controller/neo4jrestore_alldatabases.go`
+- **Rule:** `spec.instanceRef + spec.shardedDatabase` is the scope for a property-sharded backup (synthesizes `target.kind=ShardedDatabase` via `ResolvedTarget`); mutually exclusive with `database`/`allDatabases`. An **all-databases** backup (`allDatabases` / legacy `kind: Cluster`) writes shard physical DBs (`-g000`/`-pNNN`) to disk but EXCLUDES them from `databaseArtifacts` (`shardSuffixRegex`) and does NOT populate `ShardArtifacts` — so it is **not** sharded-restorable. The excluded logical families are recorded in `BackupRun.ShardedDatabasesExcluded` with a `BackupShardedDatabasesExcluded` warning event, carried to `ResolvedRestoreSource`, and re-warned by the all-databases restore (`RestoreShardedDatabasesNotCovered`). Restore a sharded DB via `Neo4jShardedDatabase.spec.seedBackupRef` (requires a `shardedDatabase`-scoped backup), never `Neo4jRestore` (which rejects sharded — rule 63/64 path).
+- **Why:** The exclusion is intentional — sharded restore needs the shard topology (only on the `Neo4jShardedDatabase` CR) + a per-shard seed map the generic single-seedURI path can't express — but if left silent, a "back up / restore all databases" drops sharded families with no signal (data-completeness gap). Surfacing it (status + events) keeps the separation explicit.
+- **Pinned-by:** `internal/validation/backup_validator_scope_test.go` (`shardedDatabase` scope + `ResolvedTarget` → ShardedDatabase kind), `internal/controller/backup_alldb_parser_test.go:TestParseShardedFamiliesExcludedFromLog`
+- **Status:** Enforced
+
+---
+
 ## Cross-references
 
 - **AUTH RULE / sharded DDL `CYPHER 25` prefix** (rules 30, 65) — same root cause: 2026.x system DB defaults to Cypher 5.

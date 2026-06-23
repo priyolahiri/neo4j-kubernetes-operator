@@ -262,8 +262,8 @@ The `Neo4jBackupStatus` represents the observed state of the backup.
 | `observedGeneration` | `int64` | The `.metadata.generation` most recently observed by the controller |
 | `lastRunTime` | `*metav1.Time` | When the last backup Job started |
 | `lastSuccessTime` | `*metav1.Time` | When a **one-shot** backup completed (set on the `Completed` phase transition). **Never set for scheduled backups** — they don't pass through `Completed`; read `status.history[]` instead. |
-| `nextRunTime` | `*metav1.Time` | When the next scheduled backup will run |
-| `stats` | [`*BackupStats`](#backupstats) | Statistics from the most recent backup run |
+| `nextRunTime` | `*metav1.Time` | **Reserved — not currently populated by the operator.** For scheduled backups the CronJob's own schedule is authoritative (`kubectl get cronjob <name>-backup-cron`); read `status.history[]` for actual run times. |
+| `stats` | [`*BackupStats`](#backupstats) | Statistics from the most recent backup run (only `duration` is populated — see [BackupStats](#backupstats)). |
 | `history` | [`[]BackupRun`](#backuprun) | History of recent backup runs. For scheduled backups this is the **authoritative record** of run outcomes. |
 
 ### Backup Phases
@@ -290,6 +290,8 @@ The `Neo4jBackupStatus` represents the observed state of the backup.
 | `throughput` | `string` | Backup throughput rate (e.g., `"8.3MB/s"`) |
 | `fileCount` | `int32` | Number of files in the backup |
 
+> **Only `duration` is currently populated.** `size`, `throughput`, and `fileCount` are reserved and not yet emitted by the operator — treat them as a forward-looking schema. To inspect artifact sizes, look at the `.backup` files under `status.history[*].backupsPath` in your storage backend.
+
 ### BackupRun
 
 Represents a single backup Job execution.
@@ -306,6 +308,7 @@ Represents a single backup Job execution.
 | `artifactFilename` | `string` | Filename of the `.backup` artifact produced by this standard-DB run (e.g. `"neo4j-2026-06-08T01-18-06.backup"`). Populated by parsing the Job's Pod log after completion; empty when logs couldn't be fetched or the pattern didn't match. Used by the cluster PVC-restore path to build a per-restore seed URL. |
 | `shardArtifacts` | [`[]ShardArtifact`](#shardartifact) | Per-shard `.backup` files produced by a sharded backup run (`target.kind=ShardedDatabase`). Empty for non-sharded runs. |
 | `databaseArtifacts` | `[]DatabaseArtifact` | Per-database `.backup` files produced by an all-databases backup (`spec.allDatabases` / legacy `target.kind=Cluster`): one entry (`database`, `filename`, `size`) per user database (shard physical databases excluded). Consumed by an all-databases restore (`Neo4jRestore.spec.allDatabases`). Empty for single-database and sharded runs. |
+| `shardedDatabasesExcluded` | `[]string` | Logical property-sharded databases (e.g. `products`) whose shard files this all-databases run wrote to disk but did **not** catalogue in `databaseArtifacts` — so an all-databases restore cannot recreate them. Each must be backed up with a `shardedDatabase`-scoped Neo4jBackup and restored via its `Neo4jShardedDatabase` CR. Makes the exclusion explicit (also raised as a `BackupShardedDatabasesExcluded` warning event). Empty when the run had no sharded families. |
 | `validation` | [`*BackupValidationResult`](#backupvalidationresult) | Per-shard outcome of the optional `neo4j-admin backup validate` step (only when `options.validate=true` and the operator could parse the output). |
 
 ### ShardArtifact
