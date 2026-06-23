@@ -30,10 +30,10 @@ spec:
         - protocol: TCP
           port: {{ .Values.metrics.service.port }}
         {{- end }}
-        {{- if .Values.webhook.enabled }}
-        - protocol: TCP
-          port: {{ .Values.webhook.port }}
-        {{- end }}
+        {{- /* No admission/conversion webhooks (invariant: NO WEBHOOKS); all
+               validation is inline in internal/validation/. The former
+               .Values.webhook block was removed from values.yaml, so there is
+               no webhook port to allow here. */}}
     {{- end }}
   egress:
     {{- if .Values.networkPolicy.egress }}
