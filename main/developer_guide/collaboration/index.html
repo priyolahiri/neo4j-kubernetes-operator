@@ -545,7 +545,7 @@
   <span class="md-ellipsis">
     
   
-    Migrating from a Prior Version
+    Upgrade Guide
   
 
     
@@ -3028,7 +3028,7 @@ behind it see <a href="../ci_and_workflows/">CI/CD &amp; Workflows</a>.</p>
 <li>Make the change. If you touched anything that drives generated files (Go API
    types, kubebuilder markers, RBAC markers, CRDs), run <code>make sync-all</code> and
    commit the regenerated output — CI's drift gate will fail otherwise (see
-   <a href="#generated-artifacts">Generated artifacts</a>).</li>
+   <a href="../ci_and_workflows/#ci">CI/CD &amp; Workflows → CI</a>).</li>
 <li>Run <code>make test-unit</code> and <code>make lint</code> locally before pushing.</li>
 <li>Open the PR; fill in the PR template (summary, type of change, testing,
    checklist).</li>
@@ -3074,7 +3074,7 @@ push) rather than pushing on top of an in-flight run. See
 </tr>
 <tr>
 <td><strong>Extended Integration Tests</strong></td>
-<td>The full suite on CalVer. Runs nightly; <strong>does not auto-run on PRs</strong> — opt a PR in with the <code>run-extended</code> label (runs extended-only) or dispatch manually (see below).</td>
+<td>The full suite on CalVer. <strong>Manual dispatch only</strong> — it never auto-runs (no nightly schedule, no PR-label trigger); run it on demand (see below).</td>
 </tr>
 </tbody>
 </table>
@@ -3083,15 +3083,14 @@ push) rather than pushing on top of an in-flight run. See
 <p>See <a href="../ci_and_workflows/#test-tiers-core-vs-extended">CI/CD &amp; Workflows → Test tiers</a>
 for the <code>core</code> vs <code>extended</code> label convention and how to run each tier locally.</p>
 <h3 id="running-the-extended-integration-tests-on-demand">Running the Extended Integration Tests on demand<a class="headerlink" href="#running-the-extended-integration-tests-on-demand" title="Anchor link to this section">&para;</a></h3>
-<p>The full (~90–150 min) CalVer suite doesn't run on every PR. Trigger it when your
-change could affect cluster coordination, backup/restore, or sharding:</p>
+<p>The full (~90–150 min) CalVer suite never runs on its own — it is
+<strong>manual-dispatch only</strong>. Trigger it when your change could affect cluster
+coordination, backup/restore, or sharding:</p>
 <ul>
-<li><strong>On a PR:</strong> apply the <strong><code>run-extended</code></strong> label. The workflow then runs the
-  <code>extended</code> specs against that PR (the <code>core</code> lane already covers <code>core</code>, so it
-  isn't re-run). Labels are maintainer-only.</li>
-<li><strong>Manually:</strong> run the <em>Extended Integration Tests</em> workflow from the Actions
-  tab <strong>against your branch</strong> (lets you pick the Neo4j version) — runs the full
-  suite.</li>
+<li>Run the <em>Extended Integration Tests</em> workflow from the Actions tab
+  ("Run workflow") <strong>against your branch</strong> (lets you pick the Neo4j version) — or
+  with <code>gh workflow run integration-tests.yml --ref &lt;branch&gt;</code>. It runs the full
+  <code>core || extended</code> suite.</li>
 </ul>
 <p>The fast <code>core</code> lane (<em>Integration Tests</em>) runs automatically on any
 runtime-path PR — no opt-in needed.</p>

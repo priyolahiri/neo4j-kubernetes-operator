@@ -545,7 +545,7 @@
   <span class="md-ellipsis">
     
   
-    Migrating from a Prior Version
+    Upgrade Guide
   
 
     
@@ -3199,7 +3199,7 @@ in-repo <code>.github/workflows/README.md</code> is a short pointer back here.</
 <tr>
 <td><a href="#extended-integration-tests">Extended Integration Tests</a></td>
 <td><code>integration-tests.yml</code></td>
-<td>nightly (full); <code>run-extended</code> label on a PR (extended-only); manual dispatch (full)</td>
+<td>manual dispatch only (full)</td>
 </tr>
 <tr>
 <td><a href="#release">Release</a></td>
@@ -3272,12 +3272,12 @@ contributor lane is <a href="#integration-tests">Integration Tests</a>; the full
 </ul>
 <p>Two things to know:</p>
 <ul>
-<li><strong>The integration checks are intentionally <em>not</em> required.</strong> Both the
-  Integration Tests lane and the Extended Integration Tests workflow are
-  path-filtered, so they don't run on every PR (e.g. a docs-only change); a
-  required check that doesn't run on a given PR would leave it stuck at
-  "Expected — waiting for status." Reviewers gate on them manually for code
-  changes.</li>
+<li><strong>The integration checks are intentionally <em>not</em> required.</strong> The Integration
+  Tests lane is path-filtered (it doesn't run on, e.g., a docs-only change) and
+  the Extended Integration Tests workflow is manual-dispatch only — so neither
+  runs on every PR; a required check that doesn't run on a given PR would leave it
+  stuck at "Expected — waiting for status." Reviewers gate on them manually for
+  code changes.</li>
 <li><strong><code>enforce_admins</code> is currently off</strong> so the maintainer can merge during the
   solo→team transition (GitHub forbids approving your own PR, and the sole
   CODEOWNER would otherwise be unable to merge anything). Turn it on once a
@@ -3337,27 +3337,21 @@ again</strong>, or batch your changes into one push.</p>
 <p><strong><code>integration-tests.yml</code> — the full suite (<code>core</code> + <code>extended</code>, ≈90–150 min)
 against a real Kind cluster, on the pinned CalVer track.</strong> This is the
 release-readiness and deep-coverage run.</p>
-<p><strong>Extended does NOT auto-run on PRs</strong> — by design, the default PR signal is the
-fast core lane, keeping the dev cycle short. Extended runs:</p>
+<p><strong>Extended never runs automatically</strong> — by design, the default PR/push signal is
+the fast core lane, keeping the dev cycle short. The extended suite is
+<strong>manual-dispatch only</strong>; there is no nightly schedule and no PR-label trigger
+(both were intentionally removed). Run it on demand from the Actions tab
+("Run workflow") or with <code>gh workflow run integration-tests.yml --ref &lt;branch&gt;</code>,
+<strong>full suite</strong>, with inputs:</p>
 <ul>
-<li><strong>Nightly</strong> (<code>cron: 0 3 * * *</code>) on <code>main</code>, <strong>full suite</strong> — keeps <code>main</code>
-  continuously known-good on the CalVer track, so a regression is caught the day
-  it merges and a release tag ships a commit whose CalVer health is already
-  established (the tag is the release trigger — too late to be the gate itself).
-  This is also the only <em>scheduled</em> check, so it must exercise everything,
-  including <code>core</code>.</li>
-<li><strong>Per-PR opt-in</strong> — apply the <strong><code>run-extended</code></strong> label to a PR to run it against
-  that PR. On the PR event it runs <strong><code>extended</code>-only</strong> (the core lane already
-  covers <code>core</code> on that PR, so re-running it would be redundant). Labels are
-  maintainer-only, which also keeps fork PRs from triggering it. Use this for
-  backup/restore/sharding/coordination changes that the <code>core</code> subset doesn't
-  exercise.</li>
-<li><strong>Manual dispatch</strong> (Actions tab), <strong>full suite</strong>, with inputs:</li>
 <li><code>neo4j-version</code> — image tag (default the pinned CalVer; pass <code>5.26-enterprise</code>
-    to verify the LTS floor, or <code>2025.12-enterprise+</code> for the property-sharding
-    paths). Dispatch against your branch to run the full suite before merging.</li>
+  to verify the LTS floor, or <code>2025.12-enterprise+</code> for the property-sharding
+  paths). Dispatch against your branch to run the full suite before merging.</li>
 <li><code>timeout-minutes</code> — default <code>150</code> (CalVer is ~2× slower per spec).</li>
 </ul>
+<p>Dispatch it explicitly for backup/restore/sharding/coordination changes that the
+<code>core</code> subset doesn't exercise, and on the release commit before tagging (see the
+release process below).</p>
 <p>It builds and deploys the operator, runs the selected scope, uploads
 logs/cluster-state artifacts, and tears the cluster down.</p>
 <blockquote>
@@ -3451,13 +3445,14 @@ from the tag.</p>
    matrix the release workflow runs as a blocking gate. Running it locally
    first means a failure costs you minutes, not a dead tag.
 2b. <strong>Dispatch the extended suite on the final main</strong> and wait for green:
-   <code>gh workflow run integration-tests.yml --ref main</code>. The extended lane runs
-   nightly, not per-PR — a PR that only core lanes validated can carry a stale
-   extended-lane expectation (or a real regression) that would otherwise
-   surface AFTER the release. Tag the exact commit the suite validated.</li>
+   <code>gh workflow run integration-tests.yml --ref main</code>. The extended lane is
+   manual-only — it never runs on its own, so a PR that only core lanes validated
+   can carry a stale extended-lane expectation (or a real regression) that would
+   otherwise surface AFTER the release. This dispatch is the release gate for the
+   extended coverage; tag the exact commit the suite validated.</li>
 <li>If there are breaking changes or notable upgrade steps, add/extend the
-   <code>Upgrading from vX to vY</code> section in
-   <a href="../../user_guide/migration_guide/"><code>migration_guide.md</code></a>.</li>
+   <code>Upgrading between future releases</code> section in
+   <a href="../../user_guide/migration_guide/"><code>migration_guide.md</code></a> (the Upgrade Guide).</li>
 <li>Draft the <strong>What's Changed</strong> notes — <code>git log &lt;last-tag&gt;..HEAD --pretty=oneline</code>
    is a good starting point. (The release workflow renders only the
    boilerplate from <code>.github/release-notes-template.md</code>; the changelog is

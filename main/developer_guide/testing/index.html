@@ -545,7 +545,7 @@
   <span class="md-ellipsis">
     
   
-    Migrating from a Prior Version
+    Upgrade Guide
   
 
     
@@ -4749,7 +4749,8 @@ worth knowing in the same spirit:</p>
   on both 5.26 and CalVer on every runtime-path PR.</li>
 <li><strong><code>extended</code></strong> — multi-node, split-brain, rolling upgrade, backup/restore,
   sharding, MinIO, MCP, ABAC. The <em>Extended Integration Tests</em> workflow runs the
-  full suite on CalVer nightly + on release prep.</li>
+  full suite on CalVer <strong>on demand only</strong> (manual dispatch) — typically on
+  release prep.</li>
 </ul>
 <p><strong>When you add a spec file, label its <code>Describe</code></strong> (<code>Label("core")</code> or
 <code>Label("extended")</code>) — an unlabeled spec runs in neither CI lane. See
@@ -4792,7 +4793,7 @@ means "the Extended lane is the only lane that will <em>consider</em> it" — a 
 <td><code>multi_node_cluster</code>, <code>splitbrain_detection</code>, <code>rolling_upgrade</code>, <code>backup_*</code>, <code>restore_*</code>, <code>standard_database_*_restore</code>, <code>database_seed_uri</code>, <code>mcp_integration</code></td>
 <td>Multi-node, coordination, backup/restore matrix, MCP</td>
 <td><code>extended</code></td>
-<td><strong>Extended</strong> lane — CalVer, nightly + coordination-critical PRs + dispatch</td>
+<td><strong>Extended</strong> lane — CalVer, <strong>manual dispatch only</strong></td>
 </tr>
 <tr>
 <td><code>neo4jauthrule</code></td>
@@ -4824,9 +4825,9 @@ node) that can satisfy the 4Gi-per-server floor:</p>
 </span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>ginkgo<span class="w"> </span>run<span class="w"> </span>--label-filter<span class="o">=</span><span class="s1">&#39;extended&#39;</span><span class="w"> </span>-focus<span class="w"> </span><span class="s2">&quot;Property Sharding&quot;</span><span class="w"> </span>./test/integration/...
 </span></code></pre></div>
 <p>Because they don't run in CI, <strong>a change to the sharding controllers/builders
-should be validated locally with these suites before merge</strong> — the nightly
-Extended lane only covers the minimal CI smoke path, not F3/F4/F5 or sharded
-backup/restore.</p>
+should be validated locally with these suites before merge</strong> — the (manually
+dispatched) Extended lane only covers the minimal CI smoke path, not F3/F4/F5 or
+sharded backup/restore.</p>
 <h3 id="example-test-coverage">Example ↔ test coverage<a class="headerlink" href="#example-test-coverage" title="Anchor link to this section">&para;</a></h3>
 <p>Which <code>examples/</code> paths are backed by an integration test vs example-only. A path
 with <strong>no test</strong> is either <em>testable-but-uncovered</em> (a real gap — file an issue
