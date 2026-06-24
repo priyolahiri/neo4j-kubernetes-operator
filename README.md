@@ -114,7 +114,7 @@ Each has examples under [`examples/`](examples/) and a dedicated guide on the [d
 | User & role management | [User & Role Management](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/user_role_management/) |
 | Property sharding | [Property Sharding](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/property_sharding/) |
 | Monitoring & metrics | [Monitoring](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/monitoring/) |
-| Migration & upgrades | [Migration Guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/migration_guide/) |
+| Upgrades | [Upgrade Guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/migration_guide/) |
 | Troubleshooting | [Troubleshooting](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/troubleshooting/) |
 | API reference | [API docs](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/) |
 

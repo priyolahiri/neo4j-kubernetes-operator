@@ -362,7 +362,7 @@ If you're moving from Neo4j 4.x or an early 5.x release:
 5. Remove any `db.format` from `spec.config` — the operator already emits `db.format=block` (the modern default) and the validator rejects a user-set `db.format`. To choose a non-default store format, set it per database via `Neo4jDatabase` `CREATE DATABASE` options, not cluster/standalone `spec.config`.
 6. `dbms.logs.query.*` → `db.logs.query.*`
 
-See the [Migration Guide](migration_guide.md) for operator-level migration steps (removed CRD fields, etc.).
+See the [Upgrade Guide](migration_guide.md) for operator-level upgrade steps (removed CRD fields, etc.).
 
 ## References
 

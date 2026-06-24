@@ -754,7 +754,7 @@ kubectl describe nodes | grep -A 5 "Allocated resources:"
 
 - **Documentation**: [User Guide](../getting_started.md)
 - **API Reference**: [Neo4jEnterpriseCluster](../../api_reference/neo4jenterprisecluster.md), [Neo4jEnterpriseStandalone](../../api_reference/neo4jenterprisestandalone.md)
-- **Migration Guide**: [Migration Guide](../migration_guide.md)
+- **Upgrade Guide**: [Upgrade Guide](../migration_guide.md)
 - **Community**: [Neo4j Community Forum](https://community.neo4j.com/)
 - **Issues**: [GitHub Issues](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues)
 

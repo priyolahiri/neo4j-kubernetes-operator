@@ -287,4 +287,4 @@ For more advanced topics, see:
 - [Configuration Guide](configuration.md) - Advanced configuration options
 - [Security Guide](security.md) - Authentication, TLS, and security best practices
 - [Performance Guide](performance.md) - Optimization and scaling strategies
-- [Migration Guide](migration_guide.md) - Migrating from previous versions
+- [Upgrade Guide](migration_guide.md) - Upgrading between releases
