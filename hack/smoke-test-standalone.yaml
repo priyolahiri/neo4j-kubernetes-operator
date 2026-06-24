@@ -4,6 +4,7 @@ metadata:
   name: smoke-test
   namespace: default
 spec:
+  acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
     tag: "5.26.0-enterprise"

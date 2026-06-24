@@ -117,6 +117,7 @@ apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata: {name: smoke, namespace: default}
 spec:
+  acceptLicenseAgreement: "eval"
   image: {repo: neo4j, tag: 5.26.0-enterprise}
   storage: {size: 1Gi}
   auth: {adminSecret: neo4j-admin-secret}
