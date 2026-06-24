@@ -11,7 +11,7 @@ name: Integration Tests
 #                        tolerated on 5.26.
 # Fast because it's the core subset and the two cells run in parallel. The full
 # matrix (backup/restore, sharding, multi-node, MinIO) lives in the Extended
-# Integration Tests workflow, which runs nightly + on release prep.
+# Integration Tests workflow, which is manual-dispatch only (run on release prep).
 on:
   pull_request:
     paths:

@@ -131,7 +131,7 @@ gates, not conventions:
 |---|---|---|
 | Unit suite + drift gate | Code behavior pinned by ~thousands of unit tests; CRDs, RBAC, Helm chart, and OLM bundle are regenerated and diffed — published manifests always match the code | Every PR, and again on the release tag |
 | Core integration suite | Reconcile contracts (cluster formation, standalone lifecycle, databases, backups) against real Neo4j on Kubernetes — on **both** supported lines (5.26 LTS *and* the pinned CalVer) | Every runtime-affecting PR |
-| Extended integration suite | The full matrix: scaling with drain, split-brain recovery, the complete backup/restore matrix (PVC, cloud, chains, hooks), sharding | Nightly, and on the exact commit being tagged |
+| Extended integration suite | The full matrix: scaling with drain, split-brain recovery, the complete backup/restore matrix (PVC, cloud, chains, hooks), sharding | On demand (manual dispatch), and on the exact commit being tagged |
 | Install-confidence gate | Five legs on a fresh cluster: Helm install in cluster **and** namespace-scoped RBAC modes (with a live smoke deployment), Helm upgrade **from the previous published release** including the mandatory CRD refresh, documented-order uninstall with live resources, and the kubectl server-side-apply path | Inside the release pipeline — `build-and-push` is blocked until it passes |
 | Signed supply chain | Multi-arch (`amd64`/`arm64`) images signed with Sigstore Cosign keyless signing; OLM bundle validated with operator-sdk | Every release |
 

@@ -31,11 +31,9 @@ Integration Tests workflow, or locally with a label-filtered Ginkgo run.
   CalVer (`2026.04-enterprise`), in parallel. Auto-triggered on PRs touching
   runtime paths.
 - **Extended**: `.github/workflows/integration-tests.yml` ("Extended
-  Integration Tests") runs nightly (`cron: '0 3 * * *'`), on
-  `workflow_dispatch`, and on a PR when the **`run-extended`** label is applied
-  (maintainer-only). Scope is **event-aware**: schedule/dispatch run the full
-  `core || extended` suite; a label-gated PR run does `extended`-only (core is
-  already covered by the core lane on that PR).
+  Integration Tests") runs on **`workflow_dispatch` only** — there is no nightly
+  schedule and no `run-extended` PR-label trigger (both were intentionally
+  removed). A dispatch runs the full `core || extended` suite.
 - Both lanes are **Kind-only** (cluster `neo4j-operator-test`), deploy the
   operator in prod mode to `neo4j-operator-system`, and run `--procs=1`
   (one shared Kind cluster + operator, so specs must run serially).
@@ -57,16 +55,7 @@ Integration Tests workflow, or locally with a label-filtered Ginkgo run.
      -f timeout-minutes=150
    ```
 
-2. **CI — or run extended against a PR by label** (maintainer-only; runs
-   `extended`-only on the PR event):
-   ```bash
-   gh pr edit <pr-number> --add-label run-extended
-   ```
-   A new push to that PR cancels its in-flight extended run (per-PR
-   `concurrency` + `cancel-in-progress`) — let a run finish before pushing again
-   if you're waiting on the result.
-
-3. **Local — bring up the Kind test cluster + operator once**, then run the
+2. **Local — bring up the Kind test cluster + operator once**, then run the
    label-filtered suite. `make test-integration` (no FOCUS) deploys the operator
    from `config/overlays/integration-test` and then runs Ginkgo:
    ```bash
@@ -84,14 +73,14 @@ Integration Tests workflow, or locally with a label-filtered Ginkgo run.
    # full tier: --label-filter='core || extended'
    ```
 
-4. **Local — run a single heavy spec by name** while iterating (focus a
+3. **Local — run a single heavy spec by name** while iterating (focus a
    description substring):
    ```bash
    make test-one TEST="Backup Integration"
    # e.g. "Property Sharding", "Multi-Node Cluster Formation", "Split-Brain"
    ```
 
-5. **Property-sharding gating (local).** The sharded specs self-skip unless the
+4. **Property-sharding gating (local).** The sharded specs self-skip unless the
    Neo4j tag is CalVer **≥ 2025.12** — `isPropertyShardingCompatible()` in
    `test/integration/property_sharding_test.go` returns false otherwise, so the
    `Label("extended")` sharding specs (`property_sharding_test.go`,
@@ -132,12 +121,10 @@ Integration Tests workflow, or locally with a label-filtered Ginkgo run.
 
 The integration suite was split into per-PR **core** (fast, two-track,
 auto-triggered) and on-demand **extended** (heavy backup/restore/sharding/
-multi-node, nightly + `run-extended` label + dispatch) so the dev cycle stays
-short while the expensive specs still run on a schedule and before a release —
-see the header comments in `.github/workflows/integration.yml` and
-`.github/workflows/integration-tests.yml`. This skill captures the exact,
-copy-pasteable way to invoke the extended tier in either place, including the
-two easy-to-miss gates: the event-aware `core || extended` vs `extended`-only
-label filter, and the CalVer-≥-2025.12 + `NEO4J_SHARDING_RELAX_MEMORY_MIN`
-conditions that decide whether the sharding specs actually run rather than
-silently skip.
+multi-node, **manual `workflow_dispatch` only**) so the dev cycle stays short
+while the expensive specs still run before a release — see the header comments in
+`.github/workflows/integration.yml` and `.github/workflows/integration-tests.yml`.
+This skill captures the exact, copy-pasteable way to invoke the extended tier on
+CI or locally, including the easy-to-miss CalVer-≥-2025.12 +
+`NEO4J_SHARDING_RELAX_MEMORY_MIN` conditions that decide whether the sharding
+specs actually run rather than silently skip.

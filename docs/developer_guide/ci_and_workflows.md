@@ -8,7 +8,7 @@ in-repo `.github/workflows/README.md` is a short pointer back here.
 |---|---|---|
 | [CI](#ci) | `ci.yml` | push/PR to `main`/`develop`, manual dispatch |
 | [Integration Tests](#integration-tests) | `integration.yml` | PR + push to `main` on runtime paths |
-| [Extended Integration Tests](#extended-integration-tests) | `integration-tests.yml` | nightly (full); `run-extended` label on a PR (extended-only); manual dispatch (full) |
+| [Extended Integration Tests](#extended-integration-tests) | `integration-tests.yml` | manual dispatch only (full) |
 | [Release](#release) | `release.yml` | push of a `vX.Y.Z` tag, manual dispatch |
 | [Pages — Docs](#pages-docs) | `pages-docs.yml` | push to `main`, push of a `v*` tag, manual dispatch |
 | [Pages — Helm Repo](#pages-helm-repo) | `pages-helm.yml` | push of a `v*` tag, manual dispatch |
@@ -72,12 +72,12 @@ The workflows cache the expensive, slowly-changing inputs so reruns stay fast:
 
 Two things to know:
 
-- **The integration checks are intentionally *not* required.** Both the
-  Integration Tests lane and the Extended Integration Tests workflow are
-  path-filtered, so they don't run on every PR (e.g. a docs-only change); a
-  required check that doesn't run on a given PR would leave it stuck at
-  "Expected — waiting for status." Reviewers gate on them manually for code
-  changes.
+- **The integration checks are intentionally *not* required.** The Integration
+  Tests lane is path-filtered (it doesn't run on, e.g., a docs-only change) and
+  the Extended Integration Tests workflow is manual-dispatch only — so neither
+  runs on every PR; a required check that doesn't run on a given PR would leave it
+  stuck at "Expected — waiting for status." Reviewers gate on them manually for
+  code changes.
 - **`enforce_admins` is currently off** so the maintainer can merge during the
   solo→team transition (GitHub forbids approving your own PR, and the sole
   CODEOWNER would otherwise be unable to merge anything). Turn it on once a
@@ -145,26 +145,21 @@ contracts they touched, on the versions users actually run.
 against a real Kind cluster, on the pinned CalVer track.** This is the
 release-readiness and deep-coverage run.
 
-**Extended does NOT auto-run on PRs** — by design, the default PR signal is the
-fast core lane, keeping the dev cycle short. Extended runs:
+**Extended never runs automatically** — by design, the default PR/push signal is
+the fast core lane, keeping the dev cycle short. The extended suite is
+**manual-dispatch only**; there is no nightly schedule and no PR-label trigger
+(both were intentionally removed). Run it on demand from the Actions tab
+("Run workflow") or with `gh workflow run integration-tests.yml --ref <branch>`,
+**full suite**, with inputs:
 
-- **Nightly** (`cron: 0 3 * * *`) on `main`, **full suite** — keeps `main`
-  continuously known-good on the CalVer track, so a regression is caught the day
-  it merges and a release tag ships a commit whose CalVer health is already
-  established (the tag is the release trigger — too late to be the gate itself).
-  This is also the only *scheduled* check, so it must exercise everything,
-  including `core`.
-- **Per-PR opt-in** — apply the **`run-extended`** label to a PR to run it against
-  that PR. On the PR event it runs **`extended`-only** (the core lane already
-  covers `core` on that PR, so re-running it would be redundant). Labels are
-  maintainer-only, which also keeps fork PRs from triggering it. Use this for
-  backup/restore/sharding/coordination changes that the `core` subset doesn't
-  exercise.
-- **Manual dispatch** (Actions tab), **full suite**, with inputs:
-  - `neo4j-version` — image tag (default the pinned CalVer; pass `5.26-enterprise`
-    to verify the LTS floor, or `2025.12-enterprise+` for the property-sharding
-    paths). Dispatch against your branch to run the full suite before merging.
-  - `timeout-minutes` — default `150` (CalVer is ~2× slower per spec).
+- `neo4j-version` — image tag (default the pinned CalVer; pass `5.26-enterprise`
+  to verify the LTS floor, or `2025.12-enterprise+` for the property-sharding
+  paths). Dispatch against your branch to run the full suite before merging.
+- `timeout-minutes` — default `150` (CalVer is ~2× slower per spec).
+
+Dispatch it explicitly for backup/restore/sharding/coordination changes that the
+`core` subset doesn't exercise, and on the release commit before tagging (see the
+release process below).
 
 It builds and deploys the operator, runs the selected scope, uploads
 logs/cluster-state artifacts, and tears the cluster down.
@@ -267,13 +262,14 @@ from the tag.
    matrix the release workflow runs as a blocking gate. Running it locally
    first means a failure costs you minutes, not a dead tag.
 2b. **Dispatch the extended suite on the final main** and wait for green:
-   `gh workflow run integration-tests.yml --ref main`. The extended lane runs
-   nightly, not per-PR — a PR that only core lanes validated can carry a stale
-   extended-lane expectation (or a real regression) that would otherwise
-   surface AFTER the release. Tag the exact commit the suite validated.
+   `gh workflow run integration-tests.yml --ref main`. The extended lane is
+   manual-only — it never runs on its own, so a PR that only core lanes validated
+   can carry a stale extended-lane expectation (or a real regression) that would
+   otherwise surface AFTER the release. This dispatch is the release gate for the
+   extended coverage; tag the exact commit the suite validated.
 3. If there are breaking changes or notable upgrade steps, add/extend the
-   `Upgrading from vX to vY` section in
-   [`migration_guide.md`](../user_guide/migration_guide.md).
+   `Upgrading between future releases` section in
+   [`migration_guide.md`](../user_guide/migration_guide.md) (the Upgrade Guide).
 4. Draft the **What's Changed** notes — `git log <last-tag>..HEAD --pretty=oneline`
    is a good starting point. (The release workflow renders only the
    boilerplate from `.github/release-notes-template.md`; the changelog is

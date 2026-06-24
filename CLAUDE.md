@@ -97,7 +97,7 @@ Ginkgo/Gomega, Kind only, **300-second timeouts** for all integration tests.
 
 **Test resources:** CPU 50m–500m, memory ≥ 1.5Gi (Enterprise minimum), storage 500Mi–1Gi. `getCIAppropriateResourceRequirements()` + `applyCIOptimizations()` shrink any cluster in CI.
 
-**Test tiers (Ginkgo labels):** every spec's top-level `Describe` carries `Label("core")` or `Label("extended")`. Core (fast reconcile contracts) runs per-PR on 5.26 + CalVer; extended (scaling, split-brain, backup/restore matrix, sharding, cloud) runs nightly + on `run-extended` label + manual dispatch. Run a tier locally: `ginkgo run --label-filter='core' ./test/integration/...`. **Label every new spec file** or it runs in neither lane. See `docs/developer_guide/testing.md` + `ci_and_workflows.md`.
+**Test tiers (Ginkgo labels):** every spec's top-level `Describe` carries `Label("core")` or `Label("extended")`. Core (fast reconcile contracts) runs per-PR on 5.26 + CalVer; extended (scaling, split-brain, backup/restore matrix, sharding, cloud) runs on manual dispatch only (no nightly schedule, no `run-extended` label — both removed). Run a tier locally: `ginkgo run --label-filter='core' ./test/integration/...`. **Label every new spec file** or it runs in neither lane. See `docs/developer_guide/testing.md` + `ci_and_workflows.md`.
 
 **Property sharding tests**: CI-runnable smoke test (`property_sharding_ci_smoke_test.go`) runs only when the integration-tests workflow is dispatched with `neo4j-version: 2025.12-enterprise+` — gated by `isPropertyShardingCompatible()`. Uses `NEO4J_SHARDING_RELAX_MEMORY_MIN=true` (set only via `config/overlays/integration-test/`) to bypass the 4Gi/1-core floor on a 2×1.5Gi/500m cluster. Richer sharded tests (F3/F4/F5, Phase 2a/2c, multi-property-shard) stay local-only — they need the production 4Gi/server floor.
 
@@ -126,7 +126,7 @@ AfterEach(func() {
 
 - **Unit tests + drift gate**: every push/PR (`ci.yml`). Required for merge.
 - **Integration Tests** (`integration.yml`): core subset on 5.26 + CalVer, auto-runs on runtime-path PRs. **A new push cancels the PR's in-flight run** (per-PR concurrency + `cancel-in-progress`) — let a run finish before pushing again if you're waiting on a green result.
-- **Extended Integration Tests** (`integration-tests.yml`): full suite on CalVer; nightly + `run-extended` label + manual dispatch.
+- **Extended Integration Tests** (`integration-tests.yml`): full suite on CalVer; **manual dispatch only** (no nightly schedule, no PR-label trigger).
 - **Release**: multi-arch builds on git tags.
 
 Integration tests deploy to `neo4j-operator-system` in prod mode (image `neo4j-operator:integration-test`). `waitForOperatorReady()` hardcodes this namespace.

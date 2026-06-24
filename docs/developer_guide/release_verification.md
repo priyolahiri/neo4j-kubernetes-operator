@@ -145,7 +145,7 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.
 
 - [Testing](testing.md) — the automated unit/integration suites and the
   core/extended label split.
-- [CI/CD & Workflows](ci_and_workflows.md) — what runs per-PR vs. nightly/extended.
+- [CI/CD & Workflows](ci_and_workflows.md) — what runs per-PR vs. the manual extended suite.
 - [Backup & Restore](../user_guide/guides/backup_restore.md),
   [Property Sharding](../user_guide/property_sharding.md) — the user docs this
   journey follows.

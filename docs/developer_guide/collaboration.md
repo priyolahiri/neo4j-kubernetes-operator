@@ -22,7 +22,7 @@ Every change lands through a PR. Keep PRs focused — one logical change per PR.
 2. Make the change. If you touched anything that drives generated files (Go API
    types, kubebuilder markers, RBAC markers, CRDs), run `make sync-all` and
    commit the regenerated output — CI's drift gate will fail otherwise (see
-   [Generated artifacts](#generated-artifacts)).
+   [CI/CD & Workflows → CI](ci_and_workflows.md#ci)).
 3. Run `make test-unit` and `make lint` locally before pushing.
 4. Open the PR; fill in the PR template (summary, type of change, testing,
    checklist).
@@ -54,7 +54,7 @@ These run automatically on every PR (see [CI/CD & Workflows](ci_and_workflows.md
 | **Generated Artifacts In Sync** (`check-drift`) | CRDs, RBAC, deepcopy, Helm CRDs, and the OLM bundle match the source. |
 | **Unit Tests** | `make test-unit` (race-enabled) passes. |
 | **Integration Tests** | The `core` subset on 5.26 + CalVer (parallel). Runs automatically when the PR touches runtime paths (`internal/**`, `api/**`, `cmd/**`, `test/integration/**`, `Makefile`, `go.{mod,sum}`). |
-| **Extended Integration Tests** | The full suite on CalVer. Runs nightly; **does not auto-run on PRs** — opt a PR in with the `run-extended` label (runs extended-only) or dispatch manually (see below). |
+| **Extended Integration Tests** | The full suite on CalVer. **Manual dispatch only** — it never auto-runs (no nightly schedule, no PR-label trigger); run it on demand (see below). |
 
 Lint (`golangci-lint`, `staticcheck`) runs via the pre-commit hooks locally; run
 `make lint` before pushing.
@@ -64,15 +64,14 @@ for the `core` vs `extended` label convention and how to run each tier locally.
 
 ### Running the Extended Integration Tests on demand
 
-The full (~90–150 min) CalVer suite doesn't run on every PR. Trigger it when your
-change could affect cluster coordination, backup/restore, or sharding:
+The full (~90–150 min) CalVer suite never runs on its own — it is
+**manual-dispatch only**. Trigger it when your change could affect cluster
+coordination, backup/restore, or sharding:
 
-- **On a PR:** apply the **`run-extended`** label. The workflow then runs the
-  `extended` specs against that PR (the `core` lane already covers `core`, so it
-  isn't re-run). Labels are maintainer-only.
-- **Manually:** run the *Extended Integration Tests* workflow from the Actions
-  tab **against your branch** (lets you pick the Neo4j version) — runs the full
-  suite.
+- Run the *Extended Integration Tests* workflow from the Actions tab
+  ("Run workflow") **against your branch** (lets you pick the Neo4j version) — or
+  with `gh workflow run integration-tests.yml --ref <branch>`. It runs the full
+  `core || extended` suite.
 
 The fast `core` lane (*Integration Tests*) runs automatically on any
 runtime-path PR — no opt-in needed.

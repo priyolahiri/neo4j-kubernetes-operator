@@ -187,7 +187,8 @@ Each spec's top-level `Describe` carries a Ginkgo `Label`:
   on both 5.26 and CalVer on every runtime-path PR.
 - **`extended`** — multi-node, split-brain, rolling upgrade, backup/restore,
   sharding, MinIO, MCP, ABAC. The *Extended Integration Tests* workflow runs the
-  full suite on CalVer nightly + on release prep.
+  full suite on CalVer **on demand only** (manual dispatch) — typically on
+  release prep.
 
 **When you add a spec file, label its `Describe`** (`Label("core")` or
 `Label("extended")`) — an unlabeled spec runs in neither CI lane. See
@@ -217,7 +218,7 @@ means "the Extended lane is the only lane that will *consider* it" — a runtime
 | Suite(s) | Verifies | Tier | Where it actually runs |
 |---|---|---|---|
 | `standalone_deployment`, `cluster_lifecycle`, `neo4j{user,role,rolebinding}`, `database_neo4j_verification`, `enterprise_features`, `plugin`, `tls_cluster_lifecycle` | Core reconcile contracts: Ready, formation, RBAC/DB CRUD, config rendering, plugin install, TLS | `core` | **Integration Tests** lane — both 5.26 + CalVer, every runtime-path PR |
-| `multi_node_cluster`, `splitbrain_detection`, `rolling_upgrade`, `backup_*`, `restore_*`, `standard_database_*_restore`, `database_seed_uri`, `mcp_integration` | Multi-node, coordination, backup/restore matrix, MCP | `extended` | **Extended** lane — CalVer, nightly + coordination-critical PRs + dispatch |
+| `multi_node_cluster`, `splitbrain_detection`, `rolling_upgrade`, `backup_*`, `restore_*`, `standard_database_*_restore`, `database_seed_uri`, `mcp_integration` | Multi-node, coordination, backup/restore matrix, MCP | `extended` | **Extended** lane — CalVer, **manual dispatch only** |
 | `neo4jauthrule` | ABAC / OIDC | `extended` | Extended lane, **CalVer only** (self-skips < 2026.03) |
 | `property_sharding_ci_smoke` | One minimal sharded DB (1 graph + 1 property shard) | `extended` | Extended lane on CalVer, **via `NEO4J_SHARDING_RELAX_MEMORY_MIN`** (the integration-test overlay relaxes the 4Gi floor to fit a runner) |
 | `property_sharding`, `property_sharding_backup`, `property_sharding_minio_restore`, `property_sharding_pvc_seed` | Full sharding: F3/F4/F5, multi-property-shard topology, sharded backup/restore | `extended` | **Local only** — `Skip` in CI (`isRunningInCI()`). They need the production **4Gi/server** floor a hosted runner can't provide |
@@ -236,9 +237,9 @@ NEO4J_VERSION=2026.04-enterprise \
 ```
 
 Because they don't run in CI, **a change to the sharding controllers/builders
-should be validated locally with these suites before merge** — the nightly
-Extended lane only covers the minimal CI smoke path, not F3/F4/F5 or sharded
-backup/restore.
+should be validated locally with these suites before merge** — the (manually
+dispatched) Extended lane only covers the minimal CI smoke path, not F3/F4/F5 or
+sharded backup/restore.
 
 ### Example ↔ test coverage
 
