@@ -18,22 +18,12 @@ on:
         required: false
         default: '150'
         type: string
-  # Nightly run on main against the pinned CalVer track. This is what keeps main
-  # continuously known-good on the version users actually deploy, so a regression
-  # is caught the day it merges (cheap, attributable) rather than at release time.
-  # It also means tagging a release ships a commit whose CalVer health is already
-  # established — the tag is too late to be the gate (it IS the release trigger).
-  schedule:
-    - cron: '0 3 * * *'  # 03:00 UTC daily
-  # Opt-in per-PR run: apply the `run-extended` label to a PR to run the EXTENDED
-  # specs (backup/restore/sharding/multi-node) against it. PRs do NOT auto-run
-  # Extended — by design, the default PR signal is the fast core lane (Integration
-  # Tests, 5.26 ∥ CalVer), keeping the dev cycle short. On the PR event we run
-  # `extended`-only (the core lane already covers core on that PR — see the
-  # label-filter in the run step), so there's no redundant core re-run. Labels are
-  # maintainer-only, which also keeps untrusted fork PRs from triggering it.
-  pull_request:
-    types: [labeled]
+  # Manual-dispatch ONLY. The former nightly `schedule` (03:00 UTC) and the
+  # `run-extended` PR-label trigger were intentionally removed — the extended
+  # suite (backup/restore/sharding/multi-node, multi-hour on CalVer) is run on
+  # demand only, via the Actions "Run workflow" button or `gh workflow run`.
+  # The fast core lane (Integration Tests, 5.26 ∥ CalVer) remains the automatic
+  # per-PR / per-push signal.
 
 # Cancel a PR's in-flight run when a new commit is pushed to the same PR — the
 # extended suite is multi-hour on CalVer, so leaving the superseded run going
@@ -51,11 +41,7 @@ env:
 jobs:
   extended-integration-tests:
     name: Extended Integration Tests
-    # Run on schedule/dispatch always; on a PR only when the `run-extended` label
-    # is the one just applied (other labels added to the PR are ignored).
-    if: >-
-      github.event_name != 'pull_request' ||
-      github.event.label.name == 'run-extended'
+    # Manual-dispatch only (see the `on:` block) — always runs when invoked.
     runs-on: ubuntu-latest
     # Fixed safety backstop, well above the Ginkgo --timeout below (the real gate,
     # driven by the timeout-minutes input; default 150 for the CalVer full suite).
