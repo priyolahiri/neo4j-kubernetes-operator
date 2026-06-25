@@ -79,106 +79,204 @@ func (r *Neo4jShardedDatabaseReconciler) resolveShardedSeed(ctx context.Context,
 		return nil, err
 	}
 
-	// Cloud path: existing CloudSeedProvider directory URI.
-	if storage.Type == "s3" || storage.Type == "gcs" || storage.Type == "azure" {
+	// Classify the referenced backup and locate THIS family's shard artifacts.
+	// A single-family ShardedDatabase-scoped backup records run.ShardArtifacts
+	// (the shard names are always present, from the CR spec); an all-databases
+	// backup records each captured family under run.ShardedFamilies. The two
+	// seed differently — see below.
+	run, err := r.findSeedRun(ctx, shardedDB, backupPath)
+	if err != nil {
+		return nil, err
+	}
+	isAllDB := len(run.ShardArtifacts) == 0 && len(run.ShardedFamilies) > 0
+	famArtifacts := run.ShardArtifacts
+	if isAllDB {
+		// Which source family to pull from the all-databases backup: the source
+		// name (spec.seedSourceDatabase) when restoring under a different target
+		// name, else the target's own name (restore-in-place).
+		sourceFamily := shardedDB.Spec.Name
+		if shardedDB.Spec.SeedSourceDatabase != "" {
+			sourceFamily = shardedDB.Spec.SeedSourceDatabase
+		}
+		if famArtifacts = findFamilyArtifacts(run, sourceFamily); famArtifacts == nil {
+			return nil, fmt.Errorf("seed: Neo4jBackup %q is an all-databases backup that did not capture sharded family %q (status.shardedFamilies has: %s) — set spec.seedSourceDatabase to one of those, or back up the family with a shardedDatabase-scoped Neo4jBackup", shardedDB.Spec.SeedBackupRef, sourceFamily, familyNames(run.ShardedFamilies))
+		}
+	}
+
+	credsSecretName := ""
+	if storage.Cloud != nil {
+		credsSecretName = storage.Cloud.CredentialsSecretRef
+	}
+
+	switch storage.Type {
+	case "s3", "gcs", "azure":
+		if isAllDB {
+			// The all-databases backup directory holds EVERY database's files,
+			// so a directory-scan seedURI can't isolate this family (and can't
+			// remap a renamed target). Build explicit per-shard cloud URIs.
+			perShard, err := buildPerShardCloudURIs(storage, backupPath, shardedDB.Spec.Name, famArtifacts)
+			if err != nil {
+				return nil, err
+			}
+			return &ResolvedShardedSeed{PerShardURIs: perShard, CredsSecretName: credsSecretName, ProxyAvailable: true}, nil
+		}
+		// Single-family: the directory holds only this family's shards →
+		// CloudSeedProvider directory URI.
 		uri, err := buildSeedURIFromBackupStorage(storage, backupPath)
 		if err != nil {
 			return nil, err
 		}
-		credsSecretName := ""
-		if storage.Cloud != nil {
-			credsSecretName = storage.Cloud.CredentialsSecretRef
-		}
 		return &ResolvedShardedSeed{URI: uri, CredsSecretName: credsSecretName}, nil
+
+	case "pvc":
+		// PVC always uses per-shard proxy URLs (single-family or all-DB family).
+		return r.resolvePVCShardedSeed(ctx, shardedDB, storage, backupPath, famArtifacts)
+
+	default:
+		return nil, fmt.Errorf("seedBackupRef does not support storage type %q", storage.Type)
+	}
+}
+
+// findSeedRun fetches the referenced Neo4jBackup and returns the Succeeded
+// BackupRun matching the resolved BackupsPath (the run whose artifacts we seed).
+func (r *Neo4jShardedDatabaseReconciler) findSeedRun(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, backupPath string) (*neo4jv1beta1.BackupRun, error) {
+	backup := &neo4jv1beta1.Neo4jBackup{}
+	if err := r.Get(ctx, types.NamespacedName{Name: shardedDB.Spec.SeedBackupRef, Namespace: shardedDB.Namespace}, backup); err != nil {
+		return nil, fmt.Errorf("seed: re-fetch backup %q: %w", shardedDB.Spec.SeedBackupRef, err)
+	}
+	for i := range backup.Status.History {
+		if backup.Status.History[i].BackupsPath == backupPath && backup.Status.History[i].Status == "Succeeded" {
+			return &backup.Status.History[i], nil
+		}
+	}
+	return nil, fmt.Errorf("seed: no Succeeded run with BackupsPath %q on Neo4jBackup %q", backupPath, shardedDB.Spec.SeedBackupRef)
+}
+
+// findFamilyArtifacts returns the per-shard artifacts for the named logical
+// family from an all-databases run's ShardedFamilies, or nil if absent.
+func findFamilyArtifacts(run *neo4jv1beta1.BackupRun, family string) []neo4jv1beta1.ShardArtifact {
+	for i := range run.ShardedFamilies {
+		if run.ShardedFamilies[i].Family == family {
+			return run.ShardedFamilies[i].ShardArtifacts
+		}
+	}
+	return nil
+}
+
+// familyNames lists the family names catalogued in an all-databases run, for
+// error messages.
+func familyNames(fams []neo4jv1beta1.ShardedFamilyArtifacts) string {
+	names := make([]string, 0, len(fams))
+	for i := range fams {
+		names = append(names, fams[i].Family)
+	}
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ", ")
+}
+
+// buildPerShardCloudURIs builds an explicit per-shard cloud seedURI map for an
+// all-databases backup: each TARGET shard (the restoring family's shard name)
+// maps to the exact source `.backup` file's cloud URI. This isolates one family
+// from the shared all-databases directory and remaps a renamed target (e.g.
+// restoring source "products" into target "products-restored"). Mirrors the PVC
+// proxy path's key transformation, with cloud URIs instead of HTTP URLs.
+func buildPerShardCloudURIs(storage neo4jv1beta1.StorageLocation, backupPath, targetFamily string, artifacts []neo4jv1beta1.ShardArtifact) (map[string]string, error) {
+	missing := []string{}
+	for _, a := range artifacts {
+		if a.Filename == "" {
+			missing = append(missing, a.ShardName)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("cloud per-shard seed: shards %v have empty Filename in backup status.history — re-run the backup so per-shard filenames are captured", missing)
 	}
 
-	// PVC path: build per-shard URLs against the operator-managed proxy.
-	if storage.Type == "pvc" {
-		return r.resolvePVCShardedSeed(ctx, shardedDB, storage, backupPath)
+	var scheme string
+	switch storage.Type {
+	case "s3":
+		scheme = "s3"
+	case "gcs":
+		scheme = "gs"
+	case "azure":
+		scheme = "azb"
+	default:
+		return nil, fmt.Errorf("buildPerShardCloudURIs: unsupported storage type %q", storage.Type)
 	}
 
-	return nil, fmt.Errorf("seedBackupRef does not support storage type %q", storage.Type)
+	dir := strings.TrimRight(storage.Path, "/")
+	if backupPath != "" {
+		if dir != "" {
+			dir += "/"
+		}
+		dir += strings.Trim(backupPath, "/")
+	}
+
+	perShard := make(map[string]string, len(artifacts))
+	for _, a := range artifacts {
+		suffix := shardSuffix(a.ShardName)
+		if suffix == "" {
+			return nil, fmt.Errorf("cloud per-shard seed: cannot parse shard suffix from %q — expected `<name>-(g|p)NNN`", a.ShardName)
+		}
+		targetShard := targetFamily + suffix
+		filePath := strings.TrimLeft(strings.TrimRight(dir, "/")+"/"+a.Filename, "/")
+		perShard[targetShard] = fmt.Sprintf("%s://%s/%s", scheme, storage.Bucket, filePath)
+	}
+	return perShard, nil
 }
 
 // resolvePVCShardedSeed handles the PVC-backed branch of resolveShardedSeed.
-// Looks up the backup CR's recorded ShardArtifacts (populated by F3 when
-// the backup ran) to construct per-shard URLs against the seed proxy.
-//
-// Returns an error if the backup didn't record per-shard filenames —
-// the F3 Pod-log parsing must have captured them. If not, the user
-// must re-run the backup with the F3-capable operator before they can
-// restore from PVC.
+// Builds per-shard URLs against the operator-managed seed proxy from the
+// already-resolved per-shard artifacts — a single-family backup's
+// run.ShardArtifacts, or one family's artifacts pulled from an all-databases
+// backup's run.ShardedFamilies (resolveShardedSeed picks which and passes them
+// in). Requires per-shard filenames; if the backup didn't capture them, returns
+// an error directing the user to re-run the backup.
 func (r *Neo4jShardedDatabaseReconciler) resolvePVCShardedSeed(
 	ctx context.Context,
 	shardedDB *neo4jv1beta1.Neo4jShardedDatabase,
 	storage neo4jv1beta1.StorageLocation,
 	backupPath string,
+	artifacts []neo4jv1beta1.ShardArtifact,
 ) (*ResolvedShardedSeed, error) {
 	if storage.PVC == nil || storage.PVC.Name == "" {
 		return nil, fmt.Errorf("PVC-backed seedBackupRef requires the backup's storage.pvc.name to be set")
 	}
-
-	// Fetch the backup CR again to read its ShardArtifacts (the shared
-	// ResolveBackupRef helper doesn't expose them — it returns only
-	// StorageLocation + BackupsPath, which the restore controller and
-	// the cloud sharded-seed path don't need).
-	backup := &neo4jv1beta1.Neo4jBackup{}
-	if err := r.Get(ctx, types.NamespacedName{Name: shardedDB.Spec.SeedBackupRef, Namespace: shardedDB.Namespace}, backup); err != nil {
-		return nil, fmt.Errorf("PVC seed: re-fetch backup %q: %w", shardedDB.Spec.SeedBackupRef, err)
+	if len(artifacts) == 0 {
+		return nil, fmt.Errorf("PVC seed: no shard artifacts resolved for %q — re-run the backup with a recent operator version (per-shard filename capture required)", shardedDB.Spec.SeedBackupRef)
 	}
 
-	// Find the BackupRun that matches the BackupsPath we just resolved —
-	// that's the Succeeded run whose artifacts we want to project.
-	var run *neo4jv1beta1.BackupRun
-	for i := range backup.Status.History {
-		if backup.Status.History[i].BackupsPath == backupPath && backup.Status.History[i].Status == "Succeeded" {
-			run = &backup.Status.History[i]
-			break
-		}
-	}
-	if run == nil {
-		return nil, fmt.Errorf("PVC seed: no Succeeded run with BackupsPath %q on Neo4jBackup %q (internal: ResolveBackupRef returned a path that's now missing)", backupPath, shardedDB.Spec.SeedBackupRef)
-	}
-	if len(run.ShardArtifacts) == 0 {
-		return nil, fmt.Errorf("PVC seed: Neo4jBackup %q run %q has no shardArtifacts metadata recorded — re-run the backup with a recent operator version (F3 wiring required to capture per-shard filenames)", backup.Name, run.RunID)
-	}
-
-	// Validate that filenames are captured (ShardName-only entries from
-	// the F3-deferred era won't have per-shard filenames the proxy can
-	// serve).
+	// Validate that filenames are captured (ShardName-only entries won't have
+	// the per-shard filenames the proxy serves).
 	missingFilenames := []string{}
-	for _, a := range run.ShardArtifacts {
+	for _, a := range artifacts {
 		if a.Filename == "" {
 			missingFilenames = append(missingFilenames, a.ShardName)
 		}
 	}
 	if len(missingFilenames) > 0 {
-		return nil, fmt.Errorf("PVC seed: shards %v have empty Filename in backup status.history — F3 Pod-log parsing didn't capture them. Re-run the backup, or use a cloud-backed seedBackupRef instead", missingFilenames)
+		return nil, fmt.Errorf("PVC seed: shards %v have empty Filename in backup status.history — Pod-log parsing didn't capture them. Re-run the backup, or use a cloud-backed seedBackupRef instead", missingFilenames)
 	}
 
-	// Ensure the proxy exists + is Ready. If not Ready yet, route to
-	// Pending so the next reconcile picks it up.
+	// Ensure the proxy exists + is Ready. If not Ready yet, route to Pending so
+	// the next reconcile picks it up.
 	available, err := r.ensurePVCSeedProxy(ctx, shardedDB, storage.PVC.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build per-shard URL map even if proxy isn't Ready yet — caller can
-	// inspect ProxyAvailable to decide whether to proceed or wait.
-	//
-	// Key transformation: Neo4j matches `seedURIs` entries against the
-	// TARGET database's shard names, not the SOURCE backup's. Strip the
-	// source DB name prefix from each shard (e.g. "products-g000") and
-	// rebuild against the target (e.g. "products-restored-g000"). Shard
-	// suffix (`-g000` / `-pNNN`) carries the per-shard role; everything
-	// before is just the DB name.
+	// Key transformation: Neo4j matches `seedURIs` entries against the TARGET
+	// database's shard names, not the SOURCE backup's. Strip the source DB name
+	// prefix from each shard (e.g. "products-g000") and rebuild against the
+	// target (e.g. "products-restored-g000"). Shard suffix (`-g000` / `-pNNN`)
+	// carries the per-shard role; everything before is just the DB name.
 	//
 	// Assumes source + target sharded DBs share the same shard count and
-	// graph/property layout. The validator enforces matching property
-	// shard count between the spec and the source backup's ShardArtifacts;
-	// resharding-on-restore would need a different code path.
-	perShard := make(map[string]string, len(run.ShardArtifacts))
-	for _, a := range run.ShardArtifacts {
+	// graph/property layout; resharding-on-restore would need a different code
+	// path.
+	perShard := make(map[string]string, len(artifacts))
+	for _, a := range artifacts {
 		suffix := shardSuffix(a.ShardName)
 		if suffix == "" {
 			return nil, fmt.Errorf("PVC seed: cannot parse shard suffix from %q — expected `<name>-(g|p)NNN`", a.ShardName)

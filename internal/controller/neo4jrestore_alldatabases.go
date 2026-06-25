@@ -70,15 +70,23 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 		return ctrl.Result{}, fmt.Errorf("%s", msg)
 	}
 
-	// Surface (once) any property-sharded databases the source backup did not
-	// cover — an all-databases restore recreates standard databases only.
+	// Surface (once) any property-sharded databases this restore's per-database
+	// loop does not recreate — sharded DBs need the SET GRAPH/PROPERTY SHARDS
+	// CREATE clauses only Neo4jShardedDatabase emits. They are NOT lost: an
+	// all-databases backup taken by a recent operator catalogues each family's
+	// shard artifacts (status.shardedFamilies), so each is restorable FROM THIS
+	// BACKUP by pointing its Neo4jShardedDatabase CR's seedBackupRef at it.
 	// Emitted on the first pass (before any per-database result is recorded) so
 	// it doesn't repeat each reconcile.
 	if len(snap.ShardedDatabasesExcluded) > 0 && len(restore.Status.DatabaseResults) == 0 {
+		seedHint := "its Neo4jShardedDatabase CR (spec.seedBackupRef)"
+		if snap.BackupRef != "" {
+			seedHint = fmt.Sprintf("its Neo4jShardedDatabase CR with spec.seedBackupRef: %s", snap.BackupRef)
+		}
 		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreShardedNotCovered,
-			fmt.Sprintf("all-databases restore does not recreate property-sharded database(s) %s — restore each via its Neo4jShardedDatabase CR (spec.seedBackupRef)", strings.Join(snap.ShardedDatabasesExcluded, ", ")))
-		logger.Info("all-databases restore: sharded databases not covered; restore them via their Neo4jShardedDatabase CRs",
-			"shardedDatabases", snap.ShardedDatabasesExcluded)
+			fmt.Sprintf("all-databases restore does not recreate property-sharded database(s) %s in its per-database loop — restore each via %s", strings.Join(snap.ShardedDatabasesExcluded, ", "), seedHint))
+		logger.Info("all-databases restore: sharded databases restore via their Neo4jShardedDatabase CRs (seedBackupRef → this backup)",
+			"shardedDatabases", snap.ShardedDatabasesExcluded, "backupRef", snap.BackupRef)
 	}
 
 	// Bounded scope for this release.
