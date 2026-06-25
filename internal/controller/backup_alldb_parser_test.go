@@ -84,3 +84,45 @@ Backup of database 'products-p001' completed, written to /backups/products-p001-
 		t.Fatalf("expected no excluded families for standard-only log, got %v", g)
 	}
 }
+
+// TestGroupShardedFamiliesFromLog verifies an all-databases backup log is
+// grouped into per-family shard-artifact sets (BackupRun.ShardedFamilies), so
+// each family is restorable from the single backup. Families and shards are
+// returned sorted, with per-shard filenames captured.
+func TestGroupShardedFamiliesFromLog(t *testing.T) {
+	log := `
+Backup of database 'neo4j' completed, written to /backups/neo4j-2026-06-08T01-18-06.backup
+Backup of database 'products-g000' completed, written to /backups/products-g000-2026-06-08T01-20-00.backup
+Backup of database 'products-p000' completed, written to /backups/products-p000-2026-06-08T01-20-30.backup
+Backup of database 'products-p001' completed, written to /backups/products-p001-2026-06-08T01-20-45.backup
+Backup of database 'orders-g000' completed, written to /backups/orders-g000-2026-06-08T01-21-00.backup
+Backup of database 'orders-p000' completed, written to /backups/orders-p000-2026-06-08T01-21-30.backup
+`
+	got := groupShardedFamiliesFromLog(log)
+	if len(got) != 2 {
+		t.Fatalf("got %d families %+v, want 2", len(got), got)
+	}
+	// Sorted: orders before products.
+	if got[0].Family != "orders" || got[1].Family != "products" {
+		t.Fatalf("families not sorted: got %q,%q want orders,products", got[0].Family, got[1].Family)
+	}
+	if len(got[0].ShardArtifacts) != 2 {
+		t.Errorf("orders: got %d shards, want 2", len(got[0].ShardArtifacts))
+	}
+	if len(got[1].ShardArtifacts) != 3 {
+		t.Errorf("products: got %d shards, want 3", len(got[1].ShardArtifacts))
+	}
+	// Shards sorted within family, filenames captured.
+	if got[1].ShardArtifacts[0].ShardName != "products-g000" ||
+		got[1].ShardArtifacts[0].Filename != "products-g000-2026-06-08T01-20-00.backup" {
+		t.Errorf("products first shard wrong: %+v", got[1].ShardArtifacts[0])
+	}
+
+	// Standard-only / empty → nil.
+	if g := groupShardedFamiliesFromLog("Backup of database 'neo4j' completed, written to /backups/neo4j-2026-06-08T01-18-06.backup"); len(g) != 0 {
+		t.Fatalf("expected no families for standard-only log, got %v", g)
+	}
+	if g := groupShardedFamiliesFromLog(""); len(g) != 0 {
+		t.Fatalf("expected no families for empty log, got %v", g)
+	}
+}

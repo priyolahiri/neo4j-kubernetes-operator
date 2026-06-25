@@ -2093,8 +2093,12 @@ func (r *Neo4jBackupReconciler) recordShardedExclusion(backup *neo4jv1beta1.Neo4
 		return
 	}
 	run.ShardedDatabasesExcluded = families
+	// Catalogue each family's per-shard artifacts so the otherwise-excluded
+	// families ARE restorable from this single all-databases backup via their
+	// Neo4jShardedDatabase CR (spec.seedBackupRef).
+	run.ShardedFamilies = groupShardedFamiliesFromLog(jobLog)
 	r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupShardedExcluded,
-		fmt.Sprintf("all-databases backup does not capture a restorable backup for property-sharded database(s) %s — back each up with a shardedDatabase-scoped Neo4jBackup and restore via its Neo4jShardedDatabase CR (spec.seedBackupRef)", strings.Join(families, ", ")))
+		fmt.Sprintf("all-databases backup captured property-sharded database(s) %s as per-shard artifacts (status.shardedFamilies); they are NOT recreated by an all-databases restore — restore each from THIS backup via its Neo4jShardedDatabase CR with spec.seedBackupRef: %s", strings.Join(families, ", "), backup.Name))
 }
 
 func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, job *batchv1.Job) {
@@ -2137,6 +2141,11 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 	}
 	if isAllDatabases && logContent != "" {
 		run.DatabaseArtifacts = parseAllDatabaseArtifactsFromLog(logContent)
+		// Catalogue any property-sharded families captured by the "*" glob so
+		// one all-databases backup is a complete DR source (also emits the
+		// Warning + sets ShardedDatabasesExcluded). The scheduled-history path
+		// calls this too; the one-shot path previously did not.
+		r.recordShardedExclusion(backup, &run, logContent)
 	}
 	if logContent != "" {
 		if validation := parseValidationFromLog(logContent); validation != nil {

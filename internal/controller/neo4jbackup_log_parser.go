@@ -226,6 +226,49 @@ func parseShardArtifactsFromLog(logContent string) map[string]neo4jv1beta1.Shard
 	return out
 }
 
+// groupShardedFamiliesFromLog scans an all-databases backup log and groups the
+// per-shard `.backup` artifacts by their logical sharded family (e.g.
+// "products" for shards "products-g000"/"products-p000"), so each family the
+// run captured is recorded restorably in BackupRun.ShardedFamilies. This is
+// what makes one all-databases backup a complete DR source: the families stay
+// out of the all-databases restore loop (they need the SET GRAPH/PROPERTY SHARDS
+// CREATE clauses) but become seedable from this backup via their
+// Neo4jShardedDatabase CR. Deterministic: families and their shards are sorted
+// by name. Returns nil when the log shows no shard-shaped databases.
+func groupShardedFamiliesFromLog(logContent string) []neo4jv1beta1.ShardedFamilyArtifacts {
+	shards := parseShardArtifactsFromLog(logContent)
+	if len(shards) == 0 {
+		return nil
+	}
+	byFamily := map[string][]neo4jv1beta1.ShardArtifact{}
+	for shardName, art := range shards {
+		suffix := shardSuffixRegex.FindString(shardName)
+		if suffix == "" {
+			continue
+		}
+		family := strings.TrimSuffix(shardName, suffix)
+		if family == "" {
+			continue
+		}
+		byFamily[family] = append(byFamily[family], art)
+	}
+	if len(byFamily) == 0 {
+		return nil
+	}
+	families := make([]string, 0, len(byFamily))
+	for f := range byFamily {
+		families = append(families, f)
+	}
+	sort.Strings(families)
+	out := make([]neo4jv1beta1.ShardedFamilyArtifacts, 0, len(families))
+	for _, f := range families {
+		fam := byFamily[f]
+		sort.Slice(fam, func(i, j int) bool { return fam[i].ShardName < fam[j].ShardName })
+		out = append(out, neo4jv1beta1.ShardedFamilyArtifacts{Family: f, ShardArtifacts: fam})
+	}
+	return out
+}
+
 // fetchBackupPodLog locates the (single) backup Pod owned by the given
 // Job, streams its `neo4j` container's stdout via the typed clientset,
 // and returns the full log as a string.
