@@ -462,11 +462,15 @@ databases (`products-g000`, `products-p000`, …). (The deprecated `spec.target.
 ShardedDatabase` form still works; `instanceRef` + `shardedDatabase` is preferred and
 survives into v1.14.)
 
-> ⚠️ An **all-databases** backup (`spec.allDatabases`) does **not** produce a restorable
-> backup of a sharded database — it lists each excluded family in
-> `status.history[].shardedDatabasesExcluded` and warns. Back each sharded database up
-> with its own `shardedDatabase`-scoped `Neo4jBackup`, and restore it via
-> `Neo4jShardedDatabase.spec.seedBackupRef` — not `Neo4jRestore`.
+> ℹ️ An **all-databases** backup (`spec.allDatabases`) now **catalogues** each sharded
+> family's per-shard artifacts in `status.history[].shardedFamilies` (family names also
+> in `shardedDatabasesExcluded`, with a warning event) — so one all-databases backup
+> *is* a restorable source for sharded databases too. The all-databases *restore loop*
+> still recreates standard databases only; recover each sharded family by re-applying
+> its `Neo4jShardedDatabase` with `spec.seedBackupRef` pointing at that same backup
+> (add `spec.seedSourceDatabase` to restore under a different name) — not `Neo4jRestore`.
+> A dedicated `shardedDatabase`-scoped `Neo4jBackup` per family is still available if you
+> prefer per-family lifecycles.
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1

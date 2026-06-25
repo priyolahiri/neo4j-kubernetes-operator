@@ -71,7 +71,7 @@ spec:
     mydb-p000: "s3://my-backups/mydb-p000.backup"
   ```
 
-- **`seedBackupRef`** — names a `Neo4jBackup` CR (same namespace) whose most-recent Succeeded run is resolved into a concrete seed at reconcile time. Supports both **cloud** backups (resolved to `seedURI`) and **PVC**-backed backups (resolved to per-shard URLs served through an in-cluster HTTP proxy — see [PVC-backed seeds](#pvc-backed-seeds)). If the referenced backup has no Succeeded run yet, the sharded database stays in `Pending` and the reconciler requeues (it does not fail).
+- **`seedBackupRef`** — names a `Neo4jBackup` CR (same namespace) whose most-recent Succeeded run is resolved into a concrete seed at reconcile time. The backup may be a `shardedDatabase`-scoped backup (the whole family) **or an all-databases backup** — the operator picks this family out of the all-databases backup's catalogued `shardedFamilies`. Storage handling: **cloud** single-family backups resolve to a directory `seedURI`; **cloud all-databases** backups resolve to explicit per-shard cloud URIs (a directory scan can't isolate one family from the shared all-databases directory); **PVC** backups resolve to per-shard URLs served through an in-cluster HTTP proxy (see [PVC-backed seeds](#pvc-backed-seeds)). When restoring an all-databases backup's family under a **different** target name, set `spec.seedSourceDatabase` to the source family name. If the referenced backup has no Succeeded run yet, the sharded database stays in `Pending` and the reconciler requeues (it does not fail).
 
 `seedBackupRef` is also mutually exclusive with `seedURI` / `seedURIs`.
 
