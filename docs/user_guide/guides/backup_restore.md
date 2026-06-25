@@ -207,7 +207,7 @@ Set **`instanceRef`** to the deployment (a `Neo4jEnterpriseCluster` **or** `Neo4
 
 | Scope field | Backs up |
 |---|---|
-| `allDatabases: true` | every **standard** database on the instance (`neo4j-admin database backup "*"` — one `.backup` artifact per database; `system` excluded). **Does not recreate sharded databases on restore — see the note below.** |
+| `allDatabases: true` | every **standard** database (`neo4j-admin database backup "*"` — one `.backup` artifact per database; `system` excluded) **and catalogues each property-sharded family** (`status.shardedFamilies`). The all-databases *restore loop* recreates standard DBs only; restore each sharded family from the **same** backup via its `Neo4jShardedDatabase` CR — **see the note below.** |
 | `database: <name>` | a single standard database (e.g. `neo4j`) |
 | `shardedDatabase: <cr-name>` | a single property-sharded database, named by its `Neo4jShardedDatabase` CR (the operator resolves the logical DB name from that CR's `spec.name` — the two often differ). All shards (graph + property) are captured in one `neo4j-admin` run. |
 
