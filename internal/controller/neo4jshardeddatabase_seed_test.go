@@ -200,7 +200,7 @@ func TestResolveShardedSeed_Matrix(t *testing.T) {
 						{RunID: "uid-1", Status: "Succeeded", BackupsPath: "products-backup", CompletionTime: &completionTime},
 					}),
 			},
-			wantErrSubstr: "no shardArtifacts metadata",
+			wantErrSubstr: "no shard artifacts resolved",
 		},
 		{
 			name:          "PVC backup with shardArtifacts but empty Filenames → permanent error",
@@ -259,4 +259,109 @@ func TestResolveShardedSeed_Matrix(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestResolveShardedSeed_AllDatabasesFamily exercises seeding a single sharded
+// family from an ALL-DATABASES backup (run.ShardedFamilies). Cloud all-DB seeds
+// via explicit per-shard cloud URIs (the directory holds every DB, so a
+// directory-scan URI can't isolate one family); the family is selected by
+// spec.seedSourceDatabase (or the target name when restoring in place), with
+// shard names remapped to the target.
+func TestResolveShardedSeed_AllDatabasesFamily(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("clientgoscheme: %v", err)
+	}
+	if err := neo4jv1beta1.AddToScheme(scheme); err != nil {
+		t.Fatalf("neo4j scheme: %v", err)
+	}
+	completionTime := metav1.Now()
+
+	// An all-databases backup: ShardArtifacts empty, ShardedFamilies populated
+	// for two families. Each family's shards carry captured filenames.
+	allDBBackup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "all-backup", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jBackupSpec{
+			Target:  neo4jv1beta1.BackupTarget{Kind: neo4jv1beta1.BackupTargetKindCluster, ClusterRef: "ec"},
+			Storage: neo4jv1beta1.StorageLocation{Type: "s3", Bucket: "b", Path: "backups"},
+		},
+		Status: neo4jv1beta1.Neo4jBackupStatus{History: []neo4jv1beta1.BackupRun{{
+			RunID: "uid-1", Status: "Succeeded", BackupsPath: "all-backup", CompletionTime: &completionTime,
+			ShardedFamilies: []neo4jv1beta1.ShardedFamilyArtifacts{
+				{Family: "orders", ShardArtifacts: []neo4jv1beta1.ShardArtifact{
+					{ShardName: "orders-g000", Filename: "orders-g000-2026-06-08T01-21-00.backup"},
+				}},
+				{Family: "products", ShardArtifacts: []neo4jv1beta1.ShardArtifact{
+					{ShardName: "products-g000", Filename: "products-g000-2026-06-08T01-20-00.backup"},
+					{ShardName: "products-p000", Filename: "products-p000-2026-06-08T01-20-30.backup"},
+				}},
+			},
+		}}},
+	}
+
+	t.Run("cloud all-DB restore in place → per-shard cloud URIs", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(allDBBackup).Build()
+		r := &Neo4jShardedDatabaseReconciler{Client: c}
+		sd := &neo4jv1beta1.Neo4jShardedDatabase{
+			ObjectMeta: metav1.ObjectMeta{Name: "products", Namespace: "default"},
+			Spec:       neo4jv1beta1.Neo4jShardedDatabaseSpec{Name: "products", SeedBackupRef: "all-backup"},
+		}
+		resolved, err := r.resolveShardedSeed(context.Background(), sd)
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		if resolved.URI != "" {
+			t.Errorf("expected per-shard URIs (no single directory URI), got URI=%q", resolved.URI)
+		}
+		if !resolved.ProxyAvailable {
+			t.Errorf("cloud seed needs no proxy; ProxyAvailable should be true")
+		}
+		want := map[string]string{
+			"products-g000": "s3://b/backups/all-backup/products-g000-2026-06-08T01-20-00.backup",
+			"products-p000": "s3://b/backups/all-backup/products-p000-2026-06-08T01-20-30.backup",
+		}
+		if len(resolved.PerShardURIs) != len(want) {
+			t.Fatalf("got %d per-shard URIs %+v, want %d", len(resolved.PerShardURIs), resolved.PerShardURIs, len(want))
+		}
+		for k, v := range want {
+			if resolved.PerShardURIs[k] != v {
+				t.Errorf("shard %q: got %q, want %q", k, resolved.PerShardURIs[k], v)
+			}
+		}
+	})
+
+	t.Run("cloud all-DB renamed target via seedSourceDatabase → shards remapped", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(allDBBackup).Build()
+		r := &Neo4jShardedDatabaseReconciler{Client: c}
+		sd := &neo4jv1beta1.Neo4jShardedDatabase{
+			ObjectMeta: metav1.ObjectMeta{Name: "products-restored", Namespace: "default"},
+			Spec: neo4jv1beta1.Neo4jShardedDatabaseSpec{
+				Name: "products-restored", SeedBackupRef: "all-backup", SeedSourceDatabase: "products",
+			},
+		}
+		resolved, err := r.resolveShardedSeed(context.Background(), sd)
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		// Target shard keys carry the NEW name; URIs point at the SOURCE files.
+		if got := resolved.PerShardURIs["products-restored-g000"]; got != "s3://b/backups/all-backup/products-g000-2026-06-08T01-20-00.backup" {
+			t.Errorf("renamed graph shard: got %q", got)
+		}
+		if _, ok := resolved.PerShardURIs["products-restored-p000"]; !ok {
+			t.Errorf("expected remapped property shard products-restored-p000, got %+v", resolved.PerShardURIs)
+		}
+	})
+
+	t.Run("family not present → actionable error", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(allDBBackup).Build()
+		r := &Neo4jShardedDatabaseReconciler{Client: c}
+		sd := &neo4jv1beta1.Neo4jShardedDatabase{
+			ObjectMeta: metav1.ObjectMeta{Name: "inventory", Namespace: "default"},
+			Spec:       neo4jv1beta1.Neo4jShardedDatabaseSpec{Name: "inventory", SeedBackupRef: "all-backup"},
+		}
+		_, err := r.resolveShardedSeed(context.Background(), sd)
+		if err == nil || !strings.Contains(err.Error(), "did not capture sharded family") {
+			t.Fatalf("err=%v, want 'did not capture sharded family'", err)
+		}
+	})
 }

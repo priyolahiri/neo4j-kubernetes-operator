@@ -280,7 +280,7 @@ Storage backend configuration (shared with `Neo4jBackup`).
 | `backupPath` | `string` | The per-CR shared chain directory of the resolved most-recent Succeeded run |
 | `artifactFilename` | `string` | Exact `.backup` filename of the resolved run — required by the cluster Cypher paths (cloud seedURI + PVC proxy), which seed from a single file |
 | `databaseArtifacts` | `[]DatabaseArtifact` | **(v1.13)** Per-database `.backup` map pinned from the resolved backup's latest Succeeded run, driving an all-databases restore (`spec.allDatabases`). Empty for single-database restores. |
-| `shardedDatabasesExcluded` | `[]string` | Logical property-sharded databases the source backup did not cover (carried forward from `Neo4jBackup` `status.history[].shardedDatabasesExcluded`). An all-databases restore surfaces these (`RestoreShardedDatabasesNotCovered` warning) since it cannot recreate them — restore each via its `Neo4jShardedDatabase` CR. Empty otherwise. |
+| `shardedDatabasesExcluded` | `[]string` | Logical property-sharded databases the all-databases **restore loop** does not recreate (carried forward from `Neo4jBackup` `status.history[].shardedDatabasesExcluded`). The restore surfaces these (`RestoreShardedDatabasesNotCovered` warning) — but they **are** restorable from the same backup: re-apply each one's `Neo4jShardedDatabase` CR with `spec.seedBackupRef` pointing at this backup (its per-shard files are in the backup's `shardedFamilies`). Empty otherwise. |
 | `resolvedAt` | `*metav1.Time` | When the `backupRef` was first dereferenced |
 
 ### RestoreStats

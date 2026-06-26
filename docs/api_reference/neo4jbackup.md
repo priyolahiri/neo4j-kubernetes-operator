@@ -308,7 +308,8 @@ Represents a single backup Job execution.
 | `artifactFilename` | `string` | Filename of the `.backup` artifact produced by this standard-DB run (e.g. `"neo4j-2026-06-08T01-18-06.backup"`). Populated by parsing the Job's Pod log after completion; empty when logs couldn't be fetched or the pattern didn't match. Used by the cluster PVC-restore path to build a per-restore seed URL. |
 | `shardArtifacts` | [`[]ShardArtifact`](#shardartifact) | Per-shard `.backup` files produced by a sharded backup run (`target.kind=ShardedDatabase`). Empty for non-sharded runs. |
 | `databaseArtifacts` | `[]DatabaseArtifact` | Per-database `.backup` files produced by an all-databases backup (`spec.allDatabases` / legacy `target.kind=Cluster`): one entry (`database`, `filename`, `size`) per user database (shard physical databases excluded). Consumed by an all-databases restore (`Neo4jRestore.spec.allDatabases`). Empty for single-database and sharded runs. |
-| `shardedDatabasesExcluded` | `[]string` | Logical property-sharded databases (e.g. `products`) whose shard files this all-databases run wrote to disk but did **not** catalogue in `databaseArtifacts` — so an all-databases restore cannot recreate them. Each must be backed up with a `shardedDatabase`-scoped Neo4jBackup and restored via its `Neo4jShardedDatabase` CR. Makes the exclusion explicit (also raised as a `BackupShardedDatabasesExcluded` warning event). Empty when the run had no sharded families. |
+| `shardedDatabasesExcluded` | `[]string` | Logical property-sharded databases (e.g. `products`) captured by this all-databases run that the all-databases **restore loop** does not recreate (they need shard-topology `CREATE` clauses only `Neo4jShardedDatabase` emits). They are **not** lost — their per-shard files are catalogued in `shardedFamilies`, so each is restorable from this backup via its `Neo4jShardedDatabase` CR (`spec.seedBackupRef`). Also raised as a `BackupShardedDatabasesExcluded` event. Empty when the run had no sharded families. |
+| `shardedFamilies` | [`[]ShardedFamilyArtifacts`](#shardedfamilyartifacts) | Per-family shard `.backup` artifacts catalogued by an all-databases backup (one entry per logical family, each with its `shardArtifacts`). Makes one all-databases backup a complete DR source: a `Neo4jShardedDatabase` whose `spec.seedBackupRef` points here is seeded from these. Empty for single-database and single-family `shardedDatabase`-scoped runs (those use `shardArtifacts`). |
 | `validation` | [`*BackupValidationResult`](#backupvalidationresult) | Per-shard outcome of the optional `neo4j-admin backup validate` step (only when `options.validate=true` and the operator could parse the output). |
 
 ### ShardArtifact
@@ -319,7 +320,16 @@ Identifies one `.backup` file produced by a sharded backup.
 |-------|------|-------------|
 | `shardName` | `string` | Per-shard database name (e.g. `"products-g000"`, `"products-p000"`). Derived by stripping the timestamp suffix from the neo4j-admin output filename. |
 | `filename` | `string` | On-disk filename as written by neo4j-admin (e.g. `"products-g000-2025-06-11T21-04-42.backup"`). |
-| `size` | `int64` | Artifact size in bytes as reported by `ls -la`. Zero if not parseable. |
+| `size` | `int64` | Artifact size in bytes. Zero if not parseable. |
+
+### ShardedFamilyArtifacts
+
+One property-sharded family's per-shard artifacts as catalogued by an **all-databases** backup, so each family is restorable from that single backup via its `Neo4jShardedDatabase` CR (`spec.seedBackupRef`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `family` | `string` | Logical sharded-database name (e.g. `"products"`) — `Neo4jShardedDatabase.spec.name`, the prefix shared by every shard. |
+| `shardArtifacts` | [`[]ShardArtifact`](#shardartifact) | Per-shard `.backup` files for this family (graph shard `{family}-g000` + property shards `{family}-pNNN`). |
 
 ### BackupValidationResult
 
