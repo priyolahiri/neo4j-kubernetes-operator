@@ -4098,11 +4098,15 @@ databases (<code>products-g000</code>, <code>products-p000</code>, …). (The de
 ShardedDatabase</code> form still works; <code>instanceRef</code> + <code>shardedDatabase</code> is preferred and
 survives into v1.14.)</p>
 <blockquote>
-<p>⚠️ An <strong>all-databases</strong> backup (<code>spec.allDatabases</code>) does <strong>not</strong> produce a restorable
-backup of a sharded database — it lists each excluded family in
-<code>status.history[].shardedDatabasesExcluded</code> and warns. Back each sharded database up
-with its own <code>shardedDatabase</code>-scoped <code>Neo4jBackup</code>, and restore it via
-<code>Neo4jShardedDatabase.spec.seedBackupRef</code> — not <code>Neo4jRestore</code>.</p>
+<p>ℹ️ An <strong>all-databases</strong> backup (<code>spec.allDatabases</code>) now <strong>catalogues</strong> each sharded
+family's per-shard artifacts in <code>status.history[].shardedFamilies</code> (family names also
+in <code>shardedDatabasesExcluded</code>, with a warning event) — so one all-databases backup
+<em>is</em> a restorable source for sharded databases too. The all-databases <em>restore loop</em>
+still recreates standard databases only; recover each sharded family by re-applying
+its <code>Neo4jShardedDatabase</code> with <code>spec.seedBackupRef</code> pointing at that same backup
+(add <code>spec.seedSourceDatabase</code> to restore under a different name) — not <code>Neo4jRestore</code>.
+A dedicated <code>shardedDatabase</code>-scoped <code>Neo4jBackup</code> per family is still available if you
+prefer per-family lifecycles.</p>
 </blockquote>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jBackup</span>

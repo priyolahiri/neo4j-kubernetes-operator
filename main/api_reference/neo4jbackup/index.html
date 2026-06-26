@@ -2410,6 +2410,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#shardedfamilyartifacts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ShardedFamilyArtifacts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#backupvalidationresult" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3365,6 +3376,17 @@
     <span class="md-ellipsis">
       
         ShardArtifact
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shardedfamilyartifacts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ShardedFamilyArtifacts
       
     </span>
   </a>
@@ -4364,7 +4386,12 @@
 <tr>
 <td><code>shardedDatabasesExcluded</code></td>
 <td><code>[]string</code></td>
-<td>Logical property-sharded databases (e.g. <code>products</code>) whose shard files this all-databases run wrote to disk but did <strong>not</strong> catalogue in <code>databaseArtifacts</code> — so an all-databases restore cannot recreate them. Each must be backed up with a <code>shardedDatabase</code>-scoped Neo4jBackup and restored via its <code>Neo4jShardedDatabase</code> CR. Makes the exclusion explicit (also raised as a <code>BackupShardedDatabasesExcluded</code> warning event). Empty when the run had no sharded families.</td>
+<td>Logical property-sharded databases (e.g. <code>products</code>) captured by this all-databases run that the all-databases <strong>restore loop</strong> does not recreate (they need shard-topology <code>CREATE</code> clauses only <code>Neo4jShardedDatabase</code> emits). They are <strong>not</strong> lost — their per-shard files are catalogued in <code>shardedFamilies</code>, so each is restorable from this backup via its <code>Neo4jShardedDatabase</code> CR (<code>spec.seedBackupRef</code>). Also raised as a <code>BackupShardedDatabasesExcluded</code> event. Empty when the run had no sharded families.</td>
+</tr>
+<tr>
+<td><code>shardedFamilies</code></td>
+<td><a href="#shardedfamilyartifacts"><code>[]ShardedFamilyArtifacts</code></a></td>
+<td>Per-family shard <code>.backup</code> artifacts catalogued by an all-databases backup (one entry per logical family, each with its <code>shardArtifacts</code>). Makes one all-databases backup a complete DR source: a <code>Neo4jShardedDatabase</code> whose <code>spec.seedBackupRef</code> points here is seeded from these. Empty for single-database and single-family <code>shardedDatabase</code>-scoped runs (those use <code>shardArtifacts</code>).</td>
 </tr>
 <tr>
 <td><code>validation</code></td>
@@ -4397,7 +4424,30 @@
 <tr>
 <td><code>size</code></td>
 <td><code>int64</code></td>
-<td>Artifact size in bytes as reported by <code>ls -la</code>. Zero if not parseable.</td>
+<td>Artifact size in bytes. Zero if not parseable.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="shardedfamilyartifacts">ShardedFamilyArtifacts<a class="headerlink" href="#shardedfamilyartifacts" title="Anchor link to this section">&para;</a></h3>
+<p>One property-sharded family's per-shard artifacts as catalogued by an <strong>all-databases</strong> backup, so each family is restorable from that single backup via its <code>Neo4jShardedDatabase</code> CR (<code>spec.seedBackupRef</code>).</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>family</code></td>
+<td><code>string</code></td>
+<td>Logical sharded-database name (e.g. <code>"products"</code>) — <code>Neo4jShardedDatabase.spec.name</code>, the prefix shared by every shard.</td>
+</tr>
+<tr>
+<td><code>shardArtifacts</code></td>
+<td><a href="#shardartifact"><code>[]ShardArtifact</code></a></td>
+<td>Per-shard <code>.backup</code> files for this family (graph shard <code>{family}-g000</code> + property shards <code>{family}-pNNN</code>).</td>
 </tr>
 </tbody>
 </table>

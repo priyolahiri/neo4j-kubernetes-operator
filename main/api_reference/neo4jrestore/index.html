@@ -4597,7 +4597,7 @@
 <tr>
 <td><code>shardedDatabasesExcluded</code></td>
 <td><code>[]string</code></td>
-<td>Logical property-sharded databases the source backup did not cover (carried forward from <code>Neo4jBackup</code> <code>status.history[].shardedDatabasesExcluded</code>). An all-databases restore surfaces these (<code>RestoreShardedDatabasesNotCovered</code> warning) since it cannot recreate them — restore each via its <code>Neo4jShardedDatabase</code> CR. Empty otherwise.</td>
+<td>Logical property-sharded databases the all-databases <strong>restore loop</strong> does not recreate (carried forward from <code>Neo4jBackup</code> <code>status.history[].shardedDatabasesExcluded</code>). The restore surfaces these (<code>RestoreShardedDatabasesNotCovered</code> warning) — but they <strong>are</strong> restorable from the same backup: re-apply each one's <code>Neo4jShardedDatabase</code> CR with <code>spec.seedBackupRef</code> pointing at this backup (its per-shard files are in the backup's <code>shardedFamilies</code>). Empty otherwise.</td>
 </tr>
 <tr>
 <td><code>resolvedAt</code></td>
