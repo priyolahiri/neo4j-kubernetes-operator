@@ -107,7 +107,7 @@ jobs:
     # skip the Docker Hub pull entirely (faster + dodges anonymous rate limits)
     # and import the tarball straight into kind's containerd.
     - name: Cache Neo4j image tarball
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: /tmp/neo4j-image.tar
         key: neo4j-image-${{ matrix.neo4j-version }}
