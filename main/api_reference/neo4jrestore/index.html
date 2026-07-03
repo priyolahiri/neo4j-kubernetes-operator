@@ -3837,7 +3837,7 @@
 <li><strong>Kind</strong>: <code>Neo4jRestore</code></li>
 </ul>
 <h2 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Anchor link to this section">&para;</a></h2>
-<p>The operator picks the restore method based on the target kind referenced by <code>instanceRef</code> (or the deprecated <code>clusterRef</code>). The Neo4j docs flag <code>neo4j-admin database restore</code> as <strong>unsafe on clusters</strong>, so the two paths diverge:</p>
+<p>The operator picks the restore method based on the deployment referenced by <code>instanceRef</code>. The Neo4j docs flag <code>neo4j-admin database restore</code> as <strong>unsafe on clusters</strong>, so the two paths diverge:</p>
 <p><strong><code>Neo4jEnterpriseCluster</code> target</strong> — Cypher over Bolt, no Job:</p>
 <ol>
 <li>Resolves <code>source.backupRef</code> (or <code>source.storage</code>) into the exact <code>.backup</code> <strong>file</strong> URI of the latest successful run, e.g. <code>s3://bucket/path/&lt;cr-name&gt;/&lt;dbname&gt;-&lt;timestamp&gt;.backup</code>. Neo4j's <code>CloudSeedProvider</code> seeds a single database from one file (a directory URI fails with <code>Can't open seed file</code>); when that file is a differential, Neo4j resolves and applies the full + differential chain from the same directory automatically.</li>
@@ -3845,7 +3845,7 @@
 <li>For <strong>PVC-backed</strong> backups, the operator spawns a <code>backup-seed-proxy-&lt;restore-name&gt;</code> Deployment + Service serving the backup PVC read-only over HTTP, plus a <strong>NetworkPolicy restricting proxy ingress to the target cluster's server pods</strong> (effective on enforcing CNIs). The seedURI becomes an <code>http://</code> URL at the exact <code>.backup</code> filename (<code>URLConnectionSeedProvider</code>). The whole proxy stack is <strong>torn down automatically</strong> as soon as the restore reaches <code>Completed</code> or <code>Failed</code> (and on CR deletion) — it does not linger for the lifetime of the CR.</li>
 <li>Projects cloud credentials onto cluster pods via <code>spec.extraEnvFrom</code> (cluster CR) — required so the JVM's AWS/GCP/Azure SDK can authenticate. The operator emits an actionable error if the Secret isn't projected; set the cluster annotation <code>neo4j.com/auto-inherit-seed-creds=true</code> to auto-patch (triggers a rolling restart, which the restore waits out in <code>Pending</code>). With <strong>workload identity</strong> (no <code>credentialsSecretRef</code>), the SDK default chain is used — the IAM binding must then be on the <strong>server pods'</strong> ServiceAccount, since the seed fetch runs inside the Neo4j JVM, not in a Job.</li>
 <li>Opens a Bolt session and runs <code>SHOW DATABASES</code> to detect whether the target database already exists.</li>
-<li>Existing database → <code>CALL dbms.[cluster.]recreateDatabase($db, {seedURI: $uri})</code>. <strong>Requires <code>spec.force: true</code> or <code>spec.options.replaceExisting: true</code></strong> — recreating wipes and replaces the live contents, so the operator refuses without the explicit opt-in (clear <code>Failed</code> message instead of a silent overwrite). Preserves user/role privileges, atomically swaps the database on every server, no <code>DROP</code> needed.</li>
+<li>Existing database → <code>CALL dbms.[cluster.]recreateDatabase($db, {seedURI: $uri})</code>. <strong>Requires <code>spec.options.replaceExisting: true</code></strong> — recreating wipes and replaces the live contents, so the operator refuses without the explicit opt-in (clear <code>Failed</code> message instead of a silent overwrite). Preserves user/role privileges, atomically swaps the database on every server, no <code>DROP</code> needed.</li>
 <li>New database → <code>CREATE DATABASE $db OPTIONS { seedURI: '&lt;file&gt;' } WAIT</code> (no opt-in needed; nothing is overwritten).</li>
 <li><code>CREATE … WAIT</code> blocks until online, but <code>dbms.recreateDatabase</code> is <strong>asynchronous</strong> — it returns once the recreate is scheduled. The operator therefore polls <code>SHOW DATABASE</code> until every allocation reports <code>online</code> before marking the restore <code>Completed</code>. The poll deadline is <strong><code>spec.timeout</code></strong> (default <strong>5m</strong> when unset) — raise it for multi-GB stores seeded from object storage; on expiry the restore goes <code>Failed</code> with the database's last <code>statusMessage</code>.</li>
 </ol>
@@ -3863,7 +3863,7 @@
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="s1">     -f /data/scripts/&lt;dbname&gt;/restore_metadata.cypher&#39;</span>
 </span></code></pre></div>
 <h3 id="retrying-a-finished-restore">Retrying a finished restore<a class="headerlink" href="#retrying-a-finished-restore" title="Anchor link to this section">&para;</a></h3>
-<p><code>Completed</code> and <code>Failed</code> are terminal <strong>for the current spec generation</strong>, not forever. To re-run a restore, <strong>edit the spec</strong> (any change that bumps <code>metadata.generation</code> — typically <code>source.backupRef</code> or <code>databaseName</code>): the operator clears the previous attempt's one-shot state and issues a fresh restore. Changing <code>source.backupRef</code> also invalidates the pinned <code>status.resolvedSource</code>, so the new reference is re-resolved rather than silently reusing the old snapshot. Alternatively, delete and recreate the CR.</p>
+<p><code>Completed</code> and <code>Failed</code> are terminal <strong>for the current spec generation</strong>, not forever. To re-run a restore, <strong>edit the spec</strong> (any change that bumps <code>metadata.generation</code> — typically <code>source.backupRef</code> or <code>database</code>): the operator clears the previous attempt's one-shot state and issues a fresh restore. Changing <code>source.backupRef</code> also invalidates the pinned <code>status.resolvedSource</code>, so the new reference is re-resolved rather than silently reusing the old snapshot. Alternatively, delete and recreate the CR.</p>
 <h2 id="neo4jrestore-spec">Neo4jRestore Spec<a class="headerlink" href="#neo4jrestore-spec" title="Anchor link to this section">&para;</a></h2>
 <h3 id="top-level-fields">Top-Level Fields<a class="headerlink" href="#top-level-fields" title="Anchor link to this section">&para;</a></h3>
 <table>
@@ -3879,14 +3879,8 @@
 <tr>
 <td><code>instanceRef</code></td>
 <td><code>string</code></td>
-<td>✅ (or <code>clusterRef</code>)</td>
-<td><strong>(v1.13)</strong> The Neo4j deployment to restore into — a <code>Neo4jEnterpriseCluster</code> or <code>Neo4jEnterpriseStandalone</code> (topology-agnostic; the operator picks the restore engine). Preferred alias of <code>clusterRef</code>.</td>
-</tr>
-<tr>
-<td><code>clusterRef</code></td>
-<td><code>string</code></td>
-<td>⚠️ deprecated</td>
-<td><strong>DEPRECATED (v1.13, removed v1.14)</strong> — use <code>instanceRef</code>.</td>
+<td>✅</td>
+<td>The Neo4j deployment to restore into — a <code>Neo4jEnterpriseCluster</code> or <code>Neo4jEnterpriseStandalone</code> (topology-agnostic; the operator picks the restore engine).</td>
 </tr>
 <tr>
 <td><code>source</code></td>
@@ -3898,31 +3892,19 @@
 <td><code>database</code></td>
 <td><code>string</code></td>
 <td>✅ (or <code>allDatabases</code>)</td>
-<td><strong>(v1.13)</strong> Name of the database to restore. Preferred alias of <code>databaseName</code>.</td>
+<td>Name of the database to restore.</td>
 </tr>
 <tr>
 <td><code>allDatabases</code></td>
 <td><code>bool</code></td>
 <td>❌</td>
-<td><strong>(v1.13)</strong> Restore <strong>every</strong> user database recorded in the source backup (the <code>system</code> database is excluded) — the restore counterpart of an all-databases backup (<a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222">#222</a>). Requires <code>source.type=backup</code>; mutually exclusive with <code>database</code>/<code>databaseName</code>; per-database progress in <code>status.databaseResults</code>. <strong>Cluster</strong> targets restore one database per reconcile pass via the in-place Cypher path (cloud and PVC-backed backups). <strong>Standalone</strong> targets (<a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/288">#288</a>) take the offline Job path — a single multi-database <code>neo4j-admin database restore</code> (needs <code>stopCluster: true</code>, plus <code>force: true</code> to overwrite existing databases), after which each database is brought online.</td>
-</tr>
-<tr>
-<td><code>databaseName</code></td>
-<td><code>string</code></td>
-<td>⚠️ deprecated</td>
-<td><strong>DEPRECATED (v1.13, removed v1.14)</strong> — use <code>database</code>.</td>
+<td>Restore <strong>every</strong> user database recorded in the source backup (the <code>system</code> database is excluded) — the restore counterpart of an all-databases backup (<a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222">#222</a>). Requires <code>source.type=backup</code>; mutually exclusive with <code>database</code>; per-database progress in <code>status.databaseResults</code>. <strong>Cluster</strong> targets restore one database per reconcile pass via the in-place Cypher path (cloud and PVC-backed backups). <strong>Standalone</strong> targets (<a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/288">#288</a>) take the offline Job path — a single multi-database <code>neo4j-admin database restore</code> (needs <code>stopCluster: true</code>, plus <code>options.replaceExisting: true</code> to overwrite existing databases), after which each database is brought online.</td>
 </tr>
 <tr>
 <td><code>options</code></td>
 <td><a href="#restoreoptionsspec"><code>RestoreOptionsSpec</code></a></td>
 <td>❌</td>
-<td>Additional restore configuration options</td>
-</tr>
-<tr>
-<td><code>force</code></td>
-<td><code>bool</code></td>
-<td>❌</td>
-<td>Confirm restoring <strong>over an existing database</strong> (default: <code>false</code>). Standalone targets: passes <code>--overwrite-destination</code> to <code>neo4j-admin</code>. Cluster targets: required (or <code>options.replaceExisting: true</code>) before the operator issues the destructive <code>dbms.recreateDatabase</code> against an existing database.</td>
+<td>Additional restore configuration options — including <code>replaceExisting</code> (the confirmation required to overwrite an existing database).</td>
 </tr>
 <tr>
 <td><code>stopCluster</code></td>
@@ -3938,7 +3920,10 @@
 </tr>
 </tbody>
 </table>
-<p><strong>Target compatibility</strong>: <code>clusterRef</code> can reference either:</p>
+<blockquote>
+<p>The pre-v1.13 top-level <code>clusterRef</code>, <code>databaseName</code>, and <code>force</code> fields were deprecated in v1.13 and <strong>removed in v1.14</strong>. Use <code>instanceRef</code>, <code>database</code>, and <code>options.replaceExisting</code> respectively.</p>
+</blockquote>
+<p><strong>Target compatibility</strong>: <code>instanceRef</code> can reference either:</p>
 <ul>
 <li><code>Neo4jEnterpriseCluster</code> — for HA cluster restore operations</li>
 <li><code>Neo4jEnterpriseStandalone</code> — for single-node restore operations</li>
@@ -4136,13 +4121,7 @@
 <td><code>replaceExisting</code></td>
 <td><code>bool</code></td>
 <td>❌</td>
-<td>Replace an existing database (default: <code>false</code>). Equivalent confirmation to top-level <code>force</code> for <strong>cluster</strong> restores of an existing database. For <strong>standalone</strong> restores, use <code>spec.force</code> instead.</td>
-</tr>
-<tr>
-<td><code>verifyBackup</code></td>
-<td><code>bool</code></td>
-<td>❌</td>
-<td><strong>RESERVED — currently a no-op.</strong> Accepted for backward compatibility but not read by the operator. Verify artifacts at backup time via <code>Neo4jBackup.spec.options.validate</code> instead.</td>
+<td>Confirm restoring <strong>over an existing database</strong> (default: <code>false</code>). Required before the operator overwrites existing contents on <strong>either</strong> target: cluster restores issue the destructive <code>dbms.recreateDatabase</code>; standalone restores pass <code>--overwrite-destination</code> to <code>neo4j-admin</code>.</td>
 </tr>
 <tr>
 <td><code>additionalArgs</code></td>
@@ -4535,12 +4514,12 @@
 <tr>
 <td><code>stats</code></td>
 <td><a href="#restorestats"><code>RestoreStats</code></a></td>
-<td>Restore operation statistics. <strong>Reserved — not currently populated</strong> (see <a href="#restorestats">RestoreStats</a>).</td>
+<td>Restore operation statistics — populated on success with the restore <code>duration</code>.</td>
 </tr>
 <tr>
 <td><code>backupInfo</code></td>
 <td><a href="#restorebackupinfo"><code>RestoreBackupInfo</code></a></td>
-<td>Information about the backup that was restored. <strong>Reserved — not currently populated</strong>; use <a href="#resolvedrestoresource"><code>resolvedSource</code></a> for provenance.</td>
+<td>Provenance of the backup this restore was seeded from — populated on success (see <a href="#restorebackupinfo">RestoreBackupInfo</a>).</td>
 </tr>
 <tr>
 <td><code>resolvedSource</code></td>
@@ -4604,6 +4583,11 @@
 <td><code>*metav1.Time</code></td>
 <td>When the <code>backupRef</code> was first dereferenced</td>
 </tr>
+<tr>
+<td><code>backupCreatedAt</code></td>
+<td><code>*metav1.Time</code></td>
+<td>Completion time of the resolved most-recent Succeeded run, captured at resolution so restore provenance survives deletion of the source <code>Neo4jBackup</code> CR</td>
+</tr>
 </tbody>
 </table>
 <h3 id="restorestats">RestoreStats<a class="headerlink" href="#restorestats" title="Anchor link to this section">&para;</a></h3>
@@ -4619,34 +4603,15 @@
 <tr>
 <td><code>duration</code></td>
 <td><code>string</code></td>
-<td>Duration of the restore operation</td>
-</tr>
-<tr>
-<td><code>dataSize</code></td>
-<td><code>string</code></td>
-<td>Amount of data restored</td>
-</tr>
-<tr>
-<td><code>throughput</code></td>
-<td><code>string</code></td>
-<td>Restore throughput</td>
-</tr>
-<tr>
-<td><code>fileCount</code></td>
-<td><code>int32</code></td>
-<td>Number of files restored</td>
-</tr>
-<tr>
-<td><code>errorCount</code></td>
-<td><code>int32</code></td>
-<td>Errors encountered during restore</td>
+<td>Wall-clock time the restore took, derived from <code>completionTime − startTime</code> (e.g. <code>"2m3s"</code>). Populated on success.</td>
 </tr>
 </tbody>
 </table>
 <blockquote>
-<p><strong>Reserved — not currently populated.</strong> The restore controller does not emit <code>status.stats</code> today; it sets <code>phase</code>, <code>message</code>, <code>startTime</code>, <code>completionTime</code>, and (for <code>spec.allDatabases</code>) <code>databaseResults</code>. Treat the fields above as a forward-looking schema.</p>
+<p><strong>(v1.14)</strong> <code>RestoreStats</code> was trimmed to the one field the operator can derive without the backup Pod's log. The former <code>dataSize</code>, <code>throughput</code>, <code>fileCount</code>, and <code>errorCount</code> fields were never populated and were removed.</p>
 </blockquote>
 <h3 id="restorebackupinfo">RestoreBackupInfo<a class="headerlink" href="#restorebackupinfo" title="Anchor link to this section">&para;</a></h3>
+<p>Provenance about the backup this restore was seeded from, populated on success. Fields the operator cannot derive without the (possibly-deleted) source backup are omitted rather than guessed.</p>
 <table>
 <thead>
 <tr>
@@ -4659,32 +4624,22 @@
 <tr>
 <td><code>backupPath</code></td>
 <td><code>string</code></td>
-<td>Source backup path</td>
+<td>Source backup location: the per-CR chain directory (with the resolved <code>.backup</code> filename when known) for a <code>source.type: backup</code> restore, or the explicit storage path for a <code>source.type: storage</code> restore</td>
 </tr>
 <tr>
 <td><code>backupCreatedAt</code></td>
 <td><code>*metav1.Time</code></td>
-<td>Original creation time of the backup</td>
+<td>Completion time of the backup run this restore was seeded from. Populated only for <code>source.type: backup</code> restores; empty for <code>source.type: storage</code> (no backup CR)</td>
 </tr>
 <tr>
 <td><code>originalDatabase</code></td>
 <td><code>string</code></td>
-<td>Original database name in the backup</td>
-</tr>
-<tr>
-<td><code>neo4jVersion</code></td>
-<td><code>string</code></td>
-<td>Neo4j version of the backup</td>
-</tr>
-<tr>
-<td><code>backupSize</code></td>
-<td><code>string</code></td>
-<td>Size of the backup</td>
+<td>The logical database that was restored. Empty for an all-databases restore (see <a href="#status-fields"><code>databaseResults</code></a> for per-database detail)</td>
 </tr>
 </tbody>
 </table>
 <blockquote>
-<p><strong>Reserved — not currently populated.</strong> The restore controller does not emit <code>status.backupInfo</code> today; for the provenance of a <code>source.type: backup</code> restore use <a href="#resolvedrestoresource"><code>resolvedSource</code></a> instead.</p>
+<p><strong>(v1.14)</strong> <code>RestoreBackupInfo</code> was trimmed to the fields derivable from the resolved source. The former <code>neo4jVersion</code> (the backup run records no version) and <code>backupSize</code> (Pod-log only) fields were never populated and were removed.</p>
 </blockquote>
 <h3 id="restore-phases">Restore Phases<a class="headerlink" href="#restore-phases" title="Anchor link to this section">&para;</a></h3>
 <table>
@@ -4744,8 +4699,8 @@
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">simple-backup-restore</span>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test-cluster</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseCluster (Cypher path — no Job)</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">databaseName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">testdb</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test-cluster</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseCluster (Cypher path — no Job)</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">testdb</span>
 </span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
 </span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="nt">backupRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">daily-test-backup</span><span class="w">   </span><span class="c1"># References a Neo4jBackup resource</span>
@@ -4760,8 +4715,8 @@
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev-s3-restore</span>
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">development</span>
 </span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone (Job path — hooks run here)</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="nt">databaseName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev-app</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone (Job path — hooks run here)</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev-app</span>
 </span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">storage</span>
 </span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">    </span><span class="nt">storage</span><span class="p">:</span>
@@ -4774,14 +4729,13 @@
 </span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">    </span><span class="c1"># Exact artifact: &lt;chain-root&gt;/&lt;dbname&gt;-&lt;timestamp&gt;.backup</span>
 </span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="w">    </span><span class="nt">backupPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev-backup/dev-app-2026-06-01T10-30-00.backup</span>
 </span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># confirms overwriting the existing database</span>
 </span><span id="__span-3-22"><a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="w">    </span><span class="nt">postRestore</span><span class="p">:</span><span class="w">   </span><span class="c1"># hooks run only on standalone targets</span>
 </span><span id="__span-3-23"><a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="w">      </span><span class="nt">cypherStatements</span><span class="p">:</span>
 </span><span id="__span-3-24"><a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;CALL</span><span class="nv"> </span><span class="s">db.awaitIndexes(60)&quot;</span>
 </span><span id="__span-3-25"><a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;CREATE</span><span class="nv"> </span><span class="s">(:TestNode</span><span class="nv"> </span><span class="s">{restored:</span><span class="nv"> </span><span class="s">datetime()})&quot;</span>
-</span><span id="__span-3-26"><a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a><span class="w">  </span><span class="nt">force</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-3-27"><a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># standalone Job restores need the instance stopped</span>
-</span><span id="__span-3-28"><a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;30m&quot;</span>
+</span><span id="__span-3-26"><a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># standalone Job restores need the instance stopped</span>
+</span><span id="__span-3-27"><a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;30m&quot;</span>
 </span></code></pre></div>
 <h3 id="restore-from-gcs-static-credentials-cluster">Restore from GCS (Static Credentials, Cluster)<a class="headerlink" href="#restore-from-gcs-static-credentials-cluster" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
@@ -4790,8 +4744,8 @@
 </span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcs-restore</span>
 </span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
 </span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-cluster</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseCluster (Cypher path)</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="nt">databaseName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-db</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-cluster</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseCluster (Cypher path)</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-db</span>
 </span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">storage</span>
 </span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="nt">storage</span><span class="p">:</span>
@@ -4806,8 +4760,7 @@
 </span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">    </span><span class="nt">backupPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">weekly-backup/analytics-db-2026-06-01T03-00-00.backup</span>
 </span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
 </span><span id="__span-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># required: analytics-db already exists</span>
-</span><span id="__span-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="w">  </span><span class="nt">force</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-4-24"><a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2h&quot;</span><span class="w">   </span><span class="c1"># online-convergence budget — raise for large stores</span>
+</span><span id="__span-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2h&quot;</span><span class="w">   </span><span class="c1"># online-convergence budget — raise for large stores</span>
 </span></code></pre></div>
 <blockquote>
 <p>For the cluster Cypher path the credentials Secret must also be projected onto the <strong>server pods</strong> via the cluster's <code>spec.extraEnvFrom</code> (or annotate the cluster with <code>neo4j.com/auto-inherit-seed-creds: "true"</code> and let the operator patch it).</p>
@@ -4823,8 +4776,8 @@
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="nt">compliance</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">required</span>
 </span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
 </span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">enterprise-cluster</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseCluster (Cypher path)</span>
-</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="nt">databaseName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">customer-data</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">enterprise-cluster</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseCluster (Cypher path)</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">customer-data</span>
 </span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">storage</span>
 </span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">    </span><span class="nt">storage</span><span class="p">:</span>
@@ -4838,8 +4791,7 @@
 </span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">    </span><span class="nt">backupPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nightly-backup/customer-data-2026-06-01T02-00-00.backup</span>
 </span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
 </span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># required: customer-data already exists</span>
-</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">  </span><span class="nt">force</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;6h&quot;</span><span class="w">   </span><span class="c1"># large store — generous online-convergence budget</span>
+</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;6h&quot;</span><span class="w">   </span><span class="c1"># large store — generous online-convergence budget</span>
 </span></code></pre></div>
 <h3 id="point-in-time-recovery-pitr">Point-in-Time Recovery (PITR)<a class="headerlink" href="#point-in-time-recovery-pitr" title="Anchor link to this section">&para;</a></h3>
 <blockquote>
@@ -4851,8 +4803,8 @@
 </span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-pitr-restore</span>
 </span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
 </span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">recovery-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone (PITR is standalone-only)</span>
-</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span><span class="nt">databaseName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-db</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">recovery-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone (PITR is standalone-only)</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-db</span>
 </span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pitr</span>
 </span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">    </span><span class="nt">pointInTime</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2025-01-04T12:30:00Z&quot;</span>
@@ -4868,7 +4820,7 @@
 </span><span id="__span-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="w">          </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws</span>
 </span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="w">          </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-restore-credentials</span>
 </span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># confirms overwriting the existing database</span>
 </span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="w">    </span><span class="nt">preRestore</span><span class="p">:</span><span class="w">     </span><span class="c1"># hooks run only on standalone targets, BEFORE the stop</span>
 </span><span id="__span-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="w">      </span><span class="nt">cypherStatements</span><span class="p">:</span>
 </span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;CALL</span><span class="nv"> </span><span class="s">db.checkpoint()&quot;</span>
@@ -4876,9 +4828,8 @@
 </span><span id="__span-6-29"><a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a><span class="w">      </span><span class="nt">cypherStatements</span><span class="p">:</span>
 </span><span id="__span-6-30"><a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;CALL</span><span class="nv"> </span><span class="s">db.awaitIndexes(600)&quot;</span>
 </span><span id="__span-6-31"><a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;CALL</span><span class="nv"> </span><span class="s">dbms.security.clearAuthCache()&quot;</span>
-</span><span id="__span-6-32"><a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a><span class="w">  </span><span class="nt">force</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-6-33"><a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-6-34"><a id="__codelineno-6-34" name="__codelineno-6-34" href="#__codelineno-6-34"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;4h&quot;</span>
+</span><span id="__span-6-32"><a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-6-33"><a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;4h&quot;</span>
 </span></code></pre></div>
 <h3 id="offline-restore-via-stopcluster-standalone">Offline Restore via stopCluster (Standalone)<a class="headerlink" href="#offline-restore-via-stopcluster-standalone" title="Anchor link to this section">&para;</a></h3>
 <p><code>stopCluster</code> applies to <strong>standalone</strong> targets only — cluster targets restore online via Cypher and ignore it. When <code>stopCluster: true</code>, the operator scales the standalone to 0 and mounts its data PVC (<code>data-{name}-server-0</code>) directly into the restore Job for a cold/offline restore.</p>
@@ -4888,8 +4839,8 @@
 </span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">offline-restore</span>
 </span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
 </span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reporting-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="nt">databaseName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">large-graph</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reporting-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">large-graph</span>
 </span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">storage</span>
 </span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="nt">storage</span><span class="p">:</span>
@@ -4900,28 +4851,28 @@
 </span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">        </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws</span>
 </span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">        </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-restore-credentials</span>
 </span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">    </span><span class="nt">backupPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nightly-backup/large-graph-2026-06-01T02-00-00.backup</span>
-</span><span id="__span-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">  </span><span class="nt">force</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># Scales the standalone to 0; mounts data-reporting-standalone-server-0</span>
-</span><span id="__span-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;8h&quot;</span>
+</span><span id="__span-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># confirms overwriting the existing database</span>
+</span><span id="__span-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># Scales the standalone to 0; mounts data-reporting-standalone-server-0</span>
+</span><span id="__span-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;8h&quot;</span>
 </span></code></pre></div>
 <h3 id="standalone-restore">Standalone Restore<a class="headerlink" href="#standalone-restore" title="Anchor link to this section">&para;</a></h3>
-<p><code>clusterRef</code> can reference a <code>Neo4jEnterpriseStandalone</code> resource. The controller detects the type automatically.</p>
+<p><code>instanceRef</code> can reference a <code>Neo4jEnterpriseStandalone</code> resource. The controller detects the type automatically.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRestore</span>
 </span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nt">metadata</span><span class="p">:</span>
 </span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">standalone-restore</span>
 </span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">development</span>
 </span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="nt">databaseName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app-db</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app-db</span>
 </span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
 </span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">    </span><span class="nt">backupRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev-daily-backup</span>
 </span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">  </span><span class="nt">force</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># required: with false the operator refuses while pods are running</span>
-</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;30m&quot;</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># confirms overwriting the existing database</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># required: with false the operator refuses while pods are running</span>
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;30m&quot;</span>
 </span></code></pre></div>
 <h3 id="cross-cloud-disaster-recovery-cluster">Cross-Cloud Disaster Recovery (Cluster)<a class="headerlink" href="#cross-cloud-disaster-recovery-cluster" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
@@ -4930,8 +4881,8 @@
 </span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cross-cloud-dr-restore</span>
 </span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">disaster-recovery</span>
 </span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseCluster (Cypher path — no hooks, no Job)</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">  </span><span class="nt">databaseName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">critical-app</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseCluster (Cypher path — no hooks, no Job)</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">critical-app</span>
 </span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">storage</span>
 </span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">    </span><span class="nt">storage</span><span class="p">:</span>
@@ -4944,9 +4895,8 @@
 </span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="w">    </span><span class="c1"># Exact .backup file, required for cluster targets:</span>
 </span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="w">    </span><span class="nt">backupPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-backup/critical-app-2026-06-01T02-00-00.backup</span>
 </span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="w">  </span><span class="nt">force</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;3h&quot;</span>
+</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># confirms overwriting the existing database</span>
+</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;3h&quot;</span>
 </span></code></pre></div>
 <h2 id="monitoring">Monitoring<a class="headerlink" href="#monitoring" title="Anchor link to this section">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># List all restore resources</span>

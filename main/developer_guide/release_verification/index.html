@@ -3163,7 +3163,7 @@ surfaces issues the lighter phases miss).</p>
 </tr>
 <tr>
 <td>All-databases restore (standalone)</td>
-<td>two user DBs → <code>Neo4jBackup</code> <code>allDatabases: true</code> → mutate both → <code>Neo4jRestore</code> <code>allDatabases: true</code> (<code>stopCluster: true</code>, <code>force: true</code>); confirm both round-trip via the single offline Job and <code>status.databaseResults</code> are all <code>Completed</code> (<code>system</code> excluded) (#288)</td>
+<td>two user DBs → <code>Neo4jBackup</code> <code>allDatabases: true</code> → mutate both → <code>Neo4jRestore</code> <code>allDatabases: true</code> (<code>stopCluster: true</code>, <code>options.replaceExisting: true</code>); confirm both round-trip via the single offline Job and <code>status.databaseResults</code> are all <code>Completed</code> (<code>system</code> excluded) (#288)</td>
 </tr>
 <tr>
 <td>Standalone recommended labels</td>
@@ -3171,7 +3171,7 @@ surfaces issues the lighter phases miss).</p>
 </tr>
 <tr>
 <td><code>system</code> is not restorable</td>
-<td>a <code>Neo4jRestore</code> with <code>databaseName: system</code> → <code>Failed</code> with an actionable message</td>
+<td>a <code>Neo4jRestore</code> with <code>database: system</code> → <code>Failed</code> with an actionable message</td>
 </tr>
 </tbody>
 </table>

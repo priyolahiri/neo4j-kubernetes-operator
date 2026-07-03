@@ -4151,7 +4151,7 @@
 <li>Uses replica-based replication</li>
 </ul>
 <h3 id="backups-and-restore">Backups and Restore<a class="headerlink" href="#backups-and-restore" title="Anchor link to this section">&para;</a></h3>
-<p>Sharded databases are a first-class backup/restore target. The <code>Neo4jBackup</code> CRD's <code>target.kind</code> accepts <code>ShardedDatabase</code> (alongside <code>Cluster</code> and <code>Database</code>); a single backup run captures every shard consistently using a <code>{name}*</code> glob, with per-shard artifacts tracked in <code>status.history[].shardArtifacts</code>.</p>
+<p>Sharded databases are a first-class backup/restore target. Set <code>Neo4jBackup.spec.shardedDatabase</code> to the <code>Neo4jShardedDatabase</code> CR name (with <code>spec.instanceRef</code> pointing at the owning cluster); a single backup run captures every shard consistently using a <code>{name}*</code> glob, with per-shard artifacts tracked in <code>status.history[].shardArtifacts</code>.</p>
 <p>Restore is performed by re-creating the sharded database from a backup rather than via a restore Job:</p>
 <ul>
 <li>Seed a fresh sharded database from a backup with <code>spec.seedBackupRef</code> (resolves the named <code>Neo4jBackup</code>'s latest Succeeded run into a seed URI).</li>
