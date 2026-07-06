@@ -65,8 +65,7 @@ type CacheManager struct {
 	filteredResources map[string]bool
 
 	// Memory monitoring
-	memoryStats   chan MemoryStats
-	alertCallback func(MemoryAlert)
+	memoryStats chan MemoryStats
 
 	// Cache options
 	cacheOptions cache.Options
@@ -124,20 +123,6 @@ func (cm *CacheManager) SetClient(c client.Client) {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 	cm.client = c
-}
-
-// SetMemoryThresholds configures memory monitoring thresholds
-func (cm *CacheManager) SetMemoryThresholds(warningMB, criticalMB int64) {
-	cm.mutex.Lock()
-	defer cm.mutex.Unlock()
-
-	cm.warningThreshold = warningMB * 1024 * 1024
-	cm.memoryThreshold = criticalMB * 1024 * 1024
-}
-
-// SetAlertCallback sets the callback for memory alerts
-func (cm *CacheManager) SetAlertCallback(callback func(MemoryAlert)) {
-	cm.alertCallback = callback
 }
 
 // GetCacheOptions returns cache options with resource filtering
@@ -249,25 +234,6 @@ func (cm *CacheManager) RemoveNamespace(namespace string) {
 	log.Log.Info("Removed namespace from watch list", "namespace", namespace, "total", len(cm.watchedNamespaces))
 }
 
-// IsNamespaceWatched checks if a namespace is being watched
-func (cm *CacheManager) IsNamespaceWatched(namespace string) bool {
-	cm.mutex.RLock()
-	defer cm.mutex.RUnlock()
-
-	if cm.watchAllModes {
-		return true
-	}
-
-	// Check prefix matching if configured
-	if cm.watchModePrefix != "" {
-		return len(namespace) >= len(cm.watchModePrefix) &&
-			namespace[:len(cm.watchModePrefix)] == cm.watchModePrefix
-	}
-
-	_, exists := cm.watchedNamespaces[namespace]
-	return exists
-}
-
 // StartMemoryMonitoring begins memory usage monitoring
 func (cm *CacheManager) StartMemoryMonitoring(ctx context.Context) {
 	go cm.memoryMonitorLoop(ctx)
@@ -313,32 +279,6 @@ func (cm *CacheManager) GetMemoryStats() MemoryStats {
 		NumGC:        m.NumGC,
 		Timestamp:    time.Now(),
 	}
-}
-
-// ShouldFilterResource determines if a resource should be filtered from cache
-func (cm *CacheManager) ShouldFilterResource(obj client.Object) bool {
-	cm.mutex.RLock()
-	defer cm.mutex.RUnlock()
-
-	// Always cache Neo4j CRDs
-	switch obj.(type) {
-	case *neo4jv1beta1.Neo4jEnterpriseCluster,
-		*neo4jv1beta1.Neo4jDatabase,
-		*neo4jv1beta1.Neo4jBackup,
-		*neo4jv1beta1.Neo4jRestore:
-		return false
-	}
-
-	// Check if resource has our management label
-	labels := obj.GetLabels()
-	if labels != nil {
-		if managedBy, exists := labels["app.kubernetes.io/managed-by"]; exists {
-			return managedBy != "neo4j-operator"
-		}
-	}
-
-	// For resources without our label, filter them out
-	return true
 }
 
 // Private methods
@@ -536,11 +476,6 @@ func (cm *CacheManager) triggerAlert(level AlertLevel, message string, stats Mem
 		log.Log.Info(alert.Message, "stats", alert.Stats)
 	case AlertLevelInfo:
 		log.Log.V(1).Info(alert.Message, "stats", alert.Stats)
-	}
-
-	// Call external callback if configured
-	if cm.alertCallback != nil {
-		go cm.alertCallback(alert)
 	}
 }
 
