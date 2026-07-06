@@ -17,6 +17,18 @@ spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
+    - kind: AuraInstance
+      name: aurainstances.neo4j.neo4j.com
+      version: v1beta1
+    - kind: AuraProviderConfig
+      name: auraproviderconfigs.neo4j.neo4j.com
+      version: v1beta1
+    - kind: AuraRestore
+      name: aurarestores.neo4j.neo4j.com
+      version: v1beta1
+    - kind: AuraSnapshot
+      name: aurasnapshots.neo4j.neo4j.com
+      version: v1beta1
     - description: Neo4jAuthRule declaratively manages an attribute-based access control
         (ABAC) auth rule. Conditions reference OIDC token claims via abac.oidc.user_attribute()
         and grant the listed roles when the condition evaluates true at authentication

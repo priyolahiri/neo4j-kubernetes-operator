@@ -1,0 +1,170 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  creationTimestamp: null
+  name: aurasnapshots.neo4j.neo4j.com
+spec:
+  group: neo4j.neo4j.com
+  names:
+    kind: AuraSnapshot
+    listKind: AuraSnapshotList
+    plural: aurasnapshots
+    shortNames:
+    - aurasnap
+    singular: aurasnapshot
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.instanceRef
+      name: Instance
+      type: string
+    - jsonPath: .status.snapshotId
+      name: SnapshotID
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          AuraSnapshot takes an on-demand snapshot of an AuraInstance (the Aura
+          equivalent of Neo4jBackup). Restore is a separate AuraRestore CR.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              AuraSnapshotSpec requests an on-demand snapshot of an Aura instance. API
+              credentials are resolved from the referenced AuraInstance's provider config.
+
+              NOTE: the Aura API cannot DELETE snapshots. Deleting this CR releases its
+              finalizer and drops it from cluster state; the Aura snapshot itself persists.
+            properties:
+              instanceRef:
+                description: InstanceRef is the AuraInstance (same namespace) to snapshot.
+                  Immutable.
+                type: string
+            required:
+            - instanceRef
+            type: object
+            x-kubernetes-validations:
+            - message: instanceRef is immutable
+              rule: self.instanceRef == oldSelf.instanceRef
+          status:
+            description: AuraSnapshotStatus is the observed state of the snapshot.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              exportable:
+                description: Exportable reports whether the snapshot can seed a new
+                  instance.
+                type: boolean
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                description: 'Phase maps the Aura snapshot status: Pending, InProgress,
+                  Completed, Failed.'
+                type: string
+              profile:
+                description: Profile is AdHoc or Scheduled.
+                type: string
+              snapshotId:
+                description: SnapshotID is the Aura snapshot ID (set once the snapshot
+                  is requested).
+                type: string
+              snapshotTime:
+                description: SnapshotTime is the snapshot's timestamp as reported
+                  by Aura.
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions: null

@@ -40,6 +40,10 @@ describe() {
         Neo4jRole)                 echo "Declarative Neo4j role management with privilege-drift reconciliation" ;;
         Neo4jRoleBinding)          echo "Role grants for users provisioned externally (SSO/LDAP/OIDC first-login)" ;;
         Neo4jAuthRule)             echo "Attribute-based access control (ABAC) — claims-to-roles mapping evaluated at OIDC authentication time (Neo4j 2026.03+)" ;;
+        AuraProviderConfig)        echo "Neo4j Aura API credentials and account defaults for Aura orchestration" ;;
+        AuraInstance)              echo "Provisions and manages Neo4j Aura cloud instances via the Aura API" ;;
+        AuraSnapshot)              echo "Takes on-demand snapshots of Neo4j Aura instances" ;;
+        AuraRestore)               echo "Restores a Neo4j Aura instance in place from a snapshot" ;;
         *)                         return 1 ;;
     esac
 }
