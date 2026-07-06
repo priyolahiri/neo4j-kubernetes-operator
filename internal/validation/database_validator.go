@@ -736,28 +736,6 @@ func (v *DatabaseValidator) validateKnownOptionKeys(key, value string, basePath 
 	}
 }
 
-func (v *DatabaseValidator) isValidMemorySize(size string) bool {
-	if size == "" {
-		return false
-	}
-	// Simple validation - ends with common memory units
-	size = strings.ToLower(size)
-	return strings.HasSuffix(size, "k") || strings.HasSuffix(size, "m") ||
-		strings.HasSuffix(size, "g") || strings.HasSuffix(size, "kb") ||
-		strings.HasSuffix(size, "mb") || strings.HasSuffix(size, "gb")
-}
-
-func (v *DatabaseValidator) isValidDuration(duration string) bool {
-	if duration == "" {
-		return false
-	}
-	// Simple validation - ends with common duration units
-	duration = strings.ToLower(duration)
-	return strings.HasSuffix(duration, "s") || strings.HasSuffix(duration, "m") ||
-		strings.HasSuffix(duration, "h") || strings.HasSuffix(duration, "ms") ||
-		strings.HasSuffix(duration, "us") || strings.HasSuffix(duration, "ns")
-}
-
 func (v *DatabaseValidator) validateConfigurationConflicts(database *neo4jv1beta1.Neo4jDatabase, result *DatabaseValidationResult) {
 	// Check for conflicting seed URI and initial data configurations
 	if database.Spec.SeedURI != "" && database.Spec.InitialData != nil {

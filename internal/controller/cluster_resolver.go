@@ -39,20 +39,6 @@ type ResolvedTarget struct {
 	Standalone *neo4jv1beta1.Neo4jEnterpriseStandalone
 }
 
-// IsStandalone reports whether the referenced target is a standalone deployment.
-func (r ResolvedTarget) IsStandalone() bool { return r.Standalone != nil }
-
-// AdminSecret returns the configured admin secret name for the resolved target.
-func (r ResolvedTarget) AdminSecret() string {
-	if r.Cluster != nil {
-		return r.Cluster.Spec.Auth.AdminSecret
-	}
-	if r.Standalone != nil {
-		return r.Standalone.Spec.Auth.AdminSecret
-	}
-	return ""
-}
-
 // IsReady reports whether the resolved target has reached its Ready phase.
 // Cluster readiness is detected via the Ready condition; standalone via the
 // status.Ready boolean (matching the existing convention from the database

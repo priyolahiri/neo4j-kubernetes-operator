@@ -817,57 +817,6 @@ func (r *Neo4jShardedDatabaseReconciler) waitForNeo4jReadiness(ctx context.Conte
 	return fmt.Errorf("timeout waiting for Neo4j to become ready for database operations after %d attempts", maxRetries)
 }
 
-// createDatabaseWithRetry creates a database with retry logic for transient failures
-func (r *Neo4jShardedDatabaseReconciler) createDatabaseWithRetry(ctx context.Context, client *neo4j.Client, dbName string, primaries, secondaries int32) error {
-	logger := log.FromContext(ctx).WithValues("database", dbName)
-
-	maxRetries := 10
-	baseDelay := time.Second
-	maxDelay := 30 * time.Second
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		logger.V(1).Info("Attempting database creation", "attempt", attempt+1, "maxRetries", maxRetries)
-
-		// Use the correct method signature with all required parameters
-		err := (*client).CreateDatabaseWithTopology(ctx, dbName, primaries, secondaries, nil, true, false, "")
-		if err == nil {
-			logger.Info("Successfully created database", "primaries", primaries, "secondaries", secondaries)
-			return nil
-		}
-
-		// Check if this is a retryable transient error (simple string check)
-		errMsg := strings.ToLower(err.Error())
-		isTransient := strings.Contains(errMsg, "unavailable") ||
-			strings.Contains(errMsg, "timeout") ||
-			strings.Contains(errMsg, "transient") ||
-			strings.Contains(errMsg, "connection") ||
-			strings.Contains(errMsg, "routing")
-
-		if isTransient {
-			// Calculate exponential backoff delay
-			delay := time.Duration(attempt) * baseDelay
-			if delay > maxDelay {
-				delay = maxDelay
-			}
-
-			logger.V(1).Info("Database creation failed with transient error, retrying",
-				"error", err.Error(), "delay", delay.String())
-
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(delay):
-				continue
-			}
-		} else {
-			// Non-transient error, fail immediately
-			return fmt.Errorf("database creation failed with non-transient error: %w", err)
-		}
-	}
-
-	return fmt.Errorf("database creation failed after %d attempts", maxRetries)
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *Neo4jShardedDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	maxConcurrentReconciles := r.MaxConcurrentReconciles

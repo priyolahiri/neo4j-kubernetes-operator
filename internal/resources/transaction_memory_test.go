@@ -190,13 +190,3 @@ func TestFormatMemorySizeForNeo4j(t *testing.T) {
 		})
 	}
 }
-
-// Simple string contains implementation for testing
-func containsString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

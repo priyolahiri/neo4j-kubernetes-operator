@@ -28,7 +28,7 @@
 
 ## Key types & functions
 
-- `ResolveClusterRef(ctx, c, ns, name) (ResolvedTarget, error)` — tries cluster first, then standalone (`cluster_resolver.go`). `ResolvedTarget` exposes `IsStandalone`, `IsReady`, `NewClient`, `AdminSecret`.
+- `ResolveClusterRef(ctx, c, ns, name) (ResolvedTarget, error)` — tries cluster first, then standalone (`cluster_resolver.go`). `ResolvedTarget` exposes `IsReady`, `NewClient`.
 - `EnqueueDependentsForClusterChange(...)` — watch wiring so user/role/binding reconcilers re-run on cluster status flips (used in each `SetupWithManager`).
 - `SetReadyCondition` / `SetNamedCondition` (`conditions.go`) — `SetNamedCondition` for `ServersHealthy`/`DatabasesHealthy` etc.; `SetReadyCondition` ONLY for the `Ready` type.
 - `(r *Neo4jEnterpriseClusterReconciler) envVarsEqual(...)` + package-level `mergeEnvVars(...)` (`neo4jenterprisecluster_controller.go`).
