@@ -62,7 +62,6 @@ type CacheManager struct {
 	// Namespace tracking
 	mutex             sync.RWMutex
 	watchedNamespaces map[string]time.Time
-	filteredResources map[string]bool
 
 	// Memory monitoring
 	memoryStats chan MemoryStats
@@ -79,14 +78,6 @@ type MemoryStats struct {
 	SysMB        float64
 	NumGC        uint32
 	Timestamp    time.Time
-}
-
-// MemoryAlert represents a memory usage alert
-type MemoryAlert struct {
-	Level     AlertLevel
-	Message   string
-	Stats     MemoryStats
-	Timestamp time.Time
 }
 
 // AlertLevel defines the severity of memory alerts
@@ -110,11 +101,9 @@ func NewCacheManager(scheme *runtime.Scheme, watchModePrefix string, watchAllMod
 		memoryThreshold:   DefaultMemoryThresholdMB,
 		warningThreshold:  WarningMemoryThresholdMB,
 		watchedNamespaces: make(map[string]time.Time),
-		filteredResources: make(map[string]bool),
 		memoryStats:       make(chan MemoryStats, 100),
 	}
 
-	cm.setupResourceFilters()
 	return cm
 }
 
@@ -283,24 +272,6 @@ func (cm *CacheManager) GetMemoryStats() MemoryStats {
 
 // Private methods
 
-func (cm *CacheManager) setupResourceFilters() {
-	cm.filteredResources = map[string]bool{
-		"Pod":                true,  // Filter unless labeled
-		"Endpoint":           true,  // Filter unless labeled
-		"Event":              true,  // Filter unless labeled
-		"ReplicaSet":         true,  // Filter unless labeled
-		"Deployment":         true,  // Filter unless labeled
-		"DaemonSet":          true,  // Filter unless labeled
-		"Ingress":            true,  // Filter unless labeled
-		"NetworkPolicy":      true,  // Filter unless labeled
-		"StorageClass":       false, // Always cache
-		"PersistentVolume":   false, // Always cache
-		"Node":               false, // Always cache
-		"ClusterRole":        false, // Always cache
-		"ClusterRoleBinding": false, // Always cache
-	}
-}
-
 func (cm *CacheManager) getWatchedNamespaces() map[string]cache.Config {
 	cm.mutex.RLock()
 	defer cm.mutex.RUnlock()
@@ -461,21 +432,14 @@ func (cm *CacheManager) isMemoryAboveThreshold() bool {
 }
 
 func (cm *CacheManager) triggerAlert(level AlertLevel, message string, stats MemoryStats) {
-	alert := MemoryAlert{
-		Level:     level,
-		Message:   message,
-		Stats:     stats,
-		Timestamp: time.Now(),
-	}
-
-	// Log the alert
+	// Log the alert at a severity matching its level.
 	switch level {
 	case AlertLevelCritical:
-		log.Log.Error(nil, alert.Message, "stats", alert.Stats)
+		log.Log.Error(nil, message, "stats", stats)
 	case AlertLevelWarning:
-		log.Log.Info(alert.Message, "stats", alert.Stats)
+		log.Log.Info(message, "stats", stats)
 	case AlertLevelInfo:
-		log.Log.V(1).Info(alert.Message, "stats", alert.Stats)
+		log.Log.V(1).Info(message, "stats", stats)
 	}
 }
 
