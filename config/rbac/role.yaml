@@ -135,6 +135,8 @@ rules:
 - apiGroups:
   - neo4j.neo4j.com
   resources:
+  - aurainstances
+  - auraproviderconfigs
   - neo4jauthrules
   - neo4jbackups
   - neo4jdatabases
@@ -157,6 +159,7 @@ rules:
 - apiGroups:
   - neo4j.neo4j.com
   resources:
+  - aurainstances/finalizers
   - neo4jauthrules/finalizers
   - neo4jbackups/finalizers
   - neo4jdatabases/finalizers
@@ -173,6 +176,8 @@ rules:
 - apiGroups:
   - neo4j.neo4j.com
   resources:
+  - aurainstances/status
+  - auraproviderconfigs/status
   - neo4jauthrules/status
   - neo4jbackups/status
   - neo4jdatabases/status

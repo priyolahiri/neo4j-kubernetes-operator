@@ -194,3 +194,21 @@ const (
 	ConditionReasonPrivilegesSynced  = "PrivilegesMatch"
 	ConditionReasonPrivilegesDrifted = "PrivilegesDrifted"
 )
+
+// Aura orchestration (control-plane) event reasons.
+const (
+	EventReasonAuraCredentialsValidated = "AuraCredentialsValidated"
+	EventReasonAuraCredentialsInvalid   = "AuraCredentialsInvalid"
+	EventReasonAuraInstanceCreated      = "AuraInstanceCreated"
+	EventReasonAuraInstanceAdopted      = "AuraInstanceAdopted"
+	EventReasonAuraInstanceUpdated      = "AuraInstanceUpdated"
+	EventReasonAuraInstancePaused       = "AuraInstancePaused"
+	EventReasonAuraInstanceResumed      = "AuraInstanceResumed"
+	EventReasonAuraInstanceDeleted      = "AuraInstanceDeleted"
+	EventReasonAuraInstanceOrphaned     = "AuraInstanceOrphaned"
+	EventReasonAuraInstanceFailed       = "AuraInstanceFailed"
+	EventReasonAuraSnapshotCreated      = "AuraSnapshotCreated"
+	EventReasonAuraRestoreStarted       = "AuraRestoreStarted"
+	EventReasonAuraRestoreCompleted     = "AuraRestoreCompleted"
+	EventReasonAuraRestoreFailed        = "AuraRestoreFailed"
+)
