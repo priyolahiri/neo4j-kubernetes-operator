@@ -18,7 +18,6 @@ package integration_test
 
 import (
 	"fmt"
-	"os/exec"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -180,11 +179,11 @@ var _ = Describe("Backup Chain Integration Tests", Label("extended"), Serial, fu
 		podName := fmt.Sprintf("%s-server-0", cluster.Name)
 		runCypher := func(stmt string) {
 			Eventually(func() error {
-				cmd := exec.CommandContext(ctx, "kubectl", "exec",
-					podName, "-n", testNamespace, "--",
+				cmd, cancel := boundedExec(ctx, podName, testNamespace,
 					"cypher-shell", "--format", "plain", "--database", dbName,
 					"-u", "neo4j", "-p", adminPass, stmt,
 				)
+				defer cancel()
 				out, err := cmd.CombinedOutput()
 				if err != nil {
 					GinkgoWriter.Printf("cypher err=%v out=%s\n", err, string(out))
@@ -292,12 +291,12 @@ var _ = Describe("Backup Chain Integration Tests", Label("extended"), Serial, fu
 		// List skus so a chain miss is visible: "pre-full" only → DIFF
 		// didn't apply; "post-full" only → FULL wasn't replayed; both → ok.
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, podName, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", dbName,
 				"-u", "neo4j", "-p", adminPass,
 				"MATCH (i:Item) RETURN i.sku AS sku ORDER BY sku;",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			outStr := string(out)
 			GinkgoWriter.Printf("verify chain err=%v out=%s\n", err, outStr)

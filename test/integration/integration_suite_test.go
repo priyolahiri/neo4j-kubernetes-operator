@@ -66,6 +66,37 @@ var interval = 5 * time.Second
 // Cluster formation timeout for complex multi-node tests
 var clusterTimeout = 5 * time.Minute
 
+// podExecTimeout bounds a SINGLE `kubectl exec` attempt. A stuck kubelet exec
+// stream (seen under CI node load) otherwise blocks cmd.CombinedOutput() on the
+// shared spec context indefinitely — the surrounding Eventually cannot retry a
+// call that never returns, so one hung exec burns the entire SpecTimeout (the
+// 10-minute opaque flake behind e.g. the Neo4jUser "authenticate as appuser"
+// check). Bounding each attempt lets Eventually kill it and retry a fresh exec.
+var podExecTimeout = 60 * time.Second
+
+// boundedExec builds a `kubectl exec <pod> -n <namespace> -- <command...>` Cmd
+// whose execution is bounded by podExecTimeout (derived from ctx). Callers MUST
+// `defer cancel()`. cmd.WaitDelay guarantees Wait returns even if the killed
+// process leaves a pipe open. Use it (not raw exec.CommandContext(ctx, ...))
+// for in-pod execs inside Eventually/Consistently so a hung exec is retried
+// rather than hanging until the spec times out.
+func boundedExec(ctx context.Context, pod, namespace string, command ...string) (*exec.Cmd, context.CancelFunc) {
+	execCtx, cancel := context.WithTimeout(ctx, podExecTimeout)
+	args := append([]string{"exec", pod, "-n", namespace, "--"}, command...)
+	cmd := exec.CommandContext(execCtx, "kubectl", args...)
+	cmd.WaitDelay = 10 * time.Second
+	return cmd, cancel
+}
+
+// execOut runs boundedExec and returns combined stdout+stderr — the one-shot
+// form for callers that don't need the *exec.Cmd. Same per-attempt timeout, so
+// it is safe inside Eventually/Consistently.
+func execOut(ctx context.Context, pod, namespace string, command ...string) ([]byte, error) {
+	cmd, cancel := boundedExec(ctx, pod, namespace, command...)
+	defer cancel()
+	return cmd.CombinedOutput()
+}
+
 // Initialize timeout based on environment
 func init() {
 	// Increase timeout in CI environments where resources are more constrained
