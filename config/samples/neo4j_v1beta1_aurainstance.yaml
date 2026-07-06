@@ -1,0 +1,20 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraInstance
+metadata:
+  name: example-aura-instance
+spec:
+  # Credentials + defaults come from the referenced AuraProviderConfig.
+  providerConfigRef:
+    name: example-aura
+  # Placement is immutable (enforced by CEL — changing any of these is rejected).
+  cloudProvider: gcp          # aws | gcp | azure
+  region: europe-west1
+  type: professional-db       # free-db | professional-db | business-critical | enterprise-db | professional-ds | enterprise-ds
+  version: "5"
+  # Sizing is mutable (drives online resize).
+  memory: 2GB
+  # Where the operator writes connection details (URI + one-time credentials).
+  connectionSecretName: example-aura-instance-conn
+  connectionSecretFormat: neo4j-driver   # neo4j-driver | aura-dotenv | jdbc | servicebinding | custom
+  # Deleting this CR keeps the cloud instance by default; set Delete to destroy it.
+  deletionPolicy: Orphan

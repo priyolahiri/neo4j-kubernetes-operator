@@ -1,0 +1,13 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraProviderConfig
+metadata:
+  name: example-aura
+spec:
+  # Secret (same namespace) holding the Aura API OAuth client credentials.
+  # Create it from your Aura console client credentials:
+  #   kubectl create secret generic aura-api-creds \
+  #     --from-literal=clientId=<CLIENT_ID> --from-literal=clientSecret=<CLIENT_SECRET>
+  credentialsSecretRef:
+    name: aura-api-creds
+  # Default Aura project (API tenant_id) for instances that omit projectId.
+  defaultProjectId: "your-aura-project-id"

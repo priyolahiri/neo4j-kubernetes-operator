@@ -1,0 +1,9 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraSnapshot
+metadata:
+  name: example-aura-snapshot
+spec:
+  # On-demand snapshot of the named AuraInstance (same namespace).
+  # NOTE: the Aura API cannot delete snapshots — deleting this CR only removes
+  # it from the cluster; the snapshot itself persists in Aura.
+  instanceRef: example-aura-instance
