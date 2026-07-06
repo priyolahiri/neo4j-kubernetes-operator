@@ -120,14 +120,6 @@ const (
 	BackupTargetKindShardedDatabase = "ShardedDatabase"
 )
 
-// IsDatabaseScopedBackupKind reports whether the scope addresses a single
-// database (or logical sharded family) rather than the whole instance.
-// Database-scoped scopes carry the database/sharded-CR name in ScopedName() and
-// the owning instance in InstanceRef.
-func IsDatabaseScopedBackupKind(kind string) bool {
-	return kind == BackupTargetKindDatabase || kind == BackupTargetKindShardedDatabase
-}
-
 // Scope returns the backup's scope — one of the BackupTargetKind* values —
 // derived from the scope fields. AllDatabases → Cluster (instance-wide);
 // ShardedDatabase set → ShardedDatabase; otherwise single Database. An empty

@@ -23,14 +23,6 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-// IsTransientError reports whether err is a transient Neo4j error worth
-// retrying (driver-classified retryable, or a conflicting-transaction-state
-// marker). Exported wrapper around the package-internal classifier so callers
-// outside this package (e.g. controller finalizer cleanup) can reuse it.
-func IsTransientError(err error) bool {
-	return isTransientNeo4jError(err)
-}
-
 // IsHostUnresolvableError reports whether err indicates the Neo4j host's DNS
 // name authoritatively does not exist — the signal that the Service (and almost
 // always the whole cluster/standalone) has been deleted. Distinct from a

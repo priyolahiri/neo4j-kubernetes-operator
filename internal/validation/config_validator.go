@@ -203,19 +203,6 @@ func (v *ConfigValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 	return allErrs
 }
 
-// isValidDiscoveryVersion checks if the discovery version is valid.
-// Only V2_ONLY is accepted; in 2025.x+ the setting is not used at all
-// (V2 is the only supported protocol), but V2_ONLY is harmless if set.
-func (v *ConfigValidator) isValidDiscoveryVersion(version string) bool {
-	validVersions := []string{"V2_ONLY"}
-	for _, valid := range validVersions {
-		if version == valid {
-			return true
-		}
-	}
-	return false
-}
-
 // validateCloudStorageConfig validates cloud storage integration settings
 func (v *ConfigValidator) validateCloudStorageConfig(key, value string) error {
 	// Validate Azure blob storage settings

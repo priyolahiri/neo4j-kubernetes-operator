@@ -14,6 +14,7 @@ linters:
     - ineffassign
     - staticcheck
     - unconvert
+    - unused
     - revive
     - gosec
     - ginkgolinter
@@ -50,7 +51,6 @@ linters:
     - gocyclo  # Too strict for this codebase
     - lll  # Too strict for this codebase
     - unparam  # Too strict for this codebase
-    - unused  # Too strict for this codebase
     - errcheck  # Too strict for this codebase
     - prealloc  # Too strict for this codebase
     - goconst  # Too strict for this codebase

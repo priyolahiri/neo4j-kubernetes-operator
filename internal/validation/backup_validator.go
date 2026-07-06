@@ -284,44 +284,6 @@ func (v *BackupValidator) validateStorageType(storageType string) error {
 		strings.Join(supportedTypes, ", "))
 }
 
-// validateSchemeSpecificURI validates scheme-specific URI requirements
-func (v *BackupValidator) validateSchemeSpecificURI(uri, scheme string) error {
-	switch scheme {
-	case "s3://":
-		// Validate S3 URI format: s3://bucket/path
-		if !regexp.MustCompile(`^s3://[a-z0-9.-]+/.+$`).MatchString(uri) {
-			return fmt.Errorf("invalid S3 URI format. Expected: s3://bucket/path")
-		}
-	case "gs://":
-		// Validate GCS URI format: gs://bucket/path
-		if !regexp.MustCompile(`^gs://[a-z0-9.-]+/.+$`).MatchString(uri) {
-			return fmt.Errorf("invalid Google Cloud Storage URI format. Expected: gs://bucket/path")
-		}
-	case "az://":
-		// Validate Azure URI format: az://container/path
-		if !regexp.MustCompile(`^az://[a-z0-9.-]+/.+$`).MatchString(uri) {
-			return fmt.Errorf("invalid Azure Blob Storage URI format. Expected: az://container/path")
-		}
-	case "file://":
-		// Validate file URI format: file:///path
-		if !strings.HasPrefix(uri, "file:///") {
-			return fmt.Errorf("invalid file URI format. Expected: file:///absolute/path")
-		}
-	case "hdfs://":
-		// Validate HDFS URI format: hdfs://namenode:port/path
-		if !regexp.MustCompile(`^hdfs://[a-zA-Z0-9.-]+:\d+/.+$`).MatchString(uri) {
-			return fmt.Errorf("invalid HDFS URI format. Expected: hdfs://namenode:port/path")
-		}
-	case "ftp://", "sftp://":
-		// Validate FTP/SFTP URI format: ftp://user@host:port/path
-		if !regexp.MustCompile(`^s?ftp://[^@]+@[a-zA-Z0-9.-]+:\d+/.+$`).MatchString(uri) {
-			return fmt.Errorf("invalid FTP/SFTP URI format. Expected: %suser@host:port/path", scheme)
-		}
-	}
-
-	return nil
-}
-
 // validateStorageProvider validates provider-specific storage configurations.
 // Cloud-provider requirements are checked against spec.storage.cloud.
 func (v *BackupValidator) validateStorageProvider(storage *neo4jv1beta1.StorageLocation) error {

@@ -130,12 +130,6 @@ func (v *StandaloneValidator) ValidateUpdate(oldStandalone, newStandalone *neo4j
 	return allErrs
 }
 
-// validateEdition validates the edition field
-// Edition field has been removed - operator only supports enterprise edition
-func (v *StandaloneValidator) validateEdition(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
-	return field.ErrorList{}
-}
-
 // validateImage validates the image configuration
 func (v *StandaloneValidator) validateImage(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
 	var allErrs field.ErrorList

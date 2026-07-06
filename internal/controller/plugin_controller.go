@@ -418,41 +418,6 @@ func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin 
 	return nil, fmt.Errorf("target deployment %s not found (tried both Neo4jEnterpriseCluster and Neo4jEnterpriseStandalone)", plugin.Spec.ClusterRef)
 }
 
-func (r *Neo4jPluginReconciler) waitForPluginReady(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin) error {
-	logger := log.FromContext(ctx)
-
-	// Wait for plugin to be in Ready state with timeout
-	timeout := time.After(5 * time.Minute)
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context cancelled while waiting for plugin %s: %w", plugin.Name, ctx.Err())
-		case <-timeout:
-			return fmt.Errorf("timeout waiting for plugin %s to be ready", plugin.Name)
-		case <-ticker.C:
-			current := &neo4jv1beta1.Neo4jPlugin{}
-			if err := r.Get(ctx, types.NamespacedName{Name: plugin.Name, Namespace: plugin.Namespace}, current); err != nil {
-				logger.Error(err, "Failed to get plugin status")
-				continue
-			}
-
-			if current.Status.Phase == "Ready" {
-				logger.Info("Plugin is ready", "plugin", plugin.Name)
-				return nil
-			}
-
-			if current.Status.Phase == "Failed" {
-				return fmt.Errorf("plugin %s failed to install: %s", plugin.Name, current.Status.Message)
-			}
-
-			logger.Info("Waiting for plugin to be ready", "plugin", plugin.Name, "phase", current.Status.Phase)
-		}
-	}
-}
-
 // arePodsReady checks if all pods are ready without blocking
 func (r *Neo4jPluginReconciler) arePodsReady(ctx context.Context, deployment *DeploymentInfo) bool {
 	logger := log.FromContext(ctx)
@@ -490,66 +455,6 @@ func (r *Neo4jPluginReconciler) arePodsReady(ctx context.Context, deployment *De
 
 	logger.Info("All pods are ready")
 	return true
-}
-
-func (r *Neo4jPluginReconciler) waitForDeploymentReady(ctx context.Context, deployment *DeploymentInfo) error {
-	logger := log.FromContext(ctx)
-	logger.Info("Waiting for deployment to be ready after plugin installation", "type", deployment.Type)
-
-	timeout := time.After(10 * time.Minute)
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context cancelled while waiting for %s deployment %s/%s: %w",
-				deployment.Type, deployment.Namespace, deployment.Name, ctx.Err())
-		case <-timeout:
-			return fmt.Errorf("timeout waiting for %s deployment %s/%s to be ready",
-				deployment.Type, deployment.Namespace, deployment.Name)
-		case <-ticker.C:
-			// Check if all pods are ready
-			pods := &corev1.PodList{}
-			podLabels := r.getPodLabels(deployment)
-			if err := r.List(ctx, pods, client.InNamespace(deployment.Namespace), client.MatchingLabels(podLabels)); err != nil {
-				logger.Error(err, "Failed to list pods")
-				continue
-			}
-
-			expectedReplicas := r.getExpectedReplicas(deployment)
-			if len(pods.Items) != expectedReplicas {
-				logger.Info("Waiting for all pods to be created", "current", len(pods.Items), "expected", expectedReplicas)
-				continue
-			}
-
-			allReady := true
-			for _, pod := range pods.Items {
-				// Check if pod is ready
-				podReady := pod.Status.Phase == corev1.PodRunning
-				if podReady {
-					for _, condition := range pod.Status.Conditions {
-						if condition.Type == corev1.PodReady {
-							podReady = condition.Status == corev1.ConditionTrue
-							break
-						}
-					}
-				}
-				if !podReady {
-					allReady = false
-					break
-				}
-			}
-
-			if allReady {
-				logger.Info("Deployment is ready",
-					"type", deployment.Type, "name", deployment.Name)
-				return nil
-			}
-
-			logger.Info("Waiting for pods to be ready")
-		}
-	}
 }
 
 func (r *Neo4jPluginReconciler) configurePlugin(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
