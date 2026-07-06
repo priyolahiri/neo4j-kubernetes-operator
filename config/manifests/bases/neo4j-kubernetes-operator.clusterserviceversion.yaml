@@ -14,6 +14,28 @@ spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
+    - description: AuraInstance provisions and manages a Neo4j Aura cloud instance
+        via the Aura REST API.
+      displayName: Aura Instance
+      kind: AuraInstance
+      name: aurainstances.neo4j.neo4j.com
+      version: v1beta1
+    - description: AuraProviderConfig holds Neo4j Aura API credentials and account
+        defaults for Aura orchestration.
+      displayName: Aura Provider Config
+      kind: AuraProviderConfig
+      name: auraproviderconfigs.neo4j.neo4j.com
+      version: v1beta1
+    - description: AuraRestore restores a Neo4j Aura instance in place from a snapshot.
+      displayName: Aura Restore
+      kind: AuraRestore
+      name: aurarestores.neo4j.neo4j.com
+      version: v1beta1
+    - description: AuraSnapshot takes an on-demand snapshot of a Neo4j Aura instance.
+      displayName: Aura Snapshot
+      kind: AuraSnapshot
+      name: aurasnapshots.neo4j.neo4j.com
+      version: v1beta1
     - description: Neo4jBackup declaratively manages a Neo4j backup. The operator
         runs `neo4j-admin database backup` against the referenced cluster or standalone
         target, writes the backup to local PVC storage or to a supported cloud bucket
