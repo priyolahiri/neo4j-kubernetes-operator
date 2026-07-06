@@ -19,7 +19,6 @@ package integration_test
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -119,11 +118,11 @@ var _ = Describe("Neo4jUser end-to-end", Label("core"), func() {
 		By("Verifying SHOW USERS via cypher-shell")
 		podName := fmt.Sprintf("%s-server-0", clusterName)
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"SHOW USERS YIELD user, roles WHERE user = 'appuser' RETURN user, roles",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				// Surface the failure mode so the Eventually's last-observed value
@@ -138,11 +137,11 @@ var _ = Describe("Neo4jUser end-to-end", Label("core"), func() {
 
 		By("Verifying the appuser can authenticate with the original password")
 		Eventually(func() error {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "appuser", "-p", userPass,
 				"RETURN 1",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				return fmt.Errorf("cypher-shell auth as appuser failed: %w; output: %s", err, string(out))
@@ -173,11 +172,11 @@ var _ = Describe("Neo4jUser end-to-end", Label("core"), func() {
 
 		By("Verifying the appuser can authenticate with the new password")
 		Eventually(func() error {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "appuser", "-p", newUserPass,
 				"RETURN 1",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				return fmt.Errorf("cypher-shell auth as appuser (rotated password) failed: %w; output: %s", err, string(out))
@@ -191,11 +190,11 @@ var _ = Describe("Neo4jUser end-to-end", Label("core"), func() {
 
 		By("Waiting for the user to disappear from SHOW USERS")
 		Eventually(func() bool {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"SHOW USERS YIELD user WHERE user = 'appuser' RETURN count(*) AS n",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("cypher-shell SHOW USERS failed: %v; output: %s\n", err, string(out))
