@@ -4,6 +4,51 @@
 > **Product framing:** This operator is not PM-tracked and there is no official Neo4j roadmap decision for Aura-cloud orchestration. This is a technical design for this project — not an official product/version commitment. Distinct from (and complementary to) the existing `auraFleetManagement` field.
 > **API foundation:** Core built on **Aura API v1 (GA)** — it is the only version with a complete instance lifecycle. v2beta1 (org/project hierarchy, multi-DB, RBAC, IP filters) is deferred to a later phase because it currently lacks scale/pause/resume/snapshot/restore/CMK.
 > **Settled decisions:** (1) full lifecycle in Phase 1; (2) deletion defaults to **Orphan** (keep the cloud instance); (3) restore is a **separate `AuraRestore` CRD** (symmetry with `Neo4jBackup`/`Neo4jRestore`); (4) **ergonomic** Kind names (`AuraInstance`/`AuraSnapshot`/`AuraRestore`) in group `neo4j.neo4j.com`; (5) the connection Secret ships **all formats** (default `neo4j-driver`) **and full Service Binding** in Phase 1.
+> **Review v2 (cloud-native) — agreed additions to Phase 1:** (6) **idempotent create + adopt** via the `neo4j.com/external-instance-id` external-name annotation; (7) **CEL** (`x-kubernetes-validations`) for immutability/enums — no webhook — with inline Go only for the live `instance_configurations` oracle; (8) an **`AuraProviderConfig`** CRD for credentials/defaults/rate-limiter (inline `credentialsSecretRef` retained as a single-account shortcut); (9) **metrics wiring** + **`publishConnectionDetailsTo`** (ConfigMap for non-secret endpoint). **Deferred to Phase 2:** `paused`/`managementPolicies`, the `status.atProvider` observed-state drift mirror, `AuraInstanceClass`, and unifying `Neo4jDatabase`/`User`/`Role` onto Aura targets. See the "Review v2" section below — where it differs from §4–§8, it wins.
+
+---
+
+## Review v2 — agreed cloud-native design (authoritative)
+
+This refines §4–§8 with the decisions taken in design review. **Where this section and a base section differ, this section wins.**
+
+### A. Idempotent create + adopt (external-name)
+The Aura instance ID is the source of truth, stored in the annotation **`neo4j.com/external-instance-id`** on the `AuraInstance`, written as the *first* action after a successful create (before status). Reconcile:
+- **annotation empty →** *observe-before-create*: `GET /instances?tenantId=<project>` and match by the CR's deterministic instance name; **adopt** (record the id) if found, else `POST /instances` and immediately persist the returned id to the annotation (with `RetryOnConflict`).
+- **annotation set →** GET/observe that instance; never POST.
+
+Why: Aura v1 has **no idempotency token**, so a crash between `POST` (201) and the status write would otherwise create a *second paid instance*. This makes create effectively idempotent and also enables **import**: set the annotation (or `spec.instanceId`, see below) on a CR pointing at a pre-existing instance and the operator adopts it instead of recreating. Documented limitation: the create→persist window is best-effort-minimized, not atomic (no server-side idempotency key exists).
+
+`AuraInstance` gains an optional **`spec.instanceId`** for explicit user-driven import; the annotation remains the internal source of truth (spec value is copied to the annotation on first reconcile).
+
+### B. Declarative validation via CEL (no webhook)
+Immutable fields (`projectId`, `cloudProvider`, `region`, `type`, `version`, `source`, `customerManagedKeyId`) carry `+kubebuilder:validation:XValidation:rule="self == oldSelf"` transition rules — **apiserver-enforced** (K8s ≥1.29; repo min is 1.32), satisfying Invariant 1 with **no webhook** and no controller-bypassable gap. Enums and cross-field rules (e.g. `storage` forbidden on `free-db`; `secondariesCount`/`cdcEnrichmentMode` only for VDC) also use `XValidation`. Inline Go validation is kept ONLY for what CEL cannot express: checking the desired tier/region/memory/version/provider combo against the live `/tenants/{id}.instance_configurations` oracle.
+
+### C. `AuraProviderConfig` CRD (credentials + defaults + rate limiter)
+Namespaced CRD holding the client-credentials Secret ref + defaults, owning the per-credential **token cache + rate limiter** (25/125 rpm). Resources reference it via `spec.providerConfigRef`; an inline `spec.credentialsSecretRef` stays as a single-account shortcut (mutually exclusive). ESO-friendly (the Secret can be populated by External Secrets Operator).
+```yaml
+kind: AuraProviderConfig
+metadata: { name: aura-prod, namespace: team-graph }
+spec:
+  credentialsSecretRef: { name: aura-api-creds }   # keys: clientId, clientSecret
+  defaultProjectId: "abc123"
+status:
+  conditions: [{ type: Ready, status: "True", reason: CredentialsValidated }]
+```
+
+### G. Metrics wiring
+When an instance exposes `metrics_integration_url`, surface it on `status` and (opt-in) generate a Prometheus **`ScrapeConfig`** so Aura DBs land in the same monitoring stack as self-managed. Add operator-level Prometheus metrics for Aura API calls (latency, error/rate-limit counts) via the existing `internal/metrics` package.
+
+### H. `publishConnectionDetailsTo` (ConfigMap)
+In addition to the connection Secret (§4.5), publish the **non-secret** endpoint (`NEO4J_URI`, `instanceId`, `region`, `type`) to a ConfigMap named by `spec.publishConnectionDetailsTo`, for teams that keep URIs out of Secrets. Credentials remain Secret-only.
+
+### Spec additions (supersede §4.1)
+`AuraInstance.spec` gains: `providerConfigRef` (+ retained `credentialsSecretRef` shortcut), optional `instanceId` (import), `publishConnectionDetailsTo`. Immutability moves from prose to CEL markers (B).
+
+### Deferred to Phase 2 (explicitly out of Phase 1)
+- **D/E:** `paused` annotation + `managementPolicies`; `status.atProvider` full observed-state mirror + continuous drift auto-correction/reporting. Phase 1 keeps the simpler `status` + `Ready`/`Synced` conditions from §4.1.
+- **F:** `AuraInstanceClass` (StorageClass-style defaults).
+- **I:** `Neo4jDatabase`/`User`/`Role` targeting an `AuraInstance` via `cluster_resolver`.
 
 ---
 
@@ -249,7 +294,7 @@ The operator already has `Neo4jDatabase`, `Neo4jUser`, `Neo4jRole`, `Neo4jBackup
 
 ## 8. Phasing
 
-- **Phase 1 (MVP):** `AuraInstance` (create/resize/pause/resume/delete, Orphan default) + `AuraSnapshot` (on-demand) + `AuraRestore`; connection Secret with **all formats** (`neo4j-driver` default, `aura-dotenv`, `jdbc`, `servicebinding`, `custom`) + **full Service Binding** (Provisioned-Service contract + `servicebinding` layout); inline validation; faked-API tests.
+- **Phase 1 (MVP):** `AuraInstance` (create/resize/pause/resume/delete, Orphan default) + `AuraSnapshot` (on-demand) + `AuraRestore`; **`AuraProviderConfig`** (C); **idempotent create + adopt** via the external-name annotation (A); **CEL** immutability/enum validation + inline `instance_configurations` oracle (B); connection Secret with **all formats** (`neo4j-driver` default, `aura-dotenv`, `jdbc`, `servicebinding`, `custom`) + **full Service Binding** + **`publishConnectionDetailsTo`** ConfigMap (H); **metrics wiring** (G); faked-API tests. (See the Review v2 section — it supersedes where they differ.)
 - **Phase 2:** clone/overwrite, `professional-db → business-critical` upgrade, CMK (`AuraCustomerManagedKey`), `AuraProviderConfig`, `AuraSnapshotSchedule`, metrics-integration wiring, deletion-protection polish.
 - **Phase 3 (when v2beta1 GAs):** `AuraDatabase` (multi-DB), `AuraIPFilter`, org/project RBAC; optionally Aura-target-aware `Neo4jDatabase`/`User`/`Role`.
 
