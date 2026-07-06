@@ -1557,13 +1557,19 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMutableResource(ctx context.
 
 	switch d := desired.(type) {
 	case *corev1.Service:
-		e := existing.(*corev1.Service)
+		e, ok := existing.(*corev1.Service)
+		if !ok {
+			return fmt.Errorf("existing object %T does not match desired *corev1.Service", existing)
+		}
 		if applyDesiredServiceFields(e, d) {
 			logger.Info("Updating Service", "name", e.Name)
 			return r.Update(ctx, e)
 		}
 	case *networkingv1.NetworkPolicy:
-		e := existing.(*networkingv1.NetworkPolicy)
+		e, ok := existing.(*networkingv1.NetworkPolicy)
+		if !ok {
+			return fmt.Errorf("existing object %T does not match desired *networkingv1.NetworkPolicy", existing)
+		}
 		changed := false
 		if !equality.Semantic.DeepEqual(e.Spec, d.Spec) {
 			e.Spec = d.Spec
@@ -1577,7 +1583,10 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMutableResource(ctx context.
 			return r.Update(ctx, e)
 		}
 	case *networkingv1.Ingress:
-		e := existing.(*networkingv1.Ingress)
+		e, ok := existing.(*networkingv1.Ingress)
+		if !ok {
+			return fmt.Errorf("existing object %T does not match desired *networkingv1.Ingress", existing)
+		}
 		changed := false
 		if !equality.Semantic.DeepEqual(e.Spec, d.Spec) {
 			e.Spec = d.Spec
@@ -1591,7 +1600,10 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMutableResource(ctx context.
 			return r.Update(ctx, e)
 		}
 	case *certmanagerv1.Certificate:
-		e := existing.(*certmanagerv1.Certificate)
+		e, ok := existing.(*certmanagerv1.Certificate)
+		if !ok {
+			return fmt.Errorf("existing object %T does not match desired *certmanagerv1.Certificate", existing)
+		}
 		changed := false
 		if !equality.Semantic.DeepEqual(e.Spec, d.Spec) {
 			e.Spec = d.Spec

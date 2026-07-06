@@ -262,16 +262,29 @@ func (r *Neo4jRestoreReconciler) ensureClusterSeedConfigReady(
 	if credsSecret != "" {
 		rolled, rErr := r.seedCredsRolledOut(ctx, cluster, credsSecret)
 		if rErr != nil || !rolled {
-			r.updateRestoreStatus(ctx, restore, StatusPending,
-				fmt.Sprintf("Waiting for cluster %q server pods to roll out seed credentials Secret %q", cluster.Name, credsSecret))
+			msg := fmt.Sprintf("Waiting for cluster %q server pods to roll out seed credentials Secret %q", cluster.Name, credsSecret)
+			if rErr != nil {
+				msg += fmt.Sprintf(" (rollout check pending: %v)", rErr)
+			}
+			r.updateRestoreStatus(ctx, restore, StatusPending, msg)
+			// A transient rollout-check error is treated as "not rolled out yet":
+			// this function drives all waiting via status + RequeueAfter and never
+			// propagates transient errors (cf. the projErr handling above). The
+			// error is surfaced in the status message set just above.
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, false, nil
 		}
 	}
 	if hasCustomEndpoint && clusterSpecEnvHasSeedEndpoint(cluster) {
 		rolled, rErr := r.specEnvEndpointRolledOut(ctx, cluster)
 		if rErr != nil || !rolled {
-			r.updateRestoreStatus(ctx, restore, StatusPending,
-				fmt.Sprintf("Waiting for cluster %q server pods to roll out the S3 endpoint", cluster.Name))
+			msg := fmt.Sprintf("Waiting for cluster %q server pods to roll out the S3 endpoint", cluster.Name)
+			if rErr != nil {
+				msg += fmt.Sprintf(" (rollout check pending: %v)", rErr)
+			}
+			r.updateRestoreStatus(ctx, restore, StatusPending, msg)
+			// Transient rollout-check error → keep waiting; this function retries
+			// via RequeueAfter and never propagates transient errors. The error is
+			// surfaced in the status message set just above.
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, false, nil
 		}
 	}
