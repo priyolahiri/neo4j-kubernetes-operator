@@ -143,6 +143,31 @@ func resolveAuraCredentials(
 	return creds, nil
 }
 
+// resolveInstanceClientAndID fetches the referenced AuraInstance (same
+// namespace), builds an Aura client from its credentials, and returns the
+// instance's external Aura ID. Used by the snapshot and restore controllers,
+// which act on an instance they don't own.
+func resolveInstanceClientAndID(
+	ctx context.Context, k8s client.Client, namespace, instanceRef string,
+) (*aura.Client, string, *neo4jv1beta1.AuraInstance, error) {
+	inst := &neo4jv1beta1.AuraInstance{}
+	if err := k8s.Get(ctx, types.NamespacedName{Name: instanceRef, Namespace: namespace}, inst); err != nil {
+		return nil, "", nil, fmt.Errorf("resolving instanceRef %q: %w", instanceRef, err)
+	}
+	creds, err := resolveAuraCredentials(ctx, k8s, namespace, inst.Spec.ProviderConfigRef, inst.Spec.CredentialsSecretRef)
+	if err != nil {
+		return nil, "", inst, err
+	}
+	externalID := inst.Annotations[AuraExternalIDAnnotation]
+	if externalID == "" {
+		externalID = inst.Status.InstanceID
+	}
+	if externalID == "" {
+		return nil, "", inst, fmt.Errorf("AuraInstance %q has no external instance ID yet (not created/adopted)", instanceRef)
+	}
+	return auraClientForCreds(creds), externalID, inst, nil
+}
+
 // auraCondStatus maps a boolean to a Kubernetes condition status.
 func auraCondStatus(ok bool) metav1.ConditionStatus {
 	if ok {

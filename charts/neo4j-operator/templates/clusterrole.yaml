@@ -127,6 +127,8 @@ rules:
   resources:
     - aurainstances
     - auraproviderconfigs
+    - aurarestores
+    - aurasnapshots
     - neo4jauthrules
     - neo4jbackups
     - neo4jdatabases
@@ -168,6 +170,8 @@ rules:
   resources:
     - aurainstances/status
     - auraproviderconfigs/status
+    - aurarestores/status
+    - aurasnapshots/status
     - neo4jauthrules/status
     - neo4jbackups/status
     - neo4jdatabases/status
