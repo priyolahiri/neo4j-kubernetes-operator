@@ -156,12 +156,25 @@ var _ = BeforeSuite(func() {
 		Expect(err).NotTo(HaveOccurred())
 	}
 
+	// testRequeueAfter: backup/restore reconcilers requeue transient states
+	// (e.g. "target cluster not ready yet") after this delay. Production uses
+	// 30s, but in envtest that turned a single stale-cache read into a 30s
+	// stall: the flaky "Should create the backup ServiceAccount automatically"
+	// spec creates the cluster, patches its status to Ready, then creates the
+	// backup — but if the backup's first reconcile observes the cluster before
+	// the manager cache has caught up to the Ready patch, it returns
+	// Waiting+RequeueAfter and does not create the ServiceAccount until the next
+	// pass 30s later. Under CI -race on 2 cores that pushed SA creation past the
+	// 60s spec timeout. A short test requeue recovers from the transient read in
+	// ~2s instead of 30s; production behaviour is unchanged.
+	const testRequeueAfter = 2 * time.Second
+
 	// Set up Neo4jBackup controller
 	if err := (&controller.Neo4jBackupReconciler{
 		Client:       mgr.GetClient(),
 		Scheme:       mgr.GetScheme(),
 		Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
-		RequeueAfter: 30 * time.Second,
+		RequeueAfter: testRequeueAfter,
 	}).SetupWithManager(mgr); err != nil {
 		Expect(err).NotTo(HaveOccurred())
 	}
@@ -171,7 +184,7 @@ var _ = BeforeSuite(func() {
 		Client:       mgr.GetClient(),
 		Scheme:       mgr.GetScheme(),
 		Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
-		RequeueAfter: 30 * time.Second,
+		RequeueAfter: testRequeueAfter,
 	}).SetupWithManager(mgr); err != nil {
 		Expect(err).NotTo(HaveOccurred())
 	}

@@ -19,7 +19,6 @@ package integration_test
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -308,11 +307,11 @@ var _ = Describe("Neo4jPlugin Integration Tests", Label("core"), func() {
 			// it because server.directories.plugins=/plugins is set in the base config.
 			podName := fmt.Sprintf("%s-server-0", clusterName)
 			Eventually(func() int {
-				apocCheckCmd := exec.CommandContext(ctx, "kubectl", "exec",
-					podName, "-n", namespace.Name, "--",
+				apocCheckCmd, cancel := boundedExec(ctx, podName, namespace.Name,
 					"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", "admin123",
 					"SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc' RETURN count(*) AS n",
 				)
+				defer cancel()
 				apocOut, apocErr := apocCheckCmd.CombinedOutput()
 				if apocErr != nil {
 					GinkgoWriter.Printf("cypher-shell not yet ready: %v\n", apocErr)

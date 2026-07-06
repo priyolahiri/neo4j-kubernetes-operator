@@ -18,7 +18,6 @@ package integration_test
 
 import (
 	"fmt"
-	"os/exec"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -118,8 +117,9 @@ var _ = Describe("All-Databases Backup and Cluster Restore (MinIO) Integration T
 
 	writeCypher := func(podName, dbName, stmt string) {
 		Eventually(func() error {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec", podName, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, podName, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", dbName, "-u", "neo4j", "-p", adminPass, stmt)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("cypher-shell (%s) err=%v out=%s\n", dbName, err, string(out))
@@ -243,16 +243,18 @@ var _ = Describe("All-Databases Backup and Cluster Restore (MinIO) Integration T
 
 		By("Verifying both databases' data round-tripped (pre-backup values restored)")
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec", podName, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, podName, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", "inventory", "-u", "neo4j", "-p", adminPass,
 				"MATCH (i:Item {sku:'A-100'}) RETURN i.count AS count;")
+			defer cancel()
 			out, _ := cmd.CombinedOutput()
 			return string(out)
 		}, 3*time.Minute, pollInterval).Should(ContainSubstring("42"))
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec", podName, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, podName, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", "customers", "-u", "neo4j", "-p", adminPass,
 				"MATCH (c:Customer {id:'C-1'}) RETURN c.tier AS tier;")
+			defer cancel()
 			out, _ := cmd.CombinedOutput()
 			return string(out)
 		}, 3*time.Minute, pollInterval).Should(ContainSubstring("gold"))

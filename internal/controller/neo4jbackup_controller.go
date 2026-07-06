@@ -879,14 +879,12 @@ func (r *Neo4jBackupReconciler) ensureBackupPVC(ctx context.Context, backup *neo
 // Neo4jBackup CR from an existing backup PVC, protecting v1.12.0-created PVCs
 // from cascade-deletion when the CR is removed. No-op when no such ref exists.
 func (r *Neo4jBackupReconciler) stripBackupPVCOwnerRef(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, pvc *corev1.PersistentVolumeClaim) error {
-	kept := make([]metav1.OwnerReference, 0, len(pvc.OwnerReferences))
 	stripped := false
 	for _, ref := range pvc.OwnerReferences {
 		if ref.UID == backup.UID && ref.Kind == "Neo4jBackup" {
 			stripped = true
-			continue
+			break
 		}
-		kept = append(kept, ref)
 	}
 	if !stripped {
 		return nil

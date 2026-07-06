@@ -18,7 +18,6 @@ package integration_test
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -191,12 +190,12 @@ var _ = Describe("Standard Database Restore (MinIO) Integration Tests", Label("e
 		podName := fmt.Sprintf("%s-server-0", cluster.Name)
 		writeCypher := "CREATE (:Item {sku: 'A-100', count: 42}), (:Item {sku: 'A-200', count: 13}) RETURN count(*) AS n;"
 		Eventually(func() error {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, podName, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", dbName,
 				"-u", "neo4j", "-p", adminPass,
 				writeCypher,
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("data-write cypher-shell err=%v out=%s\n", err, string(out))
@@ -234,12 +233,12 @@ var _ = Describe("Standard Database Restore (MinIO) Integration Tests", Label("e
 		By("Modifying data so the restore-then-verify check is meaningful")
 		modifyCypher := "MATCH (i:Item) SET i.count = 999 RETURN count(i) AS n;"
 		Eventually(func() error {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, podName, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", dbName,
 				"-u", "neo4j", "-p", adminPass,
 				modifyCypher,
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("post-backup modify err=%v out=%s\n", err, string(out))
@@ -294,12 +293,12 @@ var _ = Describe("Standard Database Restore (MinIO) Integration Tests", Label("e
 
 		By("Verifying the restored data matches the backup (count=42, not 999)")
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, podName, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", dbName,
 				"-u", "neo4j", "-p", adminPass,
 				"MATCH (i:Item {sku: 'A-100'}) RETURN i.count AS count;",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			outStr := string(out)
 			GinkgoWriter.Printf("verify cypher-shell err=%v out=%s\n", err, outStr)
@@ -326,12 +325,12 @@ var _ = Describe("Standard Database Restore (MinIO) Integration Tests", Label("e
 
 		By("Re-modifying data so the type=storage restore is meaningful (count=777)")
 		Eventually(func() error {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, podName, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", dbName,
 				"-u", "neo4j", "-p", adminPass,
 				"MATCH (i:Item) SET i.count = 777 RETURN count(i) AS n;",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("pre-storage-restore modify err=%v out=%s\n", err, string(out))
@@ -377,12 +376,12 @@ var _ = Describe("Standard Database Restore (MinIO) Integration Tests", Label("e
 
 		By("Verifying the type=storage restore brought the data back to count=42 (not 777)")
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, podName, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", dbName,
 				"-u", "neo4j", "-p", adminPass,
 				"MATCH (i:Item {sku: 'A-100'}) RETURN i.count AS count;",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			outStr := string(out)
 			GinkgoWriter.Printf("type=storage verify cypher-shell err=%v out=%s\n", err, outStr)

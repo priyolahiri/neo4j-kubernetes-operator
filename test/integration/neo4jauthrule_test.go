@@ -19,7 +19,6 @@ package integration_test
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -272,13 +271,13 @@ var _ = Describe("Neo4jAuthRule end-to-end", Label("extended"), func() {
 
 		By("Verifying SHOW AUTH RULES reports the rule")
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"CYPHER 25 SHOW AUTH RULES YIELD name, condition, enabled, roles "+
 					"WHERE name = 'analytics_team' "+
 					"RETURN name, condition, enabled, roles",
 			)
+			defer cancel()
 			out, _ := cmd.CombinedOutput()
 			return string(out)
 		}, clusterTimeout, interval).Should(SatisfyAll(
@@ -299,21 +298,21 @@ var _ = Describe("Neo4jAuthRule end-to-end", Label("extended"), func() {
 		time.Sleep(5 * time.Second)
 
 		By("Manually dropping the rule via cypher-shell to simulate drift")
-		cmd := exec.CommandContext(ctx, "kubectl", "exec",
-			podName, "-n", namespace.Name, "--",
+		cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 			"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 			"CYPHER 25 DROP AUTH RULE analytics_team",
 		)
+		defer cancel()
 		out, err := cmd.CombinedOutput()
 		Expect(err).ToNot(HaveOccurred(), "cypher-shell DROP AUTH RULE failed; output: %s", string(out))
 
 		By("Waiting for the operator to recreate the rule (drift reconciliation)")
 		Eventually(func() bool {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"CYPHER 25 SHOW AUTH RULES YIELD name WHERE name = 'analytics_team' RETURN count(*) AS n",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("cypher-shell SHOW AUTH RULES failed: %v; output: %s\n", err, string(out))
@@ -329,22 +328,22 @@ var _ = Describe("Neo4jAuthRule end-to-end", Label("extended"), func() {
 
 		By("Manually revoking the role grant to simulate role drift")
 		Eventually(func(g Gomega) {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"CYPHER 25 REVOKE ROLE analytics_reader FROM AUTH RULE analytics_team",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			g.Expect(err).ToNot(HaveOccurred(), "REVOKE failed; output: %s", string(out))
 		}, clusterTimeout, interval).Should(Succeed())
 
 		By("Waiting for the operator to re-grant analytics_reader to the rule")
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"CYPHER 25 SHOW AUTH RULES YIELD name, roles WHERE name = 'analytics_team' RETURN roles",
 			)
+			defer cancel()
 			out, _ := cmd.CombinedOutput()
 			return string(out)
 		}, clusterTimeout, interval).Should(ContainSubstring("analytics_reader"))
@@ -355,11 +354,11 @@ var _ = Describe("Neo4jAuthRule end-to-end", Label("extended"), func() {
 
 		By("Waiting for the rule to disappear from SHOW AUTH RULES")
 		Eventually(func() bool {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"CYPHER 25 SHOW AUTH RULES YIELD name WHERE name = 'analytics_team' RETURN count(*) AS n",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("cypher-shell SHOW AUTH RULES failed: %v; output: %s\n", err, string(out))

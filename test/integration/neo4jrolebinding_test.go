@@ -19,7 +19,6 @@ package integration_test
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -83,11 +82,11 @@ var _ = Describe("Neo4jRoleBinding end-to-end", Label("core"), func() {
 
 		By("Pre-creating an external user via cypher-shell (simulating SSO first-login)")
 		Eventually(func() error {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				fmt.Sprintf("CREATE USER externuser SET PASSWORD '%s' CHANGE NOT REQUIRED", extUserPass),
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				return fmt.Errorf("cypher-shell CREATE USER failed: %w; output: %s", err, string(out))
@@ -117,11 +116,11 @@ var _ = Describe("Neo4jRoleBinding end-to-end", Label("core"), func() {
 
 		By("Verifying externuser holds the reader role")
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"SHOW USERS YIELD user, roles WHERE user = 'externuser' RETURN user, roles",
 			)
+			defer cancel()
 			out, _ := cmd.CombinedOutput()
 			return string(out)
 		}, clusterTimeout, interval).Should(SatisfyAll(
@@ -140,11 +139,11 @@ var _ = Describe("Neo4jRoleBinding end-to-end", Label("core"), func() {
 
 		By("Waiting for the reader role to be revoked from externuser")
 		Eventually(func() bool {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"SHOW USERS YIELD user, roles WHERE user = 'externuser' RETURN roles",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("cypher-shell SHOW USERS failed: %v; output: %s\n", err, string(out))
@@ -162,11 +161,10 @@ var _ = Describe("Neo4jRoleBinding end-to-end", Label("core"), func() {
 		}, clusterTimeout, interval).Should(BeTrue(), "binding deletion must revoke the reader role")
 
 		By("Cleaning up the externally-created user")
-		_, _ = exec.CommandContext(ctx, "kubectl", "exec",
-			podName, "-n", namespace.Name, "--",
+		_, _ = execOut(ctx, podName, namespace.Name,
 			"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 			"DROP USER externuser IF EXISTS",
-		).CombinedOutput()
+		)
 	})
 
 	It("waits in UserNotFound when the user does not exist", SpecTimeout(testTimeout), func(ctx SpecContext) {

@@ -70,15 +70,13 @@ jobs:
         git --no-pager diff -I'^    createdAt:' >> $GITHUB_STEP_SUMMARY || true
         echo '```' >> $GITHUB_STEP_SUMMARY
 
-  go-lint-unused:
-    # Enforce staticcheck's `unused` analyzer as a real merge gate. Go
-    # golangci-lint is not otherwise run in CI (only helm-lint is), which is how
-    # unreachable code silently accumulated. Scoped to --enable=unused (not the
-    # full .golangci.yml) so it stays green today without pulling in the repo's
-    # pre-existing forcetypeassert/nilerr/staticcheck debt — that can be burned
-    # down separately. Catches unexported dead code (the common case); exported
-    # but-unreachable internal code needs `deadcode`, run ad hoc.
-    name: Go Lint (unused)
+  go-lint:
+    # Full golangci-lint as a merge gate. Go golangci-lint was not otherwise run
+    # in CI (only helm-lint is), which is how unreachable code and other lint debt
+    # silently accumulated. This started scoped to --enable=unused while the repo
+    # carried pre-existing forcetypeassert/nilerr/staticcheck debt; that debt has
+    # now been burned down, so the whole .golangci.yml runs here.
+    name: Go Lint
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -98,8 +96,8 @@ jobs:
       # rebuilds it against the current toolchain.
       run: make golangci-lint
 
-    - name: Run unused linter
-      run: ./bin/golangci-lint run --no-config --disable-all --enable=unused --timeout=5m ./...
+    - name: Run golangci-lint
+      run: ./bin/golangci-lint run --timeout=6m ./...
 
   unit-tests:
     name: Unit Tests

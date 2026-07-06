@@ -18,7 +18,6 @@ package integration_test
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -239,12 +238,12 @@ var _ = Describe("Property Sharding Restore (MinIO) Integration Tests", Label("e
 		hostPod := fmt.Sprintf("%s-server-0", cluster.Name)
 		writeCypher := "CREATE (:Item {sku: 'A-100', count: 42}), (:Item {sku: 'A-200', count: 13}) RETURN count(*) AS n;"
 		Eventually(func() error {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				hostPod, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, hostPod, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", "products",
 				"-u", "neo4j", "-p", "password123",
 				writeCypher,
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("sharded data-write cypher-shell err=%v out=%s\n", err, string(out))
@@ -312,12 +311,12 @@ var _ = Describe("Property Sharding Restore (MinIO) Integration Tests", Label("e
 		// cloud directory seedURI carried the data across the graph +
 		// property shards, not merely that CREATE … WAIT returned.
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				hostPod, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, hostPod, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", "products-restored",
 				"-u", "neo4j", "-p", "password123",
 				"MATCH (i:Item {sku: 'A-100'}) RETURN i.count AS count;",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			outStr := string(out)
 			GinkgoWriter.Printf("sharded restore verify err=%v out=%s\n", err, outStr)
@@ -393,9 +392,10 @@ var _ = Describe("Property Sharding Restore (MinIO) Integration Tests", Label("e
 		hostPod := fmt.Sprintf("%s-server-0", cluster.Name)
 		writeCypher := "CREATE (:Item {sku: 'A-100', count: 42}) RETURN count(*) AS n;"
 		Eventually(func() error {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec", hostPod, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, hostPod, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", "products",
 				"-u", "neo4j", "-p", "password123", writeCypher)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("data-write err=%v out=%s\n", err, string(out))
@@ -472,10 +472,11 @@ var _ = Describe("Property Sharding Restore (MinIO) Integration Tests", Label("e
 
 		By("Verifying the restored DB contains the backed-up data (per-shard cloud seed carried it)")
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec", hostPod, "-n", testNamespace, "--",
+			cmd, cancel := boundedExec(ctx, hostPod, testNamespace,
 				"cypher-shell", "--format", "plain", "--database", "products-restored",
 				"-u", "neo4j", "-p", "password123",
 				"MATCH (i:Item {sku: 'A-100'}) RETURN i.count AS count;")
+			defer cancel()
 			out, _ := cmd.CombinedOutput()
 			return string(out)
 		}, 2*time.Minute, pollInterval).Should(ContainSubstring("42"),

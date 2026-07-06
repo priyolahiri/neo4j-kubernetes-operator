@@ -19,7 +19,6 @@ package integration_test
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -100,11 +99,11 @@ var _ = Describe("Neo4jDatabase Neo4j-Level Verification", Label("core"), func()
 			By("Verifying 'verifydb' is visible via cypher-shell SHOW DATABASES")
 			podName := fmt.Sprintf("%s-server-0", clusterName)
 			Eventually(func() bool {
-				cmd := exec.CommandContext(ctx, "kubectl", "exec",
-					podName, "-n", namespace.Name, "--",
+				cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 					"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 					"SHOW DATABASES YIELD name WHERE name = 'verifydb' RETURN count(*) AS n",
 				)
+				defer cancel()
 				out, err := cmd.CombinedOutput()
 				outStr := string(out)
 				GinkgoWriter.Printf("cypher-shell output: %s (err: %v)\n", outStr, err)

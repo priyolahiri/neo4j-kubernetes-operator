@@ -18,7 +18,6 @@ package integration_test
 
 import (
 	"fmt"
-	"os/exec"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -92,8 +91,8 @@ var _ = Describe("Standalone All-Databases Restore (v1.13 API)", Label("extended
 
 	cypher := func(pod, db, stmt string) {
 		Eventually(func() error {
-			out, err := exec.CommandContext(ctx, "kubectl", "exec", pod, "-n", testNamespace, "--",
-				"cypher-shell", "--format", "plain", "--database", db, "-u", "neo4j", "-p", adminPass, stmt).CombinedOutput()
+			out, err := execOut(ctx, pod, testNamespace,
+				"cypher-shell", "--format", "plain", "--database", db, "-u", "neo4j", "-p", adminPass, stmt)
 			if err != nil {
 				GinkgoWriter.Printf("cypher (%s) err=%v out=%s\n", db, err, string(out))
 			}
@@ -101,8 +100,8 @@ var _ = Describe("Standalone All-Databases Restore (v1.13 API)", Label("extended
 		}, 2*time.Minute, pollInterval).Should(Succeed())
 	}
 	readCypher := func(pod, db, stmt string) string {
-		out, _ := exec.CommandContext(ctx, "kubectl", "exec", pod, "-n", testNamespace, "--",
-			"cypher-shell", "--format", "plain", "--database", db, "-u", "neo4j", "-p", adminPass, stmt).CombinedOutput()
+		out, _ := execOut(ctx, pod, testNamespace,
+			"cypher-shell", "--format", "plain", "--database", db, "-u", "neo4j", "-p", adminPass, stmt)
 		return string(out)
 	}
 

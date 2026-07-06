@@ -19,7 +19,6 @@ package integration_test
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -110,11 +109,11 @@ var _ = Describe("Neo4jRole end-to-end", Label("core"), func() {
 
 		By("Verifying privileges are visible via SHOW ROLE PRIVILEGES")
 		Eventually(func() string {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"SHOW ROLE analytics_reader PRIVILEGES YIELD action, access RETURN action, access",
 			)
+			defer cancel()
 			out, _ := cmd.CombinedOutput()
 			return string(out)
 		}, clusterTimeout, interval).Should(SatisfyAll(
@@ -140,11 +139,11 @@ var _ = Describe("Neo4jRole end-to-end", Label("core"), func() {
 		// Retry transient system-DB conflicts (GQLSTATUS 25N11) — a manual
 		// admin write can briefly collide with concurrent system-DB activity.
 		Eventually(func() error {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"REVOKE ACCESS ON DATABASE neo4j FROM analytics_reader",
 			)
+			defer cancel()
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("cypher-shell REVOKE failed; output: %s", string(out))
 			}
@@ -153,11 +152,11 @@ var _ = Describe("Neo4jRole end-to-end", Label("core"), func() {
 
 		By("Waiting for the operator to re-apply the GRANT (drift reconciliation)")
 		Eventually(func() bool {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"SHOW ROLE analytics_reader PRIVILEGES YIELD action WHERE action = 'access' RETURN count(*) AS n",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("cypher-shell SHOW ROLE PRIVILEGES failed: %v; output: %s\n", err, string(out))
@@ -174,11 +173,11 @@ var _ = Describe("Neo4jRole end-to-end", Label("core"), func() {
 
 		By("Waiting for the role to disappear from SHOW ROLES")
 		Eventually(func() bool {
-			cmd := exec.CommandContext(ctx, "kubectl", "exec",
-				podName, "-n", namespace.Name, "--",
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
 				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
 				"SHOW ROLES YIELD role WHERE role = 'analytics_reader' RETURN count(*) AS n",
 			)
+			defer cancel()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("cypher-shell SHOW ROLES failed: %v; output: %s\n", err, string(out))

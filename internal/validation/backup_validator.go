@@ -373,7 +373,7 @@ func (v *BackupValidator) validateSchedule(schedule string) (err error) {
 	}
 
 	if _, perr := cron.ParseStandard(schedule); perr != nil {
-		return fmt.Errorf("invalid cron schedule %q: %v (Kubernetes CronJob expects standard 5-field cron, e.g. \"0 2 * * *\", or a macro like \"@daily\")", schedule, perr)
+		return fmt.Errorf("invalid cron schedule %q: %w (Kubernetes CronJob expects standard 5-field cron, e.g. \"0 2 * * *\", or a macro like \"@daily\")", schedule, perr)
 	}
 	return nil
 }
