@@ -1,4 +1,4 @@
-# Operations Knowledge Base — Runtime Invariants (rules 1–39)
+# Operations Knowledge Base — Runtime Invariants (rules 1–39, + post-checklist additions ≥ 80)
 
 > One home, no duplication. This file re-homes the non-backup half of the legacy
 > CLAUDE.md regression checklist (rules 1–39). Backup/restore/sharding rules
@@ -300,6 +300,17 @@
 - **why:** "Enabled" should imply safe obfuscation by default, but must never override an operator who explicitly set `false`; emitting the key twice would make behavior config-order-dependent.
 - **pinned-by:** `TestBuildAuditConfig_ExplicitObfuscateFalseDespiteEnabled` (`internal/resources/audit_config_test.go`).
 - **enforcement:** unit test.
+
+## Testing / CI harness
+
+> ids ≥ 80 are post-checklist additions (the original CLAUDE.md checklist was 1–79; ids 40–79 are the backup/restore/sharding rules in `docs/knowledge/backup-restore.md`).
+
+### id 80 — Integration in-pod exec must be bounded (never raw shared-context `kubectl exec`)
+- **scope:** `test/integration/integration_suite_test.go` (`boundedExec`, `execOut`, `podExecTimeout`); every in-pod exec call site across the `test/integration/*_test.go` specs.
+- **rule:** Every in-pod `kubectl exec` in an integration spec MUST go through `boundedExec` / `execOut` — which run `kubectl exec <pod> -n <ns> -- <cmd…>` under a per-attempt `podExecTimeout` context (60s) with `cmd.WaitDelay`. Never call `exec.CommandContext(ctx, "kubectl", "exec", …)` directly with the shared spec `ctx` / `SpecContext`: it carries no per-attempt deadline.
+- **why:** The shared spec context is only cancelled at the SpecTimeout, so a stuck kubelet exec stream (seen under CI node load) blocks `cmd.CombinedOutput()` indefinitely — and Gomega's `Eventually` cannot retry a function that never returns. One hung exec therefore burns the entire ~10-minute spec budget instead of retrying. This produced the 5.26 `Neo4jUser end-to-end "creates, rotates and drops a user"` flake: the operator had already created the user (Ready + visible in `SHOW USERS`), but the test's "authenticate as appuser" exec never returned. A bounded attempt is killed at `podExecTimeout` and the surrounding `Eventually` retries a fresh exec.
+- **pinned-by:** the `boundedExec` / `execOut` helpers in `test/integration/integration_suite_test.go`. No dedicated unit test guards test-harness usage — **known gap**. Manual check: `grep -rn 'exec.CommandContext(ctx, "kubectl"' test/integration/` must return only the helper (0 raw call sites today).
+- **enforcement:** convention + code review — **PROSE-ONLY — at risk**. Not covered by the `unit-tests` job (test-harness code, not operator code) and deliberately out of scope for `scripts/check-invariants.sh` (that guard is the 5 hard invariants only, and its non-test grep helper skips `_test.go`). Landed with the fix in PR #302.
 
 ## Cross-cutting helpers referenced above
 
