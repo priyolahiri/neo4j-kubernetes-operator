@@ -240,6 +240,15 @@ The operator registers the following Prometheus metrics. All metrics use the pre
 | `neo4j_operator_secondary_count` | Gauge | `cluster_name`, `namespace` | Current number of secondary nodes |
 | `neo4j_operator_scaling_validation_total` | Counter | `cluster_name`, `namespace`, `validation_type`, `result` (`success`/`failure`) | Total scaling validation attempts |
 
+### Aura orchestration metrics
+
+Emitted by the [Aura orchestration](../aura_orchestration.md) controllers for every request the operator makes to the Aura Platform API. The `operation` label is a normalized route template (resource IDs collapsed to `{id}`, e.g. `POST /instances/{id}/upgrade`) so cardinality stays bounded regardless of how many Aura instances you manage.
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_aura_api_requests_total` | Counter | `operation`, `result` (`success`/`failure`) | Total Aura Platform API requests. `result=failure` counts any non-2xx response, including the 404s that idempotent deletes treat as success. |
+| `neo4j_operator_aura_api_request_duration_seconds` | Histogram | `operation` | Latency of Aura Platform API requests, by route. |
+
 ## Live Cluster Diagnostics
 
 When `spec.monitoring.enabled: true` and the cluster is in `Ready` phase, the

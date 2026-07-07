@@ -35,7 +35,8 @@ The `Neo4jDatabase` Custom Resource Definition (CRD) provides declarative databa
 
 | Field | Type | Description |
 |---|---|---|
-| `clusterRef` | `string` | **Required**. Name of target Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone |
+| `clusterRef` | `string` | Name of target Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone. **Set exactly one of `clusterRef` or `auraInstanceRef`.** |
+| `auraInstanceRef` | `string` | Name of a target [`AuraInstance`](../user_guide/aura_orchestration.md#managing-databases-on-an-aura-instance) (same namespace); the database DDL runs against it over Bolt. Requires a multi-database-capable Aura tier. **Mutually exclusive with `clusterRef`.** |
 | `name` | `string` | **Required**. Database name to create |
 | `wait` | `boolean` | Wait for database creation to complete (default: `true`) |
 | `ifNotExists` | `boolean` | Create only if database doesn't exist - prevents reconciliation errors (default: `true`) |
