@@ -169,6 +169,12 @@ nav:
           - Neo4jPlugin: api_reference/neo4jplugin.md
           - Neo4jBackup: api_reference/neo4jbackup.md
           - Neo4jRestore: api_reference/neo4jrestore.md
+          - AuraProviderConfig: api_reference/auraproviderconfig.md
+          - AuraInstance: api_reference/aurainstance.md
+          - AuraSnapshot: api_reference/aurasnapshot.md
+          - AuraRestore: api_reference/aurarestore.md
+          - AuraCustomerManagedKey: api_reference/auracustomermanagedkey.md
+          - AuraIPFilter: api_reference/auraipfilter.md
       - GitOps Integration: gitops/README.md
 
   - Contribute:
