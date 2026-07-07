@@ -53,7 +53,7 @@ type AuraInstanceSource struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.customerManagedKeyId) || self.type == 'enterprise-db' || self.type == 'enterprise-ds'",message="customerManagedKeyId is only valid for type enterprise-db or enterprise-ds"
 // +kubebuilder:validation:XValidation:rule="self.cloudProvider == oldSelf.cloudProvider",message="cloudProvider is immutable"
 // +kubebuilder:validation:XValidation:rule="self.region == oldSelf.region",message="region is immutable"
-// +kubebuilder:validation:XValidation:rule="self.type == oldSelf.type",message="type is immutable"
+// +kubebuilder:validation:XValidation:rule="self.type == oldSelf.type || (oldSelf.type == 'professional-db' && self.type == 'business-critical')",message="type is immutable except for the in-place professional-db → business-critical upgrade"
 // +kubebuilder:validation:XValidation:rule="self.version == oldSelf.version",message="version is immutable"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.projectId) || (has(self.projectId) && self.projectId == oldSelf.projectId)",message="projectId is immutable once set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.customerManagedKeyId) || (has(self.customerManagedKeyId) && self.customerManagedKeyId == oldSelf.customerManagedKeyId)",message="customerManagedKeyId is immutable once set"

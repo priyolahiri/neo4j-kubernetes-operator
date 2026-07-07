@@ -24,6 +24,9 @@ annotations:
   artifacthub.io/prerelease: "false"
   artifacthub.io/license: Apache-2.0
   artifacthub.io/crds: |-
+    - kind: AuraCustomerManagedKey
+      version: v1beta1
+      description: Registers a customer-managed encryption key with Neo4j Aura for dedicated-tier instances
     - kind: AuraInstance
       version: v1beta1
       description: Provisions and manages Neo4j Aura cloud instances via the Aura API

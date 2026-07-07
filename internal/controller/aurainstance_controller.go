@@ -166,6 +166,10 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// --- Drift + pause/resume, gated by the Update management policy ---
 	if managementAllows(inst.Spec.ManagementPolicies, auraPolicyUpdate) {
 		if aura.IsInstanceRunning(observed.Status) {
+			// Tier upgrade first (professional-db → business-critical), then resize.
+			if handled, res, err := r.reconcileUpgrade(ctx, inst, apiClient, observed); handled {
+				return res, err
+			}
 			if handled, res, err := r.reconcileDrift(ctx, inst, apiClient, observed); handled {
 				return res, err
 			}
@@ -309,6 +313,34 @@ func (r *AuraInstanceReconciler) reconcileDrift(
 	}
 	r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceUpdated,
 		fmt.Sprintf("Updated Aura instance %s", observed.ID))
+	return true, ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+}
+
+// Instance tier values involved in the one supported in-place upgrade path.
+const (
+	auraTypeProfessionalDB   = "professional-db"
+	auraTypeBusinessCritical = "business-critical"
+)
+
+// reconcileUpgrade performs the single supported in-place tier upgrade
+// (professional-db → business-critical) when the spec requests it. The CRD's CEL
+// transition rule already rejects every other type change, so this only ever
+// sees the one valid path. Returns handled=true when it issued the upgrade (the
+// caller requeues to poll the resulting "updating" → "running" transition).
+func (r *AuraInstanceReconciler) reconcileUpgrade(
+	ctx context.Context, inst *neo4jv1beta1.AuraInstance, apiClient auraAPI, observed *aura.Instance,
+) (handled bool, res ctrl.Result, err error) {
+	if observed.Type != auraTypeProfessionalDB || inst.Spec.Type != auraTypeBusinessCritical {
+		return false, ctrl.Result{}, nil
+	}
+	if err := apiClient.UpgradeInstance(ctx, observed.ID); err != nil {
+		if aura.IsConflict(err) || aura.IsTransient(err) {
+			return true, ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		}
+		return true, ctrl.Result{}, err
+	}
+	r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceUpgraded,
+		fmt.Sprintf("Upgrading Aura instance %s from professional-db to business-critical", observed.ID))
 	return true, ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 }
 

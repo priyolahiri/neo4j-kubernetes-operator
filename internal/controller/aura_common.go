@@ -39,6 +39,12 @@ const (
 	// duplicate paid instance.
 	AuraExternalIDAnnotation = "neo4j.com/external-instance-id"
 
+	// AuraExternalCMKAnnotation stores the Aura customer-managed-key ID as the
+	// external-name for an AuraCustomerManagedKey: the operator's source of truth
+	// for idempotent create + adopt, written before status so a crash between
+	// create and status cannot register a duplicate key.
+	AuraExternalCMKAnnotation = "neo4j.com/external-cmk-id"
+
 	// defaultAuraRatePerMinute is the conservative Aura API rate limit (trial
 	// keys are 25/min; paid are 125/min). We default to the safe floor.
 	defaultAuraRatePerMinute = 25
@@ -128,11 +134,23 @@ type auraAPI interface {
 	PatchInstance(ctx context.Context, id string, req aura.PatchInstanceRequest) (*aura.Instance, error)
 	PauseInstance(ctx context.Context, id string) error
 	ResumeInstance(ctx context.Context, id string) error
+	UpgradeInstance(ctx context.Context, id string) error
 	DeleteInstance(ctx context.Context, id string) error
 	GetTenant(ctx context.Context, id string) (*aura.Tenant, error)
 	CreateSnapshot(ctx context.Context, instanceID string) (*aura.Snapshot, error)
 	GetSnapshot(ctx context.Context, instanceID, snapshotID string) (*aura.Snapshot, error)
 	RestoreSnapshot(ctx context.Context, instanceID, snapshotID string) error
+}
+
+// auraCMKAPI is the subset of the Aura client the customer-managed-key
+// controller depends on. It is a separate interface (not folded into auraAPI) so
+// the instance/snapshot/restore test fakes need not implement CMK methods.
+// *aura.Client satisfies this interface.
+type auraCMKAPI interface {
+	CreateCustomerManagedKey(ctx context.Context, req aura.CreateCMKRequest) (*aura.CustomerManagedKey, error)
+	GetCustomerManagedKey(ctx context.Context, id string) (*aura.CustomerManagedKey, error)
+	ListCustomerManagedKeys(ctx context.Context, tenantID string) ([]aura.CustomerManagedKey, error)
+	DeleteCustomerManagedKey(ctx context.Context, id string) error
 }
 
 // auraClientFactory builds an auraAPI from resolved credentials; reconcilers
@@ -147,6 +165,21 @@ func resolveClient(factory auraClientFactory, c auraCredentials) auraAPI {
 		return factory(c)
 	}
 	return defaultAuraClientFactory(c)
+}
+
+// auraCMKClientFactory builds an auraCMKAPI from resolved credentials; the CMK
+// reconciler holds one (nil → the real, shared cached client) so tests can
+// inject a fake.
+type auraCMKClientFactory func(auraCredentials) auraCMKAPI
+
+func defaultAuraCMKClientFactory(c auraCredentials) auraCMKAPI { return auraClientForCreds(c) }
+
+// resolveCMKClient returns the factory's CMK client, or the default shared client.
+func resolveCMKClient(factory auraCMKClientFactory, c auraCredentials) auraCMKAPI {
+	if factory != nil {
+		return factory(c)
+	}
+	return defaultAuraCMKClientFactory(c)
 }
 
 // resolveAuraCredentials resolves API credentials from either a

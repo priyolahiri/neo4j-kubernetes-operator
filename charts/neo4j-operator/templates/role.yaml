@@ -126,6 +126,7 @@ rules:
 - apiGroups:
     - neo4j.neo4j.com
   resources:
+    - auracustomermanagedkeys
     - aurainstances
     - auraproviderconfigs
     - aurarestores
@@ -152,6 +153,7 @@ rules:
 - apiGroups:
     - neo4j.neo4j.com
   resources:
+    - auracustomermanagedkeys/finalizers
     - aurainstances/finalizers
     - neo4jauthrules/finalizers
     - neo4jbackups/finalizers
@@ -169,6 +171,7 @@ rules:
 - apiGroups:
     - neo4j.neo4j.com
   resources:
+    - auracustomermanagedkeys/status
     - aurainstances/status
     - auraproviderconfigs/status
     - aurarestores/status

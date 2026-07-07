@@ -63,6 +63,7 @@ type fakeAuraAPI struct {
 	patchCalled    bool
 	pauseCalled    bool
 	resumeCalled   bool
+	upgradeCalled  bool
 	deleteCalled   bool
 	restoreCalled  bool
 	lastPatch      aura.PatchInstanceRequest
@@ -114,6 +115,11 @@ func (f *fakeAuraAPI) ResumeInstance(ctx context.Context, id string) error {
 	return nil
 }
 
+func (f *fakeAuraAPI) UpgradeInstance(ctx context.Context, id string) error {
+	f.upgradeCalled = true
+	return nil
+}
+
 func (f *fakeAuraAPI) DeleteInstance(ctx context.Context, id string) error {
 	f.deleteCalled = true
 	return nil
@@ -152,6 +158,58 @@ func (f *fakeAuraAPI) RestoreSnapshot(ctx context.Context, instanceID, snapshotI
 // ignoring resolved credentials (the fake needs no real account).
 func factoryFor(f *fakeAuraAPI) auraClientFactory {
 	return func(auraCredentials) auraAPI { return f }
+}
+
+// ---------------------------------------------------------------------------
+// Programmable fake Aura CMK API (separate interface from fakeAuraAPI).
+// ---------------------------------------------------------------------------
+
+type fakeCMKAPI struct {
+	createFn func(ctx context.Context, req aura.CreateCMKRequest) (*aura.CustomerManagedKey, error)
+	getFn    func(ctx context.Context, id string) (*aura.CustomerManagedKey, error)
+	listFn   func(ctx context.Context, tenantID string) ([]aura.CustomerManagedKey, error)
+	deleteFn func(ctx context.Context, id string) error
+
+	createCalled bool
+	listCalled   bool
+	deleteCalled bool
+	lastCreate   aura.CreateCMKRequest
+}
+
+func (f *fakeCMKAPI) CreateCustomerManagedKey(ctx context.Context, req aura.CreateCMKRequest) (*aura.CustomerManagedKey, error) {
+	f.createCalled = true
+	f.lastCreate = req
+	if f.createFn != nil {
+		return f.createFn(ctx, req)
+	}
+	return &aura.CustomerManagedKey{ID: "cmk-created", Status: aura.CMKStatusPending}, nil
+}
+
+func (f *fakeCMKAPI) GetCustomerManagedKey(ctx context.Context, id string) (*aura.CustomerManagedKey, error) {
+	if f.getFn != nil {
+		return f.getFn(ctx, id)
+	}
+	return &aura.CustomerManagedKey{ID: id, Status: aura.CMKStatusReady}, nil
+}
+
+func (f *fakeCMKAPI) ListCustomerManagedKeys(ctx context.Context, tenantID string) ([]aura.CustomerManagedKey, error) {
+	f.listCalled = true
+	if f.listFn != nil {
+		return f.listFn(ctx, tenantID)
+	}
+	return nil, nil
+}
+
+func (f *fakeCMKAPI) DeleteCustomerManagedKey(ctx context.Context, id string) error {
+	f.deleteCalled = true
+	if f.deleteFn != nil {
+		return f.deleteFn(ctx, id)
+	}
+	return nil
+}
+
+func cmkFactoryFor(f *fakeCMKAPI) auraCMKClientFactory {
+	return func(auraCredentials) auraCMKAPI { return f }
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +254,7 @@ func newAuraFakeClient(t *testing.T, scheme *runtime.Scheme, objs ...client.Obje
 			&neo4jv1beta1.AuraSnapshot{},
 			&neo4jv1beta1.AuraRestore{},
 			&neo4jv1beta1.AuraProviderConfig{},
+			&neo4jv1beta1.AuraCustomerManagedKey{},
 		).
 		WithObjects(all...).
 		Build()
@@ -690,5 +749,285 @@ func TestAuraRestore_IssueThenComplete(t *testing.T) {
 	}
 	if got.Status.Phase != auraRestoreCompleted {
 		t.Errorf("status.phase = %q, want %q", got.Status.Phase, auraRestoreCompleted)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AuraInstance — tier upgrade (professional-db → business-critical).
+// ---------------------------------------------------------------------------
+
+func TestAuraInstance_Upgrade(t *testing.T) {
+	scheme := auraTestScheme(t)
+	// Spec asks for business-critical; the live instance is still professional-db.
+	inst := newAuraInstance("inst-upgrade")
+	inst.Spec.Type = "business-critical"
+	inst.Annotations = map[string]string{AuraExternalIDAnnotation: "ext-up"}
+	controllerutil.AddFinalizer(inst, AuraInstanceFinalizer)
+	f := &fakeAuraAPI{
+		getInstanceFn: func(_ context.Context, id string) (*aura.Instance, error) {
+			return &aura.Instance{
+				ID: id, Name: "inst-upgrade", Memory: "4GB",
+				Type: "professional-db", Status: aura.InstanceStatusRunning,
+			}, nil
+		},
+	}
+	c := newAuraFakeClient(t, scheme, inst)
+	r := &AuraInstanceReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+		ClientFactory: factoryFor(f),
+	}
+	if _, err := r.Reconcile(context.Background(), reqFor(inst)); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if !f.upgradeCalled {
+		t.Error("expected UpgradeInstance to be called for professional-db → business-critical")
+	}
+	// The tier change must take the upgrade path, not a PATCH resize.
+	if f.patchCalled {
+		t.Error("PatchInstance must NOT be called for a tier upgrade")
+	}
+}
+
+func TestAuraInstance_NoUpgradeWhenTypeMatches(t *testing.T) {
+	scheme := auraTestScheme(t)
+	inst := newAuraInstance("inst-noup")
+	inst.Annotations = map[string]string{AuraExternalIDAnnotation: "ext-noup"}
+	controllerutil.AddFinalizer(inst, AuraInstanceFinalizer)
+	f := &fakeAuraAPI{
+		getInstanceFn: func(_ context.Context, id string) (*aura.Instance, error) {
+			return &aura.Instance{
+				ID: id, Name: "inst-noup", Memory: "4GB",
+				Type: "professional-db", Status: aura.InstanceStatusRunning,
+			}, nil
+		},
+	}
+	c := newAuraFakeClient(t, scheme, inst)
+	r := &AuraInstanceReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+		ClientFactory: factoryFor(f),
+	}
+	if _, err := r.Reconcile(context.Background(), reqFor(inst)); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if f.upgradeCalled {
+		t.Error("UpgradeInstance must NOT be called when the type already matches")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AuraCustomerManagedKey.
+// ---------------------------------------------------------------------------
+
+func newAuraCMK(name string) *neo4jv1beta1.AuraCustomerManagedKey {
+	return &neo4jv1beta1.AuraCustomerManagedKey{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNS},
+		Spec: neo4jv1beta1.AuraCustomerManagedKeySpec{
+			CredentialsSecretRef: credRef(),
+			ProjectID:            "proj-1",
+			CloudProvider:        "gcp",
+			Region:               "europe-west1",
+			InstanceType:         "enterprise-db",
+			KeyID:                "projects/p/locations/eu/keyRings/r/cryptoKeys/k",
+		},
+	}
+}
+
+func TestAuraCMK_CreateThenReady(t *testing.T) {
+	scheme := auraTestScheme(t)
+	cmk := newAuraCMK("cmk-create")
+	f := &fakeCMKAPI{
+		listFn: func(context.Context, string) ([]aura.CustomerManagedKey, error) { return nil, nil },
+		createFn: func(context.Context, aura.CreateCMKRequest) (*aura.CustomerManagedKey, error) {
+			return &aura.CustomerManagedKey{ID: "cmk-new", Status: aura.CMKStatusPending}, nil
+		},
+		getFn: func(_ context.Context, id string) (*aura.CustomerManagedKey, error) {
+			return &aura.CustomerManagedKey{ID: id, Status: aura.CMKStatusReady}, nil
+		},
+	}
+	c := newAuraFakeClient(t, scheme, cmk)
+	r := &AuraCustomerManagedKeyReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+		ClientFactory: cmkFactoryFor(f),
+	}
+	ctx := context.Background()
+	// Pass 1 adds the finalizer; run twice so create/observe runs finalized.
+	for i := 0; i < 2; i++ {
+		if _, err := r.Reconcile(ctx, reqFor(cmk)); err != nil {
+			t.Fatalf("Reconcile #%d: %v", i, err)
+		}
+	}
+	if !f.createCalled {
+		t.Fatal("expected CreateCustomerManagedKey to be called")
+	}
+	if f.lastCreate.KeyID != cmk.Spec.KeyID || f.lastCreate.InstanceType != "enterprise-db" {
+		t.Errorf("create request = %+v, want the spec's keyId + enterprise-db", f.lastCreate)
+	}
+	got := &neo4jv1beta1.AuraCustomerManagedKey{}
+	if err := c.Get(ctx, reqFor(cmk).NamespacedName, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if id := got.Annotations[AuraExternalCMKAnnotation]; id != "cmk-new" {
+		t.Errorf("external-cmk-id annotation = %q, want cmk-new", id)
+	}
+	if got.Status.CustomerManagedKeyID != "cmk-new" {
+		t.Errorf("status.customerManagedKeyId = %q, want cmk-new", got.Status.CustomerManagedKeyID)
+	}
+	if s := conditionStatus(got.Status.Conditions, "Ready"); s != metav1.ConditionTrue {
+		t.Errorf("Ready = %q, want True", s)
+	}
+}
+
+func TestAuraCMK_AdoptByKeyID(t *testing.T) {
+	scheme := auraTestScheme(t)
+	cmk := newAuraCMK("cmk-adopt")
+	f := &fakeCMKAPI{
+		listFn: func(context.Context, string) ([]aura.CustomerManagedKey, error) {
+			return []aura.CustomerManagedKey{{
+				ID: "existing-cmk", KeyID: cmk.Spec.KeyID, Region: "europe-west1",
+				CloudProvider: "gcp", InstanceType: "enterprise-db", Status: aura.CMKStatusReady,
+			}}, nil
+		},
+		getFn: func(_ context.Context, id string) (*aura.CustomerManagedKey, error) {
+			return &aura.CustomerManagedKey{ID: id, Status: aura.CMKStatusReady}, nil
+		},
+	}
+	c := newAuraFakeClient(t, scheme, cmk)
+	r := &AuraCustomerManagedKeyReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+		ClientFactory: cmkFactoryFor(f),
+	}
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		if _, err := r.Reconcile(ctx, reqFor(cmk)); err != nil {
+			t.Fatalf("Reconcile #%d: %v", i, err)
+		}
+	}
+	if f.createCalled {
+		t.Error("CreateCustomerManagedKey must NOT be called when a matching key already exists")
+	}
+	got := &neo4jv1beta1.AuraCustomerManagedKey{}
+	if err := c.Get(ctx, reqFor(cmk).NamespacedName, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if id := got.Annotations[AuraExternalCMKAnnotation]; id != "existing-cmk" {
+		t.Errorf("external-cmk-id annotation = %q, want existing-cmk", id)
+	}
+}
+
+func TestAuraCMK_Deletion(t *testing.T) {
+	scheme := auraTestScheme(t)
+
+	t.Run("orphan default keeps the key", func(t *testing.T) {
+		cmk := newAuraCMK("cmk-orphan")
+		cmk.Annotations = map[string]string{AuraExternalCMKAnnotation: "ext-cmk"}
+		controllerutil.AddFinalizer(cmk, AuraCMKFinalizer)
+		now := metav1.Now()
+		cmk.DeletionTimestamp = &now
+		f := &fakeCMKAPI{}
+		c := newAuraFakeClient(t, scheme, cmk)
+		r := &AuraCustomerManagedKeyReconciler{
+			Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+			ClientFactory: cmkFactoryFor(f),
+		}
+		if _, err := r.Reconcile(context.Background(), reqFor(cmk)); err != nil {
+			t.Fatalf("Reconcile: %v", err)
+		}
+		if f.deleteCalled {
+			t.Error("DeleteCustomerManagedKey must NOT be called under the Orphan policy")
+		}
+	})
+
+	t.Run("delete policy deregisters the key", func(t *testing.T) {
+		cmk := newAuraCMK("cmk-del")
+		cmk.Spec.DeletionPolicy = "Delete"
+		cmk.Annotations = map[string]string{AuraExternalCMKAnnotation: "ext-cmk"}
+		controllerutil.AddFinalizer(cmk, AuraCMKFinalizer)
+		now := metav1.Now()
+		cmk.DeletionTimestamp = &now
+		f := &fakeCMKAPI{}
+		c := newAuraFakeClient(t, scheme, cmk)
+		r := &AuraCustomerManagedKeyReconciler{
+			Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+			ClientFactory: cmkFactoryFor(f),
+		}
+		if _, err := r.Reconcile(context.Background(), reqFor(cmk)); err != nil {
+			t.Fatalf("Reconcile: %v", err)
+		}
+		if !f.deleteCalled {
+			t.Error("expected DeleteCustomerManagedKey under the Delete policy")
+		}
+	})
+
+	t.Run("active key blocks deletion", func(t *testing.T) {
+		cmk := newAuraCMK("cmk-active")
+		cmk.Spec.DeletionPolicy = "Delete"
+		cmk.Annotations = map[string]string{AuraExternalCMKAnnotation: "ext-cmk"}
+		controllerutil.AddFinalizer(cmk, AuraCMKFinalizer)
+		now := metav1.Now()
+		cmk.DeletionTimestamp = &now
+		f := &fakeCMKAPI{
+			deleteFn: func(context.Context, string) error {
+				return &aura.APIError{StatusCode: 400, Reason: aura.ReasonEncryptionKeyActive, Message: "The encryption key is active"}
+			},
+		}
+		c := newAuraFakeClient(t, scheme, cmk)
+		r := &AuraCustomerManagedKeyReconciler{
+			Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+			ClientFactory: cmkFactoryFor(f),
+		}
+		res, err := r.Reconcile(context.Background(), reqFor(cmk))
+		if err != nil {
+			t.Fatalf("Reconcile: %v", err)
+		}
+		if res.RequeueAfter == 0 {
+			t.Error("expected a requeue while the key is still in use")
+		}
+		// The finalizer must remain so we don't drop tracking of a still-registered key.
+		got := &neo4jv1beta1.AuraCustomerManagedKey{}
+		if err := c.Get(context.Background(), reqFor(cmk).NamespacedName, got); err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if !controllerutil.ContainsFinalizer(got, AuraCMKFinalizer) {
+			t.Error("finalizer must be retained while the key is active/in-use")
+		}
+	})
+}
+
+func TestAuraCMK_Paused(t *testing.T) {
+	scheme := auraTestScheme(t)
+	cmk := newAuraCMK("cmk-paused")
+	cmk.Annotations = map[string]string{AuraPausedAnnotation: "true"}
+	f := &fakeCMKAPI{}
+	c := newAuraFakeClient(t, scheme, cmk)
+	r := &AuraCustomerManagedKeyReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+		ClientFactory: cmkFactoryFor(f),
+	}
+	if _, err := r.Reconcile(context.Background(), reqFor(cmk)); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if f.createCalled || f.listCalled {
+		t.Error("a paused CMK must not touch the Aura API")
+	}
+}
+
+func TestAuraCMK_ObserveOnly_NoCreate(t *testing.T) {
+	scheme := auraTestScheme(t)
+	cmk := newAuraCMK("cmk-observe")
+	cmk.Spec.ManagementPolicies = []string{"Observe"}
+	controllerutil.AddFinalizer(cmk, AuraCMKFinalizer)
+	f := &fakeCMKAPI{
+		listFn: func(context.Context, string) ([]aura.CustomerManagedKey, error) { return nil, nil },
+	}
+	c := newAuraFakeClient(t, scheme, cmk)
+	r := &AuraCustomerManagedKeyReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+		ClientFactory: cmkFactoryFor(f),
+	}
+	if _, err := r.Reconcile(context.Background(), reqFor(cmk)); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if f.createCalled {
+		t.Error("CreateCustomerManagedKey must NOT be called under an Observe-only policy")
 	}
 }

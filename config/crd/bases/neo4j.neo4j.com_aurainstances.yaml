@@ -284,8 +284,10 @@ spec:
               rule: self.cloudProvider == oldSelf.cloudProvider
             - message: region is immutable
               rule: self.region == oldSelf.region
-            - message: type is immutable
-              rule: self.type == oldSelf.type
+            - message: type is immutable except for the in-place professional-db →
+                business-critical upgrade
+              rule: self.type == oldSelf.type || (oldSelf.type == 'professional-db'
+                && self.type == 'business-critical')
             - message: version is immutable
               rule: self.version == oldSelf.version
             - message: projectId is immutable once set

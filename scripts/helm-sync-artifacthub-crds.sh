@@ -44,6 +44,7 @@ describe() {
         AuraInstance)              echo "Provisions and manages Neo4j Aura cloud instances via the Aura API" ;;
         AuraSnapshot)              echo "Takes on-demand snapshots of Neo4j Aura instances" ;;
         AuraRestore)               echo "Restores a Neo4j Aura instance in place from a snapshot" ;;
+        AuraCustomerManagedKey)    echo "Registers a customer-managed encryption key with Neo4j Aura for dedicated-tier instances" ;;
         *)                         return 1 ;;
     esac
 }

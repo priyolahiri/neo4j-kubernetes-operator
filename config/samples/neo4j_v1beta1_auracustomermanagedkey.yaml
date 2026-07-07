@@ -1,0 +1,21 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraCustomerManagedKey
+metadata:
+  name: example-aura-cmk
+spec:
+  providerConfigRef:
+    name: example-aura
+  # Placement is immutable — a CMK is permanently bound to one provider, region,
+  # instance type, and cloud KMS key. Customer-managed keys are only supported on
+  # the dedicated tiers (enterprise-db / enterprise-ds).
+  cloudProvider: gcp
+  region: europe-west1
+  instanceType: enterprise-db
+  # keyId is the cloud provider KMS key resource identifier (AWS KMS ARN, GCP KMS
+  # resource name, or Azure Key Vault key URL) you have granted Aura access to.
+  keyId: projects/my-project/locations/europe-west1/keyRings/aura/cryptoKeys/neo4j
+  # Orphan (default) leaves the key registered in Aura on CR deletion; Delete
+  # deregisters it (which Aura refuses while any instance still uses it).
+  deletionPolicy: Orphan
+# Once ready, copy status.customerManagedKeyId into an AuraInstance's
+# spec.customerManagedKeyId to encrypt that instance with this key.

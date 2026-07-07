@@ -107,6 +107,20 @@ func (c *Client) DeleteInstance(ctx context.Context, id string) error {
 	return nil
 }
 
+// UpgradeInstance starts the async in-place tier upgrade of an instance. The
+// only supported transition is professional-db → business-critical; the DBID is
+// preserved (connection strings stay valid). Like pause/resume it is a bodyless
+// action endpoint — the target tier is implicit. Poll GetInstance until the
+// status returns to running. A 409 (ongoing-database-operation) means another
+// operation is in flight; the caller requeues.
+func (c *Client) UpgradeInstance(ctx context.Context, id string) error {
+	path := "/instances/" + url.PathEscape(id) + "/upgrade"
+	if err := c.doJSON(ctx, "POST", path, struct{}{}, nil); err != nil {
+		return fmt.Errorf("upgrading instance %q: %w", id, err)
+	}
+	return nil
+}
+
 // GetTenant returns detail for a tenant/project, including the
 // InstanceConfigurations oracle of valid region/type/memory/storage/version
 // combinations for that project.
