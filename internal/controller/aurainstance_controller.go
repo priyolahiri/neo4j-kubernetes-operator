@@ -80,6 +80,14 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Paused: suspend all reconciliation (including deletion) until cleared.
+	if inst.Annotations[AuraPausedAnnotation] == "true" {
+		logger.Info("AuraInstance reconciliation paused via annotation")
+		_ = r.setCondition(ctx, req, "Synced", metav1.ConditionFalse, "Paused",
+			"Reconciliation paused via the neo4j.com/paused annotation")
+		return ctrl.Result{}, nil
+	}
+
 	// Resolve credentials + client (needed for both the delete and the sync path).
 	creds, err := resolveAuraCredentials(ctx, r.Client, inst.Namespace, inst.Spec.ProviderConfigRef, inst.Spec.CredentialsSecretRef)
 	if err != nil {
@@ -117,10 +125,17 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if externalID == "" {
 		// Observe-before-create: never POST if an instance with our name already
 		// exists (avoids a duplicate paid instance after a crash between create
-		// and the annotation write).
-		id, adopted, err := r.observeOrCreate(ctx, req, inst, apiClient, projectID)
+		// and the annotation write). Creation is gated by managementPolicies.
+		allowCreate := managementAllows(inst.Spec.ManagementPolicies, auraPolicyCreate)
+		id, adopted, err := r.observeOrCreate(ctx, req, inst, apiClient, projectID, allowCreate)
 		if err != nil {
 			return r.fail(ctx, req, inst, "CreateFailed", err)
+		}
+		if id == "" {
+			// Observe-only (no Create policy) and no matching instance exists yet.
+			_ = r.setCondition(ctx, req, "Synced", metav1.ConditionFalse, "AwaitingInstance",
+				"no matching Aura instance found and managementPolicies does not permit Create")
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 		}
 		externalID = id
 		if adopted {
@@ -148,15 +163,16 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		logger.Error(err, "failed to reconcile connection outputs")
 	}
 
-	// --- Drive drift only when the instance is in a stable, running state ---
-	if aura.IsInstanceRunning(observed.Status) {
-		if handled, res, err := r.reconcileDrift(ctx, inst, apiClient, observed); handled {
+	// --- Drift + pause/resume, gated by the Update management policy ---
+	if managementAllows(inst.Spec.ManagementPolicies, auraPolicyUpdate) {
+		if aura.IsInstanceRunning(observed.Status) {
+			if handled, res, err := r.reconcileDrift(ctx, inst, apiClient, observed); handled {
+				return res, err
+			}
+		}
+		if res, handled, err := r.reconcilePauseResume(ctx, inst, apiClient, observed); handled {
 			return res, err
 		}
-	}
-	// Pause/resume desired-state transitions.
-	if res, handled, err := r.reconcilePauseResume(ctx, inst, apiClient, observed); handled {
-		return res, err
 	}
 
 	// --- Status ---
@@ -175,7 +191,7 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 // observeOrCreate implements the observe-before-create idempotency guard.
 func (r *AuraInstanceReconciler) observeOrCreate(
 	ctx context.Context, req ctrl.Request, inst *neo4jv1beta1.AuraInstance,
-	apiClient auraAPI, projectID string,
+	apiClient auraAPI, projectID string, allowCreate bool,
 ) (id string, adopted bool, err error) {
 	name := r.instanceName(inst)
 
@@ -191,6 +207,11 @@ func (r *AuraInstanceReconciler) observeOrCreate(
 			}
 			return id, true, nil
 		}
+	}
+
+	// Observe-only: no matching instance exists and Create is not permitted.
+	if !allowCreate {
+		return "", false, nil
 	}
 
 	// Inline oracle (item B's Go half): validate the desired combo against the
@@ -335,14 +356,16 @@ func (r *AuraInstanceReconciler) handleDeletion(
 		externalID = inst.Status.InstanceID
 	}
 
-	switch inst.Spec.DeletionPolicy {
-	case "Delete":
-		if inst.Spec.DeletionProtection {
-			logger.Info("deletionProtection is set; refusing to delete the Aura instance", "instanceId", externalID)
-			r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonAuraInstanceFailed,
-				"deletionProtection is set: clear it to allow deletion of the cloud instance")
-			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-		}
+	// Delete the cloud instance only when the policy says Delete AND the Delete
+	// management policy permits it; otherwise orphan (the safe default).
+	deleteCloud := inst.Spec.DeletionPolicy == "Delete" && managementAllows(inst.Spec.ManagementPolicies, auraPolicyDelete)
+	switch {
+	case deleteCloud && inst.Spec.DeletionProtection:
+		logger.Info("deletionProtection is set; refusing to delete the Aura instance", "instanceId", externalID)
+		r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonAuraInstanceFailed,
+			"deletionProtection is set: clear it to allow deletion of the cloud instance")
+		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+	case deleteCloud:
 		if externalID != "" {
 			if err := apiClient.DeleteInstance(ctx, externalID); err != nil && !aura.IsNotFound(err) {
 				if aura.IsConflict(err) || aura.IsTransient(err) {
@@ -353,10 +376,10 @@ func (r *AuraInstanceReconciler) handleDeletion(
 			r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceDeleted,
 				fmt.Sprintf("Deleted Aura instance %s", externalID))
 		}
-	default: // Orphan
+	default: // Orphan (policy Orphan, or Delete not permitted by managementPolicies)
 		if externalID != "" {
 			r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceOrphaned,
-				fmt.Sprintf("Orphaning Aura instance %s (deletionPolicy=Orphan); the cloud instance keeps running", externalID))
+				fmt.Sprintf("Orphaning Aura instance %s; the cloud instance keeps running", externalID))
 		}
 	}
 
@@ -400,6 +423,27 @@ func (r *AuraInstanceReconciler) patchInstance(ctx context.Context, req ctrl.Req
 	})
 }
 
+// setCondition sets a status condition, writing only when it actually changes,
+// so a steady terminal state (e.g. Paused) doesn't self-trigger a reconcile loop.
+func (r *AuraInstanceReconciler) setCondition(ctx context.Context, req ctrl.Request, condType string, status metav1.ConditionStatus, reason, msg string) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.AuraInstance{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return err
+		}
+		existing := meta.FindStatusCondition(latest.Status.Conditions, condType)
+		if existing != nil && existing.Status == status && existing.Reason == reason &&
+			existing.Message == msg && latest.Status.ObservedGeneration == latest.Generation {
+			return nil
+		}
+		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+			Type: condType, Status: status, Reason: reason, Message: msg,
+		})
+		latest.Status.ObservedGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
+	})
+}
+
 // syncStatus writes observed state + conditions.
 func (r *AuraInstanceReconciler) syncStatus(ctx context.Context, req ctrl.Request, inst *neo4jv1beta1.AuraInstance, observed *aura.Instance) error {
 	running := aura.IsInstanceRunning(observed.Status)
@@ -414,6 +458,15 @@ func (r *AuraInstanceReconciler) syncStatus(ctx context.Context, req ctrl.Reques
 			latest.Status.ConnectionURL = observed.ConnectionURL
 		}
 		latest.Status.MetricsIntegrationURL = observed.MetricsIntegrationURL
+		latest.Status.AtProvider = &neo4jv1beta1.AuraInstanceObservation{
+			Status:        observed.Status,
+			Memory:        observed.Memory,
+			Storage:       observed.Storage,
+			Type:          observed.Type,
+			Region:        observed.Region,
+			CloudProvider: observed.CloudProvider,
+			Name:          observed.Name,
+		}
 		if cn := r.connectionSecretName(latest); cn != "" {
 			latest.Status.Binding = &neo4jv1beta1.AuraServiceBinding{Name: cn}
 		}

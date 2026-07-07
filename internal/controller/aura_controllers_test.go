@@ -516,6 +516,77 @@ func TestAuraInstance_Deletion(t *testing.T) {
 	})
 }
 
+func TestAuraInstance_Paused(t *testing.T) {
+	scheme := auraTestScheme(t)
+	inst := newAuraInstance("inst-paused")
+	inst.Annotations = map[string]string{AuraPausedAnnotation: "true"}
+	f := &fakeAuraAPI{}
+	c := newAuraFakeClient(t, scheme, inst)
+	r := &AuraInstanceReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50), ClientFactory: factoryFor(f)}
+
+	if _, err := r.Reconcile(context.Background(), reqFor(inst)); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if f.listCalled || f.createCalled {
+		t.Error("a paused instance must not touch the Aura API")
+	}
+	got := &neo4jv1beta1.AuraInstance{}
+	if err := c.Get(context.Background(), reqFor(inst).NamespacedName, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if s := conditionStatus(got.Status.Conditions, "Synced"); s != metav1.ConditionFalse {
+		t.Errorf("Synced = %q, want False (Paused)", s)
+	}
+}
+
+func TestAuraInstance_ObserveOnly_NoCreate(t *testing.T) {
+	scheme := auraTestScheme(t)
+	inst := newAuraInstance("inst-observe")
+	inst.Spec.ManagementPolicies = []string{"Observe"}
+	f := &fakeAuraAPI{listInstancesFn: func(context.Context, string) ([]aura.InstanceSummary, error) { return nil, nil }}
+	c := newAuraFakeClient(t, scheme, inst)
+	r := &AuraInstanceReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50), ClientFactory: factoryFor(f)}
+
+	ctx := context.Background()
+	for i := 0; i < 2; i++ { // pass 1 adds the finalizer, pass 2 runs observe-only
+		if _, err := r.Reconcile(ctx, reqFor(inst)); err != nil {
+			t.Fatalf("Reconcile #%d: %v", i, err)
+		}
+	}
+	if f.createCalled {
+		t.Error("managementPolicies=[Observe] must not create an instance")
+	}
+	got := &neo4jv1beta1.AuraInstance{}
+	if err := c.Get(ctx, reqFor(inst).NamespacedName, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if s := conditionStatus(got.Status.Conditions, "Synced"); s != metav1.ConditionFalse {
+		t.Errorf("Synced = %q, want False (AwaitingInstance)", s)
+	}
+}
+
+func TestAuraInstance_ManagementPolicyBlocksDelete(t *testing.T) {
+	scheme := auraTestScheme(t)
+	inst := newAuraInstance("inst-nodelete")
+	inst.Annotations = map[string]string{AuraExternalIDAnnotation: "id1"}
+	inst.Spec.DeletionPolicy = "Delete"
+	inst.Spec.ManagementPolicies = []string{"Observe"} // Delete not permitted → orphan
+	controllerutil.AddFinalizer(inst, AuraInstanceFinalizer)
+	f := &fakeAuraAPI{}
+	c := newAuraFakeClient(t, scheme, inst)
+	ctx := context.Background()
+	if err := c.Delete(ctx, inst); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	r := &AuraInstanceReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50), ClientFactory: factoryFor(f)}
+	if _, err := r.Reconcile(ctx, reqFor(inst)); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if f.deleteCalled {
+		t.Error("DeleteInstance must NOT be called when managementPolicies omits Delete (should orphan)")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // AuraSnapshot.
 // ---------------------------------------------------------------------------

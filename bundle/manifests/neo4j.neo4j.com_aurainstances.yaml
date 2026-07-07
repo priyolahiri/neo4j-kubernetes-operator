@@ -151,6 +151,22 @@ spec:
                   creating one. Immutable once set. The operator mirrors this into the
                   neo4j.com/external-instance-id annotation (its internal source of truth).
                 type: string
+              managementPolicies:
+                default:
+                - '*'
+                description: |-
+                  ManagementPolicies restricts which actions the operator may take on the
+                  cloud instance. Default ["*"] = full management. Use a subset to observe
+                  only (["Observe"]), never delete (["Observe","Create","Update"]), etc.
+                items:
+                  enum:
+                  - Observe
+                  - Create
+                  - Update
+                  - Delete
+                  - '*'
+                  type: string
+                type: array
               memory:
                 description: |-
                   Memory, e.g. 4GB. Mutable (drives online resize). Required except for
@@ -287,6 +303,25 @@ spec:
           status:
             description: AuraInstanceStatus is the observed state of an Aura instance.
             properties:
+              atProvider:
+                description: AtProvider is the full instance state last observed from
+                  the Aura API.
+                properties:
+                  cloudProvider:
+                    type: string
+                  memory:
+                    type: string
+                  name:
+                    type: string
+                  region:
+                    type: string
+                  status:
+                    type: string
+                  storage:
+                    type: string
+                  type:
+                    type: string
+                type: object
               binding:
                 description: Binding exposes this instance as a Service Binding Provisioned
                   Service.

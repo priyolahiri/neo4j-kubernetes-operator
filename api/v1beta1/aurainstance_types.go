@@ -175,6 +175,33 @@ type AuraInstanceSpec struct {
 	// deletionPolicy=Delete, until cleared.
 	// +optional
 	DeletionProtection bool `json:"deletionProtection,omitempty"`
+
+	// ManagementPolicies restricts which actions the operator may take on the
+	// cloud instance. Default ["*"] = full management. Use a subset to observe
+	// only (["Observe"]), never delete (["Observe","Create","Update"]), etc.
+	// +kubebuilder:validation:items:Enum=Observe;Create;Update;Delete;*
+	// +kubebuilder:default={"*"}
+	// +optional
+	ManagementPolicies []string `json:"managementPolicies,omitempty"`
+}
+
+// AuraInstanceObservation mirrors the instance state last observed from the Aura
+// API — the source of truth for drift detection and reporting.
+type AuraInstanceObservation struct {
+	// +optional
+	Status string `json:"status,omitempty"`
+	// +optional
+	Memory string `json:"memory,omitempty"`
+	// +optional
+	Storage string `json:"storage,omitempty"`
+	// +optional
+	Type string `json:"type,omitempty"`
+	// +optional
+	Region string `json:"region,omitempty"`
+	// +optional
+	CloudProvider string `json:"cloudProvider,omitempty"`
+	// +optional
+	Name string `json:"name,omitempty"`
 }
 
 // AuraServiceBinding is the Service Binding "Provisioned Service" pointer.
@@ -219,6 +246,10 @@ type AuraInstanceStatus struct {
 	// LastSyncedTime is when the instance was last observed from the Aura API.
 	// +optional
 	LastSyncedTime *metav1.Time `json:"lastSyncedTime,omitempty"`
+
+	// AtProvider is the full instance state last observed from the Aura API.
+	// +optional
+	AtProvider *AuraInstanceObservation `json:"atProvider,omitempty"`
 }
 
 // +kubebuilder:object:root=true

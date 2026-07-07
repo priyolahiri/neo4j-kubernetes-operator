@@ -42,7 +42,35 @@ const (
 	// defaultAuraRatePerMinute is the conservative Aura API rate limit (trial
 	// keys are 25/min; paid are 125/min). We default to the safe floor.
 	defaultAuraRatePerMinute = 25
+
+	// AuraPausedAnnotation, when "true", suspends reconciliation of a resource
+	// (including deletion) — the operator observes nothing and takes no action
+	// until it is cleared. Standard cloud-native pause knob for incident
+	// response / manual intervention without deleting the CR.
+	AuraPausedAnnotation = "neo4j.com/paused"
 )
+
+// Management policy actions.
+const (
+	auraPolicyObserve = "Observe"
+	auraPolicyCreate  = "Create"
+	auraPolicyUpdate  = "Update"
+	auraPolicyDelete  = "Delete"
+)
+
+// managementAllows reports whether an action is permitted by the resource's
+// managementPolicies. Empty (or containing "*") means full management.
+func managementAllows(policies []string, action string) bool {
+	if len(policies) == 0 {
+		return true
+	}
+	for _, p := range policies {
+		if p == "*" || p == action {
+			return true
+		}
+	}
+	return false
+}
 
 // auraCredentials is the resolved information needed to build an Aura API client.
 type auraCredentials struct {
