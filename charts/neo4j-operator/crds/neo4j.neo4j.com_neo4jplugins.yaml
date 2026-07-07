@@ -222,7 +222,7 @@ spec:
                 x-kubernetes-validations:
                 - message: 'source.url scheme must be https: plugin JARs are downloaded
                     over the network and a non-https scheme has no transport integrity'
-                  rule: size(self.url) == 0 || self.url.matches('(?i)^https://')
+                  rule: '!has(self.url) || size(self.url) == 0 || self.url.matches(''(?i)^https://'')'
               version:
                 description: Plugin version
                 type: string
@@ -234,11 +234,11 @@ spec:
             x-kubernetes-validations:
             - message: installMode 'VerifiedDownload' requires spec.source.url
               rule: self.installMode != 'VerifiedDownload' || (has(self.source) &&
-                size(self.source.url) > 0)
+                has(self.source.url) && size(self.source.url) > 0)
             - message: installMode 'VerifiedDownload' requires spec.source.checksum
                 (sha256:<64 hex> or sha512:<128 hex>)
               rule: self.installMode != 'VerifiedDownload' || (has(self.source) &&
-                size(self.source.checksum) > 0)
+                has(self.source.checksum) && size(self.source.checksum) > 0)
             - message: installMode 'VerifiedDownload' requires source.type url or
                 custom; official/community resolve via the Neo4j entrypoint and cannot
                 be pointed at a verifiable URL

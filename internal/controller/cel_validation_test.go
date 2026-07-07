@@ -103,6 +103,16 @@ func TestCELValidations(t *testing.T) {
 			ClusterRef: "c1", Name: "apoc",
 		},
 	})
+	// Regression: a Managed plugin with a source that OMITS url (the common
+	// official/community case, e.g. apoc/gds/bloom) must be accepted. The https
+	// rule must not error on the absent optional `url` field.
+	accept("plugin Managed with source, no url", &neo4jv1beta1.Neo4jPlugin{
+		ObjectMeta: meta("cel-plugin-managed-src"),
+		Spec: neo4jv1beta1.Neo4jPluginSpec{
+			ClusterRef: "c1", Name: "apoc",
+			Source: &neo4jv1beta1.PluginSource{Type: "official"},
+		},
+	})
 	reject("plugin VerifiedDownload without source", &neo4jv1beta1.Neo4jPlugin{
 		ObjectMeta: meta("cel-plugin-vd-nosource"),
 		Spec: neo4jv1beta1.Neo4jPluginSpec{
