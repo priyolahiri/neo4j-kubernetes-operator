@@ -156,6 +156,36 @@ func (v *DatabaseValidator) Validate(ctx context.Context, database *neo4jv1beta1
 		result.Warnings = append(result.Warnings, nameWarnings...)
 	}
 
+	// Aura target: an AuraInstance owns infrastructure/topology per its tier, so
+	// only the database-level concerns (name/Cypher/options) apply. Confirm the
+	// instance exists and validate that subset; skip cluster-topology and
+	// image-version gating (there is no cluster image tag to gate against).
+	if database.Spec.AuraInstanceRef != "" {
+		ai := &neo4jv1beta1.AuraInstance{}
+		aiErr := v.client.Get(ctx, types.NamespacedName{
+			Name:      database.Spec.AuraInstanceRef,
+			Namespace: database.Namespace,
+		}, ai)
+		if errors.IsNotFound(aiErr) {
+			result.Errors = append(result.Errors, field.NotFound(
+				field.NewPath("spec", "auraInstanceRef"),
+				fmt.Sprintf("Referenced AuraInstance %s not found", database.Spec.AuraInstanceRef)))
+			return result
+		} else if aiErr != nil {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("Cannot validate database configuration: failed to get AuraInstance %s", database.Spec.AuraInstanceRef))
+			return result
+		}
+		if database.Spec.Topology != nil {
+			result.Warnings = append(result.Warnings,
+				"spec.topology is ignored for Aura-targeted databases; Aura manages replication per tier")
+		}
+		v.validateCypherLanguage(database, result)
+		v.validateDatabaseOptions(database, result)
+		v.validateConfigurationConflicts(database, result)
+		return result
+	}
+
 	// Try to get referenced cluster first
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	clusterKey := types.NamespacedName{

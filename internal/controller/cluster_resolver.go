@@ -31,29 +31,41 @@ import (
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 )
 
-// ResolvedTarget is a thin holder for the result of looking up a clusterRef.
-// Exactly one of Cluster / Standalone is non-nil when Found is true.
+// ResolvedTarget is a thin holder for the result of looking up a target ref.
+// Exactly one of Cluster / Standalone / AuraInstance is non-nil when Found is
+// true.
 type ResolvedTarget struct {
-	Found      bool
-	Cluster    *neo4jv1beta1.Neo4jEnterpriseCluster
-	Standalone *neo4jv1beta1.Neo4jEnterpriseStandalone
+	Found        bool
+	Cluster      *neo4jv1beta1.Neo4jEnterpriseCluster
+	Standalone   *neo4jv1beta1.Neo4jEnterpriseStandalone
+	AuraInstance *neo4jv1beta1.AuraInstance
 }
 
 // IsReady reports whether the resolved target has reached its Ready phase.
-// Cluster readiness is detected via the Ready condition; standalone via the
-// status.Ready boolean (matching the existing convention from the database
-// controller).
+// Cluster + AuraInstance readiness is detected via the Ready condition;
+// standalone via the status.Ready boolean (matching the existing convention
+// from the database controller).
 func (r ResolvedTarget) IsReady() bool {
 	if r.Cluster != nil {
-		for _, c := range r.Cluster.Status.Conditions {
-			if c.Type == ConditionTypeReady && c.Status == metav1.ConditionTrue {
-				return true
-			}
-		}
-		return false
+		return hasReadyCondition(r.Cluster.Status.Conditions)
 	}
 	if r.Standalone != nil {
 		return r.Standalone.Status.Ready
+	}
+	if r.AuraInstance != nil {
+		// An Aura instance is usable for DDL only once it is Running (Ready) and
+		// has published its connection URL.
+		return r.AuraInstance.Status.ConnectionURL != "" &&
+			hasReadyCondition(r.AuraInstance.Status.Conditions)
+	}
+	return false
+}
+
+func hasReadyCondition(conds []metav1.Condition) bool {
+	for _, c := range conds {
+		if c.Type == ConditionTypeReady && c.Status == metav1.ConditionTrue {
+			return true
+		}
 	}
 	return false
 }
@@ -65,8 +77,25 @@ func (r ResolvedTarget) NewClient(c client.Client) (*neo4j.Client, error) {
 		return neo4j.NewClientForEnterprise(r.Cluster, c, r.Cluster.Spec.Auth.AdminSecret)
 	case r.Standalone != nil:
 		return neo4j.NewClientForEnterpriseStandalone(r.Standalone, c, r.Standalone.Spec.Auth.AdminSecret)
+	case r.AuraInstance != nil:
+		ai := r.AuraInstance
+		return neo4j.NewClientForAura(context.Background(), c, ai.Namespace, ai.Status.ConnectionURL, auraConnectionSecretName(ai))
 	default:
-		return nil, fmt.Errorf("ResolvedTarget has neither Cluster nor Standalone")
+		return nil, fmt.Errorf("ResolvedTarget has neither Cluster, Standalone, nor AuraInstance")
+	}
+}
+
+// TargetKind names the resolved target kind for events/conditions/messages.
+func (r ResolvedTarget) TargetKind() string {
+	switch {
+	case r.Cluster != nil:
+		return "Neo4jEnterpriseCluster"
+	case r.Standalone != nil:
+		return "Neo4jEnterpriseStandalone"
+	case r.AuraInstance != nil:
+		return "AuraInstance"
+	default:
+		return "unknown"
 	}
 }
 
@@ -133,4 +162,28 @@ func ResolveClusterRef(ctx context.Context, c client.Client, namespace, name str
 		return ResolvedTarget{}, fmt.Errorf("get Neo4jEnterpriseStandalone %s/%s: %w", namespace, name, err)
 	}
 	return ResolvedTarget{}, nil
+}
+
+// ResolveAuraInstanceRef looks up an AuraInstance by name in a namespace.
+// Returns ResolvedTarget{Found:false} when it does not exist.
+func ResolveAuraInstanceRef(ctx context.Context, c client.Client, namespace, name string) (ResolvedTarget, error) {
+	ai := &neo4jv1beta1.AuraInstance{}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, ai); err == nil {
+		return ResolvedTarget{Found: true, AuraInstance: ai}, nil
+	} else if !errors.IsNotFound(err) {
+		return ResolvedTarget{}, fmt.Errorf("get AuraInstance %s/%s: %w", namespace, name, err)
+	}
+	return ResolvedTarget{}, nil
+}
+
+// ResolveTargetRef resolves whichever of clusterRef / auraInstanceRef is set for
+// a Bolt-level CRD (Neo4jDatabase/User/Role/RoleBinding). Exactly one is
+// expected (enforced by CEL on the spec); auraInstanceRef takes precedence if
+// both are somehow set. clusterRef resolves a cluster or standalone;
+// auraInstanceRef resolves a managed Aura cloud instance.
+func ResolveTargetRef(ctx context.Context, c client.Client, namespace, clusterRef, auraInstanceRef string) (ResolvedTarget, error) {
+	if auraInstanceRef != "" {
+		return ResolveAuraInstanceRef(ctx, c, namespace, auraInstanceRef)
+	}
+	return ResolveClusterRef(ctx, c, namespace, clusterRef)
 }

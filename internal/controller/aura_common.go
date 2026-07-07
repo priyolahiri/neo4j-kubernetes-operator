@@ -267,6 +267,16 @@ func resolveInstanceCredsAndID(
 	return creds, externalID, inst, nil
 }
 
+// auraConnectionSecretName returns the connection Secret name for an instance:
+// spec.connectionSecretName, or "<name>-conn" by default. Package-level so the
+// target resolver can find an Aura instance's admin credentials.
+func auraConnectionSecretName(inst *neo4jv1beta1.AuraInstance) string {
+	if inst.Spec.ConnectionSecretName != "" {
+		return inst.Spec.ConnectionSecretName
+	}
+	return inst.Name + "-conn"
+}
+
 // auraCondStatus maps a boolean to a Kubernetes condition status.
 func auraCondStatus(ok bool) metav1.ConditionStatus {
 	if ok {

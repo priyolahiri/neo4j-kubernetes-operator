@@ -219,4 +219,8 @@ const (
 	EventReasonAuraCMKOrphaned          = "AuraCustomerManagedKeyOrphaned"
 	EventReasonAuraCMKDeleteBlocked     = "AuraCustomerManagedKeyDeleteBlocked"
 	EventReasonAuraCMKFailed            = "AuraCustomerManagedKeyFailed"
+	// EventReasonAuraTierUnsupported is emitted when a Bolt-level CRD targets an
+	// AuraInstance whose tier does not support the requested operation (e.g. a
+	// Neo4jDatabase against a single-database tier).
+	EventReasonAuraTierUnsupported = "AuraTierUnsupported"
 )

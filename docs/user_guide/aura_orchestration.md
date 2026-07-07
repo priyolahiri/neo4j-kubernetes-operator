@@ -152,6 +152,40 @@ reconciliation entirely (including deletion) for incident response, without
 deleting the CR. `AuraInstance` also mirrors the last-observed cloud state into
 `status.atProvider` for drift inspection.
 
+## Managing databases on an Aura instance
+
+`Neo4jDatabase` can target a managed Aura instance instead of a self-managed
+cluster — point it at the instance with `auraInstanceRef` (mutually exclusive
+with `clusterRef`):
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jDatabase
+metadata: { name: analytics-db }
+spec:
+  auraInstanceRef: analytics   # the AuraInstance, same namespace
+  name: analytics
+```
+
+The operator connects to the instance over Bolt (`neo4j+s://…`, using the admin
+credentials it captured into the connection Secret) and runs the same
+`CREATE DATABASE` / `DROP DATABASE` DDL it uses for self-managed clusters.
+
+- **Multi-database tiers only.** Additional databases require a
+  multi-database-capable Aura tier (Business Critical / dedicated). On a
+  single-database tier (`free-db`, `professional-db`) the operator refuses up
+  front with an `AuraTierUnsupported` condition rather than looping on the Aura
+  rejection.
+- **Credentials.** Works when the operator holds admin credentials — i.e. an
+  instance it created (the one-time password is captured at create). An imported
+  instance whose password the operator never saw needs credentials supplied.
+- `spec.topology` is ignored for Aura targets — Aura manages replication per
+  tier.
+
+!!! note "Users & roles on Aura — coming next"
+    `Neo4jUser` / `Neo4jRole` / `Neo4jRoleBinding` targeting an `AuraInstance`
+    land in a follow-up increment on this branch.
+
 ## Importing an existing instance
 
 Point a CR at an existing Aura instance by ID — the operator **adopts** it
