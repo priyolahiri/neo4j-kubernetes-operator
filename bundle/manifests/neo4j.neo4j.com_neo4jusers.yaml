@@ -193,6 +193,10 @@ spec:
             x-kubernetes-validations:
             - message: set exactly one of clusterRef or auraInstanceRef
               rule: has(self.clusterRef) != has(self.auraInstanceRef)
+            - message: set either passwordSecretRef or at least one externalAuth provider
+                (Neo4j requires at least one auth provider per user)
+              rule: has(self.passwordSecretRef) || (has(self.externalAuth) && size(self.externalAuth)
+                > 0)
           status:
             description: Neo4jUserStatus describes the observed state of a Neo4jUser.
             properties:

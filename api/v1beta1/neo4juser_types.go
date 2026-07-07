@@ -34,6 +34,7 @@ import (
 // PendingDependencies condition is set and the reconcile requeues.
 //
 // +kubebuilder:validation:XValidation:rule="has(self.clusterRef) != has(self.auraInstanceRef)",message="set exactly one of clusterRef or auraInstanceRef"
+// +kubebuilder:validation:XValidation:rule="has(self.passwordSecretRef) || (has(self.externalAuth) && size(self.externalAuth) > 0)",message="set either passwordSecretRef or at least one externalAuth provider (Neo4j requires at least one auth provider per user)"
 type Neo4jUserSpec struct {
 	// ClusterRef is the name of the Neo4jEnterpriseCluster or
 	// Neo4jEnterpriseStandalone in the same namespace whose security graph

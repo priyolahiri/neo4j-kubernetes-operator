@@ -5230,7 +5230,12 @@ spec:
                 - size
                 type: object
               tls:
-                description: TLSSpec defines TLS configuration
+                description: |-
+                  TLSSpec defines TLS configuration.
+
+                  The two CEL rules are apiserver-enforced (no webhook — invariant 1) and run
+                  only when a tls block is present; the same checks stay inline in
+                  internal/validation/tls_validator.go (shared by cluster + standalone).
                 properties:
                   certificateSecret:
                     description: Manual certificate configuration
@@ -5392,11 +5397,25 @@ spec:
                       is skipped (suitable for self-signed development certificates).
                     type: string
                   usages:
-                    description: Certificate usage settings
+                    description: |-
+                      Certificate usage settings. Bounded so the CEL rule on this struct has a
+                      finite cost estimate at CRD registration (the valid EKU set is ~15).
                     items:
+                      maxLength: 64
                       type: string
+                    maxItems: 32
                     type: array
                 type: object
+                x-kubernetes-validations:
+                - message: issuerRef.name is required when tls.mode is 'cert-manager'
+                    (the certificate builder cannot resolve an issuer without it)
+                  rule: self.mode != 'cert-manager' || (has(self.issuerRef) && size(self.issuerRef.name)
+                    > 0)
+                - message: tls.usages, when set, must include both 'server auth' and
+                    'client auth' (or omit usages to use the operator defaults) —
+                    Neo4j needs both EKUs for its mutual-TLS posture
+                  rule: '!has(self.usages) || size(self.usages) == 0 || (self.usages.exists(u,
+                    u == ''server auth'') && self.usages.exists(u, u == ''client auth''))'
               tolerations:
                 description: Tolerations for pod scheduling
                 items:
