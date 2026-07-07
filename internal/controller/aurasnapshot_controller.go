@@ -49,6 +49,8 @@ type AuraSnapshotReconciler struct {
 	Recorder                record.EventRecorder
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
+	// ClientFactory builds the Aura API client; nil uses the real shared client.
+	ClientFactory auraClientFactory
 }
 
 func (r *AuraSnapshotReconciler) requeueAfter() time.Duration {
@@ -67,12 +69,13 @@ func (r *AuraSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	apiClient, externalID, _, err := resolveInstanceClientAndID(ctx, r.Client, snap.Namespace, snap.Spec.InstanceRef)
+	creds, externalID, _, err := resolveInstanceCredsAndID(ctx, r.Client, snap.Namespace, snap.Spec.InstanceRef)
 	if err != nil {
 		logger.Info("snapshot deferred: instance not resolvable", "error", err.Error())
 		r.setSnapshotCondition(ctx, req, false, "InstanceNotReady", err.Error())
 		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 	}
+	apiClient := resolveClient(r.ClientFactory, creds)
 
 	// Request the snapshot exactly once.
 	if snap.Status.SnapshotID == "" {

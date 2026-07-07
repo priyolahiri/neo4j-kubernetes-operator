@@ -89,6 +89,38 @@ func auraClientForCreds(c auraCredentials) *aura.Client {
 	return cl
 }
 
+// auraAPI is the subset of the Aura client the controllers depend on. Declaring
+// it here (rather than using *aura.Client directly) lets tests inject a fake via
+// each reconciler's ClientFactory, so controller envtests need no real Aura
+// account. *aura.Client satisfies this interface.
+type auraAPI interface {
+	ListInstances(ctx context.Context, tenantID string) ([]aura.InstanceSummary, error)
+	GetInstance(ctx context.Context, id string) (*aura.Instance, error)
+	CreateInstance(ctx context.Context, req aura.CreateInstanceRequest) (*aura.CreateInstanceResponse, error)
+	PatchInstance(ctx context.Context, id string, req aura.PatchInstanceRequest) (*aura.Instance, error)
+	PauseInstance(ctx context.Context, id string) error
+	ResumeInstance(ctx context.Context, id string) error
+	DeleteInstance(ctx context.Context, id string) error
+	GetTenant(ctx context.Context, id string) (*aura.Tenant, error)
+	CreateSnapshot(ctx context.Context, instanceID string) (*aura.Snapshot, error)
+	GetSnapshot(ctx context.Context, instanceID, snapshotID string) (*aura.Snapshot, error)
+	RestoreSnapshot(ctx context.Context, instanceID, snapshotID string) error
+}
+
+// auraClientFactory builds an auraAPI from resolved credentials; reconcilers
+// hold one (nil → the real, shared cached client) so tests can inject a fake.
+type auraClientFactory func(auraCredentials) auraAPI
+
+func defaultAuraClientFactory(c auraCredentials) auraAPI { return auraClientForCreds(c) }
+
+// resolveClient returns the factory's client, or the default shared client.
+func resolveClient(factory auraClientFactory, c auraCredentials) auraAPI {
+	if factory != nil {
+		return factory(c)
+	}
+	return defaultAuraClientFactory(c)
+}
+
 // resolveAuraCredentials resolves API credentials from either a
 // providerConfigRef (preferred: also carries baseURL + default project) or an
 // inline credentialsSecretRef, reading the referenced Secret in the given
@@ -143,29 +175,29 @@ func resolveAuraCredentials(
 	return creds, nil
 }
 
-// resolveInstanceClientAndID fetches the referenced AuraInstance (same
-// namespace), builds an Aura client from its credentials, and returns the
-// instance's external Aura ID. Used by the snapshot and restore controllers,
-// which act on an instance they don't own.
-func resolveInstanceClientAndID(
+// resolveInstanceCredsAndID fetches the referenced AuraInstance (same
+// namespace) and returns its resolved credentials + external Aura ID. Callers
+// (the snapshot and restore controllers, which act on an instance they don't
+// own) build the client via their own ClientFactory so tests can inject a fake.
+func resolveInstanceCredsAndID(
 	ctx context.Context, k8s client.Client, namespace, instanceRef string,
-) (*aura.Client, string, *neo4jv1beta1.AuraInstance, error) {
+) (auraCredentials, string, *neo4jv1beta1.AuraInstance, error) {
 	inst := &neo4jv1beta1.AuraInstance{}
 	if err := k8s.Get(ctx, types.NamespacedName{Name: instanceRef, Namespace: namespace}, inst); err != nil {
-		return nil, "", nil, fmt.Errorf("resolving instanceRef %q: %w", instanceRef, err)
+		return auraCredentials{}, "", nil, fmt.Errorf("resolving instanceRef %q: %w", instanceRef, err)
 	}
 	creds, err := resolveAuraCredentials(ctx, k8s, namespace, inst.Spec.ProviderConfigRef, inst.Spec.CredentialsSecretRef)
 	if err != nil {
-		return nil, "", inst, err
+		return auraCredentials{}, "", inst, err
 	}
 	externalID := inst.Annotations[AuraExternalIDAnnotation]
 	if externalID == "" {
 		externalID = inst.Status.InstanceID
 	}
 	if externalID == "" {
-		return nil, "", inst, fmt.Errorf("AuraInstance %q has no external instance ID yet (not created/adopted)", instanceRef)
+		return auraCredentials{}, "", inst, fmt.Errorf("AuraInstance %q has no external instance ID yet (not created/adopted)", instanceRef)
 	}
-	return auraClientForCreds(creds), externalID, inst, nil
+	return creds, externalID, inst, nil
 }
 
 // auraCondStatus maps a boolean to a Kubernetes condition status.

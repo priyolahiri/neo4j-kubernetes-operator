@@ -49,6 +49,8 @@ type AuraProviderConfigReconciler struct {
 	Recorder                record.EventRecorder
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
+	// ClientFactory builds the Aura API client; nil uses the real shared client.
+	ClientFactory auraClientFactory
 }
 
 // Reconcile validates the referenced credentials by obtaining an access token
@@ -66,7 +68,7 @@ func (r *AuraProviderConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 		creds.baseURL = pc.Spec.BaseURL
 		creds.projectID = pc.Spec.DefaultProjectID
 		// Force a token exchange + a real call to prove the credentials work.
-		_, err = auraClientForCreds(creds).ListInstances(ctx, creds.projectID)
+		_, err = resolveClient(r.ClientFactory, creds).ListInstances(ctx, creds.projectID)
 	}
 
 	ready := err == nil

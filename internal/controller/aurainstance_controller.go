@@ -59,6 +59,9 @@ type AuraInstanceReconciler struct {
 	Recorder                record.EventRecorder
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
+	// ClientFactory builds the Aura API client from resolved credentials; nil
+	// uses the real shared cached client. Tests inject a fake.
+	ClientFactory auraClientFactory
 }
 
 func (r *AuraInstanceReconciler) requeueAfter() time.Duration {
@@ -86,7 +89,7 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if projectID == "" {
 		projectID = creds.projectID
 	}
-	apiClient := auraClientForCreds(creds)
+	apiClient := resolveClient(r.ClientFactory, creds)
 
 	if !inst.DeletionTimestamp.IsZero() {
 		return r.handleDeletion(ctx, inst, apiClient)
@@ -172,7 +175,7 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 // observeOrCreate implements the observe-before-create idempotency guard.
 func (r *AuraInstanceReconciler) observeOrCreate(
 	ctx context.Context, req ctrl.Request, inst *neo4jv1beta1.AuraInstance,
-	apiClient *aura.Client, projectID string,
+	apiClient auraAPI, projectID string,
 ) (id string, adopted bool, err error) {
 	name := r.instanceName(inst)
 
@@ -258,7 +261,7 @@ func (r *AuraInstanceReconciler) observeOrCreate(
 // reconcileDrift converges mutable fields (memory, storage, name) via PATCH.
 // Returns handled=true when it issued a change (caller should requeue).
 func (r *AuraInstanceReconciler) reconcileDrift(
-	ctx context.Context, inst *neo4jv1beta1.AuraInstance, apiClient *aura.Client, observed *aura.Instance,
+	ctx context.Context, inst *neo4jv1beta1.AuraInstance, apiClient auraAPI, observed *aura.Instance,
 ) (handled bool, res ctrl.Result, err error) {
 	patch := aura.PatchInstanceRequest{}
 	changed := false
@@ -290,7 +293,7 @@ func (r *AuraInstanceReconciler) reconcileDrift(
 
 // reconcilePauseResume drives the desired paused state.
 func (r *AuraInstanceReconciler) reconcilePauseResume(
-	ctx context.Context, inst *neo4jv1beta1.AuraInstance, apiClient *aura.Client, observed *aura.Instance,
+	ctx context.Context, inst *neo4jv1beta1.AuraInstance, apiClient auraAPI, observed *aura.Instance,
 ) (res ctrl.Result, handled bool, err error) {
 	switch {
 	case inst.Spec.Paused && aura.IsInstanceRunning(observed.Status):
@@ -320,7 +323,7 @@ func (r *AuraInstanceReconciler) reconcilePauseResume(
 // handleDeletion honours the deletion policy: Orphan (default) keeps the cloud
 // instance; Delete destroys it (unless deletionProtection is set).
 func (r *AuraInstanceReconciler) handleDeletion(
-	ctx context.Context, inst *neo4jv1beta1.AuraInstance, apiClient *aura.Client,
+	ctx context.Context, inst *neo4jv1beta1.AuraInstance, apiClient auraAPI,
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	if !controllerutil.ContainsFinalizer(inst, AuraInstanceFinalizer) {

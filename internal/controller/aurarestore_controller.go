@@ -58,6 +58,8 @@ type AuraRestoreReconciler struct {
 	Recorder                record.EventRecorder
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
+	// ClientFactory builds the Aura API client; nil uses the real shared client.
+	ClientFactory auraClientFactory
 }
 
 func (r *AuraRestoreReconciler) requeueAfter() time.Duration {
@@ -79,10 +81,11 @@ func (r *AuraRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	apiClient, externalID, _, err := resolveInstanceClientAndID(ctx, r.Client, restore.Namespace, restore.Spec.InstanceRef)
+	creds, externalID, _, err := resolveInstanceCredsAndID(ctx, r.Client, restore.Namespace, restore.Spec.InstanceRef)
 	if err != nil {
 		return r.pending(ctx, req, restore, "InstanceNotReady", err.Error())
 	}
+	apiClient := resolveClient(r.ClientFactory, creds)
 
 	// Resolve the snapshot ID (direct or via an AuraSnapshot CR).
 	snapshotID := restore.Spec.SnapshotID
