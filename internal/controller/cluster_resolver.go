@@ -176,6 +176,26 @@ func ResolveAuraInstanceRef(ctx context.Context, c client.Client, namespace, nam
 	return ResolvedTarget{}, nil
 }
 
+// targetRefKey is a canonical identity for a Bolt-target reference, used to
+// match dependent CRs (a Neo4jUser references Neo4jRoles on the SAME target).
+// clusterRef and auraInstanceRef are mutually exclusive; the prefix keeps a
+// cluster named "x" distinct from an Aura instance named "x".
+func targetRefKey(clusterRef, auraInstanceRef string) string {
+	if auraInstanceRef != "" {
+		return "aura/" + auraInstanceRef
+	}
+	return "cluster/" + clusterRef
+}
+
+// targetRefDisplay renders whichever ref is set, for user-facing status/event
+// messages (e.g. `clusterRef "c1"` or `auraInstanceRef "analytics"`).
+func targetRefDisplay(clusterRef, auraInstanceRef string) string {
+	if auraInstanceRef != "" {
+		return fmt.Sprintf("auraInstanceRef %q", auraInstanceRef)
+	}
+	return fmt.Sprintf("clusterRef %q", clusterRef)
+}
+
 // ResolveTargetRef resolves whichever of clusterRef / auraInstanceRef is set for
 // a Bolt-level CRD (Neo4jDatabase/User/Role/RoleBinding). Exactly one is
 // expected (enforced by CEL on the spec); auraInstanceRef takes precedence if

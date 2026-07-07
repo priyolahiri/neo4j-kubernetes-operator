@@ -182,9 +182,37 @@ credentials it captured into the connection Secret) and runs the same
 - `spec.topology` is ignored for Aura targets — Aura manages replication per
   tier.
 
-!!! note "Users & roles on Aura — coming next"
-    `Neo4jUser` / `Neo4jRole` / `Neo4jRoleBinding` targeting an `AuraInstance`
-    land in a follow-up increment on this branch.
+## Managing users & roles on an Aura instance
+
+`Neo4jUser`, `Neo4jRole`, and `Neo4jRoleBinding` accept `auraInstanceRef` too
+(same mutually-exclusive-with-`clusterRef` rule). The operator manages the
+instance's security graph over Bolt with the same Cypher it uses for
+self-managed clusters:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jRole
+metadata: { name: analytics-reader }
+spec:
+  auraInstanceRef: analytics
+  name: analytics_reader
+  privileges:
+    - "GRANT MATCH {*} ON GRAPH neo4j NODES * TO analytics_reader"
+---
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jUser
+metadata: { name: app-reader }
+spec:
+  auraInstanceRef: analytics
+  username: app_reader
+  passwordSecretRef: { name: app-reader-creds }
+  roles: [analytics-reader]     # resolves to the role on the SAME Aura instance
+```
+
+Cross-references stay scoped to the target: a user's `roles` resolve only
+against `Neo4jRole`s pointing at the *same* `auraInstanceRef`. Custom users and
+roles require an Aura tier that permits them (dedicated tiers) — on a tier that
+doesn't, the operator surfaces the Aura error rather than looping.
 
 ## Importing an existing instance
 

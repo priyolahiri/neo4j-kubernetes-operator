@@ -118,19 +118,19 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
-	// Resolve cluster
-	target, err := ResolveClusterRef(ctx, r.Client, user.Namespace, user.Spec.ClusterRef)
+	// Resolve the target (cluster/standalone via clusterRef, or Aura instance).
+	target, err := ResolveTargetRef(ctx, r.Client, user.Namespace, user.Spec.ClusterRef, user.Spec.AuraInstanceRef)
 	if err != nil {
-		logger.Error(err, "failed to resolve clusterRef")
+		logger.Error(err, "failed to resolve target ref")
 		return ctrl.Result{RequeueAfter: requeue}, err
 	}
 	if !target.Found {
-		msg := fmt.Sprintf("clusterRef %q not found", user.Spec.ClusterRef)
+		msg := fmt.Sprintf("%s not found", targetRefDisplay(user.Spec.ClusterRef, user.Spec.AuraInstanceRef))
 		r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, "", nil)
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
-		msg := fmt.Sprintf("clusterRef %q is not Ready", user.Spec.ClusterRef)
+		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(user.Spec.ClusterRef, user.Spec.AuraInstanceRef))
 		r.setNamedCondition(ctx, user, ConditionTypeClusterNotReady, metav1.ConditionTrue, ConditionReasonClusterNotReady, msg)
 		r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, ConditionReasonClusterNotReady, msg, nil, "", nil)
 		return ctrl.Result{RequeueAfter: requeue}, nil
@@ -215,7 +215,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// spec.roles to their effective Neo4j role name first (#260) — literal
 	// Neo4j names (built-ins, externally-created roles) pass through unchanged.
 	desiredRoles := normaliseRoles(user.Spec.Roles)
-	desiredRoles, resolvedRoles := resolveRoleNames(ctx, r.Client, user.Namespace, user.Spec.ClusterRef, desiredRoles)
+	desiredRoles, resolvedRoles := resolveRoleNames(ctx, r.Client, user.Namespace, targetRefKey(user.Spec.ClusterRef, user.Spec.AuraInstanceRef), desiredRoles)
 	desiredRoles = normaliseRoles(desiredRoles) // dedupe any CR-name/spec.name collisions
 	if len(resolvedRoles) > 0 {
 		r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonRolesResolved,
@@ -320,7 +320,7 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 		return ctrl.Result{}, r.Update(ctx, user)
 	}
 
-	target, err := ResolveClusterRef(ctx, r.Client, user.Namespace, user.Spec.ClusterRef)
+	target, err := ResolveTargetRef(ctx, r.Client, user.Namespace, user.Spec.ClusterRef, user.Spec.AuraInstanceRef)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: requeue}, err
 	}
@@ -450,7 +450,7 @@ func (r *Neo4jUserReconciler) diffRoles(ctx context.Context, user *neo4jv1beta1.
 		if _, ok := currentSet[role]; ok {
 			continue
 		}
-		if r.roleResourceExists(ctx, user.Namespace, user.Spec.ClusterRef, role) {
+		if r.roleResourceExists(ctx, user.Namespace, targetRefKey(user.Spec.ClusterRef, user.Spec.AuraInstanceRef), role) {
 			continue
 		}
 		missing = append(missing, role)
@@ -486,8 +486,8 @@ func (r *Neo4jUserReconciler) diffRoles(ctx context.Context, user *neo4jv1beta1.
 // namespace and pointing at the same clusterRef. Delegates to the shared
 // roleNameExists (see role_resolution.go) — same index used by #260
 // CR-name resolution.
-func (r *Neo4jUserReconciler) roleResourceExists(ctx context.Context, namespace, clusterRef, roleName string) bool {
-	return roleNameExists(ctx, r.Client, namespace, clusterRef, roleName)
+func (r *Neo4jUserReconciler) roleResourceExists(ctx context.Context, namespace, targetKey, roleName string) bool {
+	return roleNameExists(ctx, r.Client, namespace, targetKey, roleName)
 }
 
 func (r *Neo4jUserReconciler) readPasswordSecret(ctx context.Context, user *neo4jv1beta1.Neo4jUser) (string, error) {
@@ -601,10 +601,27 @@ func (r *Neo4jUserReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			}
 		},
 	)
+	// Aura-targeted users re-reconcile when their AuraInstance changes (matched
+	// by spec.auraInstanceRef instead of spec.clusterRef).
+	enqueueUsersForAura := EnqueueDependentsForClusterChange(
+		c,
+		func() client.ObjectList { return &neo4jv1beta1.Neo4jUserList{} },
+		func(list client.ObjectList, emit func(name, namespace, clusterRef string)) {
+			users, ok := list.(*neo4jv1beta1.Neo4jUserList)
+			if !ok {
+				return
+			}
+			for i := range users.Items {
+				u := &users.Items[i]
+				emit(u.Name, u.Namespace, u.Spec.AuraInstanceRef)
+			}
+		},
+	)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.Neo4jUser{}).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseCluster{}, enqueueUsersForCluster).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseStandalone{}, enqueueUsersForCluster).
+		Watches(&neo4jv1beta1.AuraInstance{}, enqueueUsersForAura).
 		Watches(&neo4jv1beta1.Neo4jRole{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 			role, ok := obj.(*neo4jv1beta1.Neo4jRole)
 			if !ok {
@@ -617,6 +634,7 @@ func (r *Neo4jUserReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			if roleName == "" {
 				roleName = role.Name
 			}
+			roleKey := targetRefKey(role.Spec.ClusterRef, role.Spec.AuraInstanceRef)
 			users := &neo4jv1beta1.Neo4jUserList{}
 			if err := c.List(ctx, users, client.InNamespace(role.Namespace)); err != nil {
 				return nil
@@ -624,7 +642,7 @@ func (r *Neo4jUserReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			var reqs []reconcile.Request
 			for i := range users.Items {
 				u := &users.Items[i]
-				if u.Spec.ClusterRef != role.Spec.ClusterRef {
+				if targetRefKey(u.Spec.ClusterRef, u.Spec.AuraInstanceRef) != roleKey {
 					continue
 				}
 				for _, rname := range u.Spec.Roles {
