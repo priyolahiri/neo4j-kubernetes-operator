@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - neo4j_v1beta1_auracustomermanagedkey.yaml
   - neo4j_v1beta1_aurainstance.yaml
+  - neo4j_v1beta1_auraipfilter.yaml
   - neo4j_v1beta1_auraproviderconfig.yaml
   - neo4j_v1beta1_aurarestore.yaml
   - neo4j_v1beta1_aurasnapshot.yaml

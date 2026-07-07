@@ -85,6 +85,12 @@ spec:
                 required:
                 - name
                 type: object
+              defaultOrganizationId:
+                description: |-
+                  DefaultOrganizationID is the Aura organization ID used by v2beta1
+                  resources (e.g. AuraIPFilter) that reference this config without their own
+                  organizationId. Only needed for the hierarchical v2beta1 org/project API.
+                type: string
               defaultProjectId:
                 description: |-
                   DefaultProjectID is the Aura project (API tenant_id) used by resources

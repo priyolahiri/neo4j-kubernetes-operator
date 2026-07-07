@@ -479,6 +479,15 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				RequeueAfter: controller.GetTestRequeueAfter(),
 			},
 		},
+		{
+			name: "AuraIPFilter",
+			controller: &controller.AuraIPFilterReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-ip-filter-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
 	}
 
 	for _, ctrl := range controllers {
@@ -640,6 +649,14 @@ func setupDevelopmentControllers(mgr ctrl.Manager, controllers []string) error {
 				Recorder:     mgr.GetEventRecorderFor("aura-customer-managed-key-controller"),
 				RequeueAfter: controller.GetTestRequeueAfter(),
 			}, "AuraCustomerManagedKey"
+		},
+		"auraipfilter": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraIPFilterReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-ip-filter-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraIPFilter"
 		},
 	}
 

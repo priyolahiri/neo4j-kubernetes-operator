@@ -1,27 +1,30 @@
----
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.19.0
-  name: auraproviderconfigs.neo4j.neo4j.com
+  creationTimestamp: null
+  name: auraipfilters.neo4j.neo4j.com
 spec:
   group: neo4j.neo4j.com
   names:
-    kind: AuraProviderConfig
-    listKind: AuraProviderConfigList
-    plural: auraproviderconfigs
+    kind: AuraIPFilter
+    listKind: AuraIPFilterList
+    plural: auraipfilters
     shortNames:
-    - auracfg
-    singular: auraproviderconfig
+    - auraipf
+    singular: auraipfilter
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.defaultProjectId
-      name: Project
+    - jsonPath: .spec.instanceRef
+      name: Instance
       type: string
-    - jsonPath: .status.conditions[?(@.type=="Ready")].status
-      name: Ready
+    - jsonPath: .status.filterId
+      name: FilterID
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -30,8 +33,9 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          AuraProviderConfig holds Neo4j Aura API credentials and account defaults,
-          referenced by Aura resources via spec.providerConfigRef.
+          AuraIPFilter manages a Neo4j Aura network IP filter (CIDR allowlist) via the
+          Aura API v2beta1. BETA / best-effort — see the type doc and
+          docs/design/aura-orchestration.md.
         properties:
           apiVersion:
             description: |-
@@ -52,22 +56,25 @@ spec:
             type: object
           spec:
             description: |-
-              AuraProviderConfigSpec configures access to a Neo4j Aura account. It holds the
-              API credentials and account-level defaults, and is referenced by AuraInstance
-              (and other Aura resources) via spec.providerConfigRef. The controller owns the
-              per-credential OAuth token cache and the Aura API rate limiter keyed by this
-              config, so all resources sharing a provider config share one token and one
-              rate-limit budget (25/125 req/min per credential).
+              AuraIPFilterSpec configures a Neo4j Aura network IP filter (CIDR allowlist).
+
+              BETA: IP filtering is only available on the Aura API v2beta1 surface, which is
+              an unstable beta (breaking changes allowed without a version bump). This CRD
+              is best-effort and its behaviour may change to track the API — see
+              docs/knowledge/operations.md and docs/design/aura-orchestration.md.
             properties:
-              baseUrl:
+              cidrs:
                 description: |-
-                  BaseURL overrides the Aura API base URL (default https://api.neo4j.io/v1).
-                  Intended for testing against a fake API server; leave empty in production.
-                type: string
+                  CIDRs is the allowlist of source ranges in CIDR notation (e.g.
+                  "203.0.113.0/24"). At least one is required.
+                items:
+                  type: string
+                minItems: 1
+                type: array
               credentialsSecretRef:
                 description: |-
-                  CredentialsSecretRef references the Secret with the OAuth client
-                  credentials. The Secret must be in the same namespace as this config.
+                  CredentialsSecretRef is a single-account shortcut when no
+                  AuraProviderConfig is used. Mutually exclusive with providerConfigRef.
                 properties:
                   clientIdKey:
                     default: clientId
@@ -85,28 +92,84 @@ spec:
                 required:
                 - name
                 type: object
-              defaultOrganizationId:
+              deletionPolicy:
+                default: Orphan
                 description: |-
-                  DefaultOrganizationID is the Aura organization ID used by v2beta1
-                  resources (e.g. AuraIPFilter) that reference this config without their own
-                  organizationId. Only needed for the hierarchical v2beta1 org/project API.
+                  DeletionPolicy controls what happens to the Aura filter when this CR is
+                  deleted: Orphan (default; leave the filter in place — deleting it would
+                  open network access) or Delete (remove it from Aura).
+                enum:
+                - Orphan
+                - Delete
                 type: string
-              defaultProjectId:
+              instanceRef:
                 description: |-
-                  DefaultProjectID is the Aura project (API tenant_id) used by resources
-                  that reference this config without specifying their own projectId.
+                  InstanceRef optionally scopes the filter to a single AuraInstance (same
+                  namespace) — Aura permits at most one IP filter per instance. Omit for a
+                  project-wide filter. Immutable once set.
+                type: string
+              managementPolicies:
+                default:
+                - '*'
+                description: |-
+                  ManagementPolicies restricts which actions the operator may take.
+                  Default ["*"] = full management.
+                items:
+                  enum:
+                  - Observe
+                  - Create
+                  - Update
+                  - Delete
+                  - '*'
+                  type: string
+                type: array
+              name:
+                description: Name is the filter's display name in Aura (defaults to
+                  metadata.name).
+                maxLength: 63
+                type: string
+              organizationId:
+                description: |-
+                  OrganizationID is the Aura organization ID (v2beta1 hierarchy). If empty,
+                  the referenced AuraProviderConfig's defaultOrganizationId is used.
+                type: string
+              projectId:
+                description: |-
+                  ProjectID is the Aura project (API tenant_id). If empty, the referenced
+                  AuraProviderConfig's defaultProjectId is used.
+                type: string
+              providerConfigRef:
+                description: |-
+                  ProviderConfigRef selects the AuraProviderConfig (credentials + defaults)
+                  in the same namespace. Mutually exclusive with credentialsSecretRef.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              region:
+                description: Region the filter applies to, when required by the provider.
                 type: string
             required:
-            - credentialsSecretRef
+            - cidrs
             type: object
+            x-kubernetes-validations:
+            - message: set exactly one of providerConfigRef or credentialsSecretRef
+              rule: has(self.providerConfigRef) != has(self.credentialsSecretRef)
+            - message: instanceRef is immutable once set
+              rule: '!has(oldSelf.instanceRef) || (has(self.instanceRef) && self.instanceRef
+                == oldSelf.instanceRef)'
           status:
-            description: AuraProviderConfigStatus reports whether the credentials
-              are usable.
+            description: AuraIPFilterStatus is the observed state of the filter.
             properties:
               conditions:
-                description: |-
-                  Conditions: Ready=True once an access token was successfully obtained with
-                  the referenced credentials (reason CredentialsValidated).
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -165,13 +228,33 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              filterId:
+                description: |-
+                  FilterID is the Aura-assigned IP-filter ID (mirrored into the
+                  neo4j.com/external-ipfilter-id annotation, the operator's source of truth
+                  for idempotent create + adopt).
+                type: string
+              lastSyncedTime:
+                description: LastSyncedTime is when the filter was last observed from
+                  the Aura API.
+                format: date-time
+                type: string
               observedGeneration:
-                description: ObservedGeneration is the .metadata.generation last reconciled.
                 format: int64
                 type: integer
+              phase:
+                description: Phase mirrors the Aura filter status (Pending, Ready,
+                  Updating, Error).
+                type: string
             type: object
         type: object
     served: true
     storage: true
     subresources:
       status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions: null

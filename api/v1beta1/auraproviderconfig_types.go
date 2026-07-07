@@ -56,6 +56,12 @@ type AuraProviderConfigSpec struct {
 	// +optional
 	DefaultProjectID string `json:"defaultProjectId,omitempty"`
 
+	// DefaultOrganizationID is the Aura organization ID used by v2beta1
+	// resources (e.g. AuraIPFilter) that reference this config without their own
+	// organizationId. Only needed for the hierarchical v2beta1 org/project API.
+	// +optional
+	DefaultOrganizationID string `json:"defaultOrganizationId,omitempty"`
+
 	// BaseURL overrides the Aura API base URL (default https://api.neo4j.io/v1).
 	// Intended for testing against a fake API server; leave empty in production.
 	// +optional

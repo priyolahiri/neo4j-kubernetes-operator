@@ -45,6 +45,7 @@ describe() {
         AuraSnapshot)              echo "Takes on-demand snapshots of Neo4j Aura instances" ;;
         AuraRestore)               echo "Restores a Neo4j Aura instance in place from a snapshot" ;;
         AuraCustomerManagedKey)    echo "Registers a customer-managed encryption key with Neo4j Aura for dedicated-tier instances" ;;
+        AuraIPFilter)              echo "Manages a Neo4j Aura network IP filter (CIDR allowlist) via the Aura API v2beta1 (beta)" ;;
         *)                         return 1 ;;
     esac
 }

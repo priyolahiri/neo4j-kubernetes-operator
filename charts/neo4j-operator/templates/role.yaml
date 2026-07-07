@@ -128,6 +128,7 @@ rules:
   resources:
     - auracustomermanagedkeys
     - aurainstances
+    - auraipfilters
     - auraproviderconfigs
     - aurarestores
     - aurasnapshots
@@ -155,6 +156,7 @@ rules:
   resources:
     - auracustomermanagedkeys/finalizers
     - aurainstances/finalizers
+    - auraipfilters/finalizers
     - neo4jauthrules/finalizers
     - neo4jbackups/finalizers
     - neo4jdatabases/finalizers
@@ -173,6 +175,7 @@ rules:
   resources:
     - auracustomermanagedkeys/status
     - aurainstances/status
+    - auraipfilters/status
     - auraproviderconfigs/status
     - aurarestores/status
     - aurasnapshots/status

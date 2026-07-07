@@ -47,6 +47,10 @@ const (
 	// create and status cannot register a duplicate key.
 	AuraExternalCMKAnnotation = "neo4j.com/external-cmk-id"
 
+	// AuraExternalIPFilterAnnotation stores the Aura v2beta1 IP-filter ID as the
+	// external-name for an AuraIPFilter (idempotent create + adopt).
+	AuraExternalIPFilterAnnotation = "neo4j.com/external-ipfilter-id"
+
 	// defaultAuraRatePerMinute is the conservative Aura API rate limit (trial
 	// keys are 25/min; paid are 125/min). We default to the safe floor.
 	defaultAuraRatePerMinute = 25
@@ -186,6 +190,33 @@ func resolveCMKClient(factory auraCMKClientFactory, c auraCredentials) auraCMKAP
 		return factory(c)
 	}
 	return defaultAuraCMKClientFactory(c)
+}
+
+// auraIPFilterAPI is the subset of the Aura v2beta1 client the IP-filter
+// controller depends on. Separate interface so the other test fakes need not
+// implement v2beta1 methods. *aura.Client satisfies it. BETA — see
+// internal/aura/ipfilter_v2beta1.go.
+type auraIPFilterAPI interface {
+	CreateIPFilter(ctx context.Context, orgID, projectID string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error)
+	GetIPFilter(ctx context.Context, orgID, projectID, id string) (*aura.IPFilter, error)
+	ListIPFilters(ctx context.Context, orgID, projectID string) ([]aura.IPFilter, error)
+	UpdateIPFilter(ctx context.Context, orgID, projectID, id string, req aura.UpdateIPFilterRequest) (*aura.IPFilter, error)
+	DeleteIPFilter(ctx context.Context, orgID, projectID, id string) error
+}
+
+// auraIPFilterClientFactory builds an auraIPFilterAPI from resolved credentials.
+type auraIPFilterClientFactory func(auraCredentials) auraIPFilterAPI
+
+func defaultAuraIPFilterClientFactory(c auraCredentials) auraIPFilterAPI {
+	return auraClientForCreds(c)
+}
+
+// resolveIPFilterClient returns the factory's client, or the default shared client.
+func resolveIPFilterClient(factory auraIPFilterClientFactory, c auraCredentials) auraIPFilterAPI {
+	if factory != nil {
+		return factory(c)
+	}
+	return defaultAuraIPFilterClientFactory(c)
 }
 
 // resolveAuraCredentials resolves API credentials from either a

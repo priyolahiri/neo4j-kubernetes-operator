@@ -11,6 +11,8 @@ resources:
   - auracustomermanagedkey_viewer_role.yaml
   - aurainstance_editor_role.yaml
   - aurainstance_viewer_role.yaml
+  - auraipfilter_editor_role.yaml
+  - auraipfilter_viewer_role.yaml
   - auraproviderconfig_editor_role.yaml
   - auraproviderconfig_viewer_role.yaml
   - aurarestore_editor_role.yaml

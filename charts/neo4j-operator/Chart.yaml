@@ -30,6 +30,9 @@ annotations:
     - kind: AuraInstance
       version: v1beta1
       description: Provisions and manages Neo4j Aura cloud instances via the Aura API
+    - kind: AuraIPFilter
+      version: v1beta1
+      description: Manages a Neo4j Aura network IP filter (CIDR allowlist) via the Aura API v2beta1 (beta)
     - kind: AuraProviderConfig
       version: v1beta1
       description: Neo4j Aura API credentials and account defaults for Aura orchestration
