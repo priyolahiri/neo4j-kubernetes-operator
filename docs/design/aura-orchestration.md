@@ -295,8 +295,9 @@ The operator already has `Neo4jDatabase`, `Neo4jUser`, `Neo4jRole`, `Neo4jBackup
 ## 8. Phasing
 
 - **Phase 1 (MVP):** `AuraInstance` (create/resize/pause/resume/delete, Orphan default) + `AuraSnapshot` (on-demand) + `AuraRestore`; **`AuraProviderConfig`** (C); **idempotent create + adopt** via the external-name annotation (A); **CEL** immutability/enum validation + inline `instance_configurations` oracle (B); connection Secret with **all formats** (`neo4j-driver` default, `aura-dotenv`, `jdbc`, `servicebinding`, `custom`) + **full Service Binding** + **`publishConnectionDetailsTo`** ConfigMap (H); **metrics wiring** (G); faked-API tests. (See the Review v2 section — it supersedes where they differ.)
-- **Phase 2:** clone/overwrite, `professional-db → business-critical` upgrade, CMK (`AuraCustomerManagedKey`), `AuraProviderConfig`, `AuraSnapshotSchedule`, metrics-integration wiring, deletion-protection polish.
-- **Phase 3 (when v2beta1 GAs):** `AuraDatabase` (multi-DB), `AuraIPFilter`, org/project RBAC; optionally Aura-target-aware `Neo4jDatabase`/`User`/`Role`.
+- **Phase 2 (done):** `professional-db → business-critical` upgrade (`POST /instances/{id}/upgrade`); CMK (`AuraCustomerManagedKey`) with its own `auraCMKAPI` interface, idempotent create+adopt (match on the immutable cloud `keyId`+placement), and in-use-key delete guard; D/E ergonomics — `managementPolicies`, `neo4j.com/paused`, `status.atProvider`; Aura-API Prometheus counters/histogram (`neo4j_operator_aura_api_requests_total` / `_request_duration_seconds`, route-normalized `operation` label) via an Observer hook on the client.
+- **Phase 2 (deferred — documented follow-ups):** clone/overwrite (`source` + overwrite-into-existing), `AuraSnapshotSchedule`, `ScrapeConfig` auto-generation from `metricsIntegrationUrl`. Low value relative to cost; revisit on demand.
+- **Phase 3 (v2beta1 — live but beta, not GA-gated):** `AuraDatabase` (multi-DB), `AuraIPFilter`, org/project RBAC are v2beta1-only (absent from v1 GA) — callable today but on an unstable beta; hold on stability, not availability. `AuraInstanceClass` and Aura-target-aware `Neo4jDatabase`/`User`/`Role` are **not** API-gated (operator-side, buildable on v1 anytime).
 
 ## 9. Risks & caveats
 

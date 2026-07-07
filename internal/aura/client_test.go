@@ -643,6 +643,100 @@ func TestIsInstanceStatusHelpers(t *testing.T) {
 	}
 }
 
+func TestNormalizeAuraPath(t *testing.T) {
+	cases := map[string]string{
+		"/instances":                          "/instances",
+		"/instances/abc123":                   "/instances/{id}",
+		"/instances/abc123/pause":             "/instances/{id}/pause",
+		"/instances/abc123/upgrade":           "/instances/{id}/upgrade",
+		"/instances/abc/snapshots":            "/instances/{id}/snapshots",
+		"/instances/abc/snapshots/s1":         "/instances/{id}/snapshots/{id}",
+		"/instances/abc/snapshots/s1/restore": "/instances/{id}/snapshots/{id}/restore",
+		"/tenants/t1":                         "/tenants/{id}",
+		"/customer-managed-keys":              "/customer-managed-keys",
+		"/customer-managed-keys/k1":           "/customer-managed-keys/{id}",
+		"/instances?tenantId=t1":              "/instances",
+		"/customer-managed-keys?tenantId=t1":  "/customer-managed-keys",
+	}
+	for in, want := range cases {
+		if got := normalizeAuraPath(in); got != want {
+			t.Errorf("normalizeAuraPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestObserverFiresWithNormalizedRoute(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth/token" {
+			writeToken(w, "tok")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"id": "abc", "status": "running"},
+		})
+	}))
+	defer srv.Close()
+
+	var gotOp string
+	var gotErr error
+	var observed int
+	c := NewClient(Config{
+		BaseURL:      srv.URL + "/v1",
+		TokenURL:     srv.URL + "/oauth/token",
+		ClientID:     "id",
+		ClientSecret: "secret",
+		PerMinute:    1000,
+		HTTPClient:   srv.Client(),
+		Observer: func(op string, _ time.Duration, err error) {
+			observed++
+			gotOp = op
+			gotErr = err
+		},
+	})
+
+	if _, err := c.GetInstance(context.Background(), "abc"); err != nil {
+		t.Fatalf("GetInstance: %v", err)
+	}
+	if observed != 1 {
+		t.Errorf("observer fired %d times, want exactly 1 per logical call", observed)
+	}
+	if gotOp != "GET /instances/{id}" {
+		t.Errorf("observed op = %q, want GET /instances/{id}", gotOp)
+	}
+	if gotErr != nil {
+		t.Errorf("observed err = %v, want nil on 2xx", gotErr)
+	}
+}
+
+func TestObserverReportsError(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth/token" {
+			writeToken(w, "tok")
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"errors": []map[string]any{{"message": "gone", "reason": "db-not-found"}},
+		})
+	}))
+	defer srv.Close()
+
+	var gotErr error
+	c := NewClient(Config{
+		BaseURL: srv.URL + "/v1", TokenURL: srv.URL + "/oauth/token",
+		ClientID: "id", ClientSecret: "secret", PerMinute: 1000, HTTPClient: srv.Client(),
+		Observer: func(_ string, _ time.Duration, err error) { gotErr = err },
+	})
+	// GetInstance surfaces the 404 as an error; the observer must see it too.
+	if _, err := c.GetInstance(context.Background(), "gone"); err == nil {
+		t.Fatal("expected error from 404")
+	}
+	if gotErr == nil {
+		t.Error("observer should report the non-2xx error")
+	}
+}
+
 // --- small helpers (avoid importing strconv/strings needlessly in table code) ---
 
 func extractForm(body, key string) string {

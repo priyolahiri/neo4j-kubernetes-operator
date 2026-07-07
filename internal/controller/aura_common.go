@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,6 +31,7 @@ import (
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/aura"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/metrics"
 )
 
 const (
@@ -118,6 +120,10 @@ func auraClientForCreds(c auraCredentials) *aura.Client {
 		ClientID:     c.clientID,
 		ClientSecret: c.clientSecret,
 		PerMinute:    perMin,
+		// Feed operator metrics without coupling the aura package to Prometheus.
+		Observer: func(operation string, duration time.Duration, err error) {
+			metrics.RecordAuraAPICall(operation, duration, err == nil)
+		},
 	})
 	auraClients[key] = cl
 	return cl

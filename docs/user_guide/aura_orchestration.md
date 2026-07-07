@@ -32,6 +32,7 @@ Design details and rationale: `docs/design/aura-orchestration.md`.
 | `AuraInstance` | A managed Aura instance (full lifecycle). |
 | `AuraSnapshot` | An on-demand snapshot of an instance. |
 | `AuraRestore` | An in-place restore of an instance from a snapshot. |
+| `AuraCustomerManagedKey` | Registers a customer-managed encryption key (CMK) for dedicated-tier instances. |
 
 ## Quick start
 
@@ -84,9 +85,72 @@ a ConfigMap via `spec.publishConnectionDetailsTo`.
 
 - **Resize:** change `spec.memory` / `spec.storage` → online resize.
 - **Pause/resume:** set `spec.paused: true` / `false`.
+- **Upgrade tier:** change `spec.type` from `professional-db` to
+  `business-critical` → in-place upgrade (see below).
 - **Snapshot:** create an `AuraSnapshot` referencing the instance.
 - **Restore:** create an `AuraRestore` with `instanceRef` + `snapshotId` (or
   `snapshotRef` to an `AuraSnapshot`). Restores are in place and one-shot.
+
+## Upgrading a tier
+
+`spec.type` is immutable **except** for the one in-place upgrade path Aura
+supports: `professional-db` → `business-critical`. Change the field and the
+operator issues the upgrade (the DBID and connection strings are preserved):
+
+```yaml
+spec:
+  type: business-critical   # was professional-db
+```
+
+The apiserver rejects any other `type` change (a different tier requires a new
+instance). Aura requires ≥ 2GB storage for Business Critical, and the GDS plugin
+is removed on upgrade — size and configure the instance accordingly first.
+
+## Customer-managed encryption keys (CMK)
+
+Dedicated-tier instances (`enterprise-db` / `enterprise-ds`) can be encrypted
+with a key you hold in your own cloud KMS. Register the key with an
+`AuraCustomerManagedKey`, then reference the ID it produces from the instance:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraCustomerManagedKey
+metadata: { name: analytics-cmk }
+spec:
+  providerConfigRef: { name: aura }
+  cloudProvider: gcp            # immutable
+  region: europe-west1          # immutable
+  instanceType: enterprise-db   # immutable (enterprise-db | enterprise-ds)
+  keyId: projects/p/locations/europe-west1/keyRings/aura/cryptoKeys/neo4j
+  deletionPolicy: Orphan        # Orphan (default) | Delete
+```
+
+`keyId` is the cloud KMS key resource identifier (AWS KMS ARN, GCP KMS resource
+name, or Azure Key Vault key URL) — grant Aura access to it out of band first.
+Once the key is `Ready`, copy `status.customerManagedKeyId` into an
+`AuraInstance`'s `spec.customerManagedKeyId`.
+
+- **Placement is immutable.** `cloudProvider`, `region`, `instanceType`, and
+  `keyId` cannot change after creation.
+- **Deletion.** `Orphan` (default) leaves the key registered in Aura; `Delete`
+  deregisters it. Aura refuses to delete a key that is still bound to a running
+  instance — the CR then reports a `KeyInUse` condition and keeps its finalizer
+  until you detach/delete those instances.
+
+## Management policies
+
+Every managed Aura resource honours `spec.managementPolicies` (default `["*"]`,
+full management). Restrict what the operator may do — a Crossplane-style safety
+knob:
+
+- `["Observe"]` — read-only: never create, update, or delete; just reflect the
+  cloud state into `status`.
+- `["Observe","Create","Update"]` — manage everything except deletion.
+
+Set the `neo4j.com/paused: "true"` annotation on any Aura CR to suspend
+reconciliation entirely (including deletion) for incident response, without
+deleting the CR. `AuraInstance` also mirrors the last-observed cloud state into
+`status.atProvider` for drift inspection.
 
 ## Importing an existing instance
 
@@ -117,6 +181,22 @@ which also makes create idempotent (a crash can't produce a duplicate instance).
   no password-reset endpoint, so it cannot be rotated by the operator.
 - **Snapshots cannot be deleted via the API.** Deleting an `AuraSnapshot` CR
   removes it from the cluster only; the Aura snapshot persists.
-- **Immutable placement.** `cloudProvider`, `region`, `type`, and `version`
-  cannot be changed after creation (enforced by the apiserver). Changing them
-  requires a new instance.
+- **Immutable placement.** `cloudProvider`, `region`, `version` (and `type`,
+  except the `professional-db → business-critical` upgrade) cannot be changed
+  after creation (enforced by the apiserver). Changing them requires a new
+  instance.
+
+## Metrics
+
+The operator exports Prometheus metrics for its Aura API traffic on the standard
+metrics endpoint:
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `neo4j_operator_aura_api_requests_total` | counter | `operation`, `result` | Aura Platform API requests, by normalized route (e.g. `POST /instances/{id}/upgrade`) and `success`/`failure`. |
+| `neo4j_operator_aura_api_request_duration_seconds` | histogram | `operation` | Latency of Aura API requests, by route. |
+
+The `operation` label is a route **template** (resource IDs collapsed to
+`{id}`), so cardinality stays bounded regardless of how many instances you
+manage. `result=failure` counts any non-2xx response, including the 404s that
+idempotent deletes treat as success.

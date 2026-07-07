@@ -62,6 +62,12 @@ type Config struct {
 	// HTTPClient is the HTTP client used for all requests. Defaults to a client
 	// with a sane timeout if nil.
 	HTTPClient *http.Client
+	// Observer, if set, is invoked once per logical API call (after any 403
+	// token-refresh retry) with a low-cardinality route label (e.g.
+	// "POST /instances/{id}/upgrade"), the call's wall-clock duration, and its
+	// error (nil on a 2xx). It lets the operator feed Prometheus metrics without
+	// coupling this package to a metrics library.
+	Observer func(operation string, duration time.Duration, err error)
 }
 
 // Client is a rate-limited, self-authenticating HTTP client for the Aura API v1.
@@ -74,6 +80,7 @@ type Client struct {
 
 	httpClient *http.Client
 	limiter    *rate.Limiter
+	observer   func(operation string, duration time.Duration, err error)
 
 	// token cache, guarded by tokenMu.
 	tokenMu     sync.Mutex
@@ -114,6 +121,7 @@ func NewClient(cfg Config) *Client {
 		clientSecret: cfg.ClientSecret,
 		httpClient:   httpClient,
 		limiter:      rate.NewLimiter(limit, 1),
+		observer:     cfg.Observer,
 		now:          time.Now,
 	}
 }
@@ -199,13 +207,35 @@ func (c *Client) fetchToken(ctx context.Context) (*tokenResponse, error) {
 // from the body. A 403 (Aura's signal for an expired token) triggers a single
 // token refresh + retry.
 func (c *Client) doJSON(ctx context.Context, method, path string, body, out any) error {
+	start := time.Now()
 	err := c.doJSONOnce(ctx, method, path, body, out, false)
 	if IsForbidden(err) {
 		// Aura returns 403 (not 401) for an expired/revoked token. Force a
 		// fresh token and retry the request exactly once.
-		return c.doJSONOnce(ctx, method, path, body, out, true)
+		err = c.doJSONOnce(ctx, method, path, body, out, true)
+	}
+	if c.observer != nil {
+		c.observer(method+" "+normalizeAuraPath(path), time.Since(start), err)
 	}
 	return err
+}
+
+// normalizeAuraPath collapses a concrete request path into a low-cardinality
+// route template so it can safely label a metric. The Aura routes alternate
+// literal / identifier segments (collection, {id}, action, {id}, ...), so every
+// odd-indexed segment is a resource ID and is replaced with "{id}"; the query
+// string is dropped.
+func normalizeAuraPath(path string) string {
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		path = path[:i]
+	}
+	segs := strings.Split(strings.Trim(path, "/"), "/")
+	for i := 1; i < len(segs); i += 2 {
+		if segs[i] != "" {
+			segs[i] = "{id}"
+		}
+	}
+	return "/" + strings.Join(segs, "/")
 }
 
 // doJSONOnce performs a single attempt of doJSON. forceRefresh forces a fresh
