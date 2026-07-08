@@ -73,17 +73,12 @@ spec:
               same role set. The Neo4jUser CR already manages role bindings via
               .spec.roles.
             properties:
-              auraInstanceRef:
-                description: |-
-                  AuraInstanceRef is the name of a managed AuraInstance (same namespace)
-                  whose security graph owns the user; role-grant DDL runs against it over
-                  Bolt. Mutually exclusive with clusterRef.
-                type: string
               clusterRef:
                 description: |-
                   ClusterRef is the name of the Neo4jEnterpriseCluster or
                   Neo4jEnterpriseStandalone in the same namespace whose security graph
-                  owns the user. Mutually exclusive with auraInstanceRef.
+                  owns the user. In-database role grants are not managed on Neo4j Aura (use
+                  Aura IAM / console-RBAC instead).
                 type: string
               deletionPolicy:
                 default: Revoke
@@ -125,12 +120,10 @@ spec:
                 pattern: ^[a-zA-Z][a-zA-Z0-9_.@\-]*$
                 type: string
             required:
+            - clusterRef
             - roles
             - username
             type: object
-            x-kubernetes-validations:
-            - message: set exactly one of clusterRef or auraInstanceRef
-              rule: has(self.clusterRef) != has(self.auraInstanceRef)
           status:
             description: Neo4jRoleBindingStatus describes the observed state of a
               Neo4jRoleBinding.

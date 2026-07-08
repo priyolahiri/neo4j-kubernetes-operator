@@ -1,0 +1,13 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraOrganizationMember
+metadata:
+  name: example-aura-org-member
+spec:
+  providerConfigRef:
+    name: example-aura
+  organizationId: "<your-aura-org-id>"   # or defaultOrganizationId on the provider config
+  email: alice@example.com
+  role: ORG_MEMBER                        # ORG_OWNER | ORG_ADMIN | ORG_MEMBER
+  deletionPolicy: Orphan
+# NOTE: BETA (Aura API v2beta1). This manages the ORG role of an EXISTING console
+# user. To bring a new person in, create an AuraInvite. Not an in-database user.

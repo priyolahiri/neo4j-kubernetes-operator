@@ -54,7 +54,7 @@ func roleCRIndex(ctx context.Context, c client.Client, namespace, targetKey stri
 	}
 	for i := range list.Items {
 		role := &list.Items[i]
-		if targetRefKey(role.Spec.ClusterRef, role.Spec.AuraInstanceRef) != targetKey {
+		if targetRefKey(role.Spec.ClusterRef) != targetKey {
 			continue
 		}
 		name := role.Spec.Name

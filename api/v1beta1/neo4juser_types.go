@@ -33,21 +33,14 @@ import (
 // roles named in .roles. If a referenced custom role is missing the
 // PendingDependencies condition is set and the reconcile requeues.
 //
-// +kubebuilder:validation:XValidation:rule="has(self.clusterRef) != has(self.auraInstanceRef)",message="set exactly one of clusterRef or auraInstanceRef"
 // +kubebuilder:validation:XValidation:rule="has(self.passwordSecretRef) || (has(self.externalAuth) && size(self.externalAuth) > 0)",message="set either passwordSecretRef or at least one externalAuth provider (Neo4j requires at least one auth provider per user)"
 type Neo4jUserSpec struct {
 	// ClusterRef is the name of the Neo4jEnterpriseCluster or
 	// Neo4jEnterpriseStandalone in the same namespace whose security graph
-	// owns this user. Mutually exclusive with auraInstanceRef.
-	// +optional
-	ClusterRef string `json:"clusterRef,omitempty"`
-
-	// AuraInstanceRef is the name of a managed AuraInstance (same namespace)
-	// whose security graph owns this user; user DDL runs against it over Bolt.
-	// Mutually exclusive with clusterRef. Requires an Aura tier that permits
-	// custom user management (dedicated tiers).
-	// +optional
-	AuraInstanceRef string `json:"auraInstanceRef,omitempty"`
+	// owns this user. In-database users are not managed on Neo4j Aura (use Aura
+	// IAM / console-RBAC instead).
+	// +kubebuilder:validation:Required
+	ClusterRef string `json:"clusterRef"`
 
 	// Username is the user name in Neo4j. Defaults to metadata.name when
 	// empty. Must start with an ASCII letter and contain only letters,

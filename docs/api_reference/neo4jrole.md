@@ -28,8 +28,7 @@ The `Neo4jRole` Custom Resource Definition (CRD) provides declarative management
 
 | Field | Type | Description |
 |---|---|---|
-| `clusterRef` | `string` | Name of the `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace. **Set exactly one of `clusterRef` or `auraInstanceRef`.** |
-| `auraInstanceRef` | `string` | Name of a managed [`AuraInstance`](../user_guide/aura_orchestration.md#managing-users--roles-on-an-aura-instance) (same namespace); role/privilege DDL runs against it over Bolt. Requires an Aura tier that permits custom roles. **Mutually exclusive with `clusterRef`.** |
+| `clusterRef` | `string` | **Required.** Name of the `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace. In-database roles are not managed on Neo4j Aura — use Aura IAM / console-RBAC instead. |
 | `name` | `string` | Role name in Neo4j. Defaults to `metadata.name`. Pattern `^[a-zA-Z][a-zA-Z0-9_]*$`. |
 | `copyOf` | `string` | Existing role to seed privileges from at creation time only (`CREATE ROLE name AS COPY OF other`). Ignored on subsequent reconciles. |
 | `privileges` | `[]string` | Desired set of `GRANT` and `DENY` statements. Each entry must be a complete Cypher statement starting with `GRANT` or `DENY` and ending with `TO <spec.name>`. |

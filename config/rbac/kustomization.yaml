@@ -9,10 +9,22 @@ resources:
   - metrics_reader_role.yaml
   - auracustomermanagedkey_editor_role.yaml
   - auracustomermanagedkey_viewer_role.yaml
+  - auradatabase_editor_role.yaml
+  - auradatabase_viewer_role.yaml
+  - auradatabasebackup_editor_role.yaml
+  - auradatabasebackup_viewer_role.yaml
+  - auradatabaserestore_editor_role.yaml
+  - auradatabaserestore_viewer_role.yaml
   - aurainstance_editor_role.yaml
   - aurainstance_viewer_role.yaml
+  - aurainvite_editor_role.yaml
+  - aurainvite_viewer_role.yaml
   - auraipfilter_editor_role.yaml
   - auraipfilter_viewer_role.yaml
+  - auraorganizationmember_editor_role.yaml
+  - auraorganizationmember_viewer_role.yaml
+  - auraprojectmember_editor_role.yaml
+  - auraprojectmember_viewer_role.yaml
   - auraproviderconfig_editor_role.yaml
   - auraproviderconfig_viewer_role.yaml
   - aurarestore_editor_role.yaml

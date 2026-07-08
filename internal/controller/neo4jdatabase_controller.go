@@ -126,16 +126,13 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Get referenced cluster or standalone (shared with handleDeletion via
 	// resolveDatabaseHost so the create and delete paths can't drift).
-	cluster, standalone, aura, isStandalone, found, err := r.resolveDatabaseHost(ctx, database)
+	cluster, standalone, isStandalone, found, err := r.resolveDatabaseHost(ctx, database)
 	if err != nil {
 		logger.Error(err, "Failed to get referenced host")
 		return ctrl.Result{}, err
 	}
 	if !found {
 		ref := database.Spec.ClusterRef
-		if database.Spec.AuraInstanceRef != "" {
-			ref = database.Spec.AuraInstanceRef
-		}
 		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonClusterNotFound,
 			fmt.Sprintf("Referenced host %s not found", ref))
 		r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonClusterNotFound,
@@ -143,22 +140,9 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
-	// Aura tier gate: single-database tiers cannot host additional databases.
-	// Fail fast with a clear terminal condition rather than hot-looping on the
-	// eventual Aura rejection. A spec change (e.g. after a tier upgrade)
-	// re-triggers the reconcile.
-	if aura != nil && !auraTierSupportsMultiDatabase(aura.Spec.Type) {
-		msg := fmt.Sprintf("AuraInstance %q tier %q does not support additional databases; use Business Critical or a dedicated tier", aura.Name, aura.Spec.Type)
-		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonAuraTierUnsupported, msg)
-		r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonAuraTierUnsupported, msg)
-		return ctrl.Result{}, nil
-	}
-
 	// Check the host is ready.
 	var clusterReady bool
 	switch {
-	case aura != nil:
-		clusterReady = isAuraReady(aura)
 	case isStandalone:
 		clusterReady = r.isStandaloneReady(standalone)
 	default:
@@ -179,8 +163,6 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}, func() error {
 		var clientErr error
 		switch {
-		case aura != nil:
-			neo4jClient, clientErr = r.createNeo4jClientForAura(ctx, aura)
 		case isStandalone:
 			neo4jClient, clientErr = r.createNeo4jClientForStandalone(ctx, standalone)
 		default:
@@ -305,7 +287,7 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 	// path only looked up clusters: the cluster Get returned NotFound, the
 	// finalizer was removed, and DropDatabase was never called — orphaning the
 	// database in Neo4j. resolveDatabaseHost (shared with Reconcile) fixes that.
-	cluster, standalone, aura, isStandalone, found, err := r.resolveDatabaseHost(ctx, database)
+	cluster, standalone, isStandalone, found, err := r.resolveDatabaseHost(ctx, database)
 	if err != nil {
 		logger.Error(err, "Failed to resolve referenced host during deletion")
 		return ctrl.Result{}, err
@@ -313,16 +295,14 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 	if !found {
 		// The host (and its databases) are gone, so there is nothing to drop.
 		// Release the finalizer.
-		logger.Info("Referenced host not found, removing finalizer", "clusterRef", database.Spec.ClusterRef, "auraInstanceRef", database.Spec.AuraInstanceRef)
+		logger.Info("Referenced host not found, removing finalizer", "clusterRef", database.Spec.ClusterRef)
 		controllerutil.RemoveFinalizer(database, DatabaseFinalizer)
 		return ctrl.Result{}, r.Update(ctx, database)
 	}
 
-	// Create the Neo4j client for the resolved host (cluster, standalone, or Aura).
+	// Create the Neo4j client for the resolved host (cluster or standalone).
 	var neo4jClient *neo4j.Client
 	switch {
-	case aura != nil:
-		neo4jClient, err = r.createNeo4jClientForAura(ctx, aura)
 	case isStandalone:
 		neo4jClient, err = r.createNeo4jClientForStandalone(ctx, standalone)
 	default:
@@ -375,80 +355,27 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 // create and delete paths can't drift on host resolution — a
 // standalone-targeted database previously failed to drop on delete because
 // handleDeletion only looked up clusters.
-func (r *Neo4jDatabaseReconciler) resolveDatabaseHost(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase) (cluster *neo4jv1beta1.Neo4jEnterpriseCluster, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, aura *neo4jv1beta1.AuraInstance, isStandalone, found bool, err error) {
-	// Aura target: an explicit auraInstanceRef selects a managed Aura instance
-	// (mutually exclusive with clusterRef, enforced by CEL on the spec).
-	if database.Spec.AuraInstanceRef != "" {
-		ai := &neo4jv1beta1.AuraInstance{}
-		aErr := r.Get(ctx, types.NamespacedName{Name: database.Spec.AuraInstanceRef, Namespace: database.Namespace}, ai)
-		if aErr == nil {
-			return nil, nil, ai, false, true, nil
-		}
-		if errors.IsNotFound(aErr) {
-			return nil, nil, nil, false, false, nil
-		}
-		return nil, nil, nil, false, false, aErr
-	}
-
+func (r *Neo4jDatabaseReconciler) resolveDatabaseHost(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase) (cluster *neo4jv1beta1.Neo4jEnterpriseCluster, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, isStandalone, found bool, err error) {
 	key := types.NamespacedName{Name: database.Spec.ClusterRef, Namespace: database.Namespace}
 
 	cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	cErr := r.Get(ctx, key, cluster)
 	if cErr == nil {
-		return cluster, nil, nil, false, true, nil
+		return cluster, nil, false, true, nil
 	}
 	if !errors.IsNotFound(cErr) {
-		return nil, nil, nil, false, false, cErr
+		return nil, nil, false, false, cErr
 	}
 
 	standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 	sErr := r.Get(ctx, key, standalone)
 	if sErr == nil {
-		return nil, standalone, nil, true, true, nil
+		return nil, standalone, true, true, nil
 	}
 	if errors.IsNotFound(sErr) {
-		return nil, nil, nil, false, false, nil
+		return nil, nil, false, false, nil
 	}
-	return nil, nil, nil, false, false, sErr
-}
-
-// createNeo4jClientForAura builds a Bolt client against a managed Aura instance
-// using its published connection URL + the admin credentials in its connection
-// Secret.
-func (r *Neo4jDatabaseReconciler) createNeo4jClientForAura(ctx context.Context, aura *neo4jv1beta1.AuraInstance) (*neo4j.Client, error) {
-	if aura.Status.ConnectionURL == "" {
-		return nil, fmt.Errorf("AuraInstance %q has no connection URL yet", aura.Name)
-	}
-	return neo4j.NewClientForAura(ctx, r.Client, aura.Namespace, aura.Status.ConnectionURL, auraConnectionSecretName(aura))
-}
-
-// isAuraReady reports whether an Aura instance is usable for DDL: Running (Ready
-// condition True) with a published connection URL.
-func isAuraReady(aura *neo4jv1beta1.AuraInstance) bool {
-	if aura.Status.ConnectionURL == "" {
-		return false
-	}
-	for _, c := range aura.Status.Conditions {
-		if c.Type == "Ready" && c.Status == metav1.ConditionTrue {
-			return true
-		}
-	}
-	return false
-}
-
-// auraTierSupportsMultiDatabase reports whether an Aura tier permits databases
-// beyond the default `neo4j`. Best-effort: only the tiers that are certainly
-// single-database (free-db, professional-db) are blocked up front; every other
-// tier is allowed through so Aura itself remains the final arbiter (a runtime
-// rejection is still surfaced by the normal creation-error path). This avoids
-// hard-coding a capability matrix we cannot fully verify.
-func auraTierSupportsMultiDatabase(tier string) bool {
-	switch tier {
-	case "free-db", "professional-db":
-		return false
-	default:
-		return true
-	}
+	return nil, nil, false, false, sErr
 }
 
 func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *neo4j.Client, database *neo4jv1beta1.Neo4jDatabase) error {
@@ -686,28 +613,10 @@ func (r *Neo4jDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			}
 		},
 	)
-	// Aura-targeted databases re-reconcile when their AuraInstance changes
-	// (most importantly the Ready condition flipping once the instance is
-	// Running), matching by spec.auraInstanceRef instead of spec.clusterRef.
-	enqueueDatabasesForAura := EnqueueDependentsForClusterChange(
-		mgr.GetClient(),
-		func() client.ObjectList { return &neo4jv1beta1.Neo4jDatabaseList{} },
-		func(list client.ObjectList, emit func(name, namespace, clusterRef string)) {
-			databases, ok := list.(*neo4jv1beta1.Neo4jDatabaseList)
-			if !ok {
-				return
-			}
-			for i := range databases.Items {
-				d := &databases.Items[i]
-				emit(d.Name, d.Namespace, d.Spec.AuraInstanceRef)
-			}
-		},
-	)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.Neo4jDatabase{}).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseCluster{}, enqueueDatabasesForCluster).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseStandalone{}, enqueueDatabasesForCluster).
-		Watches(&neo4jv1beta1.AuraInstance{}, enqueueDatabasesForAura).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
 		}).

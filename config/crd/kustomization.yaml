@@ -4,8 +4,14 @@
 # It should be run by config/default
 resources:
   - bases/neo4j.neo4j.com_auracustomermanagedkeys.yaml
+  - bases/neo4j.neo4j.com_auradatabasebackups.yaml
+  - bases/neo4j.neo4j.com_auradatabaserestores.yaml
+  - bases/neo4j.neo4j.com_auradatabases.yaml
   - bases/neo4j.neo4j.com_aurainstances.yaml
+  - bases/neo4j.neo4j.com_aurainvites.yaml
   - bases/neo4j.neo4j.com_auraipfilters.yaml
+  - bases/neo4j.neo4j.com_auraorganizationmembers.yaml
+  - bases/neo4j.neo4j.com_auraprojectmembers.yaml
   - bases/neo4j.neo4j.com_auraproviderconfigs.yaml
   - bases/neo4j.neo4j.com_aurarestores.yaml
   - bases/neo4j.neo4j.com_aurasnapshots.yaml

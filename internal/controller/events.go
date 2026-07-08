@@ -219,10 +219,6 @@ const (
 	EventReasonAuraCMKOrphaned          = "AuraCustomerManagedKeyOrphaned"
 	EventReasonAuraCMKDeleteBlocked     = "AuraCustomerManagedKeyDeleteBlocked"
 	EventReasonAuraCMKFailed            = "AuraCustomerManagedKeyFailed"
-	// EventReasonAuraTierUnsupported is emitted when a Bolt-level CRD targets an
-	// AuraInstance whose tier does not support the requested operation (e.g. a
-	// Neo4jDatabase against a single-database tier).
-	EventReasonAuraTierUnsupported = "AuraTierUnsupported"
 
 	// Aura IP filter (v2beta1, beta) event reasons.
 	EventReasonAuraIPFilterCreated  = "AuraIPFilterCreated"
@@ -232,4 +228,33 @@ const (
 	EventReasonAuraIPFilterDeleted  = "AuraIPFilterDeleted"
 	EventReasonAuraIPFilterOrphaned = "AuraIPFilterOrphaned"
 	EventReasonAuraIPFilterFailed   = "AuraIPFilterFailed"
+
+	// Aura database (v2beta1, beta) event reasons.
+	EventReasonAuraDatabaseCreated  = "AuraDatabaseCreated"
+	EventReasonAuraDatabaseAdopted  = "AuraDatabaseAdopted"
+	EventReasonAuraDatabaseReady    = "AuraDatabaseReady"
+	EventReasonAuraDatabaseDeleted  = "AuraDatabaseDeleted"
+	EventReasonAuraDatabaseOrphaned = "AuraDatabaseOrphaned"
+	EventReasonAuraDatabaseFailed   = "AuraDatabaseFailed"
+
+	// Aura per-database backup/restore (v2beta1, beta) event reasons.
+	EventReasonAuraDatabaseBackupCreated   = "AuraDatabaseBackupCreated"
+	EventReasonAuraDatabaseBackupCompleted = "AuraDatabaseBackupCompleted"
+	EventReasonAuraDatabaseBackupFailed    = "AuraDatabaseBackupFailed"
+	EventReasonAuraDatabaseRestoreStarted  = "AuraDatabaseRestoreStarted"
+	EventReasonAuraDatabaseRestoreDone     = "AuraDatabaseRestoreCompleted"
+	EventReasonAuraDatabaseRestoreFailed   = "AuraDatabaseRestoreFailed"
+
+	// Aura console-RBAC (v2beta1, beta) event reasons.
+	EventReasonAuraMemberUpdated  = "AuraMemberRoleUpdated"
+	EventReasonAuraMemberReady    = "AuraMemberReady"
+	EventReasonAuraMemberRemoved  = "AuraMemberRemoved"
+	EventReasonAuraMemberNotFound = "AuraMemberNotFound"
+	EventReasonAuraMemberFailed   = "AuraMemberFailed"
+	EventReasonAuraInviteCreated  = "AuraInviteCreated"
+	EventReasonAuraInviteAdopted  = "AuraInviteAdopted"
+	EventReasonAuraInviteReady    = "AuraInviteReady"
+	EventReasonAuraInviteDeleted  = "AuraInviteDeleted"
+	EventReasonAuraInviteOrphaned = "AuraInviteOrphaned"
+	EventReasonAuraInviteFailed   = "AuraInviteFailed"
 )

@@ -60,16 +60,11 @@ spec:
           spec:
             description: Neo4jDatabaseSpec defines the desired state of Neo4jDatabase
             properties:
-              auraInstanceRef:
-                description: |-
-                  AuraInstanceRef references a managed AuraInstance (same namespace); the
-                  database DDL runs against it over Bolt. Mutually exclusive with clusterRef.
-                  Requires a multi-database-capable Aura tier (Business Critical / dedicated).
-                type: string
               clusterRef:
                 description: |-
                   ClusterRef references a Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone
-                  (same namespace). Mutually exclusive with auraInstanceRef.
+                  (same namespace) whose DBMS hosts this database. For databases on a Neo4j
+                  Aura instance, use the AuraDatabase CRD instead.
                 type: string
               defaultCypherLanguage:
                 description: |-
@@ -340,11 +335,9 @@ spec:
                 description: Wait for database creation to complete
                 type: boolean
             required:
+            - clusterRef
             - name
             type: object
-            x-kubernetes-validations:
-            - message: set exactly one of clusterRef or auraInstanceRef
-              rule: has(self.clusterRef) != has(self.auraInstanceRef)
           status:
             description: Neo4jDatabaseStatus defines the observed state of Neo4jDatabase
             properties:

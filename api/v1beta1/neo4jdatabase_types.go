@@ -24,19 +24,12 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // Neo4jDatabaseSpec defines the desired state of Neo4jDatabase
-//
-// +kubebuilder:validation:XValidation:rule="has(self.clusterRef) != has(self.auraInstanceRef)",message="set exactly one of clusterRef or auraInstanceRef"
 type Neo4jDatabaseSpec struct {
 	// ClusterRef references a Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone
-	// (same namespace). Mutually exclusive with auraInstanceRef.
-	// +optional
-	ClusterRef string `json:"clusterRef,omitempty"`
-
-	// AuraInstanceRef references a managed AuraInstance (same namespace); the
-	// database DDL runs against it over Bolt. Mutually exclusive with clusterRef.
-	// Requires a multi-database-capable Aura tier (Business Critical / dedicated).
-	// +optional
-	AuraInstanceRef string `json:"auraInstanceRef,omitempty"`
+	// (same namespace) whose DBMS hosts this database. For databases on a Neo4j
+	// Aura instance, use the AuraDatabase CRD instead.
+	// +kubebuilder:validation:Required
+	ClusterRef string `json:"clusterRef"`
 
 	// +kubebuilder:validation:Required
 	// Database name

@@ -175,6 +175,12 @@ nav:
           - AuraRestore: api_reference/aurarestore.md
           - AuraCustomerManagedKey: api_reference/auracustomermanagedkey.md
           - AuraIPFilter: api_reference/auraipfilter.md
+          - AuraDatabase: api_reference/auradatabase.md
+          - AuraDatabaseBackup: api_reference/auradatabasebackup.md
+          - AuraDatabaseRestore: api_reference/auradatabaserestore.md
+          - AuraOrganizationMember: api_reference/auraorganizationmember.md
+          - AuraProjectMember: api_reference/auraprojectmember.md
+          - AuraInvite: api_reference/aurainvite.md
       - GitOps Integration: gitops/README.md
 
   - Contribute:

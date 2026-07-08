@@ -256,6 +256,12 @@ func newAuraFakeClient(t *testing.T, scheme *runtime.Scheme, objs ...client.Obje
 			&neo4jv1beta1.AuraProviderConfig{},
 			&neo4jv1beta1.AuraCustomerManagedKey{},
 			&neo4jv1beta1.AuraIPFilter{},
+			&neo4jv1beta1.AuraDatabase{},
+			&neo4jv1beta1.AuraDatabaseBackup{},
+			&neo4jv1beta1.AuraDatabaseRestore{},
+			&neo4jv1beta1.AuraOrganizationMember{},
+			&neo4jv1beta1.AuraProjectMember{},
+			&neo4jv1beta1.AuraInvite{},
 		).
 		WithObjects(all...).
 		Build()

@@ -34,6 +34,10 @@ Design details and rationale: `docs/design/aura-orchestration.md`.
 | `AuraRestore` | An in-place restore of an instance from a snapshot. |
 | `AuraCustomerManagedKey` | Registers a customer-managed encryption key (CMK) for dedicated-tier instances. |
 | `AuraIPFilter` | Manages an organization-scoped network IP filter (allowlist) via the Aura API **v2beta1** (beta). |
+| `AuraDatabase` | Manages a database on an Aura instance via the Aura API **v2beta1** (beta). |
+| `AuraDatabaseBackup` / `AuraDatabaseRestore` | On-demand per-database backup / in-place restore, **v2beta1** (beta). |
+| `AuraOrganizationMember` / `AuraProjectMember` | Manage an Aura console user's org / project role (console-RBAC), **v2beta1** (beta). |
+| `AuraInvite` | Invites a user to an Aura organization or project (console-RBAC), **v2beta1** (beta). |
 
 ## Quick start
 
@@ -81,6 +85,108 @@ Every format also carries `type=neo4j`/`provider=aura` and sets
 `status.binding.name`, so the instance is a compliant **Service Binding**
 Provisioned Service. Non-secret endpoint details can additionally be mirrored to
 a ConfigMap via `spec.publishConnectionDetailsTo`.
+
+## End-to-end walkthrough
+
+A full "day in the life": credentials → instance → database → backup → invite a
+teammate → clean up. Everything is in one namespace (`neo4j`). Later steps use
+CRDs on the Aura API **v2beta1** (beta) — see the notes in each section below.
+
+**1. Store your Aura API credentials** (from the console: Account → API keys):
+
+```bash
+kubectl -n neo4j create secret generic aura-api-creds \
+  --from-literal=clientId=<CLIENT_ID> \
+  --from-literal=clientSecret=<CLIENT_SECRET>
+```
+
+**2. Declare the account defaults once** with an `AuraProviderConfig`, then
+provision an instance:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraProviderConfig
+metadata: { name: aura, namespace: neo4j }
+spec:
+  credentialsSecretRef: { name: aura-api-creds }
+  defaultProjectId: "<project-id>"
+  defaultOrganizationId: "<org-id>"     # needed for the v2beta1 CRDs below
+---
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraInstance
+metadata: { name: analytics, namespace: neo4j }
+spec:
+  providerConfigRef: { name: aura }
+  cloudProvider: gcp
+  region: europe-west1
+  type: business-critical               # a multi-database tier (needed for step 4)
+  version: "5"
+  memory: 2GB
+  connectionSecretName: analytics-conn
+```
+
+**3. Wait for it to come up**, then point your app at the connection Secret:
+
+```bash
+kubectl -n neo4j wait aurainstance/analytics --for=condition=Ready --timeout=20m
+# app: envFrom the analytics-conn Secret (NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD)
+```
+
+**4. Create a database** on the instance (multi-database tiers only):
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraDatabase
+metadata: { name: analytics-db, namespace: neo4j }
+spec:
+  instanceRef: analytics
+  name: analytics
+```
+
+**5. Back it up** on demand:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraDatabaseBackup
+metadata: { name: analytics-nightly, namespace: neo4j }
+spec:
+  databaseRef: analytics-db
+```
+
+**6. Give a teammate read-only metrics access** to the project (console-RBAC —
+this is Aura console access, not an in-database user):
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraInvite
+metadata: { name: invite-bob, namespace: neo4j }
+spec:
+  providerConfigRef: { name: aura }
+  projectId: "<project-id>"
+  email: bob@example.com
+  role: METRICS_READER
+```
+
+Once Bob accepts, manage his role going forward with an `AuraProjectMember`
+(`email: bob@example.com`, `role: METRICS_READER`).
+
+**7. Check status** at any point:
+
+```bash
+kubectl -n neo4j get auradatabase,auradatabasebackup,aurainvite
+kubectl -n neo4j describe auradatabase analytics-db
+```
+
+**8. Clean up.** Deletion honours each CR's `deletionPolicy` — e.g. `AuraDatabase`
+defaults to `Delete` (drops the DB), `AuraInvite` to `Delete` (revokes a pending
+invite). Delete the instance last:
+
+```bash
+kubectl -n neo4j delete auradatabase analytics-db aurainvite invite-bob
+kubectl -n neo4j delete aurainstance analytics    # deletionPolicy governs the cloud instance
+```
+
+Each step is detailed in the sections that follow.
 
 ## Lifecycle
 
@@ -153,67 +259,109 @@ reconciliation entirely (including deletion) for incident response, without
 deleting the CR. `AuraInstance` also mirrors the last-observed cloud state into
 `status.atProvider` for drift inspection.
 
-## Managing databases on an Aura instance
+## Managing databases and access on an Aura instance
 
-`Neo4jDatabase` can target a managed Aura instance instead of a self-managed
-cluster — point it at the instance with `auraInstanceRef` (mutually exclusive
-with `clusterRef`):
+Aura resources are managed through **Aura-native, API-driven CRDs** — not by
+pointing the self-managed `Neo4jDatabase`/`Neo4jUser`/`Neo4jRole`/`Neo4jRoleBinding`
+CRDs at an instance. Those CRDs are for self-managed clusters/standalone only
+(via `clusterRef`).
+
+!!! warning "Beta / best-effort"
+    The CRDs in this section use the Aura API **v2beta1**, an unstable beta whose
+    contract can change without a version bump. Some request bodies are not fully
+    documented upstream and are best-effort. Validate against your account before
+    relying on them in production. See `docs/design/aura-orchestration.md`.
+
+### Databases
+
+Model a database on an instance with `AuraDatabase`. It references the
+`AuraInstance` (same namespace) and derives credentials, organization, and
+project from it. Aura manages replication/topology per tier, so there is **no
+topology knob** (unlike `Neo4jDatabase`):
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jDatabase
+kind: AuraDatabase
 metadata: { name: analytics-db }
 spec:
-  auraInstanceRef: analytics   # the AuraInstance, same namespace
+  instanceRef: analytics        # the AuraInstance, same namespace
   name: analytics
+  deletionPolicy: Delete        # Delete drops the DB on CR delete; Orphan leaves it
 ```
 
-The operator connects to the instance over Bolt (`neo4j+s://…`, using the admin
-credentials it captured into the connection Secret) and runs the same
-`CREATE DATABASE` / `DROP DATABASE` DDL it uses for self-managed clusters.
+Additional databases require a multi-database-capable Aura tier (Business
+Critical / dedicated). Full field reference: [`AuraDatabase`](../api_reference/auradatabase.md).
 
-- **Multi-database tiers only.** Additional databases require a
-  multi-database-capable Aura tier (Business Critical / dedicated). On a
-  single-database tier (`free-db`, `professional-db`) the operator refuses up
-  front with an `AuraTierUnsupported` condition rather than looping on the Aura
-  rejection.
-- **Credentials.** Works when the operator holds admin credentials — i.e. an
-  instance it created (the one-time password is captured at create). An imported
-  instance whose password the operator never saw needs credentials supplied.
-- `spec.topology` is ignored for Aura targets — Aura manages replication per
-  tier.
+#### Per-database backup & restore
 
-## Managing users & roles on an Aura instance
-
-`Neo4jUser`, `Neo4jRole`, and `Neo4jRoleBinding` accept `auraInstanceRef` too
-(same mutually-exclusive-with-`clusterRef` rule). The operator manages the
-instance's security graph over Bolt with the same Cypher it uses for
-self-managed clusters:
+Aura exposes per-database backups (multi-database tiers). Take an on-demand
+backup and restore in place from it:
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jRole
-metadata: { name: analytics-reader }
+kind: AuraDatabaseBackup
+metadata: { name: analytics-nightly }
 spec:
-  auraInstanceRef: analytics
-  name: analytics_reader
-  privileges:
-    - "GRANT MATCH {*} ON GRAPH neo4j NODES * TO analytics_reader"
+  databaseRef: analytics-db     # the AuraDatabase, same namespace
 ---
 apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jUser
-metadata: { name: app-reader }
+kind: AuraDatabaseRestore
+metadata: { name: analytics-rollback }
 spec:
-  auraInstanceRef: analytics
-  username: app_reader
-  passwordSecretRef: { name: app-reader-creds }
-  roles: [analytics-reader]     # resolves to the role on the SAME Aura instance
+  databaseRef: analytics-db
+  backupRef: analytics-nightly  # or: backupId: "<aura-backup-id>"
 ```
 
-Cross-references stay scoped to the target: a user's `roles` resolve only
-against `Neo4jRole`s pointing at the *same* `auraInstanceRef`. Custom users and
-roles require an Aura tier that permits them (dedicated tiers) — on a tier that
-doesn't, the operator surfaces the Aura error rather than looping.
+Like `AuraSnapshot`, a backup is one-shot and is **not** deleted from Aura when
+the CR is removed; a restore is one-shot and in place.
+
+### Access (console-RBAC)
+
+In-database Neo4j users/roles are **not** managed by the operator on Aura — there
+is no Aura API for them. Aura governs access through **console-RBAC**:
+organization/project membership and email invites (plus service accounts and
+"tool authentication with Aura user", which maps a console identity to a
+predefined database role). Model it with three CRDs:
+
+```yaml
+# Invite a new person to the organization (grants console access on acceptance).
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraInvite
+metadata: { name: invite-carol }
+spec:
+  providerConfigRef: { name: aura }
+  organizationId: "<org-id>"    # or defaultOrganizationId on the provider config
+  email: carol@example.com
+  role: ORG_MEMBER              # ORG_* ; add projectId + a PROJECT_*/METRICS_READER role for a project invite
+---
+# Manage the org role of an EXISTING console user (by email).
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraOrganizationMember
+metadata: { name: alice-org-admin }
+spec:
+  providerConfigRef: { name: aura }
+  organizationId: "<org-id>"
+  email: alice@example.com
+  role: ORG_ADMIN               # ORG_OWNER | ORG_ADMIN | ORG_MEMBER
+---
+# Manage a user's PROJECT role (e.g. read-only metrics access).
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraProjectMember
+metadata: { name: bob-metrics }
+spec:
+  providerConfigRef: { name: aura }
+  organizationId: "<org-id>"
+  projectId: "<project-id>"
+  email: bob@example.com
+  role: METRICS_READER          # PROJECT_ADMIN | PROJECT_MEMBER | PROJECT_VIEWER | METRICS_READER
+```
+
+`AuraOrganizationMember` / `AuraProjectMember` reconcile the role of a user who
+is **already** a member — if the email isn't a member yet, the CR reports a
+`NotAMember` condition; bring them in with an `AuraInvite`. Field references:
+[`AuraInvite`](../api_reference/aurainvite.md),
+[`AuraOrganizationMember`](../api_reference/auraorganizationmember.md),
+[`AuraProjectMember`](../api_reference/auraprojectmember.md).
 
 ## Importing an existing instance
 

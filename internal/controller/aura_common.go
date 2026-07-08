@@ -51,6 +51,18 @@ const (
 	// external-name for an AuraIPFilter (idempotent create + adopt).
 	AuraExternalIPFilterAnnotation = "neo4j.com/external-ipfilter-id"
 
+	// AuraExternalDatabaseAnnotation stores the Aura v2beta1 database ID as the
+	// external-name for an AuraDatabase (idempotent create + adopt).
+	AuraExternalDatabaseAnnotation = "neo4j.com/external-database-id"
+
+	// AuraExternalBackupAnnotation stores the Aura v2beta1 per-database backup ID
+	// for an AuraDatabaseBackup (so the on-demand backup is taken exactly once).
+	AuraExternalBackupAnnotation = "neo4j.com/external-backup-id"
+
+	// AuraExternalInviteAnnotation stores the Aura v2beta1 invite ID for an
+	// AuraInvite (idempotent create + adopt).
+	AuraExternalInviteAnnotation = "neo4j.com/external-invite-id"
+
 	// defaultAuraRatePerMinute is the conservative Aura API rate limit (trial
 	// keys are 25/min; paid are 125/min). We default to the safe floor.
 	defaultAuraRatePerMinute = 25
@@ -219,6 +231,102 @@ func resolveIPFilterClient(factory auraIPFilterClientFactory, c auraCredentials)
 	return defaultAuraIPFilterClientFactory(c)
 }
 
+// auraDatabaseAPI is the subset of the Aura v2beta1 client the database +
+// per-database backup/restore controllers depend on. *aura.Client satisfies it.
+// BETA — see internal/aura/database_v2beta1.go.
+type auraDatabaseAPI interface {
+	CreateDatabase(ctx context.Context, orgID, projectID, instanceID string, req aura.CreateDatabaseRequest) (*aura.Database, error)
+	GetDatabase(ctx context.Context, orgID, projectID, instanceID, id string) (*aura.Database, error)
+	ListDatabases(ctx context.Context, orgID, projectID, instanceID string) ([]aura.Database, error)
+	DeleteDatabase(ctx context.Context, orgID, projectID, instanceID, id string) error
+	CreateDatabaseBackup(ctx context.Context, orgID, projectID, instanceID, databaseID string) (*aura.DatabaseBackup, error)
+	GetDatabaseBackup(ctx context.Context, orgID, projectID, instanceID, databaseID, backupID string) (*aura.DatabaseBackup, error)
+	RestoreDatabase(ctx context.Context, orgID, projectID, instanceID, databaseID string, req aura.RestoreDatabaseRequest) error
+}
+
+// auraDatabaseClientFactory builds an auraDatabaseAPI from resolved credentials.
+type auraDatabaseClientFactory func(auraCredentials) auraDatabaseAPI
+
+func defaultAuraDatabaseClientFactory(c auraCredentials) auraDatabaseAPI {
+	return auraClientForCreds(c)
+}
+
+// resolveDatabaseClient returns the factory's client, or the default shared client.
+func resolveDatabaseClient(factory auraDatabaseClientFactory, c auraCredentials) auraDatabaseAPI {
+	if factory != nil {
+		return factory(c)
+	}
+	return defaultAuraDatabaseClientFactory(c)
+}
+
+// auraMemberAPI is the subset of the Aura v2beta1 client the console-RBAC
+// controllers (org/project members + invites) depend on. *aura.Client satisfies
+// it. BETA — see internal/aura/members_v2beta1.go.
+type auraMemberAPI interface {
+	ListOrgMembers(ctx context.Context, orgID string) ([]aura.Member, error)
+	UpdateOrgMemberRole(ctx context.Context, orgID, userID, role string) (*aura.Member, error)
+	DeleteOrgMember(ctx context.Context, orgID, userID string) error
+	ListProjectMembers(ctx context.Context, orgID, projectID string) ([]aura.Member, error)
+	UpdateProjectMemberRole(ctx context.Context, orgID, projectID, userID, role string) (*aura.Member, error)
+	DeleteProjectMember(ctx context.Context, orgID, projectID, userID string) error
+	CreateInvite(ctx context.Context, orgID string, req aura.CreateInviteRequest) (*aura.Invite, error)
+	GetInvite(ctx context.Context, orgID, id string) (*aura.Invite, error)
+	ListInvites(ctx context.Context, orgID string) ([]aura.Invite, error)
+	DeleteInvite(ctx context.Context, orgID, id string) error
+}
+
+// auraMemberClientFactory builds an auraMemberAPI from resolved credentials.
+type auraMemberClientFactory func(auraCredentials) auraMemberAPI
+
+func defaultAuraMemberClientFactory(c auraCredentials) auraMemberAPI { return auraClientForCreds(c) }
+
+// resolveMemberClient returns the factory's client, or the default shared client.
+func resolveMemberClient(factory auraMemberClientFactory, c auraCredentials) auraMemberAPI {
+	if factory != nil {
+		return factory(c)
+	}
+	return defaultAuraMemberClientFactory(c)
+}
+
+// resolveAuraDBCoords resolves the org/project/instance coordinates + credentials
+// for a database on the AuraInstance named instanceRef (same namespace).
+// orgOverride, if non-empty, wins over the provider config's default org.
+func resolveAuraDBCoords(ctx context.Context, k8s client.Client, namespace, instanceRef, orgOverride string) (creds auraCredentials, orgID, projectID, instanceID string, err error) {
+	creds, instanceID, inst, err := resolveInstanceCredsAndID(ctx, k8s, namespace, instanceRef)
+	if err != nil {
+		return creds, "", "", "", err
+	}
+	projectID = inst.Spec.ProjectID
+	if projectID == "" {
+		projectID = creds.projectID
+	}
+	orgID = resolveProviderOrgID(ctx, k8s, namespace, inst.Spec.ProviderConfigRef, orgOverride)
+	if orgID == "" {
+		return creds, "", projectID, instanceID, fmt.Errorf("organizationId is required (set it on the CR or as defaultOrganizationId on the AuraProviderConfig)")
+	}
+	if projectID == "" {
+		return creds, orgID, "", instanceID, fmt.Errorf("projectId could not be resolved from the AuraInstance or provider config")
+	}
+	return creds, orgID, projectID, instanceID, nil
+}
+
+// resolveProviderOrgID resolves the Aura organization ID for a v2beta1 resource:
+// the explicit override if set, else the referenced AuraProviderConfig's
+// defaultOrganizationId. Returns "" if neither is available.
+func resolveProviderOrgID(ctx context.Context, k8s client.Client, namespace string, providerConfigRef *corev1.LocalObjectReference, override string) string {
+	if override != "" {
+		return override
+	}
+	if providerConfigRef == nil {
+		return ""
+	}
+	pc := &neo4jv1beta1.AuraProviderConfig{}
+	if err := k8s.Get(ctx, types.NamespacedName{Name: providerConfigRef.Name, Namespace: namespace}, pc); err != nil {
+		return ""
+	}
+	return pc.Spec.DefaultOrganizationID
+}
+
 // resolveAuraCredentials resolves API credentials from either a
 // providerConfigRef (preferred: also carries baseURL + default project) or an
 // inline credentialsSecretRef, reading the referenced Secret in the given
@@ -296,16 +404,6 @@ func resolveInstanceCredsAndID(
 		return auraCredentials{}, "", inst, fmt.Errorf("AuraInstance %q has no external instance ID yet (not created/adopted)", instanceRef)
 	}
 	return creds, externalID, inst, nil
-}
-
-// auraConnectionSecretName returns the connection Secret name for an instance:
-// spec.connectionSecretName, or "<name>-conn" by default. Package-level so the
-// target resolver can find an Aura instance's admin credentials.
-func auraConnectionSecretName(inst *neo4jv1beta1.AuraInstance) string {
-	if inst.Spec.ConnectionSecretName != "" {
-		return inst.Spec.ConnectionSecretName
-	}
-	return inst.Name + "-conn"
 }
 
 // auraCondStatus maps a boolean to a Kubernetes condition status.
