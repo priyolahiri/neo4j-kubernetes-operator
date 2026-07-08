@@ -597,6 +597,8 @@
       
         
       
+        
+      
     
     
     
@@ -909,6 +911,34 @@
     
   
     Aura Fleet Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../aura_orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Aura Orchestration
   
 
     
@@ -1732,6 +1762,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#aura-orchestration-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aura orchestration metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2279,6 +2320,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -2616,6 +2669,174 @@
     
   
     Neo4jRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api_reference/auraproviderconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraProviderConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api_reference/aurainstance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraInstance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api_reference/aurasnapshot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraSnapshot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api_reference/aurarestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api_reference/auracustomermanagedkey/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraCustomerManagedKey
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api_reference/auraipfilter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraIPFilter
   
 
     
@@ -3473,6 +3694,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#aura-orchestration-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aura orchestration metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4034,6 +4266,32 @@
 <td>Counter</td>
 <td><code>cluster_name</code>, <code>namespace</code>, <code>validation_type</code>, <code>result</code> (<code>success</code>/<code>failure</code>)</td>
 <td>Total scaling validation attempts</td>
+</tr>
+</tbody>
+</table>
+<h3 id="aura-orchestration-metrics">Aura orchestration metrics<a class="headerlink" href="#aura-orchestration-metrics" title="Anchor link to this section">&para;</a></h3>
+<p>Emitted by the <a href="../../aura_orchestration/">Aura orchestration</a> controllers for every request the operator makes to the Aura Platform API. The <code>operation</code> label is a normalized route template (resource IDs collapsed to <code>{id}</code>, e.g. <code>POST /instances/{id}/upgrade</code>) so cardinality stays bounded regardless of how many Aura instances you manage.</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Type</th>
+<th>Labels</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>neo4j_operator_aura_api_requests_total</code></td>
+<td>Counter</td>
+<td><code>operation</code>, <code>result</code> (<code>success</code>/<code>failure</code>)</td>
+<td>Total Aura Platform API requests. <code>result=failure</code> counts any non-2xx response, including the 404s that idempotent deletes treat as success.</td>
+</tr>
+<tr>
+<td><code>neo4j_operator_aura_api_request_duration_seconds</code></td>
+<td>Histogram</td>
+<td><code>operation</code></td>
+<td>Latency of Aura Platform API requests, by route.</td>
 </tr>
 </tbody>
 </table>

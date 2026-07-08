@@ -597,6 +597,8 @@
       
         
       
+        
+      
     
     
     
@@ -909,6 +911,34 @@
     
   
     Aura Fleet Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../aura_orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Aura Orchestration
   
 
     
@@ -2204,6 +2234,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -2541,6 +2583,174 @@
     
   
     Neo4jRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraproviderconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraProviderConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurainstance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraInstance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurasnapshot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraSnapshot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurarestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auracustomermanagedkey/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraCustomerManagedKey
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraipfilter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraIPFilter
   
 
     
@@ -3480,7 +3690,7 @@
 </tbody>
 </table>
 <p><strong>Three CRDs, one design rule:</strong> privileges live on <code>Neo4jRole</code>, not on <code>Neo4jUser</code> or <code>Neo4jRoleBinding</code>. Putting privileges on users would re-implement Neo4j's RBAC inside-out and create merge conflicts when two CRs touch the same role. Always model "what can be done" as a role and "who can do it" as a user-to-role binding.</p>
-<p>All three CRDs are <strong>namespace-scoped</strong> and reference their target Neo4j cluster via <code>spec.clusterRef</code> (must be in the same namespace). See <a href="#cluster-vs-namespace-scope">Cluster vs namespace scope</a> below for the design rationale.</p>
+<p>All three CRDs are <strong>namespace-scoped</strong> and reference their target via <strong>exactly one</strong> of <code>spec.clusterRef</code> (a self-managed <code>Neo4jEnterpriseCluster</code>/<code>Neo4jEnterpriseStandalone</code>) or <code>spec.auraInstanceRef</code> (a managed <a href="../aura_orchestration/#managing-users--roles-on-an-aura-instance">Aura</a> instance) — both in the same namespace. See <a href="#cluster-vs-namespace-scope">Cluster vs namespace scope</a> below for the design rationale.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li>A <code>Neo4jEnterpriseCluster</code> or <code>Neo4jEnterpriseStandalone</code> in <code>Ready</code> phase.</li>
