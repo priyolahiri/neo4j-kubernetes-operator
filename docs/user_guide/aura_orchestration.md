@@ -33,7 +33,7 @@ Design details and rationale: `docs/design/aura-orchestration.md`.
 | `AuraSnapshot` | An on-demand snapshot of an instance. |
 | `AuraRestore` | An in-place restore of an instance from a snapshot. |
 | `AuraCustomerManagedKey` | Registers a customer-managed encryption key (CMK) for dedicated-tier instances. |
-| `AuraIPFilter` | Manages a network IP filter (CIDR allowlist) via the Aura API **v2beta1** (beta). |
+| `AuraIPFilter` | Manages an organization-scoped network IP filter (allowlist) via the Aura API **v2beta1** (beta). |
 
 ## Quick start
 
@@ -251,8 +251,9 @@ which also makes create idempotent (a crash can't produce a duplicate instance).
 
 ## Network IP filtering (beta)
 
-`AuraIPFilter` manages a network IP filter (CIDR allowlist) for a project or a
-single instance:
+`AuraIPFilter` manages a network IP filter (allowlist). In v2beta1 a filter is
+**organization-scoped** (`/organizations/{org}/ip-filters`) and *applied* to one
+or more instances — model that with `instanceRefs`:
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -261,18 +262,22 @@ metadata: { name: office-only }
 spec:
   providerConfigRef: { name: aura }
   organizationId: "<your-org-id>"     # or set defaultOrganizationId on the provider config
-  instanceRef: analytics              # optional; Aura allows one filter per instance
-  cidrs: ["203.0.113.0/24"]
+  instanceRefs: [analytics]           # instances the filter is applied to
+  allowList:                          # v2beta1 splits CIDR into address + prefixLen
+    - { address: "203.0.113.0", prefixLen: 24, description: office }
   deletionPolicy: Orphan              # default; Delete removes the filter (opens access)
 ```
+
+Each `allowList` entry is `{address, prefixLen, description?}` — so
+`"203.0.113.0/24"` becomes `address: "203.0.113.0"`, `prefixLen: 24`. Set
+`filteringDisabled: true` to turn the filter off without deleting it.
 
 !!! warning "Beta / best-effort"
     IP filtering is only exposed on the Aura API **v2beta1**, an unstable beta
     (breaking changes are allowed without a version bump). This CRD is
-    best-effort: its client contract is reconstructed from the documented
-    semantics and **has not been validated against a live v2beta1 account** — it
-    may need adjustment to track the API. The rest of Aura orchestration uses the
-    stable v1 API. See `docs/design/aura-orchestration.md`.
+    best-effort: the client shape follows the official v2beta1 `IpFilter` schema,
+    but v2beta1 may change without a version bump. The rest of Aura orchestration
+    uses the stable v1 API. See `docs/design/aura-orchestration.md`.
 
 ## Metrics
 

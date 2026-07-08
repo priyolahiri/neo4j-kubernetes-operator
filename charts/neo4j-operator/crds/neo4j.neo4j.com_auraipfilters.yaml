@@ -17,9 +17,6 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.instanceRef
-      name: Instance
-      type: string
     - jsonPath: .status.filterId
       name: FilterID
       type: string
@@ -33,8 +30,8 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          AuraIPFilter manages a Neo4j Aura network IP filter (CIDR allowlist) via the
-          Aura API v2beta1. BETA / best-effort — see the type doc and
+          AuraIPFilter manages a Neo4j Aura network IP filter (allowlist) via the Aura
+          API v2beta1. BETA / best-effort — see the type doc and
           docs/design/aura-orchestration.md.
         properties:
           apiVersion:
@@ -56,19 +53,42 @@ spec:
             type: object
           spec:
             description: |-
-              AuraIPFilterSpec configures a Neo4j Aura network IP filter (CIDR allowlist).
+              AuraIPFilterSpec configures a Neo4j Aura network IP filter (allowlist).
 
-              BETA: IP filtering is only available on the Aura API v2beta1 surface, which is
-              an unstable beta (breaking changes allowed without a version bump). This CRD
-              is best-effort and its behaviour may change to track the API — see
-              docs/knowledge/operations.md and docs/design/aura-orchestration.md.
+              BETA: IP filtering is on the Aura API v2beta1 (an unstable beta). IP filters
+              are ORGANIZATION-scoped and applied to instances; this CRD models the common
+              case of protecting one or more AuraInstances. See the type fields and
+              docs/design/aura-orchestration.md.
             properties:
-              cidrs:
+              allowList:
                 description: |-
-                  CIDRs is the allowlist of source ranges in CIDR notation (e.g.
-                  "203.0.113.0/24"). At least one is required.
+                  AllowList is the set of source ranges permitted by the filter. At least
+                  one entry is required.
                 items:
-                  type: string
+                  description: |-
+                    AuraIPFilterAllowEntry is one allow-listed source range. The Aura v2beta1 API
+                    splits CIDR notation into an address plus a prefix length (e.g.
+                    "203.0.113.0/24" → address "203.0.113.0", prefixLen 24).
+                  properties:
+                    address:
+                      description: Address is the IP address of the CIDR (e.g. "203.0.113.0").
+                      type: string
+                    description:
+                      description: Description is an optional human-friendly label
+                        for this entry.
+                      type: string
+                    prefixLen:
+                      description: PrefixLen is the CIDR prefix length (0–32 for IPv4,
+                        up to 128 for IPv6).
+                      format: int32
+                      maximum: 128
+                      minimum: 0
+                      type: integer
+                  required:
+                  - address
+                  - prefixLen
+                  type: object
+                maxItems: 1000
                 minItems: 1
                 type: array
               credentialsSecretRef:
@@ -96,18 +116,31 @@ spec:
                 default: Orphan
                 description: |-
                   DeletionPolicy controls what happens to the Aura filter when this CR is
-                  deleted: Orphan (default; leave the filter in place — deleting it would
-                  open network access) or Delete (remove it from Aura).
+                  deleted: Orphan (default; leave it in place — deleting it opens access) or
+                  Delete (remove it from Aura).
                 enum:
                 - Orphan
                 - Delete
                 type: string
-              instanceRef:
-                description: |-
-                  InstanceRef optionally scopes the filter to a single AuraInstance (same
-                  namespace) — Aura permits at most one IP filter per instance. Omit for a
-                  project-wide filter. Immutable once set.
+              description:
+                description: Description is an optional human-friendly description
+                  of the filter.
                 type: string
+              filteringDisabled:
+                description: |-
+                  FilteringDisabled turns the filter off without deleting it (the API's
+                  filtering_disabled). Default false (the filter is enforced).
+                type: boolean
+              instanceRefs:
+                description: |-
+                  InstanceRefs names the AuraInstances (same namespace) the filter applies
+                  to; the operator resolves each to its Aura instance ID (the API's
+                  filtered_entities.instances). Omit for a filter you attach out of band.
+                items:
+                  type: string
+                maxItems: 100
+                type: array
+                x-kubernetes-list-type: set
               managementPolicies:
                 default:
                 - '*'
@@ -130,13 +163,9 @@ spec:
                 type: string
               organizationId:
                 description: |-
-                  OrganizationID is the Aura organization ID (v2beta1 hierarchy). If empty,
-                  the referenced AuraProviderConfig's defaultOrganizationId is used.
-                type: string
-              projectId:
-                description: |-
-                  ProjectID is the Aura project (API tenant_id). If empty, the referenced
-                  AuraProviderConfig's defaultProjectId is used.
+                  OrganizationID is the Aura organization that owns the filter (filters are
+                  org-scoped in v2beta1). If empty, the referenced AuraProviderConfig's
+                  defaultOrganizationId is used.
                 type: string
               providerConfigRef:
                 description: |-
@@ -154,18 +183,12 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              region:
-                description: Region the filter applies to, when required by the provider.
-                type: string
             required:
-            - cidrs
+            - allowList
             type: object
             x-kubernetes-validations:
             - message: set exactly one of providerConfigRef or credentialsSecretRef
               rule: has(self.providerConfigRef) != has(self.credentialsSecretRef)
-            - message: instanceRef is immutable once set
-              rule: '!has(oldSelf.instanceRef) || (has(self.instanceRef) && self.instanceRef
-                == oldSelf.instanceRef)'
           status:
             description: AuraIPFilterStatus is the observed state of the filter.
             properties:
@@ -243,8 +266,8 @@ spec:
                 format: int64
                 type: integer
               phase:
-                description: Phase mirrors the Aura filter status (Pending, Ready,
-                  Updating, Error).
+                description: Phase mirrors the reconcile outcome (Pending, Ready,
+                  Error).
                 type: string
             type: object
         type: object

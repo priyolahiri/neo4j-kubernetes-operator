@@ -19,7 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"sort"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -47,9 +47,9 @@ const AuraIPFilterFinalizer = "neo4j.com/auraipfilter-finalizer"
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=auraipfilters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=auraipfilters/finalizers,verbs=update
 
-// AuraIPFilterReconciler manages a Neo4j Aura network IP filter via the Aura API
-// v2beta1. BETA / best-effort: v2beta1 is an unstable beta and the exact API
-// contract is reconstructed (see internal/aura/ipfilter_v2beta1.go).
+// AuraIPFilterReconciler manages an organization-scoped Neo4j Aura network IP
+// filter via the Aura API v2beta1. BETA / best-effort: v2beta1 is an unstable
+// beta (see internal/aura/ipfilter_v2beta1.go).
 type AuraIPFilterReconciler struct {
 	client.Client
 	Scheme                  *runtime.Scheme
@@ -92,14 +92,10 @@ func (r *AuraIPFilterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if orgID == "" {
 		orgID = r.providerDefaultOrgID(ctx, f)
 	}
-	projectID := f.Spec.ProjectID
-	if projectID == "" {
-		projectID = creds.projectID
-	}
 	apiClient := resolveIPFilterClient(r.ClientFactory, creds)
 
 	if !f.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, req, f, apiClient, orgID, projectID)
+		return r.handleDeletion(ctx, req, f, apiClient, orgID)
 	}
 
 	if !controllerutil.ContainsFinalizer(f, AuraIPFilterFinalizer) {
@@ -110,13 +106,13 @@ func (r *AuraIPFilterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	if orgID == "" || projectID == "" {
-		return r.fail(ctx, req, f, "ScopeMissing",
-			fmt.Errorf("organizationId and projectId are required (set them on the CR or as defaults on the AuraProviderConfig)"))
+	if orgID == "" {
+		return r.fail(ctx, req, f, "OrganizationMissing",
+			fmt.Errorf("organizationId is required (set it on the CR or as defaultOrganizationId on the AuraProviderConfig)"))
 	}
 
-	// Resolve the optional instance association to its Aura instance ID.
-	instanceID, err := r.resolveInstanceID(ctx, f)
+	// Resolve instanceRefs → Aura instance IDs (the API's filtered_entities.instances).
+	entities, err := r.resolveEntities(ctx, f)
 	if err != nil {
 		return r.fail(ctx, req, f, "InstanceRefUnresolved", err)
 	}
@@ -128,7 +124,7 @@ func (r *AuraIPFilterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 	if externalID == "" {
 		allowCreate := managementAllows(f.Spec.ManagementPolicies, auraPolicyCreate)
-		id, adopted, err := r.observeOrCreate(ctx, req, f, apiClient, orgID, projectID, instanceID, allowCreate)
+		id, adopted, err := r.observeOrCreate(ctx, req, f, apiClient, orgID, entities, allowCreate)
 		if err != nil {
 			return r.fail(ctx, req, f, "CreateFailed", err)
 		}
@@ -144,7 +140,7 @@ func (r *AuraIPFilterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	observed, err := apiClient.GetIPFilter(ctx, orgID, projectID, externalID)
+	observed, err := apiClient.GetIPFilter(ctx, orgID, externalID)
 	if err != nil {
 		if aura.IsNotFound(err) {
 			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
@@ -155,9 +151,9 @@ func (r *AuraIPFilterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.fail(ctx, req, f, "ObserveFailed", err)
 	}
 
-	// --- Drift: converge the CIDR set + name (Update-gated) ---
+	// --- Drift: converge allow_list + filtered_entities + name/filtering (Update-gated) ---
 	if managementAllows(f.Spec.ManagementPolicies, auraPolicyUpdate) {
-		if handled, res, err := r.reconcileDrift(ctx, f, apiClient, orgID, projectID, observed); handled {
+		if handled, res, err := r.reconcileDrift(ctx, f, apiClient, orgID, entities, observed); handled {
 			return res, err
 		}
 	}
@@ -165,58 +161,59 @@ func (r *AuraIPFilterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := r.syncStatus(ctx, req, f, observed); err != nil {
 		return ctrl.Result{}, err
 	}
-	if aura.IsIPFilterReady(observed.Status) {
-		r.Recorder.Event(f, corev1.EventTypeNormal, EventReasonAuraIPFilterReady,
-			fmt.Sprintf("IP filter %s is ready", observed.ID))
-		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
-	}
-	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+	r.Recorder.Event(f, corev1.EventTypeNormal, EventReasonAuraIPFilterReady,
+		fmt.Sprintf("IP filter %s reconciled", observed.ID))
+	// Re-observe periodically to catch out-of-band drift.
+	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-// observeOrCreate adopts an IP filter with the same name (and instance
-// association) before creating, so a crash can't produce a duplicate.
+// observeOrCreate adopts an IP filter with the same name before creating.
 func (r *AuraIPFilterReconciler) observeOrCreate(
 	ctx context.Context, req ctrl.Request, f *neo4jv1beta1.AuraIPFilter,
-	apiClient auraIPFilterAPI, orgID, projectID, instanceID string, allowCreate bool,
+	apiClient auraIPFilterAPI, orgID string, entities aura.IPFilterEntities, allowCreate bool,
 ) (id string, adopted bool, err error) {
 	name := r.filterName(f)
-	existing, err := apiClient.ListIPFilters(ctx, orgID, projectID)
+	existing, err := apiClient.ListIPFilters(ctx, orgID)
 	if err != nil {
 		return "", false, fmt.Errorf("listing ip filters before create: %w", err)
 	}
 	for i := range existing {
-		e := existing[i]
-		if e.Name == name && e.InstanceID == instanceID {
-			if err := r.setExternalID(ctx, req, e.ID); err != nil {
+		if existing[i].Name == name {
+			eid := existing[i].ID
+			if err := r.setExternalID(ctx, req, eid); err != nil {
 				return "", false, err
 			}
-			return e.ID, true, nil
+			return eid, true, nil
 		}
 	}
 	if !allowCreate {
 		return "", false, nil
 	}
-	created, err := apiClient.CreateIPFilter(ctx, orgID, projectID, aura.CreateIPFilterRequest{
-		Name:       name,
-		InstanceID: instanceID,
-		Region:     f.Spec.Region,
-		CIDRs:      f.Spec.CIDRs,
+	disabled := f.Spec.FilteringDisabled
+	created, err := apiClient.CreateIPFilter(ctx, orgID, aura.CreateIPFilterRequest{
+		Name:              name,
+		Description:       f.Spec.Description,
+		AllowList:         specAllowList(f),
+		FilteredEntities:  entities,
+		FilteringDisabled: &disabled,
 	})
 	if err != nil {
 		return "", false, err
 	}
-	if err := r.setExternalID(ctx, req, created.ID); err != nil {
+	cid := created.ID
+	if err := r.setExternalID(ctx, req, cid); err != nil {
 		return "", false, err
 	}
 	r.Recorder.Event(f, corev1.EventTypeNormal, EventReasonAuraIPFilterCreated,
-		fmt.Sprintf("Created IP filter %s", created.ID))
-	return created.ID, false, nil
+		fmt.Sprintf("Created IP filter %s", cid))
+	return cid, false, nil
 }
 
-// reconcileDrift converges the mutable CIDR set + name.
+// reconcileDrift converges the mutable fields (allow_list, filtered_entities
+// instances, name, filtering_disabled).
 func (r *AuraIPFilterReconciler) reconcileDrift(
 	ctx context.Context, f *neo4jv1beta1.AuraIPFilter, apiClient auraIPFilterAPI,
-	orgID, projectID string, observed *aura.IPFilter,
+	orgID string, entities aura.IPFilterEntities, observed *aura.IPFilter,
 ) (handled bool, res ctrl.Result, err error) {
 	patch := aura.UpdateIPFilterRequest{}
 	changed := false
@@ -224,15 +221,25 @@ func (r *AuraIPFilterReconciler) reconcileDrift(
 		patch.Name = &desired
 		changed = true
 	}
-	if !equalStringSet(f.Spec.CIDRs, observed.CIDRs) {
-		cidrs := f.Spec.CIDRs
-		patch.CIDRs = &cidrs
+	if !equalAllowList(specAllowList(f), observed.AllowList) {
+		al := specAllowList(f)
+		patch.AllowList = &al
+		changed = true
+	}
+	if !equalStringSet(entities.Instances, observed.FilteredEntities.Instances) {
+		fe := entities
+		patch.FilteredEntities = &fe
+		changed = true
+	}
+	if f.Spec.FilteringDisabled != observed.FilteringDisabled {
+		d := f.Spec.FilteringDisabled
+		patch.FilteringDisabled = &d
 		changed = true
 	}
 	if !changed {
 		return false, ctrl.Result{}, nil
 	}
-	if _, err := apiClient.UpdateIPFilter(ctx, orgID, projectID, observed.ID, patch); err != nil {
+	if _, err := apiClient.UpdateIPFilter(ctx, orgID, observed.ID, patch); err != nil {
 		if aura.IsConflict(err) || aura.IsTransient(err) {
 			return true, ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 		}
@@ -244,7 +251,7 @@ func (r *AuraIPFilterReconciler) reconcileDrift(
 }
 
 func (r *AuraIPFilterReconciler) handleDeletion(
-	ctx context.Context, req ctrl.Request, f *neo4jv1beta1.AuraIPFilter, apiClient auraIPFilterAPI, orgID, projectID string,
+	ctx context.Context, req ctrl.Request, f *neo4jv1beta1.AuraIPFilter, apiClient auraIPFilterAPI, orgID string,
 ) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(f, AuraIPFilterFinalizer) {
 		return ctrl.Result{}, nil
@@ -254,8 +261,8 @@ func (r *AuraIPFilterReconciler) handleDeletion(
 		externalID = f.Status.FilterID
 	}
 	deleteCloud := f.Spec.DeletionPolicy == "Delete" && managementAllows(f.Spec.ManagementPolicies, auraPolicyDelete)
-	if deleteCloud && externalID != "" && orgID != "" && projectID != "" {
-		if err := apiClient.DeleteIPFilter(ctx, orgID, projectID, externalID); err != nil {
+	if deleteCloud && externalID != "" && orgID != "" {
+		if err := apiClient.DeleteIPFilter(ctx, orgID, externalID); err != nil {
 			if aura.IsConflict(err) || aura.IsTransient(err) {
 				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 			}
@@ -274,29 +281,27 @@ func (r *AuraIPFilterReconciler) handleDeletion(
 	})
 }
 
-// resolveInstanceID resolves spec.instanceRef to its Aura instance ID (via the
-// referenced AuraInstance's external-id annotation / status). Empty when no
-// instanceRef is set (a project-wide filter).
-func (r *AuraIPFilterReconciler) resolveInstanceID(ctx context.Context, f *neo4jv1beta1.AuraIPFilter) (string, error) {
-	if f.Spec.InstanceRef == "" {
-		return "", nil
+// resolveEntities resolves spec.instanceRefs to Aura instance IDs (via the
+// referenced AuraInstances' external-id annotation / status).
+func (r *AuraIPFilterReconciler) resolveEntities(ctx context.Context, f *neo4jv1beta1.AuraIPFilter) (aura.IPFilterEntities, error) {
+	var entities aura.IPFilterEntities
+	for _, ref := range f.Spec.InstanceRefs {
+		inst := &neo4jv1beta1.AuraInstance{}
+		if err := r.Get(ctx, types.NamespacedName{Name: ref, Namespace: f.Namespace}, inst); err != nil {
+			return entities, fmt.Errorf("resolving instanceRef %q: %w", ref, err)
+		}
+		id := inst.Annotations[AuraExternalIDAnnotation]
+		if id == "" {
+			id = inst.Status.InstanceID
+		}
+		if id == "" {
+			return entities, fmt.Errorf("AuraInstance %q has no external instance ID yet", ref)
+		}
+		entities.Instances = append(entities.Instances, id)
 	}
-	inst := &neo4jv1beta1.AuraInstance{}
-	if err := r.Get(ctx, types.NamespacedName{Name: f.Spec.InstanceRef, Namespace: f.Namespace}, inst); err != nil {
-		return "", fmt.Errorf("resolving instanceRef %q: %w", f.Spec.InstanceRef, err)
-	}
-	id := inst.Annotations[AuraExternalIDAnnotation]
-	if id == "" {
-		id = inst.Status.InstanceID
-	}
-	if id == "" {
-		return "", fmt.Errorf("AuraInstance %q has no external instance ID yet", f.Spec.InstanceRef)
-	}
-	return id, nil
+	return entities, nil
 }
 
-// providerDefaultOrgID reads defaultOrganizationId off the referenced provider
-// config, if any.
 func (r *AuraIPFilterReconciler) providerDefaultOrgID(ctx context.Context, f *neo4jv1beta1.AuraIPFilter) string {
 	if f.Spec.ProviderConfigRef == nil {
 		return ""
@@ -313,6 +318,70 @@ func (r *AuraIPFilterReconciler) filterName(f *neo4jv1beta1.AuraIPFilter) string
 		return f.Spec.Name
 	}
 	return f.Name
+}
+
+// specAllowList maps the CRD allow list to the client's shape.
+func specAllowList(f *neo4jv1beta1.AuraIPFilter) []aura.IPFilterAllowEntry {
+	out := make([]aura.IPFilterAllowEntry, 0, len(f.Spec.AllowList))
+	for _, e := range f.Spec.AllowList {
+		out = append(out, aura.IPFilterAllowEntry{
+			Address:     e.Address,
+			PrefixLen:   int(e.PrefixLen),
+			Description: e.Description,
+		})
+	}
+	return out
+}
+
+// equalStringSet reports whether two string slices contain the same elements
+// (order-insensitive), used to detect drift in the filtered instance set.
+func equalStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := make(map[string]int, len(a))
+	for _, s := range a {
+		m[s]++
+	}
+	for _, s := range b {
+		m[s]--
+		if m[s] < 0 {
+			return false
+		}
+	}
+	for _, v := range m {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// equalAllowList compares two allow lists order-insensitively by
+// address/prefix/description.
+func equalAllowList(a, b []aura.IPFilterAllowEntry) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	key := func(e aura.IPFilterAllowEntry) string {
+		return fmt.Sprintf("%s/%d/%s", e.Address, e.PrefixLen, e.Description)
+	}
+	ak := make([]string, 0, len(a))
+	for _, e := range a {
+		ak = append(ak, key(e))
+	}
+	bk := make([]string, 0, len(b))
+	for _, e := range b {
+		bk = append(bk, key(e))
+	}
+	sort.Strings(ak)
+	sort.Strings(bk)
+	for i := range ak {
+		if ak[i] != bk[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *AuraIPFilterReconciler) setExternalID(ctx context.Context, req ctrl.Request, id string) error {
@@ -355,20 +424,19 @@ func (r *AuraIPFilterReconciler) setCondition(ctx context.Context, req ctrl.Requ
 }
 
 func (r *AuraIPFilterReconciler) syncStatus(ctx context.Context, req ctrl.Request, f *neo4jv1beta1.AuraIPFilter, observed *aura.IPFilter) error {
-	ready := aura.IsIPFilterReady(observed.Status)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.AuraIPFilter{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
 		latest.Status.FilterID = observed.ID
-		latest.Status.Phase = observed.Status
+		latest.Status.Phase = "Ready"
 		now := metav1.Now()
 		latest.Status.LastSyncedTime = &now
 		latest.Status.ObservedGeneration = latest.Generation
 		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type: "Ready", Status: auraCondStatus(ready), Reason: ipFilterReadyReason(observed.Status),
-			Message: fmt.Sprintf("IP filter status: %s", observed.Status),
+			Type: "Ready", Status: metav1.ConditionTrue, Reason: "Reconciled",
+			Message: "IP filter reconciled against the Aura API (v2beta1, beta)",
 		})
 		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
 			Type: "Synced", Status: metav1.ConditionTrue, Reason: "Observed",
@@ -376,13 +444,6 @@ func (r *AuraIPFilterReconciler) syncStatus(ctx context.Context, req ctrl.Reques
 		})
 		return r.Status().Update(ctx, latest)
 	})
-}
-
-func ipFilterReadyReason(status string) string {
-	if aura.IsIPFilterReady(status) {
-		return "Ready"
-	}
-	return "NotReady"
 }
 
 func (r *AuraIPFilterReconciler) fail(ctx context.Context, req ctrl.Request, f *neo4jv1beta1.AuraIPFilter, reason string, cause error) (ctrl.Result, error) {
@@ -396,27 +457,11 @@ func (r *AuraIPFilterReconciler) fail(ctx context.Context, req ctrl.Request, f *
 		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
 			Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error(),
 		})
+		latest.Status.Phase = "Error"
 		latest.Status.ObservedGeneration = latest.Generation
 		return r.Status().Update(ctx, latest)
 	})
 	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-}
-
-// equalStringSet reports whether two string slices contain the same elements
-// (order-insensitive), used to detect CIDR-set drift.
-func equalStringSet(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	am := make(map[string]int, len(a))
-	for _, s := range a {
-		am[s]++
-	}
-	bm := make(map[string]int, len(b))
-	for _, s := range b {
-		bm[s]++
-	}
-	return reflect.DeepEqual(am, bm)
 }
 
 // SetupWithManager wires the controller.

@@ -1,8 +1,8 @@
 # AuraIPFilter API Reference
 
-> **⚠️ BETA / best-effort.** IP filtering is only available on the Aura API **v2beta1** surface, which is an unstable beta (breaking changes are allowed without a version bump). This CRD is best-effort and its behaviour may change to track the API — the contract is reconstructed and unvalidated. See the [Aura Orchestration Guide](../user_guide/aura_orchestration.md) before relying on it in production.
+> **⚠️ BETA / best-effort.** IP filtering is only available on the Aura API **v2beta1** surface, which is an unstable beta (breaking changes are allowed without a version bump). This CRD is best-effort and its behaviour may change to track the API. The shape below is taken from the official v2beta1 `IpFilter` schema. See the [Aura Orchestration Guide](../user_guide/aura_orchestration.md) before relying on it in production.
 
-The `AuraIPFilter` Custom Resource Definition (CRD) manages a Neo4j Aura network IP filter (a CIDR allowlist) via the Aura API v2beta1.
+The `AuraIPFilter` Custom Resource Definition (CRD) manages a Neo4j Aura network IP filter (an allowlist) via the Aura API v2beta1.
 
 ## Overview
 
@@ -10,8 +10,10 @@ The `AuraIPFilter` Custom Resource Definition (CRD) manages a Neo4j Aura network
 - **Kind**: `AuraIPFilter`
 - **Scope**: Namespaced
 - **Short name**: `auraipf`
-- **Purpose**: Manage a network IP filter (CIDR allowlist) on an Aura project or instance. **BETA / best-effort.**
+- **Purpose**: Manage a network IP filter (allowlist) on a Neo4j Aura organization and apply it to one or more instances. **BETA / best-effort.**
 - **Guide**: [Aura Orchestration Guide](../user_guide/aura_orchestration.md)
+
+> **IP filters are organization-scoped.** In v2beta1 a filter lives at `/organizations/{org}/ip-filters` — not under a project or instance. A single filter is *applied* to instances via `filtered_entities.instances`; this CRD models that with `instanceRefs`.
 
 ## Spec
 
@@ -21,21 +23,29 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 |---|---|---|
 | `providerConfigRef` | `object` | References an [`AuraProviderConfig`](auraproviderconfig.md) (`{name}`, a core `LocalObjectReference`) in the same namespace. **Mutually exclusive with `credentialsSecretRef`.** |
 | `credentialsSecretRef` | `object` | Inline single-account shortcut when no `AuraProviderConfig` is used. See [AuraCredentialsSecretRef](auraproviderconfig.md#auracredentialssecretref). **Mutually exclusive with `providerConfigRef`.** |
-| `organizationId` | `string` | Aura organization ID (v2beta1 hierarchy). Falls back to the provider config's `defaultOrganizationId` when empty. |
-| `projectId` | `string` | Aura project (the API `tenant_id`). Falls back to the provider config's `defaultProjectId` when empty. |
-| `instanceRef` | `string` | Optionally scopes the filter to a single [`AuraInstance`](aurainstance.md) (same namespace) — Aura permits at most one IP filter per instance. Omit for a project-wide filter. **Immutable once set.** |
+| `organizationId` | `string` | Aura organization that owns the filter (filters are org-scoped in v2beta1). Falls back to the provider config's `defaultOrganizationId` when empty. |
 | `name` | `string` | Filter display name in Aura (max 63 chars). Defaults to `metadata.name`. |
-| `region` | `string` | Region the filter applies to, when required by the provider. |
-| `cidrs` | `[]string` | **Required.** Allowlist of source ranges in CIDR notation (e.g. `"203.0.113.0/24"`). MinItems 1. |
+| `description` | `string` | Optional human-friendly description of the filter. |
+| `allowList` | `[]object` | **Required.** The allowed source ranges (MinItems 1, MaxItems 1000). Each entry is `{address, prefixLen, description?}` — the v2beta1 API splits CIDR notation into an address plus a prefix length (so `"203.0.113.0/24"` → `address: "203.0.113.0"`, `prefixLen: 24`). |
+| `instanceRefs` | `[]string` | Names of [`AuraInstance`](aurainstance.md)s (same namespace) the filter is applied to; the operator resolves each to its Aura instance ID (the API's `filtered_entities.instances`). Set (dedup), MaxItems 100. Omit to attach the filter out of band. |
+| `filteringDisabled` | `bool` | Turns the filter off without deleting it (the API's `filtering_disabled`). Default `false` (the filter is enforced). |
 | `deletionPolicy` | `string` | Enum `Orphan` / `Delete`. Default `Orphan` (leave the filter in place on CR delete — deleting it would open network access). `Delete` removes it from Aura. |
 | `managementPolicies` | `[]string` | Items enum `Observe` / `Create` / `Update` / `Delete` / `*`. Default `["*"]` (full management). |
+
+### `allowList[]` (AuraIPFilterAllowEntry)
+
+| Field | Type | Description |
+|---|---|---|
+| `address` | `string` | **Required.** The IP address of the CIDR (e.g. `"203.0.113.0"`). |
+| `prefixLen` | `int32` | **Required.** The CIDR prefix length (0–32 for IPv4, up to 128 for IPv6). |
+| `description` | `string` | Optional human-friendly label for this entry. |
 
 ## Status
 
 | Field | Type | Description |
 |---|---|---|
 | `filterId` | `string` | Aura-assigned IP-filter ID. |
-| `phase` | `string` | Mirrors the Aura filter status: `Pending`, `Ready`, `Updating`, `Error`. |
+| `phase` | `string` | Mirrors the reconcile outcome: `Pending`, `Ready`, `Error`. |
 | `conditions` | `[]metav1.Condition` | Standard readiness conditions. |
 | `observedGeneration` | `int64` | The `.metadata.generation` last reconciled. |
 | `lastSyncedTime` | `*metav1.Time` | When the filter was last observed from the Aura API. |
@@ -51,10 +61,15 @@ metadata:
 spec:
   providerConfigRef:
     name: aura-account
-  instanceRef: analytics-prod        # omit for a project-wide filter
-  cidrs:
-    - "203.0.113.0/24"
-    - "198.51.100.42/32"
+  organizationId: "<your-aura-org-id>"   # or defaultOrganizationId on the provider config
+  instanceRefs:                          # instances the filter is applied to
+    - analytics-prod
+  allowList:
+    - address: "203.0.113.0"
+      prefixLen: 24
+      description: office
+    - address: "198.51.100.42"
+      prefixLen: 32
 ```
 
 ## Related Resources
