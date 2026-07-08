@@ -1,0 +1,14 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraProjectMember
+metadata:
+  name: example-aura-project-member
+spec:
+  providerConfigRef:
+    name: example-aura
+  organizationId: "<your-aura-org-id>"   # or defaultOrganizationId on the provider config
+  projectId: "<your-aura-project-id>"    # or defaultProjectId on the provider config
+  email: bob@example.com
+  role: PROJECT_VIEWER                    # PROJECT_ADMIN | PROJECT_MEMBER | PROJECT_VIEWER | METRICS_READER
+  deletionPolicy: Orphan
+# NOTE: BETA (Aura API v2beta1). Manages the PROJECT role of an EXISTING console
+# user. To bring a new person in, create an AuraInvite. Not an in-database user.

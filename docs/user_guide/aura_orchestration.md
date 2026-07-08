@@ -34,6 +34,10 @@ Design details and rationale: `docs/design/aura-orchestration.md`.
 | `AuraRestore` | An in-place restore of an instance from a snapshot. |
 | `AuraCustomerManagedKey` | Registers a customer-managed encryption key (CMK) for dedicated-tier instances. |
 | `AuraIPFilter` | Manages an organization-scoped network IP filter (allowlist) via the Aura API **v2beta1** (beta). |
+| `AuraDatabase` | Manages a database on an Aura instance via the Aura API **v2beta1** (beta). |
+| `AuraDatabaseBackup` / `AuraDatabaseRestore` | On-demand per-database backup / in-place restore, **v2beta1** (beta). |
+| `AuraOrganizationMember` / `AuraProjectMember` | Manage an Aura console user's org / project role (console-RBAC), **v2beta1** (beta). |
+| `AuraInvite` | Invites a user to an Aura organization or project (console-RBAC), **v2beta1** (beta). |
 
 ## Quick start
 

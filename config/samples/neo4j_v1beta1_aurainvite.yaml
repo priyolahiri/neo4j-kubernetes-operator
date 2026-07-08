@@ -1,0 +1,14 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraInvite
+metadata:
+  name: example-aura-invite
+spec:
+  providerConfigRef:
+    name: example-aura
+  organizationId: "<your-aura-org-id>"   # or defaultOrganizationId on the provider config
+  # projectId: "<your-aura-project-id>"  # set for a project-scoped invite
+  email: carol@example.com
+  role: ORG_MEMBER                        # ORG_* for an org invite; PROJECT_*/METRICS_READER with projectId set
+  deletionPolicy: Delete                  # Delete revokes a still-pending invite; Orphan leaves it
+# NOTE: BETA (Aura API v2beta1). This grants Aura CONSOLE access, not an
+# in-database Neo4j user.

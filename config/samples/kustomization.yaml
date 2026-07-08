@@ -2,8 +2,14 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - neo4j_v1beta1_auracustomermanagedkey.yaml
+  - neo4j_v1beta1_auradatabase.yaml
+  - neo4j_v1beta1_auradatabasebackup.yaml
+  - neo4j_v1beta1_auradatabaserestore.yaml
   - neo4j_v1beta1_aurainstance.yaml
+  - neo4j_v1beta1_aurainvite.yaml
   - neo4j_v1beta1_auraipfilter.yaml
+  - neo4j_v1beta1_auraorganizationmember.yaml
+  - neo4j_v1beta1_auraprojectmember.yaml
   - neo4j_v1beta1_auraproviderconfig.yaml
   - neo4j_v1beta1_aurarestore.yaml
   - neo4j_v1beta1_aurasnapshot.yaml

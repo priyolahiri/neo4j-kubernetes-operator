@@ -46,6 +46,12 @@ describe() {
         AuraRestore)               echo "Restores a Neo4j Aura instance in place from a snapshot" ;;
         AuraCustomerManagedKey)    echo "Registers a customer-managed encryption key with Neo4j Aura for dedicated-tier instances" ;;
         AuraIPFilter)              echo "Manages a Neo4j Aura network IP filter (CIDR allowlist) via the Aura API v2beta1 (beta)" ;;
+        AuraDatabase)              echo "Manages a database on a Neo4j Aura instance via the Aura API v2beta1 (beta)" ;;
+        AuraDatabaseBackup)        echo "Takes an on-demand per-database backup on a Neo4j Aura instance via the Aura API v2beta1 (beta)" ;;
+        AuraDatabaseRestore)       echo "Restores a database in place from a per-database backup on a Neo4j Aura instance via the Aura API v2beta1 (beta)" ;;
+        AuraOrganizationMember)    echo "Manages an Aura console user's organization role via the Aura API v2beta1 (beta)" ;;
+        AuraProjectMember)         echo "Manages an Aura console user's project role via the Aura API v2beta1 (beta)" ;;
+        AuraInvite)                echo "Invites a user to a Neo4j Aura organization or project via the Aura API v2beta1 (beta)" ;;
         *)                         return 1 ;;
     esac
 }

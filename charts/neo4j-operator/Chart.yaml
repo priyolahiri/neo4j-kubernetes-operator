@@ -27,12 +27,30 @@ annotations:
     - kind: AuraCustomerManagedKey
       version: v1beta1
       description: Registers a customer-managed encryption key with Neo4j Aura for dedicated-tier instances
+    - kind: AuraDatabaseBackup
+      version: v1beta1
+      description: Takes an on-demand per-database backup on a Neo4j Aura instance via the Aura API v2beta1 (beta)
+    - kind: AuraDatabaseRestore
+      version: v1beta1
+      description: Restores a database in place from a per-database backup on a Neo4j Aura instance via the Aura API v2beta1 (beta)
+    - kind: AuraDatabase
+      version: v1beta1
+      description: Manages a database on a Neo4j Aura instance via the Aura API v2beta1 (beta)
     - kind: AuraInstance
       version: v1beta1
       description: Provisions and manages Neo4j Aura cloud instances via the Aura API
+    - kind: AuraInvite
+      version: v1beta1
+      description: Invites a user to a Neo4j Aura organization or project via the Aura API v2beta1 (beta)
     - kind: AuraIPFilter
       version: v1beta1
       description: Manages a Neo4j Aura network IP filter (CIDR allowlist) via the Aura API v2beta1 (beta)
+    - kind: AuraOrganizationMember
+      version: v1beta1
+      description: Manages an Aura console user's organization role via the Aura API v2beta1 (beta)
+    - kind: AuraProjectMember
+      version: v1beta1
+      description: Manages an Aura console user's project role via the Aura API v2beta1 (beta)
     - kind: AuraProviderConfig
       version: v1beta1
       description: Neo4j Aura API credentials and account defaults for Aura orchestration

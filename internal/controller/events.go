@@ -228,4 +228,33 @@ const (
 	EventReasonAuraIPFilterDeleted  = "AuraIPFilterDeleted"
 	EventReasonAuraIPFilterOrphaned = "AuraIPFilterOrphaned"
 	EventReasonAuraIPFilterFailed   = "AuraIPFilterFailed"
+
+	// Aura database (v2beta1, beta) event reasons.
+	EventReasonAuraDatabaseCreated  = "AuraDatabaseCreated"
+	EventReasonAuraDatabaseAdopted  = "AuraDatabaseAdopted"
+	EventReasonAuraDatabaseReady    = "AuraDatabaseReady"
+	EventReasonAuraDatabaseDeleted  = "AuraDatabaseDeleted"
+	EventReasonAuraDatabaseOrphaned = "AuraDatabaseOrphaned"
+	EventReasonAuraDatabaseFailed   = "AuraDatabaseFailed"
+
+	// Aura per-database backup/restore (v2beta1, beta) event reasons.
+	EventReasonAuraDatabaseBackupCreated   = "AuraDatabaseBackupCreated"
+	EventReasonAuraDatabaseBackupCompleted = "AuraDatabaseBackupCompleted"
+	EventReasonAuraDatabaseBackupFailed    = "AuraDatabaseBackupFailed"
+	EventReasonAuraDatabaseRestoreStarted  = "AuraDatabaseRestoreStarted"
+	EventReasonAuraDatabaseRestoreDone     = "AuraDatabaseRestoreCompleted"
+	EventReasonAuraDatabaseRestoreFailed   = "AuraDatabaseRestoreFailed"
+
+	// Aura console-RBAC (v2beta1, beta) event reasons.
+	EventReasonAuraMemberUpdated  = "AuraMemberRoleUpdated"
+	EventReasonAuraMemberReady    = "AuraMemberReady"
+	EventReasonAuraMemberRemoved  = "AuraMemberRemoved"
+	EventReasonAuraMemberNotFound = "AuraMemberNotFound"
+	EventReasonAuraMemberFailed   = "AuraMemberFailed"
+	EventReasonAuraInviteCreated  = "AuraInviteCreated"
+	EventReasonAuraInviteAdopted  = "AuraInviteAdopted"
+	EventReasonAuraInviteReady    = "AuraInviteReady"
+	EventReasonAuraInviteDeleted  = "AuraInviteDeleted"
+	EventReasonAuraInviteOrphaned = "AuraInviteOrphaned"
+	EventReasonAuraInviteFailed   = "AuraInviteFailed"
 )

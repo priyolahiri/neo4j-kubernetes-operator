@@ -1,0 +1,198 @@
+/*
+Copyright 2025 Priyo Lahiri.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/aura"
+)
+
+// +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=auradatabaserestores,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=auradatabaserestores/status,verbs=get;update;patch
+
+// AuraDatabaseRestoreReconciler performs a one-shot in-place restore of a
+// database on a Neo4j Aura instance from one of its per-database backups via the
+// Aura API v2beta1. BETA / best-effort.
+type AuraDatabaseRestoreReconciler struct {
+	client.Client
+	Scheme                  *runtime.Scheme
+	Recorder                record.EventRecorder
+	MaxConcurrentReconciles int
+	RequeueAfter            time.Duration
+	ClientFactory           auraDatabaseClientFactory
+}
+
+func (r *AuraDatabaseRestoreReconciler) requeueAfter() time.Duration {
+	if r.RequeueAfter > 0 {
+		return r.RequeueAfter
+	}
+	return 30 * time.Second
+}
+
+// Reconcile drives the one-shot restore.
+func (r *AuraDatabaseRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	rs := &neo4jv1beta1.AuraDatabaseRestore{}
+	if err := r.Get(ctx, req.NamespacedName, rs); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	if rs.Annotations[AuraPausedAnnotation] == "true" {
+		logger.Info("AuraDatabaseRestore reconciliation paused via annotation")
+		return ctrl.Result{}, nil
+	}
+	// One-shot: never re-run after a terminal outcome.
+	if rs.Status.Phase == "Completed" || rs.Status.Phase == "Error" || !rs.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+	if !managementAllows(rs.Spec.ManagementPolicies, auraPolicyCreate) {
+		return ctrl.Result{}, nil
+	}
+
+	// Resolve target coordinates via the referenced AuraDatabase.
+	db := &neo4jv1beta1.AuraDatabase{}
+	if err := r.Get(ctx, types.NamespacedName{Name: rs.Spec.DatabaseRef, Namespace: rs.Namespace}, db); err != nil {
+		return r.fail(ctx, req, rs, "DatabaseRefUnresolved", fmt.Errorf("resolving databaseRef %q: %w", rs.Spec.DatabaseRef, err))
+	}
+	databaseID := db.Annotations[AuraExternalDatabaseAnnotation]
+	if databaseID == "" {
+		databaseID = db.Status.DatabaseID
+	}
+	if databaseID == "" {
+		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+	}
+
+	// Resolve the backup ID (explicit, or from an AuraDatabaseBackup).
+	backupID := rs.Spec.BackupID
+	if backupID == "" && rs.Spec.BackupRef != "" {
+		bk := &neo4jv1beta1.AuraDatabaseBackup{}
+		if err := r.Get(ctx, types.NamespacedName{Name: rs.Spec.BackupRef, Namespace: rs.Namespace}, bk); err != nil {
+			return r.fail(ctx, req, rs, "BackupRefUnresolved", fmt.Errorf("resolving backupRef %q: %w", rs.Spec.BackupRef, err))
+		}
+		backupID = bk.Status.BackupID
+		if backupID == "" {
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		}
+	}
+
+	creds, orgID, projectID, instanceID, err := resolveAuraDBCoords(ctx, r.Client, rs.Namespace, db.Spec.InstanceRef, db.Spec.OrganizationID)
+	if err != nil {
+		return r.fail(ctx, req, rs, "TargetUnresolved", err)
+	}
+	apiClient := resolveDatabaseClient(r.ClientFactory, creds)
+
+	r.markStarted(ctx, req)
+	r.Recorder.Event(rs, corev1.EventTypeNormal, EventReasonAuraDatabaseRestoreStarted,
+		fmt.Sprintf("Restoring database %s from backup %s", databaseID, backupID))
+	if err := apiClient.RestoreDatabase(ctx, orgID, projectID, instanceID, databaseID, aura.RestoreDatabaseRequest{BackupID: backupID}); err != nil {
+		if aura.IsTransient(err) {
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		}
+		return r.fail(ctx, req, rs, "RestoreFailed", err)
+	}
+	r.Recorder.Event(rs, corev1.EventTypeNormal, EventReasonAuraDatabaseRestoreDone,
+		fmt.Sprintf("Restored database %s", databaseID))
+	return ctrl.Result{}, r.markFinished(ctx, req)
+}
+
+func (r *AuraDatabaseRestoreReconciler) markStarted(ctx context.Context, req ctrl.Request) {
+	_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.AuraDatabaseRestore{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return err
+		}
+		if latest.Status.StartedAt == nil {
+			now := metav1.Now()
+			latest.Status.StartedAt = &now
+		}
+		latest.Status.Phase = "Restoring"
+		latest.Status.ObservedGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
+	})
+}
+
+func (r *AuraDatabaseRestoreReconciler) markFinished(ctx context.Context, req ctrl.Request) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.AuraDatabaseRestore{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return err
+		}
+		now := metav1.Now()
+		latest.Status.FinishedAt = &now
+		latest.Status.Phase = "Completed"
+		latest.Status.ObservedGeneration = latest.Generation
+		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+			Type: "Ready", Status: metav1.ConditionTrue, Reason: "Completed",
+			Message: "Database restore submitted to the Aura API (v2beta1, beta)",
+		})
+		return r.Status().Update(ctx, latest)
+	})
+}
+
+func (r *AuraDatabaseRestoreReconciler) fail(ctx context.Context, req ctrl.Request, rs *neo4jv1beta1.AuraDatabaseRestore, reason string, cause error) (ctrl.Result, error) {
+	log.FromContext(ctx).Info("AuraDatabaseRestore reconcile deferred", "reason", reason, "error", cause.Error())
+	r.Recorder.Event(rs, corev1.EventTypeWarning, EventReasonAuraDatabaseRestoreFailed, fmt.Sprintf("%s: %v", reason, cause))
+	terminal := reason == "RestoreFailed"
+	_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.AuraDatabaseRestore{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+			Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error(),
+		})
+		if terminal {
+			latest.Status.Phase = "Error"
+			now := metav1.Now()
+			latest.Status.FinishedAt = &now
+		}
+		latest.Status.ObservedGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
+	})
+	if terminal {
+		return ctrl.Result{}, nil
+	}
+	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+}
+
+// SetupWithManager wires the controller.
+func (r *AuraDatabaseRestoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	mcr := r.MaxConcurrentReconciles
+	if mcr <= 0 {
+		mcr = 1
+	}
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&neo4jv1beta1.AuraDatabaseRestore{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: mcr}).
+		Complete(r)
+}

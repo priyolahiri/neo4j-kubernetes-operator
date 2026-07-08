@@ -488,6 +488,60 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				RequeueAfter: controller.GetTestRequeueAfter(),
 			},
 		},
+		{
+			name: "AuraDatabase",
+			controller: &controller.AuraDatabaseReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-database-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
+		{
+			name: "AuraDatabaseBackup",
+			controller: &controller.AuraDatabaseBackupReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-database-backup-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
+		{
+			name: "AuraDatabaseRestore",
+			controller: &controller.AuraDatabaseRestoreReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-database-restore-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
+		{
+			name: "AuraOrganizationMember",
+			controller: &controller.AuraOrganizationMemberReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-organization-member-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
+		{
+			name: "AuraProjectMember",
+			controller: &controller.AuraProjectMemberReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-project-member-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
+		{
+			name: "AuraInvite",
+			controller: &controller.AuraInviteReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-invite-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
 	}
 
 	for _, ctrl := range controllers {
@@ -657,6 +711,54 @@ func setupDevelopmentControllers(mgr ctrl.Manager, controllers []string) error {
 				Recorder:     mgr.GetEventRecorderFor("aura-ip-filter-controller"),
 				RequeueAfter: controller.GetTestRequeueAfter(),
 			}, "AuraIPFilter"
+		},
+		"auradatabase": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraDatabaseReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-database-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraDatabase"
+		},
+		"auradatabasebackup": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraDatabaseBackupReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-database-backup-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraDatabaseBackup"
+		},
+		"auradatabaserestore": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraDatabaseRestoreReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-database-restore-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraDatabaseRestore"
+		},
+		"auraorganizationmember": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraOrganizationMemberReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-organization-member-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraOrganizationMember"
+		},
+		"auraprojectmember": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraProjectMemberReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-project-member-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraProjectMember"
+		},
+		"aurainvite": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraInviteReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-invite-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraInvite"
 		},
 	}
 

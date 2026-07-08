@@ -126,8 +126,14 @@ rules:
     - neo4j.neo4j.com
   resources:
     - auracustomermanagedkeys
+    - auradatabasebackups
+    - auradatabaserestores
+    - auradatabases
     - aurainstances
+    - aurainvites
     - auraipfilters
+    - auraorganizationmembers
+    - auraprojectmembers
     - auraproviderconfigs
     - aurarestores
     - aurasnapshots
@@ -154,8 +160,12 @@ rules:
     - neo4j.neo4j.com
   resources:
     - auracustomermanagedkeys/finalizers
+    - auradatabases/finalizers
     - aurainstances/finalizers
+    - aurainvites/finalizers
     - auraipfilters/finalizers
+    - auraorganizationmembers/finalizers
+    - auraprojectmembers/finalizers
     - neo4jauthrules/finalizers
     - neo4jbackups/finalizers
     - neo4jdatabases/finalizers
@@ -173,8 +183,14 @@ rules:
     - neo4j.neo4j.com
   resources:
     - auracustomermanagedkeys/status
+    - auradatabasebackups/status
+    - auradatabaserestores/status
+    - auradatabases/status
     - aurainstances/status
+    - aurainvites/status
     - auraipfilters/status
+    - auraorganizationmembers/status
+    - auraprojectmembers/status
     - auraproviderconfigs/status
     - aurarestores/status
     - aurasnapshots/status

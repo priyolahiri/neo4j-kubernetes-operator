@@ -1,0 +1,12 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraDatabase
+metadata:
+  name: example-aura-database
+spec:
+  # The AuraInstance (same namespace) that hosts the database. Credentials,
+  # organization, and project are resolved from it.
+  instanceRef: example-aura-instance
+  name: analytics
+  deletionPolicy: Delete
+# NOTE: AuraDatabase is BETA — it uses the Aura API v2beta1, whose contract is
+# unstable. Aura manages topology per tier, so there is no topology knob.

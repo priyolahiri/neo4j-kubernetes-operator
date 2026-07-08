@@ -1,0 +1,9 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraDatabaseBackup
+metadata:
+  name: example-aura-database-backup
+spec:
+  # The AuraDatabase (same namespace) to back up.
+  databaseRef: example-aura-database
+# NOTE: BETA (Aura API v2beta1). Like a snapshot, the backup is one-shot and is
+# NOT deleted from Aura when this CR is removed.
