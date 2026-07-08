@@ -153,67 +153,24 @@ reconciliation entirely (including deletion) for incident response, without
 deleting the CR. `AuraInstance` also mirrors the last-observed cloud state into
 `status.atProvider` for drift inspection.
 
-## Managing databases on an Aura instance
+## Managing databases and access on an Aura instance
 
-`Neo4jDatabase` can target a managed Aura instance instead of a self-managed
-cluster — point it at the instance with `auraInstanceRef` (mutually exclusive
-with `clusterRef`):
+Aura resources are managed through **Aura-native, API-driven CRDs** — not by
+pointing the self-managed `Neo4jDatabase`/`Neo4jUser`/`Neo4jRole`/`Neo4jRoleBinding`
+CRDs at an instance. Those CRDs are for self-managed clusters/standalone only
+(via `clusterRef`).
 
-```yaml
-apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jDatabase
-metadata: { name: analytics-db }
-spec:
-  auraInstanceRef: analytics   # the AuraInstance, same namespace
-  name: analytics
-```
+- **Databases:** use the `AuraDatabase` CRD (Aura API v2beta1). Aura manages
+  topology per tier, so an Aura database has no topology knob.
+- **Access:** in-database Neo4j users/roles are not managed by the operator on
+  Aura. Aura governs access through **Aura IAM / console-RBAC** — organization
+  and project membership, service accounts, and "tool authentication with Aura
+  user" (which maps a console identity to a predefined database role). The
+  operator models this with the `AuraOrganizationMember` / `AuraProjectMember` /
+  `AuraInvite` CRDs.
 
-The operator connects to the instance over Bolt (`neo4j+s://…`, using the admin
-credentials it captured into the connection Secret) and runs the same
-`CREATE DATABASE` / `DROP DATABASE` DDL it uses for self-managed clusters.
-
-- **Multi-database tiers only.** Additional databases require a
-  multi-database-capable Aura tier (Business Critical / dedicated). On a
-  single-database tier (`free-db`, `professional-db`) the operator refuses up
-  front with an `AuraTierUnsupported` condition rather than looping on the Aura
-  rejection.
-- **Credentials.** Works when the operator holds admin credentials — i.e. an
-  instance it created (the one-time password is captured at create). An imported
-  instance whose password the operator never saw needs credentials supplied.
-- `spec.topology` is ignored for Aura targets — Aura manages replication per
-  tier.
-
-## Managing users & roles on an Aura instance
-
-`Neo4jUser`, `Neo4jRole`, and `Neo4jRoleBinding` accept `auraInstanceRef` too
-(same mutually-exclusive-with-`clusterRef` rule). The operator manages the
-instance's security graph over Bolt with the same Cypher it uses for
-self-managed clusters:
-
-```yaml
-apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jRole
-metadata: { name: analytics-reader }
-spec:
-  auraInstanceRef: analytics
-  name: analytics_reader
-  privileges:
-    - "GRANT MATCH {*} ON GRAPH neo4j NODES * TO analytics_reader"
----
-apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jUser
-metadata: { name: app-reader }
-spec:
-  auraInstanceRef: analytics
-  username: app_reader
-  passwordSecretRef: { name: app-reader-creds }
-  roles: [analytics-reader]     # resolves to the role on the SAME Aura instance
-```
-
-Cross-references stay scoped to the target: a user's `roles` resolve only
-against `Neo4jRole`s pointing at the *same* `auraInstanceRef`. Custom users and
-roles require an Aura tier that permits them (dedicated tiers) — on a tier that
-doesn't, the operator surfaces the Aura error rather than looping.
+> These Aura-native CRDs are **BETA / best-effort** — they use the Aura API
+> **v2beta1**, whose contract can change without a version bump.
 
 ## Importing an existing instance
 

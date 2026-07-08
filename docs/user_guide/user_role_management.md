@@ -14,7 +14,7 @@ If you've previously bootstrapped users by `kubectl exec`-ing into a pod and run
 
 **Three CRDs, one design rule:** privileges live on `Neo4jRole`, not on `Neo4jUser` or `Neo4jRoleBinding`. Putting privileges on users would re-implement Neo4j's RBAC inside-out and create merge conflicts when two CRs touch the same role. Always model "what can be done" as a role and "who can do it" as a user-to-role binding.
 
-All three CRDs are **namespace-scoped** and reference their target via **exactly one** of `spec.clusterRef` (a self-managed `Neo4jEnterpriseCluster`/`Neo4jEnterpriseStandalone`) or `spec.auraInstanceRef` (a managed [Aura](aura_orchestration.md#managing-users--roles-on-an-aura-instance) instance) — both in the same namespace. See [Cluster vs namespace scope](#cluster-vs-namespace-scope) below for the design rationale.
+All three CRDs are **namespace-scoped** and reference their target self-managed `Neo4jEnterpriseCluster`/`Neo4jEnterpriseStandalone` via `spec.clusterRef` in the same namespace. In-database users and roles are **not** managed on Neo4j Aura — Aura access is governed by Aura IAM / console-RBAC (see the [Aura Orchestration Guide](aura_orchestration.md)). See [Cluster vs namespace scope](#cluster-vs-namespace-scope) below for the design rationale.
 
 ## Prerequisites
 

@@ -107,18 +107,18 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Resolve the target (cluster/standalone via clusterRef, or Aura instance).
-	target, err := ResolveTargetRef(ctx, r.Client, role.Namespace, role.Spec.ClusterRef, role.Spec.AuraInstanceRef)
+	target, err := ResolveClusterRef(ctx, r.Client, role.Namespace, role.Spec.ClusterRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve target ref")
 		return ctrl.Result{RequeueAfter: requeue}, err
 	}
 	if !target.Found {
-		msg := fmt.Sprintf("%s not found", targetRefDisplay(role.Spec.ClusterRef, role.Spec.AuraInstanceRef))
+		msg := fmt.Sprintf("%s not found", targetRefDisplay(role.Spec.ClusterRef))
 		r.setStatus(ctx, role, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, false)
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
-		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(role.Spec.ClusterRef, role.Spec.AuraInstanceRef))
+		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(role.Spec.ClusterRef))
 		r.setNamedCondition(ctx, role, ConditionTypeClusterNotReady, metav1.ConditionTrue, ConditionReasonClusterNotReady, msg)
 		r.setStatus(ctx, role, "Pending", metav1.ConditionFalse, ConditionReasonClusterNotReady, msg, nil, false)
 		return ctrl.Result{RequeueAfter: requeue}, nil
@@ -261,7 +261,7 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 		return ctrl.Result{}, r.Update(ctx, role)
 	}
 
-	target, err := ResolveTargetRef(ctx, r.Client, role.Namespace, role.Spec.ClusterRef, role.Spec.AuraInstanceRef)
+	target, err := ResolveClusterRef(ctx, r.Client, role.Namespace, role.Spec.ClusterRef)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: requeue}, err
 	}
@@ -466,26 +466,10 @@ func (r *Neo4jRoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			}
 		},
 	)
-	// Aura-targeted roles re-reconcile when their AuraInstance changes.
-	enqueueRolesForAura := EnqueueDependentsForClusterChange(
-		mgr.GetClient(),
-		func() client.ObjectList { return &neo4jv1beta1.Neo4jRoleList{} },
-		func(list client.ObjectList, emit func(name, namespace, clusterRef string)) {
-			roles, ok := list.(*neo4jv1beta1.Neo4jRoleList)
-			if !ok {
-				return
-			}
-			for i := range roles.Items {
-				role := &roles.Items[i]
-				emit(role.Name, role.Namespace, role.Spec.AuraInstanceRef)
-			}
-		},
-	)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.Neo4jRole{}).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseCluster{}, enqueueRolesForCluster).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseStandalone{}, enqueueRolesForCluster).
-		Watches(&neo4jv1beta1.AuraInstance{}, enqueueRolesForAura).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
 		Complete(r)
 }

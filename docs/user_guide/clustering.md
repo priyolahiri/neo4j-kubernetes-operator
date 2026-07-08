@@ -209,7 +209,7 @@ kubectl exec <cluster>-server-0 -c neo4j -- cypher-shell -u neo4j -p <password> 
   "ALTER DATABASE neo4j SET TOPOLOGY 3 PRIMARIES 1 SECONDARY"
 ```
 
-Alternatively, you can manage database topology declaratively using the `Neo4jDatabase` CRD. See the [Neo4jDatabase API Reference](../api_reference/neo4jdatabase.md) for details. A `Neo4jDatabase` can also target a managed **Aura** instance via `spec.auraInstanceRef` instead of `clusterRef` — see [Managing databases on an Aura instance](aura_orchestration.md#managing-databases-on-an-aura-instance).
+Alternatively, you can manage database topology declaratively using the `Neo4jDatabase` CRD. See the [Neo4jDatabase API Reference](../api_reference/neo4jdatabase.md) for details. For databases on a managed **Aura** instance, use the `AuraDatabase` CRD — see the [Aura Orchestration Guide](aura_orchestration.md).
 
 ### Cannot Skip Default Database Creation
 

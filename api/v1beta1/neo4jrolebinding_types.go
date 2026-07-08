@@ -33,20 +33,13 @@ import (
 // the validator rejects that overlap to prevent two CRs fighting over the
 // same role set. The Neo4jUser CR already manages role bindings via
 // .spec.roles.
-//
-// +kubebuilder:validation:XValidation:rule="has(self.clusterRef) != has(self.auraInstanceRef)",message="set exactly one of clusterRef or auraInstanceRef"
 type Neo4jRoleBindingSpec struct {
 	// ClusterRef is the name of the Neo4jEnterpriseCluster or
 	// Neo4jEnterpriseStandalone in the same namespace whose security graph
-	// owns the user. Mutually exclusive with auraInstanceRef.
-	// +optional
-	ClusterRef string `json:"clusterRef,omitempty"`
-
-	// AuraInstanceRef is the name of a managed AuraInstance (same namespace)
-	// whose security graph owns the user; role-grant DDL runs against it over
-	// Bolt. Mutually exclusive with clusterRef.
-	// +optional
-	AuraInstanceRef string `json:"auraInstanceRef,omitempty"`
+	// owns the user. In-database role grants are not managed on Neo4j Aura (use
+	// Aura IAM / console-RBAC instead).
+	// +kubebuilder:validation:Required
+	ClusterRef string `json:"clusterRef"`
 
 	// Username is the Neo4j username to manage role grants for. Must already
 	// exist in Neo4j (created externally — e.g. via SSO first-login

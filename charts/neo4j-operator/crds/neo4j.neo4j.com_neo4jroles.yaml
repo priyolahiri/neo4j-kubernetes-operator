@@ -76,18 +76,12 @@ spec:
                   drop it on CR delete. PUBLIC's role assignment to all users is
                   preserved regardless.
                 type: boolean
-              auraInstanceRef:
-                description: |-
-                  AuraInstanceRef is the name of a managed AuraInstance (same namespace)
-                  whose security graph owns this role; role/privilege DDL runs against it
-                  over Bolt. Mutually exclusive with clusterRef. Requires an Aura tier that
-                  permits custom role management (dedicated tiers).
-                type: string
               clusterRef:
                 description: |-
                   ClusterRef is the name of the Neo4jEnterpriseCluster or
                   Neo4jEnterpriseStandalone in the same namespace whose security graph
-                  owns this role. Mutually exclusive with auraInstanceRef.
+                  owns this role. In-database roles are not managed on Neo4j Aura (use Aura
+                  IAM / console-RBAC instead).
                 type: string
               copyOf:
                 description: |-
@@ -140,10 +134,9 @@ spec:
                 items:
                   type: string
                 type: array
+            required:
+            - clusterRef
             type: object
-            x-kubernetes-validations:
-            - message: set exactly one of clusterRef or auraInstanceRef
-              rule: has(self.clusterRef) != has(self.auraInstanceRef)
           status:
             description: Neo4jRoleStatus describes the observed state of a Neo4jRole.
             properties:

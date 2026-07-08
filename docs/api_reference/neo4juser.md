@@ -30,8 +30,7 @@ The `Neo4jUser` Custom Resource Definition (CRD) provides declarative management
 
 | Field | Type | Description |
 |---|---|---|
-| `clusterRef` | `string` | Name of the `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace. **Set exactly one of `clusterRef` or `auraInstanceRef`.** |
-| `auraInstanceRef` | `string` | Name of a managed [`AuraInstance`](../user_guide/aura_orchestration.md#managing-users--roles-on-an-aura-instance) (same namespace); user DDL runs against it over Bolt. Requires an Aura tier that permits custom users. **Mutually exclusive with `clusterRef`.** |
+| `clusterRef` | `string` | **Required.** Name of the `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace. In-database users are not managed on Neo4j Aura — use Aura IAM / console-RBAC instead. |
 | `username` | `string` | Username in Neo4j. Defaults to `metadata.name`. Pattern `^[a-zA-Z][a-zA-Z0-9_.@\-]*$` (the at-sign supports email-style SSO/LDAP usernames), max 65 characters. |
 | `passwordSecretRef` | [`SecretKeyRef`](#secretkeyref) | References a Secret holding the native-auth password. Required unless one or more `externalAuth` entries are provided. |
 | `requirePasswordChange` | `boolean` | Force password change on next login (`SET PASSWORD CHANGE REQUIRED`). Default `false`. |

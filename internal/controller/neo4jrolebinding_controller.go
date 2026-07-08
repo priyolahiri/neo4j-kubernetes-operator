@@ -113,18 +113,18 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// Resolve the target (cluster/standalone via clusterRef, or Aura instance).
-	target, err := ResolveTargetRef(ctx, r.Client, rb.Namespace, rb.Spec.ClusterRef, rb.Spec.AuraInstanceRef)
+	target, err := ResolveClusterRef(ctx, r.Client, rb.Namespace, rb.Spec.ClusterRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve target ref")
 		return ctrl.Result{RequeueAfter: requeue}, err
 	}
 	if !target.Found {
-		msg := fmt.Sprintf("%s not found", targetRefDisplay(rb.Spec.ClusterRef, rb.Spec.AuraInstanceRef))
+		msg := fmt.Sprintf("%s not found", targetRefDisplay(rb.Spec.ClusterRef))
 		r.setStatus(ctx, rb, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil)
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
-		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(rb.Spec.ClusterRef, rb.Spec.AuraInstanceRef))
+		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(rb.Spec.ClusterRef))
 		r.setNamedCondition(ctx, rb, ConditionTypeClusterNotReady, metav1.ConditionTrue, ConditionReasonClusterNotReady, msg)
 		r.setStatus(ctx, rb, "Pending", metav1.ConditionFalse, ConditionReasonClusterNotReady, msg, nil)
 		return ctrl.Result{RequeueAfter: requeue}, nil
@@ -158,7 +158,7 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// Resolve same-namespace Neo4jRole CR names in spec.roles to their
 	// effective Neo4j role name (#260); literal Neo4j names pass through.
 	desiredRoles := normaliseRoles(rb.Spec.Roles)
-	desiredRoles, resolvedRoles := resolveRoleNames(ctx, r.Client, rb.Namespace, targetRefKey(rb.Spec.ClusterRef, rb.Spec.AuraInstanceRef), desiredRoles)
+	desiredRoles, resolvedRoles := resolveRoleNames(ctx, r.Client, rb.Namespace, targetRefKey(rb.Spec.ClusterRef), desiredRoles)
 	desiredRoles = normaliseRoles(desiredRoles) // dedupe any CR-name/spec.name collisions
 	if len(resolvedRoles) > 0 {
 		r.Recorder.Eventf(rb, corev1.EventTypeNormal, EventReasonRolesResolved,
@@ -261,7 +261,7 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 		return ctrl.Result{}, r.Update(ctx, rb)
 	}
 
-	target, err := ResolveTargetRef(ctx, r.Client, rb.Namespace, rb.Spec.ClusterRef, rb.Spec.AuraInstanceRef)
+	target, err := ResolveClusterRef(ctx, r.Client, rb.Namespace, rb.Spec.ClusterRef)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: requeue}, err
 	}
@@ -330,7 +330,7 @@ func (r *Neo4jRoleBindingReconciler) diffRoles(ctx context.Context, rb *neo4jv1b
 		if _, ok := currentSet[role]; ok {
 			continue
 		}
-		if r.roleResourceExists(ctx, rb.Namespace, targetRefKey(rb.Spec.ClusterRef, rb.Spec.AuraInstanceRef), role) {
+		if r.roleResourceExists(ctx, rb.Namespace, targetRefKey(rb.Spec.ClusterRef), role) {
 			continue
 		}
 		missing = append(missing, role)
@@ -467,26 +467,10 @@ func (r *Neo4jRoleBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			}
 		},
 	)
-	// Aura-targeted bindings re-reconcile when their AuraInstance changes.
-	enqueueBindingsForAura := EnqueueDependentsForClusterChange(
-		c,
-		func() client.ObjectList { return &neo4jv1beta1.Neo4jRoleBindingList{} },
-		func(list client.ObjectList, emit func(name, namespace, clusterRef string)) {
-			bindings, ok := list.(*neo4jv1beta1.Neo4jRoleBindingList)
-			if !ok {
-				return
-			}
-			for i := range bindings.Items {
-				b := &bindings.Items[i]
-				emit(b.Name, b.Namespace, b.Spec.AuraInstanceRef)
-			}
-		},
-	)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.Neo4jRoleBinding{}).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseCluster{}, enqueueBindingsForCluster).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseStandalone{}, enqueueBindingsForCluster).
-		Watches(&neo4jv1beta1.AuraInstance{}, enqueueBindingsForAura).
 		Watches(&neo4jv1beta1.Neo4jRole{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 			role, ok := obj.(*neo4jv1beta1.Neo4jRole)
 			if !ok {
@@ -499,7 +483,7 @@ func (r *Neo4jRoleBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			if roleName == "" {
 				roleName = role.Name
 			}
-			roleKey := targetRefKey(role.Spec.ClusterRef, role.Spec.AuraInstanceRef)
+			roleKey := targetRefKey(role.Spec.ClusterRef)
 			bindings := &neo4jv1beta1.Neo4jRoleBindingList{}
 			if err := c.List(ctx, bindings, client.InNamespace(role.Namespace)); err != nil {
 				return nil
@@ -507,7 +491,7 @@ func (r *Neo4jRoleBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			var reqs []reconcile.Request
 			for i := range bindings.Items {
 				b := &bindings.Items[i]
-				if targetRefKey(b.Spec.ClusterRef, b.Spec.AuraInstanceRef) != roleKey {
+				if targetRefKey(b.Spec.ClusterRef) != roleKey {
 					continue
 				}
 				for _, rname := range b.Spec.Roles {

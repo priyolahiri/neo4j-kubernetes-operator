@@ -32,15 +32,8 @@ import (
 )
 
 func TestTargetRefKey(t *testing.T) {
-	if got := targetRefKey("c1", ""); got != "cluster/c1" {
+	if got := targetRefKey("c1"); got != "cluster/c1" {
 		t.Errorf("cluster key = %q, want cluster/c1", got)
-	}
-	if got := targetRefKey("", "a1"); got != "aura/a1" {
-		t.Errorf("aura key = %q, want aura/a1", got)
-	}
-	// A cluster and an Aura instance sharing a name must not collide.
-	if targetRefKey("x", "") == targetRefKey("", "x") {
-		t.Error("cluster and aura targets of the same name must have distinct keys")
 	}
 }
 
@@ -65,7 +58,7 @@ func roleCR(metaName, ns, clusterRef, specName string) *neo4jv1beta1.Neo4jRole {
 func TestResolveRoleNames_CRNameResolvesToSpecName(t *testing.T) {
 	c := roleResolutionClient(t, roleCR("analytics-reader", "prod", "prod-cluster", "analytics_reader"))
 
-	out, resolved := resolveRoleNames(context.Background(), c, "prod", targetRefKey("prod-cluster", ""),
+	out, resolved := resolveRoleNames(context.Background(), c, "prod", targetRefKey("prod-cluster"),
 		[]string{"analytics-reader", "editor", "externally_made"})
 
 	assert.ElementsMatch(t, []string{"analytics_reader", "editor", "externally_made"}, out)
@@ -79,7 +72,7 @@ func TestResolveRoleNames_CRNameResolvesToSpecName(t *testing.T) {
 func TestResolveRoleNames_SpecNamePassesThroughLiterally(t *testing.T) {
 	c := roleResolutionClient(t, roleCR("analytics-reader", "prod", "prod-cluster", "analytics_reader"))
 
-	out, resolved := resolveRoleNames(context.Background(), c, "prod", targetRefKey("prod-cluster", ""),
+	out, resolved := resolveRoleNames(context.Background(), c, "prod", targetRefKey("prod-cluster"),
 		[]string{"analytics_reader"})
 
 	assert.Equal(t, []string{"analytics_reader"}, out)
@@ -91,11 +84,11 @@ func TestResolveRoleNames_SpecNamePassesThroughLiterally(t *testing.T) {
 func TestResolveRoleNames_NoSpecNameIsIdentity(t *testing.T) {
 	c := roleResolutionClient(t, roleCR("plainrole", "prod", "prod-cluster", ""))
 
-	out, resolved := resolveRoleNames(context.Background(), c, "prod", targetRefKey("prod-cluster", ""), []string{"plainrole"})
+	out, resolved := resolveRoleNames(context.Background(), c, "prod", targetRefKey("prod-cluster"), []string{"plainrole"})
 	assert.Equal(t, []string{"plainrole"}, out)
 	assert.Empty(t, resolved)
 
-	assert.True(t, roleNameExists(context.Background(), c, "prod", targetRefKey("prod-cluster", ""), "plainrole"))
+	assert.True(t, roleNameExists(context.Background(), c, "prod", targetRefKey("prod-cluster"), "plainrole"))
 }
 
 // Resolution is scoped: a CR in another namespace or pointing at another
@@ -107,7 +100,7 @@ func TestResolveRoleNames_ScopedByNamespaceAndClusterRef(t *testing.T) {
 		roleCR("billing-reader", "prod", "other-cluster", "billing_reader"),
 	)
 
-	out, resolved := resolveRoleNames(context.Background(), c, "prod", targetRefKey("prod-cluster", ""),
+	out, resolved := resolveRoleNames(context.Background(), c, "prod", targetRefKey("prod-cluster"),
 		[]string{"analytics-reader", "billing-reader"})
 
 	assert.ElementsMatch(t, []string{"analytics-reader", "billing-reader"}, out,
@@ -121,30 +114,7 @@ func TestResolveRoleNames_ScopedByNamespaceAndClusterRef(t *testing.T) {
 func TestRoleNameExists_MatchesEffectiveNameOnly(t *testing.T) {
 	c := roleResolutionClient(t, roleCR("analytics-reader", "prod", "prod-cluster", "analytics_reader"))
 
-	assert.True(t, roleNameExists(context.Background(), c, "prod", targetRefKey("prod-cluster", ""), "analytics_reader"))
-	assert.False(t, roleNameExists(context.Background(), c, "prod", targetRefKey("prod-cluster", ""), "analytics-reader"),
+	assert.True(t, roleNameExists(context.Background(), c, "prod", targetRefKey("prod-cluster"), "analytics_reader"))
+	assert.False(t, roleNameExists(context.Background(), c, "prod", targetRefKey("prod-cluster"), "analytics-reader"),
 		"the CR metadata.name is not itself a Neo4j role name")
-}
-
-// Role resolution is scoped by target IDENTITY, not just clusterRef: a role that
-// targets an AuraInstance is matched only under the aura target key, and is
-// invisible to a same-named cluster target (the prefix in targetRefKey keeps a
-// cluster "x" distinct from an Aura instance "x").
-func TestResolveRoleNames_ScopedByAuraTarget(t *testing.T) {
-	auraRole := &neo4jv1beta1.Neo4jRole{
-		ObjectMeta: metav1.ObjectMeta{Name: "aura-reader", Namespace: "prod"},
-		Spec:       neo4jv1beta1.Neo4jRoleSpec{AuraInstanceRef: "analytics", Name: "aura_reader"},
-	}
-	c := roleResolutionClient(t, auraRole)
-
-	// Matched under the Aura target key.
-	out, resolved := resolveRoleNames(context.Background(), c, "prod", targetRefKey("", "analytics"),
-		[]string{"aura-reader"})
-	assert.Equal(t, []string{"aura_reader"}, out)
-	assert.Equal(t, map[string]string{"aura-reader": "aura_reader"}, resolved)
-	assert.True(t, roleNameExists(context.Background(), c, "prod", targetRefKey("", "analytics"), "aura_reader"))
-
-	// NOT matched for a cluster named the same as the Aura instance.
-	assert.False(t, roleNameExists(context.Background(), c, "prod", targetRefKey("analytics", ""), "aura_reader"),
-		"an Aura-targeted role must not match a cluster target of the same name")
 }

@@ -202,14 +202,9 @@ func (v *UserValidator) validateClusterRef(ctx context.Context, user *neo4jv1bet
 	if v.client == nil {
 		return
 	}
-	// Aura target: verify the AuraInstance exists; skip cluster/standalone lookup.
-	if user.Spec.AuraInstanceRef != "" {
-		validateAuraInstanceRef(ctx, v.client, user.Spec.AuraInstanceRef, user.Namespace, &result.Errors, &result.Warnings)
-		return
-	}
 	clusterRefPath := field.NewPath("spec", "clusterRef")
 	if user.Spec.ClusterRef == "" {
-		result.Errors = append(result.Errors, field.Required(clusterRefPath, "set exactly one of clusterRef or auraInstanceRef"))
+		result.Errors = append(result.Errors, field.Required(clusterRefPath, "clusterRef is required"))
 		return
 	}
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}

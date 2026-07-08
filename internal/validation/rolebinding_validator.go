@@ -101,52 +101,43 @@ func (v *RoleBindingValidator) validateClusterRefAndUserOverlap(ctx context.Cont
 		return
 	}
 	clusterRefPath := field.NewPath("spec", "clusterRef")
-	switch {
-	case rb.Spec.AuraInstanceRef != "":
-		// Aura target: verify the AuraInstance exists; skip cluster/standalone.
-		validateAuraInstanceRef(ctx, v.client, rb.Spec.AuraInstanceRef, rb.Namespace, &result.Errors, &result.Warnings)
-	case rb.Spec.ClusterRef == "":
-		result.Errors = append(result.Errors, field.Required(clusterRefPath, "set exactly one of clusterRef or auraInstanceRef"))
+	if rb.Spec.ClusterRef == "" {
+		result.Errors = append(result.Errors, field.Required(clusterRefPath, "clusterRef is required"))
 		return
-	default:
-		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
-		clusterKey := types.NamespacedName{Name: rb.Spec.ClusterRef, Namespace: rb.Namespace}
-		clusterFound := false
-		if err := v.client.Get(ctx, clusterKey, cluster); err == nil {
+	}
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	clusterKey := types.NamespacedName{Name: rb.Spec.ClusterRef, Namespace: rb.Namespace}
+	clusterFound := false
+	if err := v.client.Get(ctx, clusterKey, cluster); err == nil {
+		clusterFound = true
+	} else if !errors.IsNotFound(err) {
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("could not verify clusterRef %q: %v", rb.Spec.ClusterRef, err))
+	}
+	if !clusterFound {
+		standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+		if err := v.client.Get(ctx, clusterKey, standalone); err == nil {
 			clusterFound = true
 		} else if !errors.IsNotFound(err) {
 			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("could not verify clusterRef %q: %v", rb.Spec.ClusterRef, err))
 		}
-		if !clusterFound {
-			standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
-			if err := v.client.Get(ctx, clusterKey, standalone); err == nil {
-				clusterFound = true
-			} else if !errors.IsNotFound(err) {
-				result.Warnings = append(result.Warnings,
-					fmt.Sprintf("could not verify clusterRef %q: %v", rb.Spec.ClusterRef, err))
-			}
-		}
-		if !clusterFound {
-			result.Errors = append(result.Errors, field.NotFound(clusterRefPath,
-				fmt.Sprintf("no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone named %q in namespace %q", rb.Spec.ClusterRef, rb.Namespace)))
-		}
+	}
+	if !clusterFound {
+		result.Errors = append(result.Errors, field.NotFound(clusterRefPath,
+			fmt.Sprintf("no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone named %q in namespace %q", rb.Spec.ClusterRef, rb.Namespace)))
 	}
 
 	// The target the binding points at, for the same-target overlap check below.
 	targetName := rb.Spec.ClusterRef
-	if rb.Spec.AuraInstanceRef != "" {
-		targetName = rb.Spec.AuraInstanceRef
-	}
 
 	// Refuse to overlap with a Neo4jUser CR managing the same username on the
-	// SAME target (clusterRef and auraInstanceRef are mutually exclusive, so
-	// equality on both fields is same-target identity).
+	// SAME cluster/standalone target.
 	users := &neo4jv1beta1.Neo4jUserList{}
 	if err := v.client.List(ctx, users, client.InNamespace(rb.Namespace)); err == nil {
 		for i := range users.Items {
 			u := &users.Items[i]
-			if u.Spec.ClusterRef != rb.Spec.ClusterRef || u.Spec.AuraInstanceRef != rb.Spec.AuraInstanceRef {
+			if u.Spec.ClusterRef != rb.Spec.ClusterRef {
 				continue
 			}
 			username := u.Spec.Username
