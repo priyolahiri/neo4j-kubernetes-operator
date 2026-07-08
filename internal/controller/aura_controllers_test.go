@@ -1038,51 +1038,53 @@ func TestAuraCMK_ObserveOnly_NoCreate(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 type fakeIPFilterAPI struct {
-	createFn func(ctx context.Context, orgID, projectID string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error)
-	getFn    func(ctx context.Context, orgID, projectID, id string) (*aura.IPFilter, error)
-	listFn   func(ctx context.Context, orgID, projectID string) ([]aura.IPFilter, error)
-	updateFn func(ctx context.Context, orgID, projectID, id string, req aura.UpdateIPFilterRequest) (*aura.IPFilter, error)
+	createFn func(ctx context.Context, orgID string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error)
+	getFn    func(ctx context.Context, orgID, id string) (*aura.IPFilter, error)
+	listFn   func(ctx context.Context, orgID string) ([]aura.IPFilter, error)
+	updateFn func(ctx context.Context, orgID, id string, req aura.UpdateIPFilterRequest) (*aura.IPFilter, error)
 
 	createCalled bool
 	listCalled   bool
 	updateCalled bool
 	deleteCalled bool
 	lastCreate   aura.CreateIPFilterRequest
+	lastUpdate   aura.UpdateIPFilterRequest
 }
 
-func (f *fakeIPFilterAPI) CreateIPFilter(ctx context.Context, orgID, projectID string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error) {
+func (f *fakeIPFilterAPI) CreateIPFilter(ctx context.Context, orgID string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error) {
 	f.createCalled = true
 	f.lastCreate = req
 	if f.createFn != nil {
-		return f.createFn(ctx, orgID, projectID, req)
+		return f.createFn(ctx, orgID, req)
 	}
-	return &aura.IPFilter{ID: "ipf-created", Status: aura.IPFilterStatusPending, CIDRs: req.CIDRs}, nil
+	return &aura.IPFilter{ID: "ipf-created", AllowList: req.AllowList, FilteredEntities: req.FilteredEntities}, nil
 }
 
-func (f *fakeIPFilterAPI) GetIPFilter(ctx context.Context, orgID, projectID, id string) (*aura.IPFilter, error) {
+func (f *fakeIPFilterAPI) GetIPFilter(ctx context.Context, orgID, id string) (*aura.IPFilter, error) {
 	if f.getFn != nil {
-		return f.getFn(ctx, orgID, projectID, id)
+		return f.getFn(ctx, orgID, id)
 	}
-	return &aura.IPFilter{ID: id, Status: aura.IPFilterStatusReady}, nil
+	return &aura.IPFilter{ID: id}, nil
 }
 
-func (f *fakeIPFilterAPI) ListIPFilters(ctx context.Context, orgID, projectID string) ([]aura.IPFilter, error) {
+func (f *fakeIPFilterAPI) ListIPFilters(ctx context.Context, orgID string) ([]aura.IPFilter, error) {
 	f.listCalled = true
 	if f.listFn != nil {
-		return f.listFn(ctx, orgID, projectID)
+		return f.listFn(ctx, orgID)
 	}
 	return nil, nil
 }
 
-func (f *fakeIPFilterAPI) UpdateIPFilter(ctx context.Context, orgID, projectID, id string, req aura.UpdateIPFilterRequest) (*aura.IPFilter, error) {
+func (f *fakeIPFilterAPI) UpdateIPFilter(ctx context.Context, orgID, id string, req aura.UpdateIPFilterRequest) (*aura.IPFilter, error) {
 	f.updateCalled = true
+	f.lastUpdate = req
 	if f.updateFn != nil {
-		return f.updateFn(ctx, orgID, projectID, id, req)
+		return f.updateFn(ctx, orgID, id, req)
 	}
-	return &aura.IPFilter{ID: id, Status: aura.IPFilterStatusUpdating}, nil
+	return &aura.IPFilter{ID: id}, nil
 }
 
-func (f *fakeIPFilterAPI) DeleteIPFilter(ctx context.Context, orgID, projectID, id string) error {
+func (f *fakeIPFilterAPI) DeleteIPFilter(ctx context.Context, orgID, id string) error {
 	f.deleteCalled = true
 	return nil
 }
@@ -1097,8 +1099,9 @@ func newAuraIPFilter(name string) *neo4jv1beta1.AuraIPFilter {
 		Spec: neo4jv1beta1.AuraIPFilterSpec{
 			CredentialsSecretRef: credRef(),
 			OrganizationID:       "org-1",
-			ProjectID:            "proj-1",
-			CIDRs:                []string{"203.0.113.0/24"},
+			AllowList: []neo4jv1beta1.AuraIPFilterAllowEntry{
+				{Address: "203.0.113.0", PrefixLen: 24},
+			},
 		},
 	}
 }
@@ -1107,14 +1110,18 @@ func TestAuraIPFilter_CreateThenReady(t *testing.T) {
 	scheme := auraTestScheme(t)
 	f := newAuraIPFilter("ipf-create")
 	api := &fakeIPFilterAPI{
-		listFn: func(context.Context, string, string) ([]aura.IPFilter, error) { return nil, nil },
-		createFn: func(_ context.Context, _, _ string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error) {
-			return &aura.IPFilter{ID: "ipf-new", Status: aura.IPFilterStatusPending, CIDRs: req.CIDRs}, nil
+		listFn: func(context.Context, string) ([]aura.IPFilter, error) { return nil, nil },
+		createFn: func(_ context.Context, _ string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error) {
+			return &aura.IPFilter{ID: "ipf-new", AllowList: req.AllowList, FilteredEntities: req.FilteredEntities}, nil
 		},
-		getFn: func(_ context.Context, _, _, id string) (*aura.IPFilter, error) {
-			// Echo the spec name + CIDRs so reconcileDrift issues no update and the
-			// reconcile proceeds to syncStatus.
-			return &aura.IPFilter{ID: id, Name: "ipf-create", Status: aura.IPFilterStatusReady, CIDRs: []string{"203.0.113.0/24"}}, nil
+		getFn: func(_ context.Context, _, id string) (*aura.IPFilter, error) {
+			// Echo the spec name + allow list so reconcileDrift issues no update and
+			// the reconcile proceeds to syncStatus.
+			return &aura.IPFilter{
+				ID:        id,
+				Name:      "ipf-create",
+				AllowList: []aura.IPFilterAllowEntry{{Address: "203.0.113.0", PrefixLen: 24}},
+			}, nil
 		},
 	}
 	c := newAuraFakeClient(t, scheme, f)
@@ -1131,6 +1138,10 @@ func TestAuraIPFilter_CreateThenReady(t *testing.T) {
 	if !api.createCalled {
 		t.Fatal("expected CreateIPFilter to be called")
 	}
+	// Create body must carry allow_list (address/prefix_len), never a cidrs list.
+	if len(api.lastCreate.AllowList) != 1 || api.lastCreate.AllowList[0].PrefixLen != 24 {
+		t.Errorf("create allow list = %+v, want one /24 entry", api.lastCreate.AllowList)
+	}
 	got := &neo4jv1beta1.AuraIPFilter{}
 	if err := c.Get(ctx, reqFor(f).NamespacedName, got); err != nil {
 		t.Fatalf("Get: %v", err)
@@ -1143,16 +1154,23 @@ func TestAuraIPFilter_CreateThenReady(t *testing.T) {
 	}
 }
 
-func TestAuraIPFilter_DriftUpdatesCIDRs(t *testing.T) {
+func TestAuraIPFilter_DriftUpdatesAllowList(t *testing.T) {
 	scheme := auraTestScheme(t)
 	f := newAuraIPFilter("ipf-drift")
-	f.Spec.CIDRs = []string{"203.0.113.0/24", "198.51.100.7/32"}
+	f.Spec.AllowList = []neo4jv1beta1.AuraIPFilterAllowEntry{
+		{Address: "203.0.113.0", PrefixLen: 24},
+		{Address: "198.51.100.7", PrefixLen: 32},
+	}
 	f.Annotations = map[string]string{AuraExternalIPFilterAnnotation: "ipf-1"}
 	controllerutil.AddFinalizer(f, AuraIPFilterFinalizer)
 	api := &fakeIPFilterAPI{
-		getFn: func(_ context.Context, _, _, id string) (*aura.IPFilter, error) {
-			// Observed has only one CIDR → drift → Update expected.
-			return &aura.IPFilter{ID: id, Status: aura.IPFilterStatusReady, Name: "ipf-drift", CIDRs: []string{"203.0.113.0/24"}}, nil
+		getFn: func(_ context.Context, _, id string) (*aura.IPFilter, error) {
+			// Observed has only one allow entry → drift → Update expected.
+			return &aura.IPFilter{
+				ID:        id,
+				Name:      "ipf-drift",
+				AllowList: []aura.IPFilterAllowEntry{{Address: "203.0.113.0", PrefixLen: 24}},
+			}, nil
 		},
 	}
 	c := newAuraFakeClient(t, scheme, f)
@@ -1164,7 +1182,10 @@ func TestAuraIPFilter_DriftUpdatesCIDRs(t *testing.T) {
 		t.Fatalf("Reconcile: %v", err)
 	}
 	if !api.updateCalled {
-		t.Error("expected UpdateIPFilter when the observed CIDR set differs from spec")
+		t.Error("expected UpdateIPFilter when the observed allow list differs from spec")
+	}
+	if api.lastUpdate.AllowList == nil || len(*api.lastUpdate.AllowList) != 2 {
+		t.Errorf("update allow list = %+v, want 2 entries", api.lastUpdate.AllowList)
 	}
 }
 

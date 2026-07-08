@@ -28,62 +28,110 @@ import (
 )
 
 // ==========================================================================
-// BETA / UNVERIFIED — Aura API v2beta1 IP filtering.
+// BETA — Aura API v2beta1 IP filtering.
 //
-// IP filtering is only exposed on the Aura API v2beta1 surface, which is a
-// hierarchical org/project API (base path /v2beta1/organizations/{org}/
-// projects/{project}/…). v2beta1 is an UNSTABLE BETA: breaking changes are
-// allowed within it without a version bump, a `legacy_status` → `status` rename
-// is pending, and some request bodies are undocumented.
+// Shapes below are taken from the official v2beta1 OpenAPI spec (the `IpFilter`
+// schema + the ip-filters paths). Two things the spec pins that are unusual and
+// were wrong in the first (reconstructed) cut, kept here as landmines to respect:
 //
-// The exact endpoint paths and request/response field names below could NOT be
-// verified against a rendered spec (the redoc is JS-only; the raw spec is
-// gated; the first-party Labs Terraform provider is v1-only). They are
-// RECONSTRUCTED from the documented semantics (IP filters are project-scoped,
-// CIDR-based, at most one per instance) and MUST be validated against a live
-// v2beta1 account before this is relied on. Everything unverified is isolated in
-// this one file behind the single `ipFilterCollectionPath` route builder and
-// the v2beta1Envelope, so correcting the contract is a localized change.
+//   - IP filters are ORGANIZATION-scoped: /organizations/{org}/ip-filters. They
+//     are NOT under a project or instance. (A read-only per-instance *status*
+//     view exists at /organizations/{org}/projects/{p}/instances/{i}/ip-filters.)
+//   - The ip-filters endpoints return the object/array DIRECTLY — they are the
+//     one v2beta1 resource NOT wrapped in a {"data": …} envelope.
+//
+// The create/update REQUEST body is not itself schema'd in the spec (the POST
+// has no requestBody); we mirror the documented `IpFilter` response shape, which
+// is the standard convention. v2beta1 is still beta (breaking changes allowed
+// without a version bump), so this remains best-effort.
 // ==========================================================================
 
-// v2beta1 IP-filter status values (RECONSTRUCTED — verify against the live API).
+// IP-filter status values as reported by the per-instance status view
+// (/…/instances/{id}/ip-filters). The base org-scoped filter object carries no
+// status. Retained for callers that read the per-instance view.
 const (
-	IPFilterStatusReady    = "ready"
-	IPFilterStatusPending  = "pending"
-	IPFilterStatusUpdating = "updating"
-	IPFilterStatusError    = "error"
+	IPFilterStatusUnknown   = "UNKNOWN"
+	IPFilterStatusSubmitted = "SUBMITTED"
+	IPFilterStatusActive    = "ACTIVE"
+	IPFilterStatusDeleted   = "DELETED"
+	IPFilterStatusError     = "ERROR"
 )
 
-// IPFilter is an Aura network IP filter (allowlist) — RECONSTRUCTED shape.
+// IPFilterAllowEntry is a single CIDR entry in an IP filter's allow list. The
+// v2beta1 API splits CIDR notation into an address + a prefix length (so
+// "203.0.113.0/24" is {address:"203.0.113.0", prefix_len:24}).
+type IPFilterAllowEntry struct {
+	Address     string `json:"address"`
+	PrefixLen   int    `json:"prefix_len"`
+	Description string `json:"description,omitempty"`
+}
+
+// IPFilterEntities is the set of entities an IP filter is applied to. All three
+// are lists of Aura IDs.
+type IPFilterEntities struct {
+	Instances     []string `json:"instances,omitempty"`
+	Projects      []string `json:"projects,omitempty"`
+	Organizations []string `json:"organizations,omitempty"`
+}
+
+// IPFilter is an organization-scoped Aura network IP filter (allowlist), per the
+// v2beta1 `IpFilter` schema.
 type IPFilter struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	Status     string   `json:"status"`
-	InstanceID string   `json:"instance_id,omitempty"`
-	Region     string   `json:"region,omitempty"`
-	CIDRs      []string `json:"cidrs"`
+	ID                string               `json:"id,omitempty"`
+	Name              string               `json:"name,omitempty"`
+	Description       string               `json:"description,omitempty"`
+	OrganizationID    string               `json:"organization_id,omitempty"`
+	AllowList         []IPFilterAllowEntry `json:"allow_list"`
+	FilteredEntities  IPFilterEntities     `json:"filtered_entities"`
+	FilteringDisabled bool                 `json:"filtering_disabled,omitempty"`
+	UpdatedAt         string               `json:"updated_at,omitempty"`
 }
 
-// CreateIPFilterRequest is the create body — RECONSTRUCTED shape.
+// UnmarshalJSON decodes an IPFilter, coercing the `id` field which the spec
+// declares as a string but whose examples show as a bare integer — so a numeric
+// id can't break decoding.
+func (f *IPFilter) UnmarshalJSON(b []byte) error {
+	type alias IPFilter
+	aux := &struct {
+		ID json.RawMessage `json:"id"`
+		*alias
+	}{alias: (*alias)(f)}
+	if err := json.Unmarshal(b, aux); err != nil {
+		return err
+	}
+	raw := bytes.TrimSpace(aux.ID)
+	switch {
+	case len(raw) == 0 || string(raw) == "null":
+		f.ID = ""
+	case raw[0] == '"':
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return err
+		}
+		f.ID = s
+	default:
+		f.ID = string(raw) // bare number
+	}
+	return nil
+}
+
+// CreateIPFilterRequest mirrors the IpFilter response shape (the POST body is
+// not separately schema'd upstream).
 type CreateIPFilterRequest struct {
-	Name       string   `json:"name"`
-	InstanceID string   `json:"instance_id,omitempty"`
-	Region     string   `json:"region,omitempty"`
-	CIDRs      []string `json:"cidrs"`
+	Name              string               `json:"name,omitempty"`
+	Description       string               `json:"description,omitempty"`
+	AllowList         []IPFilterAllowEntry `json:"allow_list"`
+	FilteredEntities  IPFilterEntities     `json:"filtered_entities"`
+	FilteringDisabled *bool                `json:"filtering_disabled,omitempty"`
 }
 
-// UpdateIPFilterRequest is the patch body — RECONSTRUCTED shape. Only the CIDR
-// set and name are mutable; placement/instance association is fixed.
+// UpdateIPFilterRequest edits a filter's mutable fields.
 type UpdateIPFilterRequest struct {
-	Name  *string   `json:"name,omitempty"`
-	CIDRs *[]string `json:"cidrs,omitempty"`
-}
-
-// IsIPFilterReady reports whether the filter has reached its terminal ready
-// state (tolerant of the pending legacy_status → status rename: any of the
-// known ready spellings match).
-func IsIPFilterReady(status string) bool {
-	return normalizeStatus(status) == IPFilterStatusReady
+	Name              *string               `json:"name,omitempty"`
+	Description       *string               `json:"description,omitempty"`
+	AllowList         *[]IPFilterAllowEntry `json:"allow_list,omitempty"`
+	FilteredEntities  *IPFilterEntities     `json:"filtered_entities,omitempty"`
+	FilteringDisabled *bool                 `json:"filtering_disabled,omitempty"`
 }
 
 // v2beta1Base derives the v2beta1 API root from the configured v1 base URL
@@ -94,63 +142,53 @@ func (c *Client) v2beta1Base() string {
 	return root + "/v2beta1"
 }
 
-// ipFilterCollectionPath builds the project-scoped IP-filter collection path.
-// THIS ROUTE IS UNVERIFIED — the single place to correct once the live v2beta1
-// contract is confirmed.
-func ipFilterCollectionPath(orgID, projectID string) string {
-	return fmt.Sprintf("/organizations/%s/projects/%s/network/ip-filters",
-		url.PathEscape(orgID), url.PathEscape(projectID))
+// orgIPFilterPath builds the organization-scoped IP-filter collection path.
+func orgIPFilterPath(orgID string) string {
+	return "/organizations/" + url.PathEscape(orgID) + "/ip-filters"
 }
 
-// v2beta1Envelope is the assumed v2beta1 response wrapper (matches v1's `data`
-// nesting; UNVERIFIED — v2beta1 may return payloads unwrapped).
-type v2beta1Envelope[T any] struct {
-	Data T `json:"data"`
-}
-
-// CreateIPFilter registers an IP filter for a project/instance (v2beta1, beta).
-func (c *Client) CreateIPFilter(ctx context.Context, orgID, projectID string, req CreateIPFilterRequest) (*IPFilter, error) {
-	var env v2beta1Envelope[IPFilter]
-	if err := c.doV2JSON(ctx, http.MethodPost, ipFilterCollectionPath(orgID, projectID), req, &env); err != nil {
+// CreateIPFilter registers an organization IP filter (v2beta1, beta). The
+// response is returned unwrapped.
+func (c *Client) CreateIPFilter(ctx context.Context, orgID string, req CreateIPFilterRequest) (*IPFilter, error) {
+	var out IPFilter
+	if err := c.doV2JSON(ctx, http.MethodPost, orgIPFilterPath(orgID), req, &out); err != nil {
 		return nil, fmt.Errorf("creating ip filter: %w", err)
 	}
-	return &env.Data, nil
+	return &out, nil
 }
 
 // GetIPFilter returns a single IP filter by ID (v2beta1, beta).
-func (c *Client) GetIPFilter(ctx context.Context, orgID, projectID, id string) (*IPFilter, error) {
-	path := ipFilterCollectionPath(orgID, projectID) + "/" + url.PathEscape(id)
-	var env v2beta1Envelope[IPFilter]
-	if err := c.doV2JSON(ctx, http.MethodGet, path, nil, &env); err != nil {
+func (c *Client) GetIPFilter(ctx context.Context, orgID, id string) (*IPFilter, error) {
+	var out IPFilter
+	if err := c.doV2JSON(ctx, http.MethodGet, orgIPFilterPath(orgID)+"/"+url.PathEscape(id), nil, &out); err != nil {
 		return nil, fmt.Errorf("getting ip filter %q: %w", id, err)
 	}
-	return &env.Data, nil
+	return &out, nil
 }
 
-// ListIPFilters lists the IP filters in a project (v2beta1, beta).
-func (c *Client) ListIPFilters(ctx context.Context, orgID, projectID string) ([]IPFilter, error) {
-	var env v2beta1Envelope[[]IPFilter]
-	if err := c.doV2JSON(ctx, http.MethodGet, ipFilterCollectionPath(orgID, projectID), nil, &env); err != nil {
+// ListIPFilters lists the organization's IP filters (v2beta1, beta). The
+// response is a bare array.
+func (c *Client) ListIPFilters(ctx context.Context, orgID string) ([]IPFilter, error) {
+	var out []IPFilter
+	if err := c.doV2JSON(ctx, http.MethodGet, orgIPFilterPath(orgID), nil, &out); err != nil {
 		return nil, fmt.Errorf("listing ip filters: %w", err)
 	}
-	return env.Data, nil
+	return out, nil
 }
 
 // UpdateIPFilter edits an IP filter's mutable fields (v2beta1, beta).
-func (c *Client) UpdateIPFilter(ctx context.Context, orgID, projectID, id string, req UpdateIPFilterRequest) (*IPFilter, error) {
-	path := ipFilterCollectionPath(orgID, projectID) + "/" + url.PathEscape(id)
-	var env v2beta1Envelope[IPFilter]
-	if err := c.doV2JSON(ctx, http.MethodPatch, path, req, &env); err != nil {
+func (c *Client) UpdateIPFilter(ctx context.Context, orgID, id string, req UpdateIPFilterRequest) (*IPFilter, error) {
+	var out IPFilter
+	if err := c.doV2JSON(ctx, http.MethodPatch, orgIPFilterPath(orgID)+"/"+url.PathEscape(id), req, &out); err != nil {
 		return nil, fmt.Errorf("updating ip filter %q: %w", id, err)
 	}
-	return &env.Data, nil
+	return &out, nil
 }
 
 // DeleteIPFilter deletes an IP filter (v2beta1, beta). Idempotent: a 404 is
 // treated as success.
-func (c *Client) DeleteIPFilter(ctx context.Context, orgID, projectID, id string) error {
-	path := ipFilterCollectionPath(orgID, projectID) + "/" + url.PathEscape(id)
-	if err := c.doV2JSON(ctx, http.MethodDelete, path, nil, nil); err != nil {
+func (c *Client) DeleteIPFilter(ctx context.Context, orgID, id string) error {
+	if err := c.doV2JSON(ctx, http.MethodDelete, orgIPFilterPath(orgID)+"/"+url.PathEscape(id), nil, nil); err != nil {
 		if IsNotFound(err) {
 			return nil
 		}
@@ -162,8 +200,7 @@ func (c *Client) DeleteIPFilter(ctx context.Context, orgID, projectID, id string
 // doV2JSON is the v2beta1 request path. It reuses the shared OAuth token cache
 // and rate limiter but targets the v2beta1 base URL, and is deliberately kept
 // separate from the v1 doJSON so the stable v1 client is untouched by beta
-// churn. Errors are reported to the same metrics Observer with a "(v2beta1)"
-// operation prefix so beta traffic is visible but distinguishable.
+// churn. Errors are reported to the same metrics Observer.
 func (c *Client) doV2JSON(ctx context.Context, method, path string, body, out any) error {
 	if err := c.limiter.Wait(ctx); err != nil {
 		return fmt.Errorf("rate limiter: %w", err)

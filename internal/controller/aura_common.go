@@ -197,11 +197,11 @@ func resolveCMKClient(factory auraCMKClientFactory, c auraCredentials) auraCMKAP
 // implement v2beta1 methods. *aura.Client satisfies it. BETA — see
 // internal/aura/ipfilter_v2beta1.go.
 type auraIPFilterAPI interface {
-	CreateIPFilter(ctx context.Context, orgID, projectID string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error)
-	GetIPFilter(ctx context.Context, orgID, projectID, id string) (*aura.IPFilter, error)
-	ListIPFilters(ctx context.Context, orgID, projectID string) ([]aura.IPFilter, error)
-	UpdateIPFilter(ctx context.Context, orgID, projectID, id string, req aura.UpdateIPFilterRequest) (*aura.IPFilter, error)
-	DeleteIPFilter(ctx context.Context, orgID, projectID, id string) error
+	CreateIPFilter(ctx context.Context, orgID string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error)
+	GetIPFilter(ctx context.Context, orgID, id string) (*aura.IPFilter, error)
+	ListIPFilters(ctx context.Context, orgID string) ([]aura.IPFilter, error)
+	UpdateIPFilter(ctx context.Context, orgID, id string, req aura.UpdateIPFilterRequest) (*aura.IPFilter, error)
+	DeleteIPFilter(ctx context.Context, orgID, id string) error
 }
 
 // auraIPFilterClientFactory builds an auraIPFilterAPI from resolved credentials.

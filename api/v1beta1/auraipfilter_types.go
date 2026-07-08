@@ -21,15 +21,33 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// AuraIPFilterSpec configures a Neo4j Aura network IP filter (CIDR allowlist).
+// AuraIPFilterAllowEntry is one allow-listed source range. The Aura v2beta1 API
+// splits CIDR notation into an address plus a prefix length (e.g.
+// "203.0.113.0/24" → address "203.0.113.0", prefixLen 24).
+type AuraIPFilterAllowEntry struct {
+	// Address is the IP address of the CIDR (e.g. "203.0.113.0").
+	// +kubebuilder:validation:Required
+	Address string `json:"address"`
+
+	// PrefixLen is the CIDR prefix length (0–32 for IPv4, up to 128 for IPv6).
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=128
+	// +kubebuilder:validation:Required
+	PrefixLen int32 `json:"prefixLen"`
+
+	// Description is an optional human-friendly label for this entry.
+	// +optional
+	Description string `json:"description,omitempty"`
+}
+
+// AuraIPFilterSpec configures a Neo4j Aura network IP filter (allowlist).
 //
-// BETA: IP filtering is only available on the Aura API v2beta1 surface, which is
-// an unstable beta (breaking changes allowed without a version bump). This CRD
-// is best-effort and its behaviour may change to track the API — see
-// docs/knowledge/operations.md and docs/design/aura-orchestration.md.
+// BETA: IP filtering is on the Aura API v2beta1 (an unstable beta). IP filters
+// are ORGANIZATION-scoped and applied to instances; this CRD models the common
+// case of protecting one or more AuraInstances. See the type fields and
+// docs/design/aura-orchestration.md.
 //
 // +kubebuilder:validation:XValidation:rule="has(self.providerConfigRef) != has(self.credentialsSecretRef)",message="set exactly one of providerConfigRef or credentialsSecretRef"
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.instanceRef) || (has(self.instanceRef) && self.instanceRef == oldSelf.instanceRef)",message="instanceRef is immutable once set"
 type AuraIPFilterSpec struct {
 	// ProviderConfigRef selects the AuraProviderConfig (credentials + defaults)
 	// in the same namespace. Mutually exclusive with credentialsSecretRef.
@@ -41,40 +59,44 @@ type AuraIPFilterSpec struct {
 	// +optional
 	CredentialsSecretRef *AuraCredentialsSecretRef `json:"credentialsSecretRef,omitempty"`
 
-	// OrganizationID is the Aura organization ID (v2beta1 hierarchy). If empty,
-	// the referenced AuraProviderConfig's defaultOrganizationId is used.
+	// OrganizationID is the Aura organization that owns the filter (filters are
+	// org-scoped in v2beta1). If empty, the referenced AuraProviderConfig's
+	// defaultOrganizationId is used.
 	// +optional
 	OrganizationID string `json:"organizationId,omitempty"`
-
-	// ProjectID is the Aura project (API tenant_id). If empty, the referenced
-	// AuraProviderConfig's defaultProjectId is used.
-	// +optional
-	ProjectID string `json:"projectId,omitempty"`
-
-	// InstanceRef optionally scopes the filter to a single AuraInstance (same
-	// namespace) — Aura permits at most one IP filter per instance. Omit for a
-	// project-wide filter. Immutable once set.
-	// +optional
-	InstanceRef string `json:"instanceRef,omitempty"`
 
 	// Name is the filter's display name in Aura (defaults to metadata.name).
 	// +kubebuilder:validation:MaxLength=63
 	// +optional
 	Name string `json:"name,omitempty"`
 
-	// Region the filter applies to, when required by the provider.
+	// Description is an optional human-friendly description of the filter.
 	// +optional
-	Region string `json:"region,omitempty"`
+	Description string `json:"description,omitempty"`
 
-	// CIDRs is the allowlist of source ranges in CIDR notation (e.g.
-	// "203.0.113.0/24"). At least one is required.
+	// AllowList is the set of source ranges permitted by the filter. At least
+	// one entry is required.
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=1000
 	// +kubebuilder:validation:Required
-	CIDRs []string `json:"cidrs"`
+	AllowList []AuraIPFilterAllowEntry `json:"allowList"`
+
+	// InstanceRefs names the AuraInstances (same namespace) the filter applies
+	// to; the operator resolves each to its Aura instance ID (the API's
+	// filtered_entities.instances). Omit for a filter you attach out of band.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=100
+	InstanceRefs []string `json:"instanceRefs,omitempty"`
+
+	// FilteringDisabled turns the filter off without deleting it (the API's
+	// filtering_disabled). Default false (the filter is enforced).
+	// +optional
+	FilteringDisabled bool `json:"filteringDisabled,omitempty"`
 
 	// DeletionPolicy controls what happens to the Aura filter when this CR is
-	// deleted: Orphan (default; leave the filter in place — deleting it would
-	// open network access) or Delete (remove it from Aura).
+	// deleted: Orphan (default; leave it in place — deleting it opens access) or
+	// Delete (remove it from Aura).
 	// +kubebuilder:validation:Enum=Orphan;Delete
 	// +kubebuilder:default=Orphan
 	// +optional
@@ -96,7 +118,7 @@ type AuraIPFilterStatus struct {
 	// +optional
 	FilterID string `json:"filterId,omitempty"`
 
-	// Phase mirrors the Aura filter status (Pending, Ready, Updating, Error).
+	// Phase mirrors the reconcile outcome (Pending, Ready, Error).
 	// +optional
 	Phase string `json:"phase,omitempty"`
 
@@ -116,13 +138,12 @@ type AuraIPFilterStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=auraipf
-// +kubebuilder:printcolumn:name="Instance",type=string,JSONPath=`.spec.instanceRef`
 // +kubebuilder:printcolumn:name="FilterID",type=string,JSONPath=`.status.filterId`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// AuraIPFilter manages a Neo4j Aura network IP filter (CIDR allowlist) via the
-// Aura API v2beta1. BETA / best-effort — see the type doc and
+// AuraIPFilter manages a Neo4j Aura network IP filter (allowlist) via the Aura
+// API v2beta1. BETA / best-effort — see the type doc and
 // docs/design/aura-orchestration.md.
 type AuraIPFilter struct {
 	metav1.TypeMeta   `json:",inline"`
