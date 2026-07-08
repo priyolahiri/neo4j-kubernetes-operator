@@ -86,6 +86,108 @@ Every format also carries `type=neo4j`/`provider=aura` and sets
 Provisioned Service. Non-secret endpoint details can additionally be mirrored to
 a ConfigMap via `spec.publishConnectionDetailsTo`.
 
+## End-to-end walkthrough
+
+A full "day in the life": credentials → instance → database → backup → invite a
+teammate → clean up. Everything is in one namespace (`neo4j`). Later steps use
+CRDs on the Aura API **v2beta1** (beta) — see the notes in each section below.
+
+**1. Store your Aura API credentials** (from the console: Account → API keys):
+
+```bash
+kubectl -n neo4j create secret generic aura-api-creds \
+  --from-literal=clientId=<CLIENT_ID> \
+  --from-literal=clientSecret=<CLIENT_SECRET>
+```
+
+**2. Declare the account defaults once** with an `AuraProviderConfig`, then
+provision an instance:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraProviderConfig
+metadata: { name: aura, namespace: neo4j }
+spec:
+  credentialsSecretRef: { name: aura-api-creds }
+  defaultProjectId: "<project-id>"
+  defaultOrganizationId: "<org-id>"     # needed for the v2beta1 CRDs below
+---
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraInstance
+metadata: { name: analytics, namespace: neo4j }
+spec:
+  providerConfigRef: { name: aura }
+  cloudProvider: gcp
+  region: europe-west1
+  type: business-critical               # a multi-database tier (needed for step 4)
+  version: "5"
+  memory: 2GB
+  connectionSecretName: analytics-conn
+```
+
+**3. Wait for it to come up**, then point your app at the connection Secret:
+
+```bash
+kubectl -n neo4j wait aurainstance/analytics --for=condition=Ready --timeout=20m
+# app: envFrom the analytics-conn Secret (NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD)
+```
+
+**4. Create a database** on the instance (multi-database tiers only):
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraDatabase
+metadata: { name: analytics-db, namespace: neo4j }
+spec:
+  instanceRef: analytics
+  name: analytics
+```
+
+**5. Back it up** on demand:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraDatabaseBackup
+metadata: { name: analytics-nightly, namespace: neo4j }
+spec:
+  databaseRef: analytics-db
+```
+
+**6. Give a teammate read-only metrics access** to the project (console-RBAC —
+this is Aura console access, not an in-database user):
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraInvite
+metadata: { name: invite-bob, namespace: neo4j }
+spec:
+  providerConfigRef: { name: aura }
+  projectId: "<project-id>"
+  email: bob@example.com
+  role: METRICS_READER
+```
+
+Once Bob accepts, manage his role going forward with an `AuraProjectMember`
+(`email: bob@example.com`, `role: METRICS_READER`).
+
+**7. Check status** at any point:
+
+```bash
+kubectl -n neo4j get auradatabase,auradatabasebackup,aurainvite
+kubectl -n neo4j describe auradatabase analytics-db
+```
+
+**8. Clean up.** Deletion honours each CR's `deletionPolicy` — e.g. `AuraDatabase`
+defaults to `Delete` (drops the DB), `AuraInvite` to `Delete` (revokes a pending
+invite). Delete the instance last:
+
+```bash
+kubectl -n neo4j delete auradatabase analytics-db aurainvite invite-bob
+kubectl -n neo4j delete aurainstance analytics    # deletionPolicy governs the cloud instance
+```
+
+Each step is detailed in the sections that follow.
+
 ## Lifecycle
 
 - **Resize:** change `spec.memory` / `spec.storage` → online resize.
