@@ -1,0 +1,22 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraIPFilter
+metadata:
+  name: example-aura-ipfilter
+spec:
+  providerConfigRef:
+    name: example-aura
+  # v2beta1 uses a hierarchical org/project API. organizationId falls back to
+  # the AuraProviderConfig's defaultOrganizationId when omitted; projectId to
+  # its defaultProjectId.
+  organizationId: "<your-aura-org-id>"
+  # Optional: scope the filter to a single instance (Aura allows at most one IP
+  # filter per instance). Omit for a project-wide filter.
+  instanceRef: example-aura-instance
+  cidrs:
+    - "203.0.113.0/24"
+    - "198.51.100.7/32"
+  # Orphan (default) leaves the filter in place on CR deletion (removing it would
+  # open network access); Delete removes it from Aura.
+  deletionPolicy: Orphan
+# NOTE: AuraIPFilter is BETA — it uses the Aura API v2beta1, whose contract is
+# unstable and reconstructed. Validate against your account before relying on it.

@@ -117,6 +117,17 @@ repos:
               echo "working tree — review the diff, 'git add -u' the changes, and recommit."
               exit 1
             fi
+            # Also verify the hand-maintained source CSV lists every CRD as an
+            # owned resource. This is separate from check-drift (the bundle CSV
+            # auto-covers CRDs, but the source base CSV is hand-maintained) — it
+            # is the gap that let new CRDs slip past locally and only fail in CI.
+            if ! make check-csv-coverage; then
+              echo ""
+              echo "OperatorHub CSV coverage failed: add the new CRD(s) as owned"
+              echo "resources in config/manifests/bases/*.clusterserviceversion.yaml"
+              echo "(spec.customresourcedefinitions.owned)."
+              exit 1
+            fi
             # check-drift passed — the only diff make bundle produced
             # against HEAD is the createdAt: timestamp (everything else
             # was already in sync). Drop that churn so pre-commit doesn't
@@ -135,6 +146,27 @@ repos:
         # source-of-truth, and the generated trees themselves (in case
         # someone hand-edits a generated file).
         files: ^(api/v1beta1/.*\.go|internal/controller/.*_controller\.go|scripts/(helm-sync-.*|check-csv-coverage|update-alm-examples).*|config/manifests/bases/.*\.csv\.yaml|config/(crd|rbac|samples|manifests)/.*|charts/neo4j-operator/(crds|templates|Chart\.yaml).*|bundle/.*)$
+
+      # The docs/api_reference/ pages are hand-written (no generator), so they
+      # drift when a CRD spec field is added/renamed. This asserts every CRD has
+      # a page and every top-level spec field is documented on it. Runs after
+      # check-drift so it reads the freshly regenerated config/crd/bases.
+      - id: check-apiref-drift
+        name: api_reference in sync with CRD spec fields
+        entry: bash
+        args:
+          - -c
+          - |
+            if ! make check-apiref-drift; then
+              echo ""
+              echo "docs/api_reference/ is out of sync with the CRD types. Document the"
+              echo "field(s) as \`fieldName\` in the named page's Spec table, or add the"
+              echo "missing page."
+              exit 1
+            fi
+        language: system
+        pass_filenames: false
+        files: ^(api/v1beta1/.*_types\.go|config/crd/bases/.*\.yaml|docs/api_reference/.*\.md)$
 
   # Security checks (fast)
   - repo: https://github.com/gitleaks/gitleaks

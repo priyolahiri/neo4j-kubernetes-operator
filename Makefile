@@ -453,6 +453,10 @@ check-knowledge-drift: ## Verify every 'pinned-by:'/file reference in docs/knowl
 check-knowledge: check-invariants check-knowledge-drift ## Run both LLM-readiness guards (invariants + knowledge-base drift). Advisory; run by the agent skills and a non-blocking CI job.
 	@echo "Knowledge guards passed: invariants hold and docs/knowledge/ references resolve."
 
+.PHONY: check-apiref-drift
+check-apiref-drift: ## Verify docs/api_reference/ pages exist and document every top-level CRD spec field (hand-written docs have no generator).
+	@go run ./scripts/check-apiref-drift
+
 .PHONY: helm-lint
 helm-lint: ## Lint the Helm chart
 	helm lint charts/neo4j-operator

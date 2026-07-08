@@ -243,7 +243,14 @@ type StorageSpec struct {
 	RetentionPolicy string `json:"retentionPolicy,omitempty"`
 }
 
-// TLSSpec defines TLS configuration
+// TLSSpec defines TLS configuration.
+//
+// The two CEL rules are apiserver-enforced (no webhook — invariant 1) and run
+// only when a tls block is present; the same checks stay inline in
+// internal/validation/tls_validator.go (shared by cluster + standalone).
+//
+// +kubebuilder:validation:XValidation:rule="self.mode != 'cert-manager' || (has(self.issuerRef) && size(self.issuerRef.name) > 0)",message="issuerRef.name is required when tls.mode is 'cert-manager' (the certificate builder cannot resolve an issuer without it)"
+// +kubebuilder:validation:XValidation:rule="!has(self.usages) || size(self.usages) == 0 || (self.usages.exists(u, u == 'server auth') && self.usages.exists(u, u == 'client auth'))",message="tls.usages, when set, must include both 'server auth' and 'client auth' (or omit usages to use the operator defaults) — Neo4j needs both EKUs for its mutual-TLS posture"
 type TLSSpec struct {
 	// +kubebuilder:validation:Enum=cert-manager;disabled
 	// +kubebuilder:default=cert-manager
@@ -272,7 +279,10 @@ type TLSSpec struct {
 	// Additional certificate subject fields
 	Subject *CertificateSubject `json:"subject,omitempty"`
 
-	// Certificate usage settings
+	// Certificate usage settings. Bounded so the CEL rule on this struct has a
+	// finite cost estimate at CRD registration (the valid EKU set is ~15).
+	// +kubebuilder:validation:MaxItems=32
+	// +kubebuilder:validation:items:MaxLength=64
 	Usages []string `json:"usages,omitempty"`
 
 	// StrictPeerValidation controls intra-cluster TLS posture for
@@ -1269,6 +1279,14 @@ func (c *Neo4jEnterpriseCluster) EffectiveMinSystemPrimaries() int32 {
 	return min(servers, 3)
 }
 
+// TopologyConfiguration cross-field rules are enforced declaratively by the
+// apiserver via CEL (no webhook — invariant 1); the same checks are kept inline
+// in internal/validation/topology_validator.go as defense-in-depth (that layer
+// also runs in unit tests, which have no apiserver).
+//
+// +kubebuilder:validation:XValidation:rule="!has(self.minSystemPrimaries) || self.minSystemPrimaries <= self.servers",message="minSystemPrimaries must not exceed servers: a system-primary floor larger than the cluster can never be satisfied"
+// +kubebuilder:validation:XValidation:rule="!has(self.serverRoles) || self.serverRoles.all(r, r.serverIndex < self.servers)",message="each serverRoles[].serverIndex must be in range [0, servers-1]"
+// +kubebuilder:validation:XValidation:rule="!has(self.serverRoles) || !(size(self.serverRoles) == self.servers && self.serverRoles.all(r, r.modeConstraint == 'SECONDARY'))",message="cannot set ALL servers to SECONDARY; at least one server must be able to host primaries"
 type TopologyConfiguration struct {
 	// Servers specifies the number of Neo4j servers in the cluster
 	// Servers self-organize and can host databases in primary or secondary mode
@@ -1305,8 +1323,14 @@ type TopologyConfiguration struct {
 	ServerModeConstraint string `json:"serverModeConstraint,omitempty"`
 
 	// ServerRoles allows specifying role constraints for individual servers
-	// Takes precedence over ServerModeConstraint for specified servers
+	// Takes precedence over ServerModeConstraint for specified servers.
+	// listType=map keyed by serverIndex makes duplicate indices an apiserver
+	// error (idiomatic, and bounds the CEL cost of the range check above);
+	// MaxItems caps it at the server hard-cap.
 	// +optional
+	// +listType=map
+	// +listMapKey=serverIndex
+	// +kubebuilder:validation:MaxItems=100
 	ServerRoles []ServerRoleHint `json:"serverRoles,omitempty"`
 
 	// Placement defines how instances should be distributed across the cluster

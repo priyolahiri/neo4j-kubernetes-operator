@@ -1,0 +1,433 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  creationTimestamp: null
+  name: aurainstances.neo4j.neo4j.com
+spec:
+  group: neo4j.neo4j.com
+  names:
+    kind: AuraInstance
+    listKind: AuraInstanceList
+    plural: aurainstances
+    shortNames:
+    - aurainst
+    singular: aurainstance
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .spec.region
+      name: Region
+      type: string
+    - jsonPath: .spec.memory
+      name: Memory
+      type: string
+    - jsonPath: .status.connectionUrl
+      name: Connection
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          AuraInstance declaratively manages a Neo4j Aura cloud instance via the Aura
+          REST API — provision, resize, pause/resume, and (optionally) delete. Distinct
+          from spec.auraFleetManagement, which registers a self-managed cluster into the
+          Aura console. See docs/design/aura-orchestration.md.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              AuraInstanceSpec is the desired state of an Aura-hosted instance.
+
+              Immutable fields (cloudProvider, region, type, version, projectId,
+              customerManagedKeyId, source, instanceId) are enforced declaratively by the
+              apiserver via CEL transition rules below — there is no admission webhook
+              (project Invariant 1). Combinations of type/region/memory/version are further
+              validated against the live per-project instance_configurations inline in the
+              reconciler (the one check CEL cannot express).
+            properties:
+              cdcEnrichmentMode:
+                description: CDCEnrichmentMode — VDC / business-critical only.
+                enum:
+                - "OFF"
+                - DIFF
+                - FULL
+                type: string
+              cloudProvider:
+                description: CloudProvider hosting the instance. Immutable.
+                enum:
+                - aws
+                - gcp
+                - azure
+                type: string
+              connectionSecretFormat:
+                default: neo4j-driver
+                description: ConnectionSecretFormat selects the key layout of the
+                  connection Secret.
+                enum:
+                - neo4j-driver
+                - aura-dotenv
+                - jdbc
+                - servicebinding
+                - custom
+                type: string
+              connectionSecretName:
+                description: |-
+                  ConnectionSecretName is the Secret the operator writes the instance
+                  connection details (URI + one-time credentials) to. Defaults to
+                  "<name>-conn" if empty.
+                type: string
+              credentialsSecretRef:
+                description: |-
+                  CredentialsSecretRef is a single-account shortcut when no
+                  AuraProviderConfig is used. Mutually exclusive with providerConfigRef.
+                properties:
+                  clientIdKey:
+                    default: clientId
+                    description: ClientIDKey is the Secret key holding the OAuth client
+                      ID.
+                    type: string
+                  clientSecretKey:
+                    default: clientSecret
+                    description: ClientSecretKey is the Secret key holding the OAuth
+                      client secret.
+                    type: string
+                  name:
+                    description: Name of the Secret holding the Aura API client credentials.
+                    type: string
+                required:
+                - name
+                type: object
+              customerManagedKeyId:
+                description: CustomerManagedKeyID — VDC / AuraDS-Enterprise only.
+                  Immutable once set.
+                type: string
+              deletionPolicy:
+                default: Orphan
+                description: |-
+                  DeletionPolicy controls what happens to the cloud instance when this CR is
+                  deleted: Orphan (default; keep the running instance) or Delete.
+                enum:
+                - Orphan
+                - Delete
+                type: string
+              deletionProtection:
+                description: |-
+                  DeletionProtection blocks deletion of the cloud instance even when
+                  deletionPolicy=Delete, until cleared.
+                type: boolean
+              graphAnalyticsPlugin:
+                description: GraphAnalyticsPlugin enables the graph-analytics plugin.
+                type: boolean
+              instanceId:
+                description: |-
+                  InstanceID adopts/imports an existing Aura instance by ID rather than
+                  creating one. Immutable once set. The operator mirrors this into the
+                  neo4j.com/external-instance-id annotation (its internal source of truth).
+                type: string
+              managementPolicies:
+                default:
+                - '*'
+                description: |-
+                  ManagementPolicies restricts which actions the operator may take on the
+                  cloud instance. Default ["*"] = full management. Use a subset to observe
+                  only (["Observe"]), never delete (["Observe","Create","Update"]), etc.
+                items:
+                  enum:
+                  - Observe
+                  - Create
+                  - Update
+                  - Delete
+                  - '*'
+                  type: string
+                type: array
+              memory:
+                description: |-
+                  Memory, e.g. 4GB. Mutable (drives online resize). Required except for
+                  free-db, where the size is fixed by the tier.
+                type: string
+              name:
+                description: Name is the Aura instance name (1-30 chars). Defaults
+                  to metadata.name.
+                maxLength: 30
+                type: string
+              paused:
+                description: Paused expresses the desired paused state (drives pause
+                  / resume).
+                type: boolean
+              projectId:
+                description: |-
+                  ProjectID is the Aura project (API tenant_id). Immutable. If empty, the
+                  referenced AuraProviderConfig's defaultProjectId is used (the operator
+                  does not write it back into spec, to stay GitOps-idempotent).
+                type: string
+              providerConfigRef:
+                description: |-
+                  ProviderConfigRef selects the AuraProviderConfig (credentials + defaults +
+                  rate limiter) in the same namespace. Mutually exclusive with
+                  credentialsSecretRef.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              publishConnectionDetailsTo:
+                description: |-
+                  PublishConnectionDetailsTo names a ConfigMap to receive the non-secret
+                  endpoint details (URI, instanceId, region, type). Credentials stay in the
+                  connection Secret.
+                type: string
+              region:
+                description: Region, e.g. europe-west1. Immutable. Valid values are
+                  per-project.
+                type: string
+              secondariesCount:
+                description: SecondariesCount — Virtual Dedicated Cloud (enterprise-db)
+                  only.
+                format: int32
+                type: integer
+              source:
+                description: Source clones a new instance from an existing one at
+                  create. Immutable.
+                properties:
+                  instanceId:
+                    description: InstanceID is the Aura source instance ID (alternative
+                      to instanceRef).
+                    type: string
+                  instanceRef:
+                    description: InstanceRef is another AuraInstance (same namespace)
+                      to clone from.
+                    type: string
+                  snapshotId:
+                    description: SnapshotID to clone from; requires an exportable
+                      snapshot of the source.
+                    type: string
+                type: object
+              storage:
+                description: Storage, e.g. 8GB. Mutable. Not configurable for free-db.
+                type: string
+              type:
+                description: |-
+                  Type of instance. Immutable.
+                    free-db | professional-db | business-critical |
+                    enterprise-db (Virtual Dedicated Cloud) | professional-ds | enterprise-ds
+                enum:
+                - free-db
+                - professional-db
+                - business-critical
+                - enterprise-db
+                - professional-ds
+                - enterprise-ds
+                type: string
+              vectorOptimized:
+                description: VectorOptimized enables vector optimization.
+                type: boolean
+              version:
+                description: Version is the coarse Aura Neo4j major version (e.g.
+                  "5"). Immutable.
+                type: string
+            required:
+            - cloudProvider
+            - region
+            - type
+            - version
+            type: object
+            x-kubernetes-validations:
+            - message: set exactly one of providerConfigRef or credentialsSecretRef
+              rule: has(self.providerConfigRef) != has(self.credentialsSecretRef)
+            - message: storage is not configurable for free-db
+              rule: self.type != 'free-db' || !has(self.storage)
+            - message: secondariesCount is only valid for type enterprise-db (Virtual
+                Dedicated Cloud)
+              rule: '!has(self.secondariesCount) || self.type == ''enterprise-db'''
+            - message: cdcEnrichmentMode is only valid for type enterprise-db or business-critical
+              rule: '!has(self.cdcEnrichmentMode) || self.type == ''enterprise-db''
+                || self.type == ''business-critical'''
+            - message: customerManagedKeyId is only valid for type enterprise-db or
+                enterprise-ds
+              rule: '!has(self.customerManagedKeyId) || self.type == ''enterprise-db''
+                || self.type == ''enterprise-ds'''
+            - message: cloudProvider is immutable
+              rule: self.cloudProvider == oldSelf.cloudProvider
+            - message: region is immutable
+              rule: self.region == oldSelf.region
+            - message: type is immutable except for the in-place professional-db →
+                business-critical upgrade
+              rule: self.type == oldSelf.type || (oldSelf.type == 'professional-db'
+                && self.type == 'business-critical')
+            - message: version is immutable
+              rule: self.version == oldSelf.version
+            - message: projectId is immutable once set
+              rule: '!has(oldSelf.projectId) || (has(self.projectId) && self.projectId
+                == oldSelf.projectId)'
+            - message: customerManagedKeyId is immutable once set
+              rule: '!has(oldSelf.customerManagedKeyId) || (has(self.customerManagedKeyId)
+                && self.customerManagedKeyId == oldSelf.customerManagedKeyId)'
+            - message: instanceId is immutable once set
+              rule: '!has(oldSelf.instanceId) || (has(self.instanceId) && self.instanceId
+                == oldSelf.instanceId)'
+            - message: source is immutable
+              rule: has(self.source) == has(oldSelf.source) && (!has(self.source)
+                || self.source == oldSelf.source)
+          status:
+            description: AuraInstanceStatus is the observed state of an Aura instance.
+            properties:
+              atProvider:
+                description: AtProvider is the full instance state last observed from
+                  the Aura API.
+                properties:
+                  cloudProvider:
+                    type: string
+                  memory:
+                    type: string
+                  name:
+                    type: string
+                  region:
+                    type: string
+                  status:
+                    type: string
+                  storage:
+                    type: string
+                  type:
+                    type: string
+                type: object
+              binding:
+                description: Binding exposes this instance as a Service Binding Provisioned
+                  Service.
+                properties:
+                  name:
+                    description: Name is the connection Secret conforming to the Service
+                      Binding spec.
+                    type: string
+                type: object
+              conditions:
+                description: 'Conditions: Ready (instance usable) and Synced (operator
+                  reconciled spec).'
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              connectionUrl:
+                description: ConnectionURL is the Bolt routing URL (neo4j+s://...).
+                type: string
+              instanceId:
+                description: InstanceID is the Aura instance ID (mirror of the external-name
+                  annotation).
+                type: string
+              lastSyncedTime:
+                description: LastSyncedTime is when the instance was last observed
+                  from the Aura API.
+                format: date-time
+                type: string
+              metricsIntegrationUrl:
+                description: MetricsIntegrationURL is the Prometheus scrape endpoint,
+                  when available.
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the .metadata.generation last reconciled.
+                format: int64
+                type: integer
+              phase:
+                description: |-
+                  Phase mirrors the Aura instance status (Creating, Running, Pausing,
+                  Paused, Resuming, Updating, Restoring, Destroying, ...).
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions: null

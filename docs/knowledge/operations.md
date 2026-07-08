@@ -312,6 +312,13 @@
 - **pinned-by:** the `boundedExec` / `execOut` helpers in `test/integration/integration_suite_test.go`. No dedicated unit test guards test-harness usage — **known gap**. Manual check: `grep -rn 'exec.CommandContext(ctx, "kubectl"' test/integration/` must return only the helper (0 raw call sites today).
 - **enforcement:** convention + code review — **PROSE-ONLY — at risk**. Not covered by the `unit-tests` job (test-harness code, not operator code) and deliberately out of scope for `scripts/check-invariants.sh` (that guard is the 5 hard invariants only, and its non-test grep helper skips `_test.go`). Landed with the fix in PR #302.
 
+### id 81 — AuraIPFilter runs on the v2beta1 API; its contract is RECONSTRUCTED / unvalidated
+- **scope:** `internal/aura/ipfilter_v2beta1.go` (whole file); `internal/controller/auraipfilter_controller.go`; `api/v1beta1/auraipfilter_types.go`.
+- **rule:** IP filtering is only exposed on the Aura API **v2beta1** (org/project hierarchy, `/v2beta1/organizations/{org}/projects/{project}/…`), an unstable beta. The exact endpoint paths and request/response field names in `internal/aura/ipfilter_v2beta1.go` are **reconstructed from documented semantics and NOT validated against a live account.** All unverified assumptions are isolated behind `ipFilterCollectionPath` (the route) + `v2beta1Envelope` (the response wrapper) so correcting the contract is a localized change. The v2beta1 request path (`doV2JSON`) is deliberately separate from the stable v1 `doJSON` so the v1 client is untouched by beta churn. Do NOT build further v2beta1 features on this foundation until the contract is validated against a real Aura account.
+- **why:** v2beta1 allows breaking changes without a version bump (a `legacy_status`→`status` rename is pending), and the operator emits strictly-validated payloads — so a silent beta change surfaces as a runtime failure. Isolation + a single point of correction keeps the blast radius to one file.
+- **pinned-by:** `TestIPFilterLifecycle` and `TestIPFilterV2Base` (`internal/aura/ipfilter_v2beta1_test.go`) pin the *assumed* contract — they assert the client is self-consistent, NOT that it matches the live API. That gap is intentional; there is **no live-API contract test — known gap** pending a validated account.
+- **enforcement:** unit test (self-consistency only) + **PROSE-ONLY — at risk** for the live contract. Landed with the Aura Phase-3 work.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

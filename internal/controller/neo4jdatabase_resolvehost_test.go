@@ -57,29 +57,65 @@ func TestResolveDatabaseHost(t *testing.T) {
 	t.Run("resolves a cluster", func(t *testing.T) {
 		cl := &neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: "c1", Namespace: ns}}
 		r := newDatabaseReconcilerForResolve(t, cl)
-		cluster, standalone, isStandalone, found, err := r.resolveDatabaseHost(ctx, db("c1"))
+		cluster, standalone, aura, isStandalone, found, err := r.resolveDatabaseHost(ctx, db("c1"))
 		require.NoError(t, err)
 		assert.True(t, found)
 		assert.False(t, isStandalone)
 		assert.NotNil(t, cluster)
 		assert.Nil(t, standalone)
+		assert.Nil(t, aura)
 	})
 
 	t.Run("falls back to a standalone (deletion regression)", func(t *testing.T) {
 		sa := &neo4jv1beta1.Neo4jEnterpriseStandalone{ObjectMeta: metav1.ObjectMeta{Name: "s1", Namespace: ns}}
 		r := newDatabaseReconcilerForResolve(t, sa)
-		cluster, standalone, isStandalone, found, err := r.resolveDatabaseHost(ctx, db("s1"))
+		cluster, standalone, aura, isStandalone, found, err := r.resolveDatabaseHost(ctx, db("s1"))
 		require.NoError(t, err)
 		assert.True(t, found)
 		assert.True(t, isStandalone)
 		assert.Nil(t, cluster)
 		assert.NotNil(t, standalone)
+		assert.Nil(t, aura)
 	})
 
-	t.Run("neither cluster nor standalone → not found, no error", func(t *testing.T) {
+	t.Run("resolves an Aura instance via auraInstanceRef", func(t *testing.T) {
+		ai := &neo4jv1beta1.AuraInstance{ObjectMeta: metav1.ObjectMeta{Name: "a1", Namespace: ns}}
+		r := newDatabaseReconcilerForResolve(t, ai)
+		adb := &neo4jv1beta1.Neo4jDatabase{
+			ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: ns},
+			Spec:       neo4jv1beta1.Neo4jDatabaseSpec{Name: "mydb", AuraInstanceRef: "a1"},
+		}
+		cluster, standalone, aura, isStandalone, found, err := r.resolveDatabaseHost(ctx, adb)
+		require.NoError(t, err)
+		assert.True(t, found)
+		assert.False(t, isStandalone)
+		assert.Nil(t, cluster)
+		assert.Nil(t, standalone)
+		assert.NotNil(t, aura)
+	})
+
+	t.Run("neither cluster, standalone, nor aura → not found, no error", func(t *testing.T) {
 		r := newDatabaseReconcilerForResolve(t)
-		_, _, _, found, err := r.resolveDatabaseHost(ctx, db("ghost"))
+		_, _, _, _, found, err := r.resolveDatabaseHost(ctx, db("ghost"))
 		require.NoError(t, err)
 		assert.False(t, found)
 	})
+}
+
+// TestAuraTierSupportsMultiDatabase pins the fail-fast tier gate: single-database
+// Aura tiers are blocked up front; every other tier is allowed through (Aura
+// remains the final arbiter).
+func TestAuraTierSupportsMultiDatabase(t *testing.T) {
+	blocked := []string{"free-db", "professional-db"}
+	allowed := []string{"business-critical", "enterprise-db", "enterprise-ds", "professional-ds", ""}
+	for _, tier := range blocked {
+		if auraTierSupportsMultiDatabase(tier) {
+			t.Errorf("tier %q should be blocked for multi-database", tier)
+		}
+	}
+	for _, tier := range allowed {
+		if !auraTierSupportsMultiDatabase(tier) {
+			t.Errorf("tier %q should be allowed through the gate", tier)
+		}
+	}
 }

@@ -271,7 +271,24 @@ func init() {
 		secondaryCount,
 		scalingValidationTotal,
 		serverHealth,
+		// Aura orchestration metrics
+		auraAPIRequestsTotal,
+		auraAPIRequestDuration,
 	)
+}
+
+// RecordAuraAPICall records one logical Aura Platform API request. operation is
+// a low-cardinality normalized route label (e.g. "POST /instances/{id}/upgrade")
+// and success reflects the HTTP-level outcome (a 404 is a failure result even
+// where the caller treats it as an idempotent success). Safe to call from the
+// Aura client's Observer hook.
+func RecordAuraAPICall(operation string, duration time.Duration, success bool) {
+	result := MetricResultSuccess
+	if !success {
+		result = MetricResultFailure
+	}
+	auraAPIRequestsTotal.WithLabelValues(operation, result).Inc()
+	auraAPIRequestDuration.WithLabelValues(operation).Observe(duration.Seconds())
 }
 
 // ReconcileMetrics provides methods for recording reconciliation metrics
@@ -658,6 +675,29 @@ var (
 			Help:      "Health of individual Neo4j servers: 1=Enabled+Available, 0=degraded",
 		},
 		[]string{LabelClusterName, LabelNamespace, "server_name", "server_address"},
+	)
+
+	// Aura orchestration (control-plane) metrics. The operator talks to the Aura
+	// Platform REST API to provision and manage cloud instances; these track that
+	// API traffic. `operation` is a normalized route template (e.g.
+	// "POST /instances/{id}/upgrade") so cardinality stays bounded.
+	auraAPIRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: subsystem,
+			Name:      "aura_api_requests_total",
+			Help:      "Total Aura Platform API requests issued by the operator, by route and result.",
+		},
+		[]string{LabelOperation, LabelResult},
+	)
+
+	auraAPIRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Subsystem: subsystem,
+			Name:      "aura_api_request_duration_seconds",
+			Help:      "Latency of Aura Platform API requests, by route.",
+			Buckets:   []float64{0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0},
+		},
+		[]string{LabelOperation},
 	)
 )
 

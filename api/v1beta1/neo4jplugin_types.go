@@ -20,7 +20,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Neo4jPluginSpec defines the desired state of Neo4jPlugin
+// Neo4jPluginSpec defines the desired state of Neo4jPlugin.
+//
+// The installMode: VerifiedDownload supply-chain gates are apiserver-enforced
+// via CEL (no webhook — invariant 1) and mirror internal/validation/
+// plugin_validator.go (kept inline as defense-in-depth). They apply only when
+// installMode is VerifiedDownload (installMode defaults to Managed).
+//
+// +kubebuilder:validation:XValidation:rule="self.installMode != 'VerifiedDownload' || (has(self.source) && has(self.source.url) && size(self.source.url) > 0)",message="installMode 'VerifiedDownload' requires spec.source.url"
+// +kubebuilder:validation:XValidation:rule="self.installMode != 'VerifiedDownload' || (has(self.source) && has(self.source.checksum) && size(self.source.checksum) > 0)",message="installMode 'VerifiedDownload' requires spec.source.checksum (sha256:<64 hex> or sha512:<128 hex>)"
+// +kubebuilder:validation:XValidation:rule="self.installMode != 'VerifiedDownload' || !has(self.source) || !(self.source.type in ['official', 'community'])",message="installMode 'VerifiedDownload' requires source.type url or custom; official/community resolve via the Neo4j entrypoint and cannot be pointed at a verifiable URL"
+// +kubebuilder:validation:XValidation:rule="self.installMode != 'VerifiedDownload' || !has(self.dependencies) || size(self.dependencies) == 0",message="installMode 'VerifiedDownload' does not support spec.dependencies; each dependency must be its own Neo4jPlugin CR with its own verified source"
 type Neo4jPluginSpec struct {
 	// +kubebuilder:validation:Required
 	// Target cluster reference
@@ -87,14 +97,18 @@ type Neo4jPluginSpec struct {
 	Resources *PluginResourceRequirements `json:"resources,omitempty"`
 }
 
-// PluginSource defines how to obtain the plugin
+// PluginSource defines how to obtain the plugin.
+//
+// +kubebuilder:validation:XValidation:rule="!has(self.url) || size(self.url) == 0 || self.url.matches('(?i)^https://')",message="source.url scheme must be https: plugin JARs are downloaded over the network and a non-https scheme has no transport integrity"
 type PluginSource struct {
 	// +kubebuilder:validation:Enum=official;community;custom;url
 	// +kubebuilder:default=official
 	// Source type
 	Type string `json:"type,omitempty"`
 
-	// URL for custom plugins
+	// URL for custom plugins. Bounded so the https CEL rule on this struct has a
+	// finite cost estimate at CRD registration.
+	// +kubebuilder:validation:MaxLength=2048
 	URL string `json:"url,omitempty"`
 
 	// Checksum for verification

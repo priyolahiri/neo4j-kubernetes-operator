@@ -86,11 +86,18 @@ spec:
                 - active
                 - suspended
                 type: string
+              auraInstanceRef:
+                description: |-
+                  AuraInstanceRef is the name of a managed AuraInstance (same namespace)
+                  whose security graph owns this user; user DDL runs against it over Bolt.
+                  Mutually exclusive with clusterRef. Requires an Aura tier that permits
+                  custom user management (dedicated tiers).
+                type: string
               clusterRef:
                 description: |-
                   ClusterRef is the name of the Neo4jEnterpriseCluster or
                   Neo4jEnterpriseStandalone in the same namespace whose security graph
-                  owns this user.
+                  owns this user. Mutually exclusive with auraInstanceRef.
                 type: string
               deletionPolicy:
                 default: Delete
@@ -182,9 +189,14 @@ spec:
                 maxLength: 65
                 pattern: ^[a-zA-Z][a-zA-Z0-9_.@\-]*$
                 type: string
-            required:
-            - clusterRef
             type: object
+            x-kubernetes-validations:
+            - message: set exactly one of clusterRef or auraInstanceRef
+              rule: has(self.clusterRef) != has(self.auraInstanceRef)
+            - message: set either passwordSecretRef or at least one externalAuth provider
+                (Neo4j requires at least one auth provider per user)
+              rule: has(self.passwordSecretRef) || (has(self.externalAuth) && size(self.externalAuth)
+                > 0)
           status:
             description: Neo4jUserStatus describes the observed state of a Neo4jUser.
             properties:

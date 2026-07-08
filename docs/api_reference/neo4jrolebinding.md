@@ -31,7 +31,8 @@ The validator rejects a `Neo4jRoleBinding` whose `spec.username` overlaps with a
 
 | Field | Type | Description |
 |---|---|---|
-| `clusterRef` | `string` | **Required**. Name of the `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace. |
+| `clusterRef` | `string` | Name of the `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace. **Set exactly one of `clusterRef` or `auraInstanceRef`.** |
+| `auraInstanceRef` | `string` | Name of a managed [`AuraInstance`](../user_guide/aura_orchestration.md#managing-users--roles-on-an-aura-instance) (same namespace); role-grant DDL runs against it over Bolt. **Mutually exclusive with `clusterRef`.** |
 | `username` | `string` | **Required**. Username in Neo4j to manage role grants for. Must already exist when the binding reconciles (it enters `UserNotFound` and waits otherwise). Pattern `^[a-zA-Z][a-zA-Z0-9_.@\-]*$`, max 65 chars. |
 | `roles` | `[]string` | **Required**, MinItems=1. Role names to grant. Mix built-ins and custom names (the latter must correspond to existing `Neo4jRole` CRs or roles created out-of-band). PUBLIC is implicit. |
 | `enforceExclusive` | `boolean` | Default `false`. When true, `.spec.roles` is authoritative for the user's full role set: roles granted out-of-band and not listed here are revoked on every reconcile. When false, the binding only adds and removes the roles it knows about; extra grants from other sources are tolerated. |

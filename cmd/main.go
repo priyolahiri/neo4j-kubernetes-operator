@@ -434,6 +434,60 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				Validator:    validation.NewAuthRuleValidator(mgr.GetClient()),
 			},
 		},
+		{
+			name: "AuraProviderConfig",
+			controller: &controller.AuraProviderConfigReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-provider-config-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
+		{
+			name: "AuraInstance",
+			controller: &controller.AuraInstanceReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-instance-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
+		{
+			name: "AuraSnapshot",
+			controller: &controller.AuraSnapshotReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-snapshot-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
+		{
+			name: "AuraRestore",
+			controller: &controller.AuraRestoreReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-restore-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
+		{
+			name: "AuraCustomerManagedKey",
+			controller: &controller.AuraCustomerManagedKeyReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-customer-managed-key-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
+		{
+			name: "AuraIPFilter",
+			controller: &controller.AuraIPFilterReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-ip-filter-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
 	}
 
 	for _, ctrl := range controllers {
@@ -555,6 +609,54 @@ func setupDevelopmentControllers(mgr ctrl.Manager, controllers []string) error {
 				RequeueAfter: controller.GetTestRequeueAfter(),
 				Validator:    validation.NewAuthRuleValidator(mgr.GetClient()),
 			}, "Neo4jAuthRule"
+		},
+		"auraproviderconfig": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraProviderConfigReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-provider-config-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraProviderConfig"
+		},
+		"aurainstance": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraInstanceReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-instance-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraInstance"
+		},
+		"aurasnapshot": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraSnapshotReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-snapshot-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraSnapshot"
+		},
+		"aurarestore": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraRestoreReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-restore-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraRestore"
+		},
+		"auracustomermanagedkey": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraCustomerManagedKeyReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-customer-managed-key-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraCustomerManagedKey"
+		},
+		"auraipfilter": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.AuraIPFilterReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("aura-ip-filter-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "AuraIPFilter"
 		},
 	}
 

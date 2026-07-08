@@ -3,6 +3,12 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
+  - bases/neo4j.neo4j.com_auracustomermanagedkeys.yaml
+  - bases/neo4j.neo4j.com_aurainstances.yaml
+  - bases/neo4j.neo4j.com_auraipfilters.yaml
+  - bases/neo4j.neo4j.com_auraproviderconfigs.yaml
+  - bases/neo4j.neo4j.com_aurarestores.yaml
+  - bases/neo4j.neo4j.com_aurasnapshots.yaml
   - bases/neo4j.neo4j.com_neo4jauthrules.yaml
   - bases/neo4j.neo4j.com_neo4jbackups.yaml
   - bases/neo4j.neo4j.com_neo4jdatabases.yaml

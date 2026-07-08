@@ -24,6 +24,24 @@ annotations:
   artifacthub.io/prerelease: "false"
   artifacthub.io/license: Apache-2.0
   artifacthub.io/crds: |-
+    - kind: AuraCustomerManagedKey
+      version: v1beta1
+      description: Registers a customer-managed encryption key with Neo4j Aura for dedicated-tier instances
+    - kind: AuraInstance
+      version: v1beta1
+      description: Provisions and manages Neo4j Aura cloud instances via the Aura API
+    - kind: AuraIPFilter
+      version: v1beta1
+      description: Manages a Neo4j Aura network IP filter (CIDR allowlist) via the Aura API v2beta1 (beta)
+    - kind: AuraProviderConfig
+      version: v1beta1
+      description: Neo4j Aura API credentials and account defaults for Aura orchestration
+    - kind: AuraRestore
+      version: v1beta1
+      description: Restores a Neo4j Aura instance in place from a snapshot
+    - kind: AuraSnapshot
+      version: v1beta1
+      description: Takes on-demand snapshots of Neo4j Aura instances
     - kind: Neo4jAuthRule
       version: v1beta1
       description: Attribute-based access control (ABAC) — claims-to-roles mapping evaluated at OIDC authentication time (Neo4j 2026.03+)

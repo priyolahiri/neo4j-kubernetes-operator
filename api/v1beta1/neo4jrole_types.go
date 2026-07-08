@@ -27,12 +27,21 @@ import (
 // spec against `SHOW ROLE <r> PRIVILEGES AS COMMANDS` and applies the
 // difference. Built-in roles (PUBLIC, reader, editor, publisher, architect,
 // admin) cannot be managed unless `adoptBuiltin` is true.
+//
+// +kubebuilder:validation:XValidation:rule="has(self.clusterRef) != has(self.auraInstanceRef)",message="set exactly one of clusterRef or auraInstanceRef"
 type Neo4jRoleSpec struct {
 	// ClusterRef is the name of the Neo4jEnterpriseCluster or
 	// Neo4jEnterpriseStandalone in the same namespace whose security graph
-	// owns this role.
-	// +kubebuilder:validation:Required
-	ClusterRef string `json:"clusterRef"`
+	// owns this role. Mutually exclusive with auraInstanceRef.
+	// +optional
+	ClusterRef string `json:"clusterRef,omitempty"`
+
+	// AuraInstanceRef is the name of a managed AuraInstance (same namespace)
+	// whose security graph owns this role; role/privilege DDL runs against it
+	// over Bolt. Mutually exclusive with clusterRef. Requires an Aura tier that
+	// permits custom role management (dedicated tiers).
+	// +optional
+	AuraInstanceRef string `json:"auraInstanceRef,omitempty"`
 
 	// Name is the role name in Neo4j. Defaults to metadata.name when empty.
 	// Must start with an ASCII letter and contain only letters, digits, or

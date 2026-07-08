@@ -61,7 +61,13 @@ spec:
           metadata:
             type: object
           spec:
-            description: Neo4jPluginSpec defines the desired state of Neo4jPlugin
+            description: |-
+              Neo4jPluginSpec defines the desired state of Neo4jPlugin.
+
+              The installMode: VerifiedDownload supply-chain gates are apiserver-enforced
+              via CEL (no webhook — invariant 1) and mirror internal/validation/
+              plugin_validator.go (kept inline as defense-in-depth). They apply only when
+              installMode is VerifiedDownload (installMode defaults to Managed).
             properties:
               clusterRef:
                 description: Target cluster reference
@@ -207,9 +213,16 @@ spec:
                     - url
                     type: string
                   url:
-                    description: URL for custom plugins
+                    description: |-
+                      URL for custom plugins. Bounded so the https CEL rule on this struct has a
+                      finite cost estimate at CRD registration.
+                    maxLength: 2048
                     type: string
                 type: object
+                x-kubernetes-validations:
+                - message: 'source.url scheme must be https: plugin JARs are downloaded
+                    over the network and a non-https scheme has no transport integrity'
+                  rule: '!has(self.url) || size(self.url) == 0 || self.url.matches(''(?i)^https://'')'
               version:
                 description: Plugin version
                 type: string
@@ -218,6 +231,24 @@ spec:
             - name
             - version
             type: object
+            x-kubernetes-validations:
+            - message: installMode 'VerifiedDownload' requires spec.source.url
+              rule: self.installMode != 'VerifiedDownload' || (has(self.source) &&
+                has(self.source.url) && size(self.source.url) > 0)
+            - message: installMode 'VerifiedDownload' requires spec.source.checksum
+                (sha256:<64 hex> or sha512:<128 hex>)
+              rule: self.installMode != 'VerifiedDownload' || (has(self.source) &&
+                has(self.source.checksum) && size(self.source.checksum) > 0)
+            - message: installMode 'VerifiedDownload' requires source.type url or
+                custom; official/community resolve via the Neo4j entrypoint and cannot
+                be pointed at a verifiable URL
+              rule: self.installMode != 'VerifiedDownload' || !has(self.source) ||
+                !(self.source.type in ['official', 'community'])
+            - message: installMode 'VerifiedDownload' does not support spec.dependencies;
+                each dependency must be its own Neo4jPlugin CR with its own verified
+                source
+              rule: self.installMode != 'VerifiedDownload' || !has(self.dependencies)
+                || size(self.dependencies) == 0
           status:
             description: Neo4jPluginStatus defines the observed state of Neo4jPlugin
             properties:

@@ -1,0 +1,9 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraRestore
+metadata:
+  name: example-aura-restore
+spec:
+  # Restores the target AuraInstance in place. Provide exactly one of
+  # snapshotId (a raw Aura snapshot ID) or snapshotRef (an AuraSnapshot CR).
+  instanceRef: example-aura-instance
+  snapshotRef: example-aura-snapshot

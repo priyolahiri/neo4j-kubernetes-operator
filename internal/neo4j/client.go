@@ -396,6 +396,81 @@ func NewClientForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sCli
 	return client, nil
 }
 
+// NewClientForAura builds a client against a Neo4j Aura cloud instance, using
+// the routing connection URL (neo4j+s://…, TLS carried by the scheme + public
+// CA roots — no explicit TlsConfig) and the admin credentials the operator
+// captured into the instance's connection Secret at create time. It is the Aura
+// analogue of NewClientForEnterprise{,Standalone} and lets the Bolt-level CRDs
+// (Neo4jDatabase/User/Role/RoleBinding) target an AuraInstance.
+func NewClientForAura(ctx context.Context, k8sClient client.Client, namespace, connectionURL, connSecretName string) (*Client, error) {
+	creds, err := getAuraConnectionCredentials(ctx, k8sClient, namespace, connSecretName)
+	if err != nil {
+		return nil, err
+	}
+
+	auth := neo4j.BasicAuth(creds.Username, creds.Password, "")
+	config := func(c *config.Config) {
+		c.MaxConnectionLifetime = 30 * time.Minute
+		c.MaxConnectionPoolSize = 10
+		c.ConnectionAcquisitionTimeout = 20 * time.Second
+		c.SocketConnectTimeout = 15 * time.Second
+		c.SocketKeepalive = true
+		c.ConnectionLivenessCheckTimeout = 10 * time.Second
+		c.MaxTransactionRetryTime = 30 * time.Second
+		c.FetchSize = 1000
+		// No TlsConfig: Aura's neo4j+s:// scheme enables TLS against public CA
+		// roots. Setting a custom TlsConfig here would break that.
+	}
+
+	driver, err := neo4j.NewDriverWithContext(connectionURL, auth, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Neo4j driver for Aura instance: %w", err)
+	}
+
+	vctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := driver.VerifyConnectivity(vctx); err != nil {
+		driver.Close(context.Background())
+		return nil, fmt.Errorf("failed to verify connectivity to Aura instance: %w", err)
+	}
+
+	return &Client{
+		driver:         driver,
+		credentials:    creds,
+		circuitBreaker: newCircuitBreaker(),
+		poolMetrics:    &ConnectionPoolMetrics{LastHealthCheck: time.Now()},
+	}, nil
+}
+
+// getAuraConnectionCredentials reads admin credentials from an AuraInstance
+// connection Secret. It tolerates every connectionSecretFormat: the driver/env
+// formats use NEO4J_USERNAME/NEO4J_PASSWORD; the servicebinding format uses
+// lowercase username/password. Username defaults to "neo4j".
+func getAuraConnectionCredentials(ctx context.Context, k8sClient client.Client, namespace, secretName string) (*Credentials, error) {
+	secret := &corev1.Secret{}
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: namespace, Name: secretName}, secret); err != nil {
+		return nil, fmt.Errorf("failed to get Aura connection secret %q: %w", secretName, err)
+	}
+
+	username := string(secret.Data["NEO4J_USERNAME"])
+	if username == "" {
+		username = string(secret.Data["username"])
+	}
+	if username == "" {
+		username = "neo4j"
+	}
+
+	password := string(secret.Data["NEO4J_PASSWORD"])
+	if password == "" {
+		password = string(secret.Data["password"])
+	}
+	if password == "" {
+		return nil, fmt.Errorf("no password found in Aura connection secret %q (the operator captures it only when it creates the instance; an imported instance needs credentials supplied)", secretName)
+	}
+
+	return &Credentials{Username: username, Password: password}, nil
+}
+
 // checkCircuitBreakerState evaluates and updates circuit breaker state.
 // Called synchronously at the start of executeWithCircuitBreaker so an Open
 // circuit can transition to HalfOpen once resetTimeout has elapsed — there is

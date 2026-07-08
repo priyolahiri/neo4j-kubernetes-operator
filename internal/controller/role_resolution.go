@@ -45,7 +45,7 @@ import (
 //
 // On a List error it returns empty maps, so callers degrade to literal
 // (no-resolution) behaviour rather than failing.
-func roleCRIndex(ctx context.Context, c client.Client, namespace, clusterRef string) (effective map[string]struct{}, metaToEffective map[string]string) {
+func roleCRIndex(ctx context.Context, c client.Client, namespace, targetKey string) (effective map[string]struct{}, metaToEffective map[string]string) {
 	effective = map[string]struct{}{}
 	metaToEffective = map[string]string{}
 	list := &neo4jv1beta1.Neo4jRoleList{}
@@ -54,7 +54,7 @@ func roleCRIndex(ctx context.Context, c client.Client, namespace, clusterRef str
 	}
 	for i := range list.Items {
 		role := &list.Items[i]
-		if role.Spec.ClusterRef != clusterRef {
+		if targetRefKey(role.Spec.ClusterRef, role.Spec.AuraInstanceRef) != targetKey {
 			continue
 		}
 		name := role.Spec.Name
@@ -73,8 +73,8 @@ func roleCRIndex(ctx context.Context, c client.Client, namespace, clusterRef str
 // CR's effective Neo4j role name (spec.name, or metadata.name when spec.name
 // is empty) pointing at the same clusterRef. This is the existence pre-flight
 // shared by both controllers' diffRoles.
-func roleNameExists(ctx context.Context, c client.Client, namespace, clusterRef, roleName string) bool {
-	effective, _ := roleCRIndex(ctx, c, namespace, clusterRef)
+func roleNameExists(ctx context.Context, c client.Client, namespace, targetKey, roleName string) bool {
+	effective, _ := roleCRIndex(ctx, c, namespace, targetKey)
 	_, ok := effective[roleName]
 	return ok
 }
@@ -86,12 +86,12 @@ func roleNameExists(ctx context.Context, c client.Client, namespace, clusterRef,
 // CR's effective spec.name. Unknown entries pass through unchanged so diffRoles
 // can report them as missing. resolved maps any rewritten input -> output for
 // caller diagnostics (empty when nothing was rewritten).
-func resolveRoleNames(ctx context.Context, c client.Client, namespace, clusterRef string, desired []string) (out []string, resolved map[string]string) {
+func resolveRoleNames(ctx context.Context, c client.Client, namespace, targetKey string, desired []string) (out []string, resolved map[string]string) {
 	resolved = map[string]string{}
 	if len(desired) == 0 {
 		return desired, resolved
 	}
-	effective, metaToEffective := roleCRIndex(ctx, c, namespace, clusterRef)
+	effective, metaToEffective := roleCRIndex(ctx, c, namespace, targetKey)
 	out = make([]string, 0, len(desired))
 	for _, d := range desired {
 		switch {

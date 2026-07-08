@@ -194,3 +194,42 @@ const (
 	ConditionReasonPrivilegesSynced  = "PrivilegesMatch"
 	ConditionReasonPrivilegesDrifted = "PrivilegesDrifted"
 )
+
+// Aura orchestration (control-plane) event reasons.
+const (
+	EventReasonAuraCredentialsValidated = "AuraCredentialsValidated"
+	EventReasonAuraCredentialsInvalid   = "AuraCredentialsInvalid"
+	EventReasonAuraInstanceCreated      = "AuraInstanceCreated"
+	EventReasonAuraInstanceAdopted      = "AuraInstanceAdopted"
+	EventReasonAuraInstanceUpdated      = "AuraInstanceUpdated"
+	EventReasonAuraInstancePaused       = "AuraInstancePaused"
+	EventReasonAuraInstanceResumed      = "AuraInstanceResumed"
+	EventReasonAuraInstanceUpgraded     = "AuraInstanceUpgraded"
+	EventReasonAuraInstanceDeleted      = "AuraInstanceDeleted"
+	EventReasonAuraInstanceOrphaned     = "AuraInstanceOrphaned"
+	EventReasonAuraInstanceFailed       = "AuraInstanceFailed"
+	EventReasonAuraSnapshotCreated      = "AuraSnapshotCreated"
+	EventReasonAuraRestoreStarted       = "AuraRestoreStarted"
+	EventReasonAuraRestoreCompleted     = "AuraRestoreCompleted"
+	EventReasonAuraRestoreFailed        = "AuraRestoreFailed"
+	EventReasonAuraCMKCreated           = "AuraCustomerManagedKeyCreated"
+	EventReasonAuraCMKAdopted           = "AuraCustomerManagedKeyAdopted"
+	EventReasonAuraCMKReady             = "AuraCustomerManagedKeyReady"
+	EventReasonAuraCMKDeleted           = "AuraCustomerManagedKeyDeleted"
+	EventReasonAuraCMKOrphaned          = "AuraCustomerManagedKeyOrphaned"
+	EventReasonAuraCMKDeleteBlocked     = "AuraCustomerManagedKeyDeleteBlocked"
+	EventReasonAuraCMKFailed            = "AuraCustomerManagedKeyFailed"
+	// EventReasonAuraTierUnsupported is emitted when a Bolt-level CRD targets an
+	// AuraInstance whose tier does not support the requested operation (e.g. a
+	// Neo4jDatabase against a single-database tier).
+	EventReasonAuraTierUnsupported = "AuraTierUnsupported"
+
+	// Aura IP filter (v2beta1, beta) event reasons.
+	EventReasonAuraIPFilterCreated  = "AuraIPFilterCreated"
+	EventReasonAuraIPFilterAdopted  = "AuraIPFilterAdopted"
+	EventReasonAuraIPFilterUpdated  = "AuraIPFilterUpdated"
+	EventReasonAuraIPFilterReady    = "AuraIPFilterReady"
+	EventReasonAuraIPFilterDeleted  = "AuraIPFilterDeleted"
+	EventReasonAuraIPFilterOrphaned = "AuraIPFilterOrphaned"
+	EventReasonAuraIPFilterFailed   = "AuraIPFilterFailed"
+)
