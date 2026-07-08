@@ -1886,6 +1886,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -2953,6 +2965,174 @@
     
   
     AuraIPFilter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auradatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auradatabasebackup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseBackup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auradatabaserestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auraorganizationmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraOrganizationMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auraprojectmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraProjectMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../aurainvite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraInvite
   
 
     
@@ -4104,12 +4284,7 @@
 <tr>
 <td><code>clusterRef</code></td>
 <td><code>string</code></td>
-<td>Name of target Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone. <strong>Set exactly one of <code>clusterRef</code> or <code>auraInstanceRef</code>.</strong></td>
-</tr>
-<tr>
-<td><code>auraInstanceRef</code></td>
-<td><code>string</code></td>
-<td>Name of a target <a href="../../user_guide/aura_orchestration/#managing-databases-on-an-aura-instance"><code>AuraInstance</code></a> (same namespace); the database DDL runs against it over Bolt. Requires a multi-database-capable Aura tier. <strong>Mutually exclusive with <code>clusterRef</code>.</strong></td>
+<td><strong>Required.</strong> Name of the target <code>Neo4jEnterpriseCluster</code> or <code>Neo4jEnterpriseStandalone</code> in the same namespace. For databases on a Neo4j Aura instance, use the <code>AuraDatabase</code> CRD instead.</td>
 </tr>
 <tr>
 <td><code>name</code></td>

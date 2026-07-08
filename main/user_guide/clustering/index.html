@@ -2425,6 +2425,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -2930,6 +2942,174 @@
     
   
     AuraIPFilter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabasebackup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseBackup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabaserestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraorganizationmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraOrganizationMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraprojectmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraProjectMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurainvite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraInvite
   
 
     
@@ -4207,7 +4387,7 @@
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>&lt;cluster&gt;-server-0<span class="w"> </span>-c<span class="w"> </span>neo4j<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="s2">&quot;ALTER DATABASE neo4j SET TOPOLOGY 3 PRIMARIES 1 SECONDARY&quot;</span>
 </span></code></pre></div>
-<p>Alternatively, you can manage database topology declaratively using the <code>Neo4jDatabase</code> CRD. See the <a href="../../api_reference/neo4jdatabase/">Neo4jDatabase API Reference</a> for details. A <code>Neo4jDatabase</code> can also target a managed <strong>Aura</strong> instance via <code>spec.auraInstanceRef</code> instead of <code>clusterRef</code> — see <a href="../aura_orchestration/#managing-databases-on-an-aura-instance">Managing databases on an Aura instance</a>.</p>
+<p>Alternatively, you can manage database topology declaratively using the <code>Neo4jDatabase</code> CRD. See the <a href="../../api_reference/neo4jdatabase/">Neo4jDatabase API Reference</a> for details. For databases on a managed <strong>Aura</strong> instance, use the <code>AuraDatabase</code> CRD — see the <a href="../aura_orchestration/">Aura Orchestration Guide</a>.</p>
 <h3 id="cannot-skip-default-database-creation">Cannot Skip Default Database Creation<a class="headerlink" href="#cannot-skip-default-database-creation" title="Anchor link to this section">&para;</a></h3>
 <p>Neo4j does not provide a way to prevent the default <code>neo4j</code> database from being created. It is always created at cluster bootstrap. The only post-bootstrap options are:</p>
 <ul>

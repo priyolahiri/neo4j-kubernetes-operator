@@ -1878,6 +1878,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -2383,6 +2395,174 @@
     
   
     AuraIPFilter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabasebackup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseBackup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabaserestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraorganizationmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraOrganizationMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraprojectmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraProjectMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurainvite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraInvite
   
 
     
@@ -3631,9 +3811,9 @@
 <li><strong>Phase 1 (MVP):</strong> <code>AuraInstance</code> (create/resize/pause/resume/delete, Orphan default) + <code>AuraSnapshot</code> (on-demand) + <code>AuraRestore</code>; <strong><code>AuraProviderConfig</code></strong> (C); <strong>idempotent create + adopt</strong> via the external-name annotation (A); <strong>CEL</strong> immutability/enum validation + inline <code>instance_configurations</code> oracle (B); connection Secret with <strong>all formats</strong> (<code>neo4j-driver</code> default, <code>aura-dotenv</code>, <code>jdbc</code>, <code>servicebinding</code>, <code>custom</code>) + <strong>full Service Binding</strong> + <strong><code>publishConnectionDetailsTo</code></strong> ConfigMap (H); <strong>metrics wiring</strong> (G); faked-API tests. (See the Review v2 section — it supersedes where they differ.)</li>
 <li><strong>Phase 2 (done):</strong> <code>professional-db → business-critical</code> upgrade (<code>POST /instances/{id}/upgrade</code>); CMK (<code>AuraCustomerManagedKey</code>) with its own <code>auraCMKAPI</code> interface, idempotent create+adopt (match on the immutable cloud <code>keyId</code>+placement), and in-use-key delete guard; D/E ergonomics — <code>managementPolicies</code>, <code>neo4j.com/paused</code>, <code>status.atProvider</code>; Aura-API Prometheus counters/histogram (<code>neo4j_operator_aura_api_requests_total</code> / <code>_request_duration_seconds</code>, route-normalized <code>operation</code> label) via an Observer hook on the client.</li>
 <li><strong>Phase 2 (deferred — documented follow-ups):</strong> clone/overwrite (<code>source</code> + overwrite-into-existing), <code>AuraSnapshotSchedule</code>, <code>ScrapeConfig</code> auto-generation from <code>metricsIntegrationUrl</code>. Low value relative to cost; revisit on demand.</li>
-<li><strong>Phase 3 (done — the non-API-gated items, v1 + Bolt):</strong> Aura-target-aware <code>Neo4jDatabase</code>/<code>Neo4jUser</code>/<code>Neo4jRole</code>/<code>Neo4jRoleBinding</code> via a new <code>auraInstanceRef</code> (CEL exactly-one-of with <code>clusterRef</code>); a <code>NewClientForAura</code> Bolt client + a <code>ResolvedTarget</code> Aura arm + a shared <code>targetRefKey</code> so auth-model cross-references stay scoped to the same Aura target; a fail-fast multi-DB tier gate for <code>Neo4jDatabase</code>. This delivers "multi-DB on Aura" over Cypher, without v2beta1.</li>
+<li><strong>Phase 3 (superseded — Cypher-over-Bolt Aura targeting, REVERTED):</strong> an earlier cut added <code>auraInstanceRef</code> to <code>Neo4jDatabase</code>/<code>Neo4jUser</code>/<code>Neo4jRole</code>/<code>Neo4jRoleBinding</code> (CEL exactly-one-of with <code>clusterRef</code>) with a <code>NewClientForAura</code> Bolt client and a fail-fast multi-DB tier gate. This was <strong>reverted</strong>: Aura does not accept the full <code>CREATE DATABASE</code> grammar over Bolt (topology/seed are Aura-managed, not user-settable), and in-database user/role management has no Aura equivalent (Aura governs access via console-RBAC, a different concept). The self-managed CRDs are now cluster/standalone-only, and Aura databases/access are modelled by <strong>Aura-native, API-driven CRDs</strong> on the v2beta1 API — see below.</li>
 <li><strong>Phase 3 (done — first v2beta1 item, BETA/best-effort):</strong> <code>AuraIPFilter</code> (network allowlist) on the v2beta1 API, in an isolated, clearly-flagged client (<code>internal/aura/ipfilter_v2beta1.go</code>). The client shape follows the <strong>official v2beta1 <code>IpFilter</code> schema</strong>: filters are <strong>organization-scoped</strong> (<code>/organizations/{org}/ip-filters</code>, built by <code>orgIPFilterPath</code>), the ip-filter endpoints are the one v2beta1 resource returned <strong>without a <code>{data:…}</code> envelope</strong> (<code>doV2JSON</code>), and the allowlist is <code>allow_list:[{address,prefix_len,description}]</code> applied to instances via <code>filtered_entities.instances</code>. Still BETA/best-effort — v2beta1 may break without a version bump. See <code>docs/knowledge/operations.md</code>.</li>
-<li><strong>Phase 3 (still deferred):</strong> <code>AuraDatabase</code> (redundant with Aura-target <code>Neo4jDatabase</code> on multi-DB tiers), org/project RBAC, billing — all v2beta1-only; hold on stability, not availability. <code>AuraInstanceClass</code> remains a non-API-gated operator-side follow-up.</li>
+<li><strong>Phase 3 (in progress — Aura-native v2beta1 CRDs, BETA/best-effort):</strong> <code>AuraDatabase</code> (+ per-DB backup/restore) on <code>…/instances/{id}/databases</code>, and console-RBAC (<code>AuraOrganizationMember</code>/<code>AuraProjectMember</code>/<code>AuraInvite</code>) on <code>…/organizations/{org}/users</code> + <code>/invites</code>. These replace the reverted Cypher-over-Bolt path. The <code>AuraDatabase</code> create body is undocumented upstream → mirrored from the response shape, BETA/best-effort. Still deferred: billing (surface as metrics, not a CRD), <code>AuraServiceAccount</code> (no <code>/service-accounts</code> path in the current v2beta1 spec), and <code>AuraInstanceClass</code> (non-API-gated operator-side follow-up).</li>
 </ul>
 <h2 id="9-risks-caveats">9. Risks &amp; caveats<a class="headerlink" href="#9-risks-caveats" title="Anchor link to this section">&para;</a></h2>
 <ul>

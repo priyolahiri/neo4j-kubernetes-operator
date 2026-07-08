@@ -12,31 +12,31 @@
         <meta name="author" content="Priyo Lahiri">
       
       
-        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/security/">
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/auradatabaserestore/">
       
       
-        <link rel="prev" href="../../security/">
+        <link rel="prev" href="../auradatabasebackup/">
       
       
-        <link rel="next" href="../../tls_configuration/">
+        <link rel="next" href="../auraorganizationmember/">
       
       
         
       
       
-      <link rel="icon" href="../../../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Authentication & Authorization - Neo4j Kubernetes Operator</title>
+        <title>AuraDatabaseRestore - Neo4j Kubernetes Operator</title>
       
     
     
-      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -55,9 +55,9 @@
       
     
     
-      <link rel="stylesheet" href="../../../stylesheets/neo4j.css">
+      <link rel="stylesheet" href="../../stylesheets/neo4j.css">
     
-    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#security" class="md-skip">
+        <a href="#auradatabaserestore-api-reference" class="md-skip">
           Skip to content
         </a>
       
@@ -102,7 +102,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+    <a href="../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -122,7 +122,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Authentication & Authorization
+              AuraDatabaseRestore
             
           </span>
         </div>
@@ -245,7 +245,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+    <a href="../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -275,7 +275,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../.." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -370,7 +370,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../getting_started/" class="md-nav__link">
+      <a href="../../user_guide/getting_started/" class="md-nav__link">
         
   
   
@@ -398,7 +398,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../installation/" class="md-nav__link">
+      <a href="../../user_guide/installation/" class="md-nav__link">
         
   
   
@@ -426,7 +426,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../deployment/" class="md-nav__link">
+      <a href="../../user_guide/deployment/" class="md-nav__link">
         
   
   
@@ -454,7 +454,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../operator-modes/" class="md-nav__link">
+      <a href="../../user_guide/operator-modes/" class="md-nav__link">
         
   
   
@@ -482,7 +482,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../demo/" class="md-nav__link">
+      <a href="../../user_guide/guides/demo/" class="md-nav__link">
         
   
   
@@ -510,7 +510,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../version_support/" class="md-nav__link">
+      <a href="../../user_guide/version_support/" class="md-nav__link">
         
   
   
@@ -538,7 +538,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../migration_guide/" class="md-nav__link">
+      <a href="../../user_guide/migration_guide/" class="md-nav__link">
         
   
   
@@ -651,7 +651,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/" class="md-nav__link">
+      <a href="../../user_guide/configuration/" class="md-nav__link">
         
   
   
@@ -679,7 +679,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../examples_gallery/" class="md-nav__link">
+      <a href="../../user_guide/examples_gallery/" class="md-nav__link">
         
   
   
@@ -707,7 +707,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../resource_sizing/" class="md-nav__link">
+      <a href="../../user_guide/guides/resource_sizing/" class="md-nav__link">
         
   
   
@@ -735,7 +735,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../clustering/" class="md-nav__link">
+      <a href="../../user_guide/clustering/" class="md-nav__link">
         
   
   
@@ -763,7 +763,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../topology_placement/" class="md-nav__link">
+      <a href="../../user_guide/topology_placement/" class="md-nav__link">
         
   
   
@@ -791,7 +791,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../property_sharding/" class="md-nav__link">
+      <a href="../../user_guide/property_sharding/" class="md-nav__link">
         
   
   
@@ -819,7 +819,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../external_access/" class="md-nav__link">
+      <a href="../../user_guide/external_access/" class="md-nav__link">
         
   
   
@@ -847,7 +847,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../plugins/" class="md-nav__link">
+      <a href="../../user_guide/guides/plugins/" class="md-nav__link">
         
   
   
@@ -875,7 +875,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../seed-uri/" class="md-nav__link">
+      <a href="../../user_guide/guides/seed-uri/" class="md-nav__link">
         
   
   
@@ -903,7 +903,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../aura_fleet_management/" class="md-nav__link">
+      <a href="../../user_guide/aura_fleet_management/" class="md-nav__link">
         
   
   
@@ -931,7 +931,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../aura_orchestration/" class="md-nav__link">
+      <a href="../../user_guide/aura_orchestration/" class="md-nav__link">
         
   
   
@@ -959,7 +959,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mcp_client_setup/" class="md-nav__link">
+      <a href="../../user_guide/guides/mcp_client_setup/" class="md-nav__link">
         
   
   
@@ -991,10 +991,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -1015,11 +1013,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
         
           
           <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
@@ -1040,7 +1038,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1058,7 +1056,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../security/" class="md-nav__link">
+      <a href="../../user_guide/security/" class="md-nav__link">
         
   
   
@@ -1083,37 +1081,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Authentication & Authorization
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/security/" class="md-nav__link">
         
   
   
@@ -1129,81 +1100,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#authentication" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Authentication
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#tls" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        TLS
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#network-policies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Network Policies
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#rbac" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        RBAC
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#pod-security-defaults" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Pod Security Defaults
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1216,7 +1112,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../tls_configuration/" class="md-nav__link">
+      <a href="../../user_guide/tls_configuration/" class="md-nav__link">
         
   
   
@@ -1244,7 +1140,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_role_management/" class="md-nav__link">
+      <a href="../../user_guide/user_role_management/" class="md-nav__link">
         
   
   
@@ -1345,7 +1241,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../backup_restore/" class="md-nav__link">
+      <a href="../../user_guide/guides/backup_restore/" class="md-nav__link">
         
   
   
@@ -1373,7 +1269,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../upgrades/" class="md-nav__link">
+      <a href="../../user_guide/guides/upgrades/" class="md-nav__link">
         
   
   
@@ -1401,7 +1297,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../storage_expansion/" class="md-nav__link">
+      <a href="../../user_guide/guides/storage_expansion/" class="md-nav__link">
         
   
   
@@ -1429,7 +1325,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../fault_tolerance/" class="md-nav__link">
+      <a href="../../user_guide/guides/fault_tolerance/" class="md-nav__link">
         
   
   
@@ -1514,7 +1410,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../monitoring/" class="md-nav__link">
+      <a href="../../user_guide/guides/monitoring/" class="md-nav__link">
         
   
   
@@ -1542,7 +1438,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../prometheus-grafana-setup/" class="md-nav__link">
+      <a href="../../user_guide/guides/prometheus-grafana-setup/" class="md-nav__link">
         
   
   
@@ -1570,7 +1466,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../kubernetes-events/" class="md-nav__link">
+      <a href="../../user_guide/guides/kubernetes-events/" class="md-nav__link">
         
   
   
@@ -1661,7 +1557,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../performance/" class="md-nav__link">
+      <a href="../../user_guide/performance/" class="md-nav__link">
         
   
   
@@ -1689,7 +1585,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../performance/" class="md-nav__link">
+      <a href="../../user_guide/guides/performance/" class="md-nav__link">
         
   
   
@@ -1792,7 +1688,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../troubleshooting/" class="md-nav__link">
+      <a href="../../user_guide/guides/troubleshooting/" class="md-nav__link">
         
   
   
@@ -1820,7 +1716,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../troubleshooting/backup_restore/" class="md-nav__link">
+      <a href="../../user_guide/troubleshooting/backup_restore/" class="md-nav__link">
         
   
   
@@ -1848,7 +1744,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../troubleshooting/split-brain-recovery/" class="md-nav__link">
+      <a href="../../user_guide/troubleshooting/split-brain-recovery/" class="md-nav__link">
         
   
   
@@ -1880,6 +1776,8 @@
       
   
   
+    
+  
   
   
     
@@ -1900,15 +1798,15 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../gitops/" class="md-nav__link ">
+            <a href="../../gitops/" class="md-nav__link ">
               
   
   
@@ -1932,7 +1830,7 @@
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1947,8 +1845,10 @@
                 
   
   
+    
   
   
+  
     
     
       
@@ -2004,11 +1904,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1" checked>
         
           
           <label class="md-nav__link" for="__nav_7_1" id="__nav_7_1_label" tabindex="0">
@@ -2029,7 +1929,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_1_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_1_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_7_1">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2047,7 +1947,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
+      <a href="../neo4jenterprisecluster/" class="md-nav__link">
         
   
   
@@ -2075,7 +1975,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
+      <a href="../neo4jenterprisestandalone/" class="md-nav__link">
         
   
   
@@ -2103,7 +2003,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jdatabase/" class="md-nav__link">
+      <a href="../neo4jdatabase/" class="md-nav__link">
         
   
   
@@ -2131,7 +2031,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
+      <a href="../neo4jshardeddatabase/" class="md-nav__link">
         
   
   
@@ -2159,7 +2059,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4juser/" class="md-nav__link">
+      <a href="../neo4juser/" class="md-nav__link">
         
   
   
@@ -2187,7 +2087,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jrole/" class="md-nav__link">
+      <a href="../neo4jrole/" class="md-nav__link">
         
   
   
@@ -2215,7 +2115,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jrolebinding/" class="md-nav__link">
+      <a href="../neo4jrolebinding/" class="md-nav__link">
         
   
   
@@ -2243,7 +2143,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jauthrule/" class="md-nav__link">
+      <a href="../neo4jauthrule/" class="md-nav__link">
         
   
   
@@ -2271,7 +2171,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jplugin/" class="md-nav__link">
+      <a href="../neo4jplugin/" class="md-nav__link">
         
   
   
@@ -2299,7 +2199,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jbackup/" class="md-nav__link">
+      <a href="../neo4jbackup/" class="md-nav__link">
         
   
   
@@ -2327,7 +2227,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jrestore/" class="md-nav__link">
+      <a href="../neo4jrestore/" class="md-nav__link">
         
   
   
@@ -2355,7 +2255,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auraproviderconfig/" class="md-nav__link">
+      <a href="../auraproviderconfig/" class="md-nav__link">
         
   
   
@@ -2383,7 +2283,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/aurainstance/" class="md-nav__link">
+      <a href="../aurainstance/" class="md-nav__link">
         
   
   
@@ -2411,7 +2311,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/aurasnapshot/" class="md-nav__link">
+      <a href="../aurasnapshot/" class="md-nav__link">
         
   
   
@@ -2439,7 +2339,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/aurarestore/" class="md-nav__link">
+      <a href="../aurarestore/" class="md-nav__link">
         
   
   
@@ -2467,7 +2367,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auracustomermanagedkey/" class="md-nav__link">
+      <a href="../auracustomermanagedkey/" class="md-nav__link">
         
   
   
@@ -2495,7 +2395,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auraipfilter/" class="md-nav__link">
+      <a href="../auraipfilter/" class="md-nav__link">
         
   
   
@@ -2523,7 +2423,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auradatabase/" class="md-nav__link">
+      <a href="../auradatabase/" class="md-nav__link">
         
   
   
@@ -2551,7 +2451,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auradatabasebackup/" class="md-nav__link">
+      <a href="../auradatabasebackup/" class="md-nav__link">
         
   
   
@@ -2576,10 +2476,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../../api_reference/auradatabaserestore/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseRestore
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -2595,6 +2522,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#spec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spec
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related Resources
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -2607,7 +2609,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auraorganizationmember/" class="md-nav__link">
+      <a href="../auraorganizationmember/" class="md-nav__link">
         
   
   
@@ -2635,7 +2637,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auraprojectmember/" class="md-nav__link">
+      <a href="../auraprojectmember/" class="md-nav__link">
         
   
   
@@ -2663,7 +2665,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/aurainvite/" class="md-nav__link">
+      <a href="../aurainvite/" class="md-nav__link">
         
   
   
@@ -2784,7 +2786,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/QUICKSTART/" class="md-nav__link">
+      <a href="../../developer_guide/QUICKSTART/" class="md-nav__link">
         
   
   
@@ -2812,7 +2814,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/development/" class="md-nav__link">
+      <a href="../../developer_guide/development/" class="md-nav__link">
         
   
   
@@ -2840,7 +2842,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/contributing/" class="md-nav__link">
+      <a href="../../developer_guide/contributing/" class="md-nav__link">
         
   
   
@@ -2868,7 +2870,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/collaboration/" class="md-nav__link">
+      <a href="../../developer_guide/collaboration/" class="md-nav__link">
         
   
   
@@ -2896,7 +2898,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/ci_and_workflows/" class="md-nav__link">
+      <a href="../../developer_guide/ci_and_workflows/" class="md-nav__link">
         
   
   
@@ -2924,7 +2926,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/architecture/" class="md-nav__link">
+      <a href="../../developer_guide/architecture/" class="md-nav__link">
         
   
   
@@ -2952,7 +2954,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/testing/" class="md-nav__link">
+      <a href="../../developer_guide/testing/" class="md-nav__link">
         
   
   
@@ -2980,7 +2982,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/release_verification/" class="md-nav__link">
+      <a href="../../developer_guide/release_verification/" class="md-nav__link">
         
   
   
@@ -3008,7 +3010,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/makefile_reference/" class="md-nav__link">
+      <a href="../../developer_guide/makefile_reference/" class="md-nav__link">
         
   
   
@@ -3036,7 +3038,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/openshift_olm/" class="md-nav__link">
+      <a href="../../developer_guide/openshift_olm/" class="md-nav__link">
         
   
   
@@ -3121,7 +3123,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/llm-contribution/" class="md-nav__link">
+      <a href="../../developer_guide/llm-contribution/" class="md-nav__link">
         
   
   
@@ -3149,7 +3151,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/AGENT-GUARDRAILS/" class="md-nav__link">
+      <a href="../../developer_guide/AGENT-GUARDRAILS/" class="md-nav__link">
         
   
   
@@ -3177,7 +3179,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../knowledge/invariants/" class="md-nav__link">
+      <a href="../../knowledge/invariants/" class="md-nav__link">
         
   
   
@@ -3240,10 +3242,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#authentication" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Authentication
+        Overview
       
     </span>
   </a>
@@ -3251,10 +3253,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#tls" class="md-nav__link">
+  <a href="#spec" class="md-nav__link">
     <span class="md-ellipsis">
       
-        TLS
+        Spec
       
     </span>
   </a>
@@ -3262,10 +3264,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#network-policies" class="md-nav__link">
+  <a href="#status" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Network Policies
+        Status
       
     </span>
   </a>
@@ -3273,10 +3275,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#rbac" class="md-nav__link">
+  <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
-        RBAC
+        Example
       
     </span>
   </a>
@@ -3284,10 +3286,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#pod-security-defaults" class="md-nav__link">
+  <a href="#related-resources" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Pod Security Defaults
+        Related Resources
       
     </span>
   </a>
@@ -3311,7 +3313,7 @@
 
 
   
-    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/guides/security.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/api_reference/auradatabaserestore.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -3319,50 +3321,105 @@
   
 
 
-<h1 id="security">Security<a class="headerlink" href="#security" title="Anchor link to this section">&para;</a></h1>
-<p>This guide explains how to secure your Neo4j Enterprise clusters using the features provided by the operator.</p>
-<h2 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Anchor link to this section">&para;</a></h2>
-<p>The operator provides first-class, typed configuration for external identity providers. You define providers via <code>spec.auth</code> and the operator generates the correct <code>neo4j.conf</code> entries automatically — no manual <code>dbms.security.*</code> keys required.</p>
-<p><strong>Supported providers (first-class typed configuration):</strong></p>
+<h1 id="auradatabaserestore-api-reference">AuraDatabaseRestore API Reference<a class="headerlink" href="#auradatabaserestore-api-reference" title="Anchor link to this section">&para;</a></h1>
+<blockquote>
+<p><strong>⚠️ BETA / best-effort.</strong> Uses the Aura API <strong>v2beta1</strong> (unstable beta). See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a>.</p>
+</blockquote>
+<p>The <code>AuraDatabaseRestore</code> CRD performs a <strong>one-shot, in-place</strong> restore of a database on a managed Neo4j Aura instance from one of its per-database backups.</p>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><strong>Native Neo4j authentication</strong>: The default, managed via Kubernetes secrets.</li>
-<li><strong>LDAP / Active Directory</strong>: Full typed support — host, DN templates, group-to-role mapping, system account credentials (injected securely via env vars, never in ConfigMap).</li>
-<li><strong>OIDC / SSO</strong>: Multiple named providers (e.g., Okta + Azure AD simultaneously) with discovery URI, claims mapping, and group-to-role mapping.</li>
+<li><strong>API Version</strong>: <code>neo4j.neo4j.com/v1beta1</code></li>
+<li><strong>Kind</strong>: <code>AuraDatabaseRestore</code></li>
+<li><strong>Scope</strong>: Namespaced</li>
+<li><strong>Short name</strong>: <code>auradbrestore</code></li>
+<li><strong>Guide</strong>: <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a></li>
 </ul>
-<p><strong>JWT</strong> is not exposed as a typed field. Configure it by adding <code>jwt</code> to <code>spec.auth.authenticationProviders</code> and setting <code>dbms.security.jwt.{secret,public_key}</code> (plus optional <code>dbms.security.jwt.audience</code>) in <code>spec.config</code>.</p>
-<p><strong>Kerberos</strong> is not supported through operator-typed configuration today. Neo4j Kerberos uses the separate <a href="https://neo4j.com/docs/kerberos-add-on/current/">Kerberos Add-On</a> — a plugin JAR plus its own <code>kerberos.conf</code> and <code>krb5.conf</code> files — and the operator does not assemble that bundle for you. See the <a href="../../security/#kerberos-authentication">Security Guide § Kerberos Authentication</a> for current state.</p>
-<p>If you'd like typed support for either, <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues">open an issue</a> describing the use case.</p>
-<p><strong>Multi-provider support</strong>: Neo4j evaluates providers in order, so you can configure <code>authenticationProviders: [ldap, native]</code> to try LDAP first with native as fallback.</p>
-<p><strong>JVM TrustStore</strong>: For LDAPS or OIDC with internal CAs, use the top-level <code>spec.trustedCASecrets</code> field to add extra trust anchors to the operator-managed JKS truststore (seeded from the JDK <code>cacerts</code>). The legacy <code>spec.auth.trustStore</code> field still works for back-compat but is folded into the same path — prefer <code>spec.trustedCASecrets</code> for new deployments. See the <a href="../../security/#jvm-truststore-for-internal-cas">Security Guide § JVM TrustStore</a> for the full configuration.</p>
-<p>For full configuration details and examples, see the <a href="../../security/#authentication-configuration">Security Best Practices</a> guide and the <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/clusters/auth-example.yaml">auth examples</a>.</p>
-<h2 id="tls">TLS<a class="headerlink" href="#tls" title="Anchor link to this section">&para;</a></h2>
-<p>The operator makes it easy to enable TLS encryption for all communication to and from your Neo4j cluster. Enable TLS by setting <code>spec.tls.mode: cert-manager</code> and pointing <code>spec.tls.issuerRef</code> at a cert-manager <code>Issuer</code> or <code>ClusterIssuer</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">tls</span><span class="p">:</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cert-manager</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="nt">issuerRef</span><span class="p">:</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ca-cluster-issuer</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ClusterIssuer</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="c1"># strictPeerValidation defaults to true (mutual TLS on cluster links).</span>
+<h2 id="spec">Spec<a class="headerlink" href="#spec" title="Anchor link to this section">&para;</a></h2>
+<p>Set exactly one of <code>backupId</code> or <code>backupRef</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>databaseRef</code></td>
+<td><code>string</code></td>
+<td><strong>Required.</strong> The <a href="../auradatabase/"><code>AuraDatabase</code></a> (same namespace) to restore in place.</td>
+</tr>
+<tr>
+<td><code>backupId</code></td>
+<td><code>string</code></td>
+<td>The Aura backup ID to restore from. <strong>Mutually exclusive with <code>backupRef</code>.</strong></td>
+</tr>
+<tr>
+<td><code>backupRef</code></td>
+<td><code>string</code></td>
+<td>Resolves the backup ID from an <a href="../auradatabasebackup/"><code>AuraDatabaseBackup</code></a> (same namespace). <strong>Mutually exclusive with <code>backupId</code>.</strong></td>
+</tr>
+<tr>
+<td><code>managementPolicies</code></td>
+<td><code>[]string</code></td>
+<td>Items enum <code>Observe</code>/<code>Create</code>/<code>*</code>. Default <code>["*"]</code>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="status">Status<a class="headerlink" href="#status" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>phase</code></td>
+<td><code>string</code></td>
+<td><code>Pending</code>, <code>Restoring</code>, <code>Completed</code>, <code>Error</code>.</td>
+</tr>
+<tr>
+<td><code>startedAt</code></td>
+<td><code>*metav1.Time</code></td>
+<td>When the restore was submitted.</td>
+</tr>
+<tr>
+<td><code>finishedAt</code></td>
+<td><code>*metav1.Time</code></td>
+<td>When the restore reached a terminal state.</td>
+</tr>
+<tr>
+<td><code>conditions</code></td>
+<td><code>[]metav1.Condition</code></td>
+<td>Standard readiness conditions.</td>
+</tr>
+<tr>
+<td><code>observedGeneration</code></td>
+<td><code>int64</code></td>
+<td>The <code>.metadata.generation</code> last reconciled.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraDatabaseRestore</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-db-rollback</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">databaseRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-db</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">backupRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-db-backup</span>
 </span></code></pre></div>
-<p>The operator integrates with <code>cert-manager</code> to automatically provision and manage TLS certificates. This is the recommended approach for production environments. Intra-cluster mutual TLS is enabled by default via <code>spec.tls.strictPeerValidation: true</code>. See the dedicated <a href="../../tls_configuration/">TLS Configuration</a> guide for the full configuration surface, including third-party issuers (AWS PCA, Vault) and the <code>strictPeerValidation: false</code> opt-out.</p>
-<h2 id="network-policies">Network Policies<a class="headerlink" href="#network-policies" title="Anchor link to this section">&para;</a></h2>
-<p>The operator can automatically create Kubernetes <code>NetworkPolicy</code> resources to restrict traffic to your Neo4j cluster. This helps to enforce a zero-trust security model by ensuring that only authorized applications can connect to the database.</p>
-<h2 id="rbac">RBAC<a class="headerlink" href="#rbac" title="Anchor link to this section">&para;</a></h2>
-<p>The operator itself runs with a specific <code>ServiceAccount</code> that is bound to a <code>ClusterRole</code> with the minimum necessary permissions to do its job. For end-users, the operator also provides a set of <code>ClusterRoles</code> (<code>neo4j-viewer</code>, <code>neo4j-editor</code>) that administrators can bind to users or groups to grant them appropriate levels of access to the Neo4j custom resources.</p>
-<h2 id="pod-security-defaults">Pod Security Defaults<a class="headerlink" href="#pod-security-defaults" title="Anchor link to this section">&para;</a></h2>
-<p>The operator now hardens all Neo4j data-plane pods (servers, standalone, backup jobs, restore jobs, and hook jobs) with strict security contexts by default:</p>
+<h2 id="related-resources">Related Resources<a class="headerlink" href="#related-resources" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><code>runAsNonRoot: true</code> with UID/GID <code>7474</code> (Neo4j user) and matching <code>fsGroup</code>.</li>
-<li><code>allowPrivilegeEscalation: false</code>, <code>capabilities.drop: ["ALL"]</code>, <code>seccompProfile: RuntimeDefault</code>.</li>
-<li>Root filesystem remains writable to support Neo4j startup scripts and tmp usage; keep volumes for data/logs/plugins mounted as before.</li>
+<li><a href="../auradatabase/"><code>AuraDatabase</code></a> — the database restored</li>
+<li><a href="../auradatabasebackup/"><code>AuraDatabaseBackup</code></a> — the backup source</li>
+<li><a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a></li>
 </ul>
-<p>These defaults are applied automatically. If you need to override them (e.g. for Pod Security Standards / OpenShift SCC compatibility), set:</p>
-<ul>
-<li><code>spec.securityContext.podSecurityContext</code> — full <code>*corev1.PodSecurityContext</code> override (replaces the operator's default)</li>
-<li><code>spec.securityContext.containerSecurityContext</code> — full <code>*corev1.SecurityContext</code> override on the Neo4j container</li>
-</ul>
-<p>When either field is unset, the hardened default above is applied. If you add sidecars, align their security contexts with these defaults.</p>
 
 
 
@@ -3400,7 +3457,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../security/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Overview">
+          <a href="../auradatabasebackup/" class="md-footer__link md-footer__link--prev" aria-label="Previous: AuraDatabaseBackup">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3410,20 +3467,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Overview
+                AuraDatabaseBackup
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../tls_configuration/" class="md-footer__link md-footer__link--next" aria-label="Next: TLS Configuration">
+          <a href="../auraorganizationmember/" class="md-footer__link md-footer__link--next" aria-label="Next: AuraOrganizationMember">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                TLS Configuration
+                AuraOrganizationMember
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -3487,10 +3544,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

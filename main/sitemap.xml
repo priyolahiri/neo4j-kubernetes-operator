@@ -9,11 +9,35 @@
          <lastmod>2026-07-08</lastmod>
     </url>
     <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/auradatabase/</loc>
+         <lastmod>2026-07-08</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/auradatabasebackup/</loc>
+         <lastmod>2026-07-08</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/auradatabaserestore/</loc>
+         <lastmod>2026-07-08</lastmod>
+    </url>
+    <url>
          <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/aurainstance/</loc>
          <lastmod>2026-07-08</lastmod>
     </url>
     <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/aurainvite/</loc>
+         <lastmod>2026-07-08</lastmod>
+    </url>
+    <url>
          <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/auraipfilter/</loc>
+         <lastmod>2026-07-08</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/auraorganizationmember/</loc>
+         <lastmod>2026-07-08</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/auraprojectmember/</loc>
          <lastmod>2026-07-08</lastmod>
     </url>
     <url>
