@@ -2462,6 +2462,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Spec">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#allowlist-auraipfilterallowentry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        allowList[] (AuraIPFilterAllowEntry)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3081,6 +3098,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Spec">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#allowlist-auraipfilterallowentry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        allowList[] (AuraIPFilterAllowEntry)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3143,18 +3177,21 @@
 
 <h1 id="auraipfilter-api-reference">AuraIPFilter API Reference<a class="headerlink" href="#auraipfilter-api-reference" title="Anchor link to this section">&para;</a></h1>
 <blockquote>
-<p><strong>⚠️ BETA / best-effort.</strong> IP filtering is only available on the Aura API <strong>v2beta1</strong> surface, which is an unstable beta (breaking changes are allowed without a version bump). This CRD is best-effort and its behaviour may change to track the API — the contract is reconstructed and unvalidated. See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a> before relying on it in production.</p>
+<p><strong>⚠️ BETA / best-effort.</strong> IP filtering is only available on the Aura API <strong>v2beta1</strong> surface, which is an unstable beta (breaking changes are allowed without a version bump). This CRD is best-effort and its behaviour may change to track the API. The shape below is taken from the official v2beta1 <code>IpFilter</code> schema. See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a> before relying on it in production.</p>
 </blockquote>
-<p>The <code>AuraIPFilter</code> Custom Resource Definition (CRD) manages a Neo4j Aura network IP filter (a CIDR allowlist) via the Aura API v2beta1.</p>
+<p>The <code>AuraIPFilter</code> Custom Resource Definition (CRD) manages a Neo4j Aura network IP filter (an allowlist) via the Aura API v2beta1.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>API Version</strong>: <code>neo4j.neo4j.com/v1beta1</code></li>
 <li><strong>Kind</strong>: <code>AuraIPFilter</code></li>
 <li><strong>Scope</strong>: Namespaced</li>
 <li><strong>Short name</strong>: <code>auraipf</code></li>
-<li><strong>Purpose</strong>: Manage a network IP filter (CIDR allowlist) on an Aura project or instance. <strong>BETA / best-effort.</strong></li>
+<li><strong>Purpose</strong>: Manage a network IP filter (allowlist) on a Neo4j Aura organization and apply it to one or more instances. <strong>BETA / best-effort.</strong></li>
 <li><strong>Guide</strong>: <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a></li>
 </ul>
+<blockquote>
+<p><strong>IP filters are organization-scoped.</strong> In v2beta1 a filter lives at <code>/organizations/{org}/ip-filters</code> — not under a project or instance. A single filter is <em>applied</em> to instances via <code>filtered_entities.instances</code>; this CRD models that with <code>instanceRefs</code>.</p>
+</blockquote>
 <h2 id="spec">Spec<a class="headerlink" href="#spec" title="Anchor link to this section">&para;</a></h2>
 <p>Set exactly one of <code>providerConfigRef</code> or <code>credentialsSecretRef</code> for API access.</p>
 <table>
@@ -3179,17 +3216,7 @@
 <tr>
 <td><code>organizationId</code></td>
 <td><code>string</code></td>
-<td>Aura organization ID (v2beta1 hierarchy). Falls back to the provider config's <code>defaultOrganizationId</code> when empty.</td>
-</tr>
-<tr>
-<td><code>projectId</code></td>
-<td><code>string</code></td>
-<td>Aura project (the API <code>tenant_id</code>). Falls back to the provider config's <code>defaultProjectId</code> when empty.</td>
-</tr>
-<tr>
-<td><code>instanceRef</code></td>
-<td><code>string</code></td>
-<td>Optionally scopes the filter to a single <a href="../aurainstance/"><code>AuraInstance</code></a> (same namespace) — Aura permits at most one IP filter per instance. Omit for a project-wide filter. <strong>Immutable once set.</strong></td>
+<td>Aura organization that owns the filter (filters are org-scoped in v2beta1). Falls back to the provider config's <code>defaultOrganizationId</code> when empty.</td>
 </tr>
 <tr>
 <td><code>name</code></td>
@@ -3197,14 +3224,24 @@
 <td>Filter display name in Aura (max 63 chars). Defaults to <code>metadata.name</code>.</td>
 </tr>
 <tr>
-<td><code>region</code></td>
+<td><code>description</code></td>
 <td><code>string</code></td>
-<td>Region the filter applies to, when required by the provider.</td>
+<td>Optional human-friendly description of the filter.</td>
 </tr>
 <tr>
-<td><code>cidrs</code></td>
+<td><code>allowList</code></td>
+<td><code>[]object</code></td>
+<td><strong>Required.</strong> The allowed source ranges (MinItems 1, MaxItems 1000). Each entry is <code>{address, prefixLen, description?}</code> — the v2beta1 API splits CIDR notation into an address plus a prefix length (so <code>"203.0.113.0/24"</code> → <code>address: "203.0.113.0"</code>, <code>prefixLen: 24</code>).</td>
+</tr>
+<tr>
+<td><code>instanceRefs</code></td>
 <td><code>[]string</code></td>
-<td><strong>Required.</strong> Allowlist of source ranges in CIDR notation (e.g. <code>"203.0.113.0/24"</code>). MinItems 1.</td>
+<td>Names of <a href="../aurainstance/"><code>AuraInstance</code></a>s (same namespace) the filter is applied to; the operator resolves each to its Aura instance ID (the API's <code>filtered_entities.instances</code>). Set (dedup), MaxItems 100. Omit to attach the filter out of band.</td>
+</tr>
+<tr>
+<td><code>filteringDisabled</code></td>
+<td><code>bool</code></td>
+<td>Turns the filter off without deleting it (the API's <code>filtering_disabled</code>). Default <code>false</code> (the filter is enforced).</td>
 </tr>
 <tr>
 <td><code>deletionPolicy</code></td>
@@ -3215,6 +3252,33 @@
 <td><code>managementPolicies</code></td>
 <td><code>[]string</code></td>
 <td>Items enum <code>Observe</code> / <code>Create</code> / <code>Update</code> / <code>Delete</code> / <code>*</code>. Default <code>["*"]</code> (full management).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="allowlist-auraipfilterallowentry"><code>allowList[]</code> (AuraIPFilterAllowEntry)<a class="headerlink" href="#allowlist-auraipfilterallowentry" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>address</code></td>
+<td><code>string</code></td>
+<td><strong>Required.</strong> The IP address of the CIDR (e.g. <code>"203.0.113.0"</code>).</td>
+</tr>
+<tr>
+<td><code>prefixLen</code></td>
+<td><code>int32</code></td>
+<td><strong>Required.</strong> The CIDR prefix length (0–32 for IPv4, up to 128 for IPv6).</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td><code>string</code></td>
+<td>Optional human-friendly label for this entry.</td>
 </tr>
 </tbody>
 </table>
@@ -3236,7 +3300,7 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Mirrors the Aura filter status: <code>Pending</code>, <code>Ready</code>, <code>Updating</code>, <code>Error</code>.</td>
+<td>Mirrors the reconcile outcome: <code>Pending</code>, <code>Ready</code>, <code>Error</code>.</td>
 </tr>
 <tr>
 <td><code>conditions</code></td>
@@ -3264,10 +3328,15 @@
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aura-account</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-prod</span><span class="w">        </span><span class="c1"># omit for a project-wide filter</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">cidrs</span><span class="p">:</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;203.0.113.0/24&quot;</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;198.51.100.42/32&quot;</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;your-aura-org-id&gt;&quot;</span><span class="w">   </span><span class="c1"># or defaultOrganizationId on the provider config</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">instanceRefs</span><span class="p">:</span><span class="w">                          </span><span class="c1"># instances the filter is applied to</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-prod</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="nt">allowList</span><span class="p">:</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">address</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;203.0.113.0&quot;</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">      </span><span class="nt">prefixLen</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">24</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">      </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">office</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">address</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;198.51.100.42&quot;</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">      </span><span class="nt">prefixLen</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">32</span>
 </span></code></pre></div>
 <h2 id="related-resources">Related Resources<a class="headerlink" href="#related-resources" title="Anchor link to this section">&para;</a></h2>
 <ul>

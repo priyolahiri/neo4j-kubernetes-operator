@@ -3413,7 +3413,7 @@ and manages <strong>Aura-hosted</strong> instances. The two are complementary.</
 </tr>
 <tr>
 <td><code>AuraIPFilter</code></td>
-<td>Manages a network IP filter (CIDR allowlist) via the Aura API <strong>v2beta1</strong> (beta).</td>
+<td>Manages an organization-scoped network IP filter (allowlist) via the Aura API <strong>v2beta1</strong> (beta).</td>
 </tr>
 </tbody>
 </table>
@@ -3621,26 +3621,30 @@ which also makes create idempotent (a crash can't produce a duplicate instance).
   instance.</li>
 </ul>
 <h2 id="network-ip-filtering-beta">Network IP filtering (beta)<a class="headerlink" href="#network-ip-filtering-beta" title="Anchor link to this section">&para;</a></h2>
-<p><code>AuraIPFilter</code> manages a network IP filter (CIDR allowlist) for a project or a
-single instance:</p>
+<p><code>AuraIPFilter</code> manages a network IP filter (allowlist). In v2beta1 a filter is
+<strong>organization-scoped</strong> (<code>/organizations/{org}/ip-filters</code>) and <em>applied</em> to one
+or more instances — model that with <code>instanceRefs</code>:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraIPFilter</span>
 </span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nt">metadata</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">office-only</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">aura</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;your-org-id&gt;&quot;</span><span class="w">     </span><span class="c1"># or set defaultOrganizationId on the provider config</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics</span><span class="w">              </span><span class="c1"># optional; Aura allows one filter per instance</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="nt">cidrs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;203.0.113.0/24&quot;</span><span class="p p-Indicator">]</span>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">  </span><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Orphan</span><span class="w">              </span><span class="c1"># default; Delete removes the filter (opens access)</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">instanceRefs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">analytics</span><span class="p p-Indicator">]</span><span class="w">           </span><span class="c1"># instances the filter is applied to</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="nt">allowList</span><span class="p">:</span><span class="w">                          </span><span class="c1"># v2beta1 splits CIDR into address + prefixLen</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> address</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;203.0.113.0&quot;</span><span class="p p-Indicator">,</span><span class="nt"> prefixLen</span><span class="p">:</span><span class="w"> </span><span class="nv">24</span><span class="p p-Indicator">,</span><span class="nt"> description</span><span class="p">:</span><span class="w"> </span><span class="nv">office</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">  </span><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Orphan</span><span class="w">              </span><span class="c1"># default; Delete removes the filter (opens access)</span>
 </span></code></pre></div>
+<p>Each <code>allowList</code> entry is <code>{address, prefixLen, description?}</code> — so
+<code>"203.0.113.0/24"</code> becomes <code>address: "203.0.113.0"</code>, <code>prefixLen: 24</code>. Set
+<code>filteringDisabled: true</code> to turn the filter off without deleting it.</p>
 <div class="admonition warning">
 <p class="admonition-title">Beta / best-effort</p>
 <p>IP filtering is only exposed on the Aura API <strong>v2beta1</strong>, an unstable beta
 (breaking changes are allowed without a version bump). This CRD is
-best-effort: its client contract is reconstructed from the documented
-semantics and <strong>has not been validated against a live v2beta1 account</strong> — it
-may need adjustment to track the API. The rest of Aura orchestration uses the
-stable v1 API. See <code>docs/design/aura-orchestration.md</code>.</p>
+best-effort: the client shape follows the official v2beta1 <code>IpFilter</code> schema,
+but v2beta1 may change without a version bump. The rest of Aura orchestration
+uses the stable v1 API. See <code>docs/design/aura-orchestration.md</code>.</p>
 </div>
 <h2 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Anchor link to this section">&para;</a></h2>
 <p>The operator exports Prometheus metrics for its Aura API traffic on the standard
