@@ -2,7 +2,9 @@
 
 > **⚠️ BETA / best-effort.** Uses the Aura API **v2beta1** (unstable beta). See the [Aura Orchestration Guide](../user_guide/aura_orchestration.md).
 
-The `AuraProjectMember` CRD manages the **project-level role** of an existing Aura *console* user (identified by email). This is Aura **platform** identity — **not** an in-database Neo4j user. To bring a new person in, create an [`AuraInvite`](aurainvite.md).
+The `AuraProjectMember` CRD manages the **project-level role** of an Aura *console* user (identified by email). This is Aura **platform** identity — **not** an in-database Neo4j user.
+
+If the email is already an **organization** member but not yet in this project, the operator adds them directly (requires `Create` in `managementPolicies`). Only a wholly unknown email needs an [`AuraInvite`](aurainvite.md) first.
 
 ## Overview
 
@@ -23,9 +25,9 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef`.
 | `organizationId` | `string` | The Aura organization. Falls back to the provider config's `defaultOrganizationId`. |
 | `projectId` | `string` | The Aura project (API `tenant_id`). Falls back to the provider config's `defaultProjectId`. |
 | `email` | `string` | **Required.** Identifies the project member whose role is managed. |
-| `role` | `string` | **Required.** Enum `PROJECT_ADMIN` / `PROJECT_MEMBER` / `PROJECT_VIEWER` / `METRICS_READER`. |
+| `role` | `string` | **Required.** Enum `project-admin` / `project-member` / `project-viewer` / `project-metrics-integration-reader` (the Aura API's own `project_roles` values). |
 | `deletionPolicy` | `string` | Enum `Orphan` (default; leave access untouched) / `Delete` (remove from the project). |
-| `managementPolicies` | `[]string` | Items enum `Observe`/`Update`/`Delete`/`*`. Default `["*"]`. |
+| `managementPolicies` | `[]string` | Items enum `Observe`/`Create`/`Update`/`Delete`/`*`. Default `["*"]`. `Create` permits adding an existing **organization** member to this project (the Aura API takes their user UUID); a wholly unknown email still needs an [`AuraInvite`](aurainvite.md). |
 
 ## Status
 
@@ -50,7 +52,7 @@ spec:
   organizationId: "<org-id>"
   projectId: "<project-id>"
   email: bob@example.com
-  role: METRICS_READER
+  role: project-metrics-integration-reader
 ```
 
 ## Related Resources

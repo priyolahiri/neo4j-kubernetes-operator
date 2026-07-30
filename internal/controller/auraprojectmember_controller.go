@@ -112,16 +112,46 @@ func (r *AuraProjectMemberReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 		return r.fail(ctx, req, m, "LookupFailed", err)
 	}
+	// Not yet a project member: if the person already exists at ORGANIZATION
+	// level we can add them directly (POST project users takes the Aura user
+	// UUID + a project role). Only a wholly unknown email needs an AuraInvite.
 	if member == nil {
-		r.Recorder.Event(m, corev1.EventTypeWarning, EventReasonAuraMemberNotFound,
-			fmt.Sprintf("%q is not a project member; invite them with an AuraInvite", m.Spec.Email))
-		_ = r.setStatus(ctx, req, "", "NotAMember", metav1.ConditionFalse, "NotAMember",
-			fmt.Sprintf("%q is not a project member yet", m.Spec.Email))
-		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		orgMember, err := r.findOrgMemberByEmail(ctx, apiClient, orgID, m.Spec.Email)
+		if err != nil {
+			if aura.IsTransient(err) {
+				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+			}
+			return r.fail(ctx, req, m, "LookupFailed", err)
+		}
+		if orgMember == nil {
+			r.Recorder.Event(m, corev1.EventTypeWarning, EventReasonAuraMemberNotFound,
+				fmt.Sprintf("%q is not an organization member; invite them with an AuraInvite", m.Spec.Email))
+			_ = r.setStatus(ctx, req, "", "NotAMember", metav1.ConditionFalse, "NotAMember",
+				fmt.Sprintf("%q is not an organization member yet", m.Spec.Email))
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		}
+		if !managementAllows(m.Spec.ManagementPolicies, auraPolicyCreate) {
+			_ = r.setStatus(ctx, req, orgMember.UserID, "NotAMember", metav1.ConditionFalse, "CreateNotPermitted",
+				fmt.Sprintf("%q is not a project member and managementPolicies does not permit Create", m.Spec.Email))
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		}
+		if err := apiClient.AddProjectMember(ctx, orgID, projectID, orgMember.UserID, m.Spec.Role); err != nil {
+			if aura.IsConflict(err) || aura.IsTransient(err) {
+				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+			}
+			return r.fail(ctx, req, m, "AddFailed", err)
+		}
+		r.Recorder.Event(m, corev1.EventTypeNormal, EventReasonAuraMemberUpdated,
+			fmt.Sprintf("Added %q to the project as %s", m.Spec.Email, m.Spec.Role))
+		if err := r.setStatus(ctx, req, orgMember.UserID, "Ready", metav1.ConditionTrue, "Reconciled",
+			"Project membership created (v2beta1, beta)"); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
-	if member.Role != m.Spec.Role && managementAllows(m.Spec.ManagementPolicies, auraPolicyUpdate) {
-		if _, err := apiClient.UpdateProjectMemberRole(ctx, orgID, projectID, member.ID, m.Spec.Role); err != nil {
+	if member.Role() != m.Spec.Role && managementAllows(m.Spec.ManagementPolicies, auraPolicyUpdate) {
+		if _, err := apiClient.UpdateProjectMemberRole(ctx, orgID, projectID, member.UserID, m.Spec.Role); err != nil {
 			if aura.IsConflict(err) || aura.IsTransient(err) {
 				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 			}
@@ -130,7 +160,7 @@ func (r *AuraProjectMemberReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		r.Recorder.Event(m, corev1.EventTypeNormal, EventReasonAuraMemberUpdated,
 			fmt.Sprintf("Set %q project role to %s", m.Spec.Email, m.Spec.Role))
 	}
-	if err := r.setStatus(ctx, req, member.ID, "Ready", metav1.ConditionTrue, "Reconciled",
+	if err := r.setStatus(ctx, req, member.UserID, "Ready", metav1.ConditionTrue, "Reconciled",
 		"Project membership reconciled (v2beta1, beta)"); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -141,6 +171,21 @@ func (r *AuraProjectMemberReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 func (r *AuraProjectMemberReconciler) findByEmail(ctx context.Context, apiClient auraMemberAPI, orgID, projectID, email string) (*aura.Member, error) {
 	members, err := apiClient.ListProjectMembers(ctx, orgID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range members {
+		if strings.EqualFold(members[i].Email, email) {
+			return &members[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// findOrgMemberByEmail resolves an email to the ORGANIZATION-level member, whose
+// UserID is what POST project users requires (it takes a UUID, never an email).
+func (r *AuraProjectMemberReconciler) findOrgMemberByEmail(ctx context.Context, apiClient auraMemberAPI, orgID, email string) (*aura.Member, error) {
+	members, err := apiClient.ListOrgMembers(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}

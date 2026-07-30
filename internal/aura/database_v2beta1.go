@@ -33,40 +33,67 @@ import (
 //   .../databases/{id}/backups[/{backupId}]  and  .../databases/{id}/restore
 //
 // Unlike the ip-filters endpoints, these are wrapped in the standard v2beta1
-// {"data": …} envelope (unwrapped here by doV2Data). v2beta1 uses `legacy_status`
-// for lifecycle state.
+// {"data": …} envelope (unwrapped here by doV2Data).
 //
-// The database CREATE/RESTORE request bodies are NOT schema'd in the published
-// spec (the DatabaseSummary response is thin); the shapes below mirror the
-// documented response + standard conventions and are BETA/best-effort — a
-// v2beta1 change can break them without a version bump.
+// Landmines the spec pins — do NOT "tidy" these back:
+//
+//  1. `legacy_status` belongs to INSTANCES only (CreateInstanceResponse /
+//     InstanceDetails). Databases and backups do not have it: DatabaseSummary
+//     carries ONLY `id`, and DatabaseBackup carries `status` with the enum
+//     below. Reading a database/backup status from `legacy_status` silently
+//     yields "" forever.
+//
+//  2. The RESTORE body field is `id` — NOT `backup_id`. Unlike create, this body
+//     IS schema'd upstream, with `id` required, so `backup_id` is a hard 400.
+//
+//  3. DatabaseSummary has no `name`. The create body takes a name, but no
+//     response echoes it back, so a database cannot be matched by name.
+//
+// Only the database CREATE body is un-schema'd upstream (the POST publishes no
+// requestBody); it mirrors the documented conventions and is BETA/best-effort.
+// Everything else here follows a published schema.
 // ==========================================================================
 
-// Database is a v2beta1 database on an Aura instance (the thin DatabaseSummary
-// shape plus the fields the operator surfaces).
+// Backup status values (v2beta1 DatabaseBackup.status, a required field).
+const (
+	BackupStatusPending    = "Pending"
+	BackupStatusInProgress = "InProgress"
+	BackupStatusCompleted  = "Completed"
+	BackupStatusFailed     = "Failed"
+)
+
+// Database is a v2beta1 database on an Aura instance.
+//
+// This is the full DatabaseSummary shape: the API returns ONLY an ID for a
+// database — no name, no status. Do not add fields here without a schema to
+// point at.
 type Database struct {
-	ID     string `json:"id,omitempty"`
-	Name   string `json:"name,omitempty"`
-	Status string `json:"legacy_status,omitempty"`
+	ID string `json:"id,omitempty"`
 }
 
-// CreateDatabaseRequest is the (undocumented, best-effort) create body.
+// CreateDatabaseRequest is the create body. The POST publishes no requestBody
+// upstream, so this shape is BETA/best-effort (the 422 "invalid clone
+// parameters" text implies it also accepts clone fields we do not model).
 type CreateDatabaseRequest struct {
 	Name string `json:"name"`
 }
 
-// DatabaseBackup is a per-database backup record.
+// DatabaseBackup is a per-database backup record (v2beta1 DatabaseBackup).
+// `id`, `timestamp`, `status` and `exportable` are all required upstream.
+//
+// NOTE: the CREATE response is thinner — CreateDatabaseBackupResponse carries
+// only `id` — so Status/Timestamp/Exportable are zero until a subsequent GET.
 type DatabaseBackup struct {
 	ID         string `json:"id,omitempty"`
-	DatabaseID string `json:"database_id,omitempty"`
-	Status     string `json:"legacy_status,omitempty"`
+	Status     string `json:"status,omitempty"`
 	Timestamp  string `json:"timestamp,omitempty"`
+	Exportable bool   `json:"exportable,omitempty"`
 }
 
-// RestoreDatabaseRequest restores a database from one of its backups
-// (best-effort body shape).
+// RestoreDatabaseRequest restores a database from one of its backups.
+// The field is `id` (the backup's ID) and is required — see landmine 2 above.
 type RestoreDatabaseRequest struct {
-	BackupID string `json:"backup_id"`
+	BackupID string `json:"id"`
 }
 
 // dbCollectionPath builds the instance-scoped database collection path.
@@ -140,6 +167,16 @@ func (c *Client) CreateDatabaseBackup(ctx context.Context, orgID, projectID, ins
 		return nil, fmt.Errorf("creating database backup: %w", err)
 	}
 	return &out, nil
+}
+
+// ListDatabaseBackups lists a database's backups (v2beta1, beta).
+func (c *Client) ListDatabaseBackups(ctx context.Context, orgID, projectID, instanceID, databaseID string) ([]DatabaseBackup, error) {
+	var out []DatabaseBackup
+	path := dbCollectionPath(orgID, projectID, instanceID) + "/" + url.PathEscape(databaseID) + "/backups"
+	if err := c.doV2Data(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, fmt.Errorf("listing database backups: %w", err)
+	}
+	return out, nil
 }
 
 // GetDatabaseBackup returns a single backup by ID (v2beta1, beta).

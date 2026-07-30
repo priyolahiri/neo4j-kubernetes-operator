@@ -22,7 +22,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef`.
 | `credentialsSecretRef` | `object` | Inline single-account credentials. **Mutually exclusive with `providerConfigRef`.** |
 | `organizationId` | `string` | The Aura organization. Falls back to the provider config's `defaultOrganizationId`. |
 | `email` | `string` | **Required.** Identifies the org member whose role is managed. |
-| `role` | `string` | **Required.** Enum `ORG_OWNER` / `ORG_ADMIN` / `ORG_MEMBER`. |
+| `role` | `string` | **Required.** Enum `organization-owner` / `organization-admin` / `organization-member` (the Aura API's own `organization_roles` values). |
 | `deletionPolicy` | `string` | Enum `Orphan` (default; leave access untouched) / `Delete` (remove from the org). |
 | `managementPolicies` | `[]string` | Items enum `Observe`/`Update`/`Delete`/`*`. Default `["*"]`. |
 
@@ -48,7 +48,7 @@ spec:
   providerConfigRef: { name: aura }
   organizationId: "<org-id>"
   email: alice@example.com
-  role: ORG_ADMIN
+  role: organization-admin
 ```
 
 ## Related Resources

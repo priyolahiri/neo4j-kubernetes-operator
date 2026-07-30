@@ -115,14 +115,16 @@ func (r *AuraDatabaseRestoreReconciler) Reconcile(ctx context.Context, req ctrl.
 	r.Recorder.Event(rs, corev1.EventTypeNormal, EventReasonAuraDatabaseRestoreStarted,
 		fmt.Sprintf("Restoring database %s from backup %s", databaseID, backupID))
 	if err := apiClient.RestoreDatabase(ctx, orgID, projectID, instanceID, databaseID, aura.RestoreDatabaseRequest{BackupID: backupID}); err != nil {
-		if aura.IsTransient(err) {
+		// 409 here is retryable, not terminal: Aura returns it for "ongoing
+		// operation" and "backup not in a completed state".
+		if aura.IsConflict(err) || aura.IsTransient(err) {
 			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 		}
 		return r.fail(ctx, req, rs, "RestoreFailed", err)
 	}
 	r.Recorder.Event(rs, corev1.EventTypeNormal, EventReasonAuraDatabaseRestoreDone,
-		fmt.Sprintf("Restored database %s", databaseID))
-	return ctrl.Result{}, r.markFinished(ctx, req)
+		fmt.Sprintf("Submitted restore of database %s from backup %s", databaseID, backupID))
+	return ctrl.Result{}, r.markSubmitted(ctx, req)
 }
 
 func (r *AuraDatabaseRestoreReconciler) markStarted(ctx context.Context, req ctrl.Request) {
@@ -141,7 +143,14 @@ func (r *AuraDatabaseRestoreReconciler) markStarted(ctx context.Context, req ctr
 	})
 }
 
-func (r *AuraDatabaseRestoreReconciler) markFinished(ctx context.Context, req ctrl.Request) error {
+// markSubmitted records that the restore was accepted by Aura.
+//
+// The phase is deliberately "Submitted", NOT "Completed": the restore runs
+// asynchronously and v2beta1 gives us nothing to poll — the spec suggests
+// polling the database GET endpoint, but DatabaseSummary carries only an `id`,
+// with no status field, so completion is not observable through this API.
+// Claiming "Completed" here would assert something we cannot know.
+func (r *AuraDatabaseRestoreReconciler) markSubmitted(ctx context.Context, req ctrl.Request) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.AuraDatabaseRestore{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
@@ -149,11 +158,12 @@ func (r *AuraDatabaseRestoreReconciler) markFinished(ctx context.Context, req ct
 		}
 		now := metav1.Now()
 		latest.Status.FinishedAt = &now
-		latest.Status.Phase = "Completed"
+		latest.Status.Phase = "Submitted"
 		latest.Status.ObservedGeneration = latest.Generation
 		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type: "Ready", Status: metav1.ConditionTrue, Reason: "Completed",
-			Message: "Database restore submitted to the Aura API (v2beta1, beta)",
+			Type: "Ready", Status: metav1.ConditionTrue, Reason: "Submitted",
+			Message: "Restore accepted by Aura. Completion is not observable: the v2beta1 database " +
+				"endpoint exposes no status field, so verify in the Aura console (v2beta1, beta)",
 		})
 		return r.Status().Update(ctx, latest)
 	})

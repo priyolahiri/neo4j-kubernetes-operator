@@ -110,7 +110,12 @@ func (r *AuraSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 	}
 
-	done := s.Status == aura.SnapshotStatusCompleted || s.Status == aura.SnapshotStatusFailed
+	// Cancelled is terminal too. Omitting it made a cancelled snapshot requeue
+	// forever. (Note the v1 spec's snapshot LIST status enum omits Cancelled while
+	// the single-GET enum includes it — we handle it either way.)
+	done := s.Status == aura.SnapshotStatusCompleted ||
+		s.Status == aura.SnapshotStatusFailed ||
+		s.Status == aura.SnapshotStatusCancelled
 	if err := r.patchStatus(ctx, req, func(sn *neo4jv1beta1.AuraSnapshot) {
 		sn.Status.Phase = s.Status
 		sn.Status.Profile = s.Profile

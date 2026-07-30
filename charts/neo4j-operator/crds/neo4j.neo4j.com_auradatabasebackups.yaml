@@ -148,6 +148,12 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              exportable:
+                description: |-
+                  Exportable reports whether Aura can export/download this backup. Only
+                  populated once the backup has been read back (the create response carries
+                  just an ID).
+                type: boolean
               lastSyncedTime:
                 description: LastSyncedTime is when the backup was last observed from
                   the Aura API.

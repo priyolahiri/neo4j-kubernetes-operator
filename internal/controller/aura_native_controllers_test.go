@@ -32,20 +32,28 @@ import (
 // ---------------------------------------------------------------------------
 
 type fakeDatabaseAPI struct {
-	createCalled bool
-	listFn       func() ([]aura.Database, error)
-	getFn        func(id string) (*aura.Database, error)
+	createCalled   bool
+	listFn         func() ([]aura.Database, error)
+	getFn          func(id string) (*aura.Database, error)
+	listBackupsFn  func() ([]aura.DatabaseBackup, error)
+	backupStatus   string
+	lastRestoreReq aura.RestoreDatabaseRequest
 }
 
-func (f *fakeDatabaseAPI) CreateDatabase(_ context.Context, _, _, _ string, req aura.CreateDatabaseRequest) (*aura.Database, error) {
+// NOTE: these fakes mirror the PUBLISHED v2beta1 shapes. A Database carries only
+// an ID (DatabaseSummary has no name/status), a freshly-created backup carries
+// only an ID, and backup statuses use the title-case enum. Do not "helpfully"
+// populate fields the real API never returns — that is what previously let a
+// broken contract pass CI.
+func (f *fakeDatabaseAPI) CreateDatabase(_ context.Context, _, _, _ string, _ aura.CreateDatabaseRequest) (*aura.Database, error) {
 	f.createCalled = true
-	return &aura.Database{ID: "db-new", Name: req.Name}, nil
+	return &aura.Database{ID: "db-new"}, nil
 }
 func (f *fakeDatabaseAPI) GetDatabase(_ context.Context, _, _, _, id string) (*aura.Database, error) {
 	if f.getFn != nil {
 		return f.getFn(id)
 	}
-	return &aura.Database{ID: id, Name: "analytics"}, nil
+	return &aura.Database{ID: id}, nil
 }
 func (f *fakeDatabaseAPI) ListDatabases(_ context.Context, _, _, _ string) ([]aura.Database, error) {
 	if f.listFn != nil {
@@ -54,13 +62,25 @@ func (f *fakeDatabaseAPI) ListDatabases(_ context.Context, _, _, _ string) ([]au
 	return nil, nil
 }
 func (f *fakeDatabaseAPI) DeleteDatabase(_ context.Context, _, _, _, _ string) error { return nil }
-func (f *fakeDatabaseAPI) CreateDatabaseBackup(_ context.Context, _, _, _, dbID string) (*aura.DatabaseBackup, error) {
-	return &aura.DatabaseBackup{ID: "bk-new", DatabaseID: dbID, Status: "COMPLETED"}, nil
+
+// The create response is `{id}` only — no status.
+func (f *fakeDatabaseAPI) CreateDatabaseBackup(_ context.Context, _, _, _, _ string) (*aura.DatabaseBackup, error) {
+	return &aura.DatabaseBackup{ID: "bk-new"}, nil
+}
+func (f *fakeDatabaseAPI) ListDatabaseBackups(_ context.Context, _, _, _, _ string) ([]aura.DatabaseBackup, error) {
+	if f.listBackupsFn != nil {
+		return f.listBackupsFn()
+	}
+	return nil, nil
 }
 func (f *fakeDatabaseAPI) GetDatabaseBackup(_ context.Context, _, _, _, _, id string) (*aura.DatabaseBackup, error) {
-	return &aura.DatabaseBackup{ID: id, Status: "COMPLETED"}, nil
+	if f.backupStatus != "" {
+		return &aura.DatabaseBackup{ID: id, Status: f.backupStatus, Timestamp: "2026-07-01T00:00:00Z"}, nil
+	}
+	return &aura.DatabaseBackup{ID: id, Status: aura.BackupStatusCompleted, Timestamp: "2026-07-01T00:00:00Z", Exportable: true}, nil
 }
-func (f *fakeDatabaseAPI) RestoreDatabase(_ context.Context, _, _, _, _ string, _ aura.RestoreDatabaseRequest) error {
+func (f *fakeDatabaseAPI) RestoreDatabase(_ context.Context, _, _, _, _ string, req aura.RestoreDatabaseRequest) error {
+	f.lastRestoreReq = req
 	return nil
 }
 
@@ -69,12 +89,16 @@ func dbFactory(f *fakeDatabaseAPI) auraDatabaseClientFactory {
 }
 
 type fakeMemberAPI struct {
-	orgMembers    []aura.Member
-	updateCalled  bool
-	createInvite  bool
-	deleteInvite  bool
-	invites       []aura.Invite
-	lastInviteReq aura.CreateInviteRequest
+	orgMembers       []aura.Member
+	projectMembersFn func() ([]aura.Member, error)
+	updateCalled     bool
+	addCalled        bool
+	addedUserID      string
+	addedRole        string
+	createInvite     bool
+	deleteInvite     bool
+	invites          []aura.Invite
+	lastInviteReq    aura.CreateInviteRequest
 }
 
 func (f *fakeMemberAPI) ListOrgMembers(_ context.Context, _ string) ([]aura.Member, error) {
@@ -82,24 +106,48 @@ func (f *fakeMemberAPI) ListOrgMembers(_ context.Context, _ string) ([]aura.Memb
 }
 func (f *fakeMemberAPI) UpdateOrgMemberRole(_ context.Context, _, userID, role string) (*aura.Member, error) {
 	f.updateCalled = true
-	return &aura.Member{ID: userID, Role: role}, nil
+	return &aura.Member{UserID: userID, OrganizationRoles: []string{role}}, nil
 }
 func (f *fakeMemberAPI) DeleteOrgMember(_ context.Context, _, _ string) error { return nil }
 func (f *fakeMemberAPI) ListProjectMembers(_ context.Context, _, _ string) ([]aura.Member, error) {
+	if f.projectMembersFn != nil {
+		return f.projectMembersFn()
+	}
 	return f.orgMembers, nil
+}
+func (f *fakeMemberAPI) AddProjectMember(_ context.Context, _, _, userID, role string) error {
+	f.addCalled = true
+	f.addedUserID = userID
+	f.addedRole = role
+	return nil
 }
 func (f *fakeMemberAPI) UpdateProjectMemberRole(_ context.Context, _, _, userID, role string) (*aura.Member, error) {
 	f.updateCalled = true
-	return &aura.Member{ID: userID, Role: role}, nil
+	return &aura.Member{UserID: userID, ProjectRoles: []string{role}}, nil
 }
 func (f *fakeMemberAPI) DeleteProjectMember(_ context.Context, _, _, _ string) error { return nil }
 func (f *fakeMemberAPI) CreateInvite(_ context.Context, _ string, req aura.CreateInviteRequest) (*aura.Invite, error) {
 	f.createInvite = true
 	f.lastInviteReq = req
-	return &aura.Invite{ID: "inv-new", Email: req.Email, Role: req.Role, ProjectID: req.ProjectID}, nil
+	return &aura.Invite{
+		ID:                "inv-new",
+		Email:             req.Email,
+		OrganizationRoles: req.Roles,
+		ProjectInvites:    req.ProjectInvites,
+		Status:            aura.InviteStatusActive,
+	}, nil
 }
-func (f *fakeMemberAPI) GetInvite(_ context.Context, _, id string) (*aura.Invite, error) {
-	return &aura.Invite{ID: id, Email: "carol@example.com", Role: aura.OrgRoleMember}, nil
+
+// FindInvite mirrors the real client: reads from the LIST result and returns
+// (nil, nil) when absent. There is no GetInvite — v2beta1 has no
+// GET /invites/{id}, only DELETE.
+func (f *fakeMemberAPI) FindInvite(_ context.Context, _, id string) (*aura.Invite, error) {
+	for i := range f.invites {
+		if f.invites[i].ID == id {
+			return &f.invites[i], nil
+		}
+	}
+	return nil, nil
 }
 func (f *fakeMemberAPI) ListInvites(_ context.Context, _ string) ([]aura.Invite, error) {
 	return f.invites, nil
@@ -134,7 +182,7 @@ func TestAuraDatabase_CreateThenReady(t *testing.T) {
 	}
 	api := &fakeDatabaseAPI{
 		listFn: func() ([]aura.Database, error) { return nil, nil },
-		getFn:  func(id string) (*aura.Database, error) { return &aura.Database{ID: id, Name: "analytics"}, nil },
+		getFn:  func(id string) (*aura.Database, error) { return &aura.Database{ID: id}, nil },
 	}
 	c := newAuraFakeClient(t, scheme, inst, db)
 	r := &AuraDatabaseReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50), ClientFactory: dbFactory(api)}
@@ -172,7 +220,9 @@ func TestAuraOrganizationMember_UpdatesRole(t *testing.T) {
 			Email: "alice@example.com", Role: aura.OrgRoleAdmin,
 		},
 	}
-	api := &fakeMemberAPI{orgMembers: []aura.Member{{ID: "u-1", Email: "alice@example.com", Role: aura.OrgRoleMember}}}
+	api := &fakeMemberAPI{orgMembers: []aura.Member{
+		{UserID: "u-1", Email: "alice@example.com", OrganizationRoles: []string{aura.OrgRoleMember}},
+	}}
 	c := newAuraFakeClient(t, scheme, m)
 	r := &AuraOrganizationMemberReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50), ClientFactory: memberFactory(api)}
 	if _, err := r.Reconcile(context.Background(), reqFor(m)); err != nil {
@@ -214,6 +264,81 @@ func TestAuraOrganizationMember_NotAMember(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// AuraProjectMember
+// ---------------------------------------------------------------------------
+
+// An existing ORGANIZATION member who is not yet in the project is added
+// directly via POST project users (which takes their user UUID, not an email).
+// Previously this dead-ended at NotAMember and told the user to file an invite,
+// because the add-to-project operation was not implemented at all.
+func TestAuraProjectMember_AddsExistingOrgMemberToProject(t *testing.T) {
+	scheme := auraTestScheme(t)
+	m := &neo4jv1beta1.AuraProjectMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-proj", Namespace: testNS},
+		Spec: neo4jv1beta1.AuraProjectMemberSpec{
+			CredentialsSecretRef: credRef(), OrganizationID: "org-1", ProjectID: "proj-1",
+			Email: "alice@example.com", Role: aura.ProjectRoleAdmin,
+		},
+	}
+	api := &fakeMemberAPI{
+		// Known at org level...
+		orgMembers: []aura.Member{
+			{UserID: "u-1", Email: "alice@example.com", OrganizationRoles: []string{aura.OrgRoleMember}},
+		},
+		// ...but not yet a member of the project.
+		projectMembersFn: func() ([]aura.Member, error) { return nil, nil },
+	}
+	c := newAuraFakeClient(t, scheme, m)
+	r := &AuraProjectMemberReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50), ClientFactory: memberFactory(api)}
+	if _, err := r.Reconcile(context.Background(), reqFor(m)); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if !api.addCalled {
+		t.Fatal("expected AddProjectMember to be called for an existing org member")
+	}
+	if api.addedUserID != "u-1" {
+		t.Errorf("added user id = %q, want the Aura user UUID u-1 (never the email)", api.addedUserID)
+	}
+	if api.addedRole != aura.ProjectRoleAdmin {
+		t.Errorf("added role = %q, want %q", api.addedRole, aura.ProjectRoleAdmin)
+	}
+	got := &neo4jv1beta1.AuraProjectMember{}
+	_ = c.Get(context.Background(), reqFor(m).NamespacedName, got)
+	if got.Status.Phase != "Ready" {
+		t.Errorf("phase = %q, want Ready", got.Status.Phase)
+	}
+	if got.Status.UserID != "u-1" {
+		t.Errorf("status.userId = %q, want u-1", got.Status.UserID)
+	}
+}
+
+// Someone unknown at org level cannot be added directly — they need an invite.
+func TestAuraProjectMember_UnknownEmailStillNeedsInvite(t *testing.T) {
+	scheme := auraTestScheme(t)
+	m := &neo4jv1beta1.AuraProjectMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "ghost-proj", Namespace: testNS},
+		Spec: neo4jv1beta1.AuraProjectMemberSpec{
+			CredentialsSecretRef: credRef(), OrganizationID: "org-1", ProjectID: "proj-1",
+			Email: "ghost@example.com", Role: aura.ProjectRoleViewer,
+		},
+	}
+	api := &fakeMemberAPI{orgMembers: nil, projectMembersFn: func() ([]aura.Member, error) { return nil, nil }}
+	c := newAuraFakeClient(t, scheme, m)
+	r := &AuraProjectMemberReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50), ClientFactory: memberFactory(api)}
+	if _, err := r.Reconcile(context.Background(), reqFor(m)); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if api.addCalled {
+		t.Error("must NOT add a user who is not an organization member")
+	}
+	got := &neo4jv1beta1.AuraProjectMember{}
+	_ = c.Get(context.Background(), reqFor(m).NamespacedName, got)
+	if got.Status.Phase != "NotAMember" {
+		t.Errorf("phase = %q, want NotAMember", got.Status.Phase)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // AuraInvite
 // ---------------------------------------------------------------------------
 
@@ -238,8 +363,13 @@ func TestAuraInvite_CreateThenReady(t *testing.T) {
 	if !api.createInvite {
 		t.Fatal("expected CreateInvite to be called")
 	}
-	if api.lastInviteReq.Email != "carol@example.com" || api.lastInviteReq.Role != aura.OrgRoleMember {
+	// Roles is an array named `roles`; there is no scalar `role` in the API body.
+	if api.lastInviteReq.Email != "carol@example.com" ||
+		len(api.lastInviteReq.Roles) != 1 || api.lastInviteReq.Roles[0] != aura.OrgRoleMember {
 		t.Errorf("invite req = %+v", api.lastInviteReq)
+	}
+	if len(api.lastInviteReq.ProjectInvites) != 0 {
+		t.Errorf("an organization-* invite must not carry project_invites, got %+v", api.lastInviteReq.ProjectInvites)
 	}
 	got := &neo4jv1beta1.AuraInvite{}
 	if err := c.Get(ctx, reqFor(inv).NamespacedName, got); err != nil {

@@ -174,15 +174,41 @@ func (r *AuraCustomerManagedKeyReconciler) observeOrCreate(
 	if err != nil {
 		return "", false, fmt.Errorf("listing customer-managed keys before create: %w", err)
 	}
+	// The v1 LIST endpoint returns summaries (id/name/tenant_id only), so the
+	// key_id/region/cloud_provider/instance_type comparison CANNOT be made from
+	// the list — an earlier cut compared those fields against a summary, where
+	// they are always empty, so adoption never fired and a lost external-ID
+	// annotation re-registered a duplicate key.
+	//
+	// Narrow on the name (which the summary does carry), then fetch the detail to
+	// confirm the candidate is genuinely the same key before adopting.
+	wantName := r.keyName(cmk)
 	for i := range existing {
-		e := existing[i]
-		if e.KeyID == cmk.Spec.KeyID && e.Region == cmk.Spec.Region &&
-			e.CloudProvider == cmk.Spec.CloudProvider && e.InstanceType == cmk.Spec.InstanceType {
-			if err := r.setExternalID(ctx, req, e.ID); err != nil {
+		if existing[i].Name != wantName {
+			continue
+		}
+		detail, err := apiClient.GetCustomerManagedKey(ctx, existing[i].ID)
+		if err != nil {
+			if aura.IsNotFound(err) {
+				continue // raced with a delete
+			}
+			return "", false, fmt.Errorf("reading candidate key %q for adoption: %w", existing[i].ID, err)
+		}
+		if detail.KeyID == cmk.Spec.KeyID && detail.Region == cmk.Spec.Region &&
+			detail.CloudProvider == cmk.Spec.CloudProvider && detail.InstanceType == cmk.Spec.InstanceType {
+			if err := r.setExternalID(ctx, req, detail.ID); err != nil {
 				return "", false, err
 			}
-			return e.ID, true, nil
+			return detail.ID, true, nil
 		}
+		// Same name, different key material/placement. Adopting would bind this CR
+		// to the wrong key, and creating would collide on the name — so refuse and
+		// make the operator's reason visible.
+		return "", false, fmt.Errorf(
+			"a customer-managed key named %q already exists in project %q but points elsewhere "+
+				"(existing keyId=%q region=%q cloudProvider=%q instanceType=%q); "+
+				"rename this CR's key or remove the conflicting key",
+			wantName, projectID, detail.KeyID, detail.Region, detail.CloudProvider, detail.InstanceType)
 	}
 
 	if !allowCreate {

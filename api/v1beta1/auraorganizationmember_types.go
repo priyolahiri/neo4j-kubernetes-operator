@@ -49,8 +49,10 @@ type AuraOrganizationMemberSpec struct {
 	// +kubebuilder:validation:Required
 	Email string `json:"email"`
 
-	// Role is the desired organization-level role.
-	// +kubebuilder:validation:Enum=ORG_OWNER;ORG_ADMIN;ORG_MEMBER
+	// Role is the desired organization-level role. These are the Aura API's own
+	// v2beta1 `organization_roles` values — lowercase-hyphenated, not
+	// SCREAMING_SNAKE.
+	// +kubebuilder:validation:Enum=organization-owner;organization-admin;organization-member
 	// +kubebuilder:validation:Required
 	Role string `json:"role"`
 

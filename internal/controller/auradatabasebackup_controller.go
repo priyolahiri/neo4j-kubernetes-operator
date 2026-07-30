@@ -138,7 +138,32 @@ func (r *AuraDatabaseBackupReconciler) Reconcile(ctx context.Context, req ctrl.R
 }
 
 func (r *AuraDatabaseBackupReconciler) syncStatus(ctx context.Context, req ctrl.Request, observed *aura.DatabaseBackup) (ctrl.Result, error) {
-	done := observed.Status == "" || observed.Status == "COMPLETED" || observed.Status == "Completed"
+	// v2beta1 DatabaseBackup.status is a required enum:
+	// Pending | InProgress | Completed | Failed.
+	//
+	// An EMPTY status must NOT be treated as done: the CREATE response
+	// (CreateDatabaseBackupResponse) carries only `id`, so a just-scheduled
+	// backup arrives here with no status at all. Treating "" as Completed is what
+	// made every backup — including failed ones — report success.
+	phase := "Pending"
+	condStatus := metav1.ConditionFalse
+	reason := "InProgress"
+	message := "Database backup in progress"
+	switch observed.Status {
+	case aura.BackupStatusCompleted:
+		phase, condStatus, reason = "Completed", metav1.ConditionTrue, "Completed"
+		message = "Database backup completed (v2beta1, beta)"
+	case aura.BackupStatusFailed:
+		phase, condStatus, reason = "Failed", metav1.ConditionFalse, "Failed"
+		message = "Aura reported the database backup as Failed"
+	case aura.BackupStatusInProgress:
+		reason, message = "InProgress", "Database backup in progress"
+	case aura.BackupStatusPending, "":
+		reason, message = "Pending", "Database backup scheduled, awaiting Aura status"
+	default:
+		reason = "Unknown"
+		message = fmt.Sprintf("Aura reported an unrecognized backup status %q", observed.Status)
+	}
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.AuraDatabaseBackup{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
@@ -146,28 +171,22 @@ func (r *AuraDatabaseBackupReconciler) syncStatus(ctx context.Context, req ctrl.
 		}
 		latest.Status.BackupID = observed.ID
 		latest.Status.Timestamp = observed.Timestamp
+		latest.Status.Exportable = observed.Exportable
 		now := metav1.Now()
 		latest.Status.LastSyncedTime = &now
 		latest.Status.ObservedGeneration = latest.Generation
-		if done {
-			latest.Status.Phase = "Completed"
-			meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-				Type: "Ready", Status: metav1.ConditionTrue, Reason: "Completed",
-				Message: "Database backup completed (v2beta1, beta)",
-			})
-		} else {
-			latest.Status.Phase = "Pending"
-			meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-				Type: "Ready", Status: metav1.ConditionFalse, Reason: "InProgress",
-				Message: "Database backup in progress",
-			})
-		}
+		latest.Status.Phase = phase
+		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+			Type: "Ready", Status: condStatus, Reason: reason, Message: message,
+		})
 		return r.Status().Update(ctx, latest)
 	})
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if done {
+	// Completed and Failed are both terminal — stop requeueing. Anything else
+	// (Pending, InProgress, empty, unrecognized) is still in flight.
+	if phase == "Completed" || phase == "Failed" {
 		return ctrl.Result{}, nil
 	}
 	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil

@@ -48,6 +48,7 @@ type AuraInstanceSource struct {
 //
 // +kubebuilder:validation:XValidation:rule="has(self.providerConfigRef) != has(self.credentialsSecretRef)",message="set exactly one of providerConfigRef or credentialsSecretRef"
 // +kubebuilder:validation:XValidation:rule="self.type != 'free-db' || !has(self.storage)",message="storage is not configurable for free-db"
+// +kubebuilder:validation:XValidation:rule="self.type == 'free-db' || has(self.memory)",message="memory is required for every tier except free-db (the Aura API requires it at create time)"
 // +kubebuilder:validation:XValidation:rule="!has(self.secondariesCount) || self.type == 'enterprise-db'",message="secondariesCount is only valid for type enterprise-db (Virtual Dedicated Cloud)"
 // +kubebuilder:validation:XValidation:rule="!has(self.cdcEnrichmentMode) || self.type == 'enterprise-db' || self.type == 'business-critical'",message="cdcEnrichmentMode is only valid for type enterprise-db or business-critical"
 // +kubebuilder:validation:XValidation:rule="!has(self.customerManagedKeyId) || self.type == 'enterprise-db' || self.type == 'enterprise-ds'",message="customerManagedKeyId is only valid for type enterprise-db or enterprise-ds"

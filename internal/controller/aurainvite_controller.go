@@ -122,26 +122,88 @@ func (r *AuraInviteReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 	}
 
-	observed, err := apiClient.GetInvite(ctx, orgID, externalID)
+	// v2beta1 has no GET /invites/{id} (only DELETE), so a single-invite read
+	// goes through the LIST endpoint. A nil result means the invite is no longer
+	// listed at all.
+	observed, err := apiClient.FindInvite(ctx, orgID, externalID)
 	if err != nil {
-		if aura.IsNotFound(err) {
-			// The invite is gone (accepted or revoked out of band) — treat as done.
-			_ = r.setStatus(ctx, req, externalID, "Accepted", metav1.ConditionTrue, "Gone",
-				"invite is no longer pending (accepted or revoked)")
-			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
-		}
 		if aura.IsTransient(err) {
 			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 		}
 		return r.fail(ctx, req, inv, "ObserveFailed", err)
 	}
-	if err := r.setStatus(ctx, req, observed.ID, "Sent", metav1.ConditionTrue, "Reconciled",
-		"Invite reconciled against the Aura API (v2beta1, beta)"); err != nil {
+	if observed == nil {
+		// Dropped off the list entirely — accepted or revoked out of band. We
+		// cannot tell which without a status, so report it neutrally as Gone.
+		_ = r.setStatus(ctx, req, externalID, "Gone", metav1.ConditionTrue, "Gone",
+			"invite is no longer listed (accepted, declined, revoked or expired)")
+		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	}
+
+	// The invite IS listed, so use its own status field rather than inferring
+	// from existence. Only `active` is genuinely still pending.
+	phase, condition, reason, message := inviteStatusToPhase(observed.Status)
+	if err := r.setStatus(ctx, req, observed.ID, phase, condition, reason, message); err != nil {
 		return ctrl.Result{}, err
 	}
 	r.Recorder.Event(inv, corev1.EventTypeNormal, EventReasonAuraInviteReady,
-		fmt.Sprintf("Invite for %q reconciled", inv.Spec.Email))
+		fmt.Sprintf("Invite for %q reconciled (%s)", inv.Spec.Email, phase))
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+// inviteStatusToPhase maps the v2beta1 OrganizationInvite.status enum onto the
+// CR's phase + Ready condition. An empty status (older/partial payload) is
+// treated as still-pending rather than assumed accepted.
+func inviteStatusToPhase(status string) (phase string, cond metav1.ConditionStatus, reason, message string) {
+	switch status {
+	case aura.InviteStatusAccepted:
+		return "Accepted", metav1.ConditionTrue, "Accepted", "invite was accepted"
+	case aura.InviteStatusRevoked:
+		return "Revoked", metav1.ConditionFalse, "Revoked", "invite was revoked"
+	case aura.InviteStatusExpired:
+		return "Expired", metav1.ConditionFalse, "Expired", "invite expired before it was accepted"
+	case aura.InviteStatusDeclined:
+		return "Declined", metav1.ConditionFalse, "Declined", "invite was declined by the invitee"
+	case aura.InviteStatusActive, "":
+		return "Sent", metav1.ConditionTrue, "Reconciled", "invite is pending acceptance (v2beta1, beta)"
+	default:
+		return "Sent", metav1.ConditionTrue, "Reconciled",
+			fmt.Sprintf("invite reconciled; Aura reported status %q", status)
+	}
+}
+
+// buildInviteRequest maps the CR onto the two-slot v2beta1 invite body: an
+// `organization-*` role fills the org slot, a `namespace-*` role fills a
+// project_invites entry (optionally alongside spec.organizationRole).
+func buildInviteRequest(inv *neo4jv1beta1.AuraInvite) aura.CreateInviteRequest {
+	out := aura.CreateInviteRequest{Email: inv.Spec.Email}
+	if strings.HasPrefix(inv.Spec.Role, "namespace-") {
+		out.ProjectInvites = []aura.ProjectInvite{{
+			ProjectID:    inv.Spec.ProjectID,
+			ProjectRoles: []string{inv.Spec.Role},
+		}}
+		if inv.Spec.OrganizationRole != "" {
+			out.Roles = []string{inv.Spec.OrganizationRole}
+		}
+		return out
+	}
+	out.Roles = []string{inv.Spec.Role}
+	return out
+}
+
+// inviteCoversProject reports whether an existing invite is scoped to projectID,
+// so an adopt only matches an invite of the same shape. projectID == "" means an
+// organization-level invite, which must carry no project_invites.
+func inviteCoversProject(existing aura.Invite, projectID string) bool {
+	if projectID == "" {
+		return len(existing.ProjectInvites) == 0
+	}
+	for _, pi := range existing.ProjectInvites {
+		if pi.ProjectID == projectID {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *AuraInviteReconciler) observeOrCreate(ctx context.Context, req ctrl.Request, inv *neo4jv1beta1.AuraInvite, apiClient auraMemberAPI, orgID string) (id string, adopted bool, err error) {
@@ -150,7 +212,7 @@ func (r *AuraInviteReconciler) observeOrCreate(ctx context.Context, req ctrl.Req
 		return "", false, fmt.Errorf("listing invites before create: %w", err)
 	}
 	for i := range existing {
-		if strings.EqualFold(existing[i].Email, inv.Spec.Email) && existing[i].ProjectID == inv.Spec.ProjectID {
+		if strings.EqualFold(existing[i].Email, inv.Spec.Email) && inviteCoversProject(existing[i], inv.Spec.ProjectID) {
 			if err := r.setExternalID(ctx, req, existing[i].ID); err != nil {
 				return "", false, err
 			}
@@ -160,11 +222,7 @@ func (r *AuraInviteReconciler) observeOrCreate(ctx context.Context, req ctrl.Req
 	if !managementAllows(inv.Spec.ManagementPolicies, auraPolicyCreate) {
 		return "", false, nil
 	}
-	created, err := apiClient.CreateInvite(ctx, orgID, aura.CreateInviteRequest{
-		Email:     inv.Spec.Email,
-		Role:      inv.Spec.Role,
-		ProjectID: inv.Spec.ProjectID,
-	})
+	created, err := apiClient.CreateInvite(ctx, orgID, buildInviteRequest(inv))
 	if err != nil {
 		return "", false, err
 	}

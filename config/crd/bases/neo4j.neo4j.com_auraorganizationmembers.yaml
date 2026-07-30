@@ -131,11 +131,14 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               role:
-                description: Role is the desired organization-level role.
+                description: |-
+                  Role is the desired organization-level role. These are the Aura API's own
+                  v2beta1 `organization_roles` values — lowercase-hyphenated, not
+                  SCREAMING_SNAKE.
                 enum:
-                - ORG_OWNER
-                - ORG_ADMIN
-                - ORG_MEMBER
+                - organization-owner
+                - organization-admin
+                - organization-member
                 type: string
             required:
             - email

@@ -159,7 +159,15 @@ func (r *AuraDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-// observeOrCreate adopts a database with the same name before creating.
+// observeOrCreate creates the database unless the external-ID annotation already
+// pins one.
+//
+// NOTE: adoption-by-name is impossible on this API. The v2beta1 DatabaseSummary
+// carries ONLY an `id` — no name, no status — so a pre-existing Aura database
+// cannot be matched against spec.name. The external-ID annotation set by
+// setExternalID is therefore the ONLY adoption mechanism; if it is lost, this
+// will create a second database rather than re-adopt. We still list first, so we
+// can warn when creating into a non-empty instance instead of doing it silently.
 func (r *AuraDatabaseReconciler) observeOrCreate(
 	ctx context.Context, req ctrl.Request, d *neo4jv1beta1.AuraDatabase,
 	apiClient auraDatabaseAPI, tgt auraDatabaseTarget, allowCreate bool,
@@ -169,16 +177,14 @@ func (r *AuraDatabaseReconciler) observeOrCreate(
 	if err != nil {
 		return "", false, fmt.Errorf("listing databases before create: %w", err)
 	}
-	for i := range existing {
-		if existing[i].Name == name {
-			if err := r.setExternalID(ctx, req, existing[i].ID); err != nil {
-				return "", false, err
-			}
-			return existing[i].ID, true, nil
-		}
-	}
 	if !allowCreate {
 		return "", false, nil
+	}
+	if len(existing) > 0 {
+		r.Recorder.Event(d, corev1.EventTypeWarning, EventReasonAuraDatabaseCreated,
+			fmt.Sprintf("Creating database %q on an instance that already has %d database(s): the Aura API does not "+
+				"return database names, so an existing database cannot be adopted by name. Verify no duplicate was created.",
+				name, len(existing)))
 	}
 	created, err := apiClient.CreateDatabase(ctx, tgt.orgID, tgt.projectID, tgt.instanceID, aura.CreateDatabaseRequest{Name: name})
 	if err != nil {
