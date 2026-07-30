@@ -82,7 +82,7 @@ kubectl -n <operator-ns> rollout status deployment/<operator-deploy>
 ## Why this exists / provenance
 
 Distilled from real fresh-eyes passes. The standalone → cluster(3) →
-sharding(2026.04) phase plan and the one-deployment-at-a-time anti-wedge rule
+sharding(2026.06) phase plan and the one-deployment-at-a-time anti-wedge rule
 were settled after a pass where concurrent standalone + cluster JVMs wedged Bolt
 on the laptop VM. The full, evolving catalog is the matrix doc linked above —
 update *that* (not just this SKILL) when the product grows.

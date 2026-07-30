@@ -116,8 +116,8 @@ func (r *AuraOrganizationMemberReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 	}
 
-	if member.Role != m.Spec.Role && managementAllows(m.Spec.ManagementPolicies, auraPolicyUpdate) {
-		if _, err := apiClient.UpdateOrgMemberRole(ctx, orgID, member.ID, m.Spec.Role); err != nil {
+	if member.Role() != m.Spec.Role && managementAllows(m.Spec.ManagementPolicies, auraPolicyUpdate) {
+		if _, err := apiClient.UpdateOrgMemberRole(ctx, orgID, member.UserID, m.Spec.Role); err != nil {
 			if aura.IsConflict(err) || aura.IsTransient(err) {
 				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 			}
@@ -126,7 +126,7 @@ func (r *AuraOrganizationMemberReconciler) Reconcile(ctx context.Context, req ct
 		r.Recorder.Event(m, corev1.EventTypeNormal, EventReasonAuraMemberUpdated,
 			fmt.Sprintf("Set %q org role to %s", m.Spec.Email, m.Spec.Role))
 	}
-	if err := r.setStatus(ctx, req, member.ID, "Ready", metav1.ConditionTrue, "Reconciled",
+	if err := r.setStatus(ctx, req, member.UserID, "Ready", metav1.ConditionTrue, "Reconciled",
 		"Organization membership reconciled (v2beta1, beta)"); err != nil {
 		return ctrl.Result{}, err
 	}

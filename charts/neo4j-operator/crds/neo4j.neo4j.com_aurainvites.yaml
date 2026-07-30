@@ -113,6 +113,18 @@ spec:
                   OrganizationID is the Aura organization to invite into. If empty, the
                   referenced AuraProviderConfig's defaultOrganizationId is used.
                 type: string
+              organizationRole:
+                description: |-
+                  OrganizationRole optionally also grants an organization-level role on
+                  acceptance. Only meaningful alongside a namespace-* (project-scoped) role:
+                  the v2beta1 invite body carries organization roles and per-project roles in
+                  separate slots, so this fills the organization slot. Leave it empty to send
+                  only the project role and let Aura apply its own default.
+                enum:
+                - organization-owner
+                - organization-admin
+                - organization-member
+                type: string
               projectId:
                 description: |-
                   ProjectID optionally scopes the invite to a project (a project-member
@@ -136,17 +148,22 @@ spec:
                 x-kubernetes-map-type: atomic
               role:
                 description: |-
-                  Role is the role to grant on acceptance. Use an ORG_* role for an
-                  organization invite, or a PROJECT_*/METRICS_READER role for a
-                  project-scoped invite (projectId set).
+                  Role is the role to grant on acceptance, using the Aura API's own v2beta1
+                  invite vocabulary.
+
+                  Use an organization-* role for an organization-level invite (leave
+                  projectId empty), or a namespace-* role for a project-scoped invite
+                  (projectId set). The namespace-* spelling is the API's: the invite body
+                  names project roles `namespace-*` even though the project-members endpoint
+                  names the same concepts `project-*`.
                 enum:
-                - ORG_OWNER
-                - ORG_ADMIN
-                - ORG_MEMBER
-                - PROJECT_ADMIN
-                - PROJECT_MEMBER
-                - PROJECT_VIEWER
-                - METRICS_READER
+                - organization-owner
+                - organization-admin
+                - organization-member
+                - namespace-admin
+                - namespace-member
+                - namespace-viewer
+                - namespace-metrics-integration-reader
                 type: string
             required:
             - email
@@ -155,6 +172,12 @@ spec:
             x-kubernetes-validations:
             - message: set exactly one of providerConfigRef or credentialsSecretRef
               rule: has(self.providerConfigRef) != has(self.credentialsSecretRef)
+            - message: a namespace-* role is a project-scoped invite and requires
+                projectId
+              rule: '!self.role.startsWith(''namespace-'') || has(self.projectId)'
+            - message: an organization-* role is an org-level invite; do not set projectId
+                (use a namespace-* role to scope an invite to a project)
+              rule: '!self.role.startsWith(''organization-'') || !has(self.projectId)'
           status:
             description: AuraInviteStatus is the observed state of the invite.
             properties:

@@ -29,6 +29,8 @@ import (
 // best-effort.
 //
 // +kubebuilder:validation:XValidation:rule="has(self.providerConfigRef) != has(self.credentialsSecretRef)",message="set exactly one of providerConfigRef or credentialsSecretRef"
+// +kubebuilder:validation:XValidation:rule="!self.role.startsWith('namespace-') || has(self.projectId)",message="a namespace-* role is a project-scoped invite and requires projectId"
+// +kubebuilder:validation:XValidation:rule="!self.role.startsWith('organization-') || !has(self.projectId)",message="an organization-* role is an org-level invite; do not set projectId (use a namespace-* role to scope an invite to a project)"
 type AuraInviteSpec struct {
 	// ProviderConfigRef selects the AuraProviderConfig (credentials + defaults)
 	// in the same namespace. Mutually exclusive with credentialsSecretRef.
@@ -54,12 +56,26 @@ type AuraInviteSpec struct {
 	// +kubebuilder:validation:Required
 	Email string `json:"email"`
 
-	// Role is the role to grant on acceptance. Use an ORG_* role for an
-	// organization invite, or a PROJECT_*/METRICS_READER role for a
-	// project-scoped invite (projectId set).
-	// +kubebuilder:validation:Enum=ORG_OWNER;ORG_ADMIN;ORG_MEMBER;PROJECT_ADMIN;PROJECT_MEMBER;PROJECT_VIEWER;METRICS_READER
+	// Role is the role to grant on acceptance, using the Aura API's own v2beta1
+	// invite vocabulary.
+	//
+	// Use an organization-* role for an organization-level invite (leave
+	// projectId empty), or a namespace-* role for a project-scoped invite
+	// (projectId set). The namespace-* spelling is the API's: the invite body
+	// names project roles `namespace-*` even though the project-members endpoint
+	// names the same concepts `project-*`.
+	// +kubebuilder:validation:Enum=organization-owner;organization-admin;organization-member;namespace-admin;namespace-member;namespace-viewer;namespace-metrics-integration-reader
 	// +kubebuilder:validation:Required
 	Role string `json:"role"`
+
+	// OrganizationRole optionally also grants an organization-level role on
+	// acceptance. Only meaningful alongside a namespace-* (project-scoped) role:
+	// the v2beta1 invite body carries organization roles and per-project roles in
+	// separate slots, so this fills the organization slot. Leave it empty to send
+	// only the project role and let Aura apply its own default.
+	// +kubebuilder:validation:Enum=organization-owner;organization-admin;organization-member
+	// +optional
+	OrganizationRole string `json:"organizationRole,omitempty"`
 
 	// DeletionPolicy controls what happens to a still-pending invite when this CR
 	// is deleted: Delete (default; revoke it) or Orphan (leave it).

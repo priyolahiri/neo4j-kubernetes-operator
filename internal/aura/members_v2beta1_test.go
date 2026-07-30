@@ -22,36 +22,97 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 )
 
-// Pins the v2beta1 console-RBAC contract: org/project user paths, the invites
-// path, and the {"data": …} envelope.
+// Pins the v2beta1 console-RBAC contract against the PUBLISHED SPEC
+// (https://api.neo4j.io/v2beta1/spec.json), not against the client's own
+// assumptions.
+//
+// The fixtures below deliberately serve the spec's field names — `user_id`,
+// `organization_roles`, `project_roles`, invite `status` — and the assertions
+// check the REQUEST bodies, because an earlier version of this suite echoed the
+// client's invented `{"id","email","role"}` shape back at it and therefore
+// passed against a contract the API never served. If you change a fixture here,
+// change it to match the spec, never to match the client.
+
+// specOrgUserJSON is a v2beta1 OrganizationUser. All seven properties are
+// `required` upstream; the operator only reads the first three.
+const specOrgUserJSON = `{
+  "user_id": "11111111-1111-1111-1111-111111111111",
+  "email": "alice@example.com",
+  "organization_roles": ["organization-member"],
+  "exempt_from_automatic_removal": false,
+  "mfa_enrollment_status": "enrolled",
+  "mfa_enrolled_methods": [{"id": "totp"}],
+  "last_activity_at": "2026-07-01T00:00:00Z"
+}`
+
+// specProjectUserJSON is a v2beta1 ProjectUser (user_id, email, project_roles).
+const specProjectUserJSON = `{
+  "user_id": "22222222-2222-2222-2222-222222222222",
+  "email": "bob@example.com",
+  "project_roles": ["project-viewer"]
+}`
 
 func TestMembersAndInvites(t *testing.T) {
 	const org, proj = "org-1", "proj-1"
+	const aliceID = "11111111-1111-1111-1111-111111111111"
 	orgUsers := "/v2beta1/organizations/" + org + "/users"
 	projUsers := "/v2beta1/organizations/" + org + "/projects/" + proj + "/users"
 	invites := "/v2beta1/organizations/" + org + "/invites"
-	var inviteBody map[string]any
+
+	var orgPatchBody, projPatchBody, addMemberBody, inviteBody map[string]any
+	var singleInviteGetCalled bool
+
+	readJSON := func(r *http.Request, into *map[string]any) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, into)
+	}
+
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/oauth/token":
 			writeToken(w, "tok")
+
 		case r.Method == http.MethodGet && r.URL.Path == orgUsers:
-			_, _ = w.Write([]byte(`{"data":[{"id":"u-1","email":"alice@example.com","role":"ORG_MEMBER"}]}`))
-		case r.Method == http.MethodPatch && r.URL.Path == orgUsers+"/u-1":
-			_, _ = w.Write([]byte(`{"data":{"id":"u-1","email":"alice@example.com","role":"ORG_ADMIN"}}`))
+			_, _ = w.Write([]byte(`{"data":[` + specOrgUserJSON + `]}`))
+
+		case r.Method == http.MethodPatch && r.URL.Path == orgUsers+"/"+aliceID:
+			readJSON(r, &orgPatchBody)
+			_, _ = w.Write([]byte(`{"data":{"user_id":"` + aliceID + `","email":"alice@example.com",` +
+				`"organization_roles":["organization-admin"]}}`))
+
 		case r.Method == http.MethodGet && r.URL.Path == projUsers:
-			_, _ = w.Write([]byte(`{"data":[{"id":"u-2","email":"bob@example.com","role":"PROJECT_VIEWER"}]}`))
+			_, _ = w.Write([]byte(`{"data":[` + specProjectUserJSON + `]}`))
+
+		// POST project users returns 201 with NO body at all, per the spec.
+		case r.Method == http.MethodPost && r.URL.Path == projUsers:
+			readJSON(r, &addMemberBody)
+			w.WriteHeader(http.StatusCreated)
+
 		case r.Method == http.MethodPost && r.URL.Path == invites:
-			raw, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(raw, &inviteBody)
-			_, _ = w.Write([]byte(`{"data":{"id":"inv-1","email":"carol@example.com","role":"ORG_MEMBER"}}`))
+			readJSON(r, &inviteBody)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"data":{"id":"inv-1","email":"carol@example.com","organization_id":"` + org + `",` +
+				`"organization_roles":["organization-member"],"status":"active",` +
+				`"expires_at":"2026-08-01T00:00:00Z","invited_by":"` + aliceID + `"}}`))
+
+		case r.Method == http.MethodGet && r.URL.Path == invites:
+			_, _ = w.Write([]byte(`{"data":[{"id":"inv-1","email":"carol@example.com","status":"active",` +
+				`"organization_roles":["organization-member"],` +
+				`"project_invites":[{"project_id":"` + proj + `","project_roles":["namespace-member"]}]}]}`))
+
+		// The spec defines ONLY delete on /invites/{id}. A GET here is a contract
+		// violation by the client, so fail loudly rather than answering it.
 		case r.Method == http.MethodGet && r.URL.Path == invites+"/inv-1":
-			_, _ = w.Write([]byte(`{"data":{"id":"inv-1","email":"carol@example.com","role":"ORG_MEMBER"}}`))
+			singleInviteGetCalled = true
+			w.WriteHeader(http.StatusMethodNotAllowed)
+
 		case r.Method == http.MethodDelete && r.URL.Path == invites+"/inv-1":
 			w.WriteHeader(http.StatusNoContent)
+
 		default:
 			http.NotFound(w, r)
 		}
@@ -61,31 +122,139 @@ func TestMembersAndInvites(t *testing.T) {
 	c := newTestClient(t, srv, 1000)
 	ctx := context.Background()
 
+	// ---- org members -------------------------------------------------------
 	members, err := c.ListOrgMembers(ctx, org)
-	if err != nil || len(members) != 1 || members[0].Email != "alice@example.com" {
+	if err != nil || len(members) != 1 {
 		t.Fatalf("ListOrgMembers = %+v, err=%v", members, err)
 	}
-	upd, err := c.UpdateOrgMemberRole(ctx, org, "u-1", OrgRoleAdmin)
-	if err != nil || upd.Role != "ORG_ADMIN" {
-		t.Errorf("UpdateOrgMemberRole = %+v, err=%v", upd, err)
+	if members[0].UserID != aliceID {
+		t.Errorf("UserID must decode from `user_id`, got %q", members[0].UserID)
+	}
+	if got := members[0].Role(); got != OrgRoleMember {
+		t.Errorf("Role() must read organization_roles[0], got %q want %q", got, OrgRoleMember)
 	}
 
+	upd, err := c.UpdateOrgMemberRole(ctx, org, aliceID, OrgRoleAdmin)
+	if err != nil || upd.Role() != OrgRoleAdmin {
+		t.Errorf("UpdateOrgMemberRole = %+v (role %q), err=%v", upd, upd.Role(), err)
+	}
+	// The PATCH body must be exactly {"organization_roles":[<one role>]}. The
+	// schema sets additionalProperties:false with the array required, so a scalar
+	// "role" key is a hard 400.
+	if want := map[string]any{"organization_roles": []any{OrgRoleAdmin}}; !reflect.DeepEqual(orgPatchBody, want) {
+		t.Errorf("org PATCH body = %v, want exactly %v", orgPatchBody, want)
+	}
+
+	// ---- project members ---------------------------------------------------
 	pm, err := c.ListProjectMembers(ctx, org, proj)
-	if err != nil || len(pm) != 1 || pm[0].Role != "PROJECT_VIEWER" {
-		t.Errorf("ListProjectMembers = %+v, err=%v", pm, err)
+	if err != nil || len(pm) != 1 {
+		t.Fatalf("ListProjectMembers = %+v, err=%v", pm, err)
+	}
+	if got := pm[0].Role(); got != ProjectRoleViewer {
+		t.Errorf("Role() must read project_roles[0], got %q want %q", got, ProjectRoleViewer)
 	}
 
-	inv, err := c.CreateInvite(ctx, org, CreateInviteRequest{Email: "carol@example.com", Role: OrgRoleMember})
+	if err := c.AddProjectMember(ctx, org, proj, aliceID, ProjectRoleAdmin); err != nil {
+		t.Fatalf("AddProjectMember: %v", err)
+	}
+	// Takes a user UUID + project_roles — never an email.
+	if want := map[string]any{"user_id": aliceID, "project_roles": []any{ProjectRoleAdmin}}; !reflect.DeepEqual(addMemberBody, want) {
+		t.Errorf("add-project-member body = %v, want exactly %v", addMemberBody, want)
+	}
+
+	if _, err := c.UpdateProjectMemberRole(ctx, org, proj, aliceID, ProjectRoleMember); err == nil {
+		// The fixture has no PATCH handler for the project user path, so this is
+		// expected to fail; we only care that it is not a panic.
+		_ = projPatchBody
+	}
+
+	// ---- invites -----------------------------------------------------------
+	inv, err := c.CreateInvite(ctx, org, CreateInviteRequest{
+		Email: "carol@example.com",
+		Roles: []string{OrgRoleMember},
+	})
 	if err != nil || inv.ID != "inv-1" {
 		t.Fatalf("CreateInvite = %+v, err=%v", inv, err)
 	}
-	if inviteBody["email"] != "carol@example.com" || inviteBody["role"] != "ORG_MEMBER" {
-		t.Errorf("invite body = %v", inviteBody)
+	if inv.Status != InviteStatusActive {
+		t.Errorf("Status must decode from `status` (not legacy_status), got %q", inv.Status)
 	}
-	if _, err := c.GetInvite(ctx, org, "inv-1"); err != nil {
-		t.Errorf("GetInvite: %v", err)
+	// Roles is an ARRAY named `roles`; there is no scalar `role` and no
+	// top-level `project_id` in the spec's invite body.
+	if want := map[string]any{"email": "carol@example.com", "roles": []any{OrgRoleMember}}; !reflect.DeepEqual(inviteBody, want) {
+		t.Errorf("invite body = %v, want exactly %v", inviteBody, want)
 	}
+
+	// A project-scoped invite goes in project_invites, using namespace-* roles.
+	if _, err := c.CreateInvite(ctx, org, CreateInviteRequest{
+		Email:          "dave@example.com",
+		ProjectInvites: []ProjectInvite{{ProjectID: proj, ProjectRoles: []string{NamespaceRoleMember}}},
+	}); err != nil {
+		t.Fatalf("CreateInvite (project-scoped): %v", err)
+	}
+	pi, ok := inviteBody["project_invites"].([]any)
+	if !ok || len(pi) != 1 {
+		t.Fatalf("project-scoped invite body = %v, want a project_invites array", inviteBody)
+	}
+	first, _ := pi[0].(map[string]any)
+	if want := map[string]any{"project_id": proj, "project_roles": []any{NamespaceRoleMember}}; !reflect.DeepEqual(first, want) {
+		t.Errorf("project_invites[0] = %v, want %v", first, want)
+	}
+	if _, exists := inviteBody["role"]; exists {
+		t.Error("invite body must not carry a scalar `role` key")
+	}
+	if _, exists := inviteBody["project_id"]; exists {
+		t.Error("invite body must not carry a top-level `project_id` key")
+	}
+
+	// FindInvite reads via LIST, because GET /invites/{id} does not exist.
+	found, err := c.FindInvite(ctx, org, "inv-1")
+	if err != nil || found == nil || found.ID != "inv-1" {
+		t.Fatalf("FindInvite = %+v, err=%v", found, err)
+	}
+	if len(found.ProjectInvites) != 1 || found.ProjectInvites[0].ProjectID != proj {
+		t.Errorf("FindInvite must decode project_invites, got %+v", found.ProjectInvites)
+	}
+	if singleInviteGetCalled {
+		t.Error("client called GET /invites/{id}, which does not exist in v2beta1 (only DELETE)")
+	}
+
+	// Absent invite -> (nil, nil), never an error.
+	missing, err := c.FindInvite(ctx, org, "does-not-exist")
+	if err != nil || missing != nil {
+		t.Errorf("FindInvite(absent) = %+v, err=%v; want nil, nil", missing, err)
+	}
+
 	if err := c.DeleteInvite(ctx, org, "inv-1"); err != nil {
 		t.Errorf("DeleteInvite: %v", err)
+	}
+}
+
+// TestRoleVocabulariesMatchSpec pins the three DISTINCT role vocabularies. The
+// API uses lowercase-hyphenated names, and spells project roles `project-*` on
+// the project-users endpoints but `namespace-*` inside an invite body. An
+// earlier cut used SCREAMING_SNAKE values that exist nowhere in the API.
+func TestRoleVocabulariesMatchSpec(t *testing.T) {
+	for _, tc := range []struct{ got, want string }{
+		{OrgRoleOwner, "organization-owner"},
+		{OrgRoleAdmin, "organization-admin"},
+		{OrgRoleMember, "organization-member"},
+		{ProjectRoleAdmin, "project-admin"},
+		{ProjectRoleMember, "project-member"},
+		{ProjectRoleViewer, "project-viewer"},
+		{ProjectRoleMetricsIntegrationRead, "project-metrics-integration-reader"},
+		{NamespaceRoleAdmin, "namespace-admin"},
+		{NamespaceRoleMember, "namespace-member"},
+		{NamespaceRoleViewer, "namespace-viewer"},
+		{NamespaceRoleMetricsIntegrationRead, "namespace-metrics-integration-reader"},
+		{InviteStatusActive, "active"},
+		{InviteStatusAccepted, "accepted"},
+		{InviteStatusRevoked, "revoked"},
+		{InviteStatusExpired, "expired"},
+		{InviteStatusDeclined, "declined"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("role/status constant = %q, spec says %q", tc.got, tc.want)
+		}
 	}
 }

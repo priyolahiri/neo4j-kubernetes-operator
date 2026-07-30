@@ -99,11 +99,14 @@ spec:
               managementPolicies:
                 default:
                 - '*'
-                description: ManagementPolicies restricts which actions the operator
-                  may take.
+                description: |-
+                  ManagementPolicies restricts which actions the operator may take. Create
+                  permits adding an existing ORGANIZATION member to this project (the API
+                  takes their user UUID); a wholly unknown email still needs an AuraInvite.
                 items:
                   enum:
                   - Observe
+                  - Create
                   - Update
                   - Delete
                   - '*'
@@ -136,12 +139,15 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               role:
-                description: Role is the desired project-level role.
+                description: |-
+                  Role is the desired project-level role. These are the Aura API's own
+                  v2beta1 `project_roles` values. NOTE: the invite API spells the same
+                  concepts `namespace-*` — see AuraInvite.spec.role.
                 enum:
-                - PROJECT_ADMIN
-                - PROJECT_MEMBER
-                - PROJECT_VIEWER
-                - METRICS_READER
+                - project-admin
+                - project-member
+                - project-viewer
+                - project-metrics-integration-reader
                 type: string
             required:
             - email

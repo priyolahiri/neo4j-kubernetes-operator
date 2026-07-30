@@ -171,7 +171,10 @@ type auraAPI interface {
 type auraCMKAPI interface {
 	CreateCustomerManagedKey(ctx context.Context, req aura.CreateCMKRequest) (*aura.CustomerManagedKey, error)
 	GetCustomerManagedKey(ctx context.Context, id string) (*aura.CustomerManagedKey, error)
-	ListCustomerManagedKeys(ctx context.Context, tenantID string) ([]aura.CustomerManagedKey, error)
+	// ListCustomerManagedKeys returns SUMMARIES (id/name/tenant_id only) — the v1
+	// list endpoint does not include key_id/region/cloud_provider/instance_type.
+	// Fetch detail per candidate to compare those.
+	ListCustomerManagedKeys(ctx context.Context, tenantID string) ([]aura.CustomerManagedKeySummary, error)
 	DeleteCustomerManagedKey(ctx context.Context, id string) error
 }
 
@@ -240,6 +243,7 @@ type auraDatabaseAPI interface {
 	ListDatabases(ctx context.Context, orgID, projectID, instanceID string) ([]aura.Database, error)
 	DeleteDatabase(ctx context.Context, orgID, projectID, instanceID, id string) error
 	CreateDatabaseBackup(ctx context.Context, orgID, projectID, instanceID, databaseID string) (*aura.DatabaseBackup, error)
+	ListDatabaseBackups(ctx context.Context, orgID, projectID, instanceID, databaseID string) ([]aura.DatabaseBackup, error)
 	GetDatabaseBackup(ctx context.Context, orgID, projectID, instanceID, databaseID, backupID string) (*aura.DatabaseBackup, error)
 	RestoreDatabase(ctx context.Context, orgID, projectID, instanceID, databaseID string, req aura.RestoreDatabaseRequest) error
 }
@@ -267,10 +271,13 @@ type auraMemberAPI interface {
 	UpdateOrgMemberRole(ctx context.Context, orgID, userID, role string) (*aura.Member, error)
 	DeleteOrgMember(ctx context.Context, orgID, userID string) error
 	ListProjectMembers(ctx context.Context, orgID, projectID string) ([]aura.Member, error)
+	AddProjectMember(ctx context.Context, orgID, projectID, userID, role string) error
 	UpdateProjectMemberRole(ctx context.Context, orgID, projectID, userID, role string) (*aura.Member, error)
 	DeleteProjectMember(ctx context.Context, orgID, projectID, userID string) error
 	CreateInvite(ctx context.Context, orgID string, req aura.CreateInviteRequest) (*aura.Invite, error)
-	GetInvite(ctx context.Context, orgID, id string) (*aura.Invite, error)
+	// FindInvite reads one invite via the LIST endpoint and returns nil when it
+	// is absent. There is no GET /invites/{id} in v2beta1 — only DELETE.
+	FindInvite(ctx context.Context, orgID, id string) (*aura.Invite, error)
 	ListInvites(ctx context.Context, orgID string) ([]aura.Invite, error)
 	DeleteInvite(ctx context.Context, orgID, id string) error
 }

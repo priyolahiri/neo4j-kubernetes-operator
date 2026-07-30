@@ -1,0 +1,88 @@
+# NOTE: Aura Fleet Management is not covered by integration tests (it needs a real
+# Aura tenant + API credentials) — validate in your own environment.
+#
+# Neo4jEnterpriseCluster with OPERATOR-MANAGED Fleet Management onboarding.
+#
+# Contrast with cluster-with-fleet-management.yaml, where a human runs the Aura
+# console wizard and pastes a token into a Secret. Here the operator holds Aura
+# API credentials and does the whole thing itself:
+#
+#   1. Registers a Fleet Manager deployment named "<namespace>-<name>"
+#      (capped at 30 characters — the Aura API rejects longer names).
+#   2. Mints the registration token and writes it to
+#      "<name>-aura-fleet-token" (owned by this CR, so it is deleted with it).
+#   3. Registers that token over Bolt once the cluster is Ready.
+#
+# BETA / best-effort: the Aura Fleet Manager deployment + token request bodies are
+# not published in the Aura v2beta1 OpenAPI spec.
+#
+# Prerequisites:
+#   1. An Aura API client ID + secret (Aura console → Account → API credentials):
+#      kubectl create secret generic aura-api-creds \
+#        --from-literal=clientId='<client-id>' \
+#        --from-literal=clientSecret='<client-secret>'
+#   2. The admin secret:
+#      kubectl create secret generic neo4j-admin-secret \
+#        --from-literal=username=neo4j --from-literal=password=admin123
+#
+# NOTE: provision and tokenSecretRef are mutually exclusive — either the operator
+# mints the token, or you supply one, never both.
+---
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: AuraProviderConfig
+metadata:
+  name: aura-prod
+spec:
+  credentialsSecretRef:
+    name: aura-api-creds
+  # Defaults inherited by every Aura resource that references this config.
+  defaultOrganizationId: "00000000-0000-0000-0000-000000000000"
+  defaultProjectId: "11111111-1111-1111-1111-111111111111"
+---
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: fleet-provisioned
+spec:
+  acceptLicenseAgreement: "yes"
+  image:
+    repo: neo4j
+    tag: 5.26-enterprise
+  topology:
+    servers: 3
+  authentication:
+    passwordSecretRef:
+      name: neo4j-admin-secret
+  storage:
+    size: 10Gi
+
+  auraFleetManagement:
+    enabled: true
+    provision:
+      providerConfigRef:
+        name: aura-prod
+      # organizationId / projectId fall back to the AuraProviderConfig defaults.
+
+      # Optional: override the generated deployment name (max 30 chars).
+      # deploymentName: my-prod-cluster
+
+      # Optional: override where the minted token is stored.
+      # tokenSecretName: my-fleet-token
+
+      # CreateIfMissing (default) mints a token only when the Aura deployment has
+      # none. If the deployment already holds a REGISTERED token and the Secret
+      # has gone missing, the operator refuses to rotate — rotating would
+      # invalidate a working registration, and Aura never returns a token twice.
+      # Set Rotate to deliberately mint a replacement (re-registration required).
+      tokenPolicy: CreateIfMissing
+
+      # Orphan (default) leaves the deployment registered in Aura when this CR is
+      # deleted, so monitoring history survives a redeploy. Delete revokes the
+      # token and unregisters it.
+      deletionPolicy: Orphan
+
+      # Mirror Aura's own view of servers/databases into
+      # status.auraFleetManagement. This is Aura's plugin-reported view, kept
+      # separate from status.diagnostics (the operator's own Bolt-derived view) —
+      # the two can legitimately disagree.
+      collectTelemetry: true

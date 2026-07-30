@@ -54,8 +54,10 @@ type AuraProjectMemberSpec struct {
 	// +kubebuilder:validation:Required
 	Email string `json:"email"`
 
-	// Role is the desired project-level role.
-	// +kubebuilder:validation:Enum=PROJECT_ADMIN;PROJECT_MEMBER;PROJECT_VIEWER;METRICS_READER
+	// Role is the desired project-level role. These are the Aura API's own
+	// v2beta1 `project_roles` values. NOTE: the invite API spells the same
+	// concepts `namespace-*` — see AuraInvite.spec.role.
+	// +kubebuilder:validation:Enum=project-admin;project-member;project-viewer;project-metrics-integration-reader
 	// +kubebuilder:validation:Required
 	Role string `json:"role"`
 
@@ -67,8 +69,10 @@ type AuraProjectMemberSpec struct {
 	// +optional
 	DeletionPolicy string `json:"deletionPolicy,omitempty"`
 
-	// ManagementPolicies restricts which actions the operator may take.
-	// +kubebuilder:validation:items:Enum=Observe;Update;Delete;*
+	// ManagementPolicies restricts which actions the operator may take. Create
+	// permits adding an existing ORGANIZATION member to this project (the API
+	// takes their user UUID); a wholly unknown email still needs an AuraInvite.
+	// +kubebuilder:validation:items:Enum=Observe;Create;Update;Delete;*
 	// +kubebuilder:default={"*"}
 	// +optional
 	ManagementPolicies []string `json:"managementPolicies,omitempty"`

@@ -923,6 +923,118 @@ type AuraFleetManagementStatus struct {
 	// including error details when registration fails.
 	// +optional
 	Message string `json:"message,omitempty"`
+
+	// Provisioned is true once the operator has registered a Fleet Manager
+	// deployment AND stored a token for it. Only meaningful with spec.provision.
+	// +optional
+	Provisioned bool `json:"provisioned,omitempty"`
+
+	// DeploymentID is the Aura-assigned Fleet Manager deployment ID (also
+	// mirrored to the neo4j.com/external-fleet-deployment-id annotation, which is
+	// the authoritative idempotency guard).
+	// +optional
+	DeploymentID string `json:"deploymentId,omitempty"`
+
+	// DeploymentName is the name the deployment is registered under in Aura.
+	// +optional
+	DeploymentName string `json:"deploymentName,omitempty"`
+
+	// TokenSecretName is the Secret the minted token was written to.
+	// +optional
+	TokenSecretName string `json:"tokenSecretName,omitempty"`
+
+	// TokenCreationTime is when Aura created the current deployment token.
+	// +optional
+	TokenCreationTime *metav1.Time `json:"tokenCreationTime,omitempty"`
+
+	// TokenExpiryTime is when the current deployment token expires. Surfaced so
+	// an impending expiry is visible before it breaks registration.
+	// +optional
+	TokenExpiryTime *metav1.Time `json:"tokenExpiryTime,omitempty"`
+
+	// TokenAutoRotate reports whether Aura will auto-renew the token on expiry.
+	// +optional
+	TokenAutoRotate bool `json:"tokenAutoRotate,omitempty"`
+
+	// Servers is Aura's own view of the servers reporting to this deployment,
+	// populated when spec.provision.collectTelemetry is true. Bounded summary —
+	// see ServerCount for the true total when this list is truncated.
+	// +optional
+	Servers []AuraFleetServerStatus `json:"servers,omitempty"`
+
+	// ServerCount is the number of servers Aura reported, before truncation.
+	// +optional
+	ServerCount int `json:"serverCount,omitempty"`
+
+	// Databases is Aura's own view of the databases on this deployment,
+	// populated when spec.provision.collectTelemetry is true. Bounded summary —
+	// see DatabaseCount for the true total.
+	// +optional
+	Databases []AuraFleetDatabaseStatus `json:"databases,omitempty"`
+
+	// DatabaseCount is the number of databases Aura reported, before truncation.
+	// +optional
+	DatabaseCount int `json:"databaseCount,omitempty"`
+
+	// TelemetryError records why the last telemetry collection failed. Telemetry
+	// is strictly non-fatal: a failure here never fails a reconcile.
+	// +optional
+	TelemetryError string `json:"telemetryError,omitempty"`
+}
+
+// AuraFleetServerStatus is Aura Fleet Manager's view of one DBMS server.
+type AuraFleetServerStatus struct {
+	// +optional
+	Name string `json:"name,omitempty"`
+	// +optional
+	Address string `json:"address,omitempty"`
+	// +optional
+	Status string `json:"status,omitempty"`
+	// +optional
+	Version string `json:"version,omitempty"`
+	// ModeConstraint is Aura's view of the server's mode constraint — compare
+	// against spec.topology.serverModeConstraint / serverRoles to spot drift.
+	// (Aura's live field is singular `mode_constraint`, not the spec's plural.)
+	// +optional
+	ModeConstraint string `json:"modeConstraint,omitempty"`
+	// +optional
+	LastPing string `json:"lastPing,omitempty"`
+	// +optional
+	PluginVersion string `json:"pluginVersion,omitempty"`
+	// LicenseState is the server's license state (e.g. VALID, EXPIRED).
+	// +optional
+	LicenseState string `json:"licenseState,omitempty"`
+	// LicenseType is the server's license type (e.g. COMMERCIAL, EVALUATION).
+	// +optional
+	LicenseType string `json:"licenseType,omitempty"`
+}
+
+// AuraFleetDatabaseStatus is Aura Fleet Manager's view of one database, as
+// reported by ONE server. Several servers report the same database with
+// different roles, so ServerID identifies which one this row came from.
+type AuraFleetDatabaseStatus struct {
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// ServerID is the fleet server that reported this row.
+	// +optional
+	ServerID string `json:"serverId,omitempty"`
+	// +optional
+	CurrentStatus string `json:"currentStatus,omitempty"`
+	// +optional
+	Role string `json:"role,omitempty"`
+	// +optional
+	Writer bool `json:"writer,omitempty"`
+	// +optional
+	LastCommittedTxn int64 `json:"lastCommittedTxn,omitempty"`
+	// +optional
+	ReplicationLag int64 `json:"replicationLag,omitempty"`
+	// GraphShards / PropertyShards line up with the operator's property-sharding
+	// model (Neo4jShardedDatabase).
+	// +optional
+	GraphShards []string `json:"graphShards,omitempty"`
+	// +optional
+	PropertyShards []string `json:"propertyShards,omitempty"`
 }
 
 // ClusterDiagnosticsStatus holds the most recent live diagnostics collected from
@@ -1565,6 +1677,7 @@ type QueryMetricsExportConfig struct {
 //  4. Reference the Secret in this spec
 //
 // See: https://neo4j.com/docs/aura/fleet-management/setup/
+// +kubebuilder:validation:XValidation:rule="!(has(self.provision) && has(self.tokenSecretRef))",message="set at most one of provision or tokenSecretRef: either the operator mints the token (provision) or you supply it (tokenSecretRef)"
 type AuraFleetManagementSpec struct {
 	// Enabled activates Aura Fleet Management integration.
 	// When true, the fleet-management plugin is installed automatically
@@ -1581,8 +1694,102 @@ type AuraFleetManagementSpec struct {
 	//
 	// Example:
 	//   kubectl create secret generic aura-fleet-token --from-literal=token='<token-from-aura>'
+	//
+	// Mutually exclusive with provision — use provision to have the operator
+	// register the deployment and mint the token itself instead.
 	// +optional
 	TokenSecretRef *SecretKeyRef `json:"tokenSecretRef,omitempty"`
+
+	// Provision lets the operator register the deployment with Aura Fleet
+	// Manager and mint the registration token itself via the Aura API, removing
+	// the manual console-wizard step. Mutually exclusive with tokenSecretRef.
+	//
+	// BETA / best-effort: the Fleet Manager deployment and token request bodies
+	// are not published in the Aura v2beta1 OpenAPI spec.
+	// +optional
+	Provision *AuraFleetProvisionSpec `json:"provision,omitempty"`
+}
+
+// AuraFleetProvisionSpec configures operator-driven Fleet Manager onboarding:
+// register a deployment, mint its token, and store the token in a Secret that
+// the normal registration phase then consumes.
+//
+// +kubebuilder:validation:XValidation:rule="has(self.providerConfigRef) != has(self.credentialsSecretRef)",message="set exactly one of providerConfigRef or credentialsSecretRef"
+type AuraFleetProvisionSpec struct {
+	// ProviderConfigRef selects the AuraProviderConfig (credentials + default
+	// organization/project) in the same namespace. Mutually exclusive with
+	// credentialsSecretRef.
+	// +optional
+	ProviderConfigRef *corev1.LocalObjectReference `json:"providerConfigRef,omitempty"`
+
+	// CredentialsSecretRef is a single-account shortcut when no
+	// AuraProviderConfig is used. Mutually exclusive with providerConfigRef.
+	// +optional
+	CredentialsSecretRef *AuraCredentialsSecretRef `json:"credentialsSecretRef,omitempty"`
+
+	// OrganizationID is the Aura organization owning the fleet deployment. If
+	// empty, the referenced AuraProviderConfig's defaultOrganizationId is used.
+	// +optional
+	OrganizationID string `json:"organizationId,omitempty"`
+
+	// ProjectID is the Aura project (API tenant_id) the deployment belongs to.
+	// If empty, the referenced AuraProviderConfig's defaultProjectId is used.
+	// +optional
+	ProjectID string `json:"projectId,omitempty"`
+
+	// DeploymentName is the name to register in Aura Fleet Manager. Defaults to
+	// "<namespace>-<name>" truncated to 30 characters — the API rejects anything
+	// longer, and including the namespace avoids two same-named clusters in
+	// different namespaces colliding inside one Aura project.
+	// +kubebuilder:validation:MaxLength=30
+	// +optional
+	DeploymentName string `json:"deploymentName,omitempty"`
+
+	// TokenSecretName is the Secret the minted token is written to (key "token").
+	// Defaults to "<name>-aura-fleet-token". The Secret is created in the CR's
+	// namespace and owned by the CR.
+	// +optional
+	TokenSecretName string `json:"tokenSecretName,omitempty"`
+
+	// TokenPolicy controls what happens when the token Secret is missing or empty.
+	//
+	// CreateIfMissing (default) mints a token only when the Aura deployment has
+	// none. If the deployment already holds a token that has been registered
+	// successfully, the operator will NOT rotate it — a minted token is never
+	// readable again, and rotating would invalidate the DBMS's existing
+	// registration. It reports the problem instead and waits for you.
+	//
+	// Rotate actively rotates to obtain a fresh token whenever the Secret is
+	// missing or empty. This INVALIDATES any existing registration for the
+	// deployment, so the DBMS must re-register.
+	// +kubebuilder:validation:Enum=CreateIfMissing;Rotate
+	// +kubebuilder:default=CreateIfMissing
+	// +optional
+	TokenPolicy string `json:"tokenPolicy,omitempty"`
+
+	// DeletionPolicy controls the Aura-side deployment when this CR is deleted:
+	// Orphan (default; leave it registered in Aura) or Delete (revoke the token
+	// and unregister the deployment).
+	// +kubebuilder:validation:Enum=Orphan;Delete
+	// +kubebuilder:default=Orphan
+	// +optional
+	DeletionPolicy string `json:"deletionPolicy,omitempty"`
+
+	// ManagementPolicies restricts which actions the operator may take against
+	// the Aura Fleet Manager API.
+	// +kubebuilder:validation:items:Enum=Observe;Create;Delete;*
+	// +kubebuilder:default={"*"}
+	// +optional
+	ManagementPolicies []string `json:"managementPolicies,omitempty"`
+
+	// CollectTelemetry mirrors Aura's own view of the deployment's servers and
+	// databases into status.auraFleetManagement. This is Aura's view (reported by
+	// the fleet plugin), deliberately kept separate from status.diagnostics,
+	// which is the operator's own Bolt-derived view — the two can legitimately
+	// disagree and merging them would hide which source said what.
+	// +kubebuilder:default=false
+	// +optional
+	CollectTelemetry bool `json:"collectTelemetry,omitempty"`
 }
 
 // PropertyShardingSpec defines property sharding configuration

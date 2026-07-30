@@ -59,6 +59,12 @@ type AuraDatabaseBackupStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
+	// Exportable reports whether Aura can export/download this backup. Only
+	// populated once the backup has been read back (the create response carries
+	// just an ID).
+	// +optional
+	Exportable bool `json:"exportable,omitempty"`
+
 	// LastSyncedTime is when the backup was last observed from the Aura API.
 	// +optional
 	LastSyncedTime *metav1.Time `json:"lastSyncedTime,omitempty"`

@@ -270,6 +270,9 @@ spec:
               rule: has(self.providerConfigRef) != has(self.credentialsSecretRef)
             - message: storage is not configurable for free-db
               rule: self.type != 'free-db' || !has(self.storage)
+            - message: memory is required for every tier except free-db (the Aura
+                API requires it at create time)
+              rule: self.type == 'free-db' || has(self.memory)
             - message: secondariesCount is only valid for type enterprise-db (Virtual
                 Dedicated Cloud)
               rule: '!has(self.secondariesCount) || self.type == ''enterprise-db'''

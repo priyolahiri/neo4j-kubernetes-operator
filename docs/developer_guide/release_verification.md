@@ -46,11 +46,15 @@ cluster only when it *needs* clustering.
 | Plugins (APOC, …) | Standalone (ConfigMap path) | Cluster uses the **env-var** path; ConfigMap path is the cheaper of the two to smoke |
 | **Backup → restore** | **Both** | Standalone restores via the `neo4j-admin` path (supports PITR `--restore-until`); cluster restores via the in-place **Cypher** path (PITR is *rejected* on clusters). Separate code paths. |
 | Property sharding | Cluster (CalVer) | Cluster-only by nature; needs a CalVer image and is memory-heavy |
+| **Aura orchestration** (`Aura*` CRDs) | **Phase 4 — no Kind deployment**; needs Aura API credentials | Talks to a *cloud* API, not a local DBMS, so no phase above exercises it. Read-only checks need only a client ID/secret; write checks mutate real cloud resources — see the phase for what is and is not safe |
+| **Aura Fleet Management** | Standalone (+ Aura creds for `provision`) | The plugin/registration path is deployment-independent, so the cheap phase covers it; operator-driven `provision` additionally needs Aura API credentials |
 
 ## The phase plan
 
-Run **all three phases every time** (Phase 3 included — sharding regularly
-surfaces issues the lighter phases miss).
+Run **Phases 1-3 every time** (Phase 3 included — sharding regularly surfaces
+issues the lighter phases miss). Phase 4 (Aura) needs cloud credentials rather
+than a Kind cluster: run its **read-only sweep** whenever anything under
+`internal/aura/` or an `Aura*` CRD changed.
 
 ### Phase 1 — Standalone (1 pod, ~2Gi)
 
@@ -85,7 +89,7 @@ surfaces issues the lighter phases miss).
 3 servers (not 2) keeps split-brain / 3-primary quorum behaviour in the routine
 walk. → **Tear down the cluster fully** before Phase 3.
 
-### Phase 3 — Property sharding (cluster, `2026.04-enterprise`, 3 × 2Gi)
+### Phase 3 — Property sharding (cluster, `2026.06-enterprise`, 3 × 2Gi)
 
 Sharding's documented floor is **4Gi + 1 core per server**. To fit a laptop we
 deliberately relax it — **this phase is operator-mechanics verification, not
@@ -98,29 +102,66 @@ kubectl -n <operator-ns> set env deployment/<operator-deploy> \
 kubectl -n <operator-ns> rollout status deployment/<operator-deploy>
 ```
 
-Use **`2026.04-enterprise`** (the pinned CI anchor) so local sharding matches
+Use **`2026.06-enterprise`** (the pinned CI anchor) so local sharding matches
 what the [extended suite](ci_and_workflows.md) validates. On a `servers: 3`
 cluster (~2Gi each):
 
 | Scenario | Verify |
 |---|---|
-| Sharding cluster | `CALL dbms.components()` → `2026.04.x` enterprise; `status.propertyShardingReady=true` |
+| Sharding cluster | `CALL dbms.components()` → `2026.06.x` enterprise; `status.propertyShardingReady=true` |
 | Sharded database | `Neo4jShardedDatabase` whose **`metadata.name` differs from `spec.name`** (e.g. CR `products-sharded` / `spec.name: products`) → Ready; `SHOW DATABASES WHERE name STARTS WITH '<logical>'` lists the graph + property shards `online` |
 | Sharded backup **by CR name** | `Neo4jBackup` `kind=ShardedDatabase` with `target.name` = the **CR metadata name** → `Succeeded`; `status.history[].shardArtifacts` lists every shard. (Using the *logical* name fails preflight — the operator resolves the logical name from the CR's `spec.name`.) |
 
 → **Tear down**, then delete the Kind cluster.
 
+### Phase 4 — Aura (no Kind deployment; needs Aura API credentials)
+
+**BETA / best-effort surface.** The `Aura*` CRDs talk to the Aura cloud API, so
+nothing in Phases 1-3 touches them. This phase is **optional but strongly
+recommended** whenever an `Aura*` CRD or `internal/aura/` changed, because the
+published Aura OpenAPI spec is known to disagree with the live API (see
+`docs/knowledge/operations.md` id 87).
+
+Set up an `AuraProviderConfig` (or an inline `credentialsSecretRef`) with an API
+client ID + secret from the Aura console.
+
+**Read-only sweep — always safe, do this every time:**
+
+| Scenario | Verify |
+|---|---|
+| Credentials + auth | A token from `/oauth/token` authenticates **both** v1 and v2beta1 calls |
+| Org/project discovery | `GET /v2beta1/organizations` and `…/projects` return `{id,name}` |
+| Read shapes still match | Org users return `user_id` + `organization_roles[]` with `organization-*` values; ip-filters return a **bare** array (no `data` envelope); the v1 CMK list returns only `id`/`name`/`tenant_id`; `DatabaseSummary` returns only `id` |
+| Fleet reads | Fleet deployment single-GET **is** `data`-wrapped; token field is `auto_rotated`; server field is `mode_constraint` (singular); shard/txn/lag data appears only on `…/servers/{id}/databases` |
+
+A GET-only sweep needs no throwaway resources and cannot damage anything. It is
+what caught four real client bugs during the 2026-07-30 re-diff.
+
+**Write checks — ONLY in a disposable Aura project, never production:**
+
+| Scenario | Verify |
+|---|---|
+| `AuraInstance` lifecycle | create → Ready → resize (`memory`) → pause → resume → delete; `status.instanceId` pinned via annotation |
+| `AuraDatabase` + backup | `AuraDatabaseBackup` reaches `Completed` (**not** on first observe — an empty status must read as `Pending`); `AuraDatabaseRestore` reports `Submitted`, never `Completed` |
+| Console RBAC | `AuraProjectMember` for an existing **org** member is added without an invite; role PATCH bodies are accepted (they are `{organization_roles:[…]}` / `{project_roles:[…]}`, not a scalar) |
+| Fleet `provision` | Deployment registered, token minted into the Secret, DBMS registers; deleting the Secret with the default `tokenPolicy` **refuses to rotate** and says why |
+
+→ **Tear down** every resource created here; Aura bills by the hour.
+
 ## Coverage at a glance
 
-| | Standalone | Cluster (3) | Sharding (2026.04) |
-|---|:---:|:---:|:---:|
-| Reconcile → Ready | ✅ | ✅ | ✅ |
-| Database lifecycle | ✅ | | |
-| Database topology | | ✅ | |
-| Users / Roles / Bindings | ✅ | | |
-| Plugins (APOC) | ✅ (ConfigMap) | | |
-| Backup → restore | ✅ (neo4j-admin) | ✅ (Cypher) | ✅ (sharded) |
-| Property sharding | | | ✅ |
+| | Standalone | Cluster (3) | Sharding (2026.06) | Aura (Phase 4) |
+|---|:---:|:---:|:---:|:---:|
+| Reconcile → Ready | ✅ | ✅ | ✅ | ✅ (instance) |
+| Database lifecycle | ✅ | | | ✅ (`AuraDatabase`) |
+| Database topology | | ✅ | | n/a (Aura-managed) |
+| Users / Roles / Bindings | ✅ | | | n/a (console-RBAC only) |
+| Plugins (APOC) | ✅ (ConfigMap) | | | n/a |
+| Backup → restore | ✅ (neo4j-admin) | ✅ (Cypher) | ✅ (sharded) | ✅ (per-DB, API) |
+| Property sharding | | | ✅ | |
+| Aura Fleet Management | ✅ (plugin + token) | | | ✅ (`provision`) |
+| Aura console RBAC | | | | ✅ |
+| Aura read-contract sweep | | | | ✅ (GET-only) |
 
 ## Keeping this current
 

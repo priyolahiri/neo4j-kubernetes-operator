@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -259,8 +260,20 @@ func (r *AuraInstanceReconciler) observeOrCreate(
 		createReq.GraphAnalyticsPlugin = inst.Spec.GraphAnalyticsPlugin
 	}
 	if inst.Spec.Source != nil {
-		createReq.SourceInstanceID = inst.Spec.Source.InstanceID
 		createReq.SourceSnapshotID = inst.Spec.Source.SnapshotID
+		// instanceRef points at another AuraInstance in this namespace; resolve it
+		// to the Aura instance ID. Previously only source.instanceId was read, so
+		// setting instanceRef alone silently produced a plain (non-clone) create.
+		switch {
+		case inst.Spec.Source.InstanceID != "":
+			createReq.SourceInstanceID = inst.Spec.Source.InstanceID
+		case inst.Spec.Source.InstanceRef != "":
+			srcID, err := r.resolveSourceInstanceRef(ctx, inst.Namespace, inst.Spec.Source.InstanceRef)
+			if err != nil {
+				return "", false, err
+			}
+			createReq.SourceInstanceID = srcID
+		}
 	}
 
 	resp, err := apiClient.CreateInstance(ctx, createReq)
@@ -283,8 +296,23 @@ func (r *AuraInstanceReconciler) observeOrCreate(
 	return id, false, nil
 }
 
-// reconcileDrift converges mutable fields (memory, storage, name) via PATCH.
-// Returns handled=true when it issued a change (caller should requeue).
+// resolveSourceInstanceRef resolves a clone source given as another AuraInstance
+// in the same namespace, returning its Aura instance ID. The source must already
+// have been provisioned (status.instanceId populated).
+func (r *AuraInstanceReconciler) resolveSourceInstanceRef(ctx context.Context, namespace, name string) (string, error) {
+	src := &neo4jv1beta1.AuraInstance{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, src); err != nil {
+		return "", fmt.Errorf("resolving source.instanceRef %q: %w", name, err)
+	}
+	if src.Status.InstanceID == "" {
+		return "", fmt.Errorf("source AuraInstance %q has no instanceId yet (not provisioned)", name)
+	}
+	return src.Status.InstanceID, nil
+}
+
+// reconcileDrift converges mutable fields (memory, storage, name, secondaries
+// count, CDC enrichment mode) via PATCH. Returns handled=true when it issued a
+// change (caller should requeue).
 func (r *AuraInstanceReconciler) reconcileDrift(
 	ctx context.Context, inst *neo4jv1beta1.AuraInstance, apiClient auraAPI, observed *aura.Instance,
 ) (handled bool, res ctrl.Result, err error) {
@@ -300,6 +328,22 @@ func (r *AuraInstanceReconciler) reconcileDrift(
 	}
 	if desired := r.instanceName(inst); desired != observed.Name {
 		patch.Name = &desired
+		changed = true
+	}
+	// secondariesCount and cdcEnrichmentMode were previously declared on the CRD
+	// (with CEL tier guards) but never sent, so setting them did nothing at all.
+	// v1's PATCH accepts both — they are absent from the schema's `properties` but
+	// named in the endpoint description and its "Update Secondary Count" /
+	// "Update CDC Enrichment Mode" examples.
+	if inst.Spec.SecondariesCount != nil {
+		want := int(*inst.Spec.SecondariesCount)
+		if observed.SecondariesCount == nil || want != *observed.SecondariesCount {
+			patch.SecondariesCount = &want
+			changed = true
+		}
+	}
+	if inst.Spec.CDCEnrichmentMode != "" && inst.Spec.CDCEnrichmentMode != observed.CDCEnrichmentMode {
+		patch.CDCEnrichmentMode = &inst.Spec.CDCEnrichmentMode
 		changed = true
 	}
 	if !changed {

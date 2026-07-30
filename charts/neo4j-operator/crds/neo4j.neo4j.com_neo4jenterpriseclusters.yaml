@@ -1057,6 +1057,133 @@ spec:
                       (from the pre-bundled jar in the Neo4j Enterprise image) and the
                       registration token is applied after the cluster becomes ready.
                     type: boolean
+                  provision:
+                    description: |-
+                      Provision lets the operator register the deployment with Aura Fleet
+                      Manager and mint the registration token itself via the Aura API, removing
+                      the manual console-wizard step. Mutually exclusive with tokenSecretRef.
+
+                      BETA / best-effort: the Fleet Manager deployment and token request bodies
+                      are not published in the Aura v2beta1 OpenAPI spec.
+                    properties:
+                      collectTelemetry:
+                        default: false
+                        description: |-
+                          CollectTelemetry mirrors Aura's own view of the deployment's servers and
+                          databases into status.auraFleetManagement. This is Aura's view (reported by
+                          the fleet plugin), deliberately kept separate from status.diagnostics,
+                          which is the operator's own Bolt-derived view — the two can legitimately
+                          disagree and merging them would hide which source said what.
+                        type: boolean
+                      credentialsSecretRef:
+                        description: |-
+                          CredentialsSecretRef is a single-account shortcut when no
+                          AuraProviderConfig is used. Mutually exclusive with providerConfigRef.
+                        properties:
+                          clientIdKey:
+                            default: clientId
+                            description: ClientIDKey is the Secret key holding the
+                              OAuth client ID.
+                            type: string
+                          clientSecretKey:
+                            default: clientSecret
+                            description: ClientSecretKey is the Secret key holding
+                              the OAuth client secret.
+                            type: string
+                          name:
+                            description: Name of the Secret holding the Aura API client
+                              credentials.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      deletionPolicy:
+                        default: Orphan
+                        description: |-
+                          DeletionPolicy controls the Aura-side deployment when this CR is deleted:
+                          Orphan (default; leave it registered in Aura) or Delete (revoke the token
+                          and unregister the deployment).
+                        enum:
+                        - Orphan
+                        - Delete
+                        type: string
+                      deploymentName:
+                        description: |-
+                          DeploymentName is the name to register in Aura Fleet Manager. Defaults to
+                          "<namespace>-<name>" truncated to 30 characters — the API rejects anything
+                          longer, and including the namespace avoids two same-named clusters in
+                          different namespaces colliding inside one Aura project.
+                        maxLength: 30
+                        type: string
+                      managementPolicies:
+                        default:
+                        - '*'
+                        description: |-
+                          ManagementPolicies restricts which actions the operator may take against
+                          the Aura Fleet Manager API.
+                        items:
+                          enum:
+                          - Observe
+                          - Create
+                          - Delete
+                          - '*'
+                          type: string
+                        type: array
+                      organizationId:
+                        description: |-
+                          OrganizationID is the Aura organization owning the fleet deployment. If
+                          empty, the referenced AuraProviderConfig's defaultOrganizationId is used.
+                        type: string
+                      projectId:
+                        description: |-
+                          ProjectID is the Aura project (API tenant_id) the deployment belongs to.
+                          If empty, the referenced AuraProviderConfig's defaultProjectId is used.
+                        type: string
+                      providerConfigRef:
+                        description: |-
+                          ProviderConfigRef selects the AuraProviderConfig (credentials + default
+                          organization/project) in the same namespace. Mutually exclusive with
+                          credentialsSecretRef.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      tokenPolicy:
+                        default: CreateIfMissing
+                        description: |-
+                          TokenPolicy controls what happens when the token Secret is missing or empty.
+
+                          CreateIfMissing (default) mints a token only when the Aura deployment has
+                          none. If the deployment already holds a token that has been registered
+                          successfully, the operator will NOT rotate it — a minted token is never
+                          readable again, and rotating would invalidate the DBMS's existing
+                          registration. It reports the problem instead and waits for you.
+
+                          Rotate actively rotates to obtain a fresh token whenever the Secret is
+                          missing or empty. This INVALIDATES any existing registration for the
+                          deployment, so the DBMS must re-register.
+                        enum:
+                        - CreateIfMissing
+                        - Rotate
+                        type: string
+                      tokenSecretName:
+                        description: |-
+                          TokenSecretName is the Secret the minted token is written to (key "token").
+                          Defaults to "<name>-aura-fleet-token". The Secret is created in the CR's
+                          namespace and owned by the CR.
+                        type: string
+                    type: object
+                    x-kubernetes-validations:
+                    - message: set exactly one of providerConfigRef or credentialsSecretRef
+                      rule: has(self.providerConfigRef) != has(self.credentialsSecretRef)
                   tokenSecretRef:
                     description: |-
                       TokenSecretRef references a Kubernetes Secret containing the Aura
@@ -1067,6 +1194,9 @@ spec:
 
                       Example:
                         kubectl create secret generic aura-fleet-token --from-literal=token='<token-from-aura>'
+
+                      Mutually exclusive with provision — use provision to have the operator
+                      register the deployment and mint the token itself instead.
                     properties:
                       key:
                         description: Key within the Secret. The default depends on
@@ -1080,6 +1210,10 @@ spec:
                     - name
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: 'set at most one of provision or tokenSecretRef: either
+                    the operator mints the token (provision) or you supply it (tokenSecretRef)'
+                  rule: '!(has(self.provision) && has(self.tokenSecretRef))'
               auth:
                 description: |-
                   AuthSpec defines authentication and authorization configuration.
@@ -5775,6 +5909,62 @@ spec:
                 description: AuraFleetManagementStatus reports the current state of
                   the Aura Fleet Management integration.
                 properties:
+                  databaseCount:
+                    description: DatabaseCount is the number of databases Aura reported,
+                      before truncation.
+                    type: integer
+                  databases:
+                    description: |-
+                      Databases is Aura's own view of the databases on this deployment,
+                      populated when spec.provision.collectTelemetry is true. Bounded summary —
+                      see DatabaseCount for the true total.
+                    items:
+                      description: |-
+                        AuraFleetDatabaseStatus is Aura Fleet Manager's view of one database, as
+                        reported by ONE server. Several servers report the same database with
+                        different roles, so ServerID identifies which one this row came from.
+                      properties:
+                        currentStatus:
+                          type: string
+                        graphShards:
+                          description: |-
+                            GraphShards / PropertyShards line up with the operator's property-sharding
+                            model (Neo4jShardedDatabase).
+                          items:
+                            type: string
+                          type: array
+                        lastCommittedTxn:
+                          format: int64
+                          type: integer
+                        name:
+                          type: string
+                        propertyShards:
+                          items:
+                            type: string
+                          type: array
+                        replicationLag:
+                          format: int64
+                          type: integer
+                        role:
+                          type: string
+                        serverId:
+                          description: ServerID is the fleet server that reported
+                            this row.
+                          type: string
+                        writer:
+                          type: boolean
+                      type: object
+                    type: array
+                  deploymentId:
+                    description: |-
+                      DeploymentID is the Aura-assigned Fleet Manager deployment ID (also
+                      mirrored to the neo4j.com/external-fleet-deployment-id annotation, which is
+                      the authoritative idempotency guard).
+                    type: string
+                  deploymentName:
+                    description: DeploymentName is the name the deployment is registered
+                      under in Aura.
+                    type: string
                   lastRegistrationTime:
                     description: LastRegistrationTime records when the token was last
                       successfully registered.
@@ -5785,11 +5975,81 @@ spec:
                       Message provides additional information about the registration state,
                       including error details when registration fails.
                     type: string
+                  provisioned:
+                    description: |-
+                      Provisioned is true once the operator has registered a Fleet Manager
+                      deployment AND stored a token for it. Only meaningful with spec.provision.
+                    type: boolean
                   registered:
                     description: |-
                       Registered is true once the deployment has successfully called
                       fleetManagement.registerToken and been acknowledged by Aura.
                     type: boolean
+                  serverCount:
+                    description: ServerCount is the number of servers Aura reported,
+                      before truncation.
+                    type: integer
+                  servers:
+                    description: |-
+                      Servers is Aura's own view of the servers reporting to this deployment,
+                      populated when spec.provision.collectTelemetry is true. Bounded summary —
+                      see ServerCount for the true total when this list is truncated.
+                    items:
+                      description: AuraFleetServerStatus is Aura Fleet Manager's view
+                        of one DBMS server.
+                      properties:
+                        address:
+                          type: string
+                        lastPing:
+                          type: string
+                        licenseState:
+                          description: LicenseState is the server's license state
+                            (e.g. VALID, EXPIRED).
+                          type: string
+                        licenseType:
+                          description: LicenseType is the server's license type (e.g.
+                            COMMERCIAL, EVALUATION).
+                          type: string
+                        modeConstraint:
+                          description: |-
+                            ModeConstraint is Aura's view of the server's mode constraint — compare
+                            against spec.topology.serverModeConstraint / serverRoles to spot drift.
+                            (Aura's live field is singular `mode_constraint`, not the spec's plural.)
+                          type: string
+                        name:
+                          type: string
+                        pluginVersion:
+                          type: string
+                        status:
+                          type: string
+                        version:
+                          type: string
+                      type: object
+                    type: array
+                  telemetryError:
+                    description: |-
+                      TelemetryError records why the last telemetry collection failed. Telemetry
+                      is strictly non-fatal: a failure here never fails a reconcile.
+                    type: string
+                  tokenAutoRotate:
+                    description: TokenAutoRotate reports whether Aura will auto-renew
+                      the token on expiry.
+                    type: boolean
+                  tokenCreationTime:
+                    description: TokenCreationTime is when Aura created the current
+                      deployment token.
+                    format: date-time
+                    type: string
+                  tokenExpiryTime:
+                    description: |-
+                      TokenExpiryTime is when the current deployment token expires. Surfaced so
+                      an impending expiry is visible before it breaks registration.
+                    format: date-time
+                    type: string
+                  tokenSecretName:
+                    description: TokenSecretName is the Secret the minted token was
+                      written to.
+                    type: string
                 required:
                 - registered
                 type: object

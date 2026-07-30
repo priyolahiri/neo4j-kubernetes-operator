@@ -28,7 +28,7 @@ Integration Tests workflow, or locally with a label-filtered Ginkgo run.
 
 - **Core, per-PR**: `.github/workflows/integration.yml` ("Integration Tests")
   runs `--label-filter='core'` on a matrix of `5.26-enterprise` and the pinned
-  CalVer (`2026.04-enterprise`), in parallel. Auto-triggered on PRs touching
+  CalVer (`2026.06-enterprise`), in parallel. Auto-triggered on PRs touching
   runtime paths.
 - **Extended**: `.github/workflows/integration-tests.yml` ("Extended
   Integration Tests") runs on **`workflow_dispatch` only** — there is no nightly
@@ -47,7 +47,7 @@ Integration Tests workflow, or locally with a label-filtered Ginkgo run.
    gh run list --workflow=integration-tests.yml --branch=main --limit=1
    gh run watch <run-id> --exit-status
    ```
-   Defaults to the pinned anchor CalVer (`2026.04-enterprise`) with a 150-minute
+   Defaults to the pinned anchor CalVer (`2026.06-enterprise`) with a 150-minute
    Ginkgo timeout. To verify the LTS floor or a different version/timeout:
    ```bash
    gh workflow run integration-tests.yml --ref main \
@@ -59,7 +59,7 @@ Integration Tests workflow, or locally with a label-filtered Ginkgo run.
    label-filtered suite. `make test-integration` (no FOCUS) deploys the operator
    from `config/overlays/integration-test` and then runs Ginkgo:
    ```bash
-   export NEO4J_VERSION=2026.04-enterprise   # or 5.26-enterprise for the LTS floor
+   export NEO4J_VERSION=2026.06-enterprise   # or 5.26-enterprise for the LTS floor
    make test-integration                     # creates neo4j-operator-test, deploys, runs
    ```
    That target runs the whole suite. To run **only** the extended tier (or the

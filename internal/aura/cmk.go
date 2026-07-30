@@ -25,7 +25,13 @@ import (
 )
 
 // Customer-managed-key status values, as returned in the `status` field of a
-// CustomerManagedKey. Mirror the enum in the Aura API v1 OpenAPI spec.
+// CustomerManagedKey.
+//
+// NOTE: v1 (and v1beta5) type `status` as a bare `string` with NO enum, so these
+// are not schema-verifiable. Provenance: "pending" and "ready" appear in the v1
+// response examples; "deleting" appears only in v1beta5 examples; "error" is not
+// attested anywhere in either spec and is a defensive guess. Treat unrecognized
+// values as non-terminal rather than assuming this list is exhaustive.
 const (
 	CMKStatusReady    = "ready"
 	CMKStatusPending  = "pending"
@@ -103,15 +109,32 @@ func (c *Client) GetCustomerManagedKey(ctx context.Context, id string) (*Custome
 	return &env.Data, nil
 }
 
+// CustomerManagedKeySummary is what the LIST endpoint returns — deliberately
+// NOT the full CustomerManagedKey.
+//
+// v1 GET /customer-managed-keys returns a summary carrying only `id`, `name` and
+// `tenant_id` (all three required), and its own description says to use
+// GET /{id} for the detail. Decoding the list into the full struct silently
+// yields empty KeyID/Region/CloudProvider/InstanceType, so matching a candidate
+// on any of those fields can never succeed against the real API.
+type CustomerManagedKeySummary struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	TenantID string `json:"tenant_id"`
+}
+
 // ListCustomerManagedKeys returns the customer-managed keys the credential can
 // see, optionally filtered to a single tenant/project. Pass an empty tenantID to
 // list across all tenants.
-func (c *Client) ListCustomerManagedKeys(ctx context.Context, tenantID string) ([]CustomerManagedKey, error) {
+//
+// Returns SUMMARIES (id/name/tenant_id only). To compare any other field, fetch
+// the detail per candidate with GetCustomerManagedKey.
+func (c *Client) ListCustomerManagedKeys(ctx context.Context, tenantID string) ([]CustomerManagedKeySummary, error) {
 	path := "/customer-managed-keys"
 	if tenantID != "" {
 		path += "?tenantId=" + url.QueryEscape(tenantID)
 	}
-	var env dataEnvelope[[]CustomerManagedKey]
+	var env dataEnvelope[[]CustomerManagedKeySummary]
 	if err := c.doJSON(ctx, "GET", path, nil, &env); err != nil {
 		return nil, fmt.Errorf("listing customer-managed keys: %w", err)
 	}

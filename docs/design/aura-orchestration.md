@@ -1,8 +1,8 @@
 # Design: Aura orchestration (operator as an Aura control plane)
 
-> **Status:** Draft for review. Grounded in the live Aura OpenAPI specs (v1 GA, v2beta1 beta) and the GA Terraform provider (`neo4j-labs/neo4jaura` v1.0.1), fetched 2026-07-06.
+> **Status:** Draft for review. Grounded in the live Aura OpenAPI specs (v1 GA, v2beta1 beta) and the GA Terraform provider (`neo4j-labs/neo4jaura` v1.0.1). Specs fetched 2026-07-06; **re-diffed against v1 / v1beta5 / v2beta1 on 2026-07-30** (see `docs/knowledge/operations.md` ids 82 and 85 for what that re-diff corrected).
 > **Product framing:** This operator is not PM-tracked and there is no official Neo4j roadmap decision for Aura-cloud orchestration. This is a technical design for this project — not an official product/version commitment. Distinct from (and complementary to) the existing `auraFleetManagement` field.
-> **API foundation:** Core built on **Aura API v1 (GA)** — it is the only version with a complete instance lifecycle. v2beta1 (org/project hierarchy, multi-DB, RBAC, IP filters) is deferred to a later phase because it currently lacks scale/pause/resume/snapshot/restore/CMK.
+> **API foundation:** Core built on **Aura API v1 (GA)** — it is the only version with a complete instance lifecycle. v2beta1 (org/project hierarchy, multi-DB, RBAC, IP filters) is deferred to a later phase because it still lacks pause/resume/snapshot/restore/overwrite/upgrade/CMK. (As of 2026-07-30 it *has* gained instance resize — PATCH accepts `memory`+`storage` — so "v2beta1 cannot scale" is no longer accurate; the remaining gap is what keeps the lifecycle on v1.) **Do not migrate to v1beta5:** it is not a superset of v1 and removes `secondaries_count`, `cdc_enrichment_mode` and snapshot `exportable` outright.
 > **Settled decisions:** (1) full lifecycle in Phase 1; (2) deletion defaults to **Orphan** (keep the cloud instance); (3) restore is a **separate `AuraRestore` CRD** (symmetry with `Neo4jBackup`/`Neo4jRestore`); (4) **ergonomic** Kind names (`AuraInstance`/`AuraSnapshot`/`AuraRestore`) in group `neo4j.neo4j.com`; (5) the connection Secret ships **all formats** (default `neo4j-driver`) **and full Service Binding** in Phase 1.
 > **Review v2 (cloud-native) — agreed additions to Phase 1:** (6) **idempotent create + adopt** via the `neo4j.com/external-instance-id` external-name annotation; (7) **CEL** (`x-kubernetes-validations`) for immutability/enums — no webhook — with inline Go only for the live `instance_configurations` oracle; (8) an **`AuraProviderConfig`** CRD for credentials/defaults/rate-limiter (inline `credentialsSecretRef` retained as a single-account shortcut); (9) **metrics wiring** + **`publishConnectionDetailsTo`** (ConfigMap for non-secret endpoint). **Deferred to Phase 2:** `paused`/`managementPolicies`, the `status.atProvider` observed-state drift mirror, `AuraInstanceClass`, and unifying `Neo4jDatabase`/`User`/`Role` onto Aura targets. See the "Review v2" section below — where it differs from §4–§8, it wins.
 
@@ -80,11 +80,12 @@ The new CRDs sit alongside fleet management; neither replaces the other.
 |---|---|---|
 | Model | Flat; `tenant_id` as a field | Hierarchical `/organizations/{org}/projects/{project}/…` |
 | Instance create / delete | ✅ | ✅ |
-| Resize (PATCH), pause, resume | ✅ | ❌ |
+| Resize (PATCH) | ✅ | ✅ (`memory`+`storage`, added by 2026-07-30) |
+| Pause, resume | ✅ | ❌ |
 | Snapshots + restore | ✅ | ❌ (per-DB backups exist, different model) |
 | Upgrade, overwrite/clone, CMK | ✅ | ❌ |
 | New surface | — | multi-DB, IP filters, RBAC, billing, GenAI agents, GDS sessions |
-| Stability | GA, stable | beta — `legacy_status` rename pending, enum-vocabulary mismatches, undocumented request bodies |
+| Stability | GA, stable | beta — three distinct role vocabularies, per-endpoint `data` envelope, some undocumented request bodies. NOTE: `legacy_status` is an **instance-only** field; it does NOT apply to databases or backups (which use `status`) |
 
 **Decision:** implement the lifecycle on **v1**. A v2beta1-only operator could create a database it cannot scale, pause, snapshot, or key-manage — unacceptable for a lifecycle controller.
 
@@ -208,7 +209,7 @@ status:
 
 ### 4.4 Auth
 
-OAuth2 **client-credentials**. A namespaced Secret (`credentialsSecretRef`) holds `clientId` + `clientSecret`. The client exchanges them at `POST https://api.neo4j.io/oauth/token` (HTTP Basic + `grant_type=client_credentials`) for a **1-hour** bearer token, caches it, and **refreshes on 403** (Aura returns 403 — not 401 — for an expired token). Per-CR ref matches the operator's existing secret-ref idiom. A shared `AuraProviderConfig` CRD (bundling creds + `projectId`/defaults, Crossplane-style) is a Phase-2 convenience, not required for MVP.
+OAuth2 **client-credentials**. A namespaced Secret (`credentialsSecretRef`) holds `clientId` + `clientSecret`. The client exchanges them at `POST https://api.neo4j.io/oauth/token` (verified live 2026-07-30: this token also authenticates **v2beta1** calls, even though v2beta1 declares its own `tokenUrl` — the two endpoints are interchangeable, so one exchange covers both APIs) (HTTP Basic + `grant_type=client_credentials`) for a **1-hour** bearer token, caches it, and **refreshes on 403** (Aura returns 403 — not 401 — for an expired token). Per-CR ref matches the operator's existing secret-ref idiom. A shared `AuraProviderConfig` CRD (bundling creds + `projectId`/defaults, Crossplane-style) is a Phase-2 convenience, not required for MVP.
 
 ### 4.5 Connection Secret & consumption helpers
 

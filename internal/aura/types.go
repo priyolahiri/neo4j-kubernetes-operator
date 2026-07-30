@@ -120,9 +120,14 @@ type InstanceSummary struct {
 // use omitempty so they are omitted when unset. `version`, `region`, `memory`,
 // `name`, `type`, `tenant_id`, and `cloud_provider` are required by the API.
 type CreateInstanceRequest struct {
-	Version              string `json:"version"`
-	Region               string `json:"region"`
-	Memory               string `json:"memory"`
+	Version string `json:"version"`
+	Region  string `json:"region"`
+	// Memory carries omitempty deliberately: v1 lists it as required, but the
+	// operator allows it to be unset for free-db (fixed tier size). Emitting
+	// `"memory": ""` is invalid under every reading of the spec, so omit the key
+	// entirely rather than send an empty one. A CEL rule on AuraInstanceSpec
+	// requires memory for all other tiers, so it is always populated for them.
+	Memory               string `json:"memory,omitempty"`
 	Name                 string `json:"name"`
 	Type                 string `json:"type"`
 	TenantID             string `json:"tenant_id"`
