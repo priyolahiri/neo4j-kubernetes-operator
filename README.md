@@ -100,7 +100,30 @@ The operator ships these CRDs (all `neo4j.neo4j.com/v1beta1`):
 | `Neo4jShardedDatabase` | Property-sharded databases with backup, restore, and full/differential chains (Neo4j 2025.12+) |
 | `Neo4jPlugin` | Plugin installs (APOC, GDS, Bloom, GenAI, …) |
 
-Each has examples under [`examples/`](examples/) and a dedicated guide on the [docs site](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/).
+### Neo4j Aura (cloud) — BETA
+
+The operator can also drive **Neo4j Aura** through the Aura API, alongside the
+self-managed CRDs above. These are **beta / best-effort**: the instance lifecycle
+runs on the Aura API **v1 (GA)**, while multi-database and console-RBAC run on
+**v2beta1**, which Neo4j may change without a version bump.
+
+| CRD | Purpose |
+|---|---|
+| `AuraProviderConfig` | Shared Aura API credentials + default organization/project |
+| `AuraInstance` | Aura instance lifecycle — create, resize, pause/resume, upgrade, delete |
+| `AuraSnapshot`, `AuraRestore` | Instance-level snapshots and restore |
+| `AuraCustomerManagedKey` | Customer-managed encryption keys (CMK) |
+| `AuraIPFilter` | Organization-scoped network allowlists (v2beta1) |
+| `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore` | Per-database lifecycle and backups on an Aura instance (v2beta1) |
+| `AuraOrganizationMember`, `AuraProjectMember`, `AuraInvite` | Aura **console** RBAC — org/project roles and email invites (v2beta1). Not in-database Neo4j users |
+
+> Aura console-RBAC is platform identity (who can use the Aura console/project).
+> In-database users, roles and privileges are `Neo4jUser` / `Neo4jRole` /
+> `Neo4jRoleBinding`, which target self-managed clusters only.
+
+Self-managed CRDs have examples under [`examples/`](examples/); every CRD above
+has a dedicated reference page and guide on the
+[docs site](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/).
 
 ## Documentation
 
@@ -113,6 +136,8 @@ Each has examples under [`examples/`](examples/) and a dedicated guide on the [d
 | Backup & restore | [Backup & Restore](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/backup_restore/) |
 | User & role management | [User & Role Management](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/user_role_management/) |
 | Property sharding | [Property Sharding](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/property_sharding/) |
+| Neo4j Aura orchestration (beta) | [Aura Orchestration](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/aura_orchestration/) |
+| Aura Fleet Management (monitor self-managed from Aura) | [Aura Fleet Management](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/aura_fleet_management/) |
 | Monitoring & metrics | [Monitoring](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/monitoring/) |
 | Upgrades | [Upgrade Guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/migration_guide/) |
 | Troubleshooting | [Troubleshooting](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/troubleshooting/) |

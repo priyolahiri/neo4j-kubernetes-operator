@@ -164,11 +164,11 @@ spec:
   providerConfigRef: { name: aura }
   projectId: "<project-id>"
   email: bob@example.com
-  role: METRICS_READER
+  role: project-metrics-integration-reader
 ```
 
 Once Bob accepts, manage his role going forward with an `AuraProjectMember`
-(`email: bob@example.com`, `role: METRICS_READER`).
+(`email: bob@example.com`, `role: project-metrics-integration-reader`).
 
 **7. Check status** at any point:
 
@@ -332,7 +332,7 @@ spec:
   providerConfigRef: { name: aura }
   organizationId: "<org-id>"    # or defaultOrganizationId on the provider config
   email: carol@example.com
-  role: ORG_MEMBER              # ORG_* ; add projectId + a PROJECT_*/METRICS_READER role for a project invite
+  role: organization-member     # organization-* ; for a project invite set projectId + a namespace-* role
 ---
 # Manage the org role of an EXISTING console user (by email).
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -342,7 +342,7 @@ spec:
   providerConfigRef: { name: aura }
   organizationId: "<org-id>"
   email: alice@example.com
-  role: ORG_ADMIN               # ORG_OWNER | ORG_ADMIN | ORG_MEMBER
+  role: organization-admin      # organization-owner | organization-admin | organization-member
 ---
 # Manage a user's PROJECT role (e.g. read-only metrics access).
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -353,12 +353,27 @@ spec:
   organizationId: "<org-id>"
   projectId: "<project-id>"
   email: bob@example.com
-  role: METRICS_READER          # PROJECT_ADMIN | PROJECT_MEMBER | PROJECT_VIEWER | METRICS_READER
+  role: project-metrics-integration-reader  # project-admin | project-member | project-viewer | project-metrics-integration-reader
 ```
 
-`AuraOrganizationMember` / `AuraProjectMember` reconcile the role of a user who
-is **already** a member — if the email isn't a member yet, the CR reports a
-`NotAMember` condition; bring them in with an `AuraInvite`. Field references:
+`AuraOrganizationMember` reconciles the org role of a user who is **already** an
+organization member; if the email isn't one yet, the CR reports a `NotAMember`
+condition and you bring them in with an `AuraInvite`.
+
+`AuraProjectMember` goes one step further: if the email is already an
+**organization** member but not yet in the project, the operator **adds them
+directly** (the Aura API takes their user UUID, so no invite is needed). Only a
+wholly unknown email reports `NotAMember` and needs an `AuraInvite`. Adding
+requires `Create` in `managementPolicies` — with `["Observe","Update"]` the CR
+reports `NotAMember` / `CreateNotPermitted` instead.
+
+Note the role vocabularies are the Aura API's own, and there are **three** of
+them: `organization-*` for org roles, `project-*` for project roles, and
+`namespace-*` for the project part of an **invite** body — Aura spells the same
+concepts differently on those two endpoints. `AuraInvite.spec.organizationRole`
+optionally grants an org role alongside a project-scoped (`namespace-*`) invite.
+
+Field references:
 [`AuraInvite`](../api_reference/aurainvite.md),
 [`AuraOrganizationMember`](../api_reference/auraorganizationmember.md),
 [`AuraProjectMember`](../api_reference/auraprojectmember.md).
