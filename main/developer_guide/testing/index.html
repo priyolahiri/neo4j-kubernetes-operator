@@ -5211,7 +5211,7 @@ exercises</strong> — they self-skip in CI and run only on a machine (or larger
 node) that can satisfy the 4Gi-per-server floor:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Local run on a host with enough RAM (no isRunningInCI()/CI env set):</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>make<span class="w"> </span>test-cluster<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>make<span class="w"> </span>operator-setup
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nv">NEO4J_VERSION</span><span class="o">=</span><span class="m">2026</span>.04-enterprise<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nv">NEO4J_VERSION</span><span class="o">=</span><span class="m">2026</span>.06-enterprise<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>ginkgo<span class="w"> </span>run<span class="w"> </span>--label-filter<span class="o">=</span><span class="s1">&#39;extended&#39;</span><span class="w"> </span>-focus<span class="w"> </span><span class="s2">&quot;Property Sharding&quot;</span><span class="w"> </span>./test/integration/...
 </span></code></pre></div>
 <p>Because they don't run in CI, <strong>a change to the sharding controllers/builders

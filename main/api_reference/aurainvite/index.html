@@ -3373,7 +3373,12 @@
 <tr>
 <td><code>role</code></td>
 <td><code>string</code></td>
-<td><strong>Required.</strong> An <code>ORG_*</code> role for an org invite, or a <code>PROJECT_*</code>/<code>METRICS_READER</code> role for a project-scoped invite (<code>projectId</code> set).</td>
+<td><strong>Required.</strong> An <code>organization-*</code> role for an org invite, or a <code>namespace-*</code> role for a project-scoped invite (<code>projectId</code> set). The Aura invite body spells project roles <code>namespace-*</code> even though the project-members endpoint spells the same concepts <code>project-*</code>.</td>
+</tr>
+<tr>
+<td><code>organizationRole</code></td>
+<td><code>string</code></td>
+<td>Optional. Enum <code>organization-owner</code> / <code>organization-admin</code> / <code>organization-member</code>. Only meaningful alongside a <code>namespace-*</code> (project-scoped) <code>role</code>: the Aura invite body carries organization roles and per-project roles in separate slots, so this fills the organization slot. Leave empty to send only the project role and let Aura apply its own default.</td>
 </tr>
 <tr>
 <td><code>deletionPolicy</code></td>
@@ -3434,7 +3439,7 @@
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">aura</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;org-id&gt;&quot;</span>
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">carol@example.com</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ORG_MEMBER</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">organization-member</span>
 </span></code></pre></div>
 <h2 id="related-resources">Related Resources<a class="headerlink" href="#related-resources" title="Anchor link to this section">&para;</a></h2>
 <ul>

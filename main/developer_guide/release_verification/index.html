@@ -2994,10 +2994,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-3-property-sharding-cluster-202604-enterprise-3-2gi" class="md-nav__link">
+  <a href="#phase-3-property-sharding-cluster-202606-enterprise-3-2gi" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 3 — Property sharding (cluster, 2026.04-enterprise, 3 × 2Gi)
+        Phase 3 — Property sharding (cluster, 2026.06-enterprise, 3 × 2Gi)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-aura-no-kind-deployment-needs-aura-api-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — Aura (no Kind deployment; needs Aura API credentials)
       
     </span>
   </a>
@@ -3357,10 +3368,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-3-property-sharding-cluster-202604-enterprise-3-2gi" class="md-nav__link">
+  <a href="#phase-3-property-sharding-cluster-202606-enterprise-3-2gi" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 3 — Property sharding (cluster, 2026.04-enterprise, 3 × 2Gi)
+        Phase 3 — Property sharding (cluster, 2026.06-enterprise, 3 × 2Gi)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-aura-no-kind-deployment-needs-aura-api-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — Aura (no Kind deployment; needs Aura API credentials)
       
     </span>
   </a>
@@ -3516,11 +3538,23 @@ cluster only when it <em>needs</em> clustering.</p>
 <td>Cluster (CalVer)</td>
 <td>Cluster-only by nature; needs a CalVer image and is memory-heavy</td>
 </tr>
+<tr>
+<td><strong>Aura orchestration</strong> (<code>Aura*</code> CRDs)</td>
+<td><strong>Phase 4 — no Kind deployment</strong>; needs Aura API credentials</td>
+<td>Talks to a <em>cloud</em> API, not a local DBMS, so no phase above exercises it. Read-only checks need only a client ID/secret; write checks mutate real cloud resources — see the phase for what is and is not safe</td>
+</tr>
+<tr>
+<td><strong>Aura Fleet Management</strong></td>
+<td>Standalone (+ Aura creds for <code>provision</code>)</td>
+<td>The plugin/registration path is deployment-independent, so the cheap phase covers it; operator-driven <code>provision</code> additionally needs Aura API credentials</td>
+</tr>
 </tbody>
 </table>
 <h2 id="the-phase-plan">The phase plan<a class="headerlink" href="#the-phase-plan" title="Anchor link to this section">&para;</a></h2>
-<p>Run <strong>all three phases every time</strong> (Phase 3 included — sharding regularly
-surfaces issues the lighter phases miss).</p>
+<p>Run <strong>Phases 1-3 every time</strong> (Phase 3 included — sharding regularly surfaces
+issues the lighter phases miss). Phase 4 (Aura) needs cloud credentials rather
+than a Kind cluster: run its <strong>read-only sweep</strong> whenever anything under
+<code>internal/aura/</code> or an <code>Aura*</code> CRD changed.</p>
 <h3 id="phase-1-standalone-1-pod-2gi">Phase 1 — Standalone (1 pod, ~2Gi)<a class="headerlink" href="#phase-1-standalone-1-pod-2gi" title="Anchor link to this section">&para;</a></h3>
 <p><code>Neo4jEnterpriseStandalone</code> → <code>Ready</code>, then on it:</p>
 <table>
@@ -3601,7 +3635,7 @@ surfaces issues the lighter phases miss).</p>
 </table>
 <p>3 servers (not 2) keeps split-brain / 3-primary quorum behaviour in the routine
 walk. → <strong>Tear down the cluster fully</strong> before Phase 3.</p>
-<h3 id="phase-3-property-sharding-cluster-202604-enterprise-3-2gi">Phase 3 — Property sharding (cluster, <code>2026.04-enterprise</code>, 3 × 2Gi)<a class="headerlink" href="#phase-3-property-sharding-cluster-202604-enterprise-3-2gi" title="Anchor link to this section">&para;</a></h3>
+<h3 id="phase-3-property-sharding-cluster-202606-enterprise-3-2gi">Phase 3 — Property sharding (cluster, <code>2026.06-enterprise</code>, 3 × 2Gi)<a class="headerlink" href="#phase-3-property-sharding-cluster-202606-enterprise-3-2gi" title="Anchor link to this section">&para;</a></h3>
 <p>Sharding's documented floor is <strong>4Gi + 1 core per server</strong>. To fit a laptop we
 deliberately relax it — <strong>this phase is operator-mechanics verification, not
 doc-following</strong>. The relax is operator-side and DEV/TEST only:</p>
@@ -3610,7 +3644,7 @@ doc-following</strong>. The relax is operator-side and DEV/TEST only:</p>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nv">NEO4J_SHARDING_RELAX_MEMORY_MIN</span><span class="o">=</span><span class="nb">true</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>&lt;operator-ns&gt;<span class="w"> </span>rollout<span class="w"> </span>status<span class="w"> </span>deployment/&lt;operator-deploy&gt;
 </span></code></pre></div>
-<p>Use <strong><code>2026.04-enterprise</code></strong> (the pinned CI anchor) so local sharding matches
+<p>Use <strong><code>2026.06-enterprise</code></strong> (the pinned CI anchor) so local sharding matches
 what the <a href="../ci_and_workflows/">extended suite</a> validates. On a <code>servers: 3</code>
 cluster (~2Gi each):</p>
 <table>
@@ -3623,7 +3657,7 @@ cluster (~2Gi each):</p>
 <tbody>
 <tr>
 <td>Sharding cluster</td>
-<td><code>CALL dbms.components()</code> → <code>2026.04.x</code> enterprise; <code>status.propertyShardingReady=true</code></td>
+<td><code>CALL dbms.components()</code> → <code>2026.06.x</code> enterprise; <code>status.propertyShardingReady=true</code></td>
 </tr>
 <tr>
 <td>Sharded database</td>
@@ -3636,6 +3670,71 @@ cluster (~2Gi each):</p>
 </tbody>
 </table>
 <p>→ <strong>Tear down</strong>, then delete the Kind cluster.</p>
+<h3 id="phase-4-aura-no-kind-deployment-needs-aura-api-credentials">Phase 4 — Aura (no Kind deployment; needs Aura API credentials)<a class="headerlink" href="#phase-4-aura-no-kind-deployment-needs-aura-api-credentials" title="Anchor link to this section">&para;</a></h3>
+<p><strong>BETA / best-effort surface.</strong> The <code>Aura*</code> CRDs talk to the Aura cloud API, so
+nothing in Phases 1-3 touches them. This phase is <strong>optional but strongly
+recommended</strong> whenever an <code>Aura*</code> CRD or <code>internal/aura/</code> changed, because the
+published Aura OpenAPI spec is known to disagree with the live API (see
+<code>docs/knowledge/operations.md</code> id 87).</p>
+<p>Set up an <code>AuraProviderConfig</code> (or an inline <code>credentialsSecretRef</code>) with an API
+client ID + secret from the Aura console.</p>
+<p><strong>Read-only sweep — always safe, do this every time:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Credentials + auth</td>
+<td>A token from <code>/oauth/token</code> authenticates <strong>both</strong> v1 and v2beta1 calls</td>
+</tr>
+<tr>
+<td>Org/project discovery</td>
+<td><code>GET /v2beta1/organizations</code> and <code>…/projects</code> return <code>{id,name}</code></td>
+</tr>
+<tr>
+<td>Read shapes still match</td>
+<td>Org users return <code>user_id</code> + <code>organization_roles[]</code> with <code>organization-*</code> values; ip-filters return a <strong>bare</strong> array (no <code>data</code> envelope); the v1 CMK list returns only <code>id</code>/<code>name</code>/<code>tenant_id</code>; <code>DatabaseSummary</code> returns only <code>id</code></td>
+</tr>
+<tr>
+<td>Fleet reads</td>
+<td>Fleet deployment single-GET <strong>is</strong> <code>data</code>-wrapped; token field is <code>auto_rotated</code>; server field is <code>mode_constraint</code> (singular); shard/txn/lag data appears only on <code>…/servers/{id}/databases</code></td>
+</tr>
+</tbody>
+</table>
+<p>A GET-only sweep needs no throwaway resources and cannot damage anything. It is
+what caught four real client bugs during the 2026-07-30 re-diff.</p>
+<p><strong>Write checks — ONLY in a disposable Aura project, never production:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AuraInstance</code> lifecycle</td>
+<td>create → Ready → resize (<code>memory</code>) → pause → resume → delete; <code>status.instanceId</code> pinned via annotation</td>
+</tr>
+<tr>
+<td><code>AuraDatabase</code> + backup</td>
+<td><code>AuraDatabaseBackup</code> reaches <code>Completed</code> (<strong>not</strong> on first observe — an empty status must read as <code>Pending</code>); <code>AuraDatabaseRestore</code> reports <code>Submitted</code>, never <code>Completed</code></td>
+</tr>
+<tr>
+<td>Console RBAC</td>
+<td><code>AuraProjectMember</code> for an existing <strong>org</strong> member is added without an invite; role PATCH bodies are accepted (they are <code>{organization_roles:[…]}</code> / <code>{project_roles:[…]}</code>, not a scalar)</td>
+</tr>
+<tr>
+<td>Fleet <code>provision</code></td>
+<td>Deployment registered, token minted into the Secret, DBMS registers; deleting the Secret with the default <code>tokenPolicy</code> <strong>refuses to rotate</strong> and says why</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Tear down</strong> every resource created here; Aura bills by the hour.</p>
 <h2 id="coverage-at-a-glance">Coverage at a glance<a class="headerlink" href="#coverage-at-a-glance" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
@@ -3643,7 +3742,8 @@ cluster (~2Gi each):</p>
 <th></th>
 <th style="text-align: center;">Standalone</th>
 <th style="text-align: center;">Cluster (3)</th>
-<th style="text-align: center;">Sharding (2026.04)</th>
+<th style="text-align: center;">Sharding (2026.06)</th>
+<th style="text-align: center;">Aura (Phase 4)</th>
 </tr>
 </thead>
 <tbody>
@@ -3652,42 +3752,70 @@ cluster (~2Gi each):</p>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ (instance)</td>
 </tr>
 <tr>
 <td>Database lifecycle</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (<code>AuraDatabase</code>)</td>
 </tr>
 <tr>
 <td>Database topology</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;"></td>
+<td style="text-align: center;">n/a (Aura-managed)</td>
 </tr>
 <tr>
 <td>Users / Roles / Bindings</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
+<td style="text-align: center;">n/a (console-RBAC only)</td>
 </tr>
 <tr>
 <td>Plugins (APOC)</td>
 <td style="text-align: center;">✅ (ConfigMap)</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
+<td style="text-align: center;">n/a</td>
 </tr>
 <tr>
 <td>Backup → restore</td>
 <td style="text-align: center;">✅ (neo4j-admin)</td>
 <td style="text-align: center;">✅ (Cypher)</td>
 <td style="text-align: center;">✅ (sharded)</td>
+<td style="text-align: center;">✅ (per-DB, API)</td>
 </tr>
 <tr>
 <td>Property sharding</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Aura Fleet Management</td>
+<td style="text-align: center;">✅ (plugin + token)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (<code>provision</code>)</td>
+</tr>
+<tr>
+<td>Aura console RBAC</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Aura read-contract sweep</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (GET-only)</td>
 </tr>
 </tbody>
 </table>

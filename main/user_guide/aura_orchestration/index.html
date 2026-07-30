@@ -3824,10 +3824,10 @@ this is Aura console access, not an in-database user):</p>
 </span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">aura</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="nt">projectId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;project-id&gt;&quot;</span>
 </span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob@example.com</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METRICS_READER</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">project-metrics-integration-reader</span>
 </span></code></pre></div>
 <p>Once Bob accepts, manage his role going forward with an <code>AuraProjectMember</code>
-(<code>email: bob@example.com</code>, <code>role: METRICS_READER</code>).</p>
+(<code>email: bob@example.com</code>, <code>role: project-metrics-integration-reader</code>).</p>
 <p><strong>7. Check status</strong> at any point:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>get<span class="w"> </span>auradatabase,auradatabasebackup,aurainvite
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>describe<span class="w"> </span>auradatabase<span class="w"> </span>analytics-db
@@ -3958,7 +3958,7 @@ predefined database role). Model it with three CRDs:</p>
 </span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">aura</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;org-id&gt;&quot;</span><span class="w">    </span><span class="c1"># or defaultOrganizationId on the provider config</span>
 </span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">carol@example.com</span>
-</span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ORG_MEMBER</span><span class="w">              </span><span class="c1"># ORG_* ; add projectId + a PROJECT_*/METRICS_READER role for a project invite</span>
+</span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">organization-member</span><span class="w">     </span><span class="c1"># organization-* ; for a project invite set projectId + a namespace-* role</span>
 </span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="nn">---</span>
 </span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="c1"># Manage the org role of an EXISTING console user (by email).</span>
 </span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
@@ -3968,7 +3968,7 @@ predefined database role). Model it with three CRDs:</p>
 </span><span id="__span-15-16"><a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">aura</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span><span id="__span-15-17"><a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;org-id&gt;&quot;</span>
 </span><span id="__span-15-18"><a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice@example.com</span>
-</span><span id="__span-15-19"><a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ORG_ADMIN</span><span class="w">               </span><span class="c1"># ORG_OWNER | ORG_ADMIN | ORG_MEMBER</span>
+</span><span id="__span-15-19"><a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">organization-admin</span><span class="w">      </span><span class="c1"># organization-owner | organization-admin | organization-member</span>
 </span><span id="__span-15-20"><a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a><span class="nn">---</span>
 </span><span id="__span-15-21"><a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a><span class="c1"># Manage a user&#39;s PROJECT role (e.g. read-only metrics access).</span>
 </span><span id="__span-15-22"><a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
@@ -3979,11 +3979,23 @@ predefined database role). Model it with three CRDs:</p>
 </span><span id="__span-15-27"><a id="__codelineno-15-27" name="__codelineno-15-27" href="#__codelineno-15-27"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;org-id&gt;&quot;</span>
 </span><span id="__span-15-28"><a id="__codelineno-15-28" name="__codelineno-15-28" href="#__codelineno-15-28"></a><span class="w">  </span><span class="nt">projectId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;project-id&gt;&quot;</span>
 </span><span id="__span-15-29"><a id="__codelineno-15-29" name="__codelineno-15-29" href="#__codelineno-15-29"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob@example.com</span>
-</span><span id="__span-15-30"><a id="__codelineno-15-30" name="__codelineno-15-30" href="#__codelineno-15-30"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METRICS_READER</span><span class="w">          </span><span class="c1"># PROJECT_ADMIN | PROJECT_MEMBER | PROJECT_VIEWER | METRICS_READER</span>
+</span><span id="__span-15-30"><a id="__codelineno-15-30" name="__codelineno-15-30" href="#__codelineno-15-30"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">project-metrics-integration-reader</span><span class="w">  </span><span class="c1"># project-admin | project-member | project-viewer | project-metrics-integration-reader</span>
 </span></code></pre></div>
-<p><code>AuraOrganizationMember</code> / <code>AuraProjectMember</code> reconcile the role of a user who
-is <strong>already</strong> a member — if the email isn't a member yet, the CR reports a
-<code>NotAMember</code> condition; bring them in with an <code>AuraInvite</code>. Field references:
+<p><code>AuraOrganizationMember</code> reconciles the org role of a user who is <strong>already</strong> an
+organization member; if the email isn't one yet, the CR reports a <code>NotAMember</code>
+condition and you bring them in with an <code>AuraInvite</code>.</p>
+<p><code>AuraProjectMember</code> goes one step further: if the email is already an
+<strong>organization</strong> member but not yet in the project, the operator <strong>adds them
+directly</strong> (the Aura API takes their user UUID, so no invite is needed). Only a
+wholly unknown email reports <code>NotAMember</code> and needs an <code>AuraInvite</code>. Adding
+requires <code>Create</code> in <code>managementPolicies</code> — with <code>["Observe","Update"]</code> the CR
+reports <code>NotAMember</code> / <code>CreateNotPermitted</code> instead.</p>
+<p>Note the role vocabularies are the Aura API's own, and there are <strong>three</strong> of
+them: <code>organization-*</code> for org roles, <code>project-*</code> for project roles, and
+<code>namespace-*</code> for the project part of an <strong>invite</strong> body — Aura spells the same
+concepts differently on those two endpoints. <code>AuraInvite.spec.organizationRole</code>
+optionally grants an org role alongside a project-scoped (<code>namespace-*</code>) invite.</p>
+<p>Field references:
 <a href="../../api_reference/aurainvite/"><code>AuraInvite</code></a>,
 <a href="../../api_reference/auraorganizationmember/"><code>AuraOrganizationMember</code></a>,
 <a href="../../api_reference/auraprojectmember/"><code>AuraProjectMember</code></a>.</p>

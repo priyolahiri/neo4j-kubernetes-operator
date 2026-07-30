@@ -3434,9 +3434,9 @@
 
 <h1 id="design-aura-orchestration-operator-as-an-aura-control-plane">Design: Aura orchestration (operator as an Aura control plane)<a class="headerlink" href="#design-aura-orchestration-operator-as-an-aura-control-plane" title="Anchor link to this section">&para;</a></h1>
 <blockquote>
-<p><strong>Status:</strong> Draft for review. Grounded in the live Aura OpenAPI specs (v1 GA, v2beta1 beta) and the GA Terraform provider (<code>neo4j-labs/neo4jaura</code> v1.0.1), fetched 2026-07-06.
+<p><strong>Status:</strong> Draft for review. Grounded in the live Aura OpenAPI specs (v1 GA, v2beta1 beta) and the GA Terraform provider (<code>neo4j-labs/neo4jaura</code> v1.0.1). Specs fetched 2026-07-06; <strong>re-diffed against v1 / v1beta5 / v2beta1 on 2026-07-30</strong> (see <code>docs/knowledge/operations.md</code> ids 82 and 85 for what that re-diff corrected).
 <strong>Product framing:</strong> This operator is not PM-tracked and there is no official Neo4j roadmap decision for Aura-cloud orchestration. This is a technical design for this project — not an official product/version commitment. Distinct from (and complementary to) the existing <code>auraFleetManagement</code> field.
-<strong>API foundation:</strong> Core built on <strong>Aura API v1 (GA)</strong> — it is the only version with a complete instance lifecycle. v2beta1 (org/project hierarchy, multi-DB, RBAC, IP filters) is deferred to a later phase because it currently lacks scale/pause/resume/snapshot/restore/CMK.
+<strong>API foundation:</strong> Core built on <strong>Aura API v1 (GA)</strong> — it is the only version with a complete instance lifecycle. v2beta1 (org/project hierarchy, multi-DB, RBAC, IP filters) is deferred to a later phase because it still lacks pause/resume/snapshot/restore/overwrite/upgrade/CMK. (As of 2026-07-30 it <em>has</em> gained instance resize — PATCH accepts <code>memory</code>+<code>storage</code> — so "v2beta1 cannot scale" is no longer accurate; the remaining gap is what keeps the lifecycle on v1.) <strong>Do not migrate to v1beta5:</strong> it is not a superset of v1 and removes <code>secondaries_count</code>, <code>cdc_enrichment_mode</code> and snapshot <code>exportable</code> outright.
 <strong>Settled decisions:</strong> (1) full lifecycle in Phase 1; (2) deletion defaults to <strong>Orphan</strong> (keep the cloud instance); (3) restore is a <strong>separate <code>AuraRestore</code> CRD</strong> (symmetry with <code>Neo4jBackup</code>/<code>Neo4jRestore</code>); (4) <strong>ergonomic</strong> Kind names (<code>AuraInstance</code>/<code>AuraSnapshot</code>/<code>AuraRestore</code>) in group <code>neo4j.neo4j.com</code>; (5) the connection Secret ships <strong>all formats</strong> (default <code>neo4j-driver</code>) <strong>and full Service Binding</strong> in Phase 1.
 <strong>Review v2 (cloud-native) — agreed additions to Phase 1:</strong> (6) <strong>idempotent create + adopt</strong> via the <code>neo4j.com/external-instance-id</code> external-name annotation; (7) <strong>CEL</strong> (<code>x-kubernetes-validations</code>) for immutability/enums — no webhook — with inline Go only for the live <code>instance_configurations</code> oracle; (8) an <strong><code>AuraProviderConfig</code></strong> CRD for credentials/defaults/rate-limiter (inline <code>credentialsSecretRef</code> retained as a single-account shortcut); (9) <strong>metrics wiring</strong> + <strong><code>publishConnectionDetailsTo</code></strong> (ConfigMap for non-secret endpoint). <strong>Deferred to Phase 2:</strong> <code>paused</code>/<code>managementPolicies</code>, the <code>status.atProvider</code> observed-state drift mirror, <code>AuraInstanceClass</code>, and unifying <code>Neo4jDatabase</code>/<code>User</code>/<code>Role</code> onto Aura targets. See the "Review v2" section below — where it differs from §4–§8, it wins.</p>
 </blockquote>
@@ -3529,7 +3529,12 @@
 <td>✅</td>
 </tr>
 <tr>
-<td>Resize (PATCH), pause, resume</td>
+<td>Resize (PATCH)</td>
+<td>✅</td>
+<td>✅ (<code>memory</code>+<code>storage</code>, added by 2026-07-30)</td>
+</tr>
+<tr>
+<td>Pause, resume</td>
 <td>✅</td>
 <td>❌</td>
 </tr>
@@ -3551,7 +3556,7 @@
 <tr>
 <td>Stability</td>
 <td>GA, stable</td>
-<td>beta — <code>legacy_status</code> rename pending, enum-vocabulary mismatches, undocumented request bodies</td>
+<td>beta — three distinct role vocabularies, per-endpoint <code>data</code> envelope, some undocumented request bodies. NOTE: <code>legacy_status</code> is an <strong>instance-only</strong> field; it does NOT apply to databases or backups (which use <code>status</code>)</td>
 </tr>
 </tbody>
 </table>
@@ -3670,7 +3675,7 @@
 <li>Terminal <code>Completed</code>/<code>Failed</code> CRs are kept as history (no re-fire). Optional TTL/GC later.</li>
 </ul>
 <h3 id="44-auth">4.4 Auth<a class="headerlink" href="#44-auth" title="Anchor link to this section">&para;</a></h3>
-<p>OAuth2 <strong>client-credentials</strong>. A namespaced Secret (<code>credentialsSecretRef</code>) holds <code>clientId</code> + <code>clientSecret</code>. The client exchanges them at <code>POST https://api.neo4j.io/oauth/token</code> (HTTP Basic + <code>grant_type=client_credentials</code>) for a <strong>1-hour</strong> bearer token, caches it, and <strong>refreshes on 403</strong> (Aura returns 403 — not 401 — for an expired token). Per-CR ref matches the operator's existing secret-ref idiom. A shared <code>AuraProviderConfig</code> CRD (bundling creds + <code>projectId</code>/defaults, Crossplane-style) is a Phase-2 convenience, not required for MVP.</p>
+<p>OAuth2 <strong>client-credentials</strong>. A namespaced Secret (<code>credentialsSecretRef</code>) holds <code>clientId</code> + <code>clientSecret</code>. The client exchanges them at <code>POST https://api.neo4j.io/oauth/token</code> (verified live 2026-07-30: this token also authenticates <strong>v2beta1</strong> calls, even though v2beta1 declares its own <code>tokenUrl</code> — the two endpoints are interchangeable, so one exchange covers both APIs) (HTTP Basic + <code>grant_type=client_credentials</code>) for a <strong>1-hour</strong> bearer token, caches it, and <strong>refreshes on 403</strong> (Aura returns 403 — not 401 — for an expired token). Per-CR ref matches the operator's existing secret-ref idiom. A shared <code>AuraProviderConfig</code> CRD (bundling creds + <code>projectId</code>/defaults, Crossplane-style) is a Phase-2 convenience, not required for MVP.</p>
 <h3 id="45-connection-secret-consumption-helpers">4.5 Connection Secret &amp; consumption helpers<a class="headerlink" href="#45-connection-secret-consumption-helpers" title="Anchor link to this section">&para;</a></h3>
 <p>The <code>connectionSecretName</code> Secret is a first-class <strong>binding artifact</strong>, not just a credential dump — apps should consume an Aura instance as easily as an in-cluster one.</p>
 <p><strong>Secret contents</strong> (mirror Aura's downloadable credentials file + the Neo4j driver env conventions the whole ecosystem — drivers, LangChain, the GenAI stack — already expects):</p>

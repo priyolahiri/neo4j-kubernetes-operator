@@ -3374,12 +3374,17 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td><code>Pending</code>, <code>Completed</code>, <code>Error</code>.</td>
+<td><code>Pending</code>, <code>Completed</code>, <code>Failed</code>, <code>Error</code>. Mirrors Aura's own <code>status</code> enum (<code>Pending</code>/<code>InProgress</code>/<code>Completed</code>/<code>Failed</code>). A freshly-scheduled backup reports <code>Pending</code> — the create response carries only an ID, so no status is known until the next read.</td>
 </tr>
 <tr>
 <td><code>timestamp</code></td>
 <td><code>string</code></td>
 <td>Backup timestamp as reported by Aura.</td>
+</tr>
+<tr>
+<td><code>exportable</code></td>
+<td><code>bool</code></td>
+<td>Whether Aura can export/download this backup. Only populated once the backup has been read back.</td>
 </tr>
 <tr>
 <td><code>conditions</code></td>

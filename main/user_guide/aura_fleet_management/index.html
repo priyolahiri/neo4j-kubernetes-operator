@@ -1098,6 +1098,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#operator-managed-onboarding-mint-the-token-automatically" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operator-managed onboarding (mint the token automatically)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Operator-managed onboarding (mint the token automatically)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-one-shot-token-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The one-shot token rule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cleanup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cleanup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auras-view-of-the-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aura's view of the deployment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#token-rotation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3495,6 +3545,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#operator-managed-onboarding-mint-the-token-automatically" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operator-managed onboarding (mint the token automatically)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Operator-managed onboarding (mint the token automatically)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-one-shot-token-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The one-shot token rule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cleanup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cleanup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auras-view-of-the-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aura's view of the deployment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#token-rotation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3582,7 +3682,7 @@
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li>A Neo4j Aura account with Fleet Management enabled.</li>
-<li>A registration token from the Aura console wizard (see <a href="#generate-a-token">Generate a token</a>).</li>
+<li>A registration token from the Aura console wizard (see <a href="#generate-a-token">Generate a token</a>) — <strong>or</strong> Aura API credentials, and let the operator mint the token itself (see <a href="#operator-managed-onboarding-mint-the-token-automatically">Operator-managed onboarding</a>).</li>
 <li>Neo4j Enterprise 5.26+ or 2025.x+. All supported enterprise images bundle the fleet-management plugin.</li>
 </ul>
 <h2 id="generate-a-token">Generate a token<a class="headerlink" href="#generate-a-token" title="Anchor link to this section">&para;</a></h2>
@@ -3668,16 +3768,92 @@
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="c1"># tokenSecretRef omitted — plugin installed, registration deferred</span>
 </span></code></pre></div>
 <p>This is useful if you want to pre-install the plugin before setting up Aura access.</p>
+<h2 id="operator-managed-onboarding-mint-the-token-automatically">Operator-managed onboarding (mint the token automatically)<a class="headerlink" href="#operator-managed-onboarding-mint-the-token-automatically" title="Anchor link to this section">&para;</a></h2>
+<p>Everything above requires a human to run the console wizard and paste a token
+into a Secret. If you give the operator Aura API credentials instead, it can
+register the Fleet Manager deployment <strong>and mint the token itself</strong> — no wizard,
+no copy-paste.</p>
+<p>Set <code>spec.auraFleetManagement.provision</code> instead of <code>tokenSecretRef</code> (the two are
+mutually exclusive):</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jEnterpriseCluster</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">  </span><span class="nt">auraFleetManagement</span><span class="p">:</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="nt">provision</span><span class="p">:</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">      </span><span class="nt">providerConfigRef</span><span class="p">:</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aura-prod</span><span class="w">          </span><span class="c1"># AuraProviderConfig with API credentials</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">      </span><span class="c1"># organizationId / projectId default to the provider config&#39;s values</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">      </span><span class="nt">collectTelemetry</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">     </span><span class="c1"># mirror Aura&#39;s view into status (optional)</span>
+</span></code></pre></div>
+<p>The operator then:</p>
+<ol>
+<li>Registers a deployment named <code>&lt;namespace&gt;-&lt;name&gt;</code> (capped at 30 characters —
+   the Aura API's limit). Override with <code>provision.deploymentName</code>.</li>
+<li>Mints a registration token and stores it in <code>&lt;name&gt;-aura-fleet-token</code>
+   (override with <code>provision.tokenSecretName</code>). The Secret is owned by the CR, so
+   it is garbage-collected with it.</li>
+<li>Registers that token over Bolt exactly as the manual flow does.</li>
+</ol>
+<p>The Aura deployment ID is pinned to the CR in the
+<code>neo4j.com/external-fleet-deployment-id</code> annotation. <strong>Do not remove it</strong> — it is
+what stops a second deployment being registered on the next reconcile.</p>
+<h3 id="the-one-shot-token-rule">The one-shot token rule<a class="headerlink" href="#the-one-shot-token-rule" title="Anchor link to this section">&para;</a></h3>
+<p>Aura returns a deployment token <strong>exactly once</strong>. It cannot be read back later.
+That shapes the recovery behaviour when the token Secret is deleted:</p>
+<table>
+<thead>
+<tr>
+<th><code>provision.tokenPolicy</code></th>
+<th>Behaviour when the Secret is missing</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CreateIfMissing</code> (default)</td>
+<td>Mints a token only if the Aura deployment has none. If the deployment already has a <strong>registered</strong> token, the operator <strong>refuses to rotate</strong> and explains why in <code>status.auraFleetManagement.message</code> — rotating would invalidate a working registration to fix a missing file.</td>
+</tr>
+<tr>
+<td><code>Rotate</code></td>
+<td>Always rotates to obtain a fresh token. <strong>This invalidates the existing registration</strong>, so the DBMS re-registers with the new token.</td>
+</tr>
+</tbody>
+</table>
+<p>If you hit the refusal, either restore the Secret from backup or opt into
+<code>tokenPolicy: Rotate</code> deliberately.</p>
+<h3 id="cleanup">Cleanup<a class="headerlink" href="#cleanup" title="Anchor link to this section">&para;</a></h3>
+<p><code>provision.deletionPolicy</code> defaults to <code>Orphan</code> — deleting the CR leaves the
+deployment registered in Aura, so monitoring history survives a redeploy. Set it
+to <code>Delete</code> to revoke the token and unregister the deployment on CR deletion.</p>
+<h3 id="auras-view-of-the-deployment">Aura's view of the deployment<a class="headerlink" href="#auras-view-of-the-deployment" title="Anchor link to this section">&para;</a></h3>
+<p>With <code>provision.collectTelemetry: true</code>, the operator mirrors what Aura's fleet
+plugin reports into <code>status.auraFleetManagement.servers</code> / <code>.databases</code>: server
+versions, JVM/OS, license state and mode constraint, plus per-database
+role/writer, last committed transaction, replication lag, and graph/property
+shards.</p>
+<p>Database detail is fetched <strong>per server</strong> — Aura only exposes role, writer,
+transaction and shard data on its per-server endpoint, not on the
+deployment-level database list — so each row carries a <code>serverId</code> identifying
+which server reported it. Several servers reporting the same database therefore
+produce one row each, with different roles.</p>
+<p>This is deliberately <strong>separate from <code>status.diagnostics</code></strong>, which is the
+operator's own Bolt-derived view. The two can legitimately disagree (different
+source, different moment), and merging them would hide which one said what. Both
+lists are capped at 20 entries; <code>serverCount</code> / <code>databaseCount</code> report the true
+totals, and <code>telemetryError</code> records a collection failure — telemetry never fails
+a reconcile.</p>
 <h2 id="token-rotation">Token rotation<a class="headerlink" href="#token-rotation" title="Anchor link to this section">&para;</a></h2>
 <p>If you enable auto-rotation in the Aura wizard, the plugin handles renewal automatically — no operator changes needed. If you rotate manually (generate a new token in Aura), update the Kubernetes Secret:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>aura-fleet-token<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">token</span><span class="o">=</span><span class="s1">&#39;&lt;new-token&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--dry-run<span class="o">=</span>client<span class="w"> </span>-o<span class="w"> </span>yaml<span class="w"> </span><span class="p">|</span><span class="w"> </span>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>aura-fleet-token<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">token</span><span class="o">=</span><span class="s1">&#39;&lt;new-token&gt;&#39;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>--dry-run<span class="o">=</span>client<span class="w"> </span>-o<span class="w"> </span>yaml<span class="w"> </span><span class="p">|</span><span class="w"> </span>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-
 </span></code></pre></div>
 <p>The operator will detect that <code>status.auraFleetManagement.registered</code> is <code>true</code> and skip re-registration. To force re-registration with the new token, patch the cluster status:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>--type<span class="o">=</span>merge<span class="w"> </span>--subresource<span class="o">=</span>status<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">&#39;{&quot;status&quot;:{&quot;auraFleetManagement&quot;:{&quot;registered&quot;:false}}}&#39;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--type<span class="o">=</span>merge<span class="w"> </span>--subresource<span class="o">=</span>status<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">&#39;{&quot;status&quot;:{&quot;auraFleetManagement&quot;:{&quot;registered&quot;:false}}}&#39;</span>
 </span></code></pre></div>
 <p>The operator will then call <code>registerToken</code> with the new token on the next reconcile.</p>
 <h2 id="security">Security<a class="headerlink" href="#security" title="Anchor link to this section">&para;</a></h2>
@@ -3711,21 +3887,71 @@
 <td>string</td>
 <td>Human-readable status or error message</td>
 </tr>
+<tr>
+<td><code>status.auraFleetManagement.provisioned</code></td>
+<td>bool</td>
+<td><code>true</code> once the operator has registered a deployment and stored a token (operator-managed onboarding only)</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.deploymentId</code></td>
+<td>string</td>
+<td>Aura-assigned Fleet Manager deployment ID</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.deploymentName</code></td>
+<td>string</td>
+<td>Name the deployment is registered under in Aura</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.tokenSecretName</code></td>
+<td>string</td>
+<td>Secret holding the minted token</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.tokenCreationTime</code></td>
+<td>time</td>
+<td>When Aura created the current token</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.tokenExpiryTime</code></td>
+<td>time</td>
+<td>When the current token expires</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.tokenAutoRotate</code></td>
+<td>bool</td>
+<td>Whether Aura auto-renews the token on expiry</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.servers</code> / <code>.databases</code></td>
+<td>list</td>
+<td>Aura's view of the deployment (<code>collectTelemetry: true</code>), capped at 20</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.serverCount</code> / <code>.databaseCount</code></td>
+<td>int</td>
+<td>Untruncated totals</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.telemetryError</code></td>
+<td>string</td>
+<td>Why the last telemetry collection failed (non-fatal)</td>
+</tr>
 </tbody>
 </table>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Registration not happening after enabling</strong></p>
 <p>The operator only attempts registration when <code>status.phase == "Ready"</code>. Check that all pods are healthy:
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster
 </span></code></pre></div></p>
 <p><strong><code>fleetManagement.registerToken</code> procedure not found</strong></p>
 <p>The plugin jar may not have been copied yet. This happens if pods are still restarting after <code>NEO4J_PLUGINS</code> was updated. Wait for the rolling update to complete, or check:
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>my-cluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="s2">&quot;SHOW PROCEDURES YIELD name WHERE name STARTS WITH &#39;fleetManagement&#39; RETURN name&quot;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>my-cluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="s2">&quot;SHOW PROCEDURES YIELD name WHERE name STARTS WITH &#39;fleetManagement&#39; RETURN name&quot;</span>
 </span></code></pre></div></p>
 <p><strong><code>AuraFleetManagementFailed</code> event</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>AuraFleetManagementFailed
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>AuraFleetManagementFailed
 </span></code></pre></div>
 <p>Common causes:</p>
 <ul>
@@ -3735,14 +3961,14 @@
 </ul>
 <p><strong>Other plugins disappear after enabling Fleet Management</strong></p>
 <p>This should not happen with current operator versions (the additive merge strategy prevents it). If you observe it, verify the operator is up to date and check:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Inspect the full NEO4J_PLUGINS value</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>statefulset<span class="w"> </span>my-cluster-server<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.spec.template.spec.containers[0].env[?(@.name==&quot;NEO4J_PLUGINS&quot;)].value}&#39;</span>
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># Should show all plugins, e.g. [&quot;apoc&quot;,&quot;fleet-management&quot;]</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Inspect the full NEO4J_PLUGINS value</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>statefulset<span class="w"> </span>my-cluster-server<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.spec.template.spec.containers[0].env[?(@.name==&quot;NEO4J_PLUGINS&quot;)].value}&#39;</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Should show all plugins, e.g. [&quot;apoc&quot;,&quot;fleet-management&quot;]</span>
 </span></code></pre></div>
 <p><strong>Manually verify the plugin</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>my-cluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="s2">&quot;CALL fleetManagement.status()&quot;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>my-cluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="s2">&quot;CALL fleetManagement.status()&quot;</span>
 </span></code></pre></div>
 
 
