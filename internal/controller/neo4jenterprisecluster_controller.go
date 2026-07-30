@@ -68,6 +68,9 @@ type Neo4jEnterpriseClusterReconciler struct {
 	Validator          *validation.ClusterValidator
 	ConfigMapManager   *ConfigMapManager
 	SplitBrainDetector *SplitBrainDetector
+	// FleetClientFactory injects a fake Aura Fleet Manager client in tests. nil in
+	// production, where the shared credential-keyed client is used.
+	FleetClientFactory auraFleetClientFactory
 	// deferredUpgradeTargets dedupes the UpgradeDeferred event per cluster
 	// (key ns/name → deferred image) so a held image change doesn't emit an
 	// event on every Forming-phase reconcile (#262 review).
@@ -103,6 +106,7 @@ const (
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups=neo4j.neo4j.com,resources=auraproviderconfigs,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;delete
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
@@ -513,6 +517,12 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 
 	// Reconcile Aura Fleet Management registration if enabled
 	if cluster.Spec.AuraFleetManagement != nil && cluster.Spec.AuraFleetManagement.Enabled {
+		// Phase 0 — operator-driven onboarding: register the Fleet Manager
+		// deployment and mint its token into a Secret, so the Phase 2 registration
+		// below has something to read. No-op unless spec.provision is set, and
+		// itself non-fatal (it reports through status, never returns an error).
+		_ = r.newFleetProvisioner().reconcileAuraFleetProvision(ctx, cluster)
+
 		if err := r.reconcileAuraFleetManagement(ctx, cluster); err != nil {
 			// Fleet management registration failures are non-fatal: the cluster is operational,
 			// only the Aura monitoring registration failed. Log and surface via status.
@@ -690,6 +700,11 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 		logger.Info("Finalizer not present, nothing to do", "finalizers", cluster.Finalizers, "deletionTimestamp", cluster.DeletionTimestamp)
 		return ctrl.Result{}, nil
 	}
+
+	// Unregister the Aura Fleet Manager deployment when provisioning asked for it
+	// (deletionPolicy: Delete). Non-fatal and hooked into the existing finalizer
+	// rather than adding a second one — a stuck Aura API must not block deletion.
+	r.newFleetProvisioner().deprovisionAuraFleet(ctx, cluster)
 
 	// Clean up PVCs if retention policy is Delete (default behavior)
 	retentionPolicy := cluster.Spec.Storage.RetentionPolicy
@@ -2838,17 +2853,49 @@ func (r *Neo4jEnterpriseClusterReconciler) setFleetManagementStatus(ctx context.
 		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
 			return err
 		}
-		status := &neo4jv1beta1.AuraFleetManagementStatus{
-			Registered: registered,
-			Message:    message,
+		// Mutate in place rather than replacing the struct: Phase 0
+		// (reconcileAuraFleetProvision) also writes here — deploymentId, token
+		// metadata, telemetry — and a wholesale replace would silently wipe all of
+		// it on every registration update.
+		if latest.Status.AuraFleetManagement == nil {
+			latest.Status.AuraFleetManagement = &neo4jv1beta1.AuraFleetManagementStatus{}
 		}
+		latest.Status.AuraFleetManagement.Registered = registered
+		latest.Status.AuraFleetManagement.Message = message
 		if registered {
-			status.LastRegistrationTime = &now
+			latest.Status.AuraFleetManagement.LastRegistrationTime = &now
 		}
-		latest.Status.AuraFleetManagement = status
-		cluster.Status.AuraFleetManagement = status // mirror for the in-memory caller
+		cluster.Status.AuraFleetManagement = latest.Status.AuraFleetManagement // mirror for the in-memory caller
 		return r.Status().Update(ctx, latest)
 	})
+}
+
+// writeFleetStatus applies mutate to status.auraFleetManagement, creating it if
+// absent. This is the fleetProvisioner's StatusWriter for clusters.
+func (r *Neo4jEnterpriseClusterReconciler) writeFleetStatus(
+	ctx context.Context, key types.NamespacedName, mutate func(*neo4jv1beta1.AuraFleetManagementStatus),
+) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+		if err := r.Get(ctx, key, latest); err != nil {
+			return err
+		}
+		if latest.Status.AuraFleetManagement == nil {
+			latest.Status.AuraFleetManagement = &neo4jv1beta1.AuraFleetManagementStatus{}
+		}
+		mutate(latest.Status.AuraFleetManagement)
+		return r.Status().Update(ctx, latest)
+	})
+}
+
+// newFleetProvisioner builds the shared Phase 0 helper for this reconciler.
+func (r *Neo4jEnterpriseClusterReconciler) newFleetProvisioner() *fleetProvisioner {
+	return &fleetProvisioner{
+		Client:        r.Client,
+		Recorder:      r.Recorder,
+		ClientFactory: r.FleetClientFactory,
+		StatusWriter:  r.writeFleetStatus,
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.

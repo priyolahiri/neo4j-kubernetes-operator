@@ -27,8 +27,9 @@ kubectl get events --field-selector reason=AuraFleetManagementRegistered
 
 | File | Description |
 |---|---|
-| `cluster-with-fleet-management.yaml` | 3-server cluster with Fleet Management |
+| `cluster-with-fleet-management.yaml` | 3-server cluster with Fleet Management (token from the console wizard) |
 | `standalone-with-fleet-management.yaml` | Single-node standalone with Fleet Management |
+| `cluster-with-fleet-provisioning.yaml` | 3-server cluster where the **operator mints the token itself** via the Aura API — no console wizard, no hand-copied Secret (BETA) |
 
 ## Notes
 

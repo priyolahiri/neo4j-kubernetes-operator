@@ -112,6 +112,13 @@ const (
 	EventReasonAuraFleetFailed            = "AuraFleetManagementFailed"
 	EventReasonAuraFleetPluginPatchFailed = "AuraFleetManagementPluginPatchFailed"
 	EventReasonAuraFleetRegistered        = "AuraFleetManagementRegistered"
+
+	// Operator-driven Fleet Manager provisioning (spec.auraFleetManagement.provision).
+	EventReasonAuraFleetDeploymentCreated = "AuraFleetDeploymentCreated"
+	EventReasonAuraFleetDeploymentAdopted = "AuraFleetDeploymentAdopted"
+	EventReasonAuraFleetDeploymentDeleted = "AuraFleetDeploymentDeleted"
+	EventReasonAuraFleetTokenProvisioned  = "AuraFleetTokenProvisioned"
+	EventReasonAuraFleetTokenRotated      = "AuraFleetTokenRotated"
 )
 
 // Storage expansion events

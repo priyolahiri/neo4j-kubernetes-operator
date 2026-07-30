@@ -66,6 +66,9 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	RequeueAfter     time.Duration
 	Validator        *validation.StandaloneValidator
 	ConfigMapManager *ConfigMapManager
+	// FleetClientFactory injects a fake Aura Fleet Manager client in tests. nil in
+	// production, where the shared credential-keyed client is used.
+	FleetClientFactory auraFleetClientFactory
 }
 
 func podSecurityContextForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.PodSecurityContext {
@@ -106,6 +109,7 @@ const (
 //+kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jenterprisestandalones/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jenterprisestandalones/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=neo4j.neo4j.com,resources=auraproviderconfigs,verbs=get;list;watch
 //+kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=cert-manager.io,resources=issuers,verbs=get;list;watch
 //+kubebuilder:rbac:groups=cert-manager.io,resources=clusterissuers,verbs=get;list;watch
@@ -185,6 +189,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 // handleDeletion handles the deletion of a standalone deployment
 func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+
+	// Unregister the Aura Fleet Manager deployment when provisioning asked for it
+	// (deletionPolicy: Delete). Non-fatal and hooked into the existing finalizer
+	// rather than adding a second one — a stuck Aura API must not block deletion.
+	r.newFleetProvisioner().deprovisionAuraFleet(ctx, standalone)
 
 	// Cleanup resources
 	if err := r.cleanupResources(ctx, standalone); err != nil {
@@ -312,6 +321,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 
 	// Reconcile Aura Fleet Management registration if enabled (non-fatal if it fails)
 	if standalone.Spec.AuraFleetManagement != nil && standalone.Spec.AuraFleetManagement.Enabled {
+		// Phase 0 — operator-driven onboarding: register the Fleet Manager
+		// deployment and mint its token into a Secret, so the Phase 2 registration
+		// below has something to read. No-op unless spec.provision is set, and
+		// itself non-fatal (it reports through status, never returns an error).
+		_ = r.newFleetProvisioner().reconcileAuraFleetProvision(ctx, standalone)
+
 		if err := r.reconcileAuraFleetManagement(ctx, standalone); err != nil {
 			logger.Error(err, "Failed to reconcile Aura Fleet Management registration")
 			if r.Recorder != nil {
@@ -2652,21 +2667,52 @@ func (r *Neo4jEnterpriseStandaloneReconciler) mergeFleetManagementPlugin(ctx con
 
 func (r *Neo4jEnterpriseStandaloneReconciler) setFleetManagementStatus(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, registered bool, message string) error {
 	now := metav1.Now()
-	status := &neo4jv1beta1.AuraFleetManagementStatus{
-		Registered: registered,
-		Message:    message,
-	}
-	if registered {
-		status.LastRegistrationTime = &now
-	}
-
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 		if err := r.Get(ctx, types.NamespacedName{Namespace: standalone.Namespace, Name: standalone.Name}, latest); err != nil {
 			return err
 		}
-		latest.Status.AuraFleetManagement = status
-		standalone.Status.AuraFleetManagement = status // mirror for the in-memory caller
+		// Mutate in place rather than replacing the struct: Phase 0
+		// (reconcileAuraFleetProvision) also writes here — deploymentId, token
+		// metadata, telemetry — and a wholesale replace would silently wipe all of
+		// it on every registration update.
+		if latest.Status.AuraFleetManagement == nil {
+			latest.Status.AuraFleetManagement = &neo4jv1beta1.AuraFleetManagementStatus{}
+		}
+		latest.Status.AuraFleetManagement.Registered = registered
+		latest.Status.AuraFleetManagement.Message = message
+		if registered {
+			latest.Status.AuraFleetManagement.LastRegistrationTime = &now
+		}
+		standalone.Status.AuraFleetManagement = latest.Status.AuraFleetManagement // mirror for the in-memory caller
 		return r.Status().Update(ctx, latest)
 	})
+}
+
+// writeFleetStatus applies mutate to status.auraFleetManagement, creating it if
+// absent. This is the fleetProvisioner's StatusWriter for standalones.
+func (r *Neo4jEnterpriseStandaloneReconciler) writeFleetStatus(
+	ctx context.Context, key types.NamespacedName, mutate func(*neo4jv1beta1.AuraFleetManagementStatus),
+) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+		if err := r.Get(ctx, key, latest); err != nil {
+			return err
+		}
+		if latest.Status.AuraFleetManagement == nil {
+			latest.Status.AuraFleetManagement = &neo4jv1beta1.AuraFleetManagementStatus{}
+		}
+		mutate(latest.Status.AuraFleetManagement)
+		return r.Status().Update(ctx, latest)
+	})
+}
+
+// newFleetProvisioner builds the shared Phase 0 helper for this reconciler.
+func (r *Neo4jEnterpriseStandaloneReconciler) newFleetProvisioner() *fleetProvisioner {
+	return &fleetProvisioner{
+		Client:        r.Client,
+		Recorder:      r.Recorder,
+		ClientFactory: r.FleetClientFactory,
+		StatusWriter:  r.writeFleetStatus,
+	}
 }

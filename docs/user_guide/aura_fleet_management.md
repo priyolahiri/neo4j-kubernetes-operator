@@ -27,7 +27,7 @@ The operator uses an additive merge strategy — neither controller overwrites t
 ## Prerequisites
 
 - A Neo4j Aura account with Fleet Management enabled.
-- A registration token from the Aura console wizard (see [Generate a token](#generate-a-token)).
+- A registration token from the Aura console wizard (see [Generate a token](#generate-a-token)) — **or** Aura API credentials, and let the operator mint the token itself (see [Operator-managed onboarding](#operator-managed-onboarding-mint-the-token-automatically)).
 - Neo4j Enterprise 5.26+ or 2025.x+. All supported enterprise images bundle the fleet-management plugin.
 
 ## Generate a token
@@ -135,6 +135,84 @@ auraFleetManagement:
 
 This is useful if you want to pre-install the plugin before setting up Aura access.
 
+## Operator-managed onboarding (mint the token automatically)
+
+Everything above requires a human to run the console wizard and paste a token
+into a Secret. If you give the operator Aura API credentials instead, it can
+register the Fleet Manager deployment **and mint the token itself** — no wizard,
+no copy-paste.
+
+Set `spec.auraFleetManagement.provision` instead of `tokenSecretRef` (the two are
+mutually exclusive):
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: my-cluster
+spec:
+  auraFleetManagement:
+    enabled: true
+    provision:
+      providerConfigRef:
+        name: aura-prod          # AuraProviderConfig with API credentials
+      # organizationId / projectId default to the provider config's values
+      collectTelemetry: true     # mirror Aura's view into status (optional)
+```
+
+The operator then:
+
+1. Registers a deployment named `<namespace>-<name>` (capped at 30 characters —
+   the Aura API's limit). Override with `provision.deploymentName`.
+2. Mints a registration token and stores it in `<name>-aura-fleet-token`
+   (override with `provision.tokenSecretName`). The Secret is owned by the CR, so
+   it is garbage-collected with it.
+3. Registers that token over Bolt exactly as the manual flow does.
+
+The Aura deployment ID is pinned to the CR in the
+`neo4j.com/external-fleet-deployment-id` annotation. **Do not remove it** — it is
+what stops a second deployment being registered on the next reconcile.
+
+### The one-shot token rule
+
+Aura returns a deployment token **exactly once**. It cannot be read back later.
+That shapes the recovery behaviour when the token Secret is deleted:
+
+| `provision.tokenPolicy` | Behaviour when the Secret is missing |
+|---|---|
+| `CreateIfMissing` (default) | Mints a token only if the Aura deployment has none. If the deployment already has a **registered** token, the operator **refuses to rotate** and explains why in `status.auraFleetManagement.message` — rotating would invalidate a working registration to fix a missing file. |
+| `Rotate` | Always rotates to obtain a fresh token. **This invalidates the existing registration**, so the DBMS re-registers with the new token. |
+
+If you hit the refusal, either restore the Secret from backup or opt into
+`tokenPolicy: Rotate` deliberately.
+
+### Cleanup
+
+`provision.deletionPolicy` defaults to `Orphan` — deleting the CR leaves the
+deployment registered in Aura, so monitoring history survives a redeploy. Set it
+to `Delete` to revoke the token and unregister the deployment on CR deletion.
+
+### Aura's view of the deployment
+
+With `provision.collectTelemetry: true`, the operator mirrors what Aura's fleet
+plugin reports into `status.auraFleetManagement.servers` / `.databases`: server
+versions, JVM/OS, license state and mode constraint, plus per-database
+role/writer, last committed transaction, replication lag, and graph/property
+shards.
+
+Database detail is fetched **per server** — Aura only exposes role, writer,
+transaction and shard data on its per-server endpoint, not on the
+deployment-level database list — so each row carries a `serverId` identifying
+which server reported it. Several servers reporting the same database therefore
+produce one row each, with different roles.
+
+This is deliberately **separate from `status.diagnostics`**, which is the
+operator's own Bolt-derived view. The two can legitimately disagree (different
+source, different moment), and merging them would hide which one said what. Both
+lists are capped at 20 entries; `serverCount` / `databaseCount` report the true
+totals, and `telemetryError` records a collection failure — telemetry never fails
+a reconcile.
+
 ## Token rotation
 
 If you enable auto-rotation in the Aura wizard, the plugin handles renewal automatically — no operator changes needed. If you rotate manually (generate a new token in Aura), update the Kubernetes Secret:
@@ -168,6 +246,16 @@ The operator will then call `registerToken` with the new token on the next recon
 | `status.auraFleetManagement.registered` | bool | `true` once `registerToken` succeeded |
 | `status.auraFleetManagement.lastRegistrationTime` | time | Timestamp of last successful registration |
 | `status.auraFleetManagement.message` | string | Human-readable status or error message |
+| `status.auraFleetManagement.provisioned` | bool | `true` once the operator has registered a deployment and stored a token (operator-managed onboarding only) |
+| `status.auraFleetManagement.deploymentId` | string | Aura-assigned Fleet Manager deployment ID |
+| `status.auraFleetManagement.deploymentName` | string | Name the deployment is registered under in Aura |
+| `status.auraFleetManagement.tokenSecretName` | string | Secret holding the minted token |
+| `status.auraFleetManagement.tokenCreationTime` | time | When Aura created the current token |
+| `status.auraFleetManagement.tokenExpiryTime` | time | When the current token expires |
+| `status.auraFleetManagement.tokenAutoRotate` | bool | Whether Aura auto-renews the token on expiry |
+| `status.auraFleetManagement.servers` / `.databases` | list | Aura's view of the deployment (`collectTelemetry: true`), capped at 20 |
+| `status.auraFleetManagement.serverCount` / `.databaseCount` | int | Untruncated totals |
+| `status.auraFleetManagement.telemetryError` | string | Why the last telemetry collection failed (non-fatal) |
 
 ## Troubleshooting
 

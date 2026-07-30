@@ -167,7 +167,7 @@ func factoryFor(f *fakeAuraAPI) auraClientFactory {
 type fakeCMKAPI struct {
 	createFn func(ctx context.Context, req aura.CreateCMKRequest) (*aura.CustomerManagedKey, error)
 	getFn    func(ctx context.Context, id string) (*aura.CustomerManagedKey, error)
-	listFn   func(ctx context.Context, tenantID string) ([]aura.CustomerManagedKey, error)
+	listFn   func(ctx context.Context, tenantID string) ([]aura.CustomerManagedKeySummary, error)
 	deleteFn func(ctx context.Context, id string) error
 
 	createCalled bool
@@ -192,7 +192,10 @@ func (f *fakeCMKAPI) GetCustomerManagedKey(ctx context.Context, id string) (*aur
 	return &aura.CustomerManagedKey{ID: id, Status: aura.CMKStatusReady}, nil
 }
 
-func (f *fakeCMKAPI) ListCustomerManagedKeys(ctx context.Context, tenantID string) ([]aura.CustomerManagedKey, error) {
+// Returns SUMMARIES, matching the real v1 list endpoint: id/name/tenant_id only.
+// Do NOT widen this to the full CustomerManagedKey — the previous fake returned a
+// fully-populated struct, which masked an adoption path that could never match.
+func (f *fakeCMKAPI) ListCustomerManagedKeys(ctx context.Context, tenantID string) ([]aura.CustomerManagedKeySummary, error) {
 	f.listCalled = true
 	if f.listFn != nil {
 		return f.listFn(ctx, tenantID)
@@ -262,6 +265,10 @@ func newAuraFakeClient(t *testing.T, scheme *runtime.Scheme, objs ...client.Obje
 			&neo4jv1beta1.AuraOrganizationMember{},
 			&neo4jv1beta1.AuraProjectMember{},
 			&neo4jv1beta1.AuraInvite{},
+			// Needed by the Aura Fleet Manager provisioning tests, which write
+			// status.auraFleetManagement on a cluster/standalone.
+			&neo4jv1beta1.Neo4jEnterpriseCluster{},
+			&neo4jv1beta1.Neo4jEnterpriseStandalone{},
 		).
 		WithObjects(all...).
 		Build()
@@ -843,7 +850,7 @@ func TestAuraCMK_CreateThenReady(t *testing.T) {
 	scheme := auraTestScheme(t)
 	cmk := newAuraCMK("cmk-create")
 	f := &fakeCMKAPI{
-		listFn: func(context.Context, string) ([]aura.CustomerManagedKey, error) { return nil, nil },
+		listFn: func(context.Context, string) ([]aura.CustomerManagedKeySummary, error) { return nil, nil },
 		createFn: func(context.Context, aura.CreateCMKRequest) (*aura.CustomerManagedKey, error) {
 			return &aura.CustomerManagedKey{ID: "cmk-new", Status: aura.CMKStatusPending}, nil
 		},
@@ -884,18 +891,24 @@ func TestAuraCMK_CreateThenReady(t *testing.T) {
 	}
 }
 
-func TestAuraCMK_AdoptByKeyID(t *testing.T) {
+// Adoption must survive a lost external-ID annotation. The list endpoint only
+// gives id/name/tenant_id, so the controller narrows on NAME and then confirms
+// against the per-key detail before adopting.
+func TestAuraCMK_AdoptByName(t *testing.T) {
 	scheme := auraTestScheme(t)
 	cmk := newAuraCMK("cmk-adopt")
 	f := &fakeCMKAPI{
-		listFn: func(context.Context, string) ([]aura.CustomerManagedKey, error) {
-			return []aura.CustomerManagedKey{{
-				ID: "existing-cmk", KeyID: cmk.Spec.KeyID, Region: "europe-west1",
-				CloudProvider: "gcp", InstanceType: "enterprise-db", Status: aura.CMKStatusReady,
+		listFn: func(context.Context, string) ([]aura.CustomerManagedKeySummary, error) {
+			// Exactly what v1 returns: no key_id/region/cloud_provider/instance_type.
+			return []aura.CustomerManagedKeySummary{{
+				ID: "existing-cmk", Name: "cmk-adopt", TenantID: "proj-1",
 			}}, nil
 		},
 		getFn: func(_ context.Context, id string) (*aura.CustomerManagedKey, error) {
-			return &aura.CustomerManagedKey{ID: id, Status: aura.CMKStatusReady}, nil
+			return &aura.CustomerManagedKey{
+				ID: id, Name: "cmk-adopt", KeyID: cmk.Spec.KeyID, Region: "europe-west1",
+				CloudProvider: "gcp", InstanceType: "enterprise-db", Status: aura.CMKStatusReady,
+			}, nil
 		},
 	}
 	c := newAuraFakeClient(t, scheme, cmk)
@@ -918,6 +931,43 @@ func TestAuraCMK_AdoptByKeyID(t *testing.T) {
 	}
 	if id := got.Annotations[AuraExternalCMKAnnotation]; id != "existing-cmk" {
 		t.Errorf("external-cmk-id annotation = %q, want existing-cmk", id)
+	}
+}
+
+// A same-named key pointing at different material must NOT be adopted (that
+// would bind the CR to the wrong key) and must NOT be duplicated by a create —
+// the reconcile fails loudly instead.
+func TestAuraCMK_SameNameDifferentKeyIsRefused(t *testing.T) {
+	scheme := auraTestScheme(t)
+	cmk := newAuraCMK("cmk-conflict")
+	f := &fakeCMKAPI{
+		listFn: func(context.Context, string) ([]aura.CustomerManagedKeySummary, error) {
+			return []aura.CustomerManagedKeySummary{{
+				ID: "other-cmk", Name: "cmk-conflict", TenantID: "proj-1",
+			}}, nil
+		},
+		getFn: func(_ context.Context, id string) (*aura.CustomerManagedKey, error) {
+			return &aura.CustomerManagedKey{
+				ID: id, Name: "cmk-conflict",
+				KeyID:         "projects/p/locations/eu/keyRings/r/cryptoKeys/SOMETHING-ELSE",
+				Region:        "europe-west1",
+				CloudProvider: "gcp", InstanceType: "enterprise-db", Status: aura.CMKStatusReady,
+			}, nil
+		},
+	}
+	c := newAuraFakeClient(t, scheme, cmk)
+	r := &AuraCustomerManagedKeyReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+		ClientFactory: cmkFactoryFor(f),
+	}
+	_, _ = r.Reconcile(context.Background(), reqFor(cmk))
+	if f.createCalled {
+		t.Error("must NOT create a duplicate key when the name is already taken by a different key")
+	}
+	got := &neo4jv1beta1.AuraCustomerManagedKey{}
+	_ = c.Get(context.Background(), reqFor(cmk).NamespacedName, got)
+	if id := got.Annotations[AuraExternalCMKAnnotation]; id != "" {
+		t.Errorf("must NOT adopt a mismatched key, but annotation = %q", id)
 	}
 }
 
@@ -1024,7 +1074,7 @@ func TestAuraCMK_ObserveOnly_NoCreate(t *testing.T) {
 	cmk.Spec.ManagementPolicies = []string{"Observe"}
 	controllerutil.AddFinalizer(cmk, AuraCMKFinalizer)
 	f := &fakeCMKAPI{
-		listFn: func(context.Context, string) ([]aura.CustomerManagedKey, error) { return nil, nil },
+		listFn: func(context.Context, string) ([]aura.CustomerManagedKeySummary, error) { return nil, nil },
 	}
 	c := newAuraFakeClient(t, scheme, cmk)
 	r := &AuraCustomerManagedKeyReconciler{
