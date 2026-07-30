@@ -34,7 +34,7 @@ Neo4j Enterprise Operator for Kubernetes — manages Neo4j Enterprise deployment
 
 **Supported Neo4j versions**: 5.26.x (last semver LTS) and 2025.x.x+ (CalVer). No 5.27+ semver — Neo4j switched to CalVer after 5.26.
 
-**Support policy** (see `docs/user_guide/version_support.md`): the operator supports **the current LTS line + the current CalVer feature line** (today: 5.26 + 2025.x/2026.x). A new LTS is *added* at its GA; the previous LTS is *dropped only at its Neo4j EOL* — never the moment a new LTS ships — so the operator is never stricter than the database. Steady state = 2 CI anchors; a vendor-overlap window may run 3. **CalVer = validated vs. best-effort**: each release pins ONE anchor CalVer in CI (e.g. 2026.04) and stands behind it; newer CalVers are *allowed* (forward-compatible via `IsCalver`) but best-effort — a CalVer shipped after an operator release can break it (operator emits strictly-validated config/Cypher), fixed in the next release. We don't claim to support every CalVer in a window; Neo4j itself supports only the latest.
+**Support policy** (see `docs/user_guide/version_support.md`): the operator supports **the current LTS line + the current CalVer feature line** (today: 5.26 + 2025.x/2026.x). A new LTS is *added* at its GA; the previous LTS is *dropped only at its Neo4j EOL* — never the moment a new LTS ships — so the operator is never stricter than the database. Steady state = 2 CI anchors; a vendor-overlap window may run 3. **CalVer = validated vs. best-effort**: each release pins ONE anchor CalVer in CI (e.g. 2026.06) and stands behind it; newer CalVers are *allowed* (forward-compatible via `IsCalver`) but best-effort — a CalVer shipped after an operator release can break it (operator emits strictly-validated config/Cypher), fixed in the next release. We don't claim to support every CalVer in a window; Neo4j itself supports only the latest.
 
 **Deployment types:**
 - **Neo4jEnterpriseCluster**: HA clusters (min 2 servers; self-organize into primary/secondary).
@@ -42,11 +42,8 @@ Neo4j Enterprise Operator for Kubernetes — manages Neo4j Enterprise deployment
 
 ## Architecture
 
-- CRDs: `Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`, `Neo4jDatabase`, `Neo4jShardedDatabase`, `Neo4jBackup`, `Neo4jRestore`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jPlugin`.
-- Controllers: cluster & standalone controllers with controller-side validation. Neo4j client: Bolt protocol.
-- **Directories:** `api/v1beta1/` (CRD types), `internal/controller/`, `internal/resources/` (K8s builders), `test/` (unit/integration/e2e).
-
-**Server-based architecture**: single `{cluster-name}-server` StatefulSet with `replicas: N`. Pods are `{cluster-name}-server-0…N-1`. Never use `primary-*` / `secondary-*` pod names. Backups are Job-per-`Neo4jBackup`-CR exclusively (no persistent backup pod, no sidecars, no `spec.backups` field). The legacy `{cluster-name}-backup-0` StatefulSet and standalone backup sidecar were removed — never reintroduce a long-running backup pod. (Invariant 5.)
+- Neo4j client: Bolt protocol.
+- **Directories:** `api/v1beta1/` (CRD types — run `ls api/v1beta1/*_types.go` for the current CRD list), `internal/controller/`, `internal/resources/` (K8s builders), `test/` (unit/integration/e2e).
 
 **Server role hints** (`initial.server.mode_constraint`):
 ```yaml
@@ -101,7 +98,7 @@ Ginkgo/Gomega, Kind only, **300-second timeouts** for all integration tests.
 
 **Property sharding tests**: CI-runnable smoke test (`property_sharding_ci_smoke_test.go`) runs only when the integration-tests workflow is dispatched with `neo4j-version: 2025.12-enterprise+` — gated by `isPropertyShardingCompatible()`. Uses `NEO4J_SHARDING_RELAX_MEMORY_MIN=true` (set only via `config/overlays/integration-test/`) to bypass the 4Gi/1-core floor on a 2×1.5Gi/500m cluster. Richer sharded tests (F3/F4/F5, Phase 2a/2c, multi-property-shard) stay local-only — they need the production 4Gi/server floor.
 
-**Pre-release verification journey** (manual + LLM, complements the automated suites): `docs/developer_guide/release_verification.md` is the canonical matrix — what we verify, on standalone vs. cluster(3) vs. sharding(2026.04), at what size, and why. Run it from `main` before cutting a release via the `verify-journey` skill (`.claude/skills/verify-journey/`). Two durable rules: **one Enterprise deployment in the cluster at a time** (sequential phases, teardown between — concurrent JVMs wedge Bolt on a laptop) and **restore is walked on BOTH standalone (neo4j-admin path) and cluster (in-place Cypher path)**. When you add/change a capability, add its scenario to that doc in the same PR.
+**Pre-release verification journey** (manual + LLM, complements the automated suites): `docs/developer_guide/release_verification.md` is the canonical matrix — what we verify, on standalone vs. cluster(3) vs. sharding(2026.06), at what size, and why. Run it from `main` before cutting a release via the `verify-journey` skill (`.claude/skills/verify-journey/`). Two durable rules: **one Enterprise deployment in the cluster at a time** (sequential phases, teardown between — concurrent JVMs wedge Bolt on a laptop) and **restore is walked on BOTH standalone (neo4j-admin path) and cluster (in-place Cypher path)**. When you add/change a capability, add its scenario to that doc in the same PR.
 
 **Troubleshooting**: timeout → image-pull delays. OOMKilled → Enterprise needs ≥ 1.5Gi. DB-create hangs → use `TOPOLOGY` not `OPTIONS`. Cluster won't form → check discovery RBAC.
 
@@ -273,23 +270,9 @@ reference. When you discover a new invariant or regression, add it to the approp
 
 ## Generated artifacts
 
-Several files are generated, not hand-written — each carries a `# This file is GENERATED. DO NOT EDIT.` header and `check-drift` reverts tampering. **Never hand-edit.**
+Several files are generated, not hand-written — each carries a `# This file is GENERATED. DO NOT EDIT.` header and `check-drift` reverts tampering. **Never hand-edit.** Generated: `config/rbac/role.yaml`, `config/crd/bases/*.yaml`, `api/v1beta1/zz_generated.deepcopy.go`, `config/crd/kustomization.yaml`, `config/samples/kustomization.yaml`, `config/rbac/<crd>_{editor,viewer}_role.yaml`, `charts/neo4j-operator/crds/*.yaml`, `charts/neo4j-operator/templates/clusterrole.yaml`/`metrics-rbac.yaml`, `charts/neo4j-operator/Chart.yaml` (`artifacthub.io/crds`), `bundle/manifests/*` and `bundle/metadata/*`.
 
-| Generated file | Source | Regenerate via |
-|---|---|---|
-| `config/rbac/role.yaml` | `+kubebuilder:rbac:` markers in `internal/controller/*.go` | `make manifests` |
-| `config/crd/bases/*.yaml` | Go types in `api/v1beta1/*` + kubebuilder markers | `make manifests` |
-| `api/v1beta1/zz_generated.deepcopy.go` | Go types in `api/v1beta1/*` | `make generate` |
-| `config/crd/kustomization.yaml` (resources) | files in `config/crd/bases/` | `make sync-kustomize` |
-| `config/samples/kustomization.yaml` (resources) | `config/samples/neo4j_*.yaml` filenames | `make sync-kustomize` |
-| `config/rbac/<crd>_{editor,viewer}_role.yaml` + kustomization | `spec.{group,names.plural,names.singular}` from each CRD base | `make sync-editor-viewer-roles` |
-| `charts/neo4j-operator/crds/*.yaml` | `config/crd/bases/*.yaml` | `make helm-sync-crds` |
-| `charts/neo4j-operator/templates/clusterrole.yaml` | `config/rbac/role.yaml` rules | `make helm-sync-rbac` |
-| `charts/neo4j-operator/templates/metrics-rbac.yaml` | `config/rbac/metrics_{auth,reader}_role.yaml` | `make helm-sync-rbac` |
-| `charts/neo4j-operator/Chart.yaml` (`artifacthub.io/crds`) | CRD bases + curated descriptions in `scripts/helm-sync-artifacthub-crds.sh` | `make helm-sync-artifacthub-crds` |
-| `bundle/manifests/*` and `bundle/metadata/*` (OperatorHub) | `config/manifests/bases/*.csv.yaml` + everything above | `make bundle` |
-
-Umbrella targets: **`make sync-all`** (every regeneration step, no bundle); **`make ship-prep`** (`sync-all` + `bundle` + `helm-lint` + `check-csv-coverage`, run before tagging a release).
+Full source → regenerator mapping: see the **`regen-artifacts` skill** (`.claude/skills/regen-artifacts/SKILL.md`) — it mirrors the table that used to live here.
 
 CI gate: **`make check-drift`** runs `sync-all` + `bundle` then `git diff --exit-code`. `make bundle` pins the CSV's `createdAt:` to a stable placeholder so concurrent PRs don't conflict; release flow stamps the real value via `make bundle-release`.
 
