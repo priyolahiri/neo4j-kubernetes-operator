@@ -1,5 +1,7 @@
 name: 'Collect Cluster Logs'
-description: 'Collects Kubernetes cluster logs on failure'
+description: 'Collects Kubernetes cluster + Neo4j pod logs. Gate the invocation
+  with `if: failure()` in the CALLING workflow — this action does NOT self-gate
+  (see the note above the steps).'
 
 inputs:
   artifact-name:
@@ -7,11 +9,22 @@ inputs:
     required: false
     default: 'cluster-logs'
 
+# DO NOT put `if: failure()` on the steps below.
+#
+# Inside a composite action, failure()/success() evaluate against THIS action's
+# own step statuses — not the calling job's. The steps here previously carried
+# `if: failure()`, so on a failing run nothing inside the action had failed yet,
+# failure() was false, and every step was silently skipped: no logs were ever
+# collected and the artifact never appeared (verified on run 30304634581, where
+# the whole action opened and closed in 0.2ms after a 5-spec failure).
+#
+# The CALLER decides when to run this action — a workflow-level `if: failure()`
+# does correctly see job status. These steps must stay unconditional.
 runs:
   using: 'composite'
   steps:
     - name: Collect cluster info
-      if: failure()
+      if: always()
       shell: bash
       run: |
         echo "=== Cluster Info ===" > cluster-debug.log
@@ -43,11 +56,45 @@ runs:
         echo "=== Events ===" >> cluster-debug.log
         kubectl get events -A --sort-by='.lastTimestamp' >> cluster-debug.log 2>&1 || true
 
+    # A pod that never became Ready is the usual root cause of an integration
+    # failure (crash-looping Neo4j, OOMKill, a config key Neo4j refuses). Print
+    # those container logs to the JOB LOG as well as the artifact, so a red run
+    # is diagnosable from the log alone without downloading anything.
+    - name: Surface not-Ready pod logs in the job log
+      if: always()
+      shell: bash
+      run: |
+        found=0
+        for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+          case "$ns" in kube-system|kube-public|kube-node-lease|local-path-storage|cert-manager) continue;; esac
+          for pod in $(kubectl get pods -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+            # Empty containerStatuses (pod still Pending) is as interesting as an
+            # explicit ready=false, so treat both as not-Ready.
+            ready=$(kubectl get pod -n "$ns" "$pod" -o jsonpath='{.status.containerStatuses[*].ready}' 2>/dev/null || true)
+            case "$ready" in
+              *false*|'') ;;
+              *) continue;;
+            esac
+            found=1
+            echo "::group::not-Ready $ns/$pod"
+            kubectl get pod -n "$ns" "$pod" -o wide 2>&1 || true
+            echo "--- current container logs (tail 300) ---"
+            kubectl logs -n "$ns" "$pod" --all-containers --tail=300 2>&1 || true
+            echo "--- previous (crashed) container logs (tail 300) ---"
+            kubectl logs -n "$ns" "$pod" --all-containers --previous --tail=300 2>&1 || true
+            echo "::endgroup::"
+          done
+        done
+        if [ "$found" = 0 ]; then
+          echo "(every pod reported Ready — nothing to surface)"
+        fi
+
     - name: Archive cluster logs
-      uses: actions/upload-artifact@v5
-      if: failure()
+      uses: actions/upload-artifact@v7
+      if: always()
       with:
         name: ${{ inputs.artifact-name }}
         path: |
           cluster-debug.log
           /tmp/kind-*
+        if-no-files-found: warn
