@@ -10,7 +10,7 @@ on:
         required: false
         # Pinned CalVer default. Keep in sync with the neo4j-version matrix list
         # in integration.yml (the core lane) — bump both in the same PR.
-        default: '2026.04-enterprise'
+        default: '2026.06-enterprise'
         type: string
       timeout-minutes:
         description: 'Ginkgo suite timeout in minutes. CalVer images are ~2x
@@ -94,11 +94,11 @@ jobs:
       uses: actions/cache@v6
       with:
         path: /tmp/neo4j-image.tar
-        key: neo4j-image-${{ github.event.inputs.neo4j-version || '2026.04-enterprise' }}
+        key: neo4j-image-${{ github.event.inputs.neo4j-version || '2026.06-enterprise' }}
 
     - name: Create cluster and deploy operator
       run: |
-        NEO4J_VERSION="${{ github.event.inputs.neo4j-version || '2026.04-enterprise' }}"
+        NEO4J_VERSION="${{ github.event.inputs.neo4j-version || '2026.06-enterprise' }}"
 
         echo "▶ Creating test cluster..."
         make test-cluster
@@ -172,7 +172,7 @@ jobs:
     - name: Run extended integration tests
       run: |
         export FORCE_COLOR=1
-        echo "📊 Neo4j version: ${{ github.event.inputs.neo4j-version || '2026.04-enterprise' }}"
+        echo "📊 Neo4j version: ${{ github.event.inputs.neo4j-version || '2026.06-enterprise' }}"
         echo "🔗 Running full integration test suite..."
 
         # Use the project-pinned ginkgo binary (make ginkgo downloads to ./bin/ginkgo)
@@ -195,7 +195,7 @@ jobs:
           ./test/integration/... | tee integration-test-output.log
       env:
         KUBECONFIG: /home/runner/.kube/config
-        NEO4J_VERSION: ${{ github.event.inputs.neo4j-version || '2026.04-enterprise' }}
+        NEO4J_VERSION: ${{ github.event.inputs.neo4j-version || '2026.06-enterprise' }}
         GINKGO_TIMEOUT_MIN: ${{ github.event.inputs.timeout-minutes || '150' }}
         FORCE_COLOR: 1
 
@@ -220,7 +220,10 @@ jobs:
 
     - name: Collect cluster logs
       uses: ./.github/actions/collect-logs
-      if: always()
+      # The gate lives HERE, not inside the action: failure() inside a composite
+      # action sees only that action's own steps, so a self-gated action silently
+      # collects nothing. See the note in .github/actions/collect-logs/action.yml.
+      if: failure()
       with:
         artifact-name: integration-test-logs
 
@@ -275,7 +278,7 @@ jobs:
 
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Test Configuration:" >> $GITHUB_STEP_SUMMARY
-        echo "- **Neo4j Version**: ${{ github.event.inputs.neo4j-version || '2026.04-enterprise' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Neo4j Version**: ${{ github.event.inputs.neo4j-version || '2026.06-enterprise' }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Timeout**: ${{ github.event.inputs.timeout-minutes || '150' }} minutes" >> $GITHUB_STEP_SUMMARY
         echo "- **Test Suite**: Full integration suite with custom Neo4j version" >> $GITHUB_STEP_SUMMARY
 

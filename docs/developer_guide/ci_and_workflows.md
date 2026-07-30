@@ -114,7 +114,7 @@ against **both supported Neo4j tracks in parallel**:
 
 - `5.26-enterprise` — the last SemVer LTS; exercises the SemVer-only operator
   paths (V2_ONLY discovery, `system_bootstrapping_strategy`).
-- the pinned CalVer tag (currently `2026.04-enterprise`) — the track new users
+- the pinned CalVer tag (currently `2026.06-enterprise`) — the track new users
   deploy; catches strict-mode fatals (duplicate conf keys, Cypher-25 defaults)
   that 5.26 tolerates.
 

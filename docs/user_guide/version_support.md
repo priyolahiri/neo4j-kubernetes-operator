@@ -10,7 +10,7 @@ the database it manages**, so you can plan upgrades on your own schedule.
 | Your situation | Run this | Why |
 |---|---|---|
 | **Mission-critical, strict change control, SLAs** | **5.26 LTS** (`neo4j:5.26-enterprise`) | Feature-stable, fixes-only, longest support lifecycle. Nothing new churns under you. |
-| **Want the latest features; agile / non-mission-critical** | the **operator-validated CalVer anchor** (named in each operator release, e.g. `2026.04`) | Newest capabilities, validated by the operator's CI. |
+| **Want the latest features; agile / non-mission-critical** | the **operator-validated CalVer anchor** (named in each operator release, e.g. `2026.06`) | Newest capabilities, validated by the operator's CI. |
 | **Evaluating / dev / test** | either | CalVer for newest features, LTS for stability. |
 
 Enterprise Edition images only — Community is not supported. Versions older than

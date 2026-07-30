@@ -232,7 +232,7 @@ node) that can satisfy the 4Gi-per-server floor:
 ```bash
 # Local run on a host with enough RAM (no isRunningInCI()/CI env set):
 make test-cluster && make operator-setup
-NEO4J_VERSION=2026.04-enterprise \
+NEO4J_VERSION=2026.06-enterprise \
   ginkgo run --label-filter='extended' -focus "Property Sharding" ./test/integration/...
 ```
 

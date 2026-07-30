@@ -65,7 +65,7 @@ jobs:
         # so wall-clock ≈ the slower (CalVer) cell, not the sum.
         # When bumping CalVer, update BOTH this list AND the `neo4j-version`
         # default in integration-tests.yml (the Extended lane) in the same PR.
-        neo4j-version: ['5.26-enterprise', '2026.04-enterprise']
+        neo4j-version: ['5.26-enterprise', '2026.06-enterprise']
     permissions:
       contents: read
       packages: read
@@ -205,7 +205,10 @@ jobs:
 
     - name: Collect cluster logs
       uses: ./.github/actions/collect-logs
-      if: always()
+      # The gate lives HERE, not inside the action: failure() inside a composite
+      # action sees only that action's own steps, so a self-gated action silently
+      # collects nothing. See the note in .github/actions/collect-logs/action.yml.
+      if: failure()
       with:
         artifact-name: integration-test-logs-${{ matrix.neo4j-version }}
 
