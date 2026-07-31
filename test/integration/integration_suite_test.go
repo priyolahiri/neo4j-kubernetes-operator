@@ -249,11 +249,21 @@ var _ = AfterSuite(func() {
 // a leaked test password against a fresh cluster fails because the password is
 // generated per BeforeEach. Neo4j requires passwords ≥ 8 characters; pass
 // entropyBytes ≥ 8 to stay comfortably above that.
+//
+// The leading "p" is NOT cosmetic. base64url's alphabet includes '-', so ~1.58%
+// of raw encodings start with a dash. The Neo4j Docker entrypoint feeds the
+// password to `neo4j-admin dbms set-initial-password <password>`, whose picocli
+// parser treats a leading '-' as an OPTION — so the positional parameter never
+// binds and the container dies with "Missing required parameter: '<password>'"
+// and exit code 64. That produced an intermittent, thoroughly misleading
+// CrashLoopBackOff (~1-in-8 extended runs) that was twice misdiagnosed as a
+// Neo4j CalVer regression. Anchoring the first character removes the whole class.
+// See docs/knowledge/operations.md id 89.
 func randomPassword(entropyBytes int) string {
 	buf := make([]byte, entropyBytes)
 	_, err := rand.Read(buf)
 	Expect(err).NotTo(HaveOccurred(), "crypto/rand.Read should not fail")
-	return base64.RawURLEncoding.EncodeToString(buf)
+	return "p" + base64.RawURLEncoding.EncodeToString(buf)
 }
 
 // createTestNamespace creates a unique namespace for a single spec and tears it

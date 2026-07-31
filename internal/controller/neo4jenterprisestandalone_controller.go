@@ -52,6 +52,8 @@ import (
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
@@ -116,6 +118,17 @@ const (
 //+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 
+// standaloneAdminSecretName is the Secret the standalone's DB_USERNAME/DB_PASSWORD
+// are projected from: the explicit spec.auth.adminSecret when set, else the
+// operator default. Single source of truth so the value the validator inspects is
+// the value the pod actually mounts.
+func standaloneAdminSecretName(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) string {
+	if standalone.Spec.Auth != nil && standalone.Spec.Auth.AdminSecret != "" {
+		return standalone.Spec.Auth.AdminSecret
+	}
+	return resources.DefaultAdminSecret
+}
+
 func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -145,8 +158,18 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Validate the standalone configuration
-	if validationErrs := r.Validator.ValidateCreate(standalone); len(validationErrs) > 0 {
+	// Validate the standalone configuration.
+	//
+	// The admin-password shape check is appended here rather than inside
+	// StandaloneValidator because it must read the Secret, and ValidateCreate has
+	// neither a client nor a ctx — plumbing both through would churn every call
+	// site and test for one check. The reconciler has both, and inline validation
+	// from the reconciler is the project's convention anyway (invariant 1).
+	validationErrs := r.Validator.ValidateCreate(standalone)
+	validationErrs = append(validationErrs, validation.ValidateAdminSecretPassword(
+		ctx, r.Client, standalone.Namespace, standaloneAdminSecretName(standalone),
+		field.NewPath("spec", "auth", "adminSecret"))...)
+	if len(validationErrs) > 0 {
 		logger.Error(fmt.Errorf("validation failed: %v", validationErrs), "Validation failed")
 		r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonValidationFailed,
 			fmt.Sprintf("Validation failed: %v", validationErrs))
@@ -2095,7 +2118,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildEnvVars(standalone *neo4jv1be
 	})
 
 	// Determine auth secret name (use default if not specified)
-	authSecretName := "neo4j-admin-secret" // Default secret name
+	authSecretName := standaloneAdminSecretName(standalone)
 	if standalone.Spec.Auth != nil && standalone.Spec.Auth.AdminSecret != "" {
 		authSecretName = standalone.Spec.Auth.AdminSecret
 	}
