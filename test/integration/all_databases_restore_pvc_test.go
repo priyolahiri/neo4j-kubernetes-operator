@@ -87,6 +87,12 @@ var _ = Describe("PVC Cluster Restore — All-Databases and Single-Database (v1.
 		}
 	})
 
+	// The retry budget must be a MULTIPLE of podExecTimeout (60s), not 2x it:
+	// execOut kills a hung exec at that deadline, so a 2-minute budget allowed
+	// only two attempts and one stalled node exhausted it. That is exactly how the
+	// 2026-07-31 extended run failed here — two `signal: killed` execs 65s apart,
+	// against a standalone the operator had already brought up (both databases
+	// reported DatabaseReady). See docs/knowledge/operations.md id 80.
 	cypher := func(pod, db, stmt string) {
 		Eventually(func() error {
 			out, err := execOut(ctx, pod, testNamespace,
@@ -95,7 +101,7 @@ var _ = Describe("PVC Cluster Restore — All-Databases and Single-Database (v1.
 				GinkgoWriter.Printf("cypher (%s) err=%v out=%s\n", db, err, string(out))
 			}
 			return err
-		}, 2*time.Minute, pollInterval).Should(Succeed())
+		}, 6*time.Minute, pollInterval).Should(Succeed())
 	}
 	readCypher := func(pod, db, stmt string) string {
 		out, _ := execOut(ctx, pod, testNamespace,
