@@ -105,6 +105,24 @@ func InstanceTypeV2(v1Type string) (string, bool) {
 	return v2, ok
 }
 
+// multiDatabaseCapableV2Types are the ONLY tiers Aura will create a
+// multi-database instance on. Verified live 2026-07-31: `free` and `professional`
+// are both refused with HTTP 400 / `multi-database-tier-not-supported`, while
+// `business-critical` succeeded and `virtual-dedicated-cloud` passed the tier
+// check (failing later, on the test project not offering the enterprise tier).
+var multiDatabaseCapableV2Types = map[string]bool{
+	InstanceTypeV2BusinessCritical:      true,
+	InstanceTypeV2VirtualDedicatedCloud: true,
+}
+
+// SupportsMultiDatabase reports whether a v2beta1 tier name can host a
+// multi-database instance. Callers should refuse up front rather than let Aura
+// reject the create — the tier is immutable afterwards, so the failure is
+// terminal either way, and only the local check can explain it usefully.
+func SupportsMultiDatabase(v2Type string) bool {
+	return multiDatabaseCapableV2Types[v2Type]
+}
+
 // InstanceV2 is the v2beta1 instance DETAIL shape (GET
 // /organizations/{org}/projects/{project}/instances/{id}). See landmine 4 for
 // how it differs from the v1 Instance.

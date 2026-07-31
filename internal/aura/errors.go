@@ -50,6 +50,13 @@ const (
 	// there is no API to convert an existing instance, so retrying can never
 	// succeed. Verified live 2026-07-31.
 	ReasonMultiDBOnly = "multi-db-only"
+	// ReasonMultiDatabaseTierNotSupported is returned by the v2beta1 instance
+	// create (with HTTP 400, message "Multi-database instances are not supported
+	// by the provided tier") when multi_database is requested on a tier that
+	// cannot host it. Verified live 2026-07-31: `free` and `professional` are
+	// both refused this way; `business-critical` and `virtual-dedicated-cloud`
+	// are accepted. TERMINAL — the tier is immutable on an existing instance.
+	ReasonMultiDatabaseTierNotSupported = "multi-database-tier-not-supported"
 	// ReasonAuraDatabaseNotFound is returned (with HTTP 404) by the v2beta1
 	// per-database endpoints when the database does not exist — including the
 	// second DELETE of an already-deleted database, which is how those deletes
@@ -216,6 +223,18 @@ func IsMultiDatabaseOnly(err error) bool {
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.Reason == ReasonMultiDBOnly
+	}
+	return false
+}
+
+// IsMultiDatabaseTierUnsupported reports whether err is the v2beta1 refusal to
+// CREATE a multi-database instance on a tier that cannot host one. Terminal:
+// type is immutable on an existing AuraInstance (bar the one professional →
+// business-critical upgrade), so retrying the same spec can never succeed.
+func IsMultiDatabaseTierUnsupported(err error) bool {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Reason == ReasonMultiDatabaseTierNotSupported
 	}
 	return false
 }

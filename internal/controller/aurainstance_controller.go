@@ -135,6 +135,12 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		allowCreate := managementAllows(inst.Spec.ManagementPolicies, auraPolicyCreate)
 		id, adopted, err := r.observeOrCreate(ctx, req, inst, apiClient, v2Client, projectID, allowCreate)
 		if err != nil {
+			// A deliberate refusal, or Aura refusing multi_database on this tier,
+			// describes something no retry can change (type is immutable). Name it
+			// and stop, rather than rewriting the same status every 30s.
+			if isAuraRefusal(err) || aura.IsMultiDatabaseTierUnsupported(err) {
+				return r.failTerminal(ctx, req, inst, "MultiDatabaseUnsupported", err)
+			}
 			return r.fail(ctx, req, inst, "CreateFailed", err)
 		}
 		if id == "" {
@@ -603,6 +609,14 @@ func readyReason(status string) string {
 	default:
 		return "NotReady"
 	}
+}
+
+// failTerminal records a failure that no retry can clear — the spec asks for
+// something Aura will never do — so it does NOT requeue. The spec edit that
+// fixes it triggers a fresh reconcile on its own.
+func (r *AuraInstanceReconciler) failTerminal(ctx context.Context, req ctrl.Request, inst *neo4jv1beta1.AuraInstance, reason string, cause error) (ctrl.Result, error) {
+	_, _ = r.fail(ctx, req, inst, reason, cause)
+	return ctrl.Result{}, nil
 }
 
 // fail records a failure on status and requeues without a hard error when the

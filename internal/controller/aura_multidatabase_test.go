@@ -108,6 +108,16 @@ func TestMultiDatabaseCreateRequest(t *testing.T) {
 		t.Error("multi_database must be requested explicitly — it is the entire point of this path")
 	}
 
+	// enterprise-db maps to virtual-dedicated-cloud, the other multi-database
+	// capable tier — it must be accepted.
+	vdc := base()
+	vdc.Spec.Type = "enterprise-db"
+	if got, err := multiDatabaseCreateRequest(vdc, "inst"); err != nil {
+		t.Errorf("enterprise-db must be accepted: %v", err)
+	} else if got.Type != aura.InstanceTypeV2VirtualDedicatedCloud {
+		t.Errorf("Type = %q, want %q", got.Type, aura.InstanceTypeV2VirtualDedicatedCloud)
+	}
+
 	// The AuraDS tiers have no v2beta1 equivalent, so this must refuse rather
 	// than send a plausible-looking substitute to an irreversible create.
 	ds := base()
@@ -116,6 +126,26 @@ func TestMultiDatabaseCreateRequest(t *testing.T) {
 		t.Error("enterprise-ds must be refused: it has no v2beta1 tier")
 	} else if !isAuraRefusal(err) {
 		t.Errorf("must be a refusal (never retried, always explained), got %T", err)
+	}
+
+	// Aura refuses multi_database on the smaller tiers (verified live: HTTP 400
+	// multi-database-tier-not-supported for both `free` and `professional`).
+	// Refusing locally is what makes the message actionable — the CEL rule blocks
+	// this on write, so only a pre-existing CR reaches here.
+	for _, tier := range []string{"free-db", "professional-db"} {
+		small := base()
+		small.Spec.Type = tier
+		_, err := multiDatabaseCreateRequest(small, "inst")
+		if err == nil {
+			t.Errorf("%s: must be refused — Aura rejects multi_database on this tier", tier)
+			continue
+		}
+		if !isAuraRefusal(err) {
+			t.Errorf("%s: must be a refusal, got %T", tier, err)
+		}
+		if !strings.Contains(err.Error(), "business-critical") {
+			t.Errorf("%s: refusal must name the tiers that DO work, got %q", tier, err.Error())
+		}
 	}
 
 	// Fields v2beta1 silently ignores must be refused, not dropped: dropping them

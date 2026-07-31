@@ -137,7 +137,8 @@ kubectl -n neo4j wait aurainstance/analytics --for=condition=Ready --timeout=20m
 > **`multiDatabase: true` is not optional if you want step 4.** An Aura instance
 > can only hold databases beyond its own built-in one if it was created as
 > multi-database, and Aura fixes that at creation — picking a Business Critical
-> or dedicated tier is *not* on its own enough. There is no way to convert an
+> or dedicated tier is *not* on its own enough (though it is necessary: only
+> `business-critical` and `enterprise-db` support the flag at all). There is no way to convert an
 > existing instance, so an instance created without the flag (including every
 > instance created by earlier operator versions) can never host an
 > `AuraDatabase`. Setting it moves the create call to the Aura **v2beta1** API,
@@ -301,9 +302,9 @@ spec:
   deletionPolicy: Delete        # Delete drops the DB on CR delete; Orphan leaves it
 ```
 
-Additional databases require an instance created with `multiDatabase: true` on a
-tier that supports it (Business Critical / dedicated) — the tier alone is not
-enough, and the flag cannot be added later. Against any other instance the CR
+Additional databases require an instance created with `multiDatabase: true` on
+`business-critical` or `enterprise-db` — the tier alone is not enough, and the
+flag cannot be added later. Against any other instance the CR
 reports `Ready=False`, reason `InstanceNotMultiDatabase`, and stops retrying.
 Full field reference: [`AuraDatabase`](../api_reference/auradatabase.md).
 

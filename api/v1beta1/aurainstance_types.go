@@ -62,7 +62,7 @@ type AuraInstanceSource struct {
 // +kubebuilder:validation:XValidation:rule="has(self.source) == has(oldSelf.source) && (!has(self.source) || self.source == oldSelf.source)",message="source is immutable"
 // +kubebuilder:validation:XValidation:rule="has(self.multiDatabase) == has(oldSelf.multiDatabase) && (!has(self.multiDatabase) || self.multiDatabase == oldSelf.multiDatabase)",message="multiDatabase is immutable: Aura fixes it when the instance is created and offers no way to convert an existing instance"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.organizationId) || (has(self.organizationId) && self.organizationId == oldSelf.organizationId)",message="organizationId is immutable once set"
-// +kubebuilder:validation:XValidation:rule="!has(self.multiDatabase) || !self.multiDatabase || self.type in ['free-db','professional-db','business-critical','enterprise-db']",message="multiDatabase requires a tier the Aura v2beta1 API knows (free-db, professional-db, business-critical, enterprise-db); the AuraDS tiers have no v2beta1 equivalent"
+// +kubebuilder:validation:XValidation:rule="!has(self.multiDatabase) || !self.multiDatabase || self.type in ['business-critical','enterprise-db']",message="multiDatabase is only supported on business-critical or enterprise-db (Virtual Dedicated Cloud); Aura refuses it on every other tier"
 // +kubebuilder:validation:XValidation:rule="!has(self.multiDatabase) || !self.multiDatabase || (!has(self.storage) && !has(self.vectorOptimized) && !has(self.graphAnalyticsPlugin) && !has(self.secondariesCount) && !has(self.cdcEnrichmentMode) && !has(self.customerManagedKeyId) && !has(self.source))",message="multiDatabase creates the instance through the Aura v2beta1 API, which accepts only name/type/cloudProvider/region/memory and SILENTLY IGNORES every other field: unset storage, vectorOptimized, graphAnalyticsPlugin, secondariesCount, cdcEnrichmentMode, customerManagedKeyId and source"
 type AuraInstanceSpec struct {
 	// ProviderConfigRef selects the AuraProviderConfig (credentials + defaults +
@@ -151,7 +151,8 @@ type AuraInstanceSpec struct {
 	// MultiDatabase requests a MULTI-DATABASE instance, the only kind that can
 	// host more than the one database Aura creates with it — i.e. the only kind
 	// AuraDatabase, AuraDatabaseBackup and AuraDatabaseRestore can be used
-	// against.
+	// against. Supported on business-critical and enterprise-db (Virtual
+	// Dedicated Cloud) only; Aura rejects it on free-db and professional-db.
 	//
 	// Immutable, because Aura fixes it at creation and publishes no way to
 	// convert an existing instance. Only `true` changes anything: an unset or

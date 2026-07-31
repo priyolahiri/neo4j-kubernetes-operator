@@ -177,7 +177,8 @@ spec:
                   MultiDatabase requests a MULTI-DATABASE instance, the only kind that can
                   host more than the one database Aura creates with it — i.e. the only kind
                   AuraDatabase, AuraDatabaseBackup and AuraDatabaseRestore can be used
-                  against.
+                  against. Supported on business-critical and enterprise-db (Virtual
+                  Dedicated Cloud) only; Aura rejects it on free-db and professional-db.
 
                   Immutable, because Aura fixes it at creation and publishes no way to
                   convert an existing instance. Only `true` changes anything: an unset or
@@ -335,11 +336,10 @@ spec:
             - message: organizationId is immutable once set
               rule: '!has(oldSelf.organizationId) || (has(self.organizationId) &&
                 self.organizationId == oldSelf.organizationId)'
-            - message: multiDatabase requires a tier the Aura v2beta1 API knows (free-db,
-                professional-db, business-critical, enterprise-db); the AuraDS tiers
-                have no v2beta1 equivalent
+            - message: multiDatabase is only supported on business-critical or enterprise-db
+                (Virtual Dedicated Cloud); Aura refuses it on every other tier
               rule: '!has(self.multiDatabase) || !self.multiDatabase || self.type
-                in [''free-db'',''professional-db'',''business-critical'',''enterprise-db'']'
+                in [''business-critical'',''enterprise-db'']'
             - message: 'multiDatabase creates the instance through the Aura v2beta1
                 API, which accepts only name/type/cloudProvider/region/memory and
                 SILENTLY IGNORES every other field: unset storage, vectorOptimized,

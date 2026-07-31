@@ -114,3 +114,21 @@ func TestMultiDatabaseOnlyIsTerminalNotAConflict(t *testing.T) {
 		t.Error("ongoing-database-operation is not a multi-database refusal")
 	}
 }
+
+// Requesting multi_database on a tier that cannot host it is a 400, and it is
+// terminal: `type` is immutable on an existing AuraInstance, so the same spec
+// can never succeed. Verified live 2026-07-31 on both `free` and `professional`.
+func TestMultiDatabaseTierUnsupportedIsRecognised(t *testing.T) {
+	e := newAPIError(http.StatusBadRequest, "rid",
+		[]byte(`{"message":"Multi-database instances are not supported by the provided tier",`+
+			`"reason":"multi-database-tier-not-supported"}`))
+	if !IsMultiDatabaseTierUnsupported(e) {
+		t.Fatalf("IsMultiDatabaseTierUnsupported must recognise reason %q", e.Reason)
+	}
+	if IsTransient(e) {
+		t.Error("a 400 must not be transient")
+	}
+	if IsMultiDatabaseOnly(e) {
+		t.Error("this is the CREATE-side refusal, distinct from multi-db-only on database create")
+	}
+}

@@ -57,6 +57,23 @@ func TestInstanceTypeV2MapsTheVocabularies(t *testing.T) {
 	}
 }
 
+func TestSupportsMultiDatabaseMatchesWhatAuraAccepts(t *testing.T) {
+	// Verified live 2026-07-31: business-critical created successfully;
+	// virtual-dedicated-cloud passed the tier check (failing later on the test
+	// project not offering the enterprise tier); free and professional were both
+	// refused with 400 / multi-database-tier-not-supported.
+	for _, ok := range []string{InstanceTypeV2BusinessCritical, InstanceTypeV2VirtualDedicatedCloud} {
+		if !SupportsMultiDatabase(ok) {
+			t.Errorf("SupportsMultiDatabase(%q) = false, want true", ok)
+		}
+	}
+	for _, no := range []string{InstanceTypeV2Free, InstanceTypeV2Professional, "", "business-critical-db"} {
+		if SupportsMultiDatabase(no) {
+			t.Errorf("SupportsMultiDatabase(%q) = true, but Aura refuses it", no)
+		}
+	}
+}
+
 func TestCreateInstanceV2LiveContract(t *testing.T) {
 	const org, proj = "org-1", "proj-1"
 	base := "/v2beta1/organizations/" + org + "/projects/" + proj + "/instances"

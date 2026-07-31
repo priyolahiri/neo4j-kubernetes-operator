@@ -122,6 +122,15 @@ func multiDatabaseCreateRequest(inst *neo4jv1beta1.AuraInstance, name string) (a
 				"multi-database instance, knows only free-db, professional-db, business-critical and enterprise-db",
 			inst.Spec.Type)
 	}
+	// Aura refuses multi_database outright on the smaller tiers (HTTP 400,
+	// multi-database-tier-not-supported). Say so locally: type is immutable, so
+	// the API's rejection would be terminal anyway, and only this message can
+	// point at the actual choice the user has to make.
+	if !aura.SupportsMultiDatabase(v2Type) {
+		return aura.CreateInstanceV2Request{}, refusef(
+			"multiDatabase is not supported on type %q: Aura allows multi-database instances only on "+
+				"business-critical and enterprise-db (Virtual Dedicated Cloud)", inst.Spec.Type)
+	}
 
 	var dropped []string
 	if inst.Spec.Storage != "" {
