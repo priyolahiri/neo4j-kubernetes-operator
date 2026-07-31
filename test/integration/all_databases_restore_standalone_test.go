@@ -130,6 +130,12 @@ var _ = Describe("Standalone All-Databases Restore (v1.13 API)", Label("extended
 			return standalone.Status.Phase
 		}, readyTimeout, pollInterval).Should(Equal("Ready"))
 
+		// Ready proves the HTTP port is open, NOT that Bolt can serve a query —
+		// /conf/health.sh never checks 7687. Every cypher-shell below would
+		// otherwise block on a cold Bolt and be killed at podExecTimeout, which is
+		// how this spec failed three extended runs in a row. See waitForBoltReady.
+		waitForBoltReady(ctx, fmt.Sprintf("%s-0", standalone.Name), testNamespace, adminPass, 6*time.Minute)
+
 		By("Creating two user databases with data")
 		dbInventory = &neo4jv1beta1.Neo4jDatabase{
 			ObjectMeta: metav1.ObjectMeta{Name: "inventory", Namespace: testNamespace},

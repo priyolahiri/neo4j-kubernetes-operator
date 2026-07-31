@@ -97,6 +97,43 @@ func execOut(ctx context.Context, pod, namespace string, command ...string) ([]b
 	return cmd.CombinedOutput()
 }
 
+// boltWarmupPoll is the retry cadence for waitForBoltReady. Deliberately local:
+// pollInterval is declared per-spec-file, not package-wide.
+const boltWarmupPoll = 5 * time.Second
+
+// waitForBoltReady blocks until cypher-shell inside the pod can actually execute a
+// trivial query, then returns.
+//
+// A pod being Ready is NOT that guarantee. Readiness runs /conf/health.sh, which
+// checks the Neo4j process plus a TCP connect to the HTTP port (7474) and never
+// touches Bolt (7687) — see buildStandaloneHealthScript / buildHealthScript. On a
+// loaded node the gap between "HTTP accepts a connection" and "Bolt can serve a
+// query" is minutes, and a cypher-shell issued in that window BLOCKS: it connects,
+// waits, and gets killed at podExecTimeout having printed nothing at all.
+//
+// That is exactly how the standalone all-databases spec failed three extended runs
+// in a row (six consecutive `signal: killed` attempts, empty output every time)
+// while 51 other specs passed. The operator survived the same window only because
+// it retries Bolt with its own long timeouts — it logged 22 read timeouts in that
+// namespace before succeeding.
+//
+// Callers get a bounded, self-describing warm-up instead of an opaque hang.
+func waitForBoltReady(ctx context.Context, pod, namespace, password string, budget time.Duration) {
+	GinkgoHelper()
+	var last string
+	Eventually(func() error {
+		out, err := execOut(ctx, pod, namespace,
+			"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", password, "RETURN 1;")
+		if err != nil {
+			last = fmt.Sprintf("err=%v out=%s", err, string(out))
+		}
+		return err
+	}, budget, boltWarmupPoll).Should(Succeed(), func() string {
+		return fmt.Sprintf("Bolt never became usable in pod %s/%s within %s — readiness only proves the "+
+			"HTTP port is open, not that Bolt can serve a query; last attempt: %s", namespace, pod, budget, last)
+	})
+}
+
 // Initialize timeout based on environment
 func init() {
 	// Increase timeout in CI environments where resources are more constrained
