@@ -41,8 +41,11 @@ import (
 type fakeFleetAPI struct {
 	deployments []aura.Deployment
 	// hasToken reports whether the deployment already holds a token Aura will
-	// not return again.
+	// not return again. NOT observable through GetDeployment — see GetDeployment.
 	hasToken bool
+	// claimed reports whether a DBMS has claimed the token, which is the ONLY
+	// condition under which Aura exposes token metadata on GET.
+	claimed bool
 
 	listCalled   bool
 	createCalled bool
@@ -63,9 +66,13 @@ func (f *fakeFleetAPI) ListDeployments(_ context.Context, _, _ string) ([]aura.D
 	return f.deployments, nil
 }
 
+// Live behaviour: `token` is populated ONLY once a running DBMS has CLAIMED the
+// token. A freshly-minted, never-used token reports token:null — so the fake
+// keys off `claimed`, NOT `hasToken`. If it keyed off hasToken it would hand the
+// provisioner a signal the real API never provides.
 func (f *fakeFleetAPI) GetDeployment(_ context.Context, _, _, id string) (*aura.DetailedDeployment, error) {
 	d := &aura.DetailedDeployment{ID: id, Name: "ns-cluster"}
-	if f.hasToken {
+	if f.claimed {
 		d.Token = &aura.DeploymentToken{
 			AutoRotate:   true,
 			CreationTime: "2026-07-01T00:00:00Z",
@@ -86,15 +93,28 @@ func (f *fakeFleetAPI) DeleteDeployment(_ context.Context, _, _, _ string) error
 	return nil
 }
 
+// POST and PATCH are STRICTLY COMPLEMENTARY on the live API, and each signals
+// the wrong state with an unhelpful HTTP 500 rather than a conflict:
+//
+//	POST  works only when NO token exists
+//	PATCH works only when a token DOES exist
+//
+// Modelling that here is the whole point — the provisioner's create-vs-rotate
+// logic exists to cope with it, and a fake that always succeeds would hide it.
 func (f *fakeFleetAPI) CreateDeploymentToken(_ context.Context, _, _, _ string) (string, error) {
 	f.mintCalled = true
+	if f.hasToken {
+		return "", &aura.APIError{StatusCode: 500, Message: "failed to create api key: no rows in result set"}
+	}
 	f.hasToken = true
 	return "minted-token", nil
 }
 
 func (f *fakeFleetAPI) RotateDeploymentToken(_ context.Context, _, _, _ string) (string, error) {
 	f.rotateCalled = true
-	f.hasToken = true
+	if !f.hasToken {
+		return "", &aura.APIError{StatusCode: 500, Message: "failed to create api key: no rows in result set"}
+	}
 	return "rotated-token", nil
 }
 
@@ -211,8 +231,11 @@ func TestFleetProvision_CreatesDeploymentAndMintsToken(t *testing.T) {
 	if got.Status.AuraFleetManagement == nil || !got.Status.AuraFleetManagement.Provisioned {
 		t.Errorf("status.provisioned not set: %+v", got.Status.AuraFleetManagement)
 	}
-	if got.Status.AuraFleetManagement.TokenExpiryTime == nil {
-		t.Error("expected tokenExpiryTime to be surfaced so an impending expiry is visible")
+	// Token metadata is absent until a DBMS CLAIMS the token — Aura reports
+	// token:null for a freshly minted one. Expecting it here would encode a
+	// behaviour the real API does not have.
+	if got.Status.AuraFleetManagement.TokenExpiryTime != nil {
+		t.Error("tokenExpiryTime must stay empty until the token is claimed")
 	}
 }
 
@@ -261,8 +284,11 @@ func TestFleetProvision_RefusesToRotateARegisteredToken(t *testing.T) {
 	if api.rotateCalled {
 		t.Fatal("must NOT rotate a token that has already been registered successfully")
 	}
-	if api.mintCalled {
-		t.Fatal("must NOT mint: POST token 400s when the deployment already has one")
+	// POST *is* attempted, deliberately: it is the only way to probe whether a
+	// token exists (GET cannot tell us, and POST is the non-destructive half).
+	// Its failure is what proves a token is already there.
+	if !api.mintCalled {
+		t.Error("expected the POST probe to be attempted before deciding to refuse")
 	}
 	msg := ""
 	if got.Status.AuraFleetManagement != nil {
