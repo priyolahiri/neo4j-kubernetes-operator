@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -189,5 +190,36 @@ func TestBuildAllDatabasesRestoreCommand_NoArtifactsErrors(t *testing.T) {
 	}
 	if _, err := r.buildAllDatabasesRestoreCommand(restore, cluster); err == nil {
 		t.Fatalf("expected an error when no per-database artifacts are recorded")
+	}
+}
+
+// A stalled seed must say WHY. The polling branch used to discard both the error
+// and the allocation counts, so a database that never came online — or a SHOW
+// DATABASE that failed on every poll — left the restore in Running for its whole
+// budget with an empty message, no event and no log line. That is exactly how the
+// 2026-07-31 extended run failed, and it made the failure undiagnosable after the
+// fact.
+func TestSeedingProgressMessageDistinguishesStallFromProgress(t *testing.T) {
+	failed := seedingProgressMessage(0, 0, errors.New("ConnectivityError: timeout"))
+	if !strings.Contains(failed, "FAILED") || !strings.Contains(failed, "timeout") {
+		t.Errorf("a failing poll must be reported as such, got %q", failed)
+	}
+
+	recreating := seedingProgressMessage(0, 0, nil)
+	if strings.Contains(recreating, "FAILED") {
+		t.Errorf("no-allocations-yet is not a failure, got %q", recreating)
+	}
+	if !strings.Contains(recreating, "no allocations yet") {
+		t.Errorf("mid-recreate must be distinguishable from a stall, got %q", recreating)
+	}
+
+	progressing := seedingProgressMessage(1, 2, nil)
+	if !strings.Contains(progressing, "1/2") {
+		t.Errorf("partial progress must report the counts, got %q", progressing)
+	}
+
+	// The three must be mutually distinguishable — that is the whole point.
+	if failed == recreating || recreating == progressing || failed == progressing {
+		t.Error("the three states must produce different messages")
 	}
 }
