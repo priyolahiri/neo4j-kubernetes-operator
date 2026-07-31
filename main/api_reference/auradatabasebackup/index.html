@@ -3325,7 +3325,10 @@
 <blockquote>
 <p><strong>⚠️ BETA / best-effort.</strong> Uses the Aura API <strong>v2beta1</strong> (unstable beta). See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a>.</p>
 </blockquote>
-<p>The <code>AuraDatabaseBackup</code> CRD takes an <strong>on-demand</strong> per-database backup on a managed Neo4j Aura instance (per-database backups exist only on multi-database tiers). Like <a href="../aurasnapshot/"><code>AuraSnapshot</code></a>, a backup is one-shot and is <strong>not</strong> deleted from Aura when the CR is removed.</p>
+<p>The <code>AuraDatabaseBackup</code> CRD takes an <strong>on-demand</strong> per-database backup on a managed Neo4j Aura instance. Like <a href="../aurasnapshot/"><code>AuraSnapshot</code></a>, a backup is one-shot and is <strong>not</strong> deleted from Aura when the CR is removed.</p>
+<blockquote>
+<p><strong>Requires a multi-database instance</strong>, since it backs up an <a href="../auradatabase/"><code>AuraDatabase</code></a> — see that page's prerequisite. Two behaviours of the Aura API worth knowing, both verified live: a backup does <strong>not appear in Aura's backup list until it completes</strong> (the operator therefore polls it by ID, so <code>phase</code> progresses normally — but do not expect to see it in the console listing immediately), and <code>exportable</code> means "exportable <em>now</em>", flipping from <code>false</code> to <code>true</code> on completion rather than describing the finished backup up front.</p>
+</blockquote>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>API Version</strong>: <code>neo4j.neo4j.com/v1beta1</code></li>

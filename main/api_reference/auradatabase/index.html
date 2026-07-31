@@ -3326,6 +3326,9 @@
 <p><strong>⚠️ BETA / best-effort.</strong> Uses the Aura API <strong>v2beta1</strong> (an unstable beta — breaking changes allowed without a version bump). The database create body is not fully schema'd upstream and is mirrored from the response shape. See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a>.</p>
 </blockquote>
 <p>The <code>AuraDatabase</code> CRD manages a database on a managed Neo4j Aura instance. Aura manages replication/topology per tier, so there is <strong>no topology knob</strong> — for databases on a self-managed cluster, use <a href="../neo4jdatabase/"><code>Neo4jDatabase</code></a> instead.</p>
+<blockquote>
+<p><strong>Requires a multi-database instance.</strong> An Aura instance can only hold more than its own built-in database if it was created as multi-database, which is fixed at creation and cannot be changed afterwards. Create the target with <a href="../aurainstance/#multi-database-instances"><code>AuraInstance</code></a> <code>spec.multiDatabase: true</code>. Against any other instance — including every instance created by operator versions before this field existed — the API refuses with <em>"Only multi database Instances can add databases"</em> and the CR reports <code>Ready=False</code>, reason <code>InstanceNotMultiDatabase</code>. That is terminal: the operator stops retrying, because no retry can succeed. The fix is a new instance and a data migration, not a spec edit.</p>
+</blockquote>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>API Version</strong>: <code>neo4j.neo4j.com/v1beta1</code></li>

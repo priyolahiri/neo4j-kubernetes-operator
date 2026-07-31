@@ -3325,7 +3325,7 @@
 <blockquote>
 <p><strong>⚠️ BETA / best-effort.</strong> Uses the Aura API <strong>v2beta1</strong> (unstable beta). See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a>.</p>
 </blockquote>
-<p>The <code>AuraDatabaseRestore</code> CRD performs a <strong>one-shot, in-place</strong> restore of a database on a managed Neo4j Aura instance from one of its per-database backups.</p>
+<p>The <code>AuraDatabaseRestore</code> CRD performs a <strong>one-shot, in-place</strong> restore of a database on a managed Neo4j Aura instance from one of its per-database backups. Requires a multi-database instance — see <a href="../auradatabase/"><code>AuraDatabase</code></a>.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>API Version</strong>: <code>neo4j.neo4j.com/v1beta1</code></li>
@@ -3380,7 +3380,7 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td><code>Pending</code>, <code>Restoring</code>, <code>Completed</code>, <code>Error</code>.</td>
+<td><code>Restoring</code> (submitting) → <strong><code>Submitted</code></strong> (terminal success) or <code>Error</code>. It never becomes <code>Completed</code>: Aura runs the restore asynchronously and its v2beta1 database endpoint returns only an <code>id</code> with no status, so completion is <strong>not observable</strong> through the API — verify in the Aura console. Once <code>Submitted</code>, the CR is not reconciled again; a repeated restore would overwrite the database a second time.</td>
 </tr>
 <tr>
 <td><code>startedAt</code></td>

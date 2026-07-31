@@ -3722,7 +3722,11 @@ what caught four real client bugs during the 2026-07-30 re-diff.</p>
 </tr>
 <tr>
 <td><code>AuraDatabase</code> + backup</td>
-<td><code>AuraDatabaseBackup</code> reaches <code>Completed</code> (<strong>not</strong> on first observe — an empty status must read as <code>Pending</code>); <code>AuraDatabaseRestore</code> reports <code>Submitted</code>, never <code>Completed</code></td>
+<td><strong>Needs an instance created with <code>multiDatabase: true</code></strong> — a Business Critical tier alone is not enough, and the flag cannot be added later (<code>docs/knowledge/operations.md</code> id 90). Against any other instance expect <code>Ready=False</code>, reason <code>InstanceNotMultiDatabase</code>, with <strong>no requeue</strong>. On a multi-database instance: <code>AuraDatabaseBackup</code> reaches <code>Completed</code> (<strong>not</strong> on first observe — an empty status must read as <code>Pending</code>, and the backup does not appear in the backups LIST until it completes, so it must be polled by ID); <code>AuraDatabaseRestore</code> reports <code>Submitted</code>, never <code>Completed</code></td>
+</tr>
+<tr>
+<td>Multi-database create</td>
+<td>An <code>AuraInstance</code> with <code>multiDatabase: true</code> + <code>organizationId</code> is created via <strong>v2beta1</strong> (v1 <code>type</code> names are translated), then remains manageable through v1; <code>status.atProvider.multiDatabase</code> reports <code>true</code>. On a v1-created instance the same field stays <strong>absent</strong> (unknown), never <code>false</code></td>
 </tr>
 <tr>
 <td>Console RBAC</td>

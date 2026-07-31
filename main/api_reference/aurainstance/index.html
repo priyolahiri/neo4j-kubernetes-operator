@@ -2421,6 +2421,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#multi-database-instances" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-database instances
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3365,6 +3376,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#multi-database-instances" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-database instances
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3449,6 +3471,11 @@
 <td>Aura project (the API <code>tenant_id</code>). <strong>Immutable.</strong> Falls back to the provider config's <code>defaultProjectId</code> when empty.</td>
 </tr>
 <tr>
+<td><code>organizationId</code></td>
+<td><code>string</code></td>
+<td>Aura organization. <strong>Immutable once set.</strong> Needed only by the v2beta1 code paths (<code>multiDatabase</code> creation and the multi-database status probe); plain v1 management does not use it. Falls back to the provider config's <code>defaultOrganizationId</code>.</td>
+</tr>
+<tr>
 <td><code>cloudProvider</code></td>
 <td><code>string</code></td>
 <td>Enum <code>aws</code> / <code>gcp</code> / <code>azure</code>. <strong>Required. Immutable.</strong></td>
@@ -3512,6 +3539,11 @@
 <td><code>customerManagedKeyId</code></td>
 <td><code>string</code></td>
 <td>Aura-assigned CMK ID (from an <a href="../auracustomermanagedkey/"><code>AuraCustomerManagedKey</code></a> status). <code>enterprise-db</code> / <code>enterprise-ds</code> only. <strong>Immutable once set.</strong></td>
+</tr>
+<tr>
+<td><code>multiDatabase</code></td>
+<td><code>*bool</code></td>
+<td>Requests a <strong>multi-database</strong> instance — the only kind that can host more than the one database Aura creates with it, and therefore the only kind <a href="../auradatabase/"><code>AuraDatabase</code></a>, <a href="../auradatabasebackup/"><code>AuraDatabaseBackup</code></a> and <a href="../auradatabaserestore/"><code>AuraDatabaseRestore</code></a> can target. <strong>Immutable</strong>: Aura fixes it at creation and publishes no way to convert an existing instance. Only <code>true</code> changes anything, and only on <code>business-critical</code> or <code>enterprise-db</code> — Aura refuses it on every other tier. See <a href="#multi-database-instances">Multi-database instances</a>.</td>
 </tr>
 <tr>
 <td><code>source</code></td>
@@ -3686,6 +3718,16 @@
 <td><code>string</code></td>
 <td>Observed instance name.</td>
 </tr>
+<tr>
+<td><code>multiDatabase</code></td>
+<td><code>*bool</code></td>
+<td>Whether the instance can host more than one database. <strong>Unset means unknown, not false</strong> — the flag exists only on the Aura v2beta1 instance detail, which fails for instances created through v1, so the answer is not always knowable. Probed once (it can never change) and cached.</td>
+</tr>
+<tr>
+<td><code>defaultDatabaseId</code></td>
+<td><code>string</code></td>
+<td>The database Aura creates together with a multi-database instance. Reported only by the v2beta1 create response, so populated only for instances this operator created with <code>multiDatabase</code> set.</td>
+</tr>
 </tbody>
 </table>
 <h2 id="immutability">Immutability<a class="headerlink" href="#immutability" title="Anchor link to this section">&para;</a></h2>
@@ -3693,25 +3735,47 @@
 <ul>
 <li><code>cloudProvider</code>, <code>region</code>, <code>version</code></li>
 <li><code>type</code> — <strong>except</strong> the one in-place <code>professional-db</code> → <code>business-critical</code> upgrade</li>
-<li><code>projectId</code>, <code>customerManagedKeyId</code>, <code>instanceId</code> — immutable once set</li>
-<li><code>source</code></li>
+<li><code>projectId</code>, <code>organizationId</code>, <code>customerManagedKeyId</code>, <code>instanceId</code> — immutable once set</li>
+<li><code>source</code>, <code>multiDatabase</code></li>
 </ul>
 <p><code>type</code>/<code>region</code>/<code>memory</code>/<code>version</code> combinations are additionally validated against the live per-project <code>instance_configurations</code> inline in the reconciler (the one check CEL cannot express).</p>
+<h2 id="multi-database-instances">Multi-database instances<a class="headerlink" href="#multi-database-instances" title="Anchor link to this section">&para;</a></h2>
+<p>An Aura instance either can hold several databases or it cannot, and that is decided when the instance is created — Aura publishes no API to convert one. Set <code>spec.multiDatabase: true</code> to get one.</p>
+<p>This has consequences worth knowing before you rely on it:</p>
+<ul>
+<li><strong>It changes which API creates the instance.</strong> <code>multi_database</code> exists only in the Aura <strong>v2beta1</strong> API, so the operator issues the create there and then manages the instance through v1 as usual (observe, resize, pause/resume, upgrade, delete all work against a v2beta1-created instance). v2beta1 is <strong>beta</strong> — see the caveat in <a href="../../user_guide/aura_orchestration/">Aura orchestration</a>.</li>
+<li><strong>Only two tiers support it</strong>: <code>business-critical</code> and <code>enterprise-db</code> (Virtual Dedicated Cloud). <code>free-db</code> and <code>professional-db</code> are rejected by Aura outright (<code>multi-database-tier-not-supported</code>), so the CRD rejects them on write.</li>
+<li><strong>It needs an organization ID</strong>, because the v2beta1 paths are organization-scoped. Set <code>spec.organizationId</code> or <code>defaultOrganizationId</code> on the <a href="../auraproviderconfig/"><code>AuraProviderConfig</code></a>.</li>
+<li><strong>A smaller set of fields applies.</strong> The v2beta1 create accepts only name, type, cloudProvider, region and memory, and <em>silently ignores</em> anything else. So <code>storage</code>, <code>vectorOptimized</code>, <code>graphAnalyticsPlugin</code>, <code>secondariesCount</code>, <code>cdcEnrichmentMode</code>, <code>customerManagedKeyId</code> and <code>source</code> are <strong>rejected</strong> in combination with <code>multiDatabase</code> rather than quietly dropped. <code>version</code> is not sent either — Aura picks the version — although the CRD still requires it.</li>
+<li><strong>Instances created by earlier operator versions are not multi-database</strong>, and cannot be made so. An <code>AuraDatabase</code> against one is refused with <code>Ready=False</code>, reason <code>InstanceNotMultiDatabase</code>; the fix is a new <code>AuraInstance</code> (and a data migration), not a spec edit.</li>
+</ul>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aura-account</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6f2e…</span><span class="w">            </span><span class="c1"># required for the v2beta1 create</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">cloudProvider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcp</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">region</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">europe-west1</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">business-critical</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;5&quot;</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2GB</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">multiDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span></code></pre></div>
+<p><code>status.atProvider.multiDatabase</code> reports the verdict. An <strong>absent</strong> value means unknown, not false: the operator probes v2beta1 once per instance, and that probe cannot succeed for instances created through v1.</p>
 <h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraInstance</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-prod</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aura-account</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">cloudProvider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcp</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">region</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">europe-west1</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">professional-db</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;5&quot;</span>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4GB</span>
-</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">  </span><span class="nt">connectionSecretName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-prod-conn</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraInstance</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-prod</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aura-account</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">cloudProvider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcp</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="nt">region</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">europe-west1</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">professional-db</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;5&quot;</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">  </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4GB</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">  </span><span class="nt">connectionSecretName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-prod-conn</span>
 </span></code></pre></div>
 <h2 id="related-resources">Related Resources<a class="headerlink" href="#related-resources" title="Anchor link to this section">&para;</a></h2>
 <ul>
