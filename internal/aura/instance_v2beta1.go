@@ -18,8 +18,10 @@ package aura
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // ==========================================================================
@@ -205,6 +207,13 @@ func (c *Client) CreateInstanceV2(ctx context.Context, orgID, projectID string, 
 	var out CreateInstanceV2Response
 	if err := c.doV2Data(ctx, http.MethodPost, instanceV2CollectionPath(orgID, projectID), req, &out); err != nil {
 		return nil, err
+	}
+	// An empty ID must not read as success. doV2Data treats a missing or null
+	// `data` field as a no-op, so an unexpected 2xx envelope decodes to a zero
+	// struct with no error — and the caller would store an EMPTY external-ID
+	// annotation, then create another PAID instance on every reconcile.
+	if strings.TrimSpace(out.ID) == "" {
+		return nil, fmt.Errorf("creating instance %q: Aura returned success with no instance id", req.Name)
 	}
 	return &out, nil
 }

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -141,6 +142,11 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			if isAuraRefusal(err) || aura.IsMultiDatabaseTierUnsupported(err) {
 				return r.failTerminal(ctx, req, inst, "MultiDatabaseUnsupported", err)
 			}
+			// Not terminal: the answer may become available later, so keep the
+			// explanation on status and retry rather than binding the wrong instance.
+			if errors.Is(err, errAdoptionUnverified) {
+				return r.fail(ctx, req, inst, "AdoptionBlocked", err)
+			}
 			return r.fail(ctx, req, inst, "CreateFailed", err)
 		}
 		if id == "" {
@@ -223,6 +229,15 @@ func (r *AuraInstanceReconciler) observeOrCreate(
 	for i := range existing {
 		if existing[i].Name == name {
 			id = existing[i].ID
+			// Adoption-by-name must not hand a multiDatabase CR an instance that
+			// cannot host databases. The v1 list cannot tell us — multi_database is
+			// v2beta1-only — so confirm before adopting, and never adopt on a
+			// negative or unconfirmed answer.
+			if wantsMultiDatabase(inst) {
+				if err := r.verifyAdoptableAsMultiDatabase(ctx, inst, v2Client, projectID, id); err != nil {
+					return "", false, err
+				}
+			}
 			if err := r.setExternalID(ctx, req, id); err != nil {
 				return "", false, err
 			}

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,6 +35,7 @@ import (
 type fakeDatabaseAPI struct {
 	createCalled   bool
 	createErr      error
+	restoreErr     error
 	listFn         func() ([]aura.Database, error)
 	getFn          func(id string) (*aura.Database, error)
 	listBackupsFn  func() ([]aura.DatabaseBackup, error)
@@ -87,7 +89,7 @@ func (f *fakeDatabaseAPI) GetDatabaseBackup(_ context.Context, _, _, _, _, id st
 func (f *fakeDatabaseAPI) RestoreDatabase(_ context.Context, _, _, _, _ string, req aura.RestoreDatabaseRequest) error {
 	f.restoreCalls++
 	f.lastRestoreReq = req
-	return nil
+	return f.restoreErr
 }
 
 func dbFactory(f *fakeDatabaseAPI) auraDatabaseClientFactory {
@@ -450,5 +452,119 @@ func TestAuraDatabaseRestore_IsOneShot(t *testing.T) {
 	// so claiming it would assert something the operator cannot know.
 	if got.Status.Phase != "Submitted" {
 		t.Errorf("phase = %q, want Submitted", got.Status.Phase)
+	}
+}
+
+// A restore that was in flight when the operator stopped leaves the ambiguous
+// marker behind. Aura has no idempotency key and no way to read a restore's
+// state, so re-sending could overwrite a database a second time and assuming
+// success could leave a requested restore undone. The only honest move is to stop
+// and say so.
+func TestAuraDatabaseRestore_InFlightAttemptIsNotReplayed(t *testing.T) {
+	scheme := auraTestScheme(t)
+	inst := &neo4jv1beta1.AuraInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "analytics", Namespace: testNS,
+			Annotations: map[string]string{AuraExternalIDAnnotation: "inst-1"},
+		},
+		Spec: neo4jv1beta1.AuraInstanceSpec{CredentialsSecretRef: credRef(), ProjectID: "proj-1"},
+	}
+	db := &neo4jv1beta1.AuraDatabase{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "analytics-db", Namespace: testNS,
+			Annotations: map[string]string{AuraExternalDatabaseAnnotation: "db-1"},
+		},
+		Spec:   neo4jv1beta1.AuraDatabaseSpec{InstanceRef: "analytics", OrganizationID: "org-1"},
+		Status: neo4jv1beta1.AuraDatabaseStatus{DatabaseID: "db-1"},
+	}
+	rs := &neo4jv1beta1.AuraDatabaseRestore{
+		ObjectMeta: metav1.ObjectMeta{Name: "analytics-restore", Namespace: testNS},
+		Spec:       neo4jv1beta1.AuraDatabaseRestoreSpec{DatabaseRef: "analytics-db", BackupID: "bk-1"},
+		// Persisted before the API call, and never cleared — i.e. the process died
+		// without learning the outcome.
+		Status: neo4jv1beta1.AuraDatabaseRestoreStatus{Phase: auraRestorePhaseSubmitting},
+	}
+	api := &fakeDatabaseAPI{}
+	c := newAuraFakeClient(t, scheme, inst, db, rs)
+	r := &AuraDatabaseRestoreReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50), ClientFactory: dbFactory(api),
+	}
+	res, err := r.Reconcile(context.Background(), reqFor(rs))
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if api.restoreCalls != 0 {
+		t.Fatalf("RestoreDatabase called %d times; an attempt of unknown outcome must never be replayed",
+			api.restoreCalls)
+	}
+	if res.RequeueAfter != 0 {
+		t.Error("must not requeue: only a human can check the console and decide")
+	}
+	got := &neo4jv1beta1.AuraDatabaseRestore{}
+	if err := c.Get(context.Background(), reqFor(rs).NamespacedName, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	cond := findCondition(got.Status.Conditions, "Ready")
+	if cond == nil || cond.Reason != "RestoreOutcomeUnknown" {
+		t.Fatalf("Ready = %+v, want reason RestoreOutcomeUnknown", cond)
+	}
+	if !strings.Contains(cond.Message, "Aura console") {
+		t.Errorf("the message must tell the user where to check, got %q", cond.Message)
+	}
+}
+
+// The marker must not wedge a legitimate retry: when Aura itself reports a
+// transient failure, nothing was accepted, so the attempt is cleared and retried.
+func TestAuraDatabaseRestore_TransientFailureStillRetries(t *testing.T) {
+	scheme := auraTestScheme(t)
+	inst := &neo4jv1beta1.AuraInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "analytics", Namespace: testNS,
+			Annotations: map[string]string{AuraExternalIDAnnotation: "inst-1"},
+		},
+		Spec: neo4jv1beta1.AuraInstanceSpec{CredentialsSecretRef: credRef(), ProjectID: "proj-1"},
+	}
+	db := &neo4jv1beta1.AuraDatabase{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "analytics-db", Namespace: testNS,
+			Annotations: map[string]string{AuraExternalDatabaseAnnotation: "db-1"},
+		},
+		Spec:   neo4jv1beta1.AuraDatabaseSpec{InstanceRef: "analytics", OrganizationID: "org-1"},
+		Status: neo4jv1beta1.AuraDatabaseStatus{DatabaseID: "db-1"},
+	}
+	rs := &neo4jv1beta1.AuraDatabaseRestore{
+		ObjectMeta: metav1.ObjectMeta{Name: "analytics-restore", Namespace: testNS},
+		Spec:       neo4jv1beta1.AuraDatabaseRestoreSpec{DatabaseRef: "analytics-db", BackupID: "bk-1"},
+	}
+	// "another operation is in flight" — the documented retryable case.
+	api := &fakeDatabaseAPI{restoreErr: &aura.APIError{
+		StatusCode: 409, Reason: aura.ReasonOngoingDatabaseOperation, Message: "busy",
+	}}
+	c := newAuraFakeClient(t, scheme, inst, db, rs)
+	r := &AuraDatabaseRestoreReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50), ClientFactory: dbFactory(api),
+	}
+	res, err := r.Reconcile(context.Background(), reqFor(rs))
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if res.RequeueAfter == 0 {
+		t.Error("a transient failure must requeue")
+	}
+	got := &neo4jv1beta1.AuraDatabaseRestore{}
+	if err := c.Get(context.Background(), reqFor(rs).NamespacedName, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Status.Phase == auraRestorePhaseSubmitting {
+		t.Error("the ambiguous marker must be cleared when Aura reported the failure, or the retry " +
+			"is blocked as if the outcome were unknown")
+	}
+	// And the retry must actually go through.
+	api.restoreErr = nil
+	if _, err := r.Reconcile(context.Background(), reqFor(rs)); err != nil {
+		t.Fatalf("Reconcile #2: %v", err)
+	}
+	if api.restoreCalls != 2 {
+		t.Errorf("RestoreDatabase calls = %d, want 2 (one failed, one retried)", api.restoreCalls)
 	}
 }

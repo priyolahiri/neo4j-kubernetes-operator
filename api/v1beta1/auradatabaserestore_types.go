@@ -49,10 +49,13 @@ type AuraDatabaseRestoreSpec struct {
 
 // AuraDatabaseRestoreStatus is the observed state of the restore.
 type AuraDatabaseRestoreStatus struct {
-	// Phase mirrors the restore outcome: Restoring while submitting, then
-	// Submitted (the TERMINAL success phase) or Error. It is never Completed —
-	// Aura restores asynchronously and its v2beta1 database endpoint exposes no
-	// status, so completion cannot be observed and is not claimed.
+	// Phase mirrors the restore outcome: Restoring while preparing, Submitting
+	// while the request is in flight, then Submitted (the TERMINAL success phase)
+	// or Error. It is never Completed — Aura restores asynchronously and its
+	// v2beta1 database endpoint exposes no status, so completion cannot be
+	// observed and is not claimed. A CR found in Submitting means the operator
+	// stopped mid-request and the outcome is unknown; it is not retried, because
+	// repeating a restore overwrites the database again.
 	// +optional
 	Phase string `json:"phase,omitempty"`
 

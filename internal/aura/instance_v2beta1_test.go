@@ -209,3 +209,38 @@ func TestGetInstanceV2ReadsMultiDatabase(t *testing.T) {
 		t.Errorf("Name = %q, want op-verify-mdb", list[0].Name)
 	}
 }
+
+// doV2Data treats a missing or null `data` field as a no-op, so an unexpected 2xx
+// envelope decodes to a zero struct with NO error. For a create that is the worst
+// possible outcome: the caller stores an empty external-ID annotation and creates
+// another PAID instance on every reconcile. That exact shape (bare vs enveloped)
+// is what this file's landmines document, so the ID must be validated.
+func TestCreateInstanceV2RejectsASuccessWithNoID(t *testing.T) {
+	const org, proj = "org-1", "proj-1"
+	for _, body := range []string{
+		`{"data":null}`,
+		`{}`,
+		`{"data":{"name":"x"}}`,
+		// A BARE response — the divergence that caused the fleet bugs.
+		`{"id":"but-not-under-data"}`,
+	} {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/oauth/token" {
+				writeToken(w, "tok")
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(body))
+		}))
+		resp, err := newTestClient(t, srv, 1000).CreateInstanceV2(context.Background(), org, proj,
+			CreateInstanceV2Request{Name: "x", Type: InstanceTypeV2BusinessCritical})
+		srv.Close()
+		if err == nil {
+			t.Errorf("body %s: got success with resp=%+v; an empty id must be an error, not an "+
+				"annotation that lets the next reconcile create another paid instance", body, resp)
+		}
+		if resp != nil {
+			t.Errorf("body %s: must not return a response alongside the error", body)
+		}
+	}
+}

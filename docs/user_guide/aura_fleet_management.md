@@ -167,7 +167,10 @@ The operator then:
 2. Mints a registration token and stores it in `<name>-aura-fleet-token`
    (override with `provision.tokenSecretName`). The Secret is owned by the CR, so
    it is garbage-collected with it.
-3. Registers that token over Bolt exactly as the manual flow does.
+3. Registers that token over Bolt exactly as the manual flow does — reading it
+   back out of the Secret from step 2. There is no `tokenSecretRef` to point at
+   (the two are mutually exclusive), so the registration phase resolves the
+   provisioned Secret name itself.
 
 The Aura deployment ID is pinned to the CR in the
 `neo4j.com/external-fleet-deployment-id` annotation. **Do not remove it** — it is
@@ -181,7 +184,7 @@ That shapes the recovery behaviour when the token Secret is deleted:
 | `provision.tokenPolicy` | Behaviour when the Secret is missing |
 |---|---|
 | `CreateIfMissing` (default) | Mints a token only if the Aura deployment has none. If the deployment already has a **registered** token, the operator **refuses to rotate** and explains why in `status.auraFleetManagement.message` — rotating would invalidate a working registration to fix a missing file. |
-| `Rotate` | Always rotates to obtain a fresh token. **This invalidates the existing registration**, so the DBMS re-registers with the new token. |
+| `Rotate` | Always rotates to obtain a fresh token. **This invalidates the existing registration**, so the operator clears `status.auraFleetManagement.registered` before rotating and the DBMS re-registers with the new token. |
 
 If you hit the refusal, either restore the Secret from backup or opt into
 `tokenPolicy: Rotate` deliberately.

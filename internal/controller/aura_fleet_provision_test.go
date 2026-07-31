@@ -18,8 +18,10 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -322,6 +324,32 @@ func TestFleetProvision_RotatePolicyReplacesTheToken(t *testing.T) {
 	}
 }
 
+// Rotation invalidates whatever the DBMS registered, so `registered` MUST be
+// cleared — otherwise the registration phase short-circuits on the stale flag and
+// the replacement token is never registered, leaving a deployment holding a token
+// nothing has claimed.
+func TestFleetProvision_RotateClearsRegisteredBeforeReplacingTheToken(t *testing.T) {
+	p := fleetProvisionSpec()
+	p.TokenPolicy = "Rotate"
+	cl := fleetCluster("cluster", p)
+	cl.Annotations = map[string]string{AuraFleetDeploymentAnnotation: "dep-1"}
+	cl.Status.AuraFleetManagement = &neo4jv1beta1.AuraFleetManagementStatus{Registered: true}
+	api := &fakeFleetAPI{hasToken: true}
+
+	_, got := runFleetProvision(t, cl, api)
+
+	if !api.rotateCalled {
+		t.Fatal("tokenPolicy=Rotate must rotate")
+	}
+	if got.Status.AuraFleetManagement == nil {
+		t.Fatal("expected fleet status")
+	}
+	if got.Status.AuraFleetManagement.Registered {
+		t.Error("registered must be cleared by a rotation: the previous registration used the token " +
+			"that was just invalidated, and leaving it set makes the registration phase skip the new one")
+	}
+}
+
 // Never-registered + Aura already holds a token: nothing works today, so
 // replacing it costs nothing and is the only way forward.
 func TestFleetProvision_ReplacesUnusableTokenWhenNeverRegistered(t *testing.T) {
@@ -494,5 +522,120 @@ func TestFleetDeploymentNameCapped(t *testing.T) {
 	explicit := &neo4jv1beta1.AuraFleetProvisionSpec{DeploymentName: "chosen"}
 	if fleetDeploymentName(explicit, "ns", "cl") != "chosen" {
 		t.Error("an explicit deploymentName must win")
+	}
+}
+
+// The token can arrive two mutually exclusive ways, and the registration phase
+// must read whichever one applies. Keying only off tokenSecretRef meant a
+// provisioned cluster minted a token into a Secret that nothing ever read — the
+// feature stopped one step short of the thing it exists to automate.
+func TestResolveFleetTokenSource(t *testing.T) {
+	t.Run("user-supplied wins and defaults its key", func(t *testing.T) {
+		spec := &neo4jv1beta1.AuraFleetManagementSpec{
+			TokenSecretRef: &neo4jv1beta1.SecretKeyRef{Name: "mine"},
+		}
+		name, key, ok := ResolveFleetTokenSource(spec, "c1")
+		if !ok || name != "mine" || key != "token" {
+			t.Errorf("got (%q,%q,%v), want (mine,token,true)", name, key, ok)
+		}
+	})
+
+	t.Run("explicit key is honoured", func(t *testing.T) {
+		spec := &neo4jv1beta1.AuraFleetManagementSpec{
+			TokenSecretRef: &neo4jv1beta1.SecretKeyRef{Name: "mine", Key: "aura"},
+		}
+		if _, key, _ := ResolveFleetTokenSource(spec, "c1"); key != "aura" {
+			t.Errorf("key = %q, want aura", key)
+		}
+	})
+
+	t.Run("provision resolves the minted Secret", func(t *testing.T) {
+		spec := &neo4jv1beta1.AuraFleetManagementSpec{Provision: &neo4jv1beta1.AuraFleetProvisionSpec{}}
+		name, key, ok := ResolveFleetTokenSource(spec, "c1")
+		if !ok {
+			t.Fatal("provision must be a valid token source, or the minted token is never registered")
+		}
+		// Must match what Phase 0 actually writes, or registration reads a Secret
+		// that does not exist.
+		if want := fleetTokenSecretName(spec.Provision, "c1"); name != want {
+			t.Errorf("name = %q, want %q (the Secret Phase 0 writes)", name, want)
+		}
+		if key != auraFleetTokenSecretKey {
+			t.Errorf("key = %q, want %q (the key Phase 0 writes)", key, auraFleetTokenSecretKey)
+		}
+	})
+
+	t.Run("provision honours an explicit Secret name", func(t *testing.T) {
+		spec := &neo4jv1beta1.AuraFleetManagementSpec{
+			Provision: &neo4jv1beta1.AuraFleetProvisionSpec{TokenSecretName: "custom"},
+		}
+		if name, _, _ := ResolveFleetTokenSource(spec, "c1"); name != "custom" {
+			t.Errorf("name = %q, want custom", name)
+		}
+	})
+
+	t.Run("neither configured is not a source", func(t *testing.T) {
+		if _, _, ok := ResolveFleetTokenSource(&neo4jv1beta1.AuraFleetManagementSpec{}, "c1"); ok {
+			t.Error("plugin-only mode must not claim a token source")
+		}
+		if _, _, ok := ResolveFleetTokenSource(nil, "c1"); ok {
+			t.Error("nil spec must not claim a token source")
+		}
+	})
+}
+
+// The bug this pins: Phase 2 keyed off spec.tokenSecretRef, which CEL forces to
+// be nil whenever spec.provision is set — so a provisioned DBMS minted a token,
+// wrote it to a Secret, and then logged "registration deferred" forever. The
+// feature exists to remove the manual console step, and it stopped one step short.
+//
+// Asserting on the "cannot read token secret <name>" message is deliberate: it
+// proves BOTH that the gate was passed and that the right Secret was consulted.
+// The registration itself needs a live Bolt connection, so it cannot be reached
+// here.
+func TestFleetRegistration_ConsumesTheProvisionedSecret(t *testing.T) {
+	scheme := auraTestScheme(t)
+	sa := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+		ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: testNS},
+		Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+			AuraFleetManagement: &neo4jv1beta1.AuraFleetManagementSpec{
+				Enabled:   true,
+				Provision: &neo4jv1beta1.AuraFleetProvisionSpec{},
+				// tokenSecretRef deliberately absent — CEL forbids it alongside provision.
+			},
+		},
+		Status: neo4jv1beta1.Neo4jEnterpriseStandaloneStatus{Phase: "Ready"},
+	}
+	sts := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: testNS},
+		Spec: appsv1.StatefulSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "sa"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "sa"}},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "neo4j", Image: "neo4j:5.26-enterprise"}}},
+			},
+		},
+	}
+	c := newAuraFakeClient(t, scheme, sa, sts)
+	r := &Neo4jEnterpriseStandaloneReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+	}
+	if err := r.reconcileAuraFleetManagement(context.Background(), sa); err != nil {
+		t.Fatalf("reconcileAuraFleetManagement: %v", err)
+	}
+
+	got := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(sa), got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Status.AuraFleetManagement == nil {
+		t.Fatal("registration never ran: with provision set and no tokenSecretRef, Phase 2 returned early " +
+			"and the minted token would never be registered")
+	}
+	msg := got.Status.AuraFleetManagement.Message
+	want := fleetTokenSecretName(sa.Spec.AuraFleetManagement.Provision, "sa")
+	if !strings.Contains(msg, want) {
+		t.Errorf("status message = %q, want it to name the provisioned Secret %q — otherwise Phase 2 is "+
+			"reading the wrong Secret", msg, want)
 	}
 }

@@ -2571,8 +2571,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 	}
 
 	// --- Phase 2: token registration ---
-	if spec.TokenSecretRef == nil {
-		logger.Info("Aura Fleet Management enabled but no tokenSecretRef configured; plugin installed, registration deferred")
+	// Either source is valid and they are mutually exclusive — see
+	// ResolveFleetTokenSource. Keying off tokenSecretRef alone meant a provisioned
+	// standalone never registered its own minted token.
+	secretName, secretKey, haveTokenSource := ResolveFleetTokenSource(spec, standalone.Name)
+	if !haveTokenSource {
+		logger.Info("Aura Fleet Management enabled but neither tokenSecretRef nor provision is configured; " +
+			"plugin installed, registration deferred")
 		return nil
 	}
 
@@ -2585,12 +2590,6 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 	if standalone.Status.AuraFleetManagement != nil && standalone.Status.AuraFleetManagement.Registered {
 		logger.V(1).Info("Aura Fleet Management already registered; nothing to do")
 		return nil
-	}
-
-	secretName := spec.TokenSecretRef.Name
-	secretKey := spec.TokenSecretRef.Key
-	if secretKey == "" {
-		secretKey = "token"
 	}
 
 	secret := &corev1.Secret{}

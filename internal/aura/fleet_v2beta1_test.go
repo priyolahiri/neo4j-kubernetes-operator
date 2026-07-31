@@ -214,3 +214,35 @@ func TestFleetDeleteTreats404AsSuccess(t *testing.T) {
 		t.Errorf("DeleteDeploymentToken on 404 = %v, want nil", err)
 	}
 }
+
+// Same class as TestCreateInstanceV2RejectsASuccessWithNoID: an empty deployment
+// ID or token returned as success is the failure this file's landmine 1 describes
+// — an empty external-ID annotation, and another deployment registered on every
+// reconcile.
+func TestFleetCreatesRejectEmptyIdentifiers(t *testing.T) {
+	const org, proj = "org-1", "proj-1"
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/oauth/token":
+			writeToken(w, "tok")
+		default:
+			// Enveloped, 2xx, but carrying nothing useful.
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		}
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv, 1000)
+	ctx := context.Background()
+
+	if id, err := c.CreateDeployment(ctx, org, proj, "dep"); err == nil {
+		t.Errorf("CreateDeployment returned id=%q with no error; an empty id must fail", id)
+	}
+	if tok, err := c.CreateDeploymentToken(ctx, org, proj, "dep-1"); err == nil {
+		t.Errorf("CreateDeploymentToken returned %q with no error; an empty token must fail, or "+
+			"ensureToken skips its PATCH fallback and stores nothing", tok)
+	}
+	if tok, err := c.RotateDeploymentToken(ctx, org, proj, "dep-1"); err == nil {
+		t.Errorf("RotateDeploymentToken returned %q with no error; here it is worst of all — the old "+
+			"token is already invalid and the replacement is unrecoverable", tok)
+	}
+}
