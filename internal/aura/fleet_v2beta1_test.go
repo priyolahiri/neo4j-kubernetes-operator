@@ -27,12 +27,12 @@ import (
 // particular its MIXED envelope handling — which is the easiest thing here to
 // get wrong, since most of v2beta1 is uniformly data-wrapped:
 //
-//	DATA-WRAPPED: every GET, INCLUDING the single-deployment read
-//	BARE:         POST deployments, POST/PATCH token
+//	DATA-WRAPPED: EVERYTHING — every GET, both POSTs, and the PATCH
 //	NO BODY:      DELETE deployment, DELETE token
 //
-// The single-deployment GET is data-wrapped even though the published spec
-// declares it bare. Fixtures below follow the LIVE API (verified 2026-07-30),
+// The published spec declares the single-deployment GET, POST deployments and
+// POST/PATCH token as BARE and is wrong about all four. Fixtures below follow
+// the LIVE API (full lifecycle exercised against a real project 2026-07-31),
 // including the two field names where live disagrees with the spec
 // (token.auto_rotated, Server.mode_constraint) and the fact that the shard /
 // txn / lag / role / writer fields live ONLY on the per-server databases
@@ -51,10 +51,9 @@ func TestFleetDeploymentsAndTokens(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":[{"id":"dep-1","name":"prod-cluster","status":"HEALTHY",` +
 				`"connection_url":"neo4j+s://x","created_by":"u-1"}]}`))
 
-		// POST deployments is BARE and returns just an id.
+		// POST deployments is DATA-WRAPPED (live), HTTP 200 not 201.
 		case r.Method == http.MethodPost && r.URL.Path == base:
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"id":"dep-new"}`))
+			_, _ = w.Write([]byte(`{"data":{"id":"dep-new"}}`))
 
 		// Single GET is DATA-WRAPPED (live), and the token field is
 		// `auto_rotated`, not the spec's `auto_rotate`.
@@ -65,12 +64,11 @@ func TestFleetDeploymentsAndTokens(t *testing.T) {
 				`"creation_time":"2026-07-01T00:00:00Z","claimed_time":"2026-07-01T00:05:00Z",` +
 				`"expiry_time":"2027-07-01T00:00:00Z"}}}`))
 
-		// Token POST/PATCH are BARE and carry the secret exactly once.
+		// Token POST/PATCH are DATA-WRAPPED (live) and carry the secret once.
 		case r.Method == http.MethodPost && r.URL.Path == base+"/"+dep+"/token":
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"token":"minted-token-abc"}`))
+			_, _ = w.Write([]byte(`{"data":{"token":"minted-token-abc"}}`))
 		case r.Method == http.MethodPatch && r.URL.Path == base+"/"+dep+"/token":
-			_, _ = w.Write([]byte(`{"token":"rotated-token-def"}`))
+			_, _ = w.Write([]byte(`{"data":{"token":"rotated-token-def"}}`))
 		case r.Method == http.MethodDelete && r.URL.Path == base+"/"+dep+"/token":
 			w.WriteHeader(http.StatusNoContent)
 
@@ -118,7 +116,7 @@ func TestFleetDeploymentsAndTokens(t *testing.T) {
 
 	id, err := c.CreateDeployment(ctx, org, proj, "new-cluster")
 	if err != nil || id != "dep-new" {
-		t.Errorf("CreateDeployment = %q, err=%v (POST is NOT data-wrapped)", id, err)
+		t.Errorf("CreateDeployment = %q, err=%v (POST IS data-wrapped — an empty id here means doV2JSON crept back)", id, err)
 	}
 
 	detail, err := c.GetDeployment(ctx, org, proj, dep)

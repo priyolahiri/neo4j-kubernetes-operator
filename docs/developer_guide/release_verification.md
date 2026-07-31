@@ -142,7 +142,8 @@ what caught four real client bugs during the 2026-07-30 re-diff.
 | Scenario | Verify |
 |---|---|
 | `AuraInstance` lifecycle | create → Ready → resize (`memory`) → pause → resume → delete; `status.instanceId` pinned via annotation |
-| `AuraDatabase` + backup | `AuraDatabaseBackup` reaches `Completed` (**not** on first observe — an empty status must read as `Pending`); `AuraDatabaseRestore` reports `Submitted`, never `Completed` |
+| `AuraDatabase` + backup | **Needs an instance created with `multiDatabase: true`** — a Business Critical tier alone is not enough, and the flag cannot be added later (`docs/knowledge/operations.md` id 90). Against any other instance expect `Ready=False`, reason `InstanceNotMultiDatabase`, with **no requeue**. On a multi-database instance: `AuraDatabaseBackup` reaches `Completed` (**not** on first observe — an empty status must read as `Pending`, and the backup does not appear in the backups LIST until it completes, so it must be polled by ID); `AuraDatabaseRestore` reports `Submitted`, never `Completed` |
+| Multi-database create | An `AuraInstance` with `multiDatabase: true` + `organizationId` is created via **v2beta1** (v1 `type` names are translated), then remains manageable through v1; `status.atProvider.multiDatabase` reports `true`. On a v1-created instance the same field stays **absent** (unknown), never `false` |
 | Console RBAC | `AuraProjectMember` for an existing **org** member is added without an invite; role PATCH bodies are accepted (they are `{organization_roles:[…]}` / `{project_roles:[…]}`, not a scalar) |
 | Fleet `provision` | Deployment registered, token minted into the Secret, DBMS registers; deleting the Secret with the default `tokenPolicy` **refuses to rotate** and says why |
 

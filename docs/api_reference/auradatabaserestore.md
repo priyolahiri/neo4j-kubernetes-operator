@@ -2,7 +2,7 @@
 
 > **⚠️ BETA / best-effort.** Uses the Aura API **v2beta1** (unstable beta). See the [Aura Orchestration Guide](../user_guide/aura_orchestration.md).
 
-The `AuraDatabaseRestore` CRD performs a **one-shot, in-place** restore of a database on a managed Neo4j Aura instance from one of its per-database backups.
+The `AuraDatabaseRestore` CRD performs a **one-shot, in-place** restore of a database on a managed Neo4j Aura instance from one of its per-database backups. Requires a multi-database instance — see [`AuraDatabase`](auradatabase.md).
 
 ## Overview
 
@@ -27,7 +27,7 @@ Set exactly one of `backupId` or `backupRef`.
 
 | Field | Type | Description |
 |---|---|---|
-| `phase` | `string` | `Pending`, `Restoring`, `Completed`, `Error`. |
+| `phase` | `string` | `Restoring` (submitting) → **`Submitted`** (terminal success) or `Error`. It never becomes `Completed`: Aura runs the restore asynchronously and its v2beta1 database endpoint returns only an `id` with no status, so completion is **not observable** through the API — verify in the Aura console. Once `Submitted`, the CR is not reconciled again; a repeated restore would overwrite the database a second time. |
 | `startedAt` | `*metav1.Time` | When the restore was submitted. |
 | `finishedAt` | `*metav1.Time` | When the restore reached a terminal state. |
 | `conditions` | `[]metav1.Condition` | Standard readiness conditions. |

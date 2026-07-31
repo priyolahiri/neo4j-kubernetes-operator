@@ -43,29 +43,45 @@ import (
 //
 // Landmines:
 //
-//  1. Envelopes are MIXED. All GETs — including the single-deployment read —
-//     are `{"data": …}`-wrapped. Only POST deployments and the token POST/PATCH
-//     are bare. NOTE: the published spec declares the single-deployment GET as
-//     BARE (`allOf: [DetailedDeployment, {}]` with no `data`), but the live API
-//     wraps it. Verified against the live API 2026-07-30 — LIVE WINS; do not
-//     "correct" GetDeployment back to doV2JSON on the strength of the spec.
+//  1. EVERY endpoint is `{"data": …}`-wrapped — GETs, both POSTs and the PATCH.
+//     Use doV2Data throughout; never doV2JSON. The published spec declares the
+//     single-deployment GET, POST deployments and POST/PATCH token as BARE, and
+//     it is WRONG about all four. Verified by exercising the full lifecycle
+//     against a live Aura project on 2026-07-31 — LIVE WINS. Getting this wrong
+//     is silent: the envelope decodes into the struct and every field lands
+//     zero, with no error, so CreateDeployment returns an empty ID and
+//     CreateDeploymentToken an empty token.
 //
-//  2. The POST deployments and POST/PATCH token REQUEST BODIES are NOT
-//     published upstream (no requestBody in the spec at all), so the shapes here
-//     are BEST-EFFORT, inferred from the error text — POST deployments' 400 says
-//     the name "must be a maximum of 30 characters", so a `name` field clearly
-//     exists. Still UNVERIFIED: read-only live checking cannot exercise a write.
+//  2. The POST deployments and POST/PATCH token REQUEST BODIES are not published
+//     upstream. Now confirmed live: `{"name": "<=30 chars"}` for a deployment
+//     and `{}` for both token calls are accepted.
 //
-//  3. POST token 400s when the deployment ALREADY has a token; use PATCH to
-//     rotate instead of POST to re-mint.
+//  3. POST and PATCH token are STRICTLY COMPLEMENTARY, and you cannot tell which
+//     one applies:
+//       POST  works only when the deployment has NO token; otherwise HTTP 500
+//       PATCH works only when the deployment HAS a token; otherwise HTTP 500
+//     Both failure modes are 500 with an internal-sounding message
+//     ("failed to create api key: … no rows in result set"), NOT a 4xx. And
+//     GET deployment does NOT reveal which state you are in — see landmine 4.
+//     So the only reliable sequence is: try POST, and on failure fall back to
+//     PATCH. Beware that `IsTransient` treats 5xx as retryable, so a caller that
+//     does not implement the fallback will retry forever without progressing.
 //
-//  4. FIELD NAMES WHERE THE LIVE API DISAGREES WITH THE SPEC (live wins, all
+//  4. `DetailedDeployment.token` is ABSENT until the token has been CLAIMED by a
+//     running DBMS. A deployment that has a freshly-minted, never-used token
+//     reports `token: null` and `dbms: null`, indistinguishable from one with no
+//     token at all. Never use token presence to decide whether to mint.
+//
+//  5. DELETE token on a deployment with no token returns HTTP 500 (not 404), so
+//     it is NOT idempotent in the usual sense — IsNotFound will not catch it.
+//
+//  6. FIELD NAMES WHERE THE LIVE API DISAGREES WITH THE SPEC (live wins, all
 //     verified 2026-07-30):
 //       token.auto_rotate   (spec)  ->  token.auto_rotated   (live)
 //       Server.mode_constraints (spec) -> Server.mode_constraint (live, singular)
 //     Using the spec spelling silently yields a zero value forever.
 //
-//  5. TWO DIFFERENT DATABASE SHAPES on two different endpoints — do not mix
+//  7. TWO DIFFERENT DATABASE SHAPES on two different endpoints — do not mix
 //     them up (this cost a round of rework):
 //       .../deployments/{id}/databases            -> schema `Database`
 //           store / access / node+relationship counts / primaries+secondaries
@@ -264,13 +280,17 @@ func (c *Client) GetDeployment(ctx context.Context, orgID, projectID, deployment
 }
 
 // CreateDeployment registers a new deployment and returns its ID (v2beta1, beta).
-// NOT data-wrapped; the 201 body is `{"id": …}`. Body shape is best-effort.
+//
+// Data-wrapped (`{"data":{"id":…}}`, HTTP 200 — not the bare 201 the spec
+// declares). Verified live 2026-07-31. With doV2JSON the envelope decodes into
+// the struct and the ID comes back EMPTY with no error, which then silently
+// orphans the deployment it just created.
 func (c *Client) CreateDeployment(ctx context.Context, orgID, projectID, name string) (string, error) {
 	var out struct {
 		ID string `json:"id"`
 	}
 	body := CreateDeploymentRequest{Name: name}
-	if err := c.doV2JSON(ctx, http.MethodPost, fleetDeploymentsPath(orgID, projectID), body, &out); err != nil {
+	if err := c.doV2Data(ctx, http.MethodPost, fleetDeploymentsPath(orgID, projectID), body, &out); err != nil {
 		return "", fmt.Errorf("creating fleet deployment %q: %w", name, err)
 	}
 	return out.ID, nil
@@ -300,7 +320,7 @@ func (c *Client) DeleteDeployment(ctx context.Context, orgID, projectID, deploym
 func (c *Client) CreateDeploymentToken(ctx context.Context, orgID, projectID, deploymentID string) (string, error) {
 	var out deploymentTokenResponse
 	path := fleetDeploymentPath(orgID, projectID, deploymentID) + "/token"
-	if err := c.doV2JSON(ctx, http.MethodPost, path, struct{}{}, &out); err != nil {
+	if err := c.doV2Data(ctx, http.MethodPost, path, struct{}{}, &out); err != nil {
 		return "", fmt.Errorf("creating token for fleet deployment %q: %w", deploymentID, err)
 	}
 	return out.Token, nil
@@ -308,17 +328,23 @@ func (c *Client) CreateDeploymentToken(ctx context.Context, orgID, projectID, de
 
 // RotateDeploymentToken replaces the deployment's token and returns the new one
 // (v2beta1, beta). Same one-shot caveat as CreateDeploymentToken.
+//
+// Returns HTTP 500 if the deployment has NO token yet, so this is the fallback
+// half of the POST-then-PATCH pair, never a drop-in replacement for it.
 func (c *Client) RotateDeploymentToken(ctx context.Context, orgID, projectID, deploymentID string) (string, error) {
 	var out deploymentTokenResponse
 	path := fleetDeploymentPath(orgID, projectID, deploymentID) + "/token"
-	if err := c.doV2JSON(ctx, http.MethodPatch, path, struct{}{}, &out); err != nil {
+	if err := c.doV2Data(ctx, http.MethodPatch, path, struct{}{}, &out); err != nil {
 		return "", fmt.Errorf("rotating token for fleet deployment %q: %w", deploymentID, err)
 	}
 	return out.Token, nil
 }
 
 // DeleteDeploymentToken revokes the deployment's token (v2beta1, beta).
-// Idempotent: a 404 is treated as success.
+//
+// A 404 is treated as success, but note this is NOT reliably idempotent: Aura
+// returns HTTP 500 (not 404) when the deployment has no token, and IsNotFound
+// will not catch that. Callers should treat any failure here as non-fatal.
 func (c *Client) DeleteDeploymentToken(ctx context.Context, orgID, projectID, deploymentID string) error {
 	path := fleetDeploymentPath(orgID, projectID, deploymentID) + "/token"
 	if err := c.doV2JSON(ctx, http.MethodDelete, path, nil, nil); err != nil {

@@ -5,6 +5,12 @@ metadata:
 spec:
   # The AuraInstance (same namespace) that hosts the database. Credentials,
   # organization, and project are resolved from it.
+  #
+  # IMPORTANT: that instance must have been created with `multiDatabase: true`
+  # (see neo4j_v1beta1_aurainstance.yaml). An instance created without it can
+  # never host an AuraDatabase — Aura fixes the setting at creation and offers no
+  # way to convert one — and this CR will report Ready=False, reason
+  # InstanceNotMultiDatabase, without retrying.
   instanceRef: example-aura-instance
   name: analytics
   deletionPolicy: Delete

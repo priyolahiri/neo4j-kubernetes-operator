@@ -52,6 +52,31 @@ import (
 // Only the database CREATE body is un-schema'd upstream (the POST publishes no
 // requestBody); it mirrors the documented conventions and is BETA/best-effort.
 // Everything else here follows a published schema.
+//
+// Walked end-to-end against the LIVE API on 2026-07-31 (create → backup →
+// restore → delete on a multi-database Business Critical instance). Three
+// behaviours that no schema states, and that a reader would otherwise get wrong:
+//
+//  4. THE BACKUP LIST HIDES BACKUPS THAT ARE STILL RUNNING. Immediately after a
+//     202 from the create, GET .../backups returns an EMPTY array while
+//     GET .../backups/{id} returns the record with status Pending; the entry
+//     appears in the list only once it reaches Completed (~60s). Poll a backup by
+//     ID — a controller that watches the list sees its own just-created backup
+//     vanish. `exportable` also flips false → true on completion, so it means
+//     "exportable now", not "will be exportable".
+//
+//  5. THE RESTORE RESPONSE IS RICH, and it is the ONLY place the operator can see
+//     a database's state. GET/LIST on a database return `{"id": …}` and nothing
+//     else even while it is restoring; the restore's own 202 body carries
+//     `status` ("restoring"), `name`, `nodes`, `relationships`, `instance_id`,
+//     plus `available_actions` / `capabilities` maps explaining which operations
+//     are currently refused and why. Discard that body and there is no way left
+//     to observe a restore. (Not modelled here yet — RestoreDatabase drops it.)
+//
+//  6. The restore endpoint calls a backup a SNAPSHOT in its errors: an unknown
+//     backup ID yields 404 `snapshot-not-found`, and the check happens before any
+//     state check. A second DELETE of a database yields 404
+//     `aura-database-not-found` — which is what makes DeleteDatabase idempotent.
 // ==========================================================================
 
 // Backup status values (v2beta1 DatabaseBackup.status, a required field).

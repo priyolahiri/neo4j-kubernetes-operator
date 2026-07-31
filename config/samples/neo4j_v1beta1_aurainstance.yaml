@@ -13,6 +13,13 @@ spec:
   version: "5"
   # Sizing is mutable (drives online resize).
   memory: 2GB
+  # To host AuraDatabase CRs, the instance must be created MULTI-DATABASE. That
+  # is fixed at creation and cannot be added later — picking a Business Critical
+  # or dedicated tier is not on its own enough (only business-critical and
+  # enterprise-db support the flag at all). Uncomment BOTH lines, with one of
+  # those two tiers, if you need additional databases:
+  #   organizationId: "<org-id>"   # required: the v2beta1 create is org-scoped
+  #   multiDatabase: true          # immutable
   # Where the operator writes connection details (URI + one-time credentials).
   connectionSecretName: example-aura-instance-conn
   connectionSecretFormat: neo4j-driver   # neo4j-driver | aura-dotenv | jdbc | servicebinding | custom

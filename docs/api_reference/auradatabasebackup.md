@@ -2,7 +2,9 @@
 
 > **⚠️ BETA / best-effort.** Uses the Aura API **v2beta1** (unstable beta). See the [Aura Orchestration Guide](../user_guide/aura_orchestration.md).
 
-The `AuraDatabaseBackup` CRD takes an **on-demand** per-database backup on a managed Neo4j Aura instance (per-database backups exist only on multi-database tiers). Like [`AuraSnapshot`](aurasnapshot.md), a backup is one-shot and is **not** deleted from Aura when the CR is removed.
+The `AuraDatabaseBackup` CRD takes an **on-demand** per-database backup on a managed Neo4j Aura instance. Like [`AuraSnapshot`](aurasnapshot.md), a backup is one-shot and is **not** deleted from Aura when the CR is removed.
+
+> **Requires a multi-database instance**, since it backs up an [`AuraDatabase`](auradatabase.md) — see that page's prerequisite. Two behaviours of the Aura API worth knowing, both verified live: a backup does **not appear in Aura's backup list until it completes** (the operator therefore polls it by ID, so `phase` progresses normally — but do not expect to see it in the console listing immediately), and `exportable` means "exportable *now*", flipping from `false` to `true` on completion rather than describing the finished backup up front.
 
 ## Overview
 

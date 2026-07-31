@@ -60,6 +60,10 @@ type AuraInstanceSource struct {
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.customerManagedKeyId) || (has(self.customerManagedKeyId) && self.customerManagedKeyId == oldSelf.customerManagedKeyId)",message="customerManagedKeyId is immutable once set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.instanceId) || (has(self.instanceId) && self.instanceId == oldSelf.instanceId)",message="instanceId is immutable once set"
 // +kubebuilder:validation:XValidation:rule="has(self.source) == has(oldSelf.source) && (!has(self.source) || self.source == oldSelf.source)",message="source is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.multiDatabase) == has(oldSelf.multiDatabase) && (!has(self.multiDatabase) || self.multiDatabase == oldSelf.multiDatabase)",message="multiDatabase is immutable: Aura fixes it when the instance is created and offers no way to convert an existing instance"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.organizationId) || (has(self.organizationId) && self.organizationId == oldSelf.organizationId)",message="organizationId is immutable once set"
+// +kubebuilder:validation:XValidation:rule="!has(self.multiDatabase) || !self.multiDatabase || self.type in ['business-critical','enterprise-db']",message="multiDatabase is only supported on business-critical or enterprise-db (Virtual Dedicated Cloud); Aura refuses it on every other tier"
+// +kubebuilder:validation:XValidation:rule="!has(self.multiDatabase) || !self.multiDatabase || (!has(self.storage) && !has(self.vectorOptimized) && !has(self.graphAnalyticsPlugin) && !has(self.secondariesCount) && !has(self.cdcEnrichmentMode) && !has(self.customerManagedKeyId) && !has(self.source))",message="multiDatabase creates the instance through the Aura v2beta1 API, which accepts only name/type/cloudProvider/region/memory and SILENTLY IGNORES every other field: unset storage, vectorOptimized, graphAnalyticsPlugin, secondariesCount, cdcEnrichmentMode, customerManagedKeyId and source"
 type AuraInstanceSpec struct {
 	// ProviderConfigRef selects the AuraProviderConfig (credentials + defaults +
 	// rate limiter) in the same namespace. Mutually exclusive with
@@ -77,6 +81,13 @@ type AuraInstanceSpec struct {
 	// does not write it back into spec, to stay GitOps-idempotent).
 	// +optional
 	ProjectID string `json:"projectId,omitempty"`
+
+	// OrganizationID is the Aura organization. Immutable once set. Only the
+	// v2beta1 code paths need it (multiDatabase creation and the multi-database
+	// status probe) — plain v1 management does not. If empty, the referenced
+	// AuraProviderConfig's defaultOrganizationId is used.
+	// +optional
+	OrganizationID string `json:"organizationId,omitempty"`
 
 	// CloudProvider hosting the instance. Immutable.
 	// +kubebuilder:validation:Enum=aws;gcp;azure
@@ -136,6 +147,23 @@ type AuraInstanceSpec struct {
 	// CustomerManagedKeyID — VDC / AuraDS-Enterprise only. Immutable once set.
 	// +optional
 	CustomerManagedKeyID string `json:"customerManagedKeyId,omitempty"`
+
+	// MultiDatabase requests a MULTI-DATABASE instance, the only kind that can
+	// host more than the one database Aura creates with it — i.e. the only kind
+	// AuraDatabase, AuraDatabaseBackup and AuraDatabaseRestore can be used
+	// against. Supported on business-critical and enterprise-db (Virtual
+	// Dedicated Cloud) only; Aura rejects it on free-db and professional-db.
+	//
+	// Immutable, because Aura fixes it at creation and publishes no way to
+	// convert an existing instance. Only `true` changes anything: an unset or
+	// false value leaves the normal v1 create path in place.
+	//
+	// Setting it switches the CREATE call to the Aura v2beta1 API (v1 has no
+	// such field), which requires an organization ID and accepts a smaller set
+	// of fields — see the CEL rules above. Everything after create (observe,
+	// resize, pause/resume, upgrade, delete) still goes through v1.
+	// +optional
+	MultiDatabase *bool `json:"multiDatabase,omitempty"`
 
 	// Source clones a new instance from an existing one at create. Immutable.
 	// +optional
@@ -203,6 +231,25 @@ type AuraInstanceObservation struct {
 	CloudProvider string `json:"cloudProvider,omitempty"`
 	// +optional
 	Name string `json:"name,omitempty"`
+
+	// MultiDatabase reports whether the instance can host more than one
+	// database, which decides whether AuraDatabase / AuraDatabaseBackup /
+	// AuraDatabaseRestore can target it at all.
+	//
+	// Unset means UNKNOWN, not false. The flag lives only on the Aura v2beta1
+	// instance detail — v1 does not return it — and that endpoint fails for
+	// instances created through v1, so the operator cannot always learn the
+	// answer. It is probed once (the value can never change) and cached.
+	// +optional
+	MultiDatabase *bool `json:"multiDatabase,omitempty"`
+
+	// DefaultDatabaseID is the database Aura creates together with a
+	// multi-database instance. It is reported only by the v2beta1 create
+	// response, so it is populated only for instances this operator created with
+	// multiDatabase set. Useful for telling that built-in database apart from
+	// the ones AuraDatabase CRs own.
+	// +optional
+	DefaultDatabaseID string `json:"defaultDatabaseId,omitempty"`
 }
 
 // AuraServiceBinding is the Service Binding "Provisioned Service" pointer.

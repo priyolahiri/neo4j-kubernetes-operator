@@ -66,24 +66,25 @@ const AuraFleetDeploymentAnnotation = "neo4j.com/external-fleet-deployment-id"
 // auraFleetTokenSecretKey is the key the minted token is written under.
 const auraFleetTokenSecretKey = "token"
 
-// fleetRefusalError marks a decision the operator made DELIBERATELY — a policy
+// auraRefusalError marks a decision the operator made DELIBERATELY — a policy
 // refusal or an unrecoverable state — as opposed to an API or transport failure.
+// Shared by every Aura controller, not just the fleet one.
 //
 // This distinction is load-bearing: aura.IsTransient() returns TRUE for any
 // error that is not an *aura.APIError, on the reasonable assumption that such
 // errors are transport-level blips worth retrying. A deliberate refusal is not
 // an APIError either, so without this marker it would be misread as transient,
 // silently retried forever, and its explanation never shown to the user.
-type fleetRefusalError struct{ msg string }
+type auraRefusalError struct{ msg string }
 
-func (e *fleetRefusalError) Error() string { return e.msg }
+func (e *auraRefusalError) Error() string { return e.msg }
 
 func refusef(format string, a ...any) error {
-	return &fleetRefusalError{msg: fmt.Sprintf(format, a...)}
+	return &auraRefusalError{msg: fmt.Sprintf(format, a...)}
 }
 
-func isFleetRefusal(err error) bool {
-	var r *fleetRefusalError
+func isAuraRefusal(err error) bool {
+	var r *auraRefusalError
 	return errors.As(err, &r)
 }
 
@@ -189,8 +190,8 @@ func (fp *fleetProvisioner) reconcileAuraFleetProvision(ctx context.Context, obj
 	// --- deployment ---------------------------------------------------------
 	deploymentID, err := fp.ensureDeployment(ctx, obj, p, apiClient, orgID, projectID)
 	if err != nil {
-		// Refusals are checked BEFORE IsTransient — see the fleetRefusalError doc.
-		if !isFleetRefusal(err) && aura.IsTransient(err) {
+		// Refusals are checked BEFORE IsTransient — see the auraRefusalError doc.
+		if !isAuraRefusal(err) && aura.IsTransient(err) {
 			logger.Info("Aura fleet deployment lookup transient failure; will retry")
 			return nil
 		}
@@ -203,8 +204,8 @@ func (fp *fleetProvisioner) reconcileAuraFleetProvision(ctx context.Context, obj
 
 	// --- token --------------------------------------------------------------
 	if err := fp.ensureToken(ctx, obj, p, apiClient, orgID, projectID, deploymentID); err != nil {
-		// Refusals are checked BEFORE IsTransient — see the fleetRefusalError doc.
-		if !isFleetRefusal(err) && aura.IsTransient(err) {
+		// Refusals are checked BEFORE IsTransient — see the auraRefusalError doc.
+		if !isAuraRefusal(err) && aura.IsTransient(err) {
 			return nil
 		}
 		return fp.note(ctx, key, err.Error())
@@ -294,6 +295,19 @@ func (fp *fleetProvisioner) ensureDeployment(
 // Under the default CreateIfMissing policy we therefore refuse to rotate a token
 // that has already been registered successfully, and say so, rather than
 // silently breaking a working deployment.
+//
+// HOW WE DECIDE create-vs-rotate, and why it is NOT what you would expect:
+//
+// We cannot ask Aura whether a token exists. GET deployment reports
+// `token: null` for a deployment whose token has been minted but not yet CLAIMED
+// by a running DBMS — indistinguishable from having no token at all (verified
+// live 2026-07-31). And POST/PATCH are strictly complementary, each returning
+// HTTP 500 in the state the other one handles.
+//
+// So we PROBE with POST, which is the non-destructive half, and treat its
+// failure as evidence that a token already exists. Only then does policy decide
+// whether to rotate. Note the registered check uses the operator's OWN status,
+// not anything read back from Aura — that is the only trustworthy signal here.
 func (fp *fleetProvisioner) ensureToken(
 	ctx context.Context, obj fleetProvisionTarget, p *neo4jv1beta1.AuraFleetProvisionSpec,
 	apiClient auraFleetAPI, orgID, projectID, deploymentID string,
@@ -307,53 +321,50 @@ func (fp *fleetProvisioner) ensureToken(
 		return nil // already provisioned
 	}
 
-	detail, err := apiClient.GetDeployment(ctx, orgID, projectID, deploymentID)
-	if err != nil {
-		return fmt.Errorf("reading fleet deployment %q: %w", deploymentID, err)
+	if !managementAllows(p.ManagementPolicies, auraPolicyCreate) {
+		return refusef("fleet deployment %q needs a token but managementPolicies does not permit Create", deploymentID)
 	}
-	deploymentHasToken := detail != nil && detail.Token != nil
 
-	var token string
-	switch {
-	case !deploymentHasToken:
-		// Nothing to invalidate — mint.
-		if !managementAllows(p.ManagementPolicies, auraPolicyCreate) {
-			return refusef("fleet deployment %q has no token and managementPolicies does not permit Create", deploymentID)
-		}
-		token, err = apiClient.CreateDeploymentToken(ctx, orgID, projectID, deploymentID)
-		if err != nil {
-			return fmt.Errorf("minting token for fleet deployment %q: %w", deploymentID, err)
-		}
+	// Probe: POST succeeds only when no token exists yet (the first-time case).
+	token, postErr := apiClient.CreateDeploymentToken(ctx, orgID, projectID, deploymentID)
+	if postErr == nil && strings.TrimSpace(token) != "" {
+		return fp.storeToken(ctx, obj, secretName, token)
+	}
 
-	case p.TokenPolicy == "Rotate":
-		token, err = apiClient.RotateDeploymentToken(ctx, orgID, projectID, deploymentID)
-		if err != nil {
-			return fmt.Errorf("rotating token for fleet deployment %q: %w", deploymentID, err)
-		}
+	// POST failed, so a token almost certainly already exists — Aura signals this
+	// with a 500 rather than a conflict, so we cannot distinguish it from a real
+	// outage. Both paths below are safe: a genuine outage makes the PATCH fail
+	// too and we simply requeue.
+	st := obj.GetFleetStatus()
+	if p.TokenPolicy != "Rotate" && st != nil && st.Registered {
+		return refusef("token Secret %q is missing but fleet deployment %s appears to already hold a token "+
+			"that has been registered, and the Aura API will not return it again; restore the Secret, or set "+
+			"spec.auraFleetManagement.provision.tokenPolicy=Rotate to mint a replacement "+
+			"(this invalidates the current registration). Underlying error: %v", secretName, deploymentID, postErr)
+	}
+
+	// Either the user opted into rotation, or nothing was ever registered so
+	// there is no working state to protect.
+	token, err = apiClient.RotateDeploymentToken(ctx, orgID, projectID, deploymentID)
+	if err != nil {
+		// Both legs are wrapped: POST and PATCH are complementary (landmine 3), so
+		// which one failed and how is the whole diagnosis — and callers classify on
+		// the API error, which would be lost if either leg were flattened to text.
+		return fmt.Errorf("minting token for fleet deployment %q failed (post: %w; rotate: %w)", deploymentID, postErr, err)
+	}
+	if p.TokenPolicy == "Rotate" {
 		fp.Recorder.Eventf(obj, corev1.EventTypeWarning, EventReasonAuraFleetTokenRotated,
 			"Rotated the Aura fleet token for deployment %s; any previous registration is now invalid", deploymentID)
-
-	default:
-		// CreateIfMissing + the deployment already holds a token.
-		st := obj.GetFleetStatus()
-		if st != nil && st.Registered {
-			return refusef("token Secret %q is missing but fleet deployment %s already has a registered token, "+
-				"which the Aura API will not return again; restore the Secret, or set "+
-				"spec.auraFleetManagement.provision.tokenPolicy=Rotate to mint a replacement "+
-				"(this invalidates the current registration)", secretName, deploymentID)
-		}
-		// Never registered, so nothing works today anyway — rotating is the only
-		// way forward and costs nothing.
-		token, err = apiClient.RotateDeploymentToken(ctx, orgID, projectID, deploymentID)
-		if err != nil {
-			return fmt.Errorf("replacing unusable token for fleet deployment %q: %w", deploymentID, err)
-		}
 	}
+	return fp.storeToken(ctx, obj, secretName, token)
+}
 
+// storeToken persists a freshly minted token. Called immediately after minting —
+// the value is unrecoverable if dropped.
+func (fp *fleetProvisioner) storeToken(ctx context.Context, obj fleetProvisionTarget, secretName, token string) error {
 	if strings.TrimSpace(token) == "" {
-		return refusef("Aura returned an empty token for fleet deployment %q", deploymentID)
+		return refusef("Aura returned an empty token for Secret %q", secretName)
 	}
-	// Persist the token before anything else — it is unrecoverable if dropped.
 	if err := fp.writeTokenSecret(ctx, obj, secretName, token); err != nil {
 		return fmt.Errorf("storing minted token in Secret %q: %w", secretName, err)
 	}
@@ -419,6 +430,11 @@ func (fp *fleetProvisioner) syncObserved(
 		st.DeploymentName = name
 		st.TokenSecretName = secretName
 		st.Provisioned = true
+		// Token metadata only exists once a running DBMS has CLAIMED the token:
+		// until then Aura reports `token: null` even though a token was minted
+		// (verified live 2026-07-31). So these stay empty between provisioning and
+		// the DBMS's first registration — that is expected, not a failure, and is
+		// exactly why token presence must NOT drive the mint decision.
 		if derr == nil && detail != nil && detail.Token != nil {
 			st.TokenAutoRotate = detail.Token.AutoRotate
 			st.TokenCreationTime = parseFleetTime(detail.Token.CreationTime)

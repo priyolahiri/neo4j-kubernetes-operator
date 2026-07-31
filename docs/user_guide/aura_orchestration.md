@@ -119,9 +119,11 @@ spec:
   providerConfigRef: { name: aura }
   cloudProvider: gcp
   region: europe-west1
-  type: business-critical               # a multi-database tier (needed for step 4)
+  organizationId: "<org-id>"            # required by multiDatabase (v2beta1 create)
+  type: business-critical
   version: "5"
   memory: 2GB
+  multiDatabase: true                   # required for step 4 — see the note below
   connectionSecretName: analytics-conn
 ```
 
@@ -132,7 +134,18 @@ kubectl -n neo4j wait aurainstance/analytics --for=condition=Ready --timeout=20m
 # app: envFrom the analytics-conn Secret (NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD)
 ```
 
-**4. Create a database** on the instance (multi-database tiers only):
+> **`multiDatabase: true` is not optional if you want step 4.** An Aura instance
+> can only hold databases beyond its own built-in one if it was created as
+> multi-database, and Aura fixes that at creation — picking a Business Critical
+> or dedicated tier is *not* on its own enough (though it is necessary: only
+> `business-critical` and `enterprise-db` support the flag at all). There is no way to convert an
+> existing instance, so an instance created without the flag (including every
+> instance created by earlier operator versions) can never host an
+> `AuraDatabase`. Setting it moves the create call to the Aura **v2beta1** API,
+> which needs an organization ID and accepts fewer fields — see
+> [Multi-database instances](../api_reference/aurainstance.md#multi-database-instances).
+
+**4. Create a database** on the instance (multi-database instances only):
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -289,12 +302,15 @@ spec:
   deletionPolicy: Delete        # Delete drops the DB on CR delete; Orphan leaves it
 ```
 
-Additional databases require a multi-database-capable Aura tier (Business
-Critical / dedicated). Full field reference: [`AuraDatabase`](../api_reference/auradatabase.md).
+Additional databases require an instance created with `multiDatabase: true` on
+`business-critical` or `enterprise-db` — the tier alone is not enough, and the
+flag cannot be added later. Against any other instance the CR
+reports `Ready=False`, reason `InstanceNotMultiDatabase`, and stops retrying.
+Full field reference: [`AuraDatabase`](../api_reference/auradatabase.md).
 
 #### Per-database backup & restore
 
-Aura exposes per-database backups (multi-database tiers). Take an on-demand
+Aura exposes per-database backups on multi-database instances. Take an on-demand
 backup and restore in place from it:
 
 ```yaml
@@ -314,6 +330,18 @@ spec:
 
 Like `AuraSnapshot`, a backup is one-shot and is **not** deleted from Aura when
 the CR is removed; a restore is one-shot and in place.
+
+Two things to expect when you watch these:
+
+- A backup does not show up in Aura's backup *listing* until it finishes, so the
+  console may look empty for the first minute. The operator polls it by ID, so
+  `status.phase` still moves `Pending` → `Completed` normally.
+- A restore stops at **`status.phase: Submitted`**, and that is terminal — it never
+  becomes `Completed`. Aura accepts the restore asynchronously and the v2beta1
+  database endpoint returns only an `id`, with no status, so the operator has no
+  way to see it finish and will not claim otherwise. **Confirm completion in the
+  Aura console.** The CR is not retried once submitted (a repeated restore would
+  overwrite the database again).
 
 ### Access (console-RBAC)
 
