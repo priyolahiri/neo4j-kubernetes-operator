@@ -72,7 +72,15 @@ func (r *AuraDatabaseRestoreReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, nil
 	}
 	// One-shot: never re-run after a terminal outcome.
-	if rs.Status.Phase == "Completed" || rs.Status.Phase == "Error" || !rs.DeletionTimestamp.IsZero() {
+	//
+	// "Submitted" is the terminal success phase — see markSubmitted, which cannot
+	// honestly write "Completed" because v2beta1 exposes no way to observe a
+	// restore finishing. This guard previously listed only "Completed", a phase
+	// nothing ever writes, so it never fired: any later reconcile (operator
+	// restart, cache resync, any watch event) submitted the SAME restore again,
+	// silently overwriting a database that had already been restored.
+	if rs.Status.Phase == "Submitted" || rs.Status.Phase == "Completed" ||
+		rs.Status.Phase == "Error" || !rs.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	}
 	if !managementAllows(rs.Spec.ManagementPolicies, auraPolicyCreate) {

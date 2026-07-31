@@ -159,8 +159,11 @@ spec:
                 format: int64
                 type: integer
               phase:
-                description: Phase mirrors the restore outcome (Pending, Restoring,
-                  Completed, Error).
+                description: |-
+                  Phase mirrors the restore outcome: Restoring while submitting, then
+                  Submitted (the TERMINAL success phase) or Error. It is never Completed —
+                  Aura restores asynchronously and its v2beta1 database endpoint exposes no
+                  status, so completion cannot be observed and is not claimed.
                 type: string
               startedAt:
                 description: StartedAt is when the restore was submitted.

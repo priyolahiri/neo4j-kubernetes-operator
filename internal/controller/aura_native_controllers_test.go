@@ -38,6 +38,7 @@ type fakeDatabaseAPI struct {
 	getFn          func(id string) (*aura.Database, error)
 	listBackupsFn  func() ([]aura.DatabaseBackup, error)
 	backupStatus   string
+	restoreCalls   int
 	lastRestoreReq aura.RestoreDatabaseRequest
 }
 
@@ -84,6 +85,7 @@ func (f *fakeDatabaseAPI) GetDatabaseBackup(_ context.Context, _, _, _, _, id st
 	return &aura.DatabaseBackup{ID: id, Status: aura.BackupStatusCompleted, Timestamp: "2026-07-01T00:00:00Z", Exportable: true}, nil
 }
 func (f *fakeDatabaseAPI) RestoreDatabase(_ context.Context, _, _, _, _ string, req aura.RestoreDatabaseRequest) error {
+	f.restoreCalls++
 	f.lastRestoreReq = req
 	return nil
 }
@@ -381,5 +383,72 @@ func TestAuraInvite_CreateThenReady(t *testing.T) {
 	}
 	if id := got.Annotations[AuraExternalInviteAnnotation]; id != "inv-new" {
 		t.Errorf("external-invite-id = %q, want inv-new", id)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AuraDatabaseRestore
+// ---------------------------------------------------------------------------
+
+// A restore overwrites a database. Submitting the same one twice destroys data
+// that was already restored, so the one-shot guard is a correctness property,
+// not a tidiness one — and it must key off the phase the controller ACTUALLY
+// writes. It listed only "Completed", which nothing ever writes (v2beta1 gives
+// no way to observe a restore finishing, so the terminal success phase is
+// "Submitted"), meaning the guard never fired and every subsequent reconcile —
+// an operator restart, a cache resync, any watch event — restored again.
+func TestAuraDatabaseRestore_IsOneShot(t *testing.T) {
+	scheme := auraTestScheme(t)
+	inst := &neo4jv1beta1.AuraInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "analytics", Namespace: testNS,
+			Annotations: map[string]string{AuraExternalIDAnnotation: "inst-1"},
+		},
+		Spec: neo4jv1beta1.AuraInstanceSpec{CredentialsSecretRef: credRef(), ProjectID: "proj-1"},
+	}
+	db := &neo4jv1beta1.AuraDatabase{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "analytics-db", Namespace: testNS,
+			Annotations: map[string]string{AuraExternalDatabaseAnnotation: "db-1"},
+		},
+		Spec:   neo4jv1beta1.AuraDatabaseSpec{InstanceRef: "analytics", OrganizationID: "org-1"},
+		Status: neo4jv1beta1.AuraDatabaseStatus{DatabaseID: "db-1"},
+	}
+	bk := &neo4jv1beta1.AuraDatabaseBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "analytics-bk", Namespace: testNS},
+		Spec:       neo4jv1beta1.AuraDatabaseBackupSpec{DatabaseRef: "analytics-db"},
+		Status:     neo4jv1beta1.AuraDatabaseBackupStatus{BackupID: "bk-1"},
+	}
+	rs := &neo4jv1beta1.AuraDatabaseRestore{
+		ObjectMeta: metav1.ObjectMeta{Name: "analytics-restore", Namespace: testNS},
+		Spec:       neo4jv1beta1.AuraDatabaseRestoreSpec{DatabaseRef: "analytics-db", BackupRef: "analytics-bk"},
+	}
+	api := &fakeDatabaseAPI{}
+	c := newAuraFakeClient(t, scheme, inst, db, bk, rs)
+	r := &AuraDatabaseRestoreReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50), ClientFactory: dbFactory(api),
+	}
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		if _, err := r.Reconcile(ctx, reqFor(rs)); err != nil {
+			t.Fatalf("Reconcile #%d: %v", i, err)
+		}
+	}
+	if api.restoreCalls != 1 {
+		t.Fatalf("RestoreDatabase called %d times, want exactly 1 — a repeated restore silently "+
+			"overwrites an already-restored database", api.restoreCalls)
+	}
+	if api.lastRestoreReq.BackupID != "bk-1" {
+		t.Errorf("restore used backup %q, want bk-1 (resolved from backupRef)", api.lastRestoreReq.BackupID)
+	}
+
+	got := &neo4jv1beta1.AuraDatabaseRestore{}
+	if err := c.Get(ctx, reqFor(rs).NamespacedName, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	// "Submitted", never "Completed": Aura exposes no way to observe completion,
+	// so claiming it would assert something the operator cannot know.
+	if got.Status.Phase != "Submitted" {
+		t.Errorf("phase = %q, want Submitted", got.Status.Phase)
 	}
 }

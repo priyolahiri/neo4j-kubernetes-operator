@@ -330,6 +330,18 @@ spec:
 Like `AuraSnapshot`, a backup is one-shot and is **not** deleted from Aura when
 the CR is removed; a restore is one-shot and in place.
 
+Two things to expect when you watch these:
+
+- A backup does not show up in Aura's backup *listing* until it finishes, so the
+  console may look empty for the first minute. The operator polls it by ID, so
+  `status.phase` still moves `Pending` → `Completed` normally.
+- A restore stops at **`status.phase: Submitted`**, and that is terminal — it never
+  becomes `Completed`. Aura accepts the restore asynchronously and the v2beta1
+  database endpoint returns only an `id`, with no status, so the operator has no
+  way to see it finish and will not claim otherwise. **Confirm completion in the
+  Aura console.** The CR is not retried once submitted (a repeated restore would
+  overwrite the database again).
+
 ### Access (console-RBAC)
 
 In-database Neo4j users/roles are **not** managed by the operator on Aura — there

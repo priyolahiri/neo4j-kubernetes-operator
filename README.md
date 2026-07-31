@@ -114,7 +114,7 @@ runs on the Aura API **v1 (GA)**, while multi-database and console-RBAC run on
 | `AuraSnapshot`, `AuraRestore` | Instance-level snapshots and restore |
 | `AuraCustomerManagedKey` | Customer-managed encryption keys (CMK) |
 | `AuraIPFilter` | Organization-scoped network allowlists (v2beta1) |
-| `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore` | Per-database lifecycle and backups on an Aura instance (v2beta1) |
+| `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore` | Per-database lifecycle and backups on an Aura instance (v2beta1). Requires an `AuraInstance` created with `multiDatabase: true` — Aura fixes that at creation and cannot convert an existing instance |
 | `AuraOrganizationMember`, `AuraProjectMember`, `AuraInvite` | Aura **console** RBAC — org/project roles and email invites (v2beta1). Not in-database Neo4j users |
 
 > Aura console-RBAC is platform identity (who can use the Aura console/project).
