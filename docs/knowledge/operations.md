@@ -127,12 +127,12 @@
 - **pinned-by:** user controller integration specs (rotation-on-hash-change).
 - **enforcement:** integration test + code review.
 
-### id 16 — `ALTER USER` clause ordering (REMOVE before SET)
+### id 16 — `ALTER USER` clause ordering is REMOVE → ADD → SET (not merely REMOVE-before-SET)
 - **scope:** `internal/neo4j/users.go` (`AlterUserOptions` builder ~L166)
-- **rule:** On a single `ALTER USER` statement, REMOVE clauses MUST precede SET clauses. Use the `AlterUserOptions` builder — never hand-roll ALTER USER strings.
-- **why:** Neo4j rejects SET-before-REMOVE ordering on a compound ALTER; the builder enforces correct ordering centrally.
-- **pinned-by:** `test/integration/neo4juser_test.go` (ALTER USER exercised via user-update specs). NOTE: the `AlterUserOptions` builder has **no direct unit test** — known gap worth closing.
-- **enforcement:** integration test (indirect) + code review.
+- **rule:** On a single `ALTER USER` statement the documented order is **all REMOVE clauses, then all ADD clauses, then all SET clauses**. Use the `AlterUserOptions` builder — never hand-roll ALTER USER strings.
+- **why:** Neo4j rejects out-of-order compound ALTERs; the builder enforces the order centrally. This rule previously read "REMOVE before SET", which is *currently* sufficient only by accident: `ADD` exists solely for `ADD TAG[S]`, and the operator has **no tag support at all** (no `Neo4jUser` field, no clause emitted), so it never generates an ADD. That makes the omission a latent trap rather than a live bug — whoever adds tag support will naturally append `ADD TAGS` after the SET clauses and get a syntax error this rule would not have warned them about. Corrected against the current operations manual (`authentication-authorization/manage-users`), which also documents `SET TAG[S]` / `REMOVE TAG[S]` / `REMOVE ALL TAG[S]` on both `CREATE USER` and `ALTER USER` as an unimplemented capability gap.
+- **pinned-by:** `test/integration/neo4juser_test.go` (ALTER USER exercised via user-update specs). NOTE: the `AlterUserOptions` builder has **no direct unit test** — known gap worth closing, and the ADD position is unpinned by construction since no code path emits one.
+- **enforcement:** integration test (indirect) + code review — **PROSE-ONLY — at risk** for the ADD position until a tag-bearing clause exists.
 
 ### id 17 — Missing custom roles do NOT fail reconcile
 - **scope:** `internal/controller/neo4juser_controller.go` (`ConditionTypePendingDependencies` / `ConditionReasonRolesPending` set ~L254; watch on `Neo4jRole` in `SetupWithManager` ~L615)
