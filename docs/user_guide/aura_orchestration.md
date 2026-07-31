@@ -341,7 +341,10 @@ Two things to expect when you watch these:
   database endpoint returns only an `id`, with no status, so the operator has no
   way to see it finish and will not claim otherwise. **Confirm completion in the
   Aura console.** The CR is not retried once submitted (a repeated restore would
-  overwrite the database again).
+  overwrite the database again). If you ever find one stuck at `Submitting` with
+  reason `RestoreOutcomeUnknown`, the operator stopped while the request was in
+  flight and cannot tell whether it was applied — check the database, then delete
+  and recreate the CR if the restore still needs to run.
 
 ### Access (console-RBAC)
 

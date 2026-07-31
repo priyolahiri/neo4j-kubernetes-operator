@@ -71,6 +71,10 @@ func (r *AuraDatabaseRestoreReconciler) Reconcile(ctx context.Context, req ctrl.
 		logger.Info("AuraDatabaseRestore reconciliation paused via annotation")
 		return ctrl.Result{}, nil
 	}
+	if !rs.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
 	// One-shot: never re-run after a terminal outcome.
 	//
 	// "Submitted" is the terminal success phase — see markSubmitted, which cannot
@@ -79,9 +83,17 @@ func (r *AuraDatabaseRestoreReconciler) Reconcile(ctx context.Context, req ctrl.
 	// nothing ever writes, so it never fired: any later reconcile (operator
 	// restart, cache resync, any watch event) submitted the SAME restore again,
 	// silently overwriting a database that had already been restored.
-	if rs.Status.Phase == "Submitted" || rs.Status.Phase == "Completed" ||
-		rs.Status.Phase == "Error" || !rs.DeletionTimestamp.IsZero() {
+	switch rs.Status.Phase {
+	case auraRestorePhaseSubmitted, "Completed", auraRestorePhaseError:
 		return ctrl.Result{}, nil
+	case auraRestorePhaseSubmitting:
+		// The process stopped between persisting this marker and learning the
+		// outcome, so we do not know whether Aura accepted the restore. Re-sending
+		// it could overwrite a database a second time; assuming it succeeded could
+		// leave a requested restore undone. Aura offers no idempotency key and no
+		// way to read a restore's state, so this cannot be resolved automatically —
+		// stop and say so, rather than guess with someone's data.
+		return ctrl.Result{}, r.markOutcomeUnknown(ctx, req)
 	}
 	if !managementAllows(rs.Spec.ManagementPolicies, auraPolicyCreate) {
 		return ctrl.Result{}, nil
@@ -122,10 +134,22 @@ func (r *AuraDatabaseRestoreReconciler) Reconcile(ctx context.Context, req ctrl.
 	r.markStarted(ctx, req)
 	r.Recorder.Event(rs, corev1.EventTypeNormal, EventReasonAuraDatabaseRestoreStarted,
 		fmt.Sprintf("Restoring database %s from backup %s", databaseID, backupID))
+
+	// Persist the ambiguous marker BEFORE the call, so a crash mid-flight is
+	// recognisable rather than replayed. If even this write fails, do not call:
+	// an unrecorded attempt is exactly what we are protecting against.
+	if err := r.markSubmitting(ctx, req); err != nil {
+		return ctrl.Result{}, err
+	}
 	if err := apiClient.RestoreDatabase(ctx, orgID, projectID, instanceID, databaseID, aura.RestoreDatabaseRequest{BackupID: backupID}); err != nil {
 		// 409 here is retryable, not terminal: Aura returns it for "ongoing
 		// operation" and "backup not in a completed state".
 		if aura.IsConflict(err) || aura.IsTransient(err) {
+			// Aura reported a failure, so clear the marker to allow the retry. A 5xx
+			// is the residual risk — it says the server erred, not that nothing was
+			// applied — but this is the behaviour that already shipped, and the case
+			// the marker exists for is process death, where no error is seen at all.
+			r.markPhase(ctx, req, auraRestorePhasePending)
 			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 		}
 		return r.fail(ctx, req, rs, "RestoreFailed", err)
@@ -133,6 +157,66 @@ func (r *AuraDatabaseRestoreReconciler) Reconcile(ctx context.Context, req ctrl.
 	r.Recorder.Event(rs, corev1.EventTypeNormal, EventReasonAuraDatabaseRestoreDone,
 		fmt.Sprintf("Submitted restore of database %s from backup %s", databaseID, backupID))
 	return ctrl.Result{}, r.markSubmitted(ctx, req)
+}
+
+// Restore phases. "Submitting" is the ambiguous one: written before the API call
+// and cleared only by a known outcome, so finding it on a fresh reconcile means an
+// attempt was in flight when the operator stopped.
+const (
+	auraRestorePhasePending    = "Pending"
+	auraRestorePhaseRestoring  = "Restoring"
+	auraRestorePhaseSubmitting = "Submitting"
+	auraRestorePhaseSubmitted  = "Submitted"
+	auraRestorePhaseError      = "Error"
+)
+
+// markPhase sets the phase, best-effort. Used for the retry-allowing reset, where
+// a failed write simply leaves the safe (blocking) marker in place.
+func (r *AuraDatabaseRestoreReconciler) markPhase(ctx context.Context, req ctrl.Request, phase string) {
+	_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.AuraDatabaseRestore{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return err
+		}
+		latest.Status.Phase = phase
+		return r.Status().Update(ctx, latest)
+	})
+}
+
+// markSubmitting persists the ambiguous marker. Unlike the other status writers
+// this one's error is propagated: the whole point is that the marker exists before
+// the destructive call.
+func (r *AuraDatabaseRestoreReconciler) markSubmitting(ctx context.Context, req ctrl.Request) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.AuraDatabaseRestore{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return err
+		}
+		latest.Status.Phase = auraRestorePhaseSubmitting
+		latest.Status.ObservedGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
+	})
+}
+
+// markOutcomeUnknown reports an attempt whose result cannot be determined. It is
+// terminal on purpose: only a human can check the Aura console and decide whether
+// to re-run, and re-running is destructive.
+func (r *AuraDatabaseRestoreReconciler) markOutcomeUnknown(ctx context.Context, req ctrl.Request) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.AuraDatabaseRestore{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+			Type: "Ready", Status: metav1.ConditionFalse, Reason: "RestoreOutcomeUnknown",
+			Message: "A restore was in flight when the operator stopped, and the Aura v2beta1 API offers no way " +
+				"to read a restore's state, so it is unknown whether it was applied. Not retrying: a repeated " +
+				"restore overwrites the database again. Check the database in the Aura console, then delete this " +
+				"CR and recreate it if the restore still needs to run.",
+		})
+		latest.Status.ObservedGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
+	})
 }
 
 func (r *AuraDatabaseRestoreReconciler) markStarted(ctx context.Context, req ctrl.Request) {
@@ -145,7 +229,7 @@ func (r *AuraDatabaseRestoreReconciler) markStarted(ctx context.Context, req ctr
 			now := metav1.Now()
 			latest.Status.StartedAt = &now
 		}
-		latest.Status.Phase = "Restoring"
+		latest.Status.Phase = auraRestorePhaseRestoring
 		latest.Status.ObservedGeneration = latest.Generation
 		return r.Status().Update(ctx, latest)
 	})
@@ -166,7 +250,7 @@ func (r *AuraDatabaseRestoreReconciler) markSubmitted(ctx context.Context, req c
 		}
 		now := metav1.Now()
 		latest.Status.FinishedAt = &now
-		latest.Status.Phase = "Submitted"
+		latest.Status.Phase = auraRestorePhaseSubmitted
 		latest.Status.ObservedGeneration = latest.Generation
 		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
 			Type: "Ready", Status: metav1.ConditionTrue, Reason: "Submitted",
@@ -190,7 +274,7 @@ func (r *AuraDatabaseRestoreReconciler) fail(ctx context.Context, req ctrl.Reque
 			Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error(),
 		})
 		if terminal {
-			latest.Status.Phase = "Error"
+			latest.Status.Phase = auraRestorePhaseError
 			now := metav1.Now()
 			latest.Status.FinishedAt = &now
 		}

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -382,5 +383,54 @@ func (r *AuraInstanceReconciler) recordMultiDatabaseFacts(
 		return r.Status().Update(ctx, latest)
 	}); err != nil {
 		logger.Error(err, "failed to record the multi-database verdict in status")
+	}
+}
+
+// errAdoptionUnverified marks "the instance whose name matches is not known to be
+// multi-database". It is deliberately NOT an auraRefusalError: a refusal is
+// terminal, and this condition can clear on its own (the v2beta1 GET that could
+// not answer may start answering), so the caller requeues with the explanation on
+// status instead of stopping for good.
+var errAdoptionUnverified = errors.New("cannot confirm the instance to adopt is multi-database")
+
+// verifyAdoptableAsMultiDatabase refuses to adopt a name-matched instance into a
+// `multiDatabase: true` CR unless v2beta1 confirms it really is one.
+//
+// Without this, adoption-by-name — which runs before the create branch, as the
+// idempotency guard — would silently bind the CR to a pre-existing single-database
+// instance (every instance created by an earlier operator version is one), and the
+// multi-database create would never happen. The user's manifest would report Ready
+// against an instance that can never host an AuraDatabase.
+//
+// A negative and an unconfirmed answer are treated the same way — do not adopt —
+// but neither is terminal, because the two cannot be told apart: the v2beta1
+// instance GET returns HTTP 500 both for a v1-created instance and for a genuine
+// outage (landmine 6). Requeuing means the operator never binds the wrong instance
+// and never creates a duplicate paid one, and recovers by itself if the GET starts
+// working. The deliberate escape hatch is spec.instanceId, which imports an
+// instance explicitly and bypasses name matching altogether.
+func (r *AuraInstanceReconciler) verifyAdoptableAsMultiDatabase(
+	ctx context.Context, inst *neo4jv1beta1.AuraInstance,
+	v2Client auraInstanceV2API, projectID, instanceID string,
+) error {
+	orgID := resolveInstanceOrgID(ctx, r.Client, inst)
+	if orgID == "" {
+		return fmt.Errorf("%w: instance %s matches this CR's name but no organization is configured, so "+
+			"multi_database cannot be read (set spec.organizationId, or spec.instanceId to adopt it deliberately)",
+			errAdoptionUnverified, instanceID)
+	}
+	value, known := probeMultiDatabase(ctx, v2Client, orgID, projectID, instanceID)
+	switch {
+	case known && value:
+		return nil
+	case known && !value:
+		return fmt.Errorf("%w: instance %s matches this CR's name but is NOT a multi-database instance, and Aura "+
+			"cannot convert it; rename this AuraInstance so a new multi-database instance is created, or drop "+
+			"spec.multiDatabase to manage the existing one as-is", errAdoptionUnverified, instanceID)
+	default:
+		return fmt.Errorf("%w: instance %s matches this CR's name but the Aura v2beta1 API would not report its "+
+			"multi_database flag, which is also what happens for instances created through v1 (never "+
+			"multi-database); refusing to adopt it rather than bind this CR to an instance that may be unable to "+
+			"host databases (set spec.instanceId to adopt it deliberately)", errAdoptionUnverified, instanceID)
 	}
 }

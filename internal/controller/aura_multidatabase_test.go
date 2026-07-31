@@ -549,3 +549,169 @@ func TestNotMultiDatabaseRefusalIsARefusalNotATransientError(t *testing.T) {
 		t.Errorf("refusal must name the instance, got %q", err.Error())
 	}
 }
+
+// Adoption-by-name runs BEFORE the create branch, as the idempotency guard. For a
+// multiDatabase CR that means a name collision with a pre-existing
+// single-database instance would silently bind the CR to an instance that can
+// never host an AuraDatabase — and the multi-database create would never happen.
+func TestAuraInstance_DoesNotAdoptANonMultiDatabaseInstance(t *testing.T) {
+	scheme := auraTestScheme(t)
+	inst := &neo4jv1beta1.AuraInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "collide", Namespace: testNS},
+		Spec: neo4jv1beta1.AuraInstanceSpec{
+			CredentialsSecretRef: credRef(), ProjectID: "proj-1", OrganizationID: "org-1",
+			CloudProvider: "gcp", Region: "europe-west1", Type: "business-critical",
+			Version: "5", Memory: "2GB", MultiDatabase: ptrTo(true),
+		},
+	}
+	// A v1 instance already exists under the same name.
+	v1API := &fakeAuraAPI{listInstancesFn: func(context.Context, string) ([]aura.InstanceSummary, error) {
+		return []aura.InstanceSummary{{ID: "old-single", Name: "collide"}}, nil
+	}}
+
+	for _, tc := range []struct {
+		name  string
+		getFn func(string) (*aura.InstanceV2, error)
+	}{
+		{
+			// Definitely single-database.
+			name: "known false",
+			getFn: func(id string) (*aura.InstanceV2, error) {
+				return &aura.InstanceV2{ID: id, MultiDatabase: ptrTo(false)}, nil
+			},
+		},
+		{
+			// Unknown: a v1-created instance answers 500 here, and so does an
+			// outage. Neither may be adopted.
+			name: "unknown",
+			getFn: func(string) (*aura.InstanceV2, error) {
+				return nil, &aura.APIError{StatusCode: http.StatusInternalServerError, Message: "boom"}
+			},
+		},
+	} {
+		v2API := &fakeInstanceV2API{getFn: tc.getFn}
+		c := newAuraFakeClient(t, scheme, inst.DeepCopy())
+		r := &AuraInstanceReconciler{
+			Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+			ClientFactory:           func(auraCredentials) auraAPI { return v1API },
+			InstanceV2ClientFactory: instV2Factory(v2API),
+		}
+		res, err := r.Reconcile(context.Background(), reqFor(inst))
+		if err != nil {
+			t.Fatalf("%s: Reconcile: %v", tc.name, err)
+		}
+		got := &neo4jv1beta1.AuraInstance{}
+		if err := c.Get(context.Background(), reqFor(inst).NamespacedName, got); err != nil {
+			t.Fatalf("%s: Get: %v", tc.name, err)
+		}
+		if id := got.Annotations[AuraExternalIDAnnotation]; id != "" {
+			t.Errorf("%s: adopted %q — a multiDatabase CR must not bind to an instance that is not "+
+				"confirmed multi-database", tc.name, id)
+		}
+		if v2API.createCalled {
+			t.Errorf("%s: must not create a duplicate either — the name is taken", tc.name)
+		}
+		// Not terminal: the answer can become available later, and refusing forever
+		// would strand a CR on a transient API failure.
+		if res.RequeueAfter == 0 {
+			t.Errorf("%s: expected a requeue so this can clear by itself", tc.name)
+		}
+		cond := findCondition(got.Status.Conditions, "Ready")
+		if cond == nil || cond.Reason != "AdoptionBlocked" {
+			t.Errorf("%s: Ready = %+v, want reason AdoptionBlocked", tc.name, cond)
+		}
+	}
+}
+
+// The happy adoption path must still work: after a crash between create and the
+// annotation write, the next reconcile has to re-adopt the instance it just made.
+func TestAuraInstance_AdoptsAConfirmedMultiDatabaseInstance(t *testing.T) {
+	scheme := auraTestScheme(t)
+	inst := &neo4jv1beta1.AuraInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "readopt", Namespace: testNS},
+		Spec: neo4jv1beta1.AuraInstanceSpec{
+			CredentialsSecretRef: credRef(), ProjectID: "proj-1", OrganizationID: "org-1",
+			CloudProvider: "gcp", Region: "europe-west1", Type: "business-critical",
+			Version: "5", Memory: "2GB", MultiDatabase: ptrTo(true),
+		},
+	}
+	v1API := &fakeAuraAPI{listInstancesFn: func(context.Context, string) ([]aura.InstanceSummary, error) {
+		return []aura.InstanceSummary{{ID: "already-mine", Name: "readopt"}}, nil
+	}}
+	v2API := &fakeInstanceV2API{} // default getFn reports multi_database=true
+	c := newAuraFakeClient(t, scheme, inst)
+	r := &AuraInstanceReconciler{
+		Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(50),
+		ClientFactory:           func(auraCredentials) auraAPI { return v1API },
+		InstanceV2ClientFactory: instV2Factory(v2API),
+	}
+	if _, err := r.Reconcile(context.Background(), reqFor(inst)); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	got := &neo4jv1beta1.AuraInstance{}
+	if err := c.Get(context.Background(), reqFor(inst).NamespacedName, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if id := got.Annotations[AuraExternalIDAnnotation]; id != "already-mine" {
+		t.Errorf("external-instance-id = %q, want already-mine — a confirmed multi-database instance "+
+			"must still be adoptable, or a crash between create and annotation write leaks a paid instance", id)
+	}
+	if v2API.createCalled {
+		t.Error("must not create a second instance when the existing one is adoptable")
+	}
+}
+
+// spec.organizationId is REQUIRED to create a multi-database instance, so an
+// instance can legitimately carry the org while using inline credentials and no
+// provider config. If the database coords ignore it, every AuraDatabase against
+// that instance fails TargetUnresolved unless the org is duplicated on the
+// database CR — and with a provider config whose default differs, requests would
+// silently target the wrong organization.
+func TestResolveAuraDBCoordsOrgPrecedence(t *testing.T) {
+	scheme := auraTestScheme(t)
+	ctx := context.Background()
+
+	newInst := func(org string) *neo4jv1beta1.AuraInstance {
+		return &neo4jv1beta1.AuraInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "inst", Namespace: testNS,
+				Annotations: map[string]string{AuraExternalIDAnnotation: "inst-1"},
+			},
+			Spec: neo4jv1beta1.AuraInstanceSpec{
+				CredentialsSecretRef: credRef(), ProjectID: "proj-1", OrganizationID: org,
+			},
+		}
+	}
+
+	t.Run("instance org is used when the resource does not override", func(t *testing.T) {
+		c := newAuraFakeClient(t, scheme, newInst("org-from-instance"))
+		_, orgID, projectID, instanceID, err := resolveAuraDBCoords(ctx, c, testNS, "inst", "")
+		if err != nil {
+			t.Fatalf("resolveAuraDBCoords: %v", err)
+		}
+		if orgID != "org-from-instance" {
+			t.Errorf("orgID = %q, want org-from-instance", orgID)
+		}
+		if projectID != "proj-1" || instanceID != "inst-1" {
+			t.Errorf("project/instance = %q/%q", projectID, instanceID)
+		}
+	})
+
+	t.Run("the resource's own override still wins", func(t *testing.T) {
+		c := newAuraFakeClient(t, scheme, newInst("org-from-instance"))
+		_, orgID, _, _, err := resolveAuraDBCoords(ctx, c, testNS, "inst", "org-from-database")
+		if err != nil {
+			t.Fatalf("resolveAuraDBCoords: %v", err)
+		}
+		if orgID != "org-from-database" {
+			t.Errorf("orgID = %q, want org-from-database (the explicit override)", orgID)
+		}
+	})
+
+	t.Run("neither set is still an error", func(t *testing.T) {
+		c := newAuraFakeClient(t, scheme, newInst(""))
+		if _, _, _, _, err := resolveAuraDBCoords(ctx, c, testNS, "inst", ""); err == nil {
+			t.Error("expected an error when no organization can be resolved at all")
+		}
+	})
+}

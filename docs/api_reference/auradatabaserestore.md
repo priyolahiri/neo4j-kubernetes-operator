@@ -27,7 +27,7 @@ Set exactly one of `backupId` or `backupRef`.
 
 | Field | Type | Description |
 |---|---|---|
-| `phase` | `string` | `Restoring` (submitting) → **`Submitted`** (terminal success) or `Error`. It never becomes `Completed`: Aura runs the restore asynchronously and its v2beta1 database endpoint returns only an `id` with no status, so completion is **not observable** through the API — verify in the Aura console. Once `Submitted`, the CR is not reconciled again; a repeated restore would overwrite the database a second time. |
+| `phase` | `string` | `Restoring` (preparing) → `Submitting` (request in flight) → **`Submitted`** (terminal success), or `Error`. It never becomes `Completed`: Aura runs the restore asynchronously and its v2beta1 database endpoint returns only an `id` with no status, so completion is **not observable** through the API — verify in the Aura console. Once `Submitted`, the CR is not reconciled again; a repeated restore would overwrite the database a second time. A CR left in **`Submitting`** means the operator stopped while the request was in flight and cannot tell whether Aura applied it: it reports `Ready=False`, reason `RestoreOutcomeUnknown`, and deliberately does **not** retry. Check the database in the console, then delete and recreate the CR if the restore still needs to run. |
 | `startedAt` | `*metav1.Time` | When the restore was submitted. |
 | `finishedAt` | `*metav1.Time` | When the restore reached a terminal state. |
 | `conditions` | `[]metav1.Condition` | Standard readiness conditions. |

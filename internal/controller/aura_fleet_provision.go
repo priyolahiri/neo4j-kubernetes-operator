@@ -166,6 +166,36 @@ func fleetTokenSecretName(p *neo4jv1beta1.AuraFleetProvisionSpec, name string) s
 	return name + "-aura-fleet-token"
 }
 
+// ResolveFleetTokenSource returns the Secret name + key the registration phase
+// must read, for either way a token can arrive: supplied by the user via
+// spec.tokenSecretRef, or minted by Phase 0 into the provisioned Secret.
+//
+// This exists because the two are MUTUALLY EXCLUSIVE by CEL, and Phase 2
+// originally keyed only off tokenSecretRef — so a provisioned cluster minted a
+// token, wrote it to a Secret, and then never registered it, because
+// tokenSecretRef was (necessarily) nil. Provisioning that stops one step short of
+// registration defeats the entire point of the feature: closing the manual
+// console-wizard step.
+//
+// ok is false when the feature cannot register yet (neither source configured).
+func ResolveFleetTokenSource(spec *neo4jv1beta1.AuraFleetManagementSpec, objName string) (name, key string, ok bool) {
+	if spec == nil {
+		return "", "", false
+	}
+	if spec.TokenSecretRef != nil {
+		key = spec.TokenSecretRef.Key
+		if key == "" {
+			key = auraFleetTokenSecretKey
+		}
+		return spec.TokenSecretRef.Name, key, true
+	}
+	if spec.Provision != nil {
+		// Phase 0 always writes under auraFleetTokenSecretKey.
+		return fleetTokenSecretName(spec.Provision, objName), auraFleetTokenSecretKey, true
+	}
+	return "", "", false
+}
+
 // reconcileAuraFleetProvision runs Phase 0. It is a no-op unless fleet
 // management is enabled AND spec.provision is set.
 //
@@ -345,6 +375,25 @@ func (fp *fleetProvisioner) ensureToken(
 
 	// Either the user opted into rotation, or nothing was ever registered so
 	// there is no working state to protect.
+	//
+	// Clear `registered` FIRST, and persist it. Rotation invalidates whatever the
+	// DBMS registered, so leaving the flag set makes Phase 2 short-circuit on it
+	// and never register the replacement — the deployment would be left with a
+	// valid token that nothing has claimed. The write happens before the PATCH on
+	// purpose: if it fails we must NOT rotate, because the new token is returned
+	// exactly once and would be stranded behind a stale flag.
+	if st != nil && st.Registered {
+		key := types.NamespacedName{Namespace: obj.GetNamespace(), Name: obj.GetName()}
+		if err := fp.StatusWriter(ctx, key, func(fs *neo4jv1beta1.AuraFleetManagementStatus) {
+			fs.Registered = false
+			fs.Message = "token rotation in progress; the previous registration is being replaced"
+		}); err != nil {
+			return fmt.Errorf("clearing registered before rotating the token for fleet deployment %q: %w", deploymentID, err)
+		}
+		// Mirror onto the in-memory object so Phase 2 in THIS reconcile sees it.
+		st.Registered = false
+	}
+
 	token, err = apiClient.RotateDeploymentToken(ctx, orgID, projectID, deploymentID)
 	if err != nil {
 		// Both legs are wrapped: POST and PATCH are complementary (landmine 3), so

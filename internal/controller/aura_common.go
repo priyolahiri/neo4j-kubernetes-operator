@@ -297,7 +297,8 @@ func resolveMemberClient(factory auraMemberClientFactory, c auraCredentials) aur
 
 // resolveAuraDBCoords resolves the org/project/instance coordinates + credentials
 // for a database on the AuraInstance named instanceRef (same namespace).
-// orgOverride, if non-empty, wins over the provider config's default org.
+// orgOverride, if non-empty, wins over both the AuraInstance's own
+// organizationId and the provider config's default org.
 func resolveAuraDBCoords(ctx context.Context, k8s client.Client, namespace, instanceRef, orgOverride string) (creds auraCredentials, orgID, projectID, instanceID string, err error) {
 	creds, instanceID, inst, err := resolveInstanceCredsAndID(ctx, k8s, namespace, instanceRef)
 	if err != nil {
@@ -307,7 +308,18 @@ func resolveAuraDBCoords(ctx context.Context, k8s client.Client, namespace, inst
 	if projectID == "" {
 		projectID = creds.projectID
 	}
-	orgID = resolveProviderOrgID(ctx, k8s, namespace, inst.Spec.ProviderConfigRef, orgOverride)
+	// Precedence: the resource's own override, then the AuraInstance's
+	// organizationId, then the provider config default. The middle step matters:
+	// AuraInstance.spec.organizationId is required to CREATE a multi-database
+	// instance, so an instance can legitimately carry the org while using inline
+	// credentials and no provider config — and without this, every AuraDatabase
+	// against it failed TargetUnresolved unless the org was duplicated on the
+	// database CR (or, worse, silently targeted a different provider default).
+	effectiveOverride := orgOverride
+	if effectiveOverride == "" {
+		effectiveOverride = inst.Spec.OrganizationID
+	}
+	orgID = resolveProviderOrgID(ctx, k8s, namespace, inst.Spec.ProviderConfigRef, effectiveOverride)
 	if orgID == "" {
 		return creds, "", projectID, instanceID, fmt.Errorf("organizationId is required (set it on the CR or as defaultOrganizationId on the AuraProviderConfig)")
 	}

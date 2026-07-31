@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // ==========================================================================
@@ -152,6 +153,12 @@ func (c *Client) CreateDatabase(ctx context.Context, orgID, projectID, instanceI
 	if err := c.doV2Data(ctx, http.MethodPost, dbCollectionPath(orgID, projectID, instanceID), req, &out); err != nil {
 		return nil, fmt.Errorf("creating database: %w", err)
 	}
+	// See doV2Data: a missing or null `data` field is a no-op, so an unexpected 2xx
+	// envelope yields an empty ID with no error — which the controller would then
+	// store as its adoption annotation and re-create the database next reconcile.
+	if strings.TrimSpace(out.ID) == "" {
+		return nil, fmt.Errorf("creating database %q: Aura returned success with no database id", req.Name)
+	}
 	return &out, nil
 }
 
@@ -190,6 +197,9 @@ func (c *Client) CreateDatabaseBackup(ctx context.Context, orgID, projectID, ins
 	path := dbCollectionPath(orgID, projectID, instanceID) + "/" + url.PathEscape(databaseID) + "/backups"
 	if err := c.doV2Data(ctx, http.MethodPost, path, struct{}{}, &out); err != nil {
 		return nil, fmt.Errorf("creating database backup: %w", err)
+	}
+	if strings.TrimSpace(out.ID) == "" {
+		return nil, fmt.Errorf("creating database backup: Aura returned success with no backup id")
 	}
 	return &out, nil
 }

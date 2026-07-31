@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // ==========================================================================
@@ -293,6 +294,15 @@ func (c *Client) CreateDeployment(ctx context.Context, orgID, projectID, name st
 	if err := c.doV2Data(ctx, http.MethodPost, fleetDeploymentsPath(orgID, projectID), body, &out); err != nil {
 		return "", fmt.Errorf("creating fleet deployment %q: %w", name, err)
 	}
+	// An empty ID must be an error, never a success. doV2Data treats a missing or
+	// null `data` field as a no-op, so a 2xx with an unexpected envelope decodes to
+	// a zero struct with no error — and the caller would then store an EMPTY
+	// external-ID annotation and register another deployment on every reconcile.
+	// That is the exact failure this file's landmine 1 documents; the envelope fix
+	// removed the known cause, and this closes the class.
+	if strings.TrimSpace(out.ID) == "" {
+		return "", fmt.Errorf("creating fleet deployment %q: Aura returned success with no deployment id", name)
+	}
 	return out.ID, nil
 }
 
@@ -323,6 +333,13 @@ func (c *Client) CreateDeploymentToken(ctx context.Context, orgID, projectID, de
 	if err := c.doV2Data(ctx, http.MethodPost, path, struct{}{}, &out); err != nil {
 		return "", fmt.Errorf("creating token for fleet deployment %q: %w", deploymentID, err)
 	}
+	// Same reasoning as CreateDeployment: an empty token is not a success. Here it
+	// also matters that the probe-then-fallback logic in ensureToken keys off this
+	// call succeeding — a silent "" would make it skip the PATCH fallback and store
+	// nothing.
+	if strings.TrimSpace(out.Token) == "" {
+		return "", fmt.Errorf("creating token for fleet deployment %q: Aura returned success with no token", deploymentID)
+	}
 	return out.Token, nil
 }
 
@@ -336,6 +353,12 @@ func (c *Client) RotateDeploymentToken(ctx context.Context, orgID, projectID, de
 	path := fleetDeploymentPath(orgID, projectID, deploymentID) + "/token"
 	if err := c.doV2Data(ctx, http.MethodPatch, path, struct{}{}, &out); err != nil {
 		return "", fmt.Errorf("rotating token for fleet deployment %q: %w", deploymentID, err)
+	}
+	// A rotation that reports success with no token is worse than a failure: the
+	// old token is already invalid and the replacement is unrecoverable.
+	if strings.TrimSpace(out.Token) == "" {
+		return "", fmt.Errorf("rotating token for fleet deployment %q: Aura returned success with no token; "+
+			"the previous token may already be invalid", deploymentID)
 	}
 	return out.Token, nil
 }
