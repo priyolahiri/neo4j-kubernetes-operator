@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
 // ClusterValidationResult holds validation results including warnings
@@ -201,7 +202,27 @@ func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1
 	allErrs = append(allErrs, ValidateExtraVolumes(cluster.Spec.ExtraVolumes, field.NewPath("spec", "extraVolumes"))...)
 	allErrs = append(allErrs, ValidateExtraVolumeMounts(cluster.Spec.ExtraVolumeMounts, field.NewPath("spec", "extraVolumeMounts"))...)
 
+	// Admin password shape: a leading "-" makes the entrypoint's
+	// set-initial-password call fail to parse, crash-looping the pod with a
+	// message that never mentions the password. See ValidateAdminSecretPassword.
+	allErrs = append(allErrs, ValidateAdminSecretPassword(
+		ctx, v.client, cluster.Namespace, resolveAdminSecretName(cluster.Spec.Auth),
+		field.NewPath("spec", "auth", "adminSecret"))...)
+
 	return allErrs
+}
+
+// resolveAdminSecretName mirrors the builder's choice of admin Secret: the
+// explicit spec.auth.adminSecret when set, else the operator default. Kept here
+// so validation judges the SAME Secret the StatefulSet will actually mount
+// (internal/resources/cluster.go buildStatefulSetForEnterprise).
+func resolveAdminSecretName(auth *neo4jv1beta1.AuthSpec) string {
+	if auth != nil && auth.AdminSecret != "" {
+		return auth.AdminSecret
+	}
+	// Reuse the builder's own constant rather than duplicating the literal, so
+	// the two cannot drift apart.
+	return resources.DefaultAdminSecret
 }
 
 // validateClusterUpdate performs validation specific to cluster updates
