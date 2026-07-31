@@ -230,9 +230,17 @@ var _ = Describe("All-Databases Backup and Cluster Restore (MinIO) Integration T
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(restore), restore)
 			return restore.Status.Phase
-		}, restoreTimeout, pollInterval).Should(Equal("Completed"),
-			"all-databases restore should reach Completed; message=%q results=%+v",
-			restore.Status.Message, restore.Status.DatabaseResults)
+			// Lazy description: a plain format-string description has its ARGUMENTS
+			// evaluated when the assertion is built — i.e. straight after Create,
+			// while status is still empty — so every failure printed message="" and
+			// results=[] no matter what the CR actually ended up holding. Gomega
+			// calls a lone func() string only on failure, so this reports the real
+			// final state. (This misreporting sent a 2026-07-31 investigation down a
+			// blind alley.)
+		}, restoreTimeout, pollInterval).Should(Equal("Completed"), func() string {
+			return fmt.Sprintf("all-databases restore should reach Completed; phase=%q message=%q results=%+v",
+				restore.Status.Phase, restore.Status.Message, restore.Status.DatabaseResults)
+		})
 
 		gotResults := map[string]string{}
 		for _, r := range restore.Status.DatabaseResults {

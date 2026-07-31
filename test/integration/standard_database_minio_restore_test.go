@@ -287,9 +287,12 @@ var _ = Describe("Standard Database Restore (MinIO) Integration Tests", Label("e
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(restore), restore)
 			return restore.Status.Phase
-		}, restoreTimeout, pollInterval).Should(Equal("Completed"),
-			"Neo4jRestore phase should reach Completed via the cluster Cypher path; status.message=%q",
-			restore.Status.Message)
+			// Lazy description — see the note in all_databases_restore_test.go: as a
+			// format string, status.message was read at assertion-build time (empty).
+		}, restoreTimeout, pollInterval).Should(Equal("Completed"), func() string {
+			return fmt.Sprintf("Neo4jRestore phase should reach Completed via the cluster Cypher path; phase=%q status.message=%q",
+				restore.Status.Phase, restore.Status.Message)
+		})
 
 		By("Verifying the restored data matches the backup (count=42, not 999)")
 		Eventually(func() string {

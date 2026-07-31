@@ -202,7 +202,17 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 				r.markDatabaseResult(ctx, restore, db, StatusCompleted, "online")
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
-			// Still seeding — requeue without blocking.
+			// Still seeding — requeue without blocking, but RECORD WHY.
+			//
+			// This branch used to discard stErr and the counts entirely, so a
+			// database that never came online — or a SHOW DATABASE that failed on
+			// every poll — left the restore in Running forever with no message, no
+			// event and no log line. That is exactly how the 2026-07-31 extended run
+			// failed: 12 minutes of silence, nothing to distinguish "seeding" from
+			// "the status query has been erroring since the first poll". The message
+			// is persisted only when it CHANGES, so polling still costs no writes
+			// once the state is steady.
+			r.noteDatabaseProgress(ctx, restore, db, seedingProgressMessage(online, total, stErr))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 	}
@@ -505,4 +515,34 @@ func (r *Neo4jRestoreReconciler) markDatabaseResult(ctx context.Context, restore
 		}
 		return r.Status().Update(ctx, latest)
 	})
+}
+
+// seedingProgressMessage describes an in-progress (or failing) seed poll. Kept
+// separate so it can be unit-tested without a live Neo4j.
+func seedingProgressMessage(online, total int, stErr error) string {
+	if stErr != nil {
+		// A failing poll is NOT progress. Say so plainly: silence here previously
+		// looked identical to a healthy long seed.
+		return fmt.Sprintf("seeding from backup; last status poll FAILED: %v", stErr)
+	}
+	if total == 0 {
+		// Mid-recreate: SHOW DATABASE reports no allocations for the database yet.
+		return "seeding from backup; database has no allocations yet (recreate in progress)"
+	}
+	return fmt.Sprintf("seeding from backup; %d/%d allocations online", online, total)
+}
+
+// noteDatabaseProgress updates a database's message only when it changed, so the
+// poll loop does not issue a status write per reconcile.
+func (r *Neo4jRestoreReconciler) noteDatabaseProgress(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, db, message string) {
+	for i := range restore.Status.DatabaseResults {
+		if restore.Status.DatabaseResults[i].Database != db {
+			continue
+		}
+		if restore.Status.DatabaseResults[i].Message == message {
+			return // unchanged — nothing to persist
+		}
+		break
+	}
+	r.markDatabaseResult(ctx, restore, db, StatusRunning, message)
 }
