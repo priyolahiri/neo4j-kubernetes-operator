@@ -43,6 +43,18 @@ const (
 	// ReasonTenantNotFound is returned (with HTTP 404) when the target
 	// tenant/project does not exist.
 	ReasonTenantNotFound = "tenant-not-found"
+	// ReasonMultiDBOnly is returned by the v2beta1 database-create endpoint
+	// (with HTTP 409, message "Only multi database Instances can add
+	// databases") when the target instance is not a multi-database instance.
+	// It is TERMINAL: `multi_database` is fixed at instance-creation time and
+	// there is no API to convert an existing instance, so retrying can never
+	// succeed. Verified live 2026-07-31.
+	ReasonMultiDBOnly = "multi-db-only"
+	// ReasonAuraDatabaseNotFound is returned (with HTTP 404) by the v2beta1
+	// per-database endpoints when the database does not exist — including the
+	// second DELETE of an already-deleted database, which is how those deletes
+	// stay idempotent. Verified live 2026-07-31.
+	ReasonAuraDatabaseNotFound = "aura-database-not-found"
 )
 
 // APIError is the structured error returned for any non-2xx Aura API response.
@@ -101,10 +113,25 @@ type middlewareEnvelope struct {
 	Error string `json:"error"`
 }
 
-// newAPIError builds an APIError from a non-2xx response. It parses BOTH known
-// Aura error body shapes — the primary `{"errors":[...]}` shape and the gateway
-// `{"error":"..."}` shape — falling back to a generic message when the body is
-// empty or unparseable.
+// v2beta1Envelope models the BARE error body the v2beta1 API returns:
+//
+//	{"message":"Only multi database Instances can add databases","reason":"multi-db-only"}
+//
+// Note the difference from v1, which wraps the same pair in an `errors` array.
+// Verified live 2026-07-31. Without this shape the whole JSON blob ends up in
+// APIError.Message — which is what a user then sees in their CR status — and
+// Reason stays empty, so no reason-based classification can work on v2beta1.
+type v2beta1Envelope struct {
+	Message string `json:"message"`
+	Reason  string `json:"reason"`
+}
+
+// newAPIError builds an APIError from a non-2xx response. It parses the THREE
+// known Aura error body shapes — v1's `{"errors":[...]}`, v2beta1's bare
+// `{"message","reason"}`, and the gateway's `{"error":"..."}` — falling back to
+// the raw body when none match. That fallback matters: v2beta1 schema-validation
+// failures return PLAIN TEXT, not JSON (e.g. `- at ”: missing property 'id'`),
+// and the status code must survive so callers can still classify them.
 func newAPIError(statusCode int, requestID string, body []byte) *APIError {
 	e := &APIError{
 		StatusCode: statusCode,
@@ -119,6 +146,17 @@ func newAPIError(statusCode int, requestID string, body []byte) *APIError {
 		e.Message = first.Message
 		if first.Field != "" {
 			e.Message = fmt.Sprintf("%s (field: %s)", first.Message, first.Field)
+		}
+		return e
+	}
+
+	// v2beta1 returns the same pair unwrapped.
+	var v2 v2beta1Envelope
+	if err := json.Unmarshal(body, &v2); err == nil && (v2.Message != "" || v2.Reason != "") {
+		e.Message = v2.Message
+		e.Reason = v2.Reason
+		if e.Message == "" {
+			e.Message = v2.Reason
 		}
 		return e
 	}
@@ -153,11 +191,31 @@ func IsNotFound(err error) bool {
 // IsConflict reports whether err indicates the action cannot be performed
 // because another operation is in flight — HTTP 409, or the
 // ongoing-database-operation reason. Callers requeue and retry.
+//
+// The multi-db-only refusal is deliberately EXCLUDED even though it too arrives
+// as a 409: it is a permanent property of the instance, so reporting it as a
+// retryable conflict makes a controller requeue forever instead of telling the
+// user what is wrong. Use IsMultiDatabaseOnly for that case.
 func IsConflict(err error) bool {
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
+		if apiErr.Reason == ReasonMultiDBOnly {
+			return false
+		}
 		return apiErr.StatusCode == http.StatusConflict ||
 			apiErr.Reason == ReasonOngoingDatabaseOperation
+	}
+	return false
+}
+
+// IsMultiDatabaseOnly reports whether err is the v2beta1 refusal to add a
+// database to an instance that was not created as multi-database. Terminal —
+// see ReasonMultiDBOnly. Callers must check this BEFORE IsConflict and
+// IsTransient, both of which would otherwise send them into a retry loop.
+func IsMultiDatabaseOnly(err error) bool {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Reason == ReasonMultiDBOnly
 	}
 	return false
 }

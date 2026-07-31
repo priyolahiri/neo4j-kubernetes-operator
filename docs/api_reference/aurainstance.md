@@ -20,6 +20,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 | `providerConfigRef` | `object` | References an [`AuraProviderConfig`](auraproviderconfig.md) (`{name}`, a core `LocalObjectReference`) in the same namespace, supplying credentials, defaults, and the shared rate limiter. **Mutually exclusive with `credentialsSecretRef`.** |
 | `credentialsSecretRef` | `object` | Inline single-account shortcut when no `AuraProviderConfig` is used. See [AuraCredentialsSecretRef](auraproviderconfig.md#auracredentialssecretref). **Mutually exclusive with `providerConfigRef`.** |
 | `projectId` | `string` | Aura project (the API `tenant_id`). **Immutable.** Falls back to the provider config's `defaultProjectId` when empty. |
+| `organizationId` | `string` | Aura organization. **Immutable once set.** Needed only by the v2beta1 code paths (`multiDatabase` creation and the multi-database status probe); plain v1 management does not use it. Falls back to the provider config's `defaultOrganizationId`. |
 | `cloudProvider` | `string` | Enum `aws` / `gcp` / `azure`. **Required. Immutable.** |
 | `region` | `string` | Instance region, e.g. `europe-west1`. Valid values are per-project. **Required. Immutable.** |
 | `type` | `string` | Enum `free-db` / `professional-db` / `business-critical` / `enterprise-db` / `professional-ds` / `enterprise-ds`. `enterprise-db` = Virtual Dedicated Cloud (VDC). **Required. Immutable** except the in-place `professional-db` → `business-critical` upgrade. |
@@ -33,6 +34,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 | `secondariesCount` | `*int32` | Number of secondaries. `enterprise-db` (VDC) only. |
 | `cdcEnrichmentMode` | `string` | Enum `OFF` / `DIFF` / `FULL`. VDC / `business-critical` only. |
 | `customerManagedKeyId` | `string` | Aura-assigned CMK ID (from an [`AuraCustomerManagedKey`](auracustomermanagedkey.md) status). `enterprise-db` / `enterprise-ds` only. **Immutable once set.** |
+| `multiDatabase` | `*bool` | Requests a **multi-database** instance — the only kind that can host more than the one database Aura creates with it, and therefore the only kind [`AuraDatabase`](auradatabase.md), [`AuraDatabaseBackup`](auradatabasebackup.md) and [`AuraDatabaseRestore`](auradatabaserestore.md) can target. **Immutable**: Aura fixes it at creation and publishes no way to convert an existing instance. Only `true` changes anything. See [Multi-database instances](#multi-database-instances). |
 | `source` | `object` | Clone a new instance from an existing one at create time. **Immutable.** See [AuraInstanceSource](#aurainstancesource). |
 | `instanceId` | `string` | Adopt/import an existing Aura instance by ID rather than creating one. **Immutable once set.** |
 | `connectionSecretName` | `string` | Secret the operator writes connection details (URI + one-time credentials) to. Defaults to `<name>-conn`. |
@@ -79,6 +81,8 @@ Mirrors the instance state last observed from the Aura API — the source of tru
 | `region` | `string` | Observed region. |
 | `cloudProvider` | `string` | Observed cloud provider. |
 | `name` | `string` | Observed instance name. |
+| `multiDatabase` | `*bool` | Whether the instance can host more than one database. **Unset means unknown, not false** — the flag exists only on the Aura v2beta1 instance detail, which fails for instances created through v1, so the answer is not always knowable. Probed once (it can never change) and cached. |
+| `defaultDatabaseId` | `string` | The database Aura creates together with a multi-database instance. Reported only by the v2beta1 create response, so populated only for instances this operator created with `multiDatabase` set. |
 
 ## Immutability
 
@@ -86,10 +90,36 @@ The following fields are immutable and enforced declaratively by the apiserver v
 
 - `cloudProvider`, `region`, `version`
 - `type` — **except** the one in-place `professional-db` → `business-critical` upgrade
-- `projectId`, `customerManagedKeyId`, `instanceId` — immutable once set
-- `source`
+- `projectId`, `organizationId`, `customerManagedKeyId`, `instanceId` — immutable once set
+- `source`, `multiDatabase`
 
 `type`/`region`/`memory`/`version` combinations are additionally validated against the live per-project `instance_configurations` inline in the reconciler (the one check CEL cannot express).
+
+## Multi-database instances
+
+An Aura instance either can hold several databases or it cannot, and that is decided when the instance is created — Aura publishes no API to convert one. Set `spec.multiDatabase: true` to get one.
+
+This has consequences worth knowing before you rely on it:
+
+- **It changes which API creates the instance.** `multi_database` exists only in the Aura **v2beta1** API, so the operator issues the create there and then manages the instance through v1 as usual (observe, resize, pause/resume, upgrade, delete all work against a v2beta1-created instance). v2beta1 is **beta** — see the caveat in [Aura orchestration](../user_guide/aura_orchestration.md).
+- **It needs an organization ID**, because the v2beta1 paths are organization-scoped. Set `spec.organizationId` or `defaultOrganizationId` on the [`AuraProviderConfig`](auraproviderconfig.md).
+- **A smaller set of fields applies.** The v2beta1 create accepts only name, type, cloudProvider, region and memory, and *silently ignores* anything else. So `storage`, `vectorOptimized`, `graphAnalyticsPlugin`, `secondariesCount`, `cdcEnrichmentMode`, `customerManagedKeyId` and `source` are **rejected** in combination with `multiDatabase` rather than quietly dropped. `version` is not sent either — Aura picks the version — although the CRD still requires it.
+- **Instances created by earlier operator versions are not multi-database**, and cannot be made so. An `AuraDatabase` against one is refused with `Ready=False`, reason `InstanceNotMultiDatabase`; the fix is a new `AuraInstance` (and a data migration), not a spec edit.
+
+```yaml
+spec:
+  providerConfigRef:
+    name: aura-account
+  organizationId: 6f2e…            # required for the v2beta1 create
+  cloudProvider: gcp
+  region: europe-west1
+  type: business-critical
+  version: "5"
+  memory: 2GB
+  multiDatabase: true
+```
+
+`status.atProvider.multiDatabase` reports the verdict. An **absent** value means unknown, not false: the operator probes v2beta1 once per instance, and that probe cannot succeed for instances created through v1.
 
 ## Example
 

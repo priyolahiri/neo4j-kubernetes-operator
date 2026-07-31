@@ -63,6 +63,10 @@ type AuraInstanceReconciler struct {
 	// ClientFactory builds the Aura API client from resolved credentials; nil
 	// uses the real shared cached client. Tests inject a fake.
 	ClientFactory auraClientFactory
+	// InstanceV2ClientFactory builds the Aura v2beta1 instance client, used only
+	// by the multi-database paths (creating one, and probing whether an existing
+	// instance is one). nil uses the real shared cached client.
+	InstanceV2ClientFactory auraInstanceV2ClientFactory
 }
 
 func (r *AuraInstanceReconciler) requeueAfter() time.Duration {
@@ -99,6 +103,7 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		projectID = creds.projectID
 	}
 	apiClient := resolveClient(r.ClientFactory, creds)
+	v2Client := resolveInstanceV2Client(r.InstanceV2ClientFactory, creds)
 
 	if !inst.DeletionTimestamp.IsZero() {
 		return r.handleDeletion(ctx, inst, apiClient)
@@ -128,7 +133,7 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		// exists (avoids a duplicate paid instance after a crash between create
 		// and the annotation write). Creation is gated by managementPolicies.
 		allowCreate := managementAllows(inst.Spec.ManagementPolicies, auraPolicyCreate)
-		id, adopted, err := r.observeOrCreate(ctx, req, inst, apiClient, projectID, allowCreate)
+		id, adopted, err := r.observeOrCreate(ctx, req, inst, apiClient, v2Client, projectID, allowCreate)
 		if err != nil {
 			return r.fail(ctx, req, inst, "CreateFailed", err)
 		}
@@ -180,6 +185,11 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
+	// --- Multi-database verdict (one-shot, non-fatal) ---
+	// Reported for the user's benefit and consumed by the AuraDatabase family,
+	// which can only target a multi-database instance.
+	r.reconcileMultiDatabaseStatus(ctx, req, inst, v2Client, projectID, externalID)
+
 	// --- Status ---
 	if err := r.syncStatus(ctx, req, inst, observed); err != nil {
 		return ctrl.Result{}, err
@@ -196,7 +206,7 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 // observeOrCreate implements the observe-before-create idempotency guard.
 func (r *AuraInstanceReconciler) observeOrCreate(
 	ctx context.Context, req ctrl.Request, inst *neo4jv1beta1.AuraInstance,
-	apiClient auraAPI, projectID string, allowCreate bool,
+	apiClient auraAPI, v2Client auraInstanceV2API, projectID string, allowCreate bool,
 ) (id string, adopted bool, err error) {
 	name := r.instanceName(inst)
 
@@ -237,6 +247,14 @@ func (r *AuraInstanceReconciler) observeOrCreate(
 				"no Aura instance configuration for type=%s region=%s cloudProvider=%s in project %s; check the project's supported combinations",
 				inst.Spec.Type, inst.Spec.Region, inst.Spec.CloudProvider, projectID)
 		}
+	}
+
+	// A multi-database instance can only be created through v2beta1 — v1 has no
+	// such field — so that create diverges here. Everything afterwards (this
+	// method's caller included) stays on v1, which does see v2beta1-created
+	// instances.
+	if wantsMultiDatabase(inst) {
+		return r.createMultiDatabaseInstance(ctx, req, inst, projectID, name)
 	}
 
 	// Create.
@@ -534,14 +552,28 @@ func (r *AuraInstanceReconciler) syncStatus(ctx context.Context, req ctrl.Reques
 			latest.Status.ConnectionURL = observed.ConnectionURL
 		}
 		latest.Status.MetricsIntegrationURL = observed.MetricsIntegrationURL
+		// The multi-database facts are NOT part of the v1 observation this method
+		// rebuilds from — they come from the v2beta1 create response or the
+		// one-shot probe — and they can never change, so carry them across the
+		// wholesale rebuild instead of dropping them every reconcile.
+		var (
+			priorMultiDB  *bool
+			priorDefaultD string
+		)
+		if prior := latest.Status.AtProvider; prior != nil {
+			priorMultiDB = prior.MultiDatabase
+			priorDefaultD = prior.DefaultDatabaseID
+		}
 		latest.Status.AtProvider = &neo4jv1beta1.AuraInstanceObservation{
-			Status:        observed.Status,
-			Memory:        observed.Memory,
-			Storage:       observed.Storage,
-			Type:          observed.Type,
-			Region:        observed.Region,
-			CloudProvider: observed.CloudProvider,
-			Name:          observed.Name,
+			Status:            observed.Status,
+			Memory:            observed.Memory,
+			Storage:           observed.Storage,
+			Type:              observed.Type,
+			Region:            observed.Region,
+			CloudProvider:     observed.CloudProvider,
+			Name:              observed.Name,
+			MultiDatabase:     priorMultiDB,
+			DefaultDatabaseID: priorDefaultD,
 		}
 		if cn := r.connectionSecretName(latest); cn != "" {
 			latest.Status.Binding = &neo4jv1beta1.AuraServiceBinding{Name: cn}

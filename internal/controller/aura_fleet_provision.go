@@ -66,24 +66,25 @@ const AuraFleetDeploymentAnnotation = "neo4j.com/external-fleet-deployment-id"
 // auraFleetTokenSecretKey is the key the minted token is written under.
 const auraFleetTokenSecretKey = "token"
 
-// fleetRefusalError marks a decision the operator made DELIBERATELY — a policy
+// auraRefusalError marks a decision the operator made DELIBERATELY — a policy
 // refusal or an unrecoverable state — as opposed to an API or transport failure.
+// Shared by every Aura controller, not just the fleet one.
 //
 // This distinction is load-bearing: aura.IsTransient() returns TRUE for any
 // error that is not an *aura.APIError, on the reasonable assumption that such
 // errors are transport-level blips worth retrying. A deliberate refusal is not
 // an APIError either, so without this marker it would be misread as transient,
 // silently retried forever, and its explanation never shown to the user.
-type fleetRefusalError struct{ msg string }
+type auraRefusalError struct{ msg string }
 
-func (e *fleetRefusalError) Error() string { return e.msg }
+func (e *auraRefusalError) Error() string { return e.msg }
 
 func refusef(format string, a ...any) error {
-	return &fleetRefusalError{msg: fmt.Sprintf(format, a...)}
+	return &auraRefusalError{msg: fmt.Sprintf(format, a...)}
 }
 
-func isFleetRefusal(err error) bool {
-	var r *fleetRefusalError
+func isAuraRefusal(err error) bool {
+	var r *auraRefusalError
 	return errors.As(err, &r)
 }
 
@@ -189,8 +190,8 @@ func (fp *fleetProvisioner) reconcileAuraFleetProvision(ctx context.Context, obj
 	// --- deployment ---------------------------------------------------------
 	deploymentID, err := fp.ensureDeployment(ctx, obj, p, apiClient, orgID, projectID)
 	if err != nil {
-		// Refusals are checked BEFORE IsTransient — see the fleetRefusalError doc.
-		if !isFleetRefusal(err) && aura.IsTransient(err) {
+		// Refusals are checked BEFORE IsTransient — see the auraRefusalError doc.
+		if !isAuraRefusal(err) && aura.IsTransient(err) {
 			logger.Info("Aura fleet deployment lookup transient failure; will retry")
 			return nil
 		}
@@ -203,8 +204,8 @@ func (fp *fleetProvisioner) reconcileAuraFleetProvision(ctx context.Context, obj
 
 	// --- token --------------------------------------------------------------
 	if err := fp.ensureToken(ctx, obj, p, apiClient, orgID, projectID, deploymentID); err != nil {
-		// Refusals are checked BEFORE IsTransient — see the fleetRefusalError doc.
-		if !isFleetRefusal(err) && aura.IsTransient(err) {
+		// Refusals are checked BEFORE IsTransient — see the auraRefusalError doc.
+		if !isAuraRefusal(err) && aura.IsTransient(err) {
 			return nil
 		}
 		return fp.note(ctx, key, err.Error())
@@ -346,7 +347,10 @@ func (fp *fleetProvisioner) ensureToken(
 	// there is no working state to protect.
 	token, err = apiClient.RotateDeploymentToken(ctx, orgID, projectID, deploymentID)
 	if err != nil {
-		return fmt.Errorf("minting token for fleet deployment %q failed (post: %v; rotate: %w)", deploymentID, postErr, err)
+		// Both legs are wrapped: POST and PATCH are complementary (landmine 3), so
+		// which one failed and how is the whole diagnosis — and callers classify on
+		// the API error, which would be lost if either leg were flattened to text.
+		return fmt.Errorf("minting token for fleet deployment %q failed (post: %w; rotate: %w)", deploymentID, postErr, err)
 	}
 	if p.TokenPolicy == "Rotate" {
 		fp.Recorder.Eventf(obj, corev1.EventTypeWarning, EventReasonAuraFleetTokenRotated,

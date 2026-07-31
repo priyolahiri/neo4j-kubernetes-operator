@@ -33,6 +33,7 @@ import (
 
 type fakeDatabaseAPI struct {
 	createCalled   bool
+	createErr      error
 	listFn         func() ([]aura.Database, error)
 	getFn          func(id string) (*aura.Database, error)
 	listBackupsFn  func() ([]aura.DatabaseBackup, error)
@@ -47,6 +48,9 @@ type fakeDatabaseAPI struct {
 // broken contract pass CI.
 func (f *fakeDatabaseAPI) CreateDatabase(_ context.Context, _, _, _ string, _ aura.CreateDatabaseRequest) (*aura.Database, error) {
 	f.createCalled = true
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
 	return &aura.Database{ID: "db-new"}, nil
 }
 func (f *fakeDatabaseAPI) GetDatabase(_ context.Context, _, _, _, id string) (*aura.Database, error) {

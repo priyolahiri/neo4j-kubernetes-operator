@@ -47,6 +47,10 @@ type auraDatabaseTarget struct {
 	orgID      string
 	projectID  string
 	instanceID string
+	// multiDatabase is the referenced AuraInstance's recorded verdict on whether
+	// it can host additional databases. nil means UNKNOWN (see
+	// aura_multidatabase.go) — only an explicit false is grounds to refuse.
+	multiDatabase *bool
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=auradatabases,verbs=get;list;watch;create;update;patch;delete
@@ -82,7 +86,13 @@ func (r *AuraDatabaseReconciler) dbName(d *neo4jv1beta1.AuraDatabase) string {
 // referenced AuraInstance.
 func (r *AuraDatabaseReconciler) resolveTarget(ctx context.Context, d *neo4jv1beta1.AuraDatabase) (auraDatabaseTarget, error) {
 	creds, orgID, projectID, instanceID, err := resolveAuraDBCoords(ctx, r.Client, d.Namespace, d.Spec.InstanceRef, d.Spec.OrganizationID)
-	return auraDatabaseTarget{creds: creds, orgID: orgID, projectID: projectID, instanceID: instanceID}, err
+	return auraDatabaseTarget{
+		creds:         creds,
+		orgID:         orgID,
+		projectID:     projectID,
+		instanceID:    instanceID,
+		multiDatabase: auraInstanceMultiDatabase(ctx, r.Client, d.Namespace, d.Spec.InstanceRef),
+	}, err
 }
 
 // Reconcile drives one pass of the database state machine.
@@ -129,6 +139,11 @@ func (r *AuraDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		allowCreate := managementAllows(d.Spec.ManagementPolicies, auraPolicyCreate)
 		id, adopted, err := r.observeOrCreate(ctx, req, d, apiClient, tgt, allowCreate)
 		if err != nil {
+			// A deliberate refusal (see auraRefusalError) describes a permanent
+			// property of the target, so name it as such and stop retrying.
+			if isAuraRefusal(err) {
+				return r.fail(ctx, req, d, "InstanceNotMultiDatabase", err)
+			}
 			return r.fail(ctx, req, d, "CreateFailed", err)
 		}
 		if id == "" {
@@ -180,6 +195,12 @@ func (r *AuraDatabaseReconciler) observeOrCreate(
 	if !allowCreate {
 		return "", false, nil
 	}
+	// Refuse before spending a call we know will be rejected. Only an explicit
+	// false counts: an unknown verdict must still attempt the create, because
+	// the verdict is unknowable for many instances.
+	if tgt.multiDatabase != nil && !*tgt.multiDatabase {
+		return "", false, notMultiDatabaseRefusal(d.Spec.InstanceRef, tgt.instanceID)
+	}
 	if len(existing) > 0 {
 		r.Recorder.Event(d, corev1.EventTypeWarning, EventReasonAuraDatabaseCreated,
 			fmt.Sprintf("Creating database %q on an instance that already has %d database(s): the Aura API does not "+
@@ -188,6 +209,12 @@ func (r *AuraDatabaseReconciler) observeOrCreate(
 	}
 	created, err := apiClient.CreateDatabase(ctx, tgt.orgID, tgt.projectID, tgt.instanceID, aura.CreateDatabaseRequest{Name: name})
 	if err != nil {
+		// The API's own refusal, for the instances whose verdict we could not
+		// learn in advance. Translate it: on its own it is a bare 409 that reads
+		// as "try again later", and retrying it can never succeed.
+		if aura.IsMultiDatabaseOnly(err) {
+			return "", false, notMultiDatabaseRefusal(d.Spec.InstanceRef, tgt.instanceID)
+		}
 		return "", false, err
 	}
 	if err := r.setExternalID(ctx, req, created.ID); err != nil {
@@ -297,6 +324,13 @@ func (r *AuraDatabaseReconciler) fail(ctx context.Context, req ctrl.Request, d *
 		latest.Status.ObservedGeneration = latest.Generation
 		return r.Status().Update(ctx, latest)
 	})
+	// A refusal is terminal: the condition it reports cannot change on its own,
+	// so requeueing would only rewrite the same status every 30s and bury the
+	// explanation under repeated events. The spec change that fixes it triggers a
+	// fresh reconcile by itself.
+	if isAuraRefusal(cause) {
+		return ctrl.Result{}, nil
+	}
 	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 }
 
