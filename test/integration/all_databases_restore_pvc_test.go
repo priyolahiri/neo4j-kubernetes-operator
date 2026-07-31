@@ -138,6 +138,11 @@ var _ = Describe("PVC Cluster Restore — All-Databases and Single-Database (v1.
 			return cluster.Status.Phase
 		}, clusterReadyTimeout, pollInterval).Should(Equal("Ready"))
 
+		// Ready proves the HTTP port is open, NOT that Bolt can serve a query —
+		// /conf/health.sh never checks 7687. See waitForBoltReady; the sibling
+		// standalone spec failed three extended runs on exactly this gap.
+		waitForBoltReady(ctx, fmt.Sprintf("%s-server-0", cluster.Name), testNamespace, adminPass, 6*time.Minute)
+
 		By("Creating two user databases with data")
 		dbInventory = &neo4jv1beta1.Neo4jDatabase{
 			ObjectMeta: metav1.ObjectMeta{Name: "inventory", Namespace: testNamespace},
