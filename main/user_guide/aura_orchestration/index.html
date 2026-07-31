@@ -3971,7 +3971,10 @@ the CR is removed; a restore is one-shot and in place.</p>
   database endpoint returns only an <code>id</code>, with no status, so the operator has no
   way to see it finish and will not claim otherwise. <strong>Confirm completion in the
   Aura console.</strong> The CR is not retried once submitted (a repeated restore would
-  overwrite the database again).</li>
+  overwrite the database again). If you ever find one stuck at <code>Submitting</code> with
+  reason <code>RestoreOutcomeUnknown</code>, the operator stopped while the request was in
+  flight and cannot tell whether it was applied — check the database, then delete
+  and recreate the CR if the restore still needs to run.</li>
 </ul>
 <h3 id="access-console-rbac">Access (console-RBAC)<a class="headerlink" href="#access-console-rbac" title="Anchor link to this section">&para;</a></h3>
 <p>In-database Neo4j users/roles are <strong>not</strong> managed by the operator on Aura — there

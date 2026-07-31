@@ -3380,7 +3380,7 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td><code>Restoring</code> (submitting) → <strong><code>Submitted</code></strong> (terminal success) or <code>Error</code>. It never becomes <code>Completed</code>: Aura runs the restore asynchronously and its v2beta1 database endpoint returns only an <code>id</code> with no status, so completion is <strong>not observable</strong> through the API — verify in the Aura console. Once <code>Submitted</code>, the CR is not reconciled again; a repeated restore would overwrite the database a second time.</td>
+<td><code>Restoring</code> (preparing) → <code>Submitting</code> (request in flight) → <strong><code>Submitted</code></strong> (terminal success), or <code>Error</code>. It never becomes <code>Completed</code>: Aura runs the restore asynchronously and its v2beta1 database endpoint returns only an <code>id</code> with no status, so completion is <strong>not observable</strong> through the API — verify in the Aura console. Once <code>Submitted</code>, the CR is not reconciled again; a repeated restore would overwrite the database a second time. A CR left in <strong><code>Submitting</code></strong> means the operator stopped while the request was in flight and cannot tell whether Aura applied it: it reports <code>Ready=False</code>, reason <code>RestoreOutcomeUnknown</code>, and deliberately does <strong>not</strong> retry. Check the database in the console, then delete and recreate the CR if the restore still needs to run.</td>
 </tr>
 <tr>
 <td><code>startedAt</code></td>

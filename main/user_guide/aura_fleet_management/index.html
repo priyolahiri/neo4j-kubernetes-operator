@@ -3795,7 +3795,10 @@ mutually exclusive):</p>
 <li>Mints a registration token and stores it in <code>&lt;name&gt;-aura-fleet-token</code>
    (override with <code>provision.tokenSecretName</code>). The Secret is owned by the CR, so
    it is garbage-collected with it.</li>
-<li>Registers that token over Bolt exactly as the manual flow does.</li>
+<li>Registers that token over Bolt exactly as the manual flow does — reading it
+   back out of the Secret from step 2. There is no <code>tokenSecretRef</code> to point at
+   (the two are mutually exclusive), so the registration phase resolves the
+   provisioned Secret name itself.</li>
 </ol>
 <p>The Aura deployment ID is pinned to the CR in the
 <code>neo4j.com/external-fleet-deployment-id</code> annotation. <strong>Do not remove it</strong> — it is
@@ -3817,7 +3820,7 @@ That shapes the recovery behaviour when the token Secret is deleted:</p>
 </tr>
 <tr>
 <td><code>Rotate</code></td>
-<td>Always rotates to obtain a fresh token. <strong>This invalidates the existing registration</strong>, so the DBMS re-registers with the new token.</td>
+<td>Always rotates to obtain a fresh token. <strong>This invalidates the existing registration</strong>, so the operator clears <code>status.auraFleetManagement.registered</code> before rotating and the DBMS re-registers with the new token.</td>
 </tr>
 </tbody>
 </table>
