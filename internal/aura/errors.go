@@ -24,6 +24,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
+	"strconv"
+	"strings"
 )
 
 // reason values the Aura API returns in the `reason` field that callers key
@@ -133,6 +136,72 @@ type v2beta1Envelope struct {
 	Reason  string `json:"reason"`
 }
 
+// fieldErrorEnvelope models the v2beta1 VALIDATION error body, where `errors` is
+// an OBJECT KEYED BY FIELD — not the array v1 uses:
+//
+//	{"errors":{"allow_list":{"0":{"ip_range":["Field may not be null."]}},
+//	           "organization_id":["Missing data for required field."]},
+//	 "message":"The request body contains validation errors","reason":"validation-error"}
+//
+// Without this the per-field detail is lost and the user sees only "The request
+// body contains validation errors", which names neither the field nor the
+// problem — exactly the message that made the ip-filter contract bugs so hard to
+// place. Verified live 2026-08-01.
+type fieldErrorEnvelope struct {
+	Errors  map[string]json.RawMessage `json:"errors"`
+	Message string                     `json:"message"`
+	Reason  string                     `json:"reason"`
+}
+
+// flattenFieldErrors renders the nested field map as
+// "allow_list[0].ip_range: Field may not be null.; organization_id: …",
+// sorted so the output is stable. The PATH matters as much as the message: the
+// live body nests by list index, and a summary that says only "allow_list" does
+// not tell you WHICH entry or WHICH field was wrong.
+func flattenFieldErrors(m map[string]json.RawMessage) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var parts []string
+	for _, k := range keys {
+		parts = append(parts, walkFieldErrors(k, m[k])...)
+	}
+	return strings.Join(parts, "; ")
+}
+
+// walkFieldErrors renders one subtree as "<path>: <msg>" entries. A numeric key
+// is rendered as an index so `allow_list` + `0` reads as `allow_list[0]`.
+func walkFieldErrors(path string, raw json.RawMessage) []string {
+	var msgs []string
+	if err := json.Unmarshal(raw, &msgs); err == nil {
+		return []string{path + ": " + strings.Join(msgs, ", ")}
+	}
+	var child map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &child); err == nil {
+		keys := make([]string, 0, len(child))
+		for k := range child {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var out []string
+		for _, k := range keys {
+			next := path + "." + k
+			if _, convErr := strconv.Atoi(k); convErr == nil {
+				next = path + "[" + k + "]"
+			}
+			out = append(out, walkFieldErrors(next, child[k])...)
+		}
+		return out
+	}
+	var one string
+	if err := json.Unmarshal(raw, &one); err == nil {
+		return []string{path + ": " + one}
+	}
+	return []string{path + ": " + string(raw)}
+}
+
 // newAPIError builds an APIError from a non-2xx response. It parses the THREE
 // known Aura error body shapes — v1's `{"errors":[...]}`, v2beta1's bare
 // `{"message","reason"}`, and the gateway's `{"error":"..."}` — falling back to
@@ -143,6 +212,23 @@ func newAPIError(statusCode int, requestID string, body []byte) *APIError {
 	e := &APIError{
 		StatusCode: statusCode,
 		RequestID:  requestID,
+	}
+
+	// v2beta1 validation: `errors` is an object keyed by field. Try this before
+	// the array shape — an object cannot decode into []struct, so the array
+	// attempt would fall through and lose the detail.
+	var fe fieldErrorEnvelope
+	if err := json.Unmarshal(body, &fe); err == nil && len(fe.Errors) > 0 {
+		e.Reason = fe.Reason
+		e.Message = fe.Message
+		if detail := flattenFieldErrors(fe.Errors); detail != "" {
+			if e.Message == "" {
+				e.Message = detail
+			} else {
+				e.Message = e.Message + " (" + detail + ")"
+			}
+		}
+		return e
 	}
 
 	// Try the primary {"errors":[{message,reason,field}]} shape first.

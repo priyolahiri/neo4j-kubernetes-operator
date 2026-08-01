@@ -191,10 +191,12 @@ func (r *AuraIPFilterReconciler) observeOrCreate(
 	}
 	disabled := f.Spec.FilteringDisabled
 	created, err := apiClient.CreateIPFilter(ctx, orgID, aura.CreateIPFilterRequest{
-		Name:              name,
-		Description:       f.Spec.Description,
-		AllowList:         specAllowList(f),
-		FilteredEntities:  entities,
+		Name:        name,
+		Description: f.Spec.Description,
+		AllowList:   specAllowList(f),
+		// `entities` on write, `filtered_entities` on read — sending the read name
+		// returns 200 and silently attaches NOTHING. See the client's landmines.
+		Entities:          entities,
 		FilteringDisabled: &disabled,
 	})
 	if err != nil {
@@ -228,7 +230,7 @@ func (r *AuraIPFilterReconciler) reconcileDrift(
 	}
 	if !equalStringSet(entities.Instances, observed.FilteredEntities.Instances) {
 		fe := entities
-		patch.FilteredEntities = &fe
+		patch.Entities = &fe
 		changed = true
 	}
 	if f.Spec.FilteringDisabled != observed.FilteringDisabled {

@@ -132,3 +132,32 @@ func TestMultiDatabaseTierUnsupportedIsRecognised(t *testing.T) {
 		t.Error("this is the CREATE-side refusal, distinct from multi-db-only on database create")
 	}
 }
+
+// A FIFTH error shape: v2beta1 validation returns `errors` as an OBJECT KEYED BY
+// FIELD, sometimes nested by list index. Without parsing it the user sees only
+// "The request body contains validation errors" — which names neither the field
+// nor the problem, and is exactly what made the ip-filter write bugs so hard to
+// place. Verified live 2026-08-01.
+func TestNewAPIError_FieldKeyedValidationShape(t *testing.T) {
+	e := newAPIError(http.StatusBadRequest, "rid", []byte(
+		`{"errors":{"allow_list":{"0":{"ip_range":["Field may not be null."]}},`+
+			`"organization_id":["Missing data for required field."]},`+
+			`"message":"The request body contains validation errors","reason":"validation-error"}`))
+
+	if e.Reason != "validation-error" {
+		t.Errorf("Reason = %q, want validation-error", e.Reason)
+	}
+	for _, want := range []string{"allow_list", "ip_range", "Field may not be null.", "organization_id"} {
+		if !strings.Contains(e.Message, want) {
+			t.Errorf("message must surface %q so the offending field is nameable, got %q", want, e.Message)
+		}
+	}
+	// The summary must survive too — it is what tells you it was a validation
+	// failure at all.
+	if !strings.Contains(e.Message, "validation errors") {
+		t.Errorf("message must keep the API's own summary, got %q", e.Message)
+	}
+	if IsTransient(e) {
+		t.Error("a 400 validation failure must not be retried")
+	}
+}
