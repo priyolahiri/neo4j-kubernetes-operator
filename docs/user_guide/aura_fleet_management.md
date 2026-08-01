@@ -142,6 +142,12 @@ into a Secret. If you give the operator Aura API credentials instead, it can
 register the Fleet Manager deployment **and mint the token itself** — no wizard,
 no copy-paste.
 
+!!! success "Verified against a live Aura account (2026-07-31)"
+    The whole provisioning path — deployment registration, token minting,
+    rotation and cleanup — has been driven end-to-end against a real Aura
+    organization. That verification found and fixed four silent bugs; see
+    [Aura Orchestration → Verification status](aura_orchestration.md#verification-status).
+
 Set `spec.auraFleetManagement.provision` instead of `tokenSecretRef` (the two are
 mutually exclusive):
 

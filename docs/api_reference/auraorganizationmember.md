@@ -1,6 +1,7 @@
 # AuraOrganizationMember API Reference
 
 > **⚠️ BETA / best-effort.** Uses the Aura API **v2beta1** (unstable beta). See the [Aura Orchestration Guide](../user_guide/aura_orchestration.md).
+> **✅ Live-verified 2026-08-01** — request shapes and the role enum confirmed against the API's own validation errors. See [Verification status](../user_guide/aura_orchestration.md#verification-status).
 
 The `AuraOrganizationMember` CRD manages the **organization-level role** of an existing Aura *console* user (identified by email). This is Aura **platform** identity — **not** an in-database Neo4j user. To bring a new person in, create an [`AuraInvite`](aurainvite.md).
 

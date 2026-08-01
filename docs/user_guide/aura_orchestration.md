@@ -39,6 +39,47 @@ Design details and rationale: `docs/design/aura-orchestration.md`.
 | `AuraOrganizationMember` / `AuraProjectMember` | Manage an Aura console user's org / project role (console-RBAC), **v2beta1** (beta). |
 | `AuraInvite` | Invites a user to an Aura organization or project (console-RBAC), **v2beta1** (beta). |
 
+## Verification status
+
+Every one of these CRDs talks to a **live cloud API**, so what matters is not
+only whether the code compiles but whether its request shapes are what Aura
+actually accepts. The table below says exactly that, per surface.
+
+This is worth taking seriously: several of these contracts were originally built
+from the published OpenAPI spec, and when they were finally exercised against a
+real account, **three of them turned out to be wrong in ways unit tests could not
+catch** — because the tests asserted the client matched the spec, not the API.
+
+| Surface | Aura API | Live-verified | Notes |
+|---|---|---|---|
+| `AuraProviderConfig` | OAuth | ✅ 2026-07-30 | A token from the v1 endpoint authenticates v2beta1 calls too. |
+| `AuraInstance` | v1 (+ v2beta1 for `multiDatabase`) | ✅ 2026-08-01 | Full lifecycle walked: create → snapshot → restore → resize → pause → resume → tier upgrade → delete. |
+| `AuraSnapshot` | v1 | ✅ 2026-08-01 | |
+| `AuraRestore` | v1 | ✅ 2026-08-01 | |
+| `AuraCustomerManagedKey` | v1 | ❌ **UNTESTED** | See the warning below. |
+| `AuraIPFilter` | v2beta1 | ✅ 2026-08-01 | Contract was **wrong** and has been corrected — it could not create, update or delete. |
+| `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore` | v2beta1 | ✅ 2026-07-31 | Requires a multi-database instance. |
+| `AuraOrganizationMember`, `AuraProjectMember` | v2beta1 | ✅ 2026-08-01 | Read + write shapes and all role enums confirmed. |
+| `AuraInvite` | v2beta1 | ✅ 2026-08-01 | Contract was **wrong** and has been corrected — it could not send an invite. |
+| `spec.auraFleetManagement` (on a self-managed cluster) | v2beta1 | ✅ 2026-07-31 | See [Aura Fleet Management](aura_fleet_management.md). |
+
+!!! danger "AuraCustomerManagedKey has never been exercised against the Aura API"
+    Every other Aura surface above has been driven end-to-end against a real
+    account. `AuraCustomerManagedKey` has **not**, because it needs a real cloud
+    KMS key (AWS KMS / GCP Cloud KMS / Azure Key Vault) with IAM grants to Aura,
+    which cannot be created disposably.
+
+    Its client shape comes from the **published v1 OpenAPI spec**, and on this API
+    that has repeatedly proven insufficient. Treat `AuraCustomerManagedKey` as
+    **unproven**: expect that create or update may be rejected, and verify it in a
+    non-production project before relying on it. The one part that *is* pinned by
+    a test is the adoption logic — the v1 CMK **list** endpoint returns only
+    `id`/`name`/`tenant_id`, so a filter can never be matched on
+    `key_id`/`region`/`cloud_provider` from a list entry.
+
+    If you do exercise it, please report what you find so this table can be
+    updated.
+
 ## Quick start
 
 ```yaml
@@ -203,7 +244,9 @@ Each step is detailed in the sections that follow.
 
 ## Lifecycle
 
-- **Resize:** change `spec.memory` / `spec.storage` → online resize.
+- **Resize:** change `spec.memory` → online resize. **Leave `spec.storage`
+  unset**: Aura derives storage from memory and scales it for you, and a pair
+  the tier does not offer is rejected outright.
 - **Pause/resume:** set `spec.paused: true` / `false`.
 - **Upgrade tier:** change `spec.type` from `professional-db` to
   `business-critical` → in-place upgrade (see below).
@@ -227,6 +270,13 @@ instance). Aura requires ≥ 2GB storage for Business Critical, and the GDS plug
 is removed on upgrade — size and configure the instance accordingly first.
 
 ## Customer-managed encryption keys (CMK)
+
+!!! danger "Unproven — the only Aura surface never exercised against the live API"
+    See [Verification status](#verification-status). This CRD's contract comes
+    from the published OpenAPI spec, which on this API has repeatedly turned out
+    not to match what the service accepts. **Verify it in a non-production
+    project before relying on it**, and expect that create or update may be
+    rejected outright.
 
 Dedicated-tier instances (`enterprise-db` / `enterprise-ds`) can be encrypted
 with a key you hold in your own cloud KMS. Register the key with an
@@ -364,6 +414,8 @@ spec:
   organizationId: "<org-id>"    # or defaultOrganizationId on the provider config
   email: carol@example.com
   role: organization-member     # organization-* ; for a project invite set projectId + a namespace-* role
+  # For a project-scoped invite you MUST also set organizationRole — Aura
+  # requires an organization role on every invite. See the note below.
 ---
 # Manage the org role of an EXISTING console user (by email).
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -386,6 +438,32 @@ spec:
   email: bob@example.com
   role: project-metrics-integration-reader  # project-admin | project-member | project-viewer | project-metrics-integration-reader
 ```
+
+!!! warning "Every invite carries an organization role"
+    Aura has **no project-only invitation**: an invite must always grant at
+    least one `organization-*` role. So a project-scoped `AuraInvite` (a
+    `namespace-*` `role` plus `projectId`) must **also** set
+    `spec.organizationRole` — the apiserver rejects it otherwise.
+
+    The operator deliberately does not pick a default for you: silently granting
+    organization membership nobody asked for is a privilege decision that
+    belongs to you.
+
+!!! note "Three role vocabularies, and they are not interchangeable"
+    Aura spells the same ideas differently depending on where the role appears,
+    and each list below is exactly what the API accepts:
+
+    - **organization roles** — `organization-owner`, `organization-admin`,
+      `organization-member`
+    - **project roles** (on `AuraProjectMember`) — `project-admin`,
+      `project-member`, `project-viewer`,
+      `project-metrics-integration-reader`
+    - **project roles *inside an invite*** (on `AuraInvite`) —
+      `namespace-viewer`, `namespace-member`, `namespace-admin`,
+      `namespace-metrics-integration-reader`
+
+    Yes, the third list really does use `namespace-` for the same concepts the
+    second calls `project-`. That is the API's spelling, not the operator's.
 
 `AuraOrganizationMember` reconciles the org role of a user who is **already** an
 organization member; if the email isn't one yet, the CR reports a `NotAMember`
@@ -442,6 +520,19 @@ which also makes create idempotent (a crash can't produce a duplicate instance).
   except the `professional-db → business-critical` upgrade) cannot be changed
   after creation (enforced by the apiserver). Changing them requires a new
   instance.
+- **`multiDatabase` is fixed at creation.** Only an instance created with
+  `multiDatabase: true` can host `AuraDatabase` resources, only
+  `business-critical` and `enterprise-db` support it, and Aura offers no way to
+  convert an existing instance. Instances created by operator versions before
+  this field existed are single-database for good.
+- **Every invite carries an organization role.** Aura has no project-only
+  invitation, so an `AuraInvite` scoping someone to a project must also set
+  `spec.organizationRole`.
+- **Restores are not observable to completion.** Aura accepts them
+  asynchronously and exposes no status to poll, so an `AuraDatabaseRestore`
+  ends at `Submitted` — confirm the result in the Aura console.
+- **`AuraCustomerManagedKey` is unproven** — see [Verification
+  status](#verification-status).
 
 ## Network IP filtering (beta)
 

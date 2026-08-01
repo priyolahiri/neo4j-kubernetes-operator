@@ -1,5 +1,19 @@
 # AuraCustomerManagedKey API Reference
 
+> **⛔ UNPROVEN — never exercised against the live Aura API.** Every other Aura
+> CRD has been driven end-to-end against a real account; this one has not,
+> because it needs a real cloud KMS key (AWS KMS / GCP Cloud KMS / Azure Key
+> Vault) with IAM grants to Aura, which cannot be created disposably. Its shape
+> comes from the published v1 OpenAPI spec — and on this API, spec-derived
+> contracts have repeatedly proven wrong in ways unit tests could not catch.
+> **Verify in a non-production project before relying on it.** See
+> [Verification status](../user_guide/aura_orchestration.md#verification-status).
+>
+> One behaviour *is* test-pinned: the v1 CMK **list** endpoint returns only
+> `id`, `name` and `tenant_id`, so adoption narrows on `name` and then confirms
+> with a per-key `GET` — a key can never be matched on
+> `keyId`/`region`/`cloudProvider` from a list entry.
+
 The `AuraCustomerManagedKey` Custom Resource Definition (CRD) registers a customer-managed encryption key (CMK) with Neo4j Aura for use by dedicated-tier instances. The key material lives in the customer's own cloud KMS; Aura stores only a reference to it.
 
 ## Overview

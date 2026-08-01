@@ -122,6 +122,26 @@ recommended** whenever an `Aura*` CRD or `internal/aura/` changed, because the
 published Aura OpenAPI spec is known to disagree with the live API (see
 `docs/knowledge/operations.md` id 87).
 
+**Take that disagreement seriously.** As of 2026-08-01 every Aura surface except
+CMK has been driven against a real account, and three of them — fleet
+provisioning, IP filters and invites — were **broken in ways the unit suite could
+not see**, because the fixtures asserted the client matched the *spec* rather
+than the API. A green `make test-unit` is not evidence that an Aura write path
+works.
+
+**Cheap technique worth reusing:** to learn an enum or a required field without
+mutating anything, send a deliberately invalid value — the API answers with the
+full list of accepted values, or names the missing field, and changes nothing.
+
+| Surface | Live-verified | |
+|---|---|---|
+| Instances (v1 lifecycle), snapshots, restore | 2026-08-01 | ✅ |
+| Databases + per-database backup/restore (v2beta1) | 2026-07-31 | ✅ |
+| IP filters (v2beta1) | 2026-08-01 | ✅ contract corrected |
+| Console RBAC: members, invites (v2beta1) | 2026-08-01 | ✅ invite contract corrected |
+| Fleet provisioning (v2beta1) | 2026-07-31 | ✅ contract corrected |
+| **Customer-managed keys (v1)** | — | ❌ **never exercised; needs a real cloud KMS key** |
+
 Set up an `AuraProviderConfig` (or an inline `credentialsSecretRef`) with an API
 client ID + secret from the Aura console.
 

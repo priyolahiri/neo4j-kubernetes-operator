@@ -1,6 +1,7 @@
 # AuraDatabase API Reference
 
 > **⚠️ BETA / best-effort.** Uses the Aura API **v2beta1** (an unstable beta — breaking changes allowed without a version bump). The database create body is not fully schema'd upstream and is mirrored from the response shape. See the [Aura Orchestration Guide](../user_guide/aura_orchestration.md).
+> **✅ Live-verified 2026-07-31** — create → backup → restore → delete walked on a real multi-database instance. See [Verification status](../user_guide/aura_orchestration.md#verification-status).
 
 The `AuraDatabase` CRD manages a database on a managed Neo4j Aura instance. Aura manages replication/topology per tier, so there is **no topology knob** — for databases on a self-managed cluster, use [`Neo4jDatabase`](neo4jdatabase.md) instead.
 

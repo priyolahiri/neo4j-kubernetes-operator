@@ -1,5 +1,11 @@
 # AuraRestore API Reference
 
+> **✅ Live-verified 2026-08-01.** See [Verification status](../user_guide/aura_orchestration.md#verification-status).
+
+While a restore runs, the **instance** reports `status: restoring` and its
+`connectionUrl` may be briefly unavailable — restore is an instance-level
+operation, not a database-level one.
+
 The `AuraRestore` Custom Resource Definition (CRD) restores an [`AuraInstance`](aurainstance.md) in place from one of its snapshots — the Aura equivalent of `Neo4jRestore`. It is a one-shot action recorded as an auditable object: on completion the CR stays as history and does not re-fire.
 
 ## Overview

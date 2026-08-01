@@ -1,5 +1,7 @@
 # AuraInstance API Reference
 
+> **✅ Live-verified 2026-08-01** — the full lifecycle (create → snapshot → restore → resize → pause → resume → tier upgrade → delete) was walked against a real Aura project. See [Verification status](../user_guide/aura_orchestration.md#verification-status).
+
 The `AuraInstance` Custom Resource Definition (CRD) declaratively manages a Neo4j Aura cloud instance via the Aura REST API — provision, resize, pause/resume, upgrade, and (optionally) delete. It is distinct from `spec.auraFleetManagement`, which registers a self-managed cluster into the Aura console.
 
 ## Overview
@@ -26,7 +28,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 | `type` | `string` | Enum `free-db` / `professional-db` / `business-critical` / `enterprise-db` / `professional-ds` / `enterprise-ds`. `enterprise-db` = Virtual Dedicated Cloud (VDC). **Required. Immutable** except the in-place `professional-db` → `business-critical` upgrade. |
 | `version` | `string` | Coarse Aura Neo4j major version (e.g. `"5"`). **Required. Immutable.** |
 | `memory` | `string` | Instance memory, e.g. `4GB`. Mutable — drives online resize. Required except for `free-db` (size fixed by tier). |
-| `storage` | `string` | Instance storage, e.g. `8GB`. Mutable. Not configurable for `free-db`. |
+| `storage` | `string` | Instance storage, e.g. `8GB`. **In practice Aura derives storage from `memory`** — resizing memory auto-scales storage (e.g. 1GB→2GB memory takes storage 2GB→4GB), and a memory/storage pair the tier does not offer is rejected outright (`invalid-memory-size`, naming both values). **Prefer leaving this unset**: a value that disagrees with the tier makes the operator retry a permanently failing update. Not configurable for `free-db`. |
 | `name` | `string` | Aura instance name (max 30 chars). Defaults to `metadata.name`. |
 | `paused` | `bool` | Desired paused state — drives pause / resume. |
 | `vectorOptimized` | `*bool` | Enables vector optimization. |
@@ -60,7 +62,7 @@ Clones a new instance from an existing one at create time (immutable). Exactly o
 |---|---|---|
 | `instanceId` | `string` | Aura instance ID (mirror of the external-name annotation). |
 | `phase` | `string` | Mirrors the Aura instance status (`Creating`, `Running`, `Pausing`, `Paused`, `Resuming`, `Updating`, `Restoring`, `Destroying`, …). |
-| `connectionUrl` | `string` | Bolt routing URL (`neo4j+s://…`). |
+| `connectionUrl` | `string` | Bolt routing URL (`neo4j+s://…`). Aura returns this as **null while an instance is resuming**, so the operator keeps the last known value rather than blanking it — a pause/resume cycle will not clear this field. |
 | `metricsIntegrationUrl` | `string` | Prometheus scrape endpoint, when available. |
 | `binding` | `object` | Service Binding "Provisioned Service" pointer (`{name}` — the connection Secret). |
 | `conditions` | `[]metav1.Condition` | `Ready` (instance usable) and `Synced` (operator reconciled spec). |

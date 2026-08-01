@@ -1,5 +1,7 @@
 # AuraProviderConfig API Reference
 
+> **✅ Live-verified 2026-07-30** — a token from the v1 OAuth endpoint authenticates v2beta1 calls too, so one credential covers every Aura CRD. See [Verification status](../user_guide/aura_orchestration.md#verification-status).
+
 The `AuraProviderConfig` Custom Resource Definition (CRD) holds Neo4j Aura API credentials and account-level defaults. Other Aura resources reference it via `providerConfigRef` so they can share one OAuth token cache and one Aura API rate-limit budget (25/125 req/min per credential).
 
 ## Overview

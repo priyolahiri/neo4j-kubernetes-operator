@@ -1,8 +1,13 @@
 # AuraIPFilter API Reference
 
-> **⚠️ BETA / best-effort.** IP filtering is only available on the Aura API **v2beta1** surface, which is an unstable beta (breaking changes are allowed without a version bump). This CRD is best-effort and its behaviour may change to track the API. The shape below is taken from the official v2beta1 `IpFilter` schema. See the [Aura Orchestration Guide](../user_guide/aura_orchestration.md) before relying on it in production.
+> **⚠️ BETA / best-effort.** IP filtering is only available on the Aura API **v2beta1** surface, which is an unstable beta (breaking changes are allowed without a version bump). This CRD is best-effort and its behaviour may change to track the API. The shape below is taken from the **live API**, which differs from the published `IpFilter` schema in several places — see below. See the [Aura Orchestration Guide](../user_guide/aura_orchestration.md) before relying on it in production.
+> **✅ Live-verified 2026-08-01 — and the contract was WRONG.** Until then this CRD could not create, update *or* delete a filter; all three are fixed. See [Verification status](../user_guide/aura_orchestration.md#verification-status).
 
 The `AuraIPFilter` Custom Resource Definition (CRD) manages a Neo4j Aura network IP filter (an allowlist) via the Aura API v2beta1.
+
+**One filter per project.** Aura rejects a second filter targeting a project that already has one (`ip-filter-already-exists`), so two `AuraIPFilter` CRs cannot both target the same project.
+
+**Filters are organization-scoped.** They live at the organization level and are *applied* to instances/projects, so the CR needs an organization ID — from `spec.organizationId` or the provider config's `defaultOrganizationId`.
 
 ## Overview
 
