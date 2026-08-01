@@ -196,8 +196,10 @@ var _ = Describe("Standalone All-Databases Restore (v1.13 API)", Label("extended
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(restore), restore)
 			return restore.Status.Phase
-		}, restoreTimeout, pollInterval).Should(Equal("Completed"),
-			"restore should reach Completed; message=%q results=%+v", restore.Status.Message, restore.Status.DatabaseResults)
+		}, restoreTimeout, pollInterval).Should(Equal("Completed"), func() string {
+			return fmt.Sprintf("restore should reach Completed; phase=%q message=%q results=%+v",
+				restore.Status.Phase, restore.Status.Message, restore.Status.DatabaseResults)
+		})
 
 		By("Per-database results record every user database online (system excluded)")
 		got := map[string]string{}

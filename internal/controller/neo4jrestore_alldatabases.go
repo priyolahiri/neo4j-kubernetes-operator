@@ -212,7 +212,18 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 			// "the status query has been erroring since the first poll". The message
 			// is persisted only when it CHANGES, so polling still costs no writes
 			// once the state is steady.
-			r.noteDatabaseProgress(ctx, restore, db, seedingProgressMessage(online, total, stErr))
+			progress := seedingProgressMessage(online, total, stErr)
+			r.noteDatabaseProgress(ctx, restore, db, progress)
+			// Also emit it EVERY poll. The status message records only the latest
+			// state, so it cannot distinguish "slow" from "stuck": one sample of
+			// "0/1 allocations online" looks identical either way. Event
+			// aggregation supplies what is missing — repeated identical events
+			// collapse into one object with a count and first/last timestamps, so
+			// `kubectl describe` (and the integration suite's own diagnostics dump)
+			// shows whether this database sat at 0/1 from the first poll or worked
+			// through several states.
+			r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreSeedProgress,
+				fmt.Sprintf("database %q: %s", db, progress))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 	}

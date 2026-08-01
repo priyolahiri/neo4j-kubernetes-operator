@@ -284,8 +284,10 @@ var _ = Describe("Backup Chain Integration Tests", Label("extended"), Serial, fu
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(restore), restore)
 			return restore.Status.Phase
-		}, restoreTimeout, pollInterval).Should(Equal("Completed"),
-			"restore via chained DIFF should reach Completed; message=%q", restore.Status.Message)
+		}, restoreTimeout, pollInterval).Should(Equal("Completed"), func() string {
+			return fmt.Sprintf("restore via chained DIFF should reach Completed; phase=%q message=%q",
+				restore.Status.Phase, restore.Status.Message)
+		})
 
 		By("Verifying BOTH the pre-FULL and post-FULL items are present (chain was applied, not just the FULL)")
 		// List skus so a chain miss is visible: "pre-full" only → DIFF

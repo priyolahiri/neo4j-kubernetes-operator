@@ -43,9 +43,11 @@ var _ = Describe("PVC Cluster Restore — All-Databases and Single-Database (v1.
 		clusterReadyTimeout = 10 * time.Minute
 		dbReadyTimeout      = 5 * time.Minute
 		backupTimeout       = 10 * time.Minute
-		restoreTimeout      = 12 * time.Minute
-		pollInterval        = 5 * time.Second
-		adminPass           = "password123"
+		// See the note in all_databases_restore_test.go: 20 min so a slow seed under
+		// CI load is not misreported as a failure.
+		restoreTimeout = 20 * time.Minute
+		pollInterval   = 5 * time.Second
+		adminPass      = "password123"
 	)
 
 	var (
@@ -113,8 +115,10 @@ var _ = Describe("PVC Cluster Restore — All-Databases and Single-Database (v1.
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: testNamespace}, r)
 			return r.Status.Phase
-		}, restoreTimeout, pollInterval).Should(Equal("Completed"),
-			"%s should reach Completed; message=%q results=%+v", name, r.Status.Message, r.Status.DatabaseResults)
+		}, restoreTimeout, pollInterval).Should(Equal("Completed"), func() string {
+			return fmt.Sprintf("%s should reach Completed; phase=%q message=%q results=%+v",
+				name, r.Status.Phase, r.Status.Message, r.Status.DatabaseResults)
+		})
 		return r
 	}
 

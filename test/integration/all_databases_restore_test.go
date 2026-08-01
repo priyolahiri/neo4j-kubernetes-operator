@@ -45,9 +45,16 @@ var _ = Describe("All-Databases Backup and Cluster Restore (MinIO) Integration T
 		clusterReadyTimeout = 10 * time.Minute
 		dbReadyTimeout      = 5 * time.Minute
 		backupJobTimeout    = 10 * time.Minute
-		restoreTimeout      = 12 * time.Minute
-		minioReadyTimeout   = 5 * time.Minute
-		pollInterval        = 5 * time.Second
+		// 20 min, not 12: locally this restore finishes in ~95s, but under CI load
+		// it has needed longer than 12 — it failed at exactly the 12-minute mark with
+		// `neo4j` still at "0/1 allocations online", i.e. seeding and not yet done
+		// rather than erroring. A larger budget costs nothing on the passing path
+		// (Eventually returns as soon as it succeeds) and makes a genuine STALL
+		// distinguishable from mere slowness, since the RestoreSeedProgress events
+		// now show whether the state ever moved.
+		restoreTimeout    = 20 * time.Minute
+		minioReadyTimeout = 5 * time.Minute
+		pollInterval      = 5 * time.Second
 
 		minioAccessKey = "minioadmin"
 		minioSecretKey = "minioadmin"
