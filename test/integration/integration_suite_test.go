@@ -145,6 +145,40 @@ func init() {
 }
 
 // applyCIOptimizations applies CI-specific optimizations to cluster specs
+// applyCIOptimizationsStandalone is applyCIOptimizations for a standalone.
+//
+// It exists because the cluster helper takes a *Neo4jEnterpriseCluster, so no
+// standalone spec could ever reach it — they got only
+// getCIAppropriateResourceRequirements(), whose CPU LIMIT is 100m. A Neo4j JVM
+// throttled to a tenth of a core takes ~3 minutes to reach "Started.", and a
+// SECOND JVM in that same cgroup — which is exactly what `kubectl exec …
+// cypher-shell` is — cannot finish booting inside podExecTimeout. It prints
+// nothing and is SIGKILLed at 60s, forever.
+//
+// That is why the standalone all-databases spec failed FOUR consecutive extended
+// runs while cluster specs using the identical exec technique passed: those call
+// applyCIOptimizations and get 500m. Raising the limit (not the request) costs no
+// reservation — it only allows the burst the cluster specs already allow.
+func applyCIOptimizationsStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) {
+	if os.Getenv("CI") == "" && os.Getenv("GITHUB_ACTIONS") == "" {
+		return
+	}
+	if standalone.Spec.Resources == nil {
+		standalone.Spec.Resources = &corev1.ResourceRequirements{}
+	}
+	if standalone.Spec.Resources.Requests == nil {
+		standalone.Spec.Resources.Requests = corev1.ResourceList{}
+	}
+	if standalone.Spec.Resources.Limits == nil {
+		standalone.Spec.Resources.Limits = corev1.ResourceList{}
+	}
+	standalone.Spec.Resources.Requests[corev1.ResourceCPU] = resource.MustParse("100m")
+	standalone.Spec.Resources.Requests[corev1.ResourceMemory] = resource.MustParse("1.5Gi")
+	standalone.Spec.Resources.Limits[corev1.ResourceCPU] = resource.MustParse("500m")
+	standalone.Spec.Resources.Limits[corev1.ResourceMemory] = resource.MustParse("1.5Gi")
+	GinkgoWriter.Printf("CI optimization (standalone): applied resource constraints (100m-500m CPU, 1.5Gi memory)\n")
+}
+
 func applyCIOptimizations(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
 	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
 		// Reduce cluster size in CI for faster formation
