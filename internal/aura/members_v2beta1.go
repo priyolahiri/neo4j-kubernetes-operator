@@ -152,9 +152,17 @@ type AddProjectMemberRequest struct {
 
 // ProjectInvite scopes an invite to one project, with the project roles to grant
 // on acceptance. NOTE: these use the `namespace-*` vocabulary, not `project-*`.
+// ProjectInvite carries the per-project roles of an invite. Note the vocabulary:
+// these are `namespace-*` roles, NOT the `project-*` roles the project-members
+// endpoints use — confirmed live by the API's own enum error:
+// 'namespace-viewer', 'namespace-member', 'namespace-admin',
+// 'namespace-metrics-integration-reader'.
+//
+// project_roles is required within an entry ("project_invites[0].project_roles:
+// Field required"), so it carries no omitempty.
 type ProjectInvite struct {
 	ProjectID    string   `json:"project_id,omitempty"`
-	ProjectRoles []string `json:"project_roles,omitempty"`
+	ProjectRoles []string `json:"project_roles"`
 }
 
 // Invite is an email invitation to an organization, optionally carrying
@@ -173,10 +181,24 @@ type Invite struct {
 // CreateInviteRequest invites an email to an organization. Roles carries
 // organization-level roles; ProjectInvites carries per-project roles using the
 // `namespace-*` vocabulary.
+// CreateInviteRequest is the invite body. Verified live 2026-08-01; the tags
+// here are load-bearing and the omitempty that used to be on both slices made
+// EVERY invite the operator could build a 400:
+//
+//   - `roles` must be PRESENT and carry AT LEAST ONE organization role. An empty
+//     array is rejected ("List should have at least 1 item after validation"),
+//     and null is rejected ("got null, want array"). So there is no such thing as
+//     a project-only invite: every invitee gets an organization role.
+//   - `project_invites` must be PRESENT but MAY be empty — `[]` is accepted, and
+//     that is the normal shape for an organization-only invite. Omitting it is
+//     "Field required"; null is rejected.
+//
+// Both fields therefore carry no omitempty, and CreateInvite normalises a nil
+// ProjectInvites to `[]` so it can never marshal as null.
 type CreateInviteRequest struct {
 	Email          string          `json:"email"`
-	Roles          []string        `json:"roles,omitempty"`
-	ProjectInvites []ProjectInvite `json:"project_invites,omitempty"`
+	Roles          []string        `json:"roles"`
+	ProjectInvites []ProjectInvite `json:"project_invites"`
 }
 
 func orgUsersPath(orgID string) string {
@@ -272,6 +294,19 @@ func (c *Client) DeleteProjectMember(ctx context.Context, orgID, projectID, user
 
 // CreateInvite invites an email to an organization (v2beta1, beta).
 func (c *Client) CreateInvite(ctx context.Context, orgID string, req CreateInviteRequest) (*Invite, error) {
+	// Aura requires at least one ORGANIZATION role on every invite; a
+	// project-only invite is not expressible. Say so here rather than letting the
+	// API answer "List should have at least 1 item after validation, not 0",
+	// which never mentions that an organization role is the thing missing.
+	if len(req.Roles) == 0 {
+		return nil, fmt.Errorf("creating invite for %q: Aura requires at least one organization role on every "+
+			"invite (organization-owner, organization-admin or organization-member) — a project-only invite is "+
+			"not possible", req.Email)
+	}
+	// Never marshal as null: the API rejects null for both slices.
+	if req.ProjectInvites == nil {
+		req.ProjectInvites = []ProjectInvite{}
+	}
 	var out Invite
 	if err := c.doV2Data(ctx, http.MethodPost, orgInvitesPath(orgID), req, &out); err != nil {
 		return nil, fmt.Errorf("creating invite: %w", err)
