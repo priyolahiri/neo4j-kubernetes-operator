@@ -674,8 +674,12 @@ func TestAuraSnapshot_CreateThenComplete(t *testing.T) {
 		Spec:       neo4jv1beta1.AuraSnapshotSpec{InstanceRef: "inst-snap"},
 	}
 	f := &fakeAuraAPI{
-		createSnapshotFn: func(_ context.Context, instanceID string) (*aura.Snapshot, error) {
-			return &aura.Snapshot{InstanceID: instanceID, SnapshotID: "snap-1", Status: aura.SnapshotStatusPending}, nil
+		createSnapshotFn: func(_ context.Context, _ string) (*aura.Snapshot, error) {
+			// Live shape (verified 2026-08-01): the 202 body is exactly
+			// {"snapshot_id": …} — no status, no profile, no instance_id, no
+			// exportable. The fixture used to hand back a Status the API never
+			// sends, which hid that the controller was writing an empty phase.
+			return &aura.Snapshot{SnapshotID: "snap-1"}, nil
 		},
 		getSnapshotFn: func(_ context.Context, instanceID, snapshotID string) (*aura.Snapshot, error) {
 			return &aura.Snapshot{InstanceID: instanceID, SnapshotID: snapshotID, Status: aura.SnapshotStatusCompleted}, nil
@@ -695,6 +699,12 @@ func TestAuraSnapshot_CreateThenComplete(t *testing.T) {
 	got := &neo4jv1beta1.AuraSnapshot{}
 	if err := c.Get(ctx, reqFor(snap).NamespacedName, got); err != nil {
 		t.Fatalf("Get: %v", err)
+	}
+	// The create response carries no status, so the controller must supply an
+	// honest initial phase rather than persisting "".
+	if got.Status.Phase != aura.SnapshotStatusPending {
+		t.Errorf("phase after create = %q, want %q — a create response with no status must not "+
+			"leave the CR reporting an empty phase", got.Status.Phase, aura.SnapshotStatusPending)
 	}
 	if got.Status.SnapshotID != "snap-1" {
 		t.Fatalf("status.snapshotId = %q, want snap-1", got.Status.SnapshotID)
