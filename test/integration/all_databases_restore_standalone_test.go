@@ -124,6 +124,9 @@ var _ = Describe("Standalone All-Databases Restore (v1.13 API)", Label("extended
 				Env:                    []corev1.EnvVar{{Name: "NEO4J_ACCEPT_LICENSE_AGREEMENT", Value: "eval"}},
 			},
 		}
+		// Without this the pod runs at a 100m CPU LIMIT and cypher-shell — a second
+		// JVM in the same cgroup — can never boot inside podExecTimeout.
+		applyCIOptimizationsStandalone(standalone)
 		Expect(k8sClient.Create(ctx, standalone)).To(Succeed())
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(standalone), standalone)
