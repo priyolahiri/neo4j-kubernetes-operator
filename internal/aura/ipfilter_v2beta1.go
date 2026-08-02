@@ -57,13 +57,44 @@ const (
 	IPFilterStatusError     = "ERROR"
 )
 
-// IPFilterAllowEntry is a single CIDR entry in an IP filter's allow list. The
-// v2beta1 API splits CIDR notation into an address + a prefix length (so
-// "203.0.113.0/24" is {address:"203.0.113.0", prefix_len:24}).
+// IPFilterAllowEntry is a single entry in an IP filter's allow list, in the
+// shape the API READS BACK: address + prefix length.
+//
+// The WRITE shape is different — see ipFilterAllowEntryWrite. Do not reuse this
+// struct for a request body; that is the bug this file shipped with, and every
+// create and update failed with HTTP 400 because of it.
 type IPFilterAllowEntry struct {
 	Address     string `json:"address"`
 	PrefixLen   int    `json:"prefix_len"`
 	Description string `json:"description,omitempty"`
+}
+
+// CIDR renders the entry in the notation the API requires on write.
+func (e IPFilterAllowEntry) CIDR() string {
+	return fmt.Sprintf("%s/%d", e.Address, e.PrefixLen)
+}
+
+// ipFilterAllowEntryWrite is the REQUEST shape for one allow-list entry.
+//
+// Two things the response shape does not tell you, both verified live on
+// 2026-08-01 and both hard 400s:
+//   - the field is `ip_range`, a CIDR STRING ("203.0.113.0/24"), not
+//     address + prefix_len;
+//   - `description` may not be NULL. An empty string is accepted, so the key is
+//     always emitted — deliberately NO omitempty, or an entry without a
+//     description is rejected.
+type ipFilterAllowEntryWrite struct {
+	IPRange     string `json:"ip_range"`
+	Description string `json:"description"`
+}
+
+// writeAllowList converts the read/CRD shape into the request shape.
+func writeAllowList(entries []IPFilterAllowEntry) []ipFilterAllowEntryWrite {
+	out := make([]ipFilterAllowEntryWrite, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, ipFilterAllowEntryWrite{IPRange: e.CIDR(), Description: e.Description})
+	}
+	return out
 }
 
 // IPFilterEntities is the set of entities an IP filter is applied to. All three
@@ -84,7 +115,11 @@ type IPFilter struct {
 	AllowList         []IPFilterAllowEntry `json:"allow_list"`
 	FilteredEntities  IPFilterEntities     `json:"filtered_entities"`
 	FilteringDisabled bool                 `json:"filtering_disabled,omitempty"`
-	UpdatedAt         string               `json:"updated_at,omitempty"`
+	// BrainIPAddressesEnabled is undocumented in the spec but returned by every
+	// response AND writable (the API's own PATCH error enumerates it). Modelled
+	// so a PATCH round-trip cannot silently clear it.
+	BrainIPAddressesEnabled bool   `json:"brain_ip_addresses_enabled,omitempty"`
+	UpdatedAt               string `json:"updated_at,omitempty"`
 }
 
 // UnmarshalJSON decodes an IPFilter, coercing the `id` field which the spec
@@ -115,23 +150,60 @@ func (f *IPFilter) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// CreateIPFilterRequest mirrors the IpFilter response shape (the POST body is
-// not separately schema'd upstream).
+// CreateIPFilterRequest is the caller-facing create input. It is deliberately
+// NOT the response shape — see ipFilterCreateBody for what actually goes on the
+// wire, and why.
 type CreateIPFilterRequest struct {
-	Name              string               `json:"name,omitempty"`
-	Description       string               `json:"description,omitempty"`
-	AllowList         []IPFilterAllowEntry `json:"allow_list"`
-	FilteredEntities  IPFilterEntities     `json:"filtered_entities"`
-	FilteringDisabled *bool                `json:"filtering_disabled,omitempty"`
+	Name        string               `json:"-"`
+	Description string               `json:"-"`
+	AllowList   []IPFilterAllowEntry `json:"-"`
+	// Entities are the instances/projects/orgs the filter applies to. The API
+	// accepts these at create time (verified live), so no second call is needed.
+	Entities                IPFilterEntities `json:"-"`
+	FilteringDisabled       *bool            `json:"-"`
+	BrainIPAddressesEnabled *bool            `json:"-"`
 }
 
-// UpdateIPFilterRequest edits a filter's mutable fields.
+// ipFilterCreateBody is the wire shape of a create.
+//
+// Two divergences from the response, both verified live on 2026-08-01:
+//   - `organization_id` is REQUIRED IN THE BODY even though the path is already
+//     organization-scoped. Omitting it is a 400.
+//   - the attachment field is `entities` on WRITE and `filtered_entities` on
+//     READ. Sending `filtered_entities` returns HTTP 200 and SILENTLY DROPS the
+//     attachment — the filter is created applying to nothing. That silence is
+//     why this went unnoticed: the CR reported success while filtering nothing.
+type ipFilterCreateBody struct {
+	Name                    string                    `json:"name,omitempty"`
+	Description             string                    `json:"description,omitempty"`
+	OrganizationID          string                    `json:"organization_id"`
+	AllowList               []ipFilterAllowEntryWrite `json:"allow_list"`
+	Entities                IPFilterEntities          `json:"entities"`
+	FilteringDisabled       *bool                     `json:"filtering_disabled,omitempty"`
+	BrainIPAddressesEnabled *bool                     `json:"brain_ip_addresses_enabled,omitempty"`
+}
+
+// UpdateIPFilterRequest edits a filter's mutable fields. The API names the
+// settable set in its own error when a PATCH is empty: Name, Description,
+// AllowList, FilteringDisabled, BrainIPAddressesEnabled, Entities.
 type UpdateIPFilterRequest struct {
-	Name              *string               `json:"name,omitempty"`
-	Description       *string               `json:"description,omitempty"`
-	AllowList         *[]IPFilterAllowEntry `json:"allow_list,omitempty"`
-	FilteredEntities  *IPFilterEntities     `json:"filtered_entities,omitempty"`
-	FilteringDisabled *bool                 `json:"filtering_disabled,omitempty"`
+	Name                    *string               `json:"-"`
+	Description             *string               `json:"-"`
+	AllowList               *[]IPFilterAllowEntry `json:"-"`
+	Entities                *IPFilterEntities     `json:"-"`
+	FilteringDisabled       *bool                 `json:"-"`
+	BrainIPAddressesEnabled *bool                 `json:"-"`
+}
+
+// ipFilterUpdateBody is the wire shape of a PATCH — `entities`, and the CIDR
+// allow-list form, exactly as for create.
+type ipFilterUpdateBody struct {
+	Name                    *string                    `json:"name,omitempty"`
+	Description             *string                    `json:"description,omitempty"`
+	AllowList               *[]ipFilterAllowEntryWrite `json:"allow_list,omitempty"`
+	Entities                *IPFilterEntities          `json:"entities,omitempty"`
+	FilteringDisabled       *bool                      `json:"filtering_disabled,omitempty"`
+	BrainIPAddressesEnabled *bool                      `json:"brain_ip_addresses_enabled,omitempty"`
 }
 
 // v2beta1Base derives the v2beta1 API root from the configured v1 base URL
@@ -151,7 +223,16 @@ func orgIPFilterPath(orgID string) string {
 // response is returned unwrapped.
 func (c *Client) CreateIPFilter(ctx context.Context, orgID string, req CreateIPFilterRequest) (*IPFilter, error) {
 	var out IPFilter
-	if err := c.doV2JSON(ctx, http.MethodPost, orgIPFilterPath(orgID), req, &out); err != nil {
+	body := ipFilterCreateBody{
+		Name:                    req.Name,
+		Description:             req.Description,
+		OrganizationID:          orgID, // required in the body as well as the path
+		AllowList:               writeAllowList(req.AllowList),
+		Entities:                req.Entities,
+		FilteringDisabled:       req.FilteringDisabled,
+		BrainIPAddressesEnabled: req.BrainIPAddressesEnabled,
+	}
+	if err := c.doV2JSON(ctx, http.MethodPost, orgIPFilterPath(orgID), body, &out); err != nil {
 		return nil, fmt.Errorf("creating ip filter: %w", err)
 	}
 	return &out, nil
@@ -179,7 +260,18 @@ func (c *Client) ListIPFilters(ctx context.Context, orgID string) ([]IPFilter, e
 // UpdateIPFilter edits an IP filter's mutable fields (v2beta1, beta).
 func (c *Client) UpdateIPFilter(ctx context.Context, orgID, id string, req UpdateIPFilterRequest) (*IPFilter, error) {
 	var out IPFilter
-	if err := c.doV2JSON(ctx, http.MethodPatch, orgIPFilterPath(orgID)+"/"+url.PathEscape(id), req, &out); err != nil {
+	body := ipFilterUpdateBody{
+		Name:                    req.Name,
+		Description:             req.Description,
+		Entities:                req.Entities,
+		FilteringDisabled:       req.FilteringDisabled,
+		BrainIPAddressesEnabled: req.BrainIPAddressesEnabled,
+	}
+	if req.AllowList != nil {
+		w := writeAllowList(*req.AllowList)
+		body.AllowList = &w
+	}
+	if err := c.doV2JSON(ctx, http.MethodPatch, orgIPFilterPath(orgID)+"/"+url.PathEscape(id), body, &out); err != nil {
 		return nil, fmt.Errorf("updating ip filter %q: %w", id, err)
 	}
 	return &out, nil
@@ -187,14 +279,33 @@ func (c *Client) UpdateIPFilter(ctx context.Context, orgID, id string, req Updat
 
 // DeleteIPFilter deletes an IP filter (v2beta1, beta). Idempotent: a 404 is
 // treated as success.
+// DeleteIPFilter removes an IP filter (v2beta1, beta). Idempotent.
+//
+// LANDMINE: a SUCCESSFUL delete arrives as HTTP 500. The gateway rejects its own
+// backend's 204 and reports `invalid status code 204 [DELETE
+// /ip-filters/{{.Ip_filter_id}}]: https://console-api-private…` — the same
+// leaked-internal-URL, unrendered-Go-template shape as the v2beta1 instance GET.
+// Deleting an already-gone filter is a 500 too (wrapping a 404).
+//
+// So neither IsNotFound nor a 2xx can be used to decide the outcome, and because
+// IsTransient treats 5xx as retryable, the previous implementation made the
+// AuraIPFilter finalizer retry forever: the filter WAS deleted on the first
+// attempt, but the CR could never leave Terminating.
+//
+// Rather than pattern-match the gateway's prose (which will change the moment
+// Aura fixes it), confirm the outcome: if the filter is gone, the delete
+// succeeded — whatever status code said so. Verified live 2026-08-01.
 func (c *Client) DeleteIPFilter(ctx context.Context, orgID, id string) error {
-	if err := c.doV2JSON(ctx, http.MethodDelete, orgIPFilterPath(orgID)+"/"+url.PathEscape(id), nil, nil); err != nil {
-		if IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("deleting ip filter %q: %w", id, err)
+	delErr := c.doV2JSON(ctx, http.MethodDelete, orgIPFilterPath(orgID)+"/"+url.PathEscape(id), nil, nil)
+	if delErr == nil || IsNotFound(delErr) {
+		return nil
 	}
-	return nil
+	// Ask whether it is actually gone. The GET path is well-behaved: it answers a
+	// real 404 with reason ip-filter-not-found.
+	if _, getErr := c.GetIPFilter(ctx, orgID, id); IsNotFound(getErr) {
+		return nil
+	}
+	return fmt.Errorf("deleting ip filter %q: %w", id, delErr)
 }
 
 // doV2JSON is the v2beta1 request path. It reuses the shared OAuth token cache

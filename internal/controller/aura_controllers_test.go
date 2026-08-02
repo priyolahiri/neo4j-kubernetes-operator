@@ -1113,7 +1113,7 @@ func (f *fakeIPFilterAPI) CreateIPFilter(ctx context.Context, orgID string, req 
 	if f.createFn != nil {
 		return f.createFn(ctx, orgID, req)
 	}
-	return &aura.IPFilter{ID: "ipf-created", AllowList: req.AllowList, FilteredEntities: req.FilteredEntities}, nil
+	return &aura.IPFilter{ID: "ipf-created", AllowList: req.AllowList, FilteredEntities: req.Entities}, nil
 }
 
 func (f *fakeIPFilterAPI) GetIPFilter(ctx context.Context, orgID, id string) (*aura.IPFilter, error) {
@@ -1168,7 +1168,7 @@ func TestAuraIPFilter_CreateThenReady(t *testing.T) {
 	api := &fakeIPFilterAPI{
 		listFn: func(context.Context, string) ([]aura.IPFilter, error) { return nil, nil },
 		createFn: func(_ context.Context, _ string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error) {
-			return &aura.IPFilter{ID: "ipf-new", AllowList: req.AllowList, FilteredEntities: req.FilteredEntities}, nil
+			return &aura.IPFilter{ID: "ipf-new", AllowList: req.AllowList, FilteredEntities: req.Entities}, nil
 		},
 		getFn: func(_ context.Context, _, id string) (*aura.IPFilter, error) {
 			// Echo the spec name + allow list so reconcileDrift issues no update and
