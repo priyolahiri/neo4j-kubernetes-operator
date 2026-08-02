@@ -5,7 +5,7 @@
 # Neo4jEnterpriseStandalone resources via the clusterRef field.
 #
 # Prerequisites:
-# 1. A running Neo4jEnterpriseStandalone resource named "my-standalone"
+# 1. A running Neo4jEnterpriseStandalone resource named "standalone-neo4j" (examples/standalone/single-node-standalone.yaml, which the Getting Started quickstart applies)
 # 2. Admin credentials secret configured in the standalone deployment
 #
 # Usage:
@@ -19,7 +19,7 @@ metadata:
   namespace: default
 spec:
   # Reference to Neo4jEnterpriseStandalone resource
-  clusterRef: my-standalone
+  clusterRef: standalone-neo4j
 
   # Database name in Neo4j
   name: appdb
@@ -44,7 +44,7 @@ metadata:
   name: standalone-test-database
   namespace: default
 spec:
-  clusterRef: my-standalone
+  clusterRef: standalone-neo4j
   name: testdb
   ifNotExists: true
   wait: true

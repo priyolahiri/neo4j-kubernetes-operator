@@ -541,3 +541,103 @@ func TestHasRuntimeSecurityConfiguration(t *testing.T) {
 		AllowedProcedures: []string{"gds.*"},
 	}))
 }
+
+// TestRemoveFromNeo4jPluginList covers the inverse of MergeNeo4jPluginList,
+// which is what actually uninstalls a Managed plugin.
+//
+// /plugins is a per-pod EmptyDir the Neo4j entrypoint repopulates from
+// NEO4J_PLUGINS on every container start, so the env var is the only durable
+// lever. The uninstall path used to run a `rm -f /plugins/*.jar` Job against a
+// fresh EmptyDir of its own — deleting nothing — while leaving the plugin name in
+// NEO4J_PLUGINS, so the next restart reinstalled it. That same Job also wedged
+// deletion: it outlived its reconcile, and every later pass re-issued the Create
+// and failed "already exists", so the finalizer never released.
+func TestRemoveFromNeo4jPluginList(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing string
+		remove   string
+		expected string
+		wantErr  bool
+	}{
+		{
+			name:     "remove the only plugin leaves an explicit empty array",
+			existing: `["apoc"]`,
+			remove:   "apoc",
+			expected: `[]`,
+		},
+		{
+			name:     "remove one, keep the others in order",
+			existing: `["apoc","graph-data-science","bloom"]`,
+			remove:   "graph-data-science",
+			expected: `["apoc","bloom"]`,
+		},
+		{
+			name:     "does not disturb a plugin another controller owns",
+			existing: `["apoc","fleet-management"]`,
+			remove:   "apoc",
+			expected: `["fleet-management"]`,
+		},
+		{
+			name:     "absent plugin returns the input unchanged (caller skips the update)",
+			existing: `["apoc","bloom"]`,
+			remove:   "graph-data-science",
+			expected: `["apoc","bloom"]`,
+		},
+		{
+			name:     "empty string stays empty rather than becoming []",
+			existing: "",
+			remove:   "apoc",
+			expected: "",
+		},
+		{
+			name:     "handles spaces in the existing list",
+			existing: `["apoc", "bloom"]`,
+			remove:   "bloom",
+			expected: `["apoc"]`,
+		},
+		{
+			name:     "malformed JSON is an error, not a silent wipe",
+			existing: `apoc,bloom`,
+			remove:   "apoc",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := RemoveFromNeo4jPluginList(tt.existing, tt.remove)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.expected {
+				t.Errorf("got %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestRemoveFromNeo4jPluginListRoundTripsWithMerge pins the two helpers together:
+// installing then uninstalling a plugin must leave the list exactly as it was, or
+// repeated install/uninstall cycles would drift and restart the pods each time.
+func TestRemoveFromNeo4jPluginListRoundTripsWithMerge(t *testing.T) {
+	const start = `["apoc","fleet-management"]`
+
+	merged, err := MergeNeo4jPluginList(start, "graph-data-science")
+	if err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+	back, err := RemoveFromNeo4jPluginList(merged, "graph-data-science")
+	if err != nil {
+		t.Fatalf("remove failed: %v", err)
+	}
+	if back != start {
+		t.Errorf("install/uninstall did not round-trip: got %q, want %q", back, start)
+	}
+}

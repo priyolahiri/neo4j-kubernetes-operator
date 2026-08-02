@@ -29,7 +29,7 @@ spec:
   # Latest Neo4j version for best property sharding support
   image:
     repo: neo4j
-    tag: "2026.04-enterprise"
+    tag: "2026.06-enterprise"
 
   # Authentication required for property sharding
   auth:
@@ -65,13 +65,17 @@ spec:
       db.tx_log.rotation.retention_policy: "14 days"  # Longer retention for large datasets
       internal.dbms.sharded_property_database.property_pull_interval: "5ms"  # Faster sync
 
-      # Memory optimization
-      server.memory.heap.max_size: "12G"
-      server.memory.pagecache.size: "6G"
-
       # Connection pooling
       server.bolt.thread_pool_min_size: "10"
       server.bolt.thread_pool_max_size: "100"
+
+  # Memory settings belong in spec.config, not propertySharding.config — see the
+  # note in development-property-sharding.yaml. These happen to match the values
+  # the operator would derive from the 20Gi limit anyway; they are spelled out
+  # here because production sizing should be explicit rather than implied.
+  config:
+    server.memory.heap.max_size: "12G"
+    server.memory.pagecache.size: "6G"
 
   # TLS configuration for production
   tls:

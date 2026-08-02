@@ -1704,13 +1704,7 @@ server.metrics.csv.enabled=false
 	// Add custom configuration (excluding memory settings and auth-generated keys)
 	if cluster.Spec.Config != nil {
 		// Keys already set by the operator — user's spec.config values are skipped for these
-		excludeKeys := map[string]bool{
-			"server.memory.heap.initial_size": true,
-			"server.memory.heap.max_size":     true,
-			"server.memory.pagecache.size":    true,
-			"server.bolt.tls_level":           true,
-			"server.directories.certificates": true,
-		}
+		excludeKeys := operatorManagedConfKeys()
 		for _, key := range authGeneratedKeys {
 			excludeKeys[key] = true
 		}
@@ -2187,6 +2181,29 @@ func SeedFromURIProvidersConfigValue(imageTag string) string {
 	return providers
 }
 
+// operatorManagedConfKeys are neo4j.conf keys the operator derives and emits
+// itself. A user value for one of these is dropped from EVERY user-supplied conf
+// map rather than appended, because these keys have cross-key invariants the
+// operator maintains (heap initial ≤ max) or pin a security posture (TLS level,
+// certificate directory) that a raw override would silently break.
+//
+// Memory keys are still honoured — they are read back through
+// UserMemorySetting in memory_config.go, which feeds them into the single place
+// that keeps initial/max coherent. Dropping them here and reading them there is
+// what makes a user heap size take effect WITHOUT contradicting the derived one.
+//
+// Returns a fresh map so callers can add their own keys without mutating shared
+// state (the spec.config path adds the auth-generated keys).
+func operatorManagedConfKeys() map[string]bool {
+	return map[string]bool{
+		"server.memory.heap.initial_size": true,
+		"server.memory.heap.max_size":     true,
+		"server.memory.pagecache.size":    true,
+		"server.bolt.tls_level":           true,
+		"server.directories.certificates": true,
+	}
+}
+
 // buildPropertyShardingConfig merges required property sharding settings with user overrides
 func buildPropertyShardingConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) map[string]string {
 	config := map[string]string{
@@ -2196,7 +2213,15 @@ func buildPropertyShardingConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) m
 	}
 
 	if cluster.Spec.PropertySharding != nil && cluster.Spec.PropertySharding.Config != nil {
+		// Same exclusion the spec.config path applies. Without it these lines
+		// land AFTER the operator's memory block and DedupeNeo4jConf keeps the
+		// last one, so a heap.max_size here overrode max while leaving the
+		// derived initial_size in place — an unbootable JVM.
+		excludeKeys := operatorManagedConfKeys()
 		for key, value := range cluster.Spec.PropertySharding.Config {
+			if excludeKeys[key] {
+				continue
+			}
 			config[key] = value
 		}
 	}

@@ -29,7 +29,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "2026.04-enterprise"
+    tag: "2026.06-enterprise"
 
   # Authentication required for property sharding
   auth:
@@ -65,12 +65,20 @@ spec:
       db.tx_log.rotation.retention_policy: "2 days"    # Shorter retention
       internal.dbms.sharded_property_database.property_pull_interval: "50ms"  # Less aggressive
 
-      # Memory settings for development
-      server.memory.heap.max_size: "4G"
-      server.memory.pagecache.size: "1G"
-
       # Enable more logging for development
       dbms.logs.debug.level: "INFO"
+
+  # Memory settings belong in spec.config, NOT propertySharding.config.
+  # Both are honoured now, but spec.config is where every other guide puts them
+  # and it is the map the operator's sizing logic documents.
+  #
+  # Leave these out entirely to accept the derived sizing (60% of the memory
+  # limit for heap, 30% for page cache) — that is the recommended default. Set
+  # them only when you need a specific number; the operator keeps
+  # heap.initial_size in step with whatever max you give it.
+  config:
+    server.memory.heap.max_size: "4G"
+    server.memory.pagecache.size: "1G"
 
 ---
 # Simple sharded database for testing

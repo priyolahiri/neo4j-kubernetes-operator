@@ -12,7 +12,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "2026.04-enterprise"
+    tag: "2026.06-enterprise"
 
   # Authentication required for property sharding
   auth:

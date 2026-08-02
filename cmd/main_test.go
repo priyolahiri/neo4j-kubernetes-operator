@@ -179,3 +179,42 @@ func TestStartupFeedback_ExitsWhenStarted(t *testing.T) {
 		t.Fatal("startupFeedback did not exit after the started signal (the #236 infinite loop)")
 	}
 }
+
+// TestDevControllerDefaultCoversRegistry pins the -controllers default to the
+// dev registry.
+//
+// A controller registered in devControllerRegistry but absent from
+// devControllerKeys is worse than a missing feature: dev mode ACCEPTS its CRs and
+// then ignores them completely — empty status, no events, no log line — which is
+// indistinguishable from a hung reconcile. All 12 aura* controllers were in that
+// state, and it was only caught by hand during a release verification journey
+// after a 10-minute wait on an AuraInstance that never reconciled.
+func TestDevControllerDefaultCoversRegistry(t *testing.T) {
+	// Factories close over the manager but are not invoked here, so nil is fine.
+	registry := devControllerRegistry(nil)
+	if len(registry) == 0 {
+		t.Fatal("dev controller registry is empty - this test would pass vacuously")
+	}
+
+	inDefault := make(map[string]bool, len(devControllerKeys))
+	for _, key := range devControllerKeys {
+		if inDefault[key] {
+			t.Errorf("controller %q listed twice in devControllerKeys", key)
+		}
+		inDefault[key] = true
+	}
+
+	for key := range registry {
+		if !inDefault[key] {
+			t.Errorf("controller %q is registered in dev mode but missing from the "+
+				"-controllers default: its CRs would be accepted and then silently ignored", key)
+		}
+	}
+
+	for _, key := range devControllerKeys {
+		if _, ok := registry[key]; !ok {
+			t.Errorf("controller %q is in the -controllers default but not registered: "+
+				"it would be logged as 'skipping unknown controller' on every startup", key)
+		}
+	}
+}

@@ -271,41 +271,62 @@ func parseMemorySize(size string) (int64, error) {
 	return int64(num * float64(multiplier)), nil
 }
 
+// UserMemorySetting looks up an operator-managed memory key across EVERY map a
+// user can write it into: spec.config first, then spec.propertySharding.config.
+//
+// Both maps have to be consulted here because this is the only place that keeps
+// heap.initial_size and heap.max_size COHERENT. A value that reaches the rendered
+// neo4j.conf without passing through here is appended raw after the operator's
+// memory block, and DedupeNeo4jConf keeps the last occurrence — so a user
+// heap.max_size below the derived initial_size produced
+// "Initial heap size set to a larger value than the maximum heap size" and the
+// JVM refused to boot. That is exactly what happened to
+// examples/property_sharding/development-property-sharding.yaml, which set a 4G
+// max against a derived 5G initial and crash-looped every server.
+func UserMemorySetting(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, key string) (string, bool) {
+	if v, ok := cluster.Spec.Config[key]; ok {
+		return v, true
+	}
+	if cluster.Spec.PropertySharding != nil {
+		if v, ok := cluster.Spec.PropertySharding.Config[key]; ok {
+			return v, true
+		}
+	}
+	return "", false
+}
+
 // GetMemoryConfigForCluster returns memory configuration for the cluster
 func GetMemoryConfigForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) MemoryConfig {
-	// Check if custom memory configuration is provided
-	if cluster.Spec.Config != nil {
-		// Check for custom heap settings
-		if heapMax, exists := cluster.Spec.Config["server.memory.heap.max_size"]; exists {
-			config := MemoryConfig{
-				HeapMaxSize: heapMax,
-			}
-
-			// Use heap max as initial size if not specified
-			if heapInitial, exists := cluster.Spec.Config["server.memory.heap.initial_size"]; exists {
-				config.HeapInitialSize = heapInitial
-			} else {
-				config.HeapInitialSize = heapMax
-			}
-
-			// Use custom page cache if specified, otherwise calculate
-			if pageCache, exists := cluster.Spec.Config["server.memory.pagecache.size"]; exists {
-				config.PageCacheSize = pageCache
-			} else {
-				// Calculate page cache based on heap size
-				if heapBytes, err := parseMemorySize(heapMax); err == nil {
-					pageCacheBytes := heapBytes / 2 // 50% of heap for page cache
-					if pageCacheBytes < MinPageCacheSize {
-						pageCacheBytes = MinPageCacheSize
-					}
-					config.PageCacheSize = formatMemorySize(pageCacheBytes)
-				} else {
-					config.PageCacheSize = "128M"
-				}
-			}
-
-			return config
+	// Check for custom heap settings in any map the user can set them in
+	if heapMax, exists := UserMemorySetting(cluster, "server.memory.heap.max_size"); exists {
+		config := MemoryConfig{
+			HeapMaxSize: heapMax,
 		}
+
+		// Use heap max as initial size if not specified
+		if heapInitial, exists := UserMemorySetting(cluster, "server.memory.heap.initial_size"); exists {
+			config.HeapInitialSize = heapInitial
+		} else {
+			config.HeapInitialSize = heapMax
+		}
+
+		// Use custom page cache if specified, otherwise calculate
+		if pageCache, exists := UserMemorySetting(cluster, "server.memory.pagecache.size"); exists {
+			config.PageCacheSize = pageCache
+		} else {
+			// Calculate page cache based on heap size
+			if heapBytes, err := parseMemorySize(heapMax); err == nil {
+				pageCacheBytes := heapBytes / 2 // 50% of heap for page cache
+				if pageCacheBytes < MinPageCacheSize {
+					pageCacheBytes = MinPageCacheSize
+				}
+				config.PageCacheSize = formatMemorySize(pageCacheBytes)
+			} else {
+				config.PageCacheSize = "128M"
+			}
+		}
+
+		return config
 	}
 
 	// Use optimized settings for Neo4j 5.26+

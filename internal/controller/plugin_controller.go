@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -40,7 +39,6 @@ import (
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -537,17 +535,6 @@ func (r *Neo4jPluginReconciler) applySecurityConfiguration(ctx context.Context, 
 	return nil
 }
 
-// Pod hardening for plugin install/remove Jobs delegates to the single
-// source of truth in internal/resources/security_context.go so it can't
-// drift from the cluster/standalone/backup/restore pods.
-func hardenedPluginPodSecurityContext() *corev1.PodSecurityContext {
-	return resources.DefaultNeo4jPodSecurityContext()
-}
-
-func hardenedPluginContainerSecurityContext() *corev1.SecurityContext {
-	return resources.DefaultNeo4jContainerSecurityContext()
-}
-
 func (r *Neo4jPluginReconciler) uninstallPlugin(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin) error {
 	logger := log.FromContext(ctx)
 
@@ -613,72 +600,64 @@ func (r *Neo4jPluginReconciler) uninstallPlugin(ctx context.Context, plugin *neo
 	return nil
 }
 
+// removePluginFromDeployment uninstalls a Managed plugin by dropping its name
+// from the target StatefulSet's NEO4J_PLUGINS env var.
+//
+// That env var is the ONLY lever that uninstalls a Managed plugin. `/plugins` is
+// a per-pod EmptyDir (see the "plugins" volume in internal/resources/cluster.go)
+// that the Neo4j Docker entrypoint repopulates from NEO4J_PLUGINS on every
+// container start, so the JAR on disk is derived state — leave the name in the
+// env var and the next restart reinstalls the plugin.
+//
+// This used to launch a `rm -f /plugins/<name>*.jar` Job, which could not work by
+// construction: the Job declared its OWN fresh EmptyDir, so it deleted files in a
+// directory it had just created and never touched the Neo4j pod. It also wedged
+// deletion — the Job outlived the reconcile that made it, and every later
+// reconcile re-issued the same Create and failed `already exists`, so the
+// finalizer was never released and the CR stayed Terminating forever (which in
+// turn blocked namespace deletion). Removing it fixes the wedge and makes
+// uninstall symmetric with install, which mutates the same env var.
+//
+// Security-token env pruning is handled mode-independently in uninstallPlugin
+// (before the mode branches), so it is not repeated here.
 func (r *Neo4jPluginReconciler) removePluginFromDeployment(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Removing plugin from deployment", "plugin", plugin.Spec.Name, "type", deployment.Type)
 
-	// Create a Job to remove the plugin from the cluster
-	removeJob := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-remove-plugin-%s", deployment.Name, plugin.Spec.Name),
-			Namespace: deployment.Namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/name":      "neo4j-plugin",
-				"app.kubernetes.io/instance":  deployment.Name,
-				"app.kubernetes.io/component": "plugin-removal",
-				"neo4j.plugin/name":           plugin.Spec.Name,
-			},
-		},
-		Spec: batchv1.JobSpec{
-			TTLSecondsAfterFinished: func() *int32 { v := int32(300); return &v }(), // Clean up completed jobs after 5 minutes
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					SecurityContext: hardenedPluginPodSecurityContext(),
-					RestartPolicy:   corev1.RestartPolicyNever,
-					Containers: []corev1.Container{
-						{
-							Name:    "plugin-remover",
-							Image:   "busybox:latest",
-							Command: []string{"sh", "-c"},
-							Args: []string{
-								fmt.Sprintf(`
-									echo "Removing plugin %s from Neo4j %s %s"
-									# Remove plugin jar file
-									rm -f /plugins/%s*.jar
-									echo "Plugin removal completed"
-								`, plugin.Spec.Name, deployment.Type, deployment.Name, plugin.Spec.Name),
-							},
-							SecurityContext: hardenedPluginContainerSecurityContext(),
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "plugins",
-									MountPath: "/plugins",
-								},
-							},
-						},
-					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "plugins",
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	if err := r.Create(ctx, removeJob); err != nil {
-		return fmt.Errorf("failed to create plugin removal job: %w", err)
-	}
-
-	// Security-token env pruning is handled mode-independently in
-	// uninstallPlugin (before the mode branches), so it is not repeated here.
-
-	// Wait for job completion
-	return r.waitForJobCompletion(ctx, removeJob)
+	stsKey := types.NamespacedName{Name: r.getStatefulSetName(deployment), Namespace: deployment.Namespace}
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		sts := &appsv1.StatefulSet{}
+		if err := r.Get(ctx, stsKey, sts); err != nil {
+			if errors.IsNotFound(err) {
+				// Target gone → nothing to uninstall from; let the finalizer go.
+				return nil
+			}
+			return err
+		}
+		for i := range sts.Spec.Template.Spec.Containers {
+			c := &sts.Spec.Template.Spec.Containers[i]
+			if c.Name != "neo4j" {
+				continue
+			}
+			for j := range c.Env {
+				if c.Env[j].Name != "NEO4J_PLUGINS" {
+					continue
+				}
+				remaining, err := RemoveFromNeo4jPluginList(c.Env[j].Value, plugin.Spec.Name)
+				if err != nil {
+					return err
+				}
+				if remaining == c.Env[j].Value {
+					return nil // not listed — nothing to do, and no needless restart
+				}
+				c.Env[j].Value = remaining
+				logger.Info("Dropped plugin from NEO4J_PLUGINS", "plugin", plugin.Spec.Name, "remaining", remaining)
+				return r.Update(ctx, sts)
+			}
+			return nil // no NEO4J_PLUGINS at all (e.g. PreBaked-only deployment)
+		}
+		return nil
+	})
 }
 
 // prunePluginSecurityEnv removes the uninstalled plugin's additive security
@@ -1555,6 +1534,44 @@ func MergeNeo4jPluginList(existing string, newPlugin string) (string, error) {
 	return string(merged), nil
 }
 
+// RemoveFromNeo4jPluginList is the inverse of MergeNeo4jPluginList: it drops one
+// plugin from a NEO4J_PLUGINS JSON array, leaving every other entry — including
+// entries other controllers own — untouched.
+//
+// Returns the input UNCHANGED (byte for byte) when the plugin is not listed, so
+// callers can use `result == input` as "nothing to do" and skip a StatefulSet
+// Update that would otherwise restart the pods for no reason.
+//
+// Removing the last entry yields "[]" rather than "", because the Neo4j Docker
+// entrypoint treats an explicit empty array as "install nothing" while an empty
+// string is ambiguous.
+func RemoveFromNeo4jPluginList(existing string, remove string) (string, error) {
+	if strings.TrimSpace(existing) == "" {
+		return existing, nil
+	}
+
+	var plugins []string
+	if err := json.Unmarshal([]byte(existing), &plugins); err != nil {
+		return "", fmt.Errorf("failed to parse existing NEO4J_PLUGINS as JSON array: %w", err)
+	}
+
+	remaining := make([]string, 0, len(plugins))
+	for _, plugin := range plugins {
+		if plugin != remove {
+			remaining = append(remaining, plugin)
+		}
+	}
+	if len(remaining) == len(plugins) {
+		return existing, nil // not present — signal "no change" to the caller
+	}
+
+	pruned, err := json.Marshal(remaining)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal pruned NEO4J_PLUGINS: %w", err)
+	}
+	return string(pruned), nil
+}
+
 func (r *Neo4jPluginReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.Neo4jPlugin{}).
@@ -1595,55 +1612,6 @@ func (r *Neo4jPluginReconciler) getExpectedReplicas(deployment *DeploymentInfo) 
 	}
 	// Standalone always has 1 replica
 	return 1
-}
-
-func (r *Neo4jPluginReconciler) waitForJobCompletion(ctx context.Context, job *batchv1.Job) error {
-	logger := log.FromContext(ctx)
-	timeout := time.After(10 * time.Minute)
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-timeout:
-			return fmt.Errorf("timeout waiting for job %s/%s to complete", job.Namespace, job.Name)
-		case <-ticker.C:
-			if err := r.Get(ctx, client.ObjectKeyFromObject(job), job); err != nil {
-				return fmt.Errorf("failed to get status of job %s/%s: %w", job.Namespace, job.Name, err)
-			}
-
-			if job.Status.Succeeded > 0 {
-				logger.Info("Job completed successfully", "job", job.Name, "namespace", job.Namespace)
-				return nil
-			}
-
-			if job.Status.Failed > 0 {
-				// Inspect the JobFailed condition for a richer error message.
-				var failureReason, failureMessage string
-				for _, condition := range job.Status.Conditions {
-					if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
-						failureReason = condition.Reason
-						failureMessage = condition.Message
-						break
-					}
-				}
-				if failureReason != "" || failureMessage != "" {
-					return fmt.Errorf(
-						"job %s/%s failed (failed=%d): reason=%q message=%q",
-						job.Namespace,
-						job.Name,
-						job.Status.Failed,
-						failureReason,
-						failureMessage,
-					)
-				}
-				return fmt.Errorf("job %s/%s failed (failed=%d)",
-					job.Namespace, job.Name, job.Status.Failed)
-			}
-
-			// Still running, continue waiting
-		}
-	}
 }
 
 // PluginType represents different categories of Neo4j plugins

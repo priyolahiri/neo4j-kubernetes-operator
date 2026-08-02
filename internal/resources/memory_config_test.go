@@ -17,6 +17,7 @@ limitations under the License.
 package resources
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -408,5 +409,182 @@ func TestMemoryConfigForDifferentTopologies(t *testing.T) {
 				t.Errorf("expected heap max size %s, got %s", tt.expectedHeap, memoryConfig.HeapMaxSize)
 			}
 		})
+	}
+}
+
+// TestHeapCoherenceAcrossUserConfigMaps pins the fix for a crash-loop that
+// shipped in examples/property_sharding/development-property-sharding.yaml.
+//
+// The example set server.memory.heap.max_size in spec.propertySharding.config —
+// a map GetMemoryConfigForCluster did not read — so the operator still derived
+// heap.initial_size from the memory LIMIT (60% of 8Gi = 5G) while the user's 4G
+// max was appended to neo4j.conf afterwards and won. Every server then died with
+// "Initial heap size set to a larger value than the maximum heap size".
+//
+// The invariant that matters is not which number wins but that initial <= max,
+// whichever map the user wrote it in.
+func TestHeapCoherenceAcrossUserConfigMaps(t *testing.T) {
+	newCluster := func() *neo4jv1beta1.Neo4jEnterpriseCluster {
+		return &neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				AcceptLicenseAgreement: "eval",
+				Resources: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("4Gi")},
+					Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
+				},
+			},
+		}
+	}
+
+	t.Run("heap max in propertySharding.config drives initial too", func(t *testing.T) {
+		cluster := newCluster()
+		cluster.Spec.PropertySharding = &neo4jv1beta1.PropertyShardingSpec{
+			Enabled: true,
+			Config:  map[string]string{"server.memory.heap.max_size": "4G"},
+		}
+
+		cfg := GetMemoryConfigForCluster(cluster)
+
+		if cfg.HeapMaxSize != "4G" {
+			t.Errorf("user heap max ignored: got %q, want %q", cfg.HeapMaxSize, "4G")
+		}
+		if cfg.HeapInitialSize != "4G" {
+			t.Errorf("initial heap not clamped to the user's max: got %q, want %q "+
+				"(a larger initial than max makes the JVM refuse to start)",
+				cfg.HeapInitialSize, "4G")
+		}
+	})
+
+	t.Run("spec.config still wins over propertySharding.config", func(t *testing.T) {
+		cluster := newCluster()
+		cluster.Spec.Config = map[string]string{"server.memory.heap.max_size": "3G"}
+		cluster.Spec.PropertySharding = &neo4jv1beta1.PropertyShardingSpec{
+			Enabled: true,
+			Config:  map[string]string{"server.memory.heap.max_size": "4G"},
+		}
+
+		cfg := GetMemoryConfigForCluster(cluster)
+
+		if cfg.HeapMaxSize != "3G" || cfg.HeapInitialSize != "3G" {
+			t.Errorf("spec.config should take precedence: got initial=%q max=%q, want both %q",
+				cfg.HeapInitialSize, cfg.HeapMaxSize, "3G")
+		}
+	})
+
+	t.Run("the shipped example manifest boots", func(t *testing.T) {
+		// development-property-sharding.yaml, verbatim: 4Gi/8Gi with a 4G heap
+		// max and a 1G page cache, both under propertySharding.config.
+		cluster := newCluster()
+		cluster.Spec.PropertySharding = &neo4jv1beta1.PropertyShardingSpec{
+			Enabled: true,
+			Config: map[string]string{
+				"server.memory.heap.max_size":  "4G",
+				"server.memory.pagecache.size": "1G",
+			},
+		}
+
+		cfg := GetMemoryConfigForCluster(cluster)
+
+		// Both values must be what the manifest asked for. Comparing initial
+		// against max here would be vacuous: they are read from the same field
+		// and agree even when the bug is present - the contradiction only shows
+		// up in the RENDERED conf, which
+		// TestPropertyShardingConfigCannotOverrideOperatorMemoryKeys covers.
+		if cfg.HeapMaxSize != "4G" || cfg.HeapInitialSize != "4G" {
+			t.Errorf("manifest heap not honoured: got initial=%q max=%q, want both %q",
+				cfg.HeapInitialSize, cfg.HeapMaxSize, "4G")
+		}
+		if cfg.PageCacheSize != "1G" {
+			t.Errorf("user page cache ignored: got %q, want %q", cfg.PageCacheSize, "1G")
+		}
+	})
+}
+
+// TestPropertyShardingConfigCannotOverrideOperatorMemoryKeys checks the RENDERED
+// conf, not just the computed struct.
+//
+// The original bug was invisible at the struct level: the derived value was fine,
+// and the contradiction only appeared because propertySharding.config was
+// appended to neo4j.conf verbatim AFTER the operator's memory block, where
+// DedupeNeo4jConf keeps the last occurrence.
+func TestPropertyShardingConfigCannotOverrideOperatorMemoryKeys(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			AcceptLicenseAgreement: "eval",
+			Resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("4Gi")},
+				Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
+			},
+			PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
+				Enabled: true,
+				Config: map[string]string{
+					"server.memory.heap.max_size": "4G",
+					// A non-memory key must still pass through untouched.
+					"dbms.logs.debug.level": "DEBUG",
+				},
+			},
+		},
+	}
+
+	conf := buildNeo4jConfigForEnterprise(cluster)
+
+	var initial, maxHeap string
+	var maxCount int
+	for _, line := range strings.Split(conf, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "server.memory.heap.initial_size="):
+			initial = strings.TrimPrefix(line, "server.memory.heap.initial_size=")
+		case strings.HasPrefix(line, "server.memory.heap.max_size="):
+			maxHeap = strings.TrimPrefix(line, "server.memory.heap.max_size=")
+			maxCount++
+		}
+	}
+
+	if maxCount != 1 {
+		t.Errorf("expected exactly one server.memory.heap.max_size line, got %d - "+
+			"a duplicate means a raw user override was appended after the operator's block", maxCount)
+	}
+	if initial != maxHeap {
+		t.Errorf("rendered conf is incoherent: initial_size=%q max_size=%q "+
+			"(the JVM refuses to start when initial > max)", initial, maxHeap)
+	}
+	if !strings.Contains(conf, "dbms.logs.debug.level=DEBUG") {
+		t.Error("non-memory propertySharding.config keys must still reach the rendered conf")
+	}
+}
+
+// TestPropertyShardingConfigCannotOverrideTLSPosture covers what the exclusion
+// list uniquely protects.
+//
+// The memory keys are read back through UserMemorySetting, so for those the two
+// halves of the fix overlap. These two are different: nothing reads them back,
+// so without the exclusion a value in propertySharding.config would be appended
+// raw and silently downgrade the operator-managed TLS posture — the same class of
+// bypass the spec.config path has excluded all along.
+func TestPropertyShardingConfigCannotOverrideTLSPosture(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			AcceptLicenseAgreement: "eval",
+			PropertySharding: &neo4jv1beta1.PropertyShardingSpec{
+				Enabled: true,
+				Config: map[string]string{
+					"server.bolt.tls_level":           "DISABLED",
+					"server.directories.certificates": "/tmp/evil",
+				},
+			},
+		},
+	}
+
+	conf := buildNeo4jConfigForEnterprise(cluster)
+
+	if strings.Contains(conf, "server.bolt.tls_level=DISABLED") {
+		t.Error("propertySharding.config overrode the operator-managed server.bolt.tls_level")
+	}
+	if strings.Contains(conf, "/tmp/evil") {
+		t.Error("propertySharding.config overrode the operator-managed certificates directory")
 	}
 }

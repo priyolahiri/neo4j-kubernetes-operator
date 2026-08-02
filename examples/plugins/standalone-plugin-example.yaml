@@ -6,7 +6,7 @@ metadata:
   namespace: default
 spec:
   # References a Neo4jEnterpriseStandalone deployment
-  clusterRef: my-standalone
+  clusterRef: standalone-neo4j
 
   # Plugin configuration
   name: graph-data-science
