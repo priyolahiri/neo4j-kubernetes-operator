@@ -66,12 +66,22 @@ func (c *Client) ListSnapshots(ctx context.Context, instanceID, date string) ([]
 	return env.Data, nil
 }
 
-// RestoreSnapshot starts the async restore of an instance from a snapshot. Poll
-// GetInstance until the status returns to running.
-func (c *Client) RestoreSnapshot(ctx context.Context, instanceID, snapshotID string) error {
+// RestoreSnapshot starts the async restore of an instance from a snapshot and
+// returns the instance as Aura reports it at that moment.
+//
+// The 202 carries the FULL instance object — verified live 2026-08-01, where it
+// came back with `status: restoring`. Discarding it (this returned only an
+// error) threw away a free, immediate progress signal and left the caller to
+// wait a whole requeue interval before learning anything. The instance is still
+// polled to completion; this just means the first status write is accurate
+// instead of assumed.
+func (c *Client) RestoreSnapshot(ctx context.Context, instanceID, snapshotID string) (*Instance, error) {
 	path := "/instances/" + url.PathEscape(instanceID) + "/snapshots/" + url.PathEscape(snapshotID) + "/restore"
-	if err := c.doJSON(ctx, "POST", path, struct{}{}, nil); err != nil {
-		return fmt.Errorf("restoring instance %q from snapshot %q: %w", instanceID, snapshotID, err)
+	var env struct {
+		Data Instance `json:"data"`
 	}
-	return nil
+	if err := c.doJSON(ctx, "POST", path, struct{}{}, &env); err != nil {
+		return nil, fmt.Errorf("restoring instance %q from snapshot %q: %w", instanceID, snapshotID, err)
+	}
+	return &env.Data, nil
 }

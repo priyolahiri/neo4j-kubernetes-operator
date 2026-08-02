@@ -161,7 +161,10 @@ type auraAPI interface {
 	GetTenant(ctx context.Context, id string) (*aura.Tenant, error)
 	CreateSnapshot(ctx context.Context, instanceID string) (*aura.Snapshot, error)
 	GetSnapshot(ctx context.Context, instanceID, snapshotID string) (*aura.Snapshot, error)
-	RestoreSnapshot(ctx context.Context, instanceID, snapshotID string) error
+	// RestoreSnapshot returns the instance as Aura reports it in the 202 —
+	// the response carries the full object, so the first status write can be
+	// accurate rather than assumed.
+	RestoreSnapshot(ctx context.Context, instanceID, snapshotID string) (*aura.Instance, error)
 }
 
 // auraCMKAPI is the subset of the Aura client the customer-managed-key
@@ -245,7 +248,10 @@ type auraDatabaseAPI interface {
 	CreateDatabaseBackup(ctx context.Context, orgID, projectID, instanceID, databaseID string) (*aura.DatabaseBackup, error)
 	ListDatabaseBackups(ctx context.Context, orgID, projectID, instanceID, databaseID string) ([]aura.DatabaseBackup, error)
 	GetDatabaseBackup(ctx context.Context, orgID, projectID, instanceID, databaseID, backupID string) (*aura.DatabaseBackup, error)
-	RestoreDatabase(ctx context.Context, orgID, projectID, instanceID, databaseID string, req aura.RestoreDatabaseRequest) error
+	// RestoreDatabase returns the 202 body, which is the ONLY place this API
+	// reports a database's state — GET and LIST return just an id, even
+	// mid-restore.
+	RestoreDatabase(ctx context.Context, orgID, projectID, instanceID, databaseID string, req aura.RestoreDatabaseRequest) (*aura.DatabaseRestoreAccepted, error)
 }
 
 // auraDatabaseClientFactory builds an auraDatabaseAPI from resolved credentials.

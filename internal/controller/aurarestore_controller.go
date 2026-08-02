@@ -119,7 +119,8 @@ func (r *AuraRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			return r.pending(ctx, req, restore, "InstanceNotRunning",
 				fmt.Sprintf("waiting for instance to be Running before restore (status: %s)", observed.Status))
 		}
-		if err := apiClient.RestoreSnapshot(ctx, externalID, snapshotID); err != nil {
+		accepted, err := apiClient.RestoreSnapshot(ctx, externalID, snapshotID)
+		if err != nil {
 			if aura.IsConflict(err) || aura.IsTransient(err) {
 				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 			}
@@ -127,7 +128,14 @@ func (r *AuraRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonAuraRestoreStarted,
 			fmt.Sprintf("Restoring instance %s from snapshot %s", externalID, snapshotID))
-		return r.setPhase(ctx, req, restore, auraRestoreRestoring, snapshotID, "Restore issued")
+		// The 202 carries the instance with its new status, so report what Aura
+		// actually said rather than a generic "issued" that goes stale for a whole
+		// requeue interval.
+		msg := "Restore issued"
+		if accepted != nil && accepted.Status != "" {
+			msg = fmt.Sprintf("Restore issued; instance status: %s", accepted.Status)
+		}
+		return r.setPhase(ctx, req, restore, auraRestoreRestoring, snapshotID, msg)
 
 	case auraRestoreRestoring:
 		switch {

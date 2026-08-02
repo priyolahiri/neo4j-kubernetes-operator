@@ -546,8 +546,15 @@ func TestSnapshotLifecycle(t *testing.T) {
 		t.Errorf("list = %+v, want single snap-1", list)
 	}
 
-	if err := c.RestoreSnapshot(ctx, "i1", "snap-1"); err != nil {
+	// The 202 carries the full instance with its new status — verified live
+	// 2026-08-01. Returning it lets the restore controller report what Aura
+	// actually said instead of waiting a requeue interval to find out.
+	restored, err := c.RestoreSnapshot(ctx, "i1", "snap-1")
+	if err != nil {
 		t.Fatalf("RestoreSnapshot: %v", err)
+	}
+	if restored == nil || restored.Status != InstanceStatusRestoring {
+		t.Errorf("RestoreSnapshot must return the instance from the 202 body, got %+v", restored)
 	}
 }
 

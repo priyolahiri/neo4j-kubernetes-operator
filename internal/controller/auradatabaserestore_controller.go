@@ -141,7 +141,8 @@ func (r *AuraDatabaseRestoreReconciler) Reconcile(ctx context.Context, req ctrl.
 	if err := r.markSubmitting(ctx, req); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := apiClient.RestoreDatabase(ctx, orgID, projectID, instanceID, databaseID, aura.RestoreDatabaseRequest{BackupID: backupID}); err != nil {
+	accepted, err := apiClient.RestoreDatabase(ctx, orgID, projectID, instanceID, databaseID, aura.RestoreDatabaseRequest{BackupID: backupID})
+	if err != nil {
 		// 409 here is retryable, not terminal: Aura returns it for "ongoing
 		// operation" and "backup not in a completed state".
 		if aura.IsConflict(err) || aura.IsTransient(err) {
@@ -156,7 +157,7 @@ func (r *AuraDatabaseRestoreReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 	r.Recorder.Event(rs, corev1.EventTypeNormal, EventReasonAuraDatabaseRestoreDone,
 		fmt.Sprintf("Submitted restore of database %s from backup %s", databaseID, backupID))
-	return ctrl.Result{}, r.markSubmitted(ctx, req)
+	return ctrl.Result{}, r.markSubmitted(ctx, req, accepted)
 }
 
 // Restore phases. "Submitting" is the ambiguous one: written before the API call
@@ -242,7 +243,7 @@ func (r *AuraDatabaseRestoreReconciler) markStarted(ctx context.Context, req ctr
 // polling the database GET endpoint, but DatabaseSummary carries only an `id`,
 // with no status field, so completion is not observable through this API.
 // Claiming "Completed" here would assert something we cannot know.
-func (r *AuraDatabaseRestoreReconciler) markSubmitted(ctx context.Context, req ctrl.Request) error {
+func (r *AuraDatabaseRestoreReconciler) markSubmitted(ctx context.Context, req ctrl.Request, accepted *aura.DatabaseRestoreAccepted) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.AuraDatabaseRestore{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
@@ -252,10 +253,21 @@ func (r *AuraDatabaseRestoreReconciler) markSubmitted(ctx context.Context, req c
 		latest.Status.FinishedAt = &now
 		latest.Status.Phase = auraRestorePhaseSubmitted
 		latest.Status.ObservedGeneration = latest.Generation
+		// The 202 body is the ONLY state this API ever reports for a restore, so
+		// fold what it said into the message instead of discarding it. GET and
+		// LIST return just an id, even mid-restore, which is why completion still
+		// has to be confirmed in the console.
+		msg := "Restore accepted by Aura. Completion is not observable: the v2beta1 database " +
+			"endpoint exposes no status field, so verify in the Aura console (v2beta1, beta)"
+		if accepted != nil && accepted.Status != "" {
+			msg = fmt.Sprintf("Restore accepted by Aura; database reported %q at acceptance "+
+				"(%d nodes, %d relationships). Completion is not observable — the v2beta1 database "+
+				"endpoint exposes no status field, so verify in the Aura console (v2beta1, beta)",
+				accepted.Status, accepted.Nodes, accepted.Relationships)
+		}
 		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
 			Type: "Ready", Status: metav1.ConditionTrue, Reason: "Submitted",
-			Message: "Restore accepted by Aura. Completion is not observable: the v2beta1 database " +
-				"endpoint exposes no status field, so verify in the Aura console (v2beta1, beta)",
+			Message: msg,
 		})
 		return r.Status().Update(ctx, latest)
 	})

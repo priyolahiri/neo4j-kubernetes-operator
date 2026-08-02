@@ -72,7 +72,8 @@ import (
 //     `status` ("restoring"), `name`, `nodes`, `relationships`, `instance_id`,
 //     plus `available_actions` / `capabilities` maps explaining which operations
 //     are currently refused and why. Discard that body and there is no way left
-//     to observe a restore. (Not modelled here yet — RestoreDatabase drops it.)
+//     to observe a restore — so it is modelled as DatabaseRestoreAccepted and
+//     returned.
 //
 //  6. The restore endpoint calls a backup a SNAPSHOT in its errors: an unknown
 //     backup ID yields 404 `snapshot-not-found`, and the check happens before any
@@ -120,6 +121,34 @@ type DatabaseBackup struct {
 // The field is `id` (the backup's ID) and is required — see landmine 2 above.
 type RestoreDatabaseRequest struct {
 	BackupID string `json:"id"`
+}
+
+// DatabaseActionState explains whether one action is currently permitted on a
+// database, and if not, why. Returned inside the restore response's
+// `available_actions` / `capabilities` maps.
+type DatabaseActionState struct {
+	Enabled bool   `json:"enabled"`
+	Message string `json:"message,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// DatabaseRestoreAccepted is the 202 body of a database restore.
+//
+// It is the ONLY place this API reports a database's state: GET and LIST return
+// `{"id": …}` and nothing else, even mid-restore (landmine 5). So this response
+// is the single observability signal a restore ever produces, and discarding it
+// — as this client did — left AuraDatabaseRestore with nothing at all to report.
+// Verified live 2026-07-31.
+type DatabaseRestoreAccepted struct {
+	AuraDatabaseID string `json:"aura_database_id,omitempty"`
+	InstanceID     string `json:"instance_id,omitempty"`
+	Name           string `json:"name,omitempty"`
+	// Status observed live as "restoring".
+	Status           string                         `json:"status,omitempty"`
+	Nodes            int64                          `json:"nodes,omitempty"`
+	Relationships    int64                          `json:"relationships,omitempty"`
+	AvailableActions map[string]DatabaseActionState `json:"available_actions,omitempty"`
+	Capabilities     map[string]DatabaseActionState `json:"capabilities,omitempty"`
 }
 
 // dbCollectionPath builds the instance-scoped database collection path.
@@ -225,10 +254,11 @@ func (c *Client) GetDatabaseBackup(ctx context.Context, orgID, projectID, instan
 }
 
 // RestoreDatabase restores a database from one of its backups (v2beta1, beta).
-func (c *Client) RestoreDatabase(ctx context.Context, orgID, projectID, instanceID, databaseID string, req RestoreDatabaseRequest) error {
+func (c *Client) RestoreDatabase(ctx context.Context, orgID, projectID, instanceID, databaseID string, req RestoreDatabaseRequest) (*DatabaseRestoreAccepted, error) {
 	path := dbCollectionPath(orgID, projectID, instanceID) + "/" + url.PathEscape(databaseID) + "/restore"
-	if err := c.doV2Data(ctx, http.MethodPost, path, req, nil); err != nil {
-		return fmt.Errorf("restoring database %q: %w", databaseID, err)
+	var out DatabaseRestoreAccepted
+	if err := c.doV2Data(ctx, http.MethodPost, path, req, &out); err != nil {
+		return nil, fmt.Errorf("restoring database %q: %w", databaseID, err)
 	}
-	return nil
+	return &out, nil
 }

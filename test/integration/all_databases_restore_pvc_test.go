@@ -43,9 +43,8 @@ var _ = Describe("PVC Cluster Restore — All-Databases and Single-Database (v1.
 		clusterReadyTimeout = 10 * time.Minute
 		dbReadyTimeout      = 5 * time.Minute
 		backupTimeout       = 10 * time.Minute
-		// See the note in all_databases_restore_test.go: 20 min so a slow seed under
-		// CI load is not misreported as a failure.
-		restoreTimeout = 20 * time.Minute
+		// See the note in all_databases_restore_test.go: left at 12 on purpose.
+		restoreTimeout = 12 * time.Minute
 		pollInterval   = 5 * time.Second
 		adminPass      = "password123"
 	)

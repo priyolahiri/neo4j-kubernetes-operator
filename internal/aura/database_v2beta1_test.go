@@ -68,6 +68,13 @@ func TestDatabaseLifecycle(t *testing.T) {
 			raw, _ := io.ReadAll(r.Body)
 			_ = json.Unmarshal(raw, &restoreBody)
 			w.WriteHeader(http.StatusAccepted)
+			// Verbatim live 202 body (abridged): status/nodes/relationships plus the
+			// available_actions map explaining what is refused while restoring.
+			_, _ = w.Write([]byte(`{"data":{"aura_database_id":"db-1","instance_id":"` + inst + `",` +
+				`"name":"db-1","status":"restoring","nodes":0,"relationships":0,` +
+				`"available_actions":{"take_backup":{"enabled":false,` +
+				`"message":"Cannot take a backup of a database with the status restoring",` +
+				`"reason":"cannot-take-backup-in-current-state"}}}}`))
 		case r.Method == http.MethodDelete && r.URL.Path == base+"/db-1":
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"data":{"id":"db-1"}}`))
@@ -131,8 +138,14 @@ func TestDatabaseLifecycle(t *testing.T) {
 		t.Errorf("ListDatabaseBackups = %+v, err=%v", backups, err)
 	}
 
-	if err := c.RestoreDatabase(ctx, org, proj, inst, "db-1", RestoreDatabaseRequest{BackupID: "bk-1"}); err != nil {
+	// The 202 body is rich and is the ONLY state this API reports for a restore —
+	// GET/LIST return just an id, even mid-restore. Verified live 2026-07-31.
+	accepted, err := c.RestoreDatabase(ctx, org, proj, inst, "db-1", RestoreDatabaseRequest{BackupID: "bk-1"})
+	if err != nil {
 		t.Errorf("RestoreDatabase: %v", err)
+	}
+	if accepted == nil || accepted.Status != "restoring" {
+		t.Errorf("RestoreDatabase must return the 202 body's state, got %+v", accepted)
 	}
 	// The restore body's required field is `id`, NOT `backup_id`. This assertion
 	// is the one that was missing before, which is why the wrong name shipped.

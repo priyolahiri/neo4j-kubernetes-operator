@@ -55,7 +55,7 @@ type fakeAuraAPI struct {
 	getTenantFn       func(ctx context.Context, id string) (*aura.Tenant, error)
 	createSnapshotFn  func(ctx context.Context, instanceID string) (*aura.Snapshot, error)
 	getSnapshotFn     func(ctx context.Context, instanceID, snapshotID string) (*aura.Snapshot, error)
-	restoreSnapshotFn func(ctx context.Context, instanceID, snapshotID string) error
+	restoreSnapshotFn func(ctx context.Context, instanceID, snapshotID string) (*aura.Instance, error)
 
 	// Call flags / captured args.
 	listCalled     bool
@@ -146,12 +146,14 @@ func (f *fakeAuraAPI) GetSnapshot(ctx context.Context, instanceID, snapshotID st
 	return &aura.Snapshot{InstanceID: instanceID, SnapshotID: snapshotID, Status: aura.SnapshotStatusInProgress}, nil
 }
 
-func (f *fakeAuraAPI) RestoreSnapshot(ctx context.Context, instanceID, snapshotID string) error {
+func (f *fakeAuraAPI) RestoreSnapshot(ctx context.Context, instanceID, snapshotID string) (*aura.Instance, error) {
 	f.restoreCalled = true
 	if f.restoreSnapshotFn != nil {
 		return f.restoreSnapshotFn(ctx, instanceID, snapshotID)
 	}
-	return nil
+	// Live shape: the 202 returns the full instance, already flipped to
+	// "restoring".
+	return &aura.Instance{ID: instanceID, Status: aura.InstanceStatusRestoring}, nil
 }
 
 // factoryFor returns a ClientFactory that always hands back the given fake,
