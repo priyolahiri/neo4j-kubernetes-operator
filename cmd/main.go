@@ -117,6 +117,26 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+// devControllerKeys is the default set of controllers dev mode loads. It must
+// cover every key in devControllerRegistry — production mode loads all of them,
+// so anything omitted here is a CRD that works when installed by Helm and is
+// silently inert under `make dev-up`/Tilt.
+//
+// The 12 aura* keys were missing for the whole of the Aura work: the CRs applied
+// cleanly and then sat with an empty status forever, with nothing in the operator
+// log to explain it. TestDevControllerDefaultCoversRegistry now fails the build
+// if a registered controller is left out again.
+var devControllerKeys = []string{
+	"cluster", "standalone", "database", "backup", "restore", "plugin",
+	"shardeddatabase", "user", "role", "rolebinding", "authrule",
+	"auraproviderconfig", "aurainstance", "aurasnapshot", "aurarestore",
+	"auracustomermanagedkey", "auraipfilter", "auradatabase",
+	"auradatabasebackup", "auradatabaserestore", "auraorganizationmember",
+	"auraprojectmember", "aurainvite",
+}
+
+var defaultDevControllers = strings.Join(devControllerKeys, ",")
+
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(neo4jv1beta1.AddToScheme(scheme))
@@ -133,7 +153,13 @@ func main() {
 		secureMetrics        = flag.Bool("metrics-secure", false, "If set the metrics endpoint is served securely")
 
 		// Development mode specific flags
-		controllersToLoad = flag.String("controllers", "cluster,standalone,database,backup,restore,plugin,shardeddatabase,user,role,rolebinding,authrule", "Comma-separated list of controllers to load (dev mode only)")
+		// Must stay in sync with the dev controller registry in
+		// setupDevelopmentControllers — a key that is registered but missing here
+		// means dev mode ACCEPTS the CR and then silently ignores it forever: no
+		// status, no events, no logs, indistinguishable from a hung reconcile.
+		// That is exactly what the 12 aura* keys did before they were added.
+		// TestDevControllerDefaultCoversRegistry pins the two lists together.
+		controllersToLoad = flag.String("controllers", defaultDevControllers, "Comma-separated list of controllers to load (dev mode only)")
 
 		// Cache optimization flags
 		cacheStrategy = flag.String("cache-strategy", "", "Cache strategy: standard, lazy, selective, on-demand, none (auto-selected based on mode if empty)")
@@ -555,9 +581,16 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 	return nil
 }
 
-// setupDevelopmentControllers sets up controllers based on configuration for development mode
-func setupDevelopmentControllers(mgr ctrl.Manager, controllers []string) error {
-	controllerMap := map[string]func() (interface{ SetupWithManager(ctrl.Manager) error }, string){
+// devControllerRegistry maps every controller key dev mode understands to its
+// factory. Split out from setupDevelopmentControllers so the default value of
+// the -controllers flag can be checked against it by a test: a key here that is
+// missing from defaultDevControllers is a CR that dev mode accepts and then
+// ignores in total silence.
+//
+// The factories close over mgr but are not invoked at construction, so passing a
+// nil manager is safe when all you need is the key set.
+func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+	return map[string]func() (interface{ SetupWithManager(ctrl.Manager) error }, string){
 		"cluster": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
 			return &controller.Neo4jEnterpriseClusterReconciler{
 				Client:             mgr.GetClient(),
@@ -763,17 +796,40 @@ func setupDevelopmentControllers(mgr ctrl.Manager, controllers []string) error {
 			}, "AuraInvite"
 		},
 	}
+}
 
+// setupDevelopmentControllers sets up controllers based on configuration for development mode
+func setupDevelopmentControllers(mgr ctrl.Manager, controllers []string) error {
+	controllerMap := devControllerRegistry(mgr)
+
+	loaded := make(map[string]bool, len(controllers))
 	for _, controllerName := range controllers {
 		if factory, exists := controllerMap[controllerName]; exists {
 			ctrl, name := factory()
 			if err := ctrl.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("failed to setup controller %s: %w", name, err)
 			}
+			loaded[controllerName] = true
 			setupLog.Info("loaded controller", "controller", name)
 		} else {
 			setupLog.Info("skipping unknown controller", "controller", controllerName)
 		}
+	}
+
+	// Say out loud which CRDs will be ignored. Without this, applying a CR whose
+	// controller was not selected looks exactly like a hung reconcile — the
+	// resource is accepted and then nothing happens: no status, no events, no
+	// logs. Naming the gap at startup is the only cheap way to spot it.
+	var omitted []string
+	for name := range controllerMap {
+		if !loaded[name] {
+			omitted = append(omitted, name)
+		}
+	}
+	if len(omitted) > 0 {
+		sort.Strings(omitted)
+		setupLog.Info("NOT loading controllers - their CRs will be accepted and then ignored",
+			"controllers", omitted, "hint", "add them to --controllers to enable")
 	}
 
 	return nil

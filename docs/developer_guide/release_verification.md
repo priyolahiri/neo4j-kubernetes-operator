@@ -71,7 +71,13 @@ than a Kind cluster: run its **read-only sweep** whenever anything under
 | Standalone recommended labels | `kubectl get pods -l app.kubernetes.io/name=neo4j` returns the standalone pod (it carries `app.kubernetes.io/{name,instance,managed-by}`) |
 | `system` is not restorable | a `Neo4jRestore` with `database: system` → `Failed` with an actionable message |
 
-→ **Tear down the standalone fully** before Phase 2.
+→ **Tear down the standalone fully** before Phase 2 — but **KEEP the backup PVC**
+(and the `Neo4jBackup` CR that owns it, so retention does not prune the artifact).
+Phase 2's cross-topology scenario restores that standalone-produced artifact into
+the cluster, and the one-deployment-at-a-time rule means you cannot stand the
+standalone back up alongside the cluster to re-make it. Deleting the PVC here
+costs a full standalone rebuild-and-teardown cycle later, so treat "a retained
+standalone backup" as one of Phase 1's outputs.
 
 ### Phase 2 — Cluster, 3 servers (~6Gi)
 
@@ -84,7 +90,7 @@ than a Kind cluster: run its **read-only sweep** whenever anything under
 | Database **with topology** | e.g. `3 PRIMARIES`; `SHOW DATABASE <db>` shows the primaries `online` |
 | Backup → restore (cluster) | in-place **Cypher** path: back up one DB (`instanceRef` + `database`), restore into a **new** database, confirm the data round-trips |
 | All-databases restore (cluster) | `Neo4jBackup` `allDatabases: true` → `Neo4jRestore` `allDatabases: true` (cloud-backed); confirm every user DB round-trips and `status.databaseResults` are all `Completed` (#222) |
-| Cross-topology restore | back up a DB from the **standalone** (Phase 1), restore it into the **cluster** via `instanceRef`; confirm the data round-trips |
+| Cross-topology restore | restore the **retained standalone backup** from Phase 1 into the **cluster** via `instanceRef`; confirm the data round-trips. The cluster path stands up a short-lived `backup-seed-proxy-<restore>` Deployment that serves the backup PVC over HTTP, so the seed URI in `status` is an `http://…` URL, not a `file://` path |
 
 3 servers (not 2) keeps split-brain / 3-primary quorum behaviour in the routine
 walk. → **Tear down the cluster fully** before Phase 3.
@@ -161,13 +167,17 @@ what caught four real client bugs during the 2026-07-30 re-diff.
 
 | Scenario | Verify |
 |---|---|
-| `AuraInstance` lifecycle | create → Ready → resize (`memory`) → pause → resume → delete; `status.instanceId` pinned via annotation |
+| `AuraInstance` lifecycle | create → Ready → resize (`memory`) → pause → resume → delete; `status.instanceId` pinned via the `neo4j.com/external-instance-id` annotation. **Set `deletionPolicy: Delete` on the throwaway instance** — the default is `Orphan`, so otherwise deleting the CR leaves the instance running and billing (see the teardown note below), and the delete path itself goes untested |
 | `AuraDatabase` + backup | **Needs an instance created with `multiDatabase: true`** — a Business Critical tier alone is not enough, and the flag cannot be added later (`docs/knowledge/operations.md` id 90). Against any other instance expect `Ready=False`, reason `InstanceNotMultiDatabase`, with **no requeue**. On a multi-database instance: `AuraDatabaseBackup` reaches `Completed` (**not** on first observe — an empty status must read as `Pending`, and the backup does not appear in the backups LIST until it completes, so it must be polled by ID); `AuraDatabaseRestore` reports `Submitted`, never `Completed` |
-| Multi-database create | An `AuraInstance` with `multiDatabase: true` + `organizationId` is created via **v2beta1** (v1 `type` names are translated), then remains manageable through v1; `status.atProvider.multiDatabase` reports `true`. On a v1-created instance the same field stays **absent** (unknown), never `false` |
+| Multi-database create | An `AuraInstance` with `multiDatabase: true` + `organizationId` is created via **v2beta1** (v1 `type` names are translated), then remains manageable through v1; `status.atProvider.multiDatabase` reports `true`. On a v1-created instance the field reports the **true** value from the v2beta1 probe — `false` is correct there, and it stays **absent** (unknown) only when no `organizationId` is resolvable, since the v1 GET carries no such field |
 | Console RBAC | `AuraProjectMember` for an existing **org** member is added without an invite; role PATCH bodies are accepted (they are `{organization_roles:[…]}` / `{project_roles:[…]}`, not a scalar) |
 | Fleet `provision` | Deployment registered, token minted into the Secret, DBMS registers; deleting the Secret with the default `tokenPolicy` **refuses to rotate** and says why |
 
-→ **Tear down** every resource created here; Aura bills by the hour.
+→ **Tear down** every resource created here; Aura bills by the hour. Deleting the
+CRs is **not** sufficient proof: `deletionPolicy` defaults to `Orphan`, so a CR
+delete can leave a running instance behind. Confirm with
+`GET /v1/instances/<id>` → **404** and a project instance list of **0** before you
+call the phase done.
 
 ## Coverage at a glance
 
@@ -202,6 +212,7 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.
 | Release | Date | Result | Findings |
 |---|---|---|---|
 | v1.12.2 | 2026-06-14 | ✅ all phases pass | Doc bug: `backup_restore.md` sharded `target.name` said *logical name*, must be *CR name* (fixed, `#270` follow-up). v1.12.2 surfaces (#260/#268/#269/#270) verified live. |
+| v1.14.0 | 2026-08-02 | ✅ all 4 phases pass (19/19 scenarios) — 3 bugs + 4 doc gaps found | **Bugs:** (1) deleting a `Neo4jPlugin` against a live deployment never finalizes — the removal Job is re-created every reconcile and fails `already exists`, so the CR stays Terminating and blocks namespace deletion; (2) `examples/property_sharding/development-property-sharding.yaml` does not boot — `spec.propertySharding.config` bypasses the memory-key exclusion that `spec.config` gets, so a user `heap.max_size` contradicts the operator-derived `heap.initial_size` and the JVM refuses to start; (3) `make dev-up` loads no `aura*` controller (the dev `-controllers` default omits all 12), so every Aura CR is accepted and then silently ignored — no status, no events, no logs. **Doc gaps:** Phase 1 teardown destroys the backup Phase 2's cross-topology scenario needs; Phase 4 teardown leaves a billing instance because `deletionPolicy` defaults to `Orphan`; the `multiDatabase`-stays-absent rule holds only with no org configured; sharding examples pin `2026.04` while the CI anchor is `2026.06`. **Also:** a crash-looping member surfaces only as `ConnectivityDegraded`, which points at Bolt rather than the container. |
 
 ## See also
 

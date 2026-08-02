@@ -37,7 +37,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "2026.04-enterprise"   # property sharding needs CalVer ≥ 2025.12
+    tag: "2026.06-enterprise"   # property sharding needs CalVer ≥ 2025.12
 
   auth:
     adminSecret: neo4j-admin-secret   # create out-of-band (see bottom of file)

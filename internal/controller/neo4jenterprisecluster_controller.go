@@ -1931,16 +1931,31 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 		// a streak of 1-2 during a rolling restart is expected; a streak
 		// climbing for minutes against a settled cluster is the incident.
 		streak := r.recordConnectivityFailure(cluster)
+		// A member that never starts looks identical to a slow one from the Bolt
+		// side, so name the pod-level cause when there is one. Without this the
+		// only signal is ConnectivityDegraded ("connection refused"), which points
+		// at networking — a crash-looping container (bad JVM flags, OOM, image
+		// problem) reads as a hung reconcile and sends people to the wrong place.
+		podIssues := r.diagnoseUnhealthyMembers(ctx, cluster)
 		logger.Info("Neo4j not ready to accept connections, waiting...",
 			"targetURI", neo4jclient.ConnectionURIForEnterprise(cluster),
 			"clientError", connectError, "testError", testError,
 			"consecutiveFailures", streak.count,
-			"failingSince", streak.since.Format(time.RFC3339))
+			"failingSince", streak.since.Format(time.RFC3339),
+			"memberPods", podIssues)
 		if streak.count == connectivityFailureEventThreshold && r.Recorder != nil {
-			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonConnectivityDegraded,
-				fmt.Sprintf("Operator has failed to reach Neo4j at %s for %d consecutive reconciles (since %s); last error: %v",
-					neo4jclient.ConnectionURIForEnterprise(cluster), streak.count,
-					streak.since.Format(time.RFC3339), firstNonNilErr(testError, connectError)))
+			msg := fmt.Sprintf("Operator has failed to reach Neo4j at %s for %d consecutive reconciles (since %s); last error: %v",
+				neo4jclient.ConnectionURIForEnterprise(cluster), streak.count,
+				streak.since.Format(time.RFC3339), firstNonNilErr(testError, connectError))
+			if podIssues != "" {
+				msg += "; " + podIssues
+			}
+			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonConnectivityDegraded, msg)
+		}
+		if podIssues != "" {
+			// Surface it on the CR too — this is the string `kubectl describe`
+			// and `kubectl get` show, and it is where a user looks first.
+			return false, "Waiting for Neo4j to accept connections; " + podIssues, nil
 		}
 		return false, "Waiting for Neo4j to accept connections", nil
 	}
@@ -3046,6 +3061,94 @@ func (r *Neo4jEnterpriseClusterReconciler) clearConnectivityFailures(ctx context
 
 // firstNonNilErr returns the first non-nil error, for log/event messages
 // that want the most specific failure available.
+// benignWaitingReasons are container waiting reasons that occur on the normal
+// startup path. They are reported only when the container has already terminated
+// at least once, which turns them from "starting" into "restarting".
+var benignWaitingReasons = map[string]bool{
+	"ContainerCreating": true,
+	"PodInitializing":   true,
+}
+
+// diagnoseUnhealthyMembers summarises member pods that are not running, so a
+// container-level failure is reported on the CR instead of only in a container
+// log nobody knows to look at.
+//
+// Returns "" when every pod looks fine (or the listing fails) — this is a
+// reporting aid on an already-failing path, so it must never turn a transient
+// List error into a reconcile failure. Output is bounded to a few pods to keep it
+// inside the event/status message length a human will actually read.
+func (r *Neo4jEnterpriseClusterReconciler) diagnoseUnhealthyMembers(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	pods := &corev1.PodList{}
+	if err := r.List(ctx, pods,
+		client.InNamespace(cluster.Namespace),
+		client.MatchingLabels(resources.ServerPodSelector(cluster.Name)),
+	); err != nil {
+		return ""
+	}
+
+	const maxReported = 3
+	var issues []string
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		for j := range pod.Status.ContainerStatuses {
+			cs := &pod.Status.ContainerStatuses[j]
+			if cs.Name != "neo4j" || cs.Ready {
+				continue
+			}
+			var detail string
+			switch {
+			case cs.State.Waiting != nil:
+				// Every healthy cluster passes through these on the way up, so
+				// reporting them would put "member pod not running" on the CR
+				// during normal formation and train people to ignore it. They
+				// only matter if the container has ALREADY died once, in which
+				// case the last-terminated state below carries the real cause.
+				if benignWaitingReasons[cs.State.Waiting.Reason] &&
+					cs.LastTerminationState.Terminated == nil {
+					continue
+				}
+				detail = cs.State.Waiting.Reason
+				// The waiting reason on a restart loop is just
+				// "CrashLoopBackOff"; the useful part is why the previous
+				// attempt died, which lives on the last terminated state.
+				if lt := cs.LastTerminationState.Terminated; lt != nil {
+					detail = fmt.Sprintf("%s (last exit %d %s: %s)",
+						detail, lt.ExitCode, lt.Reason, truncateForMessage(lt.Message, 160))
+				}
+			case cs.State.Terminated != nil:
+				detail = fmt.Sprintf("Terminated (exit %d %s: %s)",
+					cs.State.Terminated.ExitCode, cs.State.Terminated.Reason,
+					truncateForMessage(cs.State.Terminated.Message, 160))
+			default:
+				continue // running but not yet Ready — normal during startup
+			}
+			issues = append(issues, fmt.Sprintf("%s: %s", pod.Name, detail))
+		}
+	}
+	if len(issues) == 0 {
+		return ""
+	}
+
+	sort.Strings(issues) // stable text so the event does not churn
+	suffix := ""
+	if len(issues) > maxReported {
+		suffix = fmt.Sprintf(" (+%d more)", len(issues)-maxReported)
+		issues = issues[:maxReported]
+	}
+	return "member pod not running — " + strings.Join(issues, "; ") + suffix +
+		". Inspect with: kubectl logs <pod> -c neo4j --previous"
+}
+
+// truncateForMessage keeps a container message short enough for a Kubernetes
+// event without dropping the leading text, which is where the cause usually is.
+func truncateForMessage(s string, limit int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "…"
+}
+
 func firstNonNilErr(errs ...error) error {
 	for _, e := range errs {
 		if e != nil {

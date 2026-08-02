@@ -196,7 +196,7 @@ source:
    ```bash
    kubectl get neo4jenterprisecluster my-cluster
    # or
-   kubectl get neo4jenterprisestandalone my-standalone
+   kubectl get neo4jenterprisestandalone standalone-neo4j
    ```
 
 3. **Apply the plugin**
