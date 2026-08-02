@@ -112,10 +112,15 @@ runs on the Aura API **v1 (GA)**, while multi-database and console-RBAC run on
 | `AuraProviderConfig` | Shared Aura API credentials + default organization/project |
 | `AuraInstance` | Aura instance lifecycle — create, resize, pause/resume, upgrade, delete |
 | `AuraSnapshot`, `AuraRestore` | Instance-level snapshots and restore |
-| `AuraCustomerManagedKey` | Customer-managed encryption keys (CMK) |
+| `AuraCustomerManagedKey` | Customer-managed encryption keys (CMK). **Unproven — never exercised against the live API** |
 | `AuraIPFilter` | Organization-scoped network allowlists (v2beta1) |
 | `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore` | Per-database lifecycle and backups on an Aura instance (v2beta1). Requires an `AuraInstance` created with `multiDatabase: true` — Aura fixes that at creation and cannot convert an existing instance |
 | `AuraOrganizationMember`, `AuraProjectMember`, `AuraInvite` | Aura **console** RBAC — org/project roles and email invites (v2beta1). Not in-database Neo4j users |
+
+Every Aura surface above has been exercised against a **live Aura account**
+except `AuraCustomerManagedKey`, which needs a real cloud KMS key and is
+therefore **unproven** — see
+[Verification status](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/aura_orchestration/#verification-status).
 
 > Aura console-RBAC is platform identity (who can use the Aura console/project).
 > In-database users, roles and privileges are `Neo4jUser` / `Neo4jRole` /

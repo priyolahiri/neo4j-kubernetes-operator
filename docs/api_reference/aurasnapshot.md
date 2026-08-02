@@ -1,6 +1,16 @@
 # AuraSnapshot API Reference
 
+> **✅ Live-verified 2026-08-01.** See [Verification status](../user_guide/aura_orchestration.md#verification-status).
+
 The `AuraSnapshot` Custom Resource Definition (CRD) takes an on-demand snapshot of an [`AuraInstance`](aurainstance.md) — the Aura equivalent of `Neo4jBackup`. Restore is a separate [`AuraRestore`](aurarestore.md) CR.
+
+Three behaviours confirmed against the live API that are easy to misread:
+
+- **`status.profile` is `AdHoc` for snapshots this CRD takes**, and `Scheduled` for the automatic ones Aura makes on its own. Listing an instance's snapshots shows both.
+- **`status.exportable` means "exportable *now*"** — it is `false` while the snapshot runs and flips to `true` on completion. It is not a property of the finished snapshot decided up front.
+- **Aura starts a scheduled snapshot immediately after an instance is created**, and it allows only one snapshot at a time. An `AuraSnapshot` created in that window is legitimately refused with `snapshot-not-allowed`; the operator retries, so it resolves itself.
+
+The create call returns only the snapshot ID — no status — so a fresh CR reports `phase: Pending` until the first poll reads the real state.
 
 ## Overview
 

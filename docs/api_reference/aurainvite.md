@@ -1,6 +1,7 @@
 # AuraInvite API Reference
 
 > **⚠️ BETA / best-effort.** Uses the Aura API **v2beta1** (unstable beta). See the [Aura Orchestration Guide](../user_guide/aura_orchestration.md).
+> **✅ Live-verified 2026-08-01 — and the contract was WRONG.** Until then this CRD could not send an invite in either of its two modes. Fixed; see [Verification status](../user_guide/aura_orchestration.md#verification-status).
 
 The `AuraInvite` CRD invites a user (by email) to a Neo4j Aura **organization** — or a **project** within it — with a role. This is how a new person is granted Aura **console** access; it is **not** an in-database Neo4j user. An existing member's role is managed with [`AuraOrganizationMember`](auraorganizationmember.md) / [`AuraProjectMember`](auraprojectmember.md).
 

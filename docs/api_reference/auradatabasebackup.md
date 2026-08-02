@@ -1,6 +1,7 @@
 # AuraDatabaseBackup API Reference
 
 > **⚠️ BETA / best-effort.** Uses the Aura API **v2beta1** (unstable beta). See the [Aura Orchestration Guide](../user_guide/aura_orchestration.md).
+> **✅ Live-verified 2026-07-31.** See [Verification status](../user_guide/aura_orchestration.md#verification-status).
 
 The `AuraDatabaseBackup` CRD takes an **on-demand** per-database backup on a managed Neo4j Aura instance. Like [`AuraSnapshot`](aurasnapshot.md), a backup is one-shot and is **not** deleted from Aura when the CR is removed.
 
