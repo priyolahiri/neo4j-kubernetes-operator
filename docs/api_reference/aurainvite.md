@@ -24,7 +24,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef`.
 | `projectId` | `string` | Optionally scopes the invite to a project (a project-member invite). Omit for an org-level invite. |
 | `email` | `string` | **Required.** The invitee's email address. |
 | `role` | `string` | **Required.** An `organization-*` role for an org invite, or a `namespace-*` role for a project-scoped invite (`projectId` set). The Aura invite body spells project roles `namespace-*` even though the project-members endpoint spells the same concepts `project-*`. |
-| `organizationRole` | `string` | Optional. Enum `organization-owner` / `organization-admin` / `organization-member`. Only meaningful alongside a `namespace-*` (project-scoped) `role`: the Aura invite body carries organization roles and per-project roles in separate slots, so this fills the organization slot. Leave empty to send only the project role and let Aura apply its own default. |
+| `organizationRole` | `string` | Enum `organization-owner` / `organization-admin` / `organization-member`. Grants the organization-level role on acceptance. **Required when `role` is a `namespace-*` role** — Aura demands an organization role on *every* invite (an empty role list is rejected), so a project-only invite is impossible. Enforced by CEL. |
 | `deletionPolicy` | `string` | Enum `Delete` (default; revoke a still-pending invite) / `Orphan` (leave it). |
 | `managementPolicies` | `[]string` | Items enum `Observe`/`Create`/`Delete`/`*`. Default `["*"]`. |
 

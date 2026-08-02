@@ -108,6 +108,14 @@ func (r *AuraInviteReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if externalID == "" {
 		id, adopted, err := r.observeOrCreate(ctx, req, inv, apiClient, orgID)
 		if err != nil {
+			// A refusal describes a spec that Aura can never accept (see
+			// buildInviteRequest), so retrying it every 30s only rewrites the same
+			// status. The spec edit that fixes it triggers its own reconcile.
+			if isAuraRefusal(err) {
+				res, ferr := r.fail(ctx, req, inv, "OrganizationRoleRequired", err)
+				res.RequeueAfter = 0
+				return res, ferr
+			}
 			return r.fail(ctx, req, inv, "CreateFailed", err)
 		}
 		if id == "" {
@@ -174,21 +182,40 @@ func inviteStatusToPhase(status string) (phase string, cond metav1.ConditionStat
 
 // buildInviteRequest maps the CR onto the two-slot v2beta1 invite body: an
 // `organization-*` role fills the org slot, a `namespace-*` role fills a
-// project_invites entry (optionally alongside spec.organizationRole).
-func buildInviteRequest(inv *neo4jv1beta1.AuraInvite) aura.CreateInviteRequest {
-	out := aura.CreateInviteRequest{Email: inv.Spec.Email}
+// project_invites entry.
+//
+// Aura requires at least one ORGANIZATION role on every invite and rejects a
+// null/absent project_invites, so both slots are always populated — an empty
+// project_invites list is the normal shape for an organization-only invite.
+// Before this was verified live, BOTH branches produced a body the API rejected:
+// an organization-role invite omitted project_invites ("Field required"), and a
+// namespace-role invite omitted roles. Only the combination of a namespace role
+// AND spec.organizationRole happened to work.
+//
+// A namespace-only invite is not expressible, so it is refused with an
+// explanation rather than silently granting an organization role nobody asked
+// for — that is a privilege decision for the user, not the operator.
+func buildInviteRequest(inv *neo4jv1beta1.AuraInvite) (aura.CreateInviteRequest, error) {
+	out := aura.CreateInviteRequest{
+		Email:          inv.Spec.Email,
+		ProjectInvites: []aura.ProjectInvite{}, // never nil: null is rejected
+	}
 	if strings.HasPrefix(inv.Spec.Role, "namespace-") {
 		out.ProjectInvites = []aura.ProjectInvite{{
 			ProjectID:    inv.Spec.ProjectID,
 			ProjectRoles: []string{inv.Spec.Role},
 		}}
-		if inv.Spec.OrganizationRole != "" {
-			out.Roles = []string{inv.Spec.OrganizationRole}
+		if inv.Spec.OrganizationRole == "" {
+			return aura.CreateInviteRequest{}, refusef(
+				"invite for %q requests only the project role %q, but Aura requires an organization role on "+
+					"every invite; set spec.organizationRole (organization-owner, organization-admin or "+
+					"organization-member)", inv.Spec.Email, inv.Spec.Role)
 		}
-		return out
+		out.Roles = []string{inv.Spec.OrganizationRole}
+		return out, nil
 	}
 	out.Roles = []string{inv.Spec.Role}
-	return out
+	return out, nil
 }
 
 // inviteCoversProject reports whether an existing invite is scoped to projectID,
@@ -222,7 +249,11 @@ func (r *AuraInviteReconciler) observeOrCreate(ctx context.Context, req ctrl.Req
 	if !managementAllows(inv.Spec.ManagementPolicies, auraPolicyCreate) {
 		return "", false, nil
 	}
-	created, err := apiClient.CreateInvite(ctx, orgID, buildInviteRequest(inv))
+	body, err := buildInviteRequest(inv)
+	if err != nil {
+		return "", false, err
+	}
+	created, err := apiClient.CreateInvite(ctx, orgID, body)
 	if err != nil {
 		return "", false, err
 	}

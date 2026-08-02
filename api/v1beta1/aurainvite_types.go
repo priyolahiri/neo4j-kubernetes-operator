@@ -31,6 +31,7 @@ import (
 // +kubebuilder:validation:XValidation:rule="has(self.providerConfigRef) != has(self.credentialsSecretRef)",message="set exactly one of providerConfigRef or credentialsSecretRef"
 // +kubebuilder:validation:XValidation:rule="!self.role.startsWith('namespace-') || has(self.projectId)",message="a namespace-* role is a project-scoped invite and requires projectId"
 // +kubebuilder:validation:XValidation:rule="!self.role.startsWith('organization-') || !has(self.projectId)",message="an organization-* role is an org-level invite; do not set projectId (use a namespace-* role to scope an invite to a project)"
+// +kubebuilder:validation:XValidation:rule="!self.role.startsWith('namespace-') || has(self.organizationRole)",message="organizationRole is required when role is a namespace-* (project-scoped) role: Aura requires an organization role on every invite, so a project-only invite is impossible"
 type AuraInviteSpec struct {
 	// ProviderConfigRef selects the AuraProviderConfig (credentials + defaults)
 	// in the same namespace. Mutually exclusive with credentialsSecretRef.
@@ -68,11 +69,13 @@ type AuraInviteSpec struct {
 	// +kubebuilder:validation:Required
 	Role string `json:"role"`
 
-	// OrganizationRole optionally also grants an organization-level role on
-	// acceptance. Only meaningful alongside a namespace-* (project-scoped) role:
-	// the v2beta1 invite body carries organization roles and per-project roles in
-	// separate slots, so this fills the organization slot. Leave it empty to send
-	// only the project role and let Aura apply its own default.
+	// OrganizationRole grants the organization-level role on acceptance.
+	//
+	// REQUIRED alongside a namespace-* (project-scoped) role: Aura demands at
+	// least one organization role on EVERY invite — an empty `roles` list is
+	// rejected outright — so a project-only invite is not expressible. Verified
+	// live 2026-08-01. (This field previously said "leave it empty … and let Aura
+	// apply its own default"; there is no such default, and doing so was a 400.)
 	// +kubebuilder:validation:Enum=organization-owner;organization-admin;organization-member
 	// +optional
 	OrganizationRole string `json:"organizationRole,omitempty"`
