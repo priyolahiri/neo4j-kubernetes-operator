@@ -88,10 +88,14 @@ func (r *AuraSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 		}
 		if err := r.patchStatus(ctx, req, func(s *neo4jv1beta1.AuraSnapshot) {
+			// The create response carries ONLY snapshot_id — no status, no
+			// profile, no exportable (verified live 2026-08-01: a 202 whose body
+			// is exactly {"snapshot_id": …}). Copying those fields wrote an empty
+			// phase into the CR, so `kubectl get aurasnapshot` showed a blank
+			// PHASE until the first poll. Record the ID and the honest initial
+			// state; GetSnapshot fills the rest.
 			s.Status.SnapshotID = created.SnapshotID
-			s.Status.Profile = created.Profile
-			s.Status.Phase = created.Status
-			s.Status.Exportable = created.Exportable
+			s.Status.Phase = aura.SnapshotStatusPending
 		}); err != nil {
 			return ctrl.Result{}, err
 		}
