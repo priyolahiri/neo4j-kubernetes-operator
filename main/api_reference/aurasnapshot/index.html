@@ -3344,7 +3344,17 @@
 
 
 <h1 id="aurasnapshot-api-reference">AuraSnapshot API Reference<a class="headerlink" href="#aurasnapshot-api-reference" title="Anchor link to this section">&para;</a></h1>
+<blockquote>
+<p><strong>✅ Live-verified 2026-08-01.</strong> See <a href="../../user_guide/aura_orchestration/#verification-status">Verification status</a>.</p>
+</blockquote>
 <p>The <code>AuraSnapshot</code> Custom Resource Definition (CRD) takes an on-demand snapshot of an <a href="../aurainstance/"><code>AuraInstance</code></a> — the Aura equivalent of <code>Neo4jBackup</code>. Restore is a separate <a href="../aurarestore/"><code>AuraRestore</code></a> CR.</p>
+<p>Three behaviours confirmed against the live API that are easy to misread:</p>
+<ul>
+<li><strong><code>status.profile</code> is <code>AdHoc</code> for snapshots this CRD takes</strong>, and <code>Scheduled</code> for the automatic ones Aura makes on its own. Listing an instance's snapshots shows both.</li>
+<li><strong><code>status.exportable</code> means "exportable <em>now</em>"</strong> — it is <code>false</code> while the snapshot runs and flips to <code>true</code> on completion. It is not a property of the finished snapshot decided up front.</li>
+<li><strong>Aura starts a scheduled snapshot immediately after an instance is created</strong>, and it allows only one snapshot at a time. An <code>AuraSnapshot</code> created in that window is legitimately refused with <code>snapshot-not-allowed</code>; the operator retries, so it resolves itself.</li>
+</ul>
+<p>The create call returns only the snapshot ID — no status — so a fresh CR reports <code>phase: Pending</code> until the first poll reads the real state.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>API Version</strong>: <code>neo4j.neo4j.com/v1beta1</code></li>

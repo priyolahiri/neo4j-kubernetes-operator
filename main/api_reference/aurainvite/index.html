@@ -3323,7 +3323,8 @@
 
 <h1 id="aurainvite-api-reference">AuraInvite API Reference<a class="headerlink" href="#aurainvite-api-reference" title="Anchor link to this section">&para;</a></h1>
 <blockquote>
-<p><strong>⚠️ BETA / best-effort.</strong> Uses the Aura API <strong>v2beta1</strong> (unstable beta). See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a>.</p>
+<p><strong>⚠️ BETA / best-effort.</strong> Uses the Aura API <strong>v2beta1</strong> (unstable beta). See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a>.
+<strong>✅ Live-verified 2026-08-01 — and the contract was WRONG.</strong> Until then this CRD could not send an invite in either of its two modes. Fixed; see <a href="../../user_guide/aura_orchestration/#verification-status">Verification status</a>.</p>
 </blockquote>
 <p>The <code>AuraInvite</code> CRD invites a user (by email) to a Neo4j Aura <strong>organization</strong> — or a <strong>project</strong> within it — with a role. This is how a new person is granted Aura <strong>console</strong> access; it is <strong>not</strong> an in-database Neo4j user. An existing member's role is managed with <a href="../auraorganizationmember/"><code>AuraOrganizationMember</code></a> / <a href="../auraprojectmember/"><code>AuraProjectMember</code></a>.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>

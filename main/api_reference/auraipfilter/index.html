@@ -3357,9 +3357,12 @@
 
 <h1 id="auraipfilter-api-reference">AuraIPFilter API Reference<a class="headerlink" href="#auraipfilter-api-reference" title="Anchor link to this section">&para;</a></h1>
 <blockquote>
-<p><strong>⚠️ BETA / best-effort.</strong> IP filtering is only available on the Aura API <strong>v2beta1</strong> surface, which is an unstable beta (breaking changes are allowed without a version bump). This CRD is best-effort and its behaviour may change to track the API. The shape below is taken from the official v2beta1 <code>IpFilter</code> schema. See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a> before relying on it in production.</p>
+<p><strong>⚠️ BETA / best-effort.</strong> IP filtering is only available on the Aura API <strong>v2beta1</strong> surface, which is an unstable beta (breaking changes are allowed without a version bump). This CRD is best-effort and its behaviour may change to track the API. The shape below is taken from the <strong>live API</strong>, which differs from the published <code>IpFilter</code> schema in several places — see below. See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a> before relying on it in production.
+<strong>✅ Live-verified 2026-08-01 — and the contract was WRONG.</strong> Until then this CRD could not create, update <em>or</em> delete a filter; all three are fixed. See <a href="../../user_guide/aura_orchestration/#verification-status">Verification status</a>.</p>
 </blockquote>
 <p>The <code>AuraIPFilter</code> Custom Resource Definition (CRD) manages a Neo4j Aura network IP filter (an allowlist) via the Aura API v2beta1.</p>
+<p><strong>One filter per project.</strong> Aura rejects a second filter targeting a project that already has one (<code>ip-filter-already-exists</code>), so two <code>AuraIPFilter</code> CRs cannot both target the same project.</p>
+<p><strong>Filters are organization-scoped.</strong> They live at the organization level and are <em>applied</em> to instances/projects, so the CR needs an organization ID — from <code>spec.organizationId</code> or the provider config's <code>defaultOrganizationId</code>.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>API Version</strong>: <code>neo4j.neo4j.com/v1beta1</code></li>

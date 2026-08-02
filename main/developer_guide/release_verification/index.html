@@ -3676,6 +3676,56 @@ nothing in Phases 1-3 touches them. This phase is <strong>optional but strongly
 recommended</strong> whenever an <code>Aura*</code> CRD or <code>internal/aura/</code> changed, because the
 published Aura OpenAPI spec is known to disagree with the live API (see
 <code>docs/knowledge/operations.md</code> id 87).</p>
+<p><strong>Take that disagreement seriously.</strong> As of 2026-08-01 every Aura surface except
+CMK has been driven against a real account, and three of them — fleet
+provisioning, IP filters and invites — were <strong>broken in ways the unit suite could
+not see</strong>, because the fixtures asserted the client matched the <em>spec</em> rather
+than the API. A green <code>make test-unit</code> is not evidence that an Aura write path
+works.</p>
+<p><strong>Cheap technique worth reusing:</strong> to learn an enum or a required field without
+mutating anything, send a deliberately invalid value — the API answers with the
+full list of accepted values, or names the missing field, and changes nothing.</p>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>Live-verified</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Instances (v1 lifecycle), snapshots, restore</td>
+<td>2026-08-01</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Databases + per-database backup/restore (v2beta1)</td>
+<td>2026-07-31</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>IP filters (v2beta1)</td>
+<td>2026-08-01</td>
+<td>✅ contract corrected</td>
+</tr>
+<tr>
+<td>Console RBAC: members, invites (v2beta1)</td>
+<td>2026-08-01</td>
+<td>✅ invite contract corrected</td>
+</tr>
+<tr>
+<td>Fleet provisioning (v2beta1)</td>
+<td>2026-07-31</td>
+<td>✅ contract corrected</td>
+</tr>
+<tr>
+<td><strong>Customer-managed keys (v1)</strong></td>
+<td>—</td>
+<td>❌ <strong>never exercised; needs a real cloud KMS key</strong></td>
+</tr>
+</tbody>
+</table>
 <p>Set up an <code>AuraProviderConfig</code> (or an inline <code>credentialsSecretRef</code>) with an API
 client ID + secret from the Aura console.</p>
 <p><strong>Read-only sweep — always safe, do this every time:</strong></p>

@@ -3773,6 +3773,13 @@
 into a Secret. If you give the operator Aura API credentials instead, it can
 register the Fleet Manager deployment <strong>and mint the token itself</strong> — no wizard,
 no copy-paste.</p>
+<div class="admonition success">
+<p class="admonition-title">Verified against a live Aura account (2026-07-31)</p>
+<p>The whole provisioning path — deployment registration, token minting,
+rotation and cleanup — has been driven end-to-end against a real Aura
+organization. That verification found and fixed four silent bugs; see
+<a href="../aura_orchestration/#verification-status">Aura Orchestration → Verification status</a>.</p>
+</div>
 <p>Set <code>spec.auraFleetManagement.provision</code> instead of <code>tokenSecretRef</code> (the two are
 mutually exclusive):</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>

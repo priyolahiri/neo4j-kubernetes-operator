@@ -1015,6 +1015,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#verification-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#quick-start" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3417,6 +3428,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#verification-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#quick-start" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3703,6 +3725,102 @@ and manages <strong>Aura-hosted</strong> instances. The two are complementary.</
 </tr>
 </tbody>
 </table>
+<h2 id="verification-status">Verification status<a class="headerlink" href="#verification-status" title="Anchor link to this section">&para;</a></h2>
+<p>Every one of these CRDs talks to a <strong>live cloud API</strong>, so what matters is not
+only whether the code compiles but whether its request shapes are what Aura
+actually accepts. The table below says exactly that, per surface.</p>
+<p>This is worth taking seriously: several of these contracts were originally built
+from the published OpenAPI spec, and when they were finally exercised against a
+real account, <strong>three of them turned out to be wrong in ways unit tests could not
+catch</strong> — because the tests asserted the client matched the spec, not the API.</p>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>Aura API</th>
+<th>Live-verified</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AuraProviderConfig</code></td>
+<td>OAuth</td>
+<td>✅ 2026-07-30</td>
+<td>A token from the v1 endpoint authenticates v2beta1 calls too.</td>
+</tr>
+<tr>
+<td><code>AuraInstance</code></td>
+<td>v1 (+ v2beta1 for <code>multiDatabase</code>)</td>
+<td>✅ 2026-08-01</td>
+<td>Full lifecycle walked: create → snapshot → restore → resize → pause → resume → tier upgrade → delete.</td>
+</tr>
+<tr>
+<td><code>AuraSnapshot</code></td>
+<td>v1</td>
+<td>✅ 2026-08-01</td>
+<td></td>
+</tr>
+<tr>
+<td><code>AuraRestore</code></td>
+<td>v1</td>
+<td>✅ 2026-08-01</td>
+<td></td>
+</tr>
+<tr>
+<td><code>AuraCustomerManagedKey</code></td>
+<td>v1</td>
+<td>❌ <strong>UNTESTED</strong></td>
+<td>See the warning below.</td>
+</tr>
+<tr>
+<td><code>AuraIPFilter</code></td>
+<td>v2beta1</td>
+<td>✅ 2026-08-01</td>
+<td>Contract was <strong>wrong</strong> and has been corrected — it could not create, update or delete.</td>
+</tr>
+<tr>
+<td><code>AuraDatabase</code>, <code>AuraDatabaseBackup</code>, <code>AuraDatabaseRestore</code></td>
+<td>v2beta1</td>
+<td>✅ 2026-07-31</td>
+<td>Requires a multi-database instance.</td>
+</tr>
+<tr>
+<td><code>AuraOrganizationMember</code>, <code>AuraProjectMember</code></td>
+<td>v2beta1</td>
+<td>✅ 2026-08-01</td>
+<td>Read + write shapes and all role enums confirmed.</td>
+</tr>
+<tr>
+<td><code>AuraInvite</code></td>
+<td>v2beta1</td>
+<td>✅ 2026-08-01</td>
+<td>Contract was <strong>wrong</strong> and has been corrected — it could not send an invite.</td>
+</tr>
+<tr>
+<td><code>spec.auraFleetManagement</code> (on a self-managed cluster)</td>
+<td>v2beta1</td>
+<td>✅ 2026-07-31</td>
+<td>See <a href="../aura_fleet_management/">Aura Fleet Management</a>.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition danger">
+<p class="admonition-title">AuraCustomerManagedKey has never been exercised against the Aura API</p>
+<p>Every other Aura surface above has been driven end-to-end against a real
+account. <code>AuraCustomerManagedKey</code> has <strong>not</strong>, because it needs a real cloud
+KMS key (AWS KMS / GCP Cloud KMS / Azure Key Vault) with IAM grants to Aura,
+which cannot be created disposably.</p>
+<p>Its client shape comes from the <strong>published v1 OpenAPI spec</strong>, and on this API
+that has repeatedly proven insufficient. Treat <code>AuraCustomerManagedKey</code> as
+<strong>unproven</strong>: expect that create or update may be rejected, and verify it in a
+non-production project before relying on it. The one part that <em>is</em> pinned by
+a test is the adoption logic — the v1 CMK <strong>list</strong> endpoint returns only
+<code>id</code>/<code>name</code>/<code>tenant_id</code>, so a filter can never be matched on
+<code>key_id</code>/<code>region</code>/<code>cloud_provider</code> from a list entry.</p>
+<p>If you do exercise it, please report what you find so this table can be
+updated.</p>
+</div>
 <h2 id="quick-start">Quick start<a class="headerlink" href="#quick-start" title="Anchor link to this section">&para;</a></h2>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraProviderConfig</span>
@@ -3855,7 +3973,9 @@ invite). Delete the instance last:</p>
 <p>Each step is detailed in the sections that follow.</p>
 <h2 id="lifecycle">Lifecycle<a class="headerlink" href="#lifecycle" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><strong>Resize:</strong> change <code>spec.memory</code> / <code>spec.storage</code> → online resize.</li>
+<li><strong>Resize:</strong> change <code>spec.memory</code> → online resize. <strong>Leave <code>spec.storage</code>
+  unset</strong>: Aura derives storage from memory and scales it for you, and a pair
+  the tier does not offer is rejected outright.</li>
 <li><strong>Pause/resume:</strong> set <code>spec.paused: true</code> / <code>false</code>.</li>
 <li><strong>Upgrade tier:</strong> change <code>spec.type</code> from <code>professional-db</code> to
   <code>business-critical</code> → in-place upgrade (see below).</li>
@@ -3874,6 +3994,14 @@ operator issues the upgrade (the DBID and connection strings are preserved):</p>
 instance). Aura requires ≥ 2GB storage for Business Critical, and the GDS plugin
 is removed on upgrade — size and configure the instance accordingly first.</p>
 <h2 id="customer-managed-encryption-keys-cmk">Customer-managed encryption keys (CMK)<a class="headerlink" href="#customer-managed-encryption-keys-cmk" title="Anchor link to this section">&para;</a></h2>
+<div class="admonition danger">
+<p class="admonition-title">Unproven — the only Aura surface never exercised against the live API</p>
+<p>See <a href="#verification-status">Verification status</a>. This CRD's contract comes
+from the published OpenAPI spec, which on this API has repeatedly turned out
+not to match what the service accepts. <strong>Verify it in a non-production
+project before relying on it</strong>, and expect that create or update may be
+rejected outright.</p>
+</div>
 <p>Dedicated-tier instances (<code>enterprise-db</code> / <code>enterprise-ds</code>) can be encrypted
 with a key you hold in your own cloud KMS. Register the key with an
 <code>AuraCustomerManagedKey</code>, then reference the ID it produces from the instance:</p>
@@ -3991,28 +4119,57 @@ predefined database role). Model it with three CRDs:</p>
 </span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;org-id&gt;&quot;</span><span class="w">    </span><span class="c1"># or defaultOrganizationId on the provider config</span>
 </span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">carol@example.com</span>
 </span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">organization-member</span><span class="w">     </span><span class="c1"># organization-* ; for a project invite set projectId + a namespace-* role</span>
-</span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="nn">---</span>
-</span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="c1"># Manage the org role of an EXISTING console user (by email).</span>
-</span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-15-13"><a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraOrganizationMember</span>
-</span><span id="__span-15-14"><a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="nt">metadata</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">alice-org-admin</span><span class="w"> </span><span class="p p-Indicator">}</span>
-</span><span id="__span-15-15"><a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-15-16"><a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">aura</span><span class="w"> </span><span class="p p-Indicator">}</span>
-</span><span id="__span-15-17"><a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;org-id&gt;&quot;</span>
-</span><span id="__span-15-18"><a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice@example.com</span>
-</span><span id="__span-15-19"><a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">organization-admin</span><span class="w">      </span><span class="c1"># organization-owner | organization-admin | organization-member</span>
-</span><span id="__span-15-20"><a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a><span class="nn">---</span>
-</span><span id="__span-15-21"><a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a><span class="c1"># Manage a user&#39;s PROJECT role (e.g. read-only metrics access).</span>
-</span><span id="__span-15-22"><a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-15-23"><a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraProjectMember</span>
-</span><span id="__span-15-24"><a id="__codelineno-15-24" name="__codelineno-15-24" href="#__codelineno-15-24"></a><span class="nt">metadata</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">bob-metrics</span><span class="w"> </span><span class="p p-Indicator">}</span>
-</span><span id="__span-15-25"><a id="__codelineno-15-25" name="__codelineno-15-25" href="#__codelineno-15-25"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-15-26"><a id="__codelineno-15-26" name="__codelineno-15-26" href="#__codelineno-15-26"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">aura</span><span class="w"> </span><span class="p p-Indicator">}</span>
-</span><span id="__span-15-27"><a id="__codelineno-15-27" name="__codelineno-15-27" href="#__codelineno-15-27"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;org-id&gt;&quot;</span>
-</span><span id="__span-15-28"><a id="__codelineno-15-28" name="__codelineno-15-28" href="#__codelineno-15-28"></a><span class="w">  </span><span class="nt">projectId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;project-id&gt;&quot;</span>
-</span><span id="__span-15-29"><a id="__codelineno-15-29" name="__codelineno-15-29" href="#__codelineno-15-29"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob@example.com</span>
-</span><span id="__span-15-30"><a id="__codelineno-15-30" name="__codelineno-15-30" href="#__codelineno-15-30"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">project-metrics-integration-reader</span><span class="w">  </span><span class="c1"># project-admin | project-member | project-viewer | project-metrics-integration-reader</span>
+</span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="w">  </span><span class="c1"># For a project-scoped invite you MUST also set organizationRole — Aura</span>
+</span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="w">  </span><span class="c1"># requires an organization role on every invite. See the note below.</span>
+</span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="nn">---</span>
+</span><span id="__span-15-13"><a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="c1"># Manage the org role of an EXISTING console user (by email).</span>
+</span><span id="__span-15-14"><a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-15-15"><a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraOrganizationMember</span>
+</span><span id="__span-15-16"><a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="nt">metadata</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">alice-org-admin</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-15-17"><a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-15-18"><a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">aura</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-15-19"><a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;org-id&gt;&quot;</span>
+</span><span id="__span-15-20"><a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">alice@example.com</span>
+</span><span id="__span-15-21"><a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">organization-admin</span><span class="w">      </span><span class="c1"># organization-owner | organization-admin | organization-member</span>
+</span><span id="__span-15-22"><a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a><span class="nn">---</span>
+</span><span id="__span-15-23"><a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a><span class="c1"># Manage a user&#39;s PROJECT role (e.g. read-only metrics access).</span>
+</span><span id="__span-15-24"><a id="__codelineno-15-24" name="__codelineno-15-24" href="#__codelineno-15-24"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-15-25"><a id="__codelineno-15-25" name="__codelineno-15-25" href="#__codelineno-15-25"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraProjectMember</span>
+</span><span id="__span-15-26"><a id="__codelineno-15-26" name="__codelineno-15-26" href="#__codelineno-15-26"></a><span class="nt">metadata</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">bob-metrics</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-15-27"><a id="__codelineno-15-27" name="__codelineno-15-27" href="#__codelineno-15-27"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-15-28"><a id="__codelineno-15-28" name="__codelineno-15-28" href="#__codelineno-15-28"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">aura</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-15-29"><a id="__codelineno-15-29" name="__codelineno-15-29" href="#__codelineno-15-29"></a><span class="w">  </span><span class="nt">organizationId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;org-id&gt;&quot;</span>
+</span><span id="__span-15-30"><a id="__codelineno-15-30" name="__codelineno-15-30" href="#__codelineno-15-30"></a><span class="w">  </span><span class="nt">projectId</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;project-id&gt;&quot;</span>
+</span><span id="__span-15-31"><a id="__codelineno-15-31" name="__codelineno-15-31" href="#__codelineno-15-31"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob@example.com</span>
+</span><span id="__span-15-32"><a id="__codelineno-15-32" name="__codelineno-15-32" href="#__codelineno-15-32"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">project-metrics-integration-reader</span><span class="w">  </span><span class="c1"># project-admin | project-member | project-viewer | project-metrics-integration-reader</span>
 </span></code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Every invite carries an organization role</p>
+<p>Aura has <strong>no project-only invitation</strong>: an invite must always grant at
+least one <code>organization-*</code> role. So a project-scoped <code>AuraInvite</code> (a
+<code>namespace-*</code> <code>role</code> plus <code>projectId</code>) must <strong>also</strong> set
+<code>spec.organizationRole</code> — the apiserver rejects it otherwise.</p>
+<p>The operator deliberately does not pick a default for you: silently granting
+organization membership nobody asked for is a privilege decision that
+belongs to you.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Three role vocabularies, and they are not interchangeable</p>
+<p>Aura spells the same ideas differently depending on where the role appears,
+and each list below is exactly what the API accepts:</p>
+<ul>
+<li><strong>organization roles</strong> — <code>organization-owner</code>, <code>organization-admin</code>,
+  <code>organization-member</code></li>
+<li><strong>project roles</strong> (on <code>AuraProjectMember</code>) — <code>project-admin</code>,
+  <code>project-member</code>, <code>project-viewer</code>,
+  <code>project-metrics-integration-reader</code></li>
+<li><strong>project roles <em>inside an invite</em></strong> (on <code>AuraInvite</code>) —
+  <code>namespace-viewer</code>, <code>namespace-member</code>, <code>namespace-admin</code>,
+  <code>namespace-metrics-integration-reader</code></li>
+</ul>
+<p>Yes, the third list really does use <code>namespace-</code> for the same concepts the
+second calls <code>project-</code>. That is the API's spelling, not the operator's.</p>
+</div>
 <p><code>AuraOrganizationMember</code> reconciles the org role of a user who is <strong>already</strong> an
 organization member; if the email isn't one yet, the CR reports a <code>NotAMember</code>
 condition and you bring them in with an <code>AuraInvite</code>.</p>
@@ -4058,6 +4215,19 @@ which also makes create idempotent (a crash can't produce a duplicate instance).
   except the <code>professional-db → business-critical</code> upgrade) cannot be changed
   after creation (enforced by the apiserver). Changing them requires a new
   instance.</li>
+<li><strong><code>multiDatabase</code> is fixed at creation.</strong> Only an instance created with
+  <code>multiDatabase: true</code> can host <code>AuraDatabase</code> resources, only
+  <code>business-critical</code> and <code>enterprise-db</code> support it, and Aura offers no way to
+  convert an existing instance. Instances created by operator versions before
+  this field existed are single-database for good.</li>
+<li><strong>Every invite carries an organization role.</strong> Aura has no project-only
+  invitation, so an <code>AuraInvite</code> scoping someone to a project must also set
+  <code>spec.organizationRole</code>.</li>
+<li><strong>Restores are not observable to completion.</strong> Aura accepts them
+  asynchronously and exposes no status to poll, so an <code>AuraDatabaseRestore</code>
+  ends at <code>Submitted</code> — confirm the result in the Aura console.</li>
+<li><strong><code>AuraCustomerManagedKey</code> is unproven</strong> — see <a href="#verification-status">Verification
+  status</a>.</li>
 </ul>
 <h2 id="network-ip-filtering-beta">Network IP filtering (beta)<a class="headerlink" href="#network-ip-filtering-beta" title="Anchor link to this section">&para;</a></h2>
 <p><code>AuraIPFilter</code> manages a network IP filter (allowlist). In v2beta1 a filter is

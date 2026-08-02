@@ -3344,6 +3344,20 @@
 
 
 <h1 id="auracustomermanagedkey-api-reference">AuraCustomerManagedKey API Reference<a class="headerlink" href="#auracustomermanagedkey-api-reference" title="Anchor link to this section">&para;</a></h1>
+<blockquote>
+<p><strong>⛔ UNPROVEN — never exercised against the live Aura API.</strong> Every other Aura
+CRD has been driven end-to-end against a real account; this one has not,
+because it needs a real cloud KMS key (AWS KMS / GCP Cloud KMS / Azure Key
+Vault) with IAM grants to Aura, which cannot be created disposably. Its shape
+comes from the published v1 OpenAPI spec — and on this API, spec-derived
+contracts have repeatedly proven wrong in ways unit tests could not catch.
+<strong>Verify in a non-production project before relying on it.</strong> See
+<a href="../../user_guide/aura_orchestration/#verification-status">Verification status</a>.</p>
+<p>One behaviour <em>is</em> test-pinned: the v1 CMK <strong>list</strong> endpoint returns only
+<code>id</code>, <code>name</code> and <code>tenant_id</code>, so adoption narrows on <code>name</code> and then confirms
+with a per-key <code>GET</code> — a key can never be matched on
+<code>keyId</code>/<code>region</code>/<code>cloudProvider</code> from a list entry.</p>
+</blockquote>
 <p>The <code>AuraCustomerManagedKey</code> Custom Resource Definition (CRD) registers a customer-managed encryption key (CMK) with Neo4j Aura for use by dedicated-tier instances. The key material lives in the customer's own cloud KMS; Aura stores only a reference to it.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <ul>

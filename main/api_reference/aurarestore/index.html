@@ -3322,6 +3322,12 @@
 
 
 <h1 id="aurarestore-api-reference">AuraRestore API Reference<a class="headerlink" href="#aurarestore-api-reference" title="Anchor link to this section">&para;</a></h1>
+<blockquote>
+<p><strong>✅ Live-verified 2026-08-01.</strong> See <a href="../../user_guide/aura_orchestration/#verification-status">Verification status</a>.</p>
+</blockquote>
+<p>While a restore runs, the <strong>instance</strong> reports <code>status: restoring</code> and its
+<code>connectionUrl</code> may be briefly unavailable — restore is an instance-level
+operation, not a database-level one.</p>
 <p>The <code>AuraRestore</code> Custom Resource Definition (CRD) restores an <a href="../aurainstance/"><code>AuraInstance</code></a> in place from one of its snapshots — the Aura equivalent of <code>Neo4jRestore</code>. It is a one-shot action recorded as an auditable object: on completion the CR stays as history and does not re-fire.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <ul>

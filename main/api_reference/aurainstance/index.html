@@ -3434,6 +3434,9 @@
 
 
 <h1 id="aurainstance-api-reference">AuraInstance API Reference<a class="headerlink" href="#aurainstance-api-reference" title="Anchor link to this section">&para;</a></h1>
+<blockquote>
+<p><strong>✅ Live-verified 2026-08-01</strong> — the full lifecycle (create → snapshot → restore → resize → pause → resume → tier upgrade → delete) was walked against a real Aura project. See <a href="../../user_guide/aura_orchestration/#verification-status">Verification status</a>.</p>
+</blockquote>
 <p>The <code>AuraInstance</code> Custom Resource Definition (CRD) declaratively manages a Neo4j Aura cloud instance via the Aura REST API — provision, resize, pause/resume, upgrade, and (optionally) delete. It is distinct from <code>spec.auraFleetManagement</code>, which registers a self-managed cluster into the Aura console.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <ul>
@@ -3503,7 +3506,7 @@
 <tr>
 <td><code>storage</code></td>
 <td><code>string</code></td>
-<td>Instance storage, e.g. <code>8GB</code>. Mutable. Not configurable for <code>free-db</code>.</td>
+<td>Instance storage, e.g. <code>8GB</code>. <strong>In practice Aura derives storage from <code>memory</code></strong> — resizing memory auto-scales storage (e.g. 1GB→2GB memory takes storage 2GB→4GB), and a memory/storage pair the tier does not offer is rejected outright (<code>invalid-memory-size</code>, naming both values). <strong>Prefer leaving this unset</strong>: a value that disagrees with the tier makes the operator retry a permanently failing update. Not configurable for <code>free-db</code>.</td>
 </tr>
 <tr>
 <td><code>name</code></td>
@@ -3638,7 +3641,7 @@
 <tr>
 <td><code>connectionUrl</code></td>
 <td><code>string</code></td>
-<td>Bolt routing URL (<code>neo4j+s://…</code>).</td>
+<td>Bolt routing URL (<code>neo4j+s://…</code>). Aura returns this as <strong>null while an instance is resuming</strong>, so the operator keeps the last known value rather than blanking it — a pause/resume cycle will not clear this field.</td>
 </tr>
 <tr>
 <td><code>metricsIntegrationUrl</code></td>

@@ -3323,7 +3323,8 @@
 
 <h1 id="auraprojectmember-api-reference">AuraProjectMember API Reference<a class="headerlink" href="#auraprojectmember-api-reference" title="Anchor link to this section">&para;</a></h1>
 <blockquote>
-<p><strong>⚠️ BETA / best-effort.</strong> Uses the Aura API <strong>v2beta1</strong> (unstable beta). See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a>.</p>
+<p><strong>⚠️ BETA / best-effort.</strong> Uses the Aura API <strong>v2beta1</strong> (unstable beta). See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a>.
+<strong>✅ Live-verified 2026-08-01</strong> — request shapes and the role enum confirmed against the API's own validation errors. See <a href="../../user_guide/aura_orchestration/#verification-status">Verification status</a>.</p>
 </blockquote>
 <p>The <code>AuraProjectMember</code> CRD manages the <strong>project-level role</strong> of an Aura <em>console</em> user (identified by email). This is Aura <strong>platform</strong> identity — <strong>not</strong> an in-database Neo4j user.</p>
 <p>If the email is already an <strong>organization</strong> member but not yet in this project, the operator adds them directly (requires <code>Create</code> in <code>managementPolicies</code>). Only a wholly unknown email needs an <a href="../aurainvite/"><code>AuraInvite</code></a> first.</p>
