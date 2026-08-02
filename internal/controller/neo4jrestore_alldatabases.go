@@ -164,6 +164,21 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 			// Issue the create/recreate exactly ONCE, then flip to Running and
 			// persist BEFORE returning — re-issuing would wipe a partially-seeded
 			// database. Re-entry finds Running and only polls (below).
+			//
+			// "Persist before returning" is necessary but NOT sufficient: the
+			// re-entry reads through the informer CACHE, which lags the write. A
+			// second reconcile can therefore still see Pending and issue the
+			// recreate again. That is not theoretical — it was reproduced, and the
+			// result is a permanently bricked database: two concurrent seeds race
+			// on /data/databases/<db>/temp-copy/<db>/database_lock and Neo4j parks
+			// the database offline with "Unable to obtain lock on file", where it
+			// stays forever (requestedStatus online, currentStatus offline). So
+			// confirm against the API SERVER, uncached, before doing it.
+			if !r.issueGuardAllowsRecreate(ctx, restore, db) {
+				logger.Info("all-databases restore: recreate already issued for this database (uncached re-check); skipping",
+					"database", db)
+				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+			}
 			exists, exErr := neo4jClient.DatabaseExists(ctx, db)
 			if exErr != nil {
 				r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Checking database %q: %v", db, exErr))
@@ -212,7 +227,18 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 			// "the status query has been erroring since the first poll". The message
 			// is persisted only when it CHANGES, so polling still costs no writes
 			// once the state is steady.
-			r.noteDatabaseProgress(ctx, restore, db, seedingProgressMessage(online, total, stErr))
+			progress := seedingProgressMessage(online, total, stErr)
+			r.noteDatabaseProgress(ctx, restore, db, progress)
+			// Also emit it EVERY poll. The status message records only the latest
+			// state, so it cannot distinguish "slow" from "stuck": one sample of
+			// "0/1 allocations online" looks identical either way. Event
+			// aggregation supplies what is missing — repeated identical events
+			// collapse into one object with a count and first/last timestamps, so
+			// `kubectl describe` (and the integration suite's own diagnostics dump)
+			// shows whether this database sat at 0/1 from the first poll or worked
+			// through several states.
+			r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreSeedProgress,
+				fmt.Sprintf("database %q: %s", db, progress))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 	}
@@ -545,4 +571,41 @@ func (r *Neo4jRestoreReconciler) noteDatabaseProgress(ctx context.Context, resto
 		break
 	}
 	r.markDatabaseResult(ctx, restore, db, StatusRunning, message)
+}
+
+// issueGuardAllowsRecreate answers "is this database still un-issued?" against
+// the API SERVER rather than the informer cache.
+//
+// The cached client is eventually consistent, so the status write that flips a
+// database to Running may not be visible to the next reconcile — which would
+// then issue a second, concurrent seed and brick the database (see the call
+// site). An uncached read closes that window: controller-runtime never
+// reconciles one object concurrently, so once the write has landed, the next
+// reconcile is guaranteed to see it here.
+//
+// Fails OPEN when no APIReader is wired (tests, dev wiring): the cached phase
+// has already been checked by the caller, so this can only ever be an extra
+// guard, never the only one.
+func (r *Neo4jRestoreReconciler) issueGuardAllowsRecreate(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, db string) bool {
+	if r.APIReader == nil {
+		return true
+	}
+	fresh := &neo4jv1beta1.Neo4jRestore{}
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(restore), fresh); err != nil {
+		// Cannot confirm. Refuse rather than risk a second concurrent seed: the
+		// caller requeues, and a transient read failure costs one interval.
+		log.FromContext(ctx).V(1).Info("all-databases restore: uncached re-check failed; deferring the recreate",
+			"database", db, "error", err.Error())
+		return false
+	}
+	for i := range fresh.Status.DatabaseResults {
+		if fresh.Status.DatabaseResults[i].Database != db {
+			continue
+		}
+		p := fresh.Status.DatabaseResults[i].Phase
+		return p == "" || p == StatusPending
+	}
+	// No entry yet on the server — the seeding write has not landed at all, so
+	// this is genuinely the first pass for this database.
+	return true
 }

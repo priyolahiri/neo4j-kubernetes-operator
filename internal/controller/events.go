@@ -66,6 +66,15 @@ const (
 	EventReasonRestoreFailed            = "RestoreFailed"
 	EventReasonRestoreFromChainParent   = "RestoreFromChainParent"
 	EventReasonDatabaseCreateFailed     = "DatabaseCreateFailed"
+	// EventReasonRestoreSeedProgress reports one poll of an all-databases
+	// restore's per-database seed. It is emitted on EVERY non-terminal poll, not
+	// only when the message changes, deliberately: the apiserver aggregates
+	// identical events into a single object carrying a COUNT plus first/last
+	// timestamps, which is exactly the "has this been stuck at 0/1 since the
+	// first poll, or is it progressing?" signal that a status message alone
+	// cannot give. Bounded by the number of distinct states, not by poll count.
+	EventReasonRestoreSeedProgress = "RestoreSeedProgress"
+
 	// EventReasonRestoreShardedNotCovered — an all-databases restore's source
 	// backup recorded property-sharded databases it did not cover; they are not
 	// recreated here and must be restored via their Neo4jShardedDatabase CR.

@@ -86,10 +86,14 @@ func (f *fakeDatabaseAPI) GetDatabaseBackup(_ context.Context, _, _, _, _, id st
 	}
 	return &aura.DatabaseBackup{ID: id, Status: aura.BackupStatusCompleted, Timestamp: "2026-07-01T00:00:00Z", Exportable: true}, nil
 }
-func (f *fakeDatabaseAPI) RestoreDatabase(_ context.Context, _, _, _, _ string, req aura.RestoreDatabaseRequest) error {
+func (f *fakeDatabaseAPI) RestoreDatabase(_ context.Context, _, _, _, _ string, req aura.RestoreDatabaseRequest) (*aura.DatabaseRestoreAccepted, error) {
 	f.restoreCalls++
 	f.lastRestoreReq = req
-	return f.restoreErr
+	if f.restoreErr != nil {
+		return nil, f.restoreErr
+	}
+	// Live shape: the 202 is the only place this API reports a database's state.
+	return &aura.DatabaseRestoreAccepted{Status: "restoring", Nodes: 0, Relationships: 0}, nil
 }
 
 func dbFactory(f *fakeDatabaseAPI) auraDatabaseClientFactory {

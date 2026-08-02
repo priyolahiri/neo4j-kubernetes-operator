@@ -103,8 +103,15 @@ const RestoreInProgressAnnotation = "neo4j.com/restore-in-progress"
 // Neo4jRestoreReconciler reconciles a Neo4jRestore object
 type Neo4jRestoreReconciler struct {
 	client.Client
-	Scheme                  *runtime.Scheme
-	Recorder                record.EventRecorder
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
+	// APIReader reads straight from the API server, bypassing the informer cache.
+	// Required before issuing a DESTRUCTIVE, non-idempotent operation: the cached
+	// client is eventually consistent, so a status write that marks work as
+	// already-started may not be visible to the very next reconcile, and the work
+	// gets issued twice. See issueGuardAllowsRecreate. Nil is tolerated (tests,
+	// and it degrades to the cached read).
+	APIReader               client.Reader
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
 }

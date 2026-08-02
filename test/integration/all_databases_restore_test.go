@@ -45,9 +45,14 @@ var _ = Describe("All-Databases Backup and Cluster Restore (MinIO) Integration T
 		clusterReadyTimeout = 10 * time.Minute
 		dbReadyTimeout      = 5 * time.Minute
 		backupJobTimeout    = 10 * time.Minute
-		restoreTimeout      = 12 * time.Minute
-		minioReadyTimeout   = 5 * time.Minute
-		pollInterval        = 5 * time.Second
+		// Deliberately still 12, not raised. The "0/1 allocations online" stall this
+		// spec hit was NOT slowness — the database was bricked by two concurrent seeds
+		// racing on a temp-copy lock and never came back (see
+		// issueGuardAllowsRecreate). No budget rescues that, and a bigger number would
+		// only have delayed the failure by 8 minutes while looking like a fix.
+		restoreTimeout    = 12 * time.Minute
+		minioReadyTimeout = 5 * time.Minute
+		pollInterval      = 5 * time.Second
 
 		minioAccessKey = "minioadmin"
 		minioSecretKey = "minioadmin"

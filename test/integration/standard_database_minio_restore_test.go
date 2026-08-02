@@ -374,8 +374,10 @@ var _ = Describe("Standard Database Restore (MinIO) Integration Tests", Label("e
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(restoreStorage), restoreStorage)
 			return restoreStorage.Status.Phase
-		}, restoreTimeout, pollInterval).Should(Equal("Completed"),
-			"type=storage cluster restore should reach Completed; status.message=%q", restoreStorage.Status.Message)
+		}, restoreTimeout, pollInterval).Should(Equal("Completed"), func() string {
+			return fmt.Sprintf("type=storage cluster restore should reach Completed; phase=%q status.message=%q",
+				restoreStorage.Status.Phase, restoreStorage.Status.Message)
+		})
 
 		By("Verifying the type=storage restore brought the data back to count=42 (not 777)")
 		Eventually(func() string {

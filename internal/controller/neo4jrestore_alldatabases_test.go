@@ -21,7 +21,12 @@ import (
 	"strings"
 	"testing"
 
+	"context"
+
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestUserDatabasesFromArtifacts_ExcludesSystem(t *testing.T) {
@@ -222,4 +227,79 @@ func TestSeedingProgressMessageDistinguishesStallFromProgress(t *testing.T) {
 	if failed == recreating || recreating == progressing || failed == progressing {
 		t.Error("the three states must produce different messages")
 	}
+}
+
+// The all-databases restore issues a DESTRUCTIVE, non-idempotent recreate. Its
+// only guard used to be the per-database phase read through the informer cache
+// — which lags writes, so a second reconcile could still see Pending and issue
+// a second concurrent seed.
+//
+// That is not theoretical. Reproduced 2026-08-02: two RestoreStarted events in
+// the same second (consecutive resourceVersions), both seeds racing on
+// /data/databases/neo4j/temp-copy/neo4j/database_lock, and Neo4j parked the
+// database offline with "Unable to obtain lock on file" — permanently, with
+// requestedStatus=online and currentStatus=offline. No timeout can rescue that.
+func TestIssueGuardRefusesASecondRecreate(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := neo4jv1beta1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+
+	newRestore := func(phase string) *neo4jv1beta1.Neo4jRestore {
+		return &neo4jv1beta1.Neo4jRestore{
+			ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "ns"},
+			Status: neo4jv1beta1.Neo4jRestoreStatus{
+				DatabaseResults: []neo4jv1beta1.DatabaseRestoreResult{{Database: "neo4j", Phase: phase}},
+			},
+		}
+	}
+
+	t.Run("server says Running -> refuse, even though the caller's cached copy said Pending", func(t *testing.T) {
+		// The caller's (stale, cached) view.
+		stale := newRestore(StatusPending)
+		// What the API server actually holds.
+		fresh := newRestore(StatusRunning)
+		api := fake.NewClientBuilder().WithScheme(scheme).WithObjects(fresh).Build()
+		r := &Neo4jRestoreReconciler{APIReader: api}
+		if r.issueGuardAllowsRecreate(context.Background(), stale, "neo4j") {
+			t.Error("issued a SECOND recreate: the server already had this database at Running. " +
+				"Two concurrent seeds brick the database on a temp-copy lock.")
+		}
+	})
+
+	t.Run("server still says Pending -> allow", func(t *testing.T) {
+		rest := newRestore(StatusPending)
+		api := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rest).Build()
+		r := &Neo4jRestoreReconciler{APIReader: api}
+		if !r.issueGuardAllowsRecreate(context.Background(), rest, "neo4j") {
+			t.Error("refused the FIRST recreate; the restore would never start")
+		}
+	})
+
+	t.Run("no entry on the server yet -> allow (genuinely the first pass)", func(t *testing.T) {
+		rest := newRestore(StatusPending)
+		bare := &neo4jv1beta1.Neo4jRestore{ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "ns"}}
+		api := fake.NewClientBuilder().WithScheme(scheme).WithObjects(bare).Build()
+		r := &Neo4jRestoreReconciler{APIReader: api}
+		if !r.issueGuardAllowsRecreate(context.Background(), rest, "neo4j") {
+			t.Error("refused although the server has no record of this database at all")
+		}
+	})
+
+	t.Run("read failure -> refuse, never guess", func(t *testing.T) {
+		rest := newRestore(StatusPending)
+		// Empty client: the object does not exist, so Get returns NotFound.
+		api := fake.NewClientBuilder().WithScheme(scheme).Build()
+		r := &Neo4jRestoreReconciler{APIReader: api}
+		if r.issueGuardAllowsRecreate(context.Background(), rest, "neo4j") {
+			t.Error("issued a destructive recreate without being able to confirm it had not already been issued")
+		}
+	})
+
+	t.Run("no APIReader wired -> fail open (the cached check already ran)", func(t *testing.T) {
+		r := &Neo4jRestoreReconciler{}
+		if !r.issueGuardAllowsRecreate(context.Background(), newRestore(StatusPending), "neo4j") {
+			t.Error("must not block when no APIReader is configured")
+		}
+	})
 }

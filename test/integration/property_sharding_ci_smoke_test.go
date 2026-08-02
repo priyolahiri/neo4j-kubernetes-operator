@@ -17,6 +17,7 @@ limitations under the License.
 package integration_test
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -184,8 +185,9 @@ var _ = Describe("Property Sharding CI Smoke Test", Label("extended"), Serial, f
 		Eventually(func() bool {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(shardedDB), shardedDB)
 			return shardedDB.Status.ShardingReady != nil && *shardedDB.Status.ShardingReady
-		}, shardedReadyTimeout, pollInterval).Should(BeTrue(),
-			"sharded DB must reach shardingReady=true; status.message=%q", shardedDB.Status.Message)
+		}, shardedReadyTimeout, pollInterval).Should(BeTrue(), func() string {
+			return fmt.Sprintf("sharded DB must reach shardingReady=true; status.message=%q", shardedDB.Status.Message)
+		})
 
 		By("Backing up the sharded DB to a PVC")
 		backup = &neo4jv1beta1.Neo4jBackup{
@@ -207,8 +209,9 @@ var _ = Describe("Property Sharding CI Smoke Test", Label("extended"), Serial, f
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(backup), backup)
 			return backup.Status.Phase
-		}, backupJobTimeout, pollInterval).Should(Equal("Completed"),
-			"sharded backup must Complete; status.message=%q", backup.Status.Message)
+		}, backupJobTimeout, pollInterval).Should(Equal("Completed"), func() string {
+			return fmt.Sprintf("sharded backup must Complete; status.message=%q", backup.Status.Message)
+		})
 		Expect(backup.Status.History).ToNot(BeEmpty())
 		Expect(backup.Status.History[0].Status).To(Equal("Succeeded"))
 		// Two shards (1 graph + 1 property) should appear in the manifest.

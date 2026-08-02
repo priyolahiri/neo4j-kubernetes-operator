@@ -363,6 +363,7 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				Client:       mgr.GetClient(),
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
+				APIReader:    mgr.GetAPIReader(), // uncached — guards the destructive recreate
 				RequeueAfter: controller.GetTestRequeueAfter(),
 				// Cluster-native Cypher restores poll database online-state
 				// across requeues (pollClusterRestoreOnline) rather than
@@ -602,6 +603,7 @@ func setupDevelopmentControllers(mgr ctrl.Manager, controllers []string) error {
 				Client:       mgr.GetClient(),
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
+				APIReader:    mgr.GetAPIReader(), // uncached — guards the destructive recreate
 				RequeueAfter: controller.GetTestRequeueAfter(),
 				// See dev-mode wiring above: poll-based online wait + multiple
 				// workers prevents one slow restore from starving the rest.
