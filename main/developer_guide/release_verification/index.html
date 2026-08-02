@@ -3599,7 +3599,13 @@ than a Kind cluster: run its <strong>read-only sweep</strong> whenever anything 
 </tr>
 </tbody>
 </table>
-<p>→ <strong>Tear down the standalone fully</strong> before Phase 2.</p>
+<p>→ <strong>Tear down the standalone fully</strong> before Phase 2 — but <strong>KEEP the backup PVC</strong>
+(and the <code>Neo4jBackup</code> CR that owns it, so retention does not prune the artifact).
+Phase 2's cross-topology scenario restores that standalone-produced artifact into
+the cluster, and the one-deployment-at-a-time rule means you cannot stand the
+standalone back up alongside the cluster to re-make it. Deleting the PVC here
+costs a full standalone rebuild-and-teardown cycle later, so treat "a retained
+standalone backup" as one of Phase 1's outputs.</p>
 <h3 id="phase-2-cluster-3-servers-6gi">Phase 2 — Cluster, 3 servers (~6Gi)<a class="headerlink" href="#phase-2-cluster-3-servers-6gi" title="Anchor link to this section">&para;</a></h3>
 <p><code>Neo4jEnterpriseCluster</code> with <code>servers: 3</code> → <code>Ready</code>; pods
 <code>{cluster}-server-0..2</code>; <code>SHOW SERVERS</code> lists 3 <code>Enabled</code>/<code>Available</code>. Then:</p>
@@ -3629,7 +3635,7 @@ than a Kind cluster: run its <strong>read-only sweep</strong> whenever anything 
 </tr>
 <tr>
 <td>Cross-topology restore</td>
-<td>back up a DB from the <strong>standalone</strong> (Phase 1), restore it into the <strong>cluster</strong> via <code>instanceRef</code>; confirm the data round-trips</td>
+<td>restore the <strong>retained standalone backup</strong> from Phase 1 into the <strong>cluster</strong> via <code>instanceRef</code>; confirm the data round-trips. The cluster path stands up a short-lived <code>backup-seed-proxy-&lt;restore&gt;</code> Deployment that serves the backup PVC over HTTP, so the seed URI in <code>status</code> is an <code>http://…</code> URL, not a <code>file://</code> path</td>
 </tr>
 </tbody>
 </table>
@@ -3768,7 +3774,7 @@ what caught four real client bugs during the 2026-07-30 re-diff.</p>
 <tbody>
 <tr>
 <td><code>AuraInstance</code> lifecycle</td>
-<td>create → Ready → resize (<code>memory</code>) → pause → resume → delete; <code>status.instanceId</code> pinned via annotation</td>
+<td>create → Ready → resize (<code>memory</code>) → pause → resume → delete; <code>status.instanceId</code> pinned via the <code>neo4j.com/external-instance-id</code> annotation. <strong>Set <code>deletionPolicy: Delete</code> on the throwaway instance</strong> — the default is <code>Orphan</code>, so otherwise deleting the CR leaves the instance running and billing (see the teardown note below), and the delete path itself goes untested</td>
 </tr>
 <tr>
 <td><code>AuraDatabase</code> + backup</td>
@@ -3776,7 +3782,7 @@ what caught four real client bugs during the 2026-07-30 re-diff.</p>
 </tr>
 <tr>
 <td>Multi-database create</td>
-<td>An <code>AuraInstance</code> with <code>multiDatabase: true</code> + <code>organizationId</code> is created via <strong>v2beta1</strong> (v1 <code>type</code> names are translated), then remains manageable through v1; <code>status.atProvider.multiDatabase</code> reports <code>true</code>. On a v1-created instance the same field stays <strong>absent</strong> (unknown), never <code>false</code></td>
+<td>An <code>AuraInstance</code> with <code>multiDatabase: true</code> + <code>organizationId</code> is created via <strong>v2beta1</strong> (v1 <code>type</code> names are translated), then remains manageable through v1; <code>status.atProvider.multiDatabase</code> reports <code>true</code>. On a v1-created instance the field reports the <strong>true</strong> value from the v2beta1 probe — <code>false</code> is correct there, and it stays <strong>absent</strong> (unknown) only when no <code>organizationId</code> is resolvable, since the v1 GET carries no such field</td>
 </tr>
 <tr>
 <td>Console RBAC</td>
@@ -3788,7 +3794,11 @@ what caught four real client bugs during the 2026-07-30 re-diff.</p>
 </tr>
 </tbody>
 </table>
-<p>→ <strong>Tear down</strong> every resource created here; Aura bills by the hour.</p>
+<p>→ <strong>Tear down</strong> every resource created here; Aura bills by the hour. Deleting the
+CRs is <strong>not</strong> sufficient proof: <code>deletionPolicy</code> defaults to <code>Orphan</code>, so a CR
+delete can leave a running instance behind. Confirm with
+<code>GET /v1/instances/&lt;id&gt;</code> → <strong>404</strong> and a project instance list of <strong>0</strong> before you
+call the phase done.</p>
 <h2 id="coverage-at-a-glance">Coverage at a glance<a class="headerlink" href="#coverage-at-a-glance" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
@@ -3900,6 +3910,12 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.</p>
 <td>2026-06-14</td>
 <td>✅ all phases pass</td>
 <td>Doc bug: <code>backup_restore.md</code> sharded <code>target.name</code> said <em>logical name</em>, must be <em>CR name</em> (fixed, <code>#270</code> follow-up). v1.12.2 surfaces (#260/#268/#269/#270) verified live.</td>
+</tr>
+<tr>
+<td>v1.14.0</td>
+<td>2026-08-02</td>
+<td>✅ all 4 phases pass (19/19 scenarios) — 3 bugs + 4 doc gaps found</td>
+<td><strong>Bugs:</strong> (1) deleting a <code>Neo4jPlugin</code> against a live deployment never finalizes — the removal Job is re-created every reconcile and fails <code>already exists</code>, so the CR stays Terminating and blocks namespace deletion; (2) <code>examples/property_sharding/development-property-sharding.yaml</code> does not boot — <code>spec.propertySharding.config</code> bypasses the memory-key exclusion that <code>spec.config</code> gets, so a user <code>heap.max_size</code> contradicts the operator-derived <code>heap.initial_size</code> and the JVM refuses to start; (3) <code>make dev-up</code> loads no <code>aura*</code> controller (the dev <code>-controllers</code> default omits all 12), so every Aura CR is accepted and then silently ignored — no status, no events, no logs. <strong>Doc gaps:</strong> Phase 1 teardown destroys the backup Phase 2's cross-topology scenario needs; Phase 4 teardown leaves a billing instance because <code>deletionPolicy</code> defaults to <code>Orphan</code>; the <code>multiDatabase</code>-stays-absent rule holds only with no org configured; sharding examples pin <code>2026.04</code> while the CI anchor is <code>2026.06</code>. <strong>Also:</strong> a crash-looping member surfaces only as <code>ConnectivityDegraded</code>, which points at Bolt rather than the container.</td>
 </tr>
 </tbody>
 </table>
