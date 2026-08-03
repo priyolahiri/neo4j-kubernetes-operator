@@ -3729,10 +3729,11 @@ and manages <strong>Aura-hosted</strong> instances. The two are complementary.</
 <p>Every one of these CRDs talks to a <strong>live cloud API</strong>, so what matters is not
 only whether the code compiles but whether its request shapes are what Aura
 actually accepts. The table below says exactly that, per surface.</p>
-<p>This is worth taking seriously: several of these contracts were originally built
-from the published OpenAPI spec, and when they were finally exercised against a
-real account, <strong>three of them turned out to be wrong in ways unit tests could not
-catch</strong> — because the tests asserted the client matched the spec, not the API.</p>
+<p>Some of these clients were first written from the published OpenAPI spec and later
+corrected once they were exercised against a real account. Unit tests alone did
+not surface those corrections, because they asserted the client matched the spec
+rather than the API. The table therefore records live verification separately from
+test coverage.</p>
 <table>
 <thead>
 <tr>
@@ -3777,7 +3778,7 @@ catch</strong> — because the tests asserted the client matched the spec, not t
 <td><code>AuraIPFilter</code></td>
 <td>v2beta1</td>
 <td>✅ 2026-08-01</td>
-<td>Contract was <strong>wrong</strong> and has been corrected — it could not create, update or delete.</td>
+<td>Request shapes corrected against the live API (create, update and delete).</td>
 </tr>
 <tr>
 <td><code>AuraDatabase</code>, <code>AuraDatabaseBackup</code>, <code>AuraDatabaseRestore</code></td>
@@ -3795,7 +3796,7 @@ catch</strong> — because the tests asserted the client matched the spec, not t
 <td><code>AuraInvite</code></td>
 <td>v2beta1</td>
 <td>✅ 2026-08-01</td>
-<td>Contract was <strong>wrong</strong> and has been corrected — it could not send an invite.</td>
+<td>Request body corrected against the live API; an organization role is required on every invite.</td>
 </tr>
 <tr>
 <td><code>spec.auraFleetManagement</code> (on a self-managed cluster)</td>
@@ -3811,12 +3812,11 @@ catch</strong> — because the tests asserted the client matched the spec, not t
 account. <code>AuraCustomerManagedKey</code> has <strong>not</strong>, because it needs a real cloud
 KMS key (AWS KMS / GCP Cloud KMS / Azure Key Vault) with IAM grants to Aura,
 which cannot be created disposably.</p>
-<p>Its client shape comes from the <strong>published v1 OpenAPI spec</strong>, and on this API
-that has repeatedly proven insufficient. Treat <code>AuraCustomerManagedKey</code> as
-<strong>unproven</strong>: expect that create or update may be rejected, and verify it in a
-non-production project before relying on it. The one part that <em>is</em> pinned by
-a test is the adoption logic — the v1 CMK <strong>list</strong> endpoint returns only
-<code>id</code>/<code>name</code>/<code>tenant_id</code>, so a filter can never be matched on
+<p>Its client shape comes from the <strong>published v1 OpenAPI spec</strong> and has not been
+confirmed against the API. Treat <code>AuraCustomerManagedKey</code> as <strong>unproven</strong> and
+verify it in a non-production project before relying on it. The one part that
+<em>is</em> pinned by a test is the adoption logic — the v1 CMK <strong>list</strong> endpoint
+returns only <code>id</code>/<code>name</code>/<code>tenant_id</code>, so a filter cannot be matched on
 <code>key_id</code>/<code>region</code>/<code>cloud_provider</code> from a list entry.</p>
 <p>If you do exercise it, please report what you find so this table can be
 updated.</p>
