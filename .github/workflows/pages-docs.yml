@@ -38,6 +38,17 @@ on:
         required: false
         default: false
         type: boolean
+      # Without this, a manual re-publish of an existing version renames it in the
+      # version selector: the tag path titles vX.Y as the full "vX.Y.Z", while a
+      # dispatch could only title it "vX.Y". Re-publishing v1.14 to correct a doc
+      # therefore relabelled it from "v1.14.0" to "v1.14", inconsistent with
+      # every other entry. Pass the full tag here when refreshing a released
+      # version; leave empty for a throwaway alias like "dev".
+      title:
+        description: 'Title shown in the version selector (default: the alias). Use the full vX.Y.Z when refreshing a released version.'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write   # mike needs to push to gh-pages
@@ -99,8 +110,9 @@ jobs:
             else
               echo "extra="       >> "$GITHUB_OUTPUT"
             fi
-            echo "title=${{ inputs.version-alias }}" >> "$GITHUB_OUTPUT"
-            echo "Manual deploy: ${{ inputs.version-alias }}"
+            manual_title="${{ inputs.title }}"
+            echo "title=${manual_title:-${{ inputs.version-alias }}}" >> "$GITHUB_OUTPUT"
+            echo "Manual deploy: ${{ inputs.version-alias }} (title: ${manual_title:-${{ inputs.version-alias }}})"
           else
             echo "alias=main"  >> "$GITHUB_OUTPUT"
             echo "extra="      >> "$GITHUB_OUTPUT"
