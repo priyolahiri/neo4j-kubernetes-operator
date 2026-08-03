@@ -3,7 +3,7 @@ module github.com/priyolahiri/neo4j-kubernetes-operator
 go 1.26.0
 
 require (
-	github.com/cert-manager/cert-manager v1.21.0
+	github.com/cert-manager/cert-manager v1.21.1
 	github.com/go-logr/logr v1.4.4
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
 	github.com/onsi/ginkgo/v2 v2.32.0
