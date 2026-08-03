@@ -283,7 +283,7 @@ func (c *Client) UpdateIPFilter(ctx context.Context, orgID, id string, req Updat
 //
 // LANDMINE: a SUCCESSFUL delete arrives as HTTP 500. The gateway rejects its own
 // backend's 204 and reports `invalid status code 204 [DELETE
-// /ip-filters/{{.Ip_filter_id}}]: https://console-api-private…` — the same
+// /ip-filters/{{.Ip_filter_id}}]: https://<internal-address-redacted>` — the same
 // leaked-internal-URL, unrendered-Go-template shape as the v2beta1 instance GET.
 // Deleting an already-gone filter is a 500 too (wrapping a 404).
 //

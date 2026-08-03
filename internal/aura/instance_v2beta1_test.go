@@ -165,7 +165,7 @@ func TestGetInstanceV2ReadsMultiDatabase(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == base+"/6f2a753a":
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(`invalid status code 404 [GET /aura-instances/{{.Instance_id}}]: ` +
-				`https://console-api-private.default.svc.cluster.local.:443/aura-instances/6f2a753a`))
+				`https://<internal-address-redacted>/aura-instances/6f2a753a`))
 		// Verbatim live LIST: no multi_database, so it cannot answer the question.
 		case r.Method == http.MethodGet && r.URL.Path == base:
 			_, _ = w.Write([]byte(`{"data":[{"cloud_provider":"gcp",` +

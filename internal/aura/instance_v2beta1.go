@@ -71,7 +71,7 @@ import (
 //     POST /v1/instances is not registered in the v2beta1 instance store, and
 //     the GET fails with HTTP 500 and a body that leaks an internal URL and an
 //     unrendered Go template (`invalid status code 404 [GET
-//     /aura-instances/{{.Instance_id}}]: https://console-api-private…`) — not a
+//     /aura-instances/{{.Instance_id}}]: https://<internal-address-redacted>`) — not a
 //     404. Callers MUST treat any error here as "multi_database unknown" and
 //     never as "not multi-database", and never let it fail a reconcile. The
 //     instance's OTHER v2beta1 sub-resources (…/databases, …/ip-filters) do

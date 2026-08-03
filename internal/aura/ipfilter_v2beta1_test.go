@@ -198,7 +198,7 @@ func TestIPFilterDeleteSucceedsDespiteGateway500(t *testing.T) {
 			// unrendered Go template and an internal address.
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(`invalid status code 204 [DELETE /ip-filters/{{.Ip_filter_id}}]: ` +
-				`https://console-api-private.default.svc.cluster.local.:443/ip-filters/` + id))
+				`https://<internal-address-redacted>/ip-filters/` + id))
 		case r.Method == http.MethodGet && r.URL.Path == base+"/"+id:
 			getCalls++
 			w.WriteHeader(http.StatusNotFound)
