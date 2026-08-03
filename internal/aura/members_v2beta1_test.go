@@ -37,7 +37,7 @@ import (
 // `organization_roles`, `project_roles`, invite `status` — and the assertions
 // check the REQUEST bodies, because an earlier version of this suite echoed the
 // client's invented `{"id","email","role"}` shape back at it and therefore
-// passed against a contract the API never served. If you change a fixture here,
+// passed against a contract the API does not accept. If you change a fixture here,
 // change it to match the spec, never to match the client.
 
 // specOrgUserJSON is a v2beta1 OrganizationUser. All seven properties are

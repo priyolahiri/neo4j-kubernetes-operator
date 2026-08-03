@@ -32,7 +32,7 @@ import (
 //
 // The fixtures serve the SPEC's shapes. An earlier version served the client's
 // invented `name` / `legacy_status` / `database_id` fields, so the suite passed
-// against a contract the API never served and hid a restore body that could
+// against a contract the API does not accept, and hid a restore body that could
 // never work. If you change a fixture, change it to match the spec.
 
 func TestDatabaseLifecycle(t *testing.T) {

@@ -45,10 +45,11 @@ Every one of these CRDs talks to a **live cloud API**, so what matters is not
 only whether the code compiles but whether its request shapes are what Aura
 actually accepts. The table below says exactly that, per surface.
 
-This is worth taking seriously: several of these contracts were originally built
-from the published OpenAPI spec, and when they were finally exercised against a
-real account, **three of them turned out to be wrong in ways unit tests could not
-catch** — because the tests asserted the client matched the spec, not the API.
+Some of these clients were first written from the published OpenAPI spec and later
+corrected once they were exercised against a real account. Unit tests alone did
+not surface those corrections, because they asserted the client matched the spec
+rather than the API. The table therefore records live verification separately from
+test coverage.
 
 | Surface | Aura API | Live-verified | Notes |
 |---|---|---|---|
@@ -57,10 +58,10 @@ catch** — because the tests asserted the client matched the spec, not the API.
 | `AuraSnapshot` | v1 | ✅ 2026-08-01 | |
 | `AuraRestore` | v1 | ✅ 2026-08-01 | |
 | `AuraCustomerManagedKey` | v1 | ❌ **UNTESTED** | See the warning below. |
-| `AuraIPFilter` | v2beta1 | ✅ 2026-08-01 | Contract was **wrong** and has been corrected — it could not create, update or delete. |
+| `AuraIPFilter` | v2beta1 | ✅ 2026-08-01 | Request shapes corrected against the live API (create, update and delete). |
 | `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore` | v2beta1 | ✅ 2026-07-31 | Requires a multi-database instance. |
 | `AuraOrganizationMember`, `AuraProjectMember` | v2beta1 | ✅ 2026-08-01 | Read + write shapes and all role enums confirmed. |
-| `AuraInvite` | v2beta1 | ✅ 2026-08-01 | Contract was **wrong** and has been corrected — it could not send an invite. |
+| `AuraInvite` | v2beta1 | ✅ 2026-08-01 | Request body corrected against the live API; an organization role is required on every invite. |
 | `spec.auraFleetManagement` (on a self-managed cluster) | v2beta1 | ✅ 2026-07-31 | See [Aura Fleet Management](aura_fleet_management.md). |
 
 !!! danger "AuraCustomerManagedKey has never been exercised against the Aura API"
@@ -69,12 +70,11 @@ catch** — because the tests asserted the client matched the spec, not the API.
     KMS key (AWS KMS / GCP Cloud KMS / Azure Key Vault) with IAM grants to Aura,
     which cannot be created disposably.
 
-    Its client shape comes from the **published v1 OpenAPI spec**, and on this API
-    that has repeatedly proven insufficient. Treat `AuraCustomerManagedKey` as
-    **unproven**: expect that create or update may be rejected, and verify it in a
-    non-production project before relying on it. The one part that *is* pinned by
-    a test is the adoption logic — the v1 CMK **list** endpoint returns only
-    `id`/`name`/`tenant_id`, so a filter can never be matched on
+    Its client shape comes from the **published v1 OpenAPI spec** and has not been
+    confirmed against the API. Treat `AuraCustomerManagedKey` as **unproven** and
+    verify it in a non-production project before relying on it. The one part that
+    *is* pinned by a test is the adoption logic — the v1 CMK **list** endpoint
+    returns only `id`/`name`/`tenant_id`, so a filter cannot be matched on
     `key_id`/`region`/`cloud_provider` from a list entry.
 
     If you do exercise it, please report what you find so this table can be

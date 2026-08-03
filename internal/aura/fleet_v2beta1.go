@@ -48,7 +48,8 @@ import (
 //     Use doV2Data throughout; never doV2JSON. The published spec declares the
 //     single-deployment GET, POST deployments and POST/PATCH token as BARE, and
 //     it is WRONG about all four. Verified by exercising the full lifecycle
-//     against a live Aura project on 2026-07-31 — LIVE WINS. Getting this wrong
+//     against a live Aura project on 2026-07-31; the observed shape is what the
+//     client follows. Getting this wrong
 //     is silent: the envelope decodes into the struct and every field lands
 //     zero, with no error, so CreateDeployment returns an empty ID and
 //     CreateDeploymentToken an empty token.
@@ -76,7 +77,7 @@ import (
 //  5. DELETE token on a deployment with no token returns HTTP 500 (not 404), so
 //     it is NOT idempotent in the usual sense — IsNotFound will not catch it.
 //
-//  6. FIELD NAMES WHERE THE LIVE API DISAGREES WITH THE SPEC (live wins, all
+//  6. FIELD NAMES WHERE THE LIVE API AND THE SPEC DIFFER (observed values used, all
 //     verified 2026-07-30):
 //       token.auto_rotate   (spec)  ->  token.auto_rotated   (live)
 //       Server.mode_constraints (spec) -> Server.mode_constraint (live, singular)
