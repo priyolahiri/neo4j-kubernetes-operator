@@ -47,6 +47,8 @@ enabled.
 | `Neo4jPlugin` | Plugin installation for APOC, GDS, Bloom, GenAI, N10s, and GraphQL with automatic security configuration |
 | `Neo4jBackup`, `Neo4jRestore` | FULL, DIFF, and AUTO backup types with point-in-time recovery |
 | `Neo4jShardedDatabase` | Property sharding for horizontal scale (GA in Neo4j 2025.12 and later CalVer releases) |
+| `Neo4jDatabaseAlias` | Database aliases — decouple the name applications connect to from the database it resolves to (Cypher has no `RENAME DATABASE`) |
+| `Neo4jReplicaDatabase`, `Neo4jReplicaPromotion` | Cross-cluster replication — read-only replicas fed by a differential backup chain, with one-way promotion for disaster-recovery failover (Neo4j 2026.08+) |
 
 [Browse the full API reference →](api_reference/neo4jenterprisecluster.md)
 

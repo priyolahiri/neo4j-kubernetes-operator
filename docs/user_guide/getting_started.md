@@ -280,6 +280,7 @@ Ready-to-apply YAML manifests for every CRD live under [`examples/`](https://git
 | [`plugins/`](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/plugins) | `Neo4jPlugin` examples (APOC, GDS, Bloom, GenAI, …) |
 | [`backup-restore/`](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/backup-restore) | `Neo4jBackup`, `Neo4jRestore` (PVC, S3, GCS, Azure, PITR) |
 | [`property_sharding/`](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/property_sharding) | `Neo4jShardedDatabase` setups |
+| [`cross-cluster-replication/`](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/cross-cluster-replication) | `Neo4jReplicaDatabase`, `Neo4jReplicaPromotion`, `Neo4jDatabaseAlias` — DR replication across two Kubernetes clusters |
 | [`security/`](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/security) | NetworkPolicy + Kyverno conformance policies |
 
 For more advanced topics, see:

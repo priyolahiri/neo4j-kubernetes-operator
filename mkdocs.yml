@@ -141,6 +141,7 @@ nav:
   - Operate:
       - Backup & Restore: user_guide/guides/backup_restore.md
       - Cross-Cluster Replication: user_guide/guides/cross_cluster_replication.md
+      - Database Aliases: user_guide/guides/database_aliases.md
       - Upgrades: user_guide/guides/upgrades.md
       - Storage Expansion: user_guide/guides/storage_expansion.md
       - Fault Tolerance: user_guide/guides/fault_tolerance.md

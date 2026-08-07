@@ -98,6 +98,8 @@ The operator ships these CRDs (all `neo4j.neo4j.com/v1beta1`):
 | `Neo4jAuthRule` | Attribute-based access control (Neo4j 2026.03+) |
 | `Neo4jBackup`, `Neo4jRestore` | Backup and restore via `neo4j-admin` (PVC, S3, GCS, Azure) |
 | `Neo4jShardedDatabase` | Property-sharded databases with backup, restore, and full/differential chains (Neo4j 2025.12+) |
+| `Neo4jDatabaseAlias` | Database aliases — a stable name applications address while the target changes underneath (blue/green swaps, rebuilds, DR failover) |
+| `Neo4jReplicaDatabase`, `Neo4jReplicaPromotion` | Cross-cluster replication — a read-only replica fed by a differential backup chain, and its one-way promotion for DR failover (Neo4j 2026.08+) |
 | `Neo4jPlugin` | Plugin installs (APOC, GDS, Bloom, GenAI, …) |
 
 ### Neo4j Aura (cloud) — BETA
@@ -139,6 +141,8 @@ has a dedicated reference page and guide on the
 | Clustering, topology, fault tolerance | [Clustering](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/clustering/) |
 | TLS, authentication, RBAC, audit | [Security](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/security/) |
 | Backup & restore | [Backup & Restore](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/backup_restore/) |
+| Cross-cluster replication (DR) | [Cross-Cluster Replication](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/cross_cluster_replication/) |
+| Database aliases | [Database Aliases](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/database_aliases/) |
 | User & role management | [User & Role Management](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/user_role_management/) |
 | Property sharding | [Property Sharding](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/property_sharding/) |
 | Neo4j Aura orchestration (beta) | [Aura Orchestration](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/aura_orchestration/) |

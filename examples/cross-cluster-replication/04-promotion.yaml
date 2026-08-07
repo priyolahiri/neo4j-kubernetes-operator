@@ -1,0 +1,28 @@
+# DOWNSTREAM cluster — the failover action.
+#
+# !! IRREVERSIBLE !!
+# A promoted database cannot be re-attached to its upstream, and whatever
+# replication lag is outstanding at this moment becomes PERMANENT DATA LOSS.
+# Check the replica's status.replicationLag first if the upstream is reachable.
+#
+# Deliberately a separate one-shot CR rather than a `promote: true` field: a
+# GitOps controller re-applying the pre-promotion manifest after a failover is
+# byte-identical to a deliberate revert. A one-shot CR is inert to re-apply.
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jReplicaPromotion
+metadata:
+  name: failover-2026-08-07
+  namespace: dr
+spec:
+  replicaRef: inventory-replica
+  topology:                    # optional; omit to retain the current topology
+    primaries: 3
+    secondaries: 1
+---
+# After completion:
+#   - status.observedLagTxIds records the RPO this promotion actually took.
+#   - The Neo4jReplicaDatabase goes to phase Promoted (terminal) and stops
+#     managing the database. Deleting it will NOT drop the database.
+#   - The `inventory` alias now resolves to a read-write database, with no
+#     client reconfiguration.
+#   - Adopt the database with a Neo4jDatabase CR using ifNotExists: true.

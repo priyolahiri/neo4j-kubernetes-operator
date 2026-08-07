@@ -1,0 +1,34 @@
+# UPSTREAM cluster (Kubernetes cluster A) — produce the differential chain a
+# replica will pull from.
+#
+# mode: replication-source changes no backup behaviour. It enforces the
+# constraints that keep a chain usable by a replica, and publishes
+# status.replicationPullURI for the downstream CR to consume.
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jBackup
+metadata:
+  name: inventory-chain
+  namespace: prod
+spec:
+  mode: replication-source
+  instanceRef: prod-cluster
+  database: inventory          # single-database scope is required in this mode
+  schedule: "0 * * * *"        # hourly; bounds how stale the replica can get
+  options:
+    backupType: AUTO
+    preferDiffAsParent: true   # chain diffs off the previous diff (2025.04+)
+  storage:
+    type: s3
+    bucket: prod-backups
+    path: inventory
+    cloud:
+      provider: aws
+      credentialsSecretRef: s3-creds
+---
+# Read the value to paste downstream:
+#   kubectl get neo4jbackup inventory-chain -n prod \
+#     -o jsonpath='{.status.replicationPullURI}'
+#
+# WARNING: the operator cannot see object-store lifecycle rules. Any rule that
+# expires objects under this path breaks the differential chain and forces the
+# replica to be rebuilt. Exclude it from lifecycle expiry.

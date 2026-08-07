@@ -124,6 +124,28 @@ Job-per-CR `Neo4jBackup` (one-shot and scheduled) and `Neo4jRestore` scenarios. 
     do point-in-time recovery by creating a `Neo4jDatabase` with
     `seedConfig.restoreUntil` instead — see the database seed examples above.
 
+## Cross-Cluster Replication & Aliases
+
+Read-only replicas of a database on **another** Neo4j cluster, fed by a differential backup chain in object storage — plus the aliases that keep connection strings stable across a failover. See the [Cross-Cluster Replication guide](guides/cross_cluster_replication.md) and the [Database aliases guide](guides/database_aliases.md).
+
+Apply these across **two** Kubernetes clusters, in order: 01 upstream, 02–04 downstream.
+
+| Example | What it shows | Notable fields |
+|---|---|---|
+| [`01-upstream-backup-chain.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/cross-cluster-replication/01-upstream-backup-chain.yaml) | Upstream backup chain that feeds a replica; publishes the pull URI for the downstream CR | `mode: replication-source`, `status.replicationPullURI` |
+| [`02-downstream-replica.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/cross-cluster-replication/02-downstream-replica.yaml) | The read-only replica, seeded from and following that chain | `source.mode: backup`, `source.pullURI`/`seedURI`, `pullInterval` |
+| [`03-failover-alias.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/cross-cluster-replication/03-failover-alias.yaml) | Stable client name pre-staged **before** any failover — aliases can target a database that is still a replica | `targetDatabase` |
+| [`04-promotion.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/cross-cluster-replication/04-promotion.yaml) | The one-way failover action, recording the RPO it took | `replicaRef`, `topology`, `status.observedLagTxIds` |
+
+!!! danger "Two things no validation can catch"
+    **Bucket lifecycle rules.** For cloud storage the operator never prunes —
+    retention is delegated to lifecycle rules it cannot read. One that expires
+    objects under the chain path silently breaks replication and forces a full
+    replica rebuild. Exclude that path from expiry.
+
+    **Promotion is irreversible.** A promoted database cannot be re-attached to
+    its upstream, and whatever lag is outstanding becomes permanent data loss.
+
 ## Users, Roles & Auth
 
 Declarative user, role, and access management via `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, and `Neo4jAuthRule`. Numbered for a natural reading order; see [User & Role Management](user_role_management.md).
