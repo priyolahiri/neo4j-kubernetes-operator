@@ -277,3 +277,24 @@ Full source → regenerator mapping: see the **`regen-artifacts` skill** (`.clau
 CI gate: **`make check-drift`** runs `sync-all` + `bundle` then `git diff --exit-code`. `make bundle` pins the CSV's `createdAt:` to a stable placeholder so concurrent PRs don't conflict; release flow stamps the real value via `make bundle-release`.
 
 **`scripts/helm-sync-artifacthub-crds.sh` requires a description per CRD**: when adding a CRD, add a `case "$kind" in ... esac` row or the script exits non-zero.
+
+## Adding a CRD: the hand-written surfaces
+
+`check-drift` covers every *generated* artifact, but a new Kind also has to be
+added by hand in several places that nothing regenerates. Three CI checks fail
+loudly if you miss one — but knowing the list up front is faster:
+
+| Surface | Guarded by |
+|---|---|
+| `docs/api_reference/<kind>.md`, documenting every top-level spec field | `make check-apiref-drift` |
+| `docs/index.md`, `README.md`, and the `mkdocs.yml` nav | `make check-crd-catalog` |
+| `config/manifests/bases/*.clusterserviceversion.yaml` owned resources | `make check-csv-coverage` |
+| `scripts/helm-sync-artifacthub-crds.sh` `describe()` row | the script itself |
+| `config/samples/*.yaml` (feeds the bundle's `alm-examples`) | `make bundle` warns |
+| `docs/gitops/argocd-health-checks.yaml` | **unguarded** — omit it and GitOps users see the CR as `Progressing` forever |
+| `devControllerKeys` in `cmd/main.go` | `TestDevControllerDefaultCoversRegistry` |
+
+The catalogue check exists because the entire 12-CRD Aura suite was absent from
+`docs/index.md` from the day it shipped, while being correctly listed in the
+README and nav the whole time — two of three surfaces being right is the shape
+of drift review misses.

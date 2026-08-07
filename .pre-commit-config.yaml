@@ -166,6 +166,25 @@ repos:
             fi
         language: system
         pass_filenames: false
+
+      # The CRD catalogues (docs landing page, README, mkdocs nav) are also
+      # hand-written. A new Kind silently fails to appear on them — the entire
+      # 12-CRD Aura suite was missing from docs/index.md from the day it
+      # shipped, while being correct in the README and nav the whole time.
+      - id: check-crd-catalog
+        name: every CRD listed on docs landing page, README and nav
+        entry: bash
+        args:
+          - -c
+          - |
+            if ! make check-crd-catalog; then
+              echo ""
+              echo "A CRD is missing from a hand-written catalogue. These pages have"
+              echo "no generator — add the Kind where the failure above says."
+              exit 1
+            fi
+        language: system
+        pass_filenames: false
         files: ^(api/v1beta1/.*_types\.go|config/crd/bases/.*\.yaml|docs/api_reference/.*\.md)$
 
   # Security checks (fast)
