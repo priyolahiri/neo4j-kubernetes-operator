@@ -3,7 +3,7 @@
 > **Status:** Draft for review. Not an official product or version commitment.
 > **Source:** Neo4j Operations Manual, *Replicating databases across clusters* (pre-publication preview, 2026.07 docs branch). The page requires a **downstream cluster on 2026.08 or later**; the upstream minimum is stated as 2025.01 but see §9 — mixed-version support is under active test upstream and should not be hardened into operator validation yet.
 > **Scope of this document:** what CCDR needs from a Kubernetes deployment, what this operator already provides, what actually blocks it, and a two-phase delivery shape. Phase 1 (backup-based) is designed to a level a contributor can implement from. Phase 2 (network-based) is deliberately left at the "what must be answered first" stage.
-> **Headline:** backup-based CCDR is largely deliverable on top of machinery the operator already has. Network-based CCDR is blocked on an addressing problem that no amount of Service configuration resolves, and the fix is a new operator capability.
+> **Headline:** backup-based CCDR is largely deliverable on top of machinery the operator already has. Network-based CCDR is blocked on an addressing problem that no amount of Service configuration resolves — confirmed, not merely suspected (§9 Q1) — and the remaining question is which of three cluster-wide addressing strategies to adopt (§9 Q1a).
 
 ---
 
@@ -77,7 +77,13 @@ server.cluster.advertised_address=${HOSTNAME_FQDN}:6000
 
 and `internal/validation/config_validator.go:85-91` **forbids** overriding any `*.advertised_address` via `spec.config` (`operatorRuntimeManagedSettings`).
 
-So even with :6000 exposed externally, upstream members advertise names that do not resolve outside their own Kubernetes cluster. This is the classic advertised-listener problem. **Whether it actually bites depends on an unanswered question — see §9, Q1.** If the downstream only ever dials the addresses it was given, B1 evaporates and Phase 2 shrinks dramatically.
+**Confirmed behaviour (§9 Q1):** the downstream dials *only* the addresses listed in `replicaConfig.addresses`, and those addresses should be the upstream servers' **advertised cluster addresses**. So this is not a redirect-following problem — the downstream never chases an address it learned from the protocol. It is an **identity and routability** problem: the value the operator pins into `server.cluster.advertised_address` is precisely the value that has to be listed downstream, and it is an in-cluster FQDN that does not resolve anywhere else.
+
+This makes B1 narrower than originally feared but **not** removable, and it exposes a structural conflict that is the central Phase 2 design problem:
+
+> There is one `server.cluster.advertised_address` per server, and it serves two consumers with incompatible requirements — intra-cluster peer traffic (wants the internal FQDN; changing it re-routes all normal cluster traffic through an external hop) and cross-cluster CCDR identity (wants an externally routable address).
+
+Resolving that is §9 Q1a, and it gates Phase 2 more tightly than the original Q1 did.
 
 ### B2 — No per-server external exposure
 
@@ -165,6 +171,34 @@ Standard project patterns: finalizer, `retry.RetryOnConflict`, inline validation
 3. Absent → `CREATE REPLICA DATABASE ... OPTIONS {seedURI, replicaConfig:{remote, pullURI}}`.
 4. Present and `type = replica` → reconcile topology drift only. **Do not** attempt to change `replicaConfig`; treat `source` as immutable via a CEL `self == oldSelf` transition rule (the project uses apiserver-side CEL for immutability, consistent with invariant 1's no-webhook rule).
 5. Present and `type != replica` → **promoted, out of band or otherwise.** Go terminal. Never mutate. See §5.4.
+
+### 4.4 `Neo4jBackup` gains a replication-source mode
+
+Decided (§9 Q5). A backup that feeds a replica has requirements a general-purpose backup does not — an unbroken differential chain and a stable directory — and today nothing stops a user from configuring a chain-breaking setup. `mode: replication-source` turns that class of footgun into validation errors at apply time.
+
+```yaml
+kind: Neo4jBackup
+spec:
+  mode: replication-source        # standard (default) | replication-source
+  instanceRef: prod-cluster
+  database: foo
+  schedule: "0 * * * *"
+  storage: {type: s3, bucket: backups, path: prod-foo}
+status:
+  replicationPullURI: s3://backups/prod-foo/<chain-dir>/
+```
+
+Validator rules when `mode: replication-source`:
+
+- **R1 — single-database scope required.** Reject `allDatabases` (the instance-wide artifact layout is not what a per-database `pullURI` consumes). Reject `shardedDatabase` in Phase 1; sharded CCDR is its own track.
+- **R2 — reject an operator-side `spec.retention`.** For PVC storage the delete-time cleanup Job would prune a diff's parent and break the chain outright.
+- **R3 — reject a competing writer.** Another `Neo4jBackup` CR whose `storage` (type + bucket + path) collides, and which is not part of this chain via `chainFromBackup`, is rejected. The existing `part-of` label interlock only serialises *Jobs within one chain*; it does not stop an unrelated CR from sharing a directory.
+- **R4 — require `schedule`.** A replication source with no cadence is a replica that falls arbitrarily far behind.
+- **R5 — publish `status.replicationPullURI`.** The exact string to paste into the downstream `Neo4jReplicaDatabase.spec.source.pullURI`, so nobody hand-assembles bucket + path + `backupsPath`. This is the main ergonomic payoff.
+
+Mode is declared on the chain root and inherited by members; a member declaring a conflicting mode is rejected.
+
+**What this mode cannot protect against, and must say so.** For cloud storage the operator does not prune at all — `RetentionPolicy` delegates to bucket lifecycle rules (`api/v1beta1/neo4jbackup_types.go:162-165`), which the operator can neither read nor validate. **An S3 lifecycle rule expiring old objects will silently break the chain and force a replica rebuild, and no operator-side validation can catch it.** `replication-source` must therefore emit a warning event on first reconcile naming this risk, and the user guide must state it plainly rather than implying the mode confers protection it does not.
 
 ---
 
@@ -270,15 +304,21 @@ This is deliberately *recorded*, not *enforced*. Blocking a failover on a lag th
 
 ## 6. Phase 2 — network replication
 
-Not designed here, because it is gated on §9 Q1. If the answer is "the downstream follows upstream advertised addresses", Phase 2 requires all of:
+Still not designed here, but Q1's answer bounds it. Phase 2 requires all of:
 
 1. a per-server exposure API emitting one Service per pod on :6000 (B2);
-2. an `advertisedAddress` override, which means carving `server.cluster.advertised_address` out of `operatorRuntimeManagedSettings` and managing it as a first-class field rather than a runtime-appended constant (B1);
+2. an externally-routable `server.cluster.advertised_address`, which means carving it out of `operatorRuntimeManagedSettings` and managing it as a first-class field rather than a runtime-appended constant (B1);
 3. external per-server SANs on the cert-manager `Certificate` (B3);
-4. a supported path for the remote CA into the cluster SSL policy's trust directory — most likely projecting `spec.tls.additionalClusterTrustCAs` into `/ssl/trusted/` alongside the operator's own `ca.crt`, since the `extraVolumes` route is structurally unavailable (B3);
+4. a supported path for the remote CA into the cluster SSL policy's trust directory — most likely projecting a new `spec.tls.additionalClusterTrustCAs` into `/ssl/trusted/` alongside the operator's own `ca.crt`, since the `extraVolumes` route is structurally unavailable (B3);
 5. a NetworkPolicy rule admitting remote CIDRs on :6000 (B4).
 
-If the answer is "only the listed addresses are ever dialled", items 1, 3, 4 and 5 remain but item 2 — by far the largest — falls away.
+Item 2 is the hard one, and Q1's answer *sharpened* rather than removed it. Because the downstream dials only the listed addresses, and those must be the upstream's advertised cluster addresses, the advertised address has to be externally routable — but that same value carries all intra-cluster peer traffic. The candidate resolutions, in rough order of preference:
+
+- **(a) Neo4j exposes a separate cross-cluster advertised address.** Cleanest by far; unknown whether it exists. This is the first thing to check (§9 Q1a) because a "yes" collapses item 2 to a normal additive field.
+- **(b) Whole-cluster external addressing.** Every server advertises its external address and intra-cluster traffic hairpins out through the load balancer. Workable — several stateful systems on Kubernetes do exactly this — but it is an opinionated, cluster-wide mode with real latency and cross-zone data-transfer cost, not an additive field. It would need to be explicitly opt-in and loudly documented.
+- **(c) Split-horizon DNS.** The internal FQDN resolves to the pod inside the cluster and to the external endpoint outside it, so one advertised value serves both. Avoids the hairpin, but pushes a hard requirement onto the user's DNS infrastructure that the operator cannot provision or verify.
+
+**Do not start Phase 2 implementation until Q1a picks between these** — they produce materially different APIs, and (b) in particular is a change to how every cluster talks to itself, not a CCDR feature.
 
 ---
 
@@ -296,15 +336,18 @@ If the answer is "only the listed addresses are ever dialled", items 1, 3, 4 and
 2. `Version.SupportsCCDR()` (B7).
 3. Fix the B3 docs-vs-code inconsistency in `tls_configuration.md` — currently the docs point users at a path that cannot work.
 4. `Neo4jReplicaDatabase` + validator + backup-mode reconcile.
-5. `Neo4jReplicaPromotion` + the §5 terminal-guard behaviour.
-6. User guide: the end-to-end backup-based runbook, the failover procedure including the alias step, and the B8 warning about restoring an upstream.
-7. Phase 2, pending §9 Q1.
+5. `Neo4jBackup` `mode: replication-source` + rules R1–R5 (§4.4). Independent of 4, so it can land in parallel.
+6. `Neo4jReplicaPromotion` + the §5 terminal-guard behaviour.
+7. User guide: the end-to-end backup-based runbook, the failover procedure including the alias step, the bucket-lifecycle warning from §4.4, and the B8 warning about restoring an upstream.
+8. Phase 2, pending §9 Q1a.
 
 ---
 
 ## 9. Open questions
 
-**Q1 (blocking Phase 2). Does the downstream only ever dial the addresses listed in `replicaConfig.addresses`, or does it follow the upstream members' advertised addresses for catchup and redirect?** The manual's note that *"there is no requirement that every remote server hosts the upstream database"* hints at redirection. This single answer determines whether network CCDR needs a new advertised-address capability (B1) or merely per-pod Services. **Needs an answer from the clustering team before any Phase 2 work starts.**
+**Q1 — ANSWERED.** The downstream dials *only* the addresses listed in `replicaConfig.addresses`, and those should be the upstream servers' advertised cluster addresses. No redirect-following. Consequence: B1 is narrower than feared but survives, as an identity/routability requirement on `server.cluster.advertised_address` rather than a redirect problem. See B1 and §6.
+
+**Q1a (now the blocker for Phase 2). Does Neo4j offer a cross-cluster advertised address distinct from `server.cluster.advertised_address`?** One value currently serves both intra-cluster peer traffic (wants the internal FQDN) and cross-cluster CCDR identity (wants an externally routable address). If a separate setting exists, Phase 2 item 2 collapses to an ordinary additive field. If not, the choice is between whole-cluster external addressing and split-horizon DNS (§6 (b)/(c)) — both of which change how every cluster talks to itself and need an explicit product decision, not just an implementation. **Ask the clustering team before starting Phase 2.**
 
 **Q2. Upstream version floor.** The manual states 2025.01, but mixed-version support is under active test upstream and the direction has not been finalised. Operator validation should therefore warn rather than reject on upstream version, and the floor should be a constant that is cheap to move.
 
@@ -312,6 +355,6 @@ If the answer is "only the listed addresses are ever dialled", items 1, 3, 4 and
 
 **Q4. Does `dbms.promoteReplicaDatabase` error or no-op against an already-promoted database?** The §5.4 ordering makes the operator correct either way, so this is informational — but it affects the quality of the error surfaced to a user who re-applies a promotion CR.
 
-**Q5. Should `Neo4jBackup` learn a CCDR-aware mode?** The upstream chain for CCDR has requirements a general-purpose backup does not — an unbroken differential chain, and a stable directory. A `spec.mode: replication-source` that refuses configurations which would break the chain (e.g. a competing FULL CR writing to the same path, or a retention policy that prunes a diff's parent) would turn B8-adjacent footguns into validation errors. Deferred, but worth deciding before the user guide sets expectations.
+**Q5 — ANSWERED: yes.** `Neo4jBackup` gains `mode: replication-source`. Designed in §4.4. Note the honest limit recorded there: for cloud storage the operator delegates retention to bucket lifecycle rules it cannot see, so the mode reduces the footgun surface but cannot close it.
 
 **Q6. Alias CRD.** `Neo4jDatabaseAlias` as a follow-on (§5.7), which would also cover non-CCDR use cases.
