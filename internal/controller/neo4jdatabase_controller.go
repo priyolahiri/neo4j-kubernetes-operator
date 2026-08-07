@@ -518,12 +518,12 @@ func (r *Neo4jDatabaseReconciler) importInitialData(ctx context.Context, client 
 
 func (r *Neo4jDatabaseReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
 	// Use the enterprise client method
-	return neo4j.NewClientForEnterprise(cluster, r.Client, cluster.Spec.Auth.AdminSecret)
+	return neo4j.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
 }
 
 func (r *Neo4jDatabaseReconciler) createNeo4jClientForStandalone(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (*neo4j.Client, error) {
 	// Use the enterprise client method for standalone
-	return neo4j.NewClientForEnterpriseStandalone(standalone, r.Client, standalone.Spec.Auth.AdminSecret)
+	return neo4j.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
 }
 
 func (r *Neo4jDatabaseReconciler) isClusterReady(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
