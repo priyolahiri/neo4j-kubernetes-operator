@@ -1,0 +1,11 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jReplicaPromotion
+metadata:
+  name: example-promotion
+spec:
+  # IRREVERSIBLE. The database cannot be re-attached to its upstream, and any
+  # outstanding replication lag becomes permanent data loss.
+  replicaRef: example-replica
+  topology:
+    primaries: 3
+    secondaries: 1

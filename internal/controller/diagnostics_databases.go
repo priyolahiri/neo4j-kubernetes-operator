@@ -41,14 +41,16 @@ func toDatabaseDiagnostics(databases []neo4jclient.DatabaseInfo) []neo4jv1beta1.
 	out := make([]neo4jv1beta1.DatabaseDiagnosticInfo, 0, len(databases))
 	for _, d := range databases {
 		out = append(out, neo4jv1beta1.DatabaseDiagnosticInfo{
-			Name:            d.Name,
-			Status:          d.Status,
-			RequestedStatus: d.RequestedStatus,
-			Role:            d.Role,
-			Default:         d.Default,
-			Type:            d.Type,
-			Access:          d.Access,
-			Writer:          d.Writer,
+			Name:             d.Name,
+			Status:           d.Status,
+			RequestedStatus:  d.RequestedStatus,
+			Role:             d.Role,
+			Default:          d.Default,
+			Type:             d.Type,
+			Access:           d.Access,
+			Writer:           d.Writer,
+			LastCommittedTxn: d.LastCommittedTxn,
+			ReplicationLag:   d.ReplicationLag,
 		})
 	}
 	return out

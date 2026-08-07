@@ -1,0 +1,339 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: neo4jreplicadatabases.neo4j.neo4j.com
+spec:
+  group: neo4j.neo4j.com
+  names:
+    categories:
+    - neo4j
+    kind: Neo4jReplicaDatabase
+    listKind: Neo4jReplicaDatabaseList
+    plural: neo4jreplicadatabases
+    shortNames:
+    - n4jreplica
+    - n4jreplicas
+    singular: neo4jreplicadatabase
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.clusterRef
+      name: Cluster
+      type: string
+    - jsonPath: .spec.upstreamDatabase
+      name: Upstream
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.replicationLag
+      name: Lag
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: Neo4jReplicaDatabase is the Schema for the neo4jreplicadatabases
+          API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              Neo4jReplicaDatabaseSpec defines a read-only cross-cluster replica of a
+              database hosted on another Neo4j cluster.
+
+              This CR is applied to the DOWNSTREAM cluster. The upstream lives in another
+              Kubernetes cluster the operator cannot see; the only coupling is the object
+              storage location the upstream's Neo4jBackup chain writes to.
+
+              Requires Neo4j 2026.08+ on the downstream cluster.
+            properties:
+              clusterRef:
+                description: |-
+                  ClusterRef is the downstream Neo4jEnterpriseCluster or
+                  Neo4jEnterpriseStandalone in the same namespace that will host the
+                  replica.
+                type: string
+              deletionPolicy:
+                default: Delete
+                description: |-
+                  DeletionPolicy controls what happens to the replica database when this
+                  CR is deleted.
+                    Delete (default): DROP DATABASE on CR deletion.
+                    Retain:           leave it in Neo4j, release the finalizer only.
+
+                  This applies only while the database is still a replica. Once promoted,
+                  deletion NEVER drops regardless of this setting — a promoted database is
+                  the live system, and removing a CR that no longer describes it must not
+                  be a data-loss event.
+                enum:
+                - Delete
+                - Retain
+                type: string
+              name:
+                description: |-
+                  Name is the replica database name. Defaults to metadata.name when empty.
+
+                  Choose deliberately: Cypher has no RENAME DATABASE, so this name is
+                  permanent and survives promotion. Pair the replica with a
+                  Neo4jDatabaseAlias if applications should address it under the
+                  upstream's name after failover.
+                maxLength: 63
+                minLength: 3
+                pattern: ^[a-zA-Z][a-zA-Z0-9_.\-]*$
+                type: string
+              pullInterval:
+                description: |-
+                  PullInterval is how often the replica checks the pullURI for new
+                  differential backups (Neo4j's `db.cluster.backup.pull_interval`,
+                  default 1m). It bounds the replica's recovery point objective.
+                pattern: ^[0-9]+(ms|s|m|h)$
+                type: string
+              source:
+                description: |-
+                  Source describes where the replica pulls from. Immutable — Neo4j offers
+                  no way to re-point an existing replica, so a change here would mean
+                  dropping and re-seeding the database.
+                properties:
+                  addresses:
+                    description: |-
+                      Addresses lists upstream cluster endpoints for network mode. Unused
+                      while network mode is rejected; present so the API does not change shape
+                      if it later becomes supported.
+                    items:
+                      type: string
+                    type: array
+                  credentialsSecretRef:
+                    description: |-
+                      CredentialsSecretRef names a Secret holding object-storage credentials
+                      for PullURI/SeedURI, when the downstream cluster cannot reach the bucket
+                      via workload identity. Same key layout as Neo4jBackup's cloud
+                      credentials.
+                    type: string
+                  mode:
+                    default: backup
+                    description: |-
+                      Mode selects the replication mechanism.
+
+                      "backup" pulls a differential backup chain from object storage and
+                      needs no network path between clusters. This is the only mode this
+                      operator supports.
+
+                      "network" streams directly from the upstream's cluster endpoints. It is
+                      rejected by the validator: it requires the upstream servers'
+                      `server.cluster.advertised_address` values to be externally routable,
+                      which this operator pins to in-cluster DNS. See
+                      docs/design/cross-cluster-replication.md §6.
+                    enum:
+                    - backup
+                    - network
+                    type: string
+                  pullURI:
+                    description: |-
+                      PullURI is the object-storage directory holding the upstream's
+                      differential backup chain. Becomes `replicaConfig.pullURI`.
+
+                      This must be the directory the upstream Neo4jBackup CR writes into —
+                      read it from that CR's `status.replicationPullURI`. Pointing at the
+                      bucket root, or at a directory a second backup CR also writes to, breaks
+                      the chain.
+
+                      Example: "s3://prod-backups/foo-chain/"
+                    type: string
+                  seedURI:
+                    description: |-
+                      SeedURI is the full backup artifact the replica is initially seeded
+                      from, before it starts applying differentials. Must belong to the same
+                      chain as PullURI.
+
+                      Example: "s3://prod-backups/foo-chain/foo-2026-08-01T01-00-00.backup"
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: spec.source is immutable; delete and recreate the Neo4jReplicaDatabase
+                    to change the replication source
+                  rule: self == oldSelf
+              topology:
+                description: |-
+                  Topology is how the replica is distributed across the downstream
+                  cluster's servers. Both primaries and secondaries are read-only.
+                properties:
+                  primaries:
+                    description: |-
+                      Number of primary replicas for this database
+
+                      Primaries handle both read and write operations for the database.
+                      At least 1 primary is required for database operation.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  secondaries:
+                    description: |-
+                      Number of secondary replicas for this database
+
+                      Secondaries provide read-only access for horizontal scaling.
+                      Secondaries are optional but improve read performance and availability.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                type: object
+              upstreamDatabase:
+                description: |-
+                  UpstreamDatabase is the name of the database being replicated, as it is
+                  known on the upstream cluster. Becomes `replicaConfig.remote`.
+                maxLength: 63
+                minLength: 1
+                type: string
+            required:
+            - clusterRef
+            - source
+            - upstreamDatabase
+            type: object
+          status:
+            description: Neo4jReplicaDatabaseStatus describes the observed state of
+              a replica.
+            properties:
+              conditions:
+                description: |-
+                  Conditions reflects the latest reconcile state. Conditions used:
+                    Ready            — replica exists and is online
+                    ClusterNotReady  — referenced cluster is not Ready
+                    VersionTooOld    — downstream cluster predates 2026.08
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              databaseType:
+                description: |-
+                  DatabaseType is the live `type` column from SHOW DATABASES — "replica"
+                  while replicating, and a standard type after promotion.
+
+                  This is the operator's authoritative signal, not status.phase: status
+                  can be lost to an etcd restore, so every mutating path re-reads this
+                  value before acting.
+                type: string
+              lastCommittedTxn:
+                description: LastCommittedTxn is the last transaction ID the replica
+                  has applied.
+                format: int64
+                type: integer
+              message:
+                description: Message carries a short human-readable explanation of
+                  the current Phase.
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the .metadata.generation observed during the last
+                  successful reconcile.
+                format: int64
+                type: integer
+              phase:
+                description: |-
+                  Phase is a coarse summary: Pending, Seeding, Replicating, Promoted,
+                  Failed.
+
+                  Promoted is TERMINAL. Once set, the controller stops touching the
+                  database entirely — no create, no topology reconciliation, no drift
+                  correction — because the database is no longer a replica and
+                  "correcting" it back would mean dropping the promoted live system.
+                enum:
+                - Pending
+                - Seeding
+                - Replicating
+                - Promoted
+                - Failed
+                type: string
+              promotedAt:
+                description: PromotedAt is when this replica was promoted to a standard
+                  database.
+                format: date-time
+                type: string
+              promotedBy:
+                description: |-
+                  PromotedBy names the Neo4jReplicaPromotion CR that promoted it, or
+                  "out-of-band" when the operator observed a promotion it did not perform.
+                type: string
+              replicationLag:
+                description: |-
+                  ReplicationLag is how many transactions the replica is behind, and
+                  therefore the data loss that promoting right now would make permanent.
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

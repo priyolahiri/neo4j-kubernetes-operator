@@ -6136,9 +6136,24 @@ spec:
                           description: Default indicates whether this is the default
                             database.
                           type: boolean
+                        lastCommittedTxn:
+                          description: LastCommittedTxn is the ID of the last transaction
+                            this copy received.
+                          format: int64
+                          type: integer
                         name:
                           description: Name is the database name.
                           type: string
+                        replicationLag:
+                          description: |-
+                            ReplicationLag is how many transactions this copy is behind, as
+                            reported by SHOW DATABASES. Always 0 on a standalone.
+
+                            For a cross-cluster replica this is the data loss that promoting right
+                            now would make permanent — promotion cannot re-attach to the upstream
+                            to catch up afterwards.
+                          format: int64
+                          type: integer
                         requestedStatus:
                           description: RequestedStatus is the desired operational
                             status.

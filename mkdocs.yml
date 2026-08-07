@@ -140,6 +140,7 @@ nav:
 
   - Operate:
       - Backup & Restore: user_guide/guides/backup_restore.md
+      - Cross-Cluster Replication: user_guide/guides/cross_cluster_replication.md
       - Upgrades: user_guide/guides/upgrades.md
       - Storage Expansion: user_guide/guides/storage_expansion.md
       - Fault Tolerance: user_guide/guides/fault_tolerance.md
@@ -169,6 +170,9 @@ nav:
           - Neo4jPlugin: api_reference/neo4jplugin.md
           - Neo4jBackup: api_reference/neo4jbackup.md
           - Neo4jRestore: api_reference/neo4jrestore.md
+          - Neo4jReplicaDatabase: api_reference/neo4jreplicadatabase.md
+          - Neo4jReplicaPromotion: api_reference/neo4jreplicapromotion.md
+          - Neo4jDatabaseAlias: api_reference/neo4jdatabasealias.md
           - AuraProviderConfig: api_reference/auraproviderconfig.md
           - AuraInstance: api_reference/aurainstance.md
           - AuraSnapshot: api_reference/aurasnapshot.md

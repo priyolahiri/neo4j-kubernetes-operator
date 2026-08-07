@@ -466,7 +466,32 @@ The operator exposes two fields for this:
 | Field | When to use |
 |---|---|
 | `spec.trustedCASecrets` (list of `{name, key}`) | Most cases. Adds each Secret's CA to Neo4j's JVM-default truststore. Works for OIDC, LDAPS, generic outbound HTTPS. Cert-manager-issued Secrets reference directly — default key `ca.crt` matches. |
-| `spec.extraVolumes` + `spec.extraVolumeMounts` | When a Neo4j SSL policy (e.g. cross-cluster replication) needs a CA at a specific filesystem path via `dbms.ssl.policy.<name>.truststore_path`. |
+| `spec.extraVolumes` + `spec.extraVolumeMounts` | When a **custom** Neo4j SSL policy needs a CA at a specific filesystem path via `dbms.ssl.policy.<name>.truststore_path`. Mount it at a path of your own — see the limitation below. |
+
+!!! warning "This cannot add trust to the operator-managed `cluster` SSL policy"
+
+    `spec.extraVolumes` is **not** a way to make the built-in `cluster` policy
+    trust an additional CA, and earlier revisions of this page implied it was.
+
+    The `cluster` policy reads its trust anchors from `/ssl/trusted/`, which the
+    operator projects from the cluster's own cert-manager Secret with exactly one
+    entry (`ca.crt` → `trusted/ca.crt`). Two things block augmenting it:
+
+    - `/ssl` is a reserved mount path and is rejected by the validator.
+    - `/ssl/trusted` is not itself reserved, so the validator permits it — but
+      mounting a volume there **shadows the operator's own `trusted/ca.crt`**
+      and breaks intra-cluster TLS. Do not do this.
+
+    So `spec.trustedCASecrets` covers outbound TLS from Neo4j-the-server (it
+    builds a JVM truststore at `/truststore/truststore.jks`), and
+    `spec.extraVolumes` covers SSL policies **you** define at paths you choose.
+    Neither can add a peer CA to the operator-managed `cluster` policy.
+
+    **Consequence for cross-cluster replication:** mutual CA trust between two
+    Neo4j clusters — which CCDR's network-replication mode requires — is *not*
+    currently expressible through this operator. Backup-based replication needs
+    no cross-cluster TLS trust at all and is unaffected. See
+    `docs/design/cross-cluster-replication.md` (B3).
 
 The legacy singular `spec.auth.trustStore` continues to work and is folded
 into the same JKS at reconcile time.

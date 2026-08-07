@@ -39,14 +39,16 @@ func TestToDatabaseDiagnostics_Empty(t *testing.T) {
 // database; dropping them in the mapping would silently defeat that.
 func TestToDatabaseDiagnostics_CarriesEveryField(t *testing.T) {
 	in := []neo4jclient.DatabaseInfo{{
-		Name:            "mydb",
-		Status:          "online",
-		RequestedStatus: "online",
-		Role:            "primary",
-		Default:         true,
-		Type:            "standard",
-		Access:          "read-write",
-		Writer:          true,
+		Name:             "mydb",
+		Status:           "online",
+		RequestedStatus:  "online",
+		Role:             "primary",
+		Default:          true,
+		Type:             "standard",
+		Access:           "read-write",
+		Writer:           true,
+		LastCommittedTxn: 918273,
+		ReplicationLag:   0,
 	}}
 
 	got := toDatabaseDiagnostics(in)
@@ -70,6 +72,9 @@ func TestToDatabaseDiagnostics_CarriesEveryField(t *testing.T) {
 	if !d.Writer {
 		t.Error("Writer not carried: got false, want true")
 	}
+	if d.LastCommittedTxn != 918273 {
+		t.Errorf("LastCommittedTxn not carried: got %d, want 918273", d.LastCommittedTxn)
+	}
 }
 
 // TestToDatabaseDiagnostics_Replica pins the shape a cross-cluster replica
@@ -78,13 +83,15 @@ func TestToDatabaseDiagnostics_CarriesEveryField(t *testing.T) {
 // surprises people.
 func TestToDatabaseDiagnostics_Replica(t *testing.T) {
 	in := []neo4jclient.DatabaseInfo{{
-		Name:            "foo-replica",
-		Status:          "online",
-		RequestedStatus: "online",
-		Role:            "primary",
-		Type:            "replica",
-		Access:          "read-only",
-		Writer:          false,
+		Name:             "foo-replica",
+		Status:           "online",
+		RequestedStatus:  "online",
+		Role:             "primary",
+		Type:             "replica",
+		Access:           "read-only",
+		Writer:           false,
+		LastCommittedTxn: 918200,
+		ReplicationLag:   73,
 	}}
 
 	d := toDatabaseDiagnostics(in)[0]
@@ -97,6 +104,10 @@ func TestToDatabaseDiagnostics_Replica(t *testing.T) {
 	}
 	if d.Writer {
 		t.Error("a replica primary must not report writer=true")
+	}
+	// The lag is the RPO a promotion right now would make permanent.
+	if d.ReplicationLag != 73 {
+		t.Errorf("ReplicationLag not carried: got %d, want 73", d.ReplicationLag)
 	}
 }
 

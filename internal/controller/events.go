@@ -273,4 +273,24 @@ const (
 	EventReasonAuraInviteDeleted  = "AuraInviteDeleted"
 	EventReasonAuraInviteOrphaned = "AuraInviteOrphaned"
 	EventReasonAuraInviteFailed   = "AuraInviteFailed"
+
+	// Cross-cluster replication (CCDR) event reasons.
+	EventReasonReplicationSourceCaveat = "ReplicationSourceCaveat"
+	EventReasonReplicaCreated          = "ReplicaCreated"
+	EventReasonReplicaReady            = "ReplicaReady"
+	EventReasonReplicaFailed           = "ReplicaFailed"
+	EventReasonReplicaDropped          = "ReplicaDropped"
+	EventReasonReplicaRetainedPromoted = "ReplicaRetainedAfterPromotion"
+	EventReasonReplicaPromotedDetected = "ReplicaPromotionDetected"
+	EventReasonReplicaVersionTooOld    = "ReplicaVersionTooOld"
+	EventReasonPromotionStarted        = "ReplicaPromotionStarted"
+	EventReasonPromotionCompleted      = "ReplicaPromotionCompleted"
+	EventReasonPromotionFailed         = "ReplicaPromotionFailed"
+
+	// Database alias event reasons.
+	EventReasonAliasCreated    = "AliasCreated"
+	EventReasonAliasRetargeted = "AliasRetargeted"
+	EventReasonAliasReady      = "AliasReady"
+	EventReasonAliasDropped    = "AliasDropped"
+	EventReasonAliasFailed     = "AliasFailed"
 )

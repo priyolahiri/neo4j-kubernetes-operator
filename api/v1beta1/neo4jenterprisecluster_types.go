@@ -1169,6 +1169,19 @@ type DatabaseDiagnosticInfo struct {
 	// cross-cluster replica.
 	// +optional
 	Writer bool `json:"writer,omitempty"`
+
+	// LastCommittedTxn is the ID of the last transaction this copy received.
+	// +optional
+	LastCommittedTxn int64 `json:"lastCommittedTxn,omitempty"`
+
+	// ReplicationLag is how many transactions this copy is behind, as
+	// reported by SHOW DATABASES. Always 0 on a standalone.
+	//
+	// For a cross-cluster replica this is the data loss that promoting right
+	// now would make permanent — promotion cannot re-attach to the upstream
+	// to catch up afterwards.
+	// +optional
+	ReplicationLag int64 `json:"replicationLag,omitempty"`
 }
 
 // UpgradeStatus tracks the progress of an ongoing upgrade

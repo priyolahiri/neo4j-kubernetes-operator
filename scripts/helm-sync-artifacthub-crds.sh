@@ -40,6 +40,9 @@ describe() {
         Neo4jRole)                 echo "Declarative Neo4j role management with privilege-drift reconciliation" ;;
         Neo4jRoleBinding)          echo "Role grants for users provisioned externally (SSO/LDAP/OIDC first-login)" ;;
         Neo4jAuthRule)             echo "Attribute-based access control (ABAC) — claims-to-roles mapping evaluated at OIDC authentication time (Neo4j 2026.03+)" ;;
+        Neo4jDatabaseAlias)        echo "A second name for a database — used to keep a stable connection string across a cross-cluster replica promotion" ;;
+        Neo4jReplicaDatabase)      echo "Read-only cross-cluster replica of a database on another Neo4j cluster, fed by a differential backup chain (Neo4j 2026.08+)" ;;
+        Neo4jReplicaPromotion)     echo "One-shot, irreversible promotion of a cross-cluster replica into a read-write database (disaster-recovery failover)" ;;
         AuraProviderConfig)        echo "Neo4j Aura API credentials and account defaults for Aura orchestration" ;;
         AuraInstance)              echo "Provisions and manages Neo4j Aura cloud instances via the Aura API" ;;
         AuraSnapshot)              echo "Takes on-demand snapshots of Neo4j Aura instances" ;;
