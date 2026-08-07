@@ -133,6 +133,42 @@ type DatabaseInfo struct {
 	Home            bool
 	Role            string
 	RequestedStatus string
+
+	// Type is the `type` column of SHOW DATABASES: "system", "standard" or
+	// "composite" on every supported version, plus "graph shard" /
+	// "property shard" on CalVer 2025.12+, and "replica" for a
+	// cross-cluster replica on 2026.08+.
+	//
+	// This is the authoritative signal for "is this database still a
+	// replica?" — a question the operator cannot answer from its own CR
+	// status, which may be lost to an etcd restore or a status-subresource
+	// wipe. Cross-cluster replica promotion is irreversible, so any code
+	// that would drop and recreate a database must consult the live value
+	// here first. See docs/design/cross-cluster-replication.md §5.4.
+	Type string
+
+	// Access is the `access` column: "read-write" or "read-only".
+	// Replica databases are always read-only, on both primaries and
+	// secondaries.
+	Access string
+
+	// Writer reports whether this copy of the database accepts writes.
+	// False for every copy of a replica database.
+	Writer bool
+
+	// LastCommittedTxn is the ID of the last transaction this copy received.
+	LastCommittedTxn int64
+
+	// ReplicationLag is how many transactions this copy is behind. Always 0
+	// on a standalone.
+	//
+	// For a cross-cluster replica this is the recovery point that would be
+	// lost by promoting right now — promotion is irreversible and cannot
+	// catch up afterwards, so the operator records this at promote time to
+	// make the RPO actually taken auditable. Reading it from SHOW DATABASES
+	// works even when the upstream is unreachable, which is the usual reason
+	// a failover is happening.
+	ReplicationLag int64
 }
 
 // ServerInfo represents information about a Neo4j server
@@ -654,10 +690,18 @@ func (c *Client) GetDatabases(ctx context.Context) ([]DatabaseInfo, error) {
 		timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 
+		// `type`, `access`, `writer`, `lastCommittedTxn` and
+		// `replicationLag` are available on every supported version —
+		// 5.26 LTS and all CalVer — so they need no version gate. (Their
+		// *values* do vary: "graph shard"/"property shard" arrive in
+		// 2025.12 and "replica" in 2026.08, but an older server simply
+		// never returns them.)
 		result, err := session.Run(timeoutCtx, `
 			SHOW DATABASES
-			YIELD name, currentStatus, default, home, role, requestedStatus
-			RETURN name, currentStatus, default, home, role, requestedStatus
+			YIELD name, currentStatus, default, home, role, requestedStatus, type, access, writer,
+			      lastCommittedTxn, replicationLag
+			RETURN name, currentStatus, default, home, role, requestedStatus, type, access, writer,
+			       lastCommittedTxn, replicationLag
 		`, nil)
 		if err != nil {
 			return fmt.Errorf("failed to get databases: %w", err)
@@ -672,14 +716,24 @@ func (c *Client) GetDatabases(ctx context.Context) ([]DatabaseInfo, error) {
 			isHome, _ := record.Get("home")
 			role, _ := record.Get("role")
 			requestedStatus, _ := record.Get("requestedStatus")
+			dbType, _ := record.Get("type")
+			access, _ := record.Get("access")
+			writer, _ := record.Get("writer")
+			lastTxn, _ := record.Get("lastCommittedTxn")
+			lag, _ := record.Get("replicationLag")
 
 			databases = append(databases, DatabaseInfo{
-				Name:            fmt.Sprintf("%v", name),
-				Status:          fmt.Sprintf("%v", status),
-				Default:         fmt.Sprintf("%v", isDefault) == TrueString,
-				Home:            fmt.Sprintf("%v", isHome) == TrueString,
-				Role:            fmt.Sprintf("%v", role),
-				RequestedStatus: fmt.Sprintf("%v", requestedStatus),
+				Name:             fmt.Sprintf("%v", name),
+				Status:           fmt.Sprintf("%v", status),
+				Default:          fmt.Sprintf("%v", isDefault) == TrueString,
+				Home:             fmt.Sprintf("%v", isHome) == TrueString,
+				Role:             fmt.Sprintf("%v", role),
+				RequestedStatus:  fmt.Sprintf("%v", requestedStatus),
+				Type:             columnString(dbType),
+				Access:           columnString(access),
+				Writer:           fmt.Sprintf("%v", writer) == TrueString,
+				LastCommittedTxn: columnInt64(lastTxn),
+				ReplicationLag:   columnInt64(lag),
 			})
 		}
 
@@ -691,6 +745,34 @@ func (c *Client) GetDatabases(ctx context.Context) ([]DatabaseInfo, error) {
 	})
 
 	return databases, err
+}
+
+// columnString renders a result column as a string, mapping a NULL column to
+// "" rather than the literal "<nil>" that fmt.Sprintf would produce. Used for
+// columns whose value is surfaced into CR status, where "<nil>" would be both
+// confusing to a reader and awkward to compare against.
+func columnString(v any) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// columnInt64 renders an INTEGER result column, returning 0 when the column
+// is NULL or carries an unexpected type. Neo4j's Go driver decodes Cypher
+// INTEGER as int64; the other cases are defensive so a surprising value
+// cannot panic a diagnostics pass, which must never fail a reconcile.
+func columnInt64(v any) int64 {
+	switch n := v.(type) {
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	case float64:
+		return int64(n)
+	default:
+		return 0
+	}
 }
 
 // GetConnectionPoolMetrics returns current connection pool metrics

@@ -457,6 +457,10 @@ check-knowledge: check-invariants check-knowledge-drift ## Run both LLM-readines
 check-apiref-drift: ## Verify docs/api_reference/ pages exist and document every top-level CRD spec field (hand-written docs have no generator).
 	@go run ./scripts/check-apiref-drift
 
+.PHONY: check-crd-catalog
+check-crd-catalog: ## Verify every CRD is listed on the docs landing page, the README, and the mkdocs nav (hand-written catalogues have no generator).
+	@go run ./scripts/check-crd-catalog
+
 .PHONY: helm-lint
 helm-lint: ## Lint the Helm chart
 	helm lint charts/neo4j-operator

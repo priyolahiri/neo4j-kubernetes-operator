@@ -66,6 +66,9 @@ annotations:
     - kind: Neo4jBackup
       version: v1beta1
       description: Manages Neo4j backup operations
+    - kind: Neo4jDatabaseAlias
+      version: v1beta1
+      description: A second name for a database — used to keep a stable connection string across a cross-cluster replica promotion
     - kind: Neo4jDatabase
       version: v1beta1
       description: Manages Neo4j databases within clusters
@@ -78,6 +81,12 @@ annotations:
     - kind: Neo4jPlugin
       version: v1beta1
       description: Manages Neo4j plugin installations (APOC, GDS, Bloom, etc.)
+    - kind: Neo4jReplicaDatabase
+      version: v1beta1
+      description: Read-only cross-cluster replica of a database on another Neo4j cluster, fed by a differential backup chain (Neo4j 2026.08+)
+    - kind: Neo4jReplicaPromotion
+      version: v1beta1
+      description: One-shot, irreversible promotion of a cross-cluster replica into a read-write database (disaster-recovery failover)
     - kind: Neo4jRestore
       version: v1beta1
       description: Manages Neo4j restore operations

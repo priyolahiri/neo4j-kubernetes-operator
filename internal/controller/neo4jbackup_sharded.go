@@ -109,7 +109,7 @@ func (r *Neo4jBackupReconciler) shardedPreflightGlobSafety(ctx context.Context, 
 		return nil
 	}
 
-	client, err := neo4jclient.NewClientForEnterprise(cluster, r.Client, cluster.Spec.Auth.AdminSecret)
+	client, err := neo4jclient.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
 	if err != nil {
 		// Connect failures are indistinguishable from a cluster that is
 		// momentarily unreachable — transient (#217), not a glob violation.

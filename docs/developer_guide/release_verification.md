@@ -48,13 +48,18 @@ cluster only when it *needs* clustering.
 | Property sharding | Cluster (CalVer) | Cluster-only by nature; needs a CalVer image and is memory-heavy |
 | **Aura orchestration** (`Aura*` CRDs) | **Phase 4 — no Kind deployment**; needs Aura API credentials | Talks to a *cloud* API, not a local DBMS, so no phase above exercises it. Read-only checks need only a client ID/secret; write checks mutate real cloud resources — see the phase for what is and is not safe |
 | **Aura Fleet Management** | Standalone (+ Aura creds for `provision`) | The plugin/registration path is deployment-independent, so the cheap phase covers it; operator-driven `provision` additionally needs Aura API credentials |
+| **Cross-cluster replication** (`Neo4jReplicaDatabase`, `Neo4jReplicaPromotion`) | **Phase 5 — two deployments, run SEQUENTIALLY**; needs a `2026.08+` image | Needs an upstream *and* a downstream, which looks like it breaks the one-deployment-at-a-time rule — but backup-based replication couples the two only through a bucket, so the upstream can be torn down before the downstream comes up. See the phase |
+| **Database aliases** (`Neo4jDatabaseAlias`) | Standalone | Alias DDL is deployment-independent; the CCDR failover behaviour is covered in Phase 5 |
 
 ## The phase plan
 
 Run **Phases 1-3 every time** (Phase 3 included — sharding regularly surfaces
 issues the lighter phases miss). Phase 4 (Aura) needs cloud credentials rather
 than a Kind cluster: run its **read-only sweep** whenever anything under
-`internal/aura/` or an `Aura*` CRD changed.
+`internal/aura/` or an `Aura*` CRD changed. Phase 5 (CCDR) needs a `2026.08+`
+image, which is above the pinned CI anchor — run it whenever anything under the
+replication CRDs changed **and** such an image is available; if it is not, say
+so in the log rather than recording the phase as passed.
 
 ### Phase 1 — Standalone (1 pod, ~2Gi)
 
@@ -70,6 +75,8 @@ than a Kind cluster: run its **read-only sweep** whenever anything under
 | All-databases restore (standalone) | two user DBs → `Neo4jBackup` `allDatabases: true` → mutate both → `Neo4jRestore` `allDatabases: true` (`stopCluster: true`, `options.replaceExisting: true`); confirm both round-trip via the single offline Job and `status.databaseResults` are all `Completed` (`system` excluded) (#288) |
 | Standalone recommended labels | `kubectl get pods -l app.kubernetes.io/name=neo4j` returns the standalone pod (it carries `app.kubernetes.io/{name,instance,managed-by}`) |
 | `system` is not restorable | a `Neo4jRestore` with `database: system` → `Failed` with an actionable message |
+| Database alias | `Neo4jDatabaseAlias` → Ready; connect via the alias name and reach the target; `SHOW ALIASES FOR DATABASE` lists it. Then re-point `spec.targetDatabase` at a second database and confirm the same connection string now reaches the new one |
+| Alias drift is corrected | `ALTER ALIAS` it elsewhere by hand → next reconcile restores `spec.targetDatabase` |
 
 → **Tear down the standalone fully** before Phase 2 — but **KEEP the backup PVC**
 (and the `Neo4jBackup` CR that owns it, so retention does not prune the artifact).
@@ -179,20 +186,67 @@ delete can leave a running instance behind. Confirm with
 `GET /v1/instances/<id>` → **404** and a project instance list of **0** before you
 call the phase done.
 
+### Phase 5 — Cross-cluster replication (two deployments, run sequentially; needs `2026.08+`)
+
+**Run this only when a `2026.08+` enterprise image is available.** Hosting a
+replica requires it, and the check is enforced — on an older image the CR fails
+with `ReplicaVersionTooOld` and nothing else in this phase can proceed. That is
+itself scenario 1: confirm the gate fires rather than silently doing nothing.
+
+This phase looks like it breaks the **one Enterprise deployment at a time**
+ground rule. It does not, and the reason is the point of the feature: with
+backup-based replication the two clusters are coupled **only through the
+object store**, never over the network. So the upstream produces its chain,
+gets torn down, and *then* the downstream comes up and pulls from the bucket.
+Two deployments, never concurrent.
+
+Stand up MinIO as the shared bucket (same pattern the backup specs use).
+
+**Part A — upstream (standalone is enough):**
+
+| Scenario | Verify |
+|---|---|
+| Replication-source backup | `Neo4jBackup` `mode: replication-source` + `database` + `schedule` → `status.replicationPullURI` is populated and points at the chain directory. **Copy this value** |
+| Chain-breaking configs rejected | the same CR with `retention` set, or `allDatabases: true`, or no `schedule` → phase `Invalid`, message names the rule |
+| A FULL then a DIFF | let (or force) two runs so the bucket holds a full **and** a differential — a seed-only chain does not exercise the pull path |
+
+→ **Tear the upstream down completely.** Leave the MinIO bucket intact.
+
+**Part B — downstream (fresh deployment, `2026.08+`):**
+
+| Scenario | Verify |
+|---|---|
+| Replica seeds | `Neo4jReplicaDatabase` with `source.pullURI`/`seedURI` from Part A → phase `Replicating`; `SHOW DATABASES` shows `type=replica`, `access=read-only`, `writer=false` on **every** copy including primaries |
+| Replica is read-only | a write via `cypher-shell` fails; the same query with `--access-mode=read` succeeds |
+| Alias pre-staged against a replica | `Neo4jDatabaseAlias` targeting the replica → `Ready` **while the target is still a replica** (this is what removes work from the failover window) |
+| `network` mode rejected | `source.mode: network` → `Failed`, and the message names `advertised_address`. A bare "unsupported" would send someone off configuring Services |
+| Promotion | `Neo4jReplicaPromotion` → `Completed`; `status.observedLagTxIds` recorded; `SHOW DATABASES` now shows a standard read-write type |
+| Alias survives promotion | the **same** alias now resolves to a read-write database — no CR change, no client reconfiguration |
+| Replica CR goes inert | the `Neo4jReplicaDatabase` is `phase: Promoted`; **delete it and confirm the database is NOT dropped** |
+| Out-of-band promotion is safe | on a second replica, promote by hand at a `cypher-shell`, then let the operator reconcile → it goes `Promoted` (reason `DetectedOutOfBand`) rather than "correcting" the drift by dropping the database |
+
+That last row is the one worth doing carefully: it is the failure mode the
+whole observe-before-act design exists to prevent, and it is invisible to unit
+tests.
+
+→ **Tear down**, then delete the Kind cluster.
+
 ## Coverage at a glance
 
-| | Standalone | Cluster (3) | Sharding (2026.06) | Aura (Phase 4) |
-|---|:---:|:---:|:---:|:---:|
-| Reconcile → Ready | ✅ | ✅ | ✅ | ✅ (instance) |
-| Database lifecycle | ✅ | | | ✅ (`AuraDatabase`) |
-| Database topology | | ✅ | | n/a (Aura-managed) |
-| Users / Roles / Bindings | ✅ | | | n/a (console-RBAC only) |
-| Plugins (APOC) | ✅ (ConfigMap) | | | n/a |
-| Backup → restore | ✅ (neo4j-admin) | ✅ (Cypher) | ✅ (sharded) | ✅ (per-DB, API) |
-| Property sharding | | | ✅ | |
-| Aura Fleet Management | ✅ (plugin + token) | | | ✅ (`provision`) |
-| Aura console RBAC | | | | ✅ |
-| Aura read-contract sweep | | | | ✅ (GET-only) |
+| | Standalone | Cluster (3) | Sharding (2026.06) | Aura (Phase 4) | CCDR (Phase 5, 2026.08+) |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Reconcile → Ready | ✅ | ✅ | ✅ | ✅ (instance) | ✅ |
+| Database lifecycle | ✅ | | | ✅ (`AuraDatabase`) | |
+| Database topology | | ✅ | | n/a (Aura-managed) | ✅ (replica) |
+| Users / Roles / Bindings | ✅ | | | n/a (console-RBAC only) | |
+| Plugins (APOC) | ✅ (ConfigMap) | | | n/a | |
+| Backup → restore | ✅ (neo4j-admin) | ✅ (Cypher) | ✅ (sharded) | ✅ (per-DB, API) | ✅ (chain as source) |
+| Property sharding | | | ✅ | | |
+| Aura Fleet Management | ✅ (plugin + token) | | | ✅ (`provision`) | |
+| Aura console RBAC | | | | ✅ | |
+| Aura read-contract sweep | | | | ✅ (GET-only) | |
+| Cross-cluster replication | | | | | ✅ |
+| Database aliases | ✅ | | | | ✅ (survives promotion) |
 
 ## Keeping this current
 
@@ -212,6 +266,7 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.
 | Release | Date | Result | Findings |
 |---|---|---|---|
 | v1.12.2 | 2026-06-14 | ✅ all phases pass | Doc bug: `backup_restore.md` sharded `target.name` said *logical name*, must be *CR name* (fixed, `#270` follow-up). v1.12.2 surfaces (#260/#268/#269/#270) verified live. |
+| _(pre-merge, PR #333)_ | 2026-08-07 | ⚠️ partial — Phases 1 (alias scenarios) + 5A/5B validation only | **Bug found + fixed:** `spec.auth` is optional on Cluster/Standalone, but five call sites dereferenced `Spec.Auth.AdminSecret` unguarded — a `Neo4jDatabase` against a standalone without `spec.auth` panicked the reconciler and the CR sat with an empty status forever, with nothing on the CR explaining why. Widest site was `ResolvedTarget.NewClient`, shared by the user/role/binding/authrule and replication controllers. Fixed to use the existing nil-safe helpers. **Also:** `make deploy-dev-local` reports "deployment configured" without restarting the pod when the `:dev` tag is unchanged, so a rebuilt binary silently does not take effect — needs `kubectl rollout restart`. **Verified pass:** alias create/resolve, blue-green re-point, drift correction, alias delete does not drop the target; replica version gate (2026.08 required, refused on 2026.06), network-mode rejection naming `advertised_address`, replication-source R1/R2/R4 rejections, `status.replicationPullURI` published. **Not run:** replica seeding, promotion, and alias-survives-promotion — need a 2026.08+ image, which is not yet published (highest on Docker Hub is 2026.06). |
 | v1.14.0 | 2026-08-02 | ✅ all 4 phases pass (19/19 scenarios) — 3 bugs + 4 doc gaps found | **Bugs:** (1) deleting a `Neo4jPlugin` against a live deployment never finalizes — the removal Job is re-created every reconcile and fails `already exists`, so the CR stays Terminating and blocks namespace deletion; (2) `examples/property_sharding/development-property-sharding.yaml` does not boot — `spec.propertySharding.config` bypasses the memory-key exclusion that `spec.config` gets, so a user `heap.max_size` contradicts the operator-derived `heap.initial_size` and the JVM refuses to start; (3) `make dev-up` loads no `aura*` controller (the dev `-controllers` default omits all 12), so every Aura CR is accepted and then silently ignored — no status, no events, no logs. **Doc gaps:** Phase 1 teardown destroys the backup Phase 2's cross-topology scenario needs; Phase 4 teardown leaves a billing instance because `deletionPolicy` defaults to `Orphan`; the `multiDatabase`-stays-absent rule holds only with no org configured; sharding examples pin `2026.04` while the CI anchor is `2026.06`. **Also:** a crash-looping member surfaces only as `ConnectivityDegraded`, which points at Bolt rather than the container. |
 
 ## See also

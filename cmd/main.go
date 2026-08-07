@@ -129,6 +129,7 @@ var (
 var devControllerKeys = []string{
 	"cluster", "standalone", "database", "backup", "restore", "plugin",
 	"shardeddatabase", "user", "role", "rolebinding", "authrule",
+	"databasealias", "replicadatabase", "replicapromotion",
 	"auraproviderconfig", "aurainstance", "aurasnapshot", "aurarestore",
 	"auracustomermanagedkey", "auraipfilter", "auradatabase",
 	"auradatabasebackup", "auradatabaserestore", "auraorganizationmember",
@@ -432,6 +433,35 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 			},
 		},
 		{
+			name: "Neo4jDatabaseAlias",
+			controller: &controller.Neo4jDatabaseAliasReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-databasealias-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+				Validator:    validation.NewAliasValidator(mgr.GetClient()),
+			},
+		},
+		{
+			name: "Neo4jReplicaDatabase",
+			controller: &controller.Neo4jReplicaDatabaseReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-replicadatabase-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+				Validator:    validation.NewReplicaValidator(mgr.GetClient()),
+			},
+		},
+		{
+			name: "Neo4jReplicaPromotion",
+			controller: &controller.Neo4jReplicaPromotionReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-replicapromotion-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			},
+		},
+		{
 			name: "Neo4jUser",
 			controller: &controller.Neo4jUserReconciler{
 				Client:       mgr.GetClient(),
@@ -671,6 +701,32 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				RequeueAfter: controller.GetTestRequeueAfter(),
 				Validator:    validation.NewRoleValidator(mgr.GetClient()),
 			}, "Neo4jRole"
+		},
+		"databasealias": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jDatabaseAliasReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-databasealias-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+				Validator:    validation.NewAliasValidator(mgr.GetClient()),
+			}, "Neo4jDatabaseAlias"
+		},
+		"replicadatabase": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jReplicaDatabaseReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-replicadatabase-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+				Validator:    validation.NewReplicaValidator(mgr.GetClient()),
+			}, "Neo4jReplicaDatabase"
+		},
+		"replicapromotion": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jReplicaPromotionReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-replicapromotion-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+			}, "Neo4jReplicaPromotion"
 		},
 		"user": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
 			return &controller.Neo4jUserReconciler{

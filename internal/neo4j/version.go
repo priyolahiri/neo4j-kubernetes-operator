@@ -344,3 +344,60 @@ func (v *Version) SupportsAuthRules() bool {
 	}
 	return v.Major == 2026 && v.Minor >= 3
 }
+
+// Cross-cluster database replication (CCDR) version floors.
+//
+// Kept as constants so the gate below and the operator's user-facing error
+// messages read from one source. The equivalent AUTH RULE gate spells its
+// version into both the code and the message string, which is exactly the
+// drift this avoids.
+const (
+	// MinCCDRReplicaVersion is the lowest Neo4j version that can HOST a
+	// replica database — i.e. the downstream cluster. Enforced.
+	MinCCDRReplicaVersion = "2026.08"
+
+	// MinCCDRUpstreamVersion is the lowest Neo4j version that can be
+	// replicated FROM. Provisional — see MeetsCCDRUpstreamFloor.
+	MinCCDRUpstreamVersion = "2025.01"
+)
+
+// SupportsCCDRReplica reports whether this Neo4j version can host a
+// cross-cluster replica database — the DOWNSTREAM role. Replica support
+// (CREATE REPLICA DATABASE, dbms.promoteReplicaDatabase, the "replica"
+// value of the SHOW DATABASES `type` column) arrives in 2026.08. 5.26 LTS
+// and every earlier CalVer return false.
+//
+// Deliberately named for the role rather than the feature: upstream and
+// downstream have different floors (see MeetsCCDRUpstreamFloor), so a single
+// "supports CCDR" predicate would silently answer the wrong question at half
+// its call sites.
+//
+// See docs/design/cross-cluster-replication.md.
+func (v *Version) SupportsCCDRReplica() bool {
+	if !v.IsCalver {
+		return false
+	}
+	if v.Major > 2026 {
+		return true
+	}
+	return v.Major == 2026 && v.Minor >= 8
+}
+
+// MeetsCCDRUpstreamFloor reports whether this Neo4j version is new enough to
+// be replicated FROM — the UPSTREAM role. The manual gives this floor as
+// 2025.01, which makes it currently equivalent to IsCalver by construction
+// (CalVer minors start at 01, so every CalVer release is >= 2025.01). It is
+// written as its own predicate anyway for two reasons:
+//
+//  1. The mixed-version story is still being settled upstream, so this floor
+//     is the most likely thing in this file to move. When it does, the body
+//     changes here and every caller is corrected at once.
+//  2. Callers should WARN rather than reject on this. The operator manages
+//     the downstream cluster and can enforce SupportsCCDRReplica against it,
+//     but the upstream lives in another Kubernetes cluster the operator
+//     cannot inspect — any upstream version it is told about is a user-
+//     supplied claim, not an observation. Refusing to reconcile on the basis
+//     of an unverifiable claim would be worse than surfacing a warning.
+func (v *Version) MeetsCCDRUpstreamFloor() bool {
+	return v.IsCalver
+}

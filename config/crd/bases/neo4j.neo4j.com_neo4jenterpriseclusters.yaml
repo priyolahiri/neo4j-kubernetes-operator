@@ -6127,13 +6127,33 @@ spec:
                       description: DatabaseDiagnosticInfo holds the observed state
                         of a single Neo4j database.
                       properties:
+                        access:
+                          description: |-
+                            Access is the database access mode: "read-write" or "read-only".
+                            Cross-cluster replicas are always read-only.
+                          type: string
                         default:
                           description: Default indicates whether this is the default
                             database.
                           type: boolean
+                        lastCommittedTxn:
+                          description: LastCommittedTxn is the ID of the last transaction
+                            this copy received.
+                          format: int64
+                          type: integer
                         name:
                           description: Name is the database name.
                           type: string
+                        replicationLag:
+                          description: |-
+                            ReplicationLag is how many transactions this copy is behind, as
+                            reported by SHOW DATABASES. Always 0 on a standalone.
+
+                            For a cross-cluster replica this is the data loss that promoting right
+                            now would make permanent — promotion cannot re-attach to the upstream
+                            to catch up afterwards.
+                          format: int64
+                          type: integer
                         requestedStatus:
                           description: RequestedStatus is the desired operational
                             status.
@@ -6146,6 +6166,23 @@ spec:
                           description: Status is the current operational status (e.g.
                             "online", "offline", "quarantined").
                           type: string
+                        type:
+                          description: |-
+                            Type is the database type as reported by SHOW DATABASES: "system",
+                            "standard" or "composite" on every supported version, plus
+                            "graph shard" / "property shard" on Neo4j 2025.12+, and "replica"
+                            for a cross-cluster replica on 2026.08+.
+
+                            Surfacing this makes a replica distinguishable from an ordinary
+                            database in `kubectl describe` — previously the operator collected
+                            no column that told them apart.
+                          type: string
+                        writer:
+                          description: |-
+                            Writer indicates whether the most recently contacted server holds the
+                            copy of this database that accepts writes. Always false for a
+                            cross-cluster replica.
+                          type: boolean
                       required:
                       - name
                       - requestedStatus

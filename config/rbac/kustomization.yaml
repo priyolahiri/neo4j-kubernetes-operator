@@ -37,12 +37,18 @@ resources:
   - neo4jbackup_viewer_role.yaml
   - neo4jdatabase_editor_role.yaml
   - neo4jdatabase_viewer_role.yaml
+  - neo4jdatabasealias_editor_role.yaml
+  - neo4jdatabasealias_viewer_role.yaml
   - neo4jenterprisecluster_editor_role.yaml
   - neo4jenterprisecluster_viewer_role.yaml
   - neo4jenterprisestandalone_editor_role.yaml
   - neo4jenterprisestandalone_viewer_role.yaml
   - neo4jplugin_editor_role.yaml
   - neo4jplugin_viewer_role.yaml
+  - neo4jreplicadatabase_editor_role.yaml
+  - neo4jreplicadatabase_viewer_role.yaml
+  - neo4jreplicapromotion_editor_role.yaml
+  - neo4jreplicapromotion_viewer_role.yaml
   - neo4jrestore_editor_role.yaml
   - neo4jrestore_viewer_role.yaml
   - neo4jrole_editor_role.yaml

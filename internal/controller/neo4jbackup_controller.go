@@ -147,12 +147,55 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// spec re-triggers reconcile; unlike the terminal one-time "Failed" guard)
 	// and don't requeue. Catching it here gives a clear, aggregated message
 	// instead of an opaque apiserver failure when a resource is later created.
-	if errs := validation.NewBackupValidator().Validate(backup); len(errs) > 0 {
+	errs := validation.NewBackupValidator().Validate(backup)
+
+	// mode=replication-source carries extra constraints (design §4.4): the
+	// differential chain feeding a cross-cluster replica must stay unbroken
+	// and must own its directory. The competing-writer rule needs to see the
+	// other Neo4jBackups in the namespace, which the base validator has no
+	// client to fetch, so it runs here.
+	if backup.Spec.Mode == validation.BackupModeReplicationSource {
+		var siblings neo4jv1beta1.Neo4jBackupList
+		if err := r.List(ctx, &siblings, client.InNamespace(backup.Namespace)); err != nil {
+			// Not fatal to validation: fall back to checking everything the
+			// sibling list is not needed for, rather than blocking the
+			// reconcile on a transient List failure.
+			logger.Error(err, "could not list Neo4jBackups for replication-source conflict check")
+			errs = append(errs, validation.ValidateReplicationSourceMode(backup, nil)...)
+		} else {
+			errs = append(errs, validation.ValidateReplicationSourceMode(backup, siblings.Items)...)
+		}
+	}
+
+	if len(errs) > 0 {
 		msg := errs.ToAggregate().Error()
 		logger.Info("Invalid Neo4jBackup spec", "errors", msg)
 		r.updateBackupStatus(ctx, backup, "Invalid", "Invalid backup spec: "+msg)
 		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
 		return ctrl.Result{}, nil
+	}
+
+	// Publish the exact directory a downstream replica should pull from, and
+	// surface the limit this mode cannot enforce. For cloud storage the
+	// operator never prunes — retention is delegated to bucket lifecycle
+	// rules it can neither read nor validate — so a lifecycle rule expiring
+	// old objects will break the chain silently and force a replica rebuild.
+	// Say so rather than implying the mode confers protection it does not.
+	if backup.Spec.Mode == validation.BackupModeReplicationSource && backup.Status.ReplicationPullURI == "" {
+		pullURI := validation.ReplicationPullURI(backup.Spec.Storage, chainRoot(backup))
+		if pullURI == "" {
+			r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonReplicationSourceCaveat,
+				"storage type "+backup.Spec.Storage.Type+" has no cross-cluster URI form; a replica in "+
+					"another Kubernetes cluster cannot reach it. Use s3, gcs or azure storage for a "+
+					"replication source.")
+		} else {
+			r.setReplicationPullURI(ctx, backup, pullURI)
+			r.Recorder.Eventf(backup, corev1.EventTypeNormal, EventReasonReplicationSourceCaveat,
+				"Replication source ready. Downstream replicas should set source.pullURI=%s. NOTE: the "+
+					"operator cannot see object-store lifecycle rules — any rule that expires objects in "+
+					"this directory will break the differential chain and force the replica to be rebuilt. "+
+					"Exclude this path from lifecycle expiry.", pullURI)
+		}
 	}
 
 	// Get target cluster. NotFound is TRANSIENT (#217): `kubectl apply -f dir/`
@@ -2116,6 +2159,30 @@ func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *
 	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update backup status")
+	}
+}
+
+// setReplicationPullURI publishes the object-storage directory a downstream
+// cross-cluster replica should pull this chain from.
+//
+// Written once and left alone: the value derives from spec.storage plus the
+// chain root, both of which are stable for the life of the CR. Publishing it
+// spares users assembling bucket + path + chain directory by hand, which is
+// the single most likely thing to get wrong when wiring up a replica.
+func (r *Neo4jBackupReconciler) setReplicationPullURI(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, pullURI string) {
+	update := func() error {
+		latest := &neo4jv1beta1.Neo4jBackup{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(backup), latest); err != nil {
+			return err
+		}
+		if latest.Status.ReplicationPullURI == pullURI {
+			return nil
+		}
+		latest.Status.ReplicationPullURI = pullURI
+		return r.Status().Update(ctx, latest)
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to publish replicationPullURI")
 	}
 }
 

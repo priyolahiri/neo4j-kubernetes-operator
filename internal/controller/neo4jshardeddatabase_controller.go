@@ -411,7 +411,7 @@ func (r *Neo4jShardedDatabaseReconciler) clusterSupportsPropertySharding(cluster
 // createNeo4jClient creates a Neo4j client for the specified cluster
 func (r *Neo4jShardedDatabaseReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
 	// Use the same pattern as the database controller
-	return neo4j.NewClientForEnterprise(cluster, r.Client, cluster.Spec.Auth.AdminSecret)
+	return neo4j.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
 }
 
 // reconcileShardedDatabase handles the creation and management of sharded

@@ -168,6 +168,30 @@ repos:
         pass_filenames: false
         files: ^(api/v1beta1/.*_types\.go|config/crd/bases/.*\.yaml|docs/api_reference/.*\.md)$
 
+      # The CRD catalogues (docs landing page, README, mkdocs nav) are also
+      # hand-written. A new Kind silently fails to appear on them — the entire
+      # 12-CRD Aura suite was missing from docs/index.md from the day it
+      # shipped, while being correct in the README and nav the whole time.
+      #
+      # The trigger set must include the catalogue files themselves, not just
+      # the CRD sources: EDITING one of these pages is exactly when a Kind gets
+      # dropped by accident.
+      - id: check-crd-catalog
+        name: every CRD listed on docs landing page, README and nav
+        entry: bash
+        args:
+          - -c
+          - |
+            if ! make check-crd-catalog; then
+              echo ""
+              echo "A CRD is missing from a hand-written catalogue. These pages have"
+              echo "no generator — add the Kind where the failure above says."
+              exit 1
+            fi
+        language: system
+        pass_filenames: false
+        files: ^(api/v1beta1/.*_types\.go|config/crd/bases/.*\.yaml|docs/index\.md|README\.md|mkdocs\.yml|docs/gitops/argocd-health-checks\.yaml)$
+
   # Security checks (fast)
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2

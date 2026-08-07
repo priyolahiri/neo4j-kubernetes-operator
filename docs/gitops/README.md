@@ -22,11 +22,28 @@ Health state mapping:
 | Degraded       | Failed, Degraded                       |
 | Progressing    | Forming, Pending, Creating, or empty   |
 
-Health checks are configured for all 11 CRDs in the `neo4j.neo4j.com` group:
-the 7 workload CRDs (`Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`,
-`Neo4jDatabase`, `Neo4jBackup`, `Neo4jRestore`, `Neo4jPlugin`,
-`Neo4jShardedDatabase`) and the 4 identity CRDs (`Neo4jUser`, `Neo4jRole`,
-`Neo4jRoleBinding`, `Neo4jAuthRule`).
+Health checks are configured for **all 26 CRDs** in the `neo4j.neo4j.com`
+group — the 14 self-managed CRDs (7 workload, 4 identity, 3 replication) and
+all 12 Aura CRDs. `make check-crd-catalog` fails the build if a CRD is added
+without one.
+
+**Self-managed CRDs** key off `status.phase`, per the table above.
+
+**Aura CRDs** key off the `Ready` **condition** instead. Their `status.phase`
+largely mirrors Aura's *own* API status (`AuraInstance` copies the live instance
+status verbatim), which is an open vocabulary Neo4j can extend without a version
+bump — enumerating running states would silently report any new one as
+`Degraded`. `phase` is still consulted first for the terminal `Error`/`Failed`
+values, because the `Ready` condition can lag a failure by a reconcile.
+
+!!! note "A promoted replica reports Healthy, not Degraded"
+
+    `Neo4jReplicaDatabase` reaching `phase: Promoted` is a **completed
+    failover**, not a fault — its health check maps that to `Healthy`. Mapping
+    it to `Degraded` would show a successful DR promotion as broken, and could
+    prompt an operator (or an automated remediation) to try to "fix" something
+    that is working as designed. The CR is inert from that point on and will
+    never modify the database again.
 
 ## Flux Health Checks
 

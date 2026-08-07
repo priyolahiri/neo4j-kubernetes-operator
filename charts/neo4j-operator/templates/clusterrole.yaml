@@ -139,10 +139,13 @@ rules:
     - aurasnapshots
     - neo4jauthrules
     - neo4jbackups
+    - neo4jdatabasealiases
     - neo4jdatabases
     - neo4jenterpriseclusters
     - neo4jenterprisestandalones
     - neo4jplugins
+    - neo4jreplicadatabases
+    - neo4jreplicapromotions
     - neo4jrestores
     - neo4jrolebindings
     - neo4jroles
@@ -168,10 +171,13 @@ rules:
     - auraprojectmembers/finalizers
     - neo4jauthrules/finalizers
     - neo4jbackups/finalizers
+    - neo4jdatabasealiases/finalizers
     - neo4jdatabases/finalizers
     - neo4jenterpriseclusters/finalizers
     - neo4jenterprisestandalones/finalizers
     - neo4jplugins/finalizers
+    - neo4jreplicadatabases/finalizers
+    - neo4jreplicapromotions/finalizers
     - neo4jrestores/finalizers
     - neo4jrolebindings/finalizers
     - neo4jroles/finalizers
@@ -196,10 +202,13 @@ rules:
     - aurasnapshots/status
     - neo4jauthrules/status
     - neo4jbackups/status
+    - neo4jdatabasealiases/status
     - neo4jdatabases/status
     - neo4jenterpriseclusters/status
     - neo4jenterprisestandalones/status
     - neo4jplugins/status
+    - neo4jreplicadatabases/status
+    - neo4jreplicapromotions/status
     - neo4jrestores/status
     - neo4jrolebindings/status
     - neo4jroles/status
