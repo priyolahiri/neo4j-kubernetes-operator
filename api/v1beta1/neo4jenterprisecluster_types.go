@@ -1147,6 +1147,28 @@ type DatabaseDiagnosticInfo struct {
 	// Default indicates whether this is the default database.
 	// +optional
 	Default bool `json:"default,omitempty"`
+
+	// Type is the database type as reported by SHOW DATABASES: "system",
+	// "standard" or "composite" on every supported version, plus
+	// "graph shard" / "property shard" on Neo4j 2025.12+, and "replica"
+	// for a cross-cluster replica on 2026.08+.
+	//
+	// Surfacing this makes a replica distinguishable from an ordinary
+	// database in `kubectl describe` — previously the operator collected
+	// no column that told them apart.
+	// +optional
+	Type string `json:"type,omitempty"`
+
+	// Access is the database access mode: "read-write" or "read-only".
+	// Cross-cluster replicas are always read-only.
+	// +optional
+	Access string `json:"access,omitempty"`
+
+	// Writer indicates whether the most recently contacted server holds the
+	// copy of this database that accepts writes. Always false for a
+	// cross-cluster replica.
+	// +optional
+	Writer bool `json:"writer,omitempty"`
 }
 
 // UpgradeStatus tracks the progress of an ongoing upgrade

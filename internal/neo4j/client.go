@@ -133,6 +133,28 @@ type DatabaseInfo struct {
 	Home            bool
 	Role            string
 	RequestedStatus string
+
+	// Type is the `type` column of SHOW DATABASES: "system", "standard" or
+	// "composite" on every supported version, plus "graph shard" /
+	// "property shard" on CalVer 2025.12+, and "replica" for a
+	// cross-cluster replica on 2026.08+.
+	//
+	// This is the authoritative signal for "is this database still a
+	// replica?" — a question the operator cannot answer from its own CR
+	// status, which may be lost to an etcd restore or a status-subresource
+	// wipe. Cross-cluster replica promotion is irreversible, so any code
+	// that would drop and recreate a database must consult the live value
+	// here first. See docs/design/cross-cluster-replication.md §5.4.
+	Type string
+
+	// Access is the `access` column: "read-write" or "read-only".
+	// Replica databases are always read-only, on both primaries and
+	// secondaries.
+	Access string
+
+	// Writer reports whether this copy of the database accepts writes.
+	// False for every copy of a replica database.
+	Writer bool
 }
 
 // ServerInfo represents information about a Neo4j server
@@ -654,10 +676,15 @@ func (c *Client) GetDatabases(ctx context.Context) ([]DatabaseInfo, error) {
 		timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 
+		// `type`, `access` and `writer` are available on every supported
+		// version — 5.26 LTS and all CalVer — so they need no version
+		// gate. (Their *values* do vary: "graph shard"/"property shard"
+		// arrive in 2025.12 and "replica" in 2026.08, but an older server
+		// simply never returns them.)
 		result, err := session.Run(timeoutCtx, `
 			SHOW DATABASES
-			YIELD name, currentStatus, default, home, role, requestedStatus
-			RETURN name, currentStatus, default, home, role, requestedStatus
+			YIELD name, currentStatus, default, home, role, requestedStatus, type, access, writer
+			RETURN name, currentStatus, default, home, role, requestedStatus, type, access, writer
 		`, nil)
 		if err != nil {
 			return fmt.Errorf("failed to get databases: %w", err)
@@ -672,6 +699,9 @@ func (c *Client) GetDatabases(ctx context.Context) ([]DatabaseInfo, error) {
 			isHome, _ := record.Get("home")
 			role, _ := record.Get("role")
 			requestedStatus, _ := record.Get("requestedStatus")
+			dbType, _ := record.Get("type")
+			access, _ := record.Get("access")
+			writer, _ := record.Get("writer")
 
 			databases = append(databases, DatabaseInfo{
 				Name:            fmt.Sprintf("%v", name),
@@ -680,6 +710,9 @@ func (c *Client) GetDatabases(ctx context.Context) ([]DatabaseInfo, error) {
 				Home:            fmt.Sprintf("%v", isHome) == TrueString,
 				Role:            fmt.Sprintf("%v", role),
 				RequestedStatus: fmt.Sprintf("%v", requestedStatus),
+				Type:            columnString(dbType),
+				Access:          columnString(access),
+				Writer:          fmt.Sprintf("%v", writer) == TrueString,
 			})
 		}
 
@@ -691,6 +724,17 @@ func (c *Client) GetDatabases(ctx context.Context) ([]DatabaseInfo, error) {
 	})
 
 	return databases, err
+}
+
+// columnString renders a result column as a string, mapping a NULL column to
+// "" rather than the literal "<nil>" that fmt.Sprintf would produce. Used for
+// columns whose value is surfaced into CR status, where "<nil>" would be both
+// confusing to a reader and awkward to compare against.
+func columnString(v any) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", v)
 }
 
 // GetConnectionPoolMetrics returns current connection pool metrics
