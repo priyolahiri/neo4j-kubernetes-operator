@@ -422,13 +422,57 @@ The position would be: *"CCDR on Kubernetes is supported via backup replication.
 
 If network replication is later demanded by a specific customer with a hard sub-minute RPO requirement, (a)/(c) can be revisited with that requirement as justification.
 
-### 6.5 Recommendation
+### 6.5 Prior art: the official Neo4j Helm charts already do option (b)
+
+Checked against `neo4j/helm-charts` at chart `2026.6.0` / appVersion `2026.06.0`.
+
+**By default the charts have exactly our problem.** `neo4j/templates/neo4j-config.yaml` sets:
+
+```
+server.cluster.advertised_address: "$(bash -c 'echo ${SERVICE_NEO4J_INTERNALS}')"
+```
+
+where `SERVICE_NEO4J_INTERNALS` is `<release>-internals.<namespace>.svc.<clusterDomain>` — an in-cluster FQDN, unroutable from anywhere else, same as ours.
+
+**But the charts ship a supported escape hatch, and we do not.** `services.neo4j.multiCluster: true` makes `neo4j-loadbalancer.yaml` open the internal cluster ports on the LoadBalancer — `tcp-tx` (6000), `tcp-raft` (7000), `tcp-discovery` (5000), `tcp-boltrouting` (7688) — and sets `publishNotReadyAddresses: true`. The `examples/multi-cluster/` values then simply override the advertised addresses to the load balancer's IP:
+
+```yaml
+services:
+  neo4j:
+    annotations:
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    spec: {loadBalancerIP: 10.30.1.101}
+    multiCluster: true
+config:
+  server.cluster.advertised_address: "10.30.1.101:6000"
+  server.cluster.raft.advertised_address: "10.30.1.101:7000"
+```
+
+That is option (b), shipped and documented.
+
+**Why it is easy there and hard here — an architectural difference, not a missing feature.** The Helm charts deploy **one Neo4j server per Helm release**: each cluster member is its own release with its own Service and its own load balancer IP. So `server.cluster.advertised_address` is a *scalar per member* and a user can override it in plain values. This operator deploys **one StatefulSet with N pods under a single CR**, so there is exactly one rendered config for all pods and no scalar override is possible. Getting the same result requires the per-ordinal address templating described in §6.2 — operator code, not a values field.
+
+**Consequences worth taking seriously:**
+
+- **The advice that "exposing the cluster port via Helm should just work" is essentially right — for the Helm charts.** `multiCluster: true` plus advertised-address overrides is a real, existing answer for the network path. Any field-facing CCDR-on-Kubernetes guidance should say so.
+- **This operator currently has a capability gap against the Helm charts.** A user migrating from charts to the operator would *lose* the ability to run cross-K8s-cluster networking. That reframes Phase 2 from "a new feature for a minority" to "parity with the sibling deployment method", which is a stronger claim on roadmap than §6.4 assumed.
+- **The proven design is (b), not (c).** The charts' example mitigates the hairpin objection by using an **internal** load balancer with a private IP routable across peered VNets, not a public one — so intra-cluster traffic hairpins within the private network. That is a meaningful and copyable mitigation of §6.2's main cost.
+
+**Three caveats before treating the chart example as a template:**
+
+1. **The example is 4.4-era and stale.** It sets `dbms.cluster.discovery.resolver_type: LIST` with `dbms.cluster.discovery.endpoints: "...:5000"` — V1 discovery on port 5000 — and its README links to the 4.4 manual. The chart's own current default is the `K8S` resolver on the `tcp-tx` port. The *capability* is current; the *example values* need modernising for 5.26/CalVer before anyone follows them.
+2. **`multiCluster` mode forces abandoning the chart's default discovery.** `dbms.cluster.discovery.resolver_type: K8S` with `dbms.kubernetes.label_selector` queries the *local* Kubernetes API and cannot see members in another cluster, which is why the example switches to LIST. Anyone enabling multi-cluster gives up K8S discovery.
+3. **It opens more than CCDR needs.** The flag exposes 5000/6000/7000/7688 together. A downstream replica needs only the cluster/catchup port. An operator-side equivalent should expose 6000 alone, and pair it with the NetworkPolicy work (B4) rather than inheriting the chart's broader surface.
+
+### 6.6 Recommendation
 
 **(a) is off the table** on the documented setting surface (§6.1), so the choice is among the remaining three.
 
-**(d) as the shipped product position**, with **(c) documented but unsupported** for users who already run controllable DNS, and **(b) only** for a customer who needs network replication where DNS cannot be controlled — with the RAFT-availability coupling stated plainly up front, and sized against write volume, since its per-GB cost is the one that grows with success.
+**(d) for the current release, but no longer as a permanent stance — §6.5 undercuts that.** Ship Phase 1 (backup-based) now and decline network replication *for this operator, for now*, while pointing field questions about the network path at the Helm charts' `multiCluster` mode, which already supports it.
 
-The case for (d) is now stronger than when it was written. With (a) eliminated, network replication on Kubernetes cannot be delivered as an additive feature at all: it requires changing how every cluster addresses itself, and both remaining routes degrade something that currently works well for every user who will never use CCDR. Against that, Phase 1 already delivers the DR use case at roughly a one-minute RPO with no networking changes whatsoever.
+Then **(b) as the eventual operator implementation**, following the charts' proven shape: per-pod external endpoints, advertised addresses overridden per ordinal (§6.2), and an *internal* load balancer on a privately-routable IP to keep the hairpin off the public network. **(c) documented but unsupported** for users who already run controllable DNS and want to avoid the hairpin entirely.
+
+Two things changed the weighting here. With (a) eliminated, network replication cannot be an additive feature — it requires changing how every cluster addresses itself. That argues for (d). But §6.5 shows the sibling Helm charts already ship exactly this, which makes a permanent "not supported in the operator" position a **parity gap** rather than a scoping decision: a user moving from charts to the operator would lose a capability. So (d) is the right sequencing call and the wrong end state.
 
 **Do not start Phase 2 implementation until §9 Q1a is confirmed** — and treat the outcome as a product decision about acceptable blast radius, not an implementation choice.
 
