@@ -117,9 +117,26 @@ Resolving that is §9 Q1a. **Phase 1 (backup-based) is entirely unaffected** —
 
 Health checking itself is unaffected: `updateDatabasesCondition` compares `Status` against `RequestedStatus`, so an online replica reads healthy and raises no false alarm.
 
-### B7 — Version gating is absent
+### B7 — Version gating is absent — *implemented, delivery item 2*
 
-Downstream must be ≥ 2026.08. `internal/neo4j/version.go` has the exact template in `SupportsAuthRules()` (gates 2026.03). Note the CI anchor CalVer is currently 2026.06, so CCDR specs will be dispatch-gated and largely local-only until the anchor moves — the same treatment property sharding gets via `isPropertyShardingCompatible()`.
+Downstream must be ≥ 2026.08. Implemented in `internal/neo4j/version.go` as
+**`SupportsCCDRReplica()`**, alongside `MeetsCCDRUpstreamFloor()` and the
+`MinCCDRReplicaVersion` / `MinCCDRUpstreamVersion` constants.
+
+Named for the *role*, not the feature — the placeholder name `SupportsCCDR()`
+used earlier in this document was a trap, because upstream and downstream have
+different floors (2025.01 vs 2026.08) and a single predicate would silently
+answer the wrong question at half its call sites.
+
+The two gates are also enforced differently, deliberately. The operator manages
+the downstream cluster and can *observe* its version, so `SupportsCCDRReplica`
+is a hard gate. The upstream lives in another Kubernetes cluster the operator
+cannot inspect, so any upstream version is a user-supplied claim — callers must
+**warn, not reject**, on `MeetsCCDRUpstreamFloor` (§9 Q2).
+
+Note the CI anchor CalVer is currently 2026.06, so CCDR specs will be
+dispatch-gated and largely local-only until the anchor moves — the same
+treatment property sharding gets via `isPropertyShardingCompatible()`.
 
 ### B8 — Restoring or recreating an upstream database silently detaches its replicas
 
@@ -172,7 +189,7 @@ status:
 
 Standard project patterns: finalizer, `retry.RetryOnConflict`, inline validation in `internal/validation/` (never a webhook), structured events from `internal/controller/events.go`.
 
-1. Resolve `clusterRef`; require downstream version ≥ 2026.08 via a new `Version.SupportsCCDR()`.
+1. Resolve `clusterRef`; require downstream version ≥ 2026.08 via `Version.SupportsCCDRReplica()`. Quote `MinCCDRReplicaVersion` in the failure message rather than a literal, so gate and message cannot drift.
 2. **Observe before acting** — `SHOW DATABASE <name> YIELD name, type, access, writer`. This drives every branch below and is the safety spine of §5.
 3. Absent → `CREATE REPLICA DATABASE ... OPTIONS {seedURI, replicaConfig:{remote, pullURI}}`.
 4. Present and `type = replica` → reconcile topology drift only. **Do not** attempt to change `replicaConfig`; treat `source` as immutable via a CEL `self == oldSelf` transition rule (the project uses apiserver-side CEL for immutability, consistent with invariant 1's no-webhook rule).
@@ -480,7 +497,7 @@ Two things changed the weighting here. With (a) eliminated, network replication 
 
 ## 7. Testing
 
-- **Unit:** Cypher construction for `CREATE REPLICA DATABASE` in both modes; `SupportsCCDR()` version gating; validator table tests; the §5.4 terminal guard, including the out-of-band-promotion branch.
+- **Unit:** Cypher construction for `CREATE REPLICA DATABASE` in both modes; version gating (`SupportsCCDRReplica` / `MeetsCCDRUpstreamFloor` — landed, including a drift guard pinning the floor constants to the gate logic); validator table tests; the §5.4 terminal guard, including the out-of-band-promotion branch.
 - **Integration:** gated behind a dispatch input the way property sharding is (`isPropertyShardingCompatible()`), because the CI anchor CalVer is below 2026.08 (B7). Label every new spec `Label("extended")`.
 - **Two-cluster testing is the hard part.** Backup-based replication is testable on a *single* Kind cluster with two Neo4j deployments and a shared MinIO bucket — but the project invariant is **one Enterprise deployment at a time** (concurrent JVMs wedge Bolt on a laptop). So this lands in the manual pre-release journey (`docs/developer_guide/release_verification.md`) rather than the automated suite, at least initially. Add the scenario there in the same PR that adds the capability.
 
@@ -489,7 +506,7 @@ Two things changed the weighting here. With (a) eliminated, network replication 
 ## 8. Delivery order
 
 1. `DatabaseInfo` gains `Type` / `Access` / `Writer` (B6) — unblocks everything and is independently useful for diagnostics.
-2. `Version.SupportsCCDR()` (B7).
+2. ~~`Version.SupportsCCDR()`~~ → **done**: `Version.SupportsCCDRReplica()` + `MeetsCCDRUpstreamFloor()` + floor constants (B7).
 3. Fix the B3 docs-vs-code inconsistency in `tls_configuration.md` — currently the docs point users at a path that cannot work.
 4. `Neo4jReplicaDatabase` + validator + backup-mode reconcile.
 5. `Neo4jBackup` `mode: replication-source` + rules R1–R5 (§4.4). Independent of 4, so it can land in parallel.
@@ -509,7 +526,7 @@ Consequence: **B1 is confirmed in its strongest form.** `server.cluster.advertis
 
 Remaining ask for the clustering team is narrow: **confirm nothing undocumented or planned changes this.** Design on the assumption it does not, which leaves the choice between (b), (c) and (d) — a product decision about how much cluster-wide addressing change CCDR-on-Kubernetes justifies, not an implementation question. **Still blocks Phase 2.**
 
-**Q2. Upstream version floor.** The manual states 2025.01, but mixed-version support is under active test upstream and the direction has not been finalised. Operator validation should therefore warn rather than reject on upstream version, and the floor should be a constant that is cheap to move.
+**Q2. Upstream version floor — still open, but the code is ready for the answer.** The manual states 2025.01, and mixed-version support remains under active test upstream. Implemented as `MeetsCCDRUpstreamFloor()` + the `MinCCDRUpstreamVersion` constant, so moving the floor is a one-line change that corrects every caller at once. Callers must **warn, not reject**: the upstream is in another Kubernetes cluster the operator cannot inspect, so its version is always a user-supplied claim rather than an observation, and refusing to reconcile on an unverifiable claim is worse than surfacing a warning. Note the predicate is currently equivalent to `IsCalver` by construction (CalVer minors start at 01); it exists as its own function because this floor is the most likely thing in that file to move.
 
 **Q3 — ANSWERED: yes.** Aliases can be created against a replica database. The alias is therefore pre-staged at replica-creation time and needs no action during the failover window; it silently gains write capability at promotion. See §5.7 — this also strengthens the case for pulling `Neo4jDatabaseAlias` (Q6) into Phase 1.
 

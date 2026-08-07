@@ -503,3 +503,84 @@ func TestGetBackupCommand_ToPathShellInjectionGuard(t *testing.T) {
 		t.Errorf("embedded single quote must be escaped, got: %q", cmd)
 	}
 }
+
+func TestSupportsCCDRReplica(t *testing.T) {
+	cases := []struct {
+		version string
+		want    bool
+	}{
+		// 5.26 LTS — no CCDR at all
+		{"5.26.0-enterprise", false},
+		{"5.26.29-enterprise", false},
+		// CalVer below 2026.08 — cannot host a replica
+		{"2025.01.0-enterprise", false},
+		{"2025.12.0-enterprise", false},
+		{"2026.01.0-enterprise", false},
+		{"2026.06.0-enterprise", false}, // current CI anchor
+		{"2026.07.0-enterprise", false}, // the boundary case, one minor below
+		// 2026.08+ — replica support
+		{"2026.08.0-enterprise", true},
+		{"2026.09.1-enterprise", true},
+		{"2026.12.0-enterprise", true},
+		{"2027.01.0-enterprise", true},
+		{"2030.05.0-enterprise", true},
+	}
+	for _, tc := range cases {
+		v, err := ParseVersion(tc.version)
+		if err != nil {
+			t.Fatalf("ParseVersion(%s): %v", tc.version, err)
+		}
+		if got := v.SupportsCCDRReplica(); got != tc.want {
+			t.Errorf("SupportsCCDRReplica(%s) = %v, want %v", tc.version, got, tc.want)
+		}
+	}
+}
+
+func TestMeetsCCDRUpstreamFloor(t *testing.T) {
+	cases := []struct {
+		version string
+		want    bool
+	}{
+		// 5.26 LTS is below the documented upstream floor of 2025.01.
+		{"5.26.0-enterprise", false},
+		{"5.26.29-enterprise", false},
+		// Every CalVer release meets it.
+		{"2025.01.0-enterprise", true},
+		{"2025.06.0-enterprise", true},
+		{"2026.08.0-enterprise", true},
+		{"2027.01.0-enterprise", true},
+	}
+	for _, tc := range cases {
+		v, err := ParseVersion(tc.version)
+		if err != nil {
+			t.Fatalf("ParseVersion(%s): %v", tc.version, err)
+		}
+		if got := v.MeetsCCDRUpstreamFloor(); got != tc.want {
+			t.Errorf("MeetsCCDRUpstreamFloor(%s) = %v, want %v", tc.version, got, tc.want)
+		}
+	}
+}
+
+// TestCCDRVersionConstantsMatchGates pins the constants to the gate logic.
+// The constants are what user-facing error messages quote, so a floor moved
+// in code but not in the constant (or vice versa) would tell users to upgrade
+// to a version the operator still rejects.
+func TestCCDRVersionConstantsMatchGates(t *testing.T) {
+	replicaFloor, err := ParseVersion(MinCCDRReplicaVersion + ".0")
+	if err != nil {
+		t.Fatalf("MinCCDRReplicaVersion %q does not parse: %v", MinCCDRReplicaVersion, err)
+	}
+	if !replicaFloor.SupportsCCDRReplica() {
+		t.Errorf("MinCCDRReplicaVersion %q is rejected by SupportsCCDRReplica; constant and gate have drifted",
+			MinCCDRReplicaVersion)
+	}
+
+	upstreamFloor, err := ParseVersion(MinCCDRUpstreamVersion + ".0")
+	if err != nil {
+		t.Fatalf("MinCCDRUpstreamVersion %q does not parse: %v", MinCCDRUpstreamVersion, err)
+	}
+	if !upstreamFloor.MeetsCCDRUpstreamFloor() {
+		t.Errorf("MinCCDRUpstreamVersion %q is rejected by MeetsCCDRUpstreamFloor; constant and gate have drifted",
+			MinCCDRUpstreamVersion)
+	}
+}
