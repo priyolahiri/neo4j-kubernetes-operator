@@ -32,6 +32,10 @@ limitations under the License.
 //   - README.md     — the GitHub landing page (mentions the Kind)
 //   - mkdocs.yml    — nav entry pointing at the Kind's api_reference page,
 //     without which the page exists but is unreachable
+//   - docs/gitops/argocd-health-checks.yaml — a health check per Kind. This one
+//     is not cosmetic: without an entry ArgoCD cannot tell whether the resource
+//     is ready, so it reports the CR as Progressing forever and any sync-wave
+//     or health gate behind it never completes.
 //
 // The per-page content of api_reference/ is a separate concern, covered by
 // check-apiref-drift.
@@ -101,6 +105,17 @@ func main() {
 			},
 			fix: "add `- <Kind>: api_reference/<kind>.md` under the CRD Reference nav section",
 		},
+		{
+			label: "docs/gitops/argocd-health-checks.yaml",
+			path:  filepath.Join("docs", "gitops", "argocd-health-checks.yaml"),
+			// ArgoCD keys health customizations on
+			// `resource.customizations.health.<group>_<Kind>`.
+			mentions: func(body, kind string) bool {
+				return strings.Contains(body, "resource.customizations.health.neo4j.neo4j.com_"+kind+":")
+			},
+			fix: "add a `resource.customizations.health.neo4j.neo4j.com_<Kind>` Lua block — " +
+				"without it ArgoCD reports the CR as Progressing forever",
+		},
 	}
 
 	for _, s := range surfaces {
@@ -140,7 +155,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("check-crd-catalog: OK — all %d CRD(s) listed in docs/index.md, README.md and the mkdocs nav.\n",
+	fmt.Printf("check-crd-catalog: OK — all %d CRD(s) listed in docs/index.md, README.md, the mkdocs nav and the ArgoCD health checks.\n",
 		len(kinds))
 }
 

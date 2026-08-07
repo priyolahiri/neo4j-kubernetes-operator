@@ -305,3 +305,330 @@ data:
       hs.message = obj.status.message or ("Promotion is " .. phase)
     end
     return hs
+
+  # ---------------------------------------------------------------------------
+  # Neo4j Aura (cloud) CRDs — beta.
+  #
+  # These key off the `Ready` CONDITION rather than status.phase. For the
+  # self-managed CRDs above, phase is an operator-owned vocabulary; for Aura it
+  # largely mirrors Aura's OWN API status (e.g. AuraInstance copies the live
+  # instance status verbatim), which is an open vocabulary Neo4j can extend
+  # without a version bump. Enumerating running states here would silently
+  # report new ones as Degraded. Every Aura controller sets a Ready condition,
+  # so that is the stable signal.
+  #
+  # phase is still consulted first for terminal errors, because the Ready
+  # condition can lag a failure by a reconcile.
+  # ---------------------------------------------------------------------------
+
+  resource.customizations.health.neo4j.neo4j.com_AuraProviderConfig: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for provider config status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura provider config is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura provider config is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura provider config to become ready"
+    return hs
+
+  resource.customizations.health.neo4j.neo4j.com_AuraInstance: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for instance status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura instance is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura instance is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura instance to become ready"
+    return hs
+
+  resource.customizations.health.neo4j.neo4j.com_AuraSnapshot: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for snapshot status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura snapshot is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura snapshot is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura snapshot to become ready"
+    return hs
+
+  resource.customizations.health.neo4j.neo4j.com_AuraRestore: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for restore status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura restore is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura restore is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura restore to become ready"
+    return hs
+
+  resource.customizations.health.neo4j.neo4j.com_AuraCustomerManagedKey: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for customer-managed key status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura customer-managed key is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura customer-managed key is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura customer-managed key to become ready"
+    return hs
+
+  resource.customizations.health.neo4j.neo4j.com_AuraIPFilter: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for IP filter status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura IP filter is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura IP filter is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura IP filter to become ready"
+    return hs
+
+  resource.customizations.health.neo4j.neo4j.com_AuraDatabase: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for database status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura database is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura database is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura database to become ready"
+    return hs
+
+  resource.customizations.health.neo4j.neo4j.com_AuraDatabaseBackup: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for database backup status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura database backup is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura database backup is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura database backup to become ready"
+    return hs
+
+  resource.customizations.health.neo4j.neo4j.com_AuraDatabaseRestore: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for database restore status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura database restore is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura database restore is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura database restore to become ready"
+    return hs
+
+  resource.customizations.health.neo4j.neo4j.com_AuraOrganizationMember: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for organization member status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura organization member is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura organization member is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura organization member to become ready"
+    return hs
+
+  resource.customizations.health.neo4j.neo4j.com_AuraProjectMember: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for project member status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura project member is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura project member is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura project member to become ready"
+    return hs
+
+  resource.customizations.health.neo4j.neo4j.com_AuraInvite: |
+    hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for invite status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Error" or phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or ("Aura invite is " .. phase)
+      return hs
+    end
+    if obj.status.conditions ~= nil then
+      for i, c in ipairs(obj.status.conditions) do
+        if c.type == "Ready" and c.status == "True" then
+          hs.status = "Healthy"
+          hs.message = c.message or "Aura invite is ready"
+          return hs
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = obj.status.message or "Waiting for Aura invite to become ready"
+    return hs

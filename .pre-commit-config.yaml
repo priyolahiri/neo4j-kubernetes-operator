@@ -190,7 +190,7 @@ repos:
             fi
         language: system
         pass_filenames: false
-        files: ^(api/v1beta1/.*_types\.go|config/crd/bases/.*\.yaml|docs/index\.md|README\.md|mkdocs\.yml)$
+        files: ^(api/v1beta1/.*_types\.go|config/crd/bases/.*\.yaml|docs/index\.md|README\.md|mkdocs\.yml|docs/gitops/argocd-health-checks\.yaml)$
 
   # Security checks (fast)
   - repo: https://github.com/gitleaks/gitleaks
