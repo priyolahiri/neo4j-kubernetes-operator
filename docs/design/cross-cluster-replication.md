@@ -281,18 +281,25 @@ After promotion the database is an ordinary standard database, so its natural lo
 
 **Cypher has no `RENAME DATABASE`.** `ALTER DATABASE` covers access mode, default language, options and topology only. A replica named `foo-replica` therefore keeps that name forever, including after it becomes the production database — and applications failing over to DR would have to target `foo-replica`.
 
-The clean fix is a **database alias** on the promoted database:
+The clean fix is a **database alias** on the downstream cluster:
 
 ```cypher
 CREATE ALIAS `foo` FOR DATABASE `foo-replica`;
 ```
 
-so applications keep using the original name after failover. Two consequences for this design:
+**Aliases can target a database that is still a replica** (§9 Q3, answered), which is better than it first appears — it means the alias is **pre-staged at replica-creation time, not created during the failover window**:
 
-1. Document the alias step as part of the failover runbook, not as an afterthought.
-2. The operator has no alias CRD today. A `Neo4jDatabaseAlias` CRD is a natural follow-on and is listed in §9. Until then the alias is a manual `cypher-shell` step, which is acceptable for a break-glass DR procedure but not for a routine one.
+| | Alias `foo` on the DR cluster resolves to | Client experience |
+|---|---|---|
+| Steady state | `foo-replica`, a read-only replica | reads succeed, writes refused |
+| After promotion | `foo-replica`, now a standard database | reads and writes succeed |
 
-*(To verify before this is documented as guidance: whether an alias may be created against a database that is still a replica, or only after promotion. The failover-time cost differs depending on the answer.)*
+So applications on the DR side address `foo` throughout and **need no reconfiguration at failover** — the same connection string silently gains write capability the moment promotion completes. Nothing has to be executed inside the outage window, which is exactly when you least want a manual `cypher-shell` step.
+
+Two consequences for this design:
+
+1. The failover runbook's alias step moves *left*, to replica setup. Document it there, and make the sample manifests create it by default rather than presenting it as an optional extra.
+2. The operator has no alias surface today, so this is currently a manual step at setup time. Because it is now part of the recommended steady-state configuration rather than a break-glass action, **`Neo4jDatabaseAlias` has a stronger claim on Phase 1 scope than when it was filed as a follow-on** (§9 Q6). Flagged, not decided.
 
 ### 5.8 Promoting a lagging replica
 
@@ -312,13 +319,68 @@ Still not designed here, but Q1's answer bounds it. Phase 2 requires all of:
 4. a supported path for the remote CA into the cluster SSL policy's trust directory — most likely projecting a new `spec.tls.additionalClusterTrustCAs` into `/ssl/trusted/` alongside the operator's own `ca.crt`, since the `extraVolumes` route is structurally unavailable (B3);
 5. a NetworkPolicy rule admitting remote CIDRs on :6000 (B4).
 
-Item 2 is the hard one, and Q1's answer *sharpened* rather than removed it. Because the downstream dials only the listed addresses, and those must be the upstream's advertised cluster addresses, the advertised address has to be externally routable — but that same value carries all intra-cluster peer traffic. The candidate resolutions, in rough order of preference:
+Item 2 is the hard one, and Q1's answer *sharpened* rather than removed it. Because the downstream dials only the listed addresses, and those must be the upstream's advertised cluster addresses, the advertised address has to be externally routable — but that same value carries all intra-cluster peer traffic.
 
-- **(a) Neo4j exposes a separate cross-cluster advertised address.** Cleanest by far; unknown whether it exists. This is the first thing to check (§9 Q1a) because a "yes" collapses item 2 to a normal additive field.
-- **(b) Whole-cluster external addressing.** Every server advertises its external address and intra-cluster traffic hairpins out through the load balancer. Workable — several stateful systems on Kubernetes do exactly this — but it is an opinionated, cluster-wide mode with real latency and cross-zone data-transfer cost, not an additive field. It would need to be explicitly opt-in and loudly documented.
-- **(c) Split-horizon DNS.** The internal FQDN resolves to the pod inside the cluster and to the external endpoint outside it, so one advertised value serves both. Avoids the hairpin, but pushes a hard requirement onto the user's DNS infrastructure that the operator cannot provision or verify.
+**Shared prerequisite for (b) and (c): per-pod addressing.** The StatefulSet has one pod template, so per-pod values must be derived at runtime. The operator already does exactly this — `HOSTNAME_FQDN` is built from `${HOSTNAME}` in the startup script (`internal/resources/cluster.go:2249`) — so extending it to index a per-ordinal address list is a small change. Provisioning the endpoints is the hard part, not templating them.
 
-**Do not start Phase 2 implementation until Q1a picks between these** — they produce materially different APIs, and (b) in particular is a change to how every cluster talks to itself, not a CCDR feature.
+### 6.1 Option (a) — a distinct cross-cluster advertised address
+
+If Neo4j exposes a setting separate from `server.cluster.advertised_address` for cross-cluster identity, item 2 collapses to an ordinary additive field: the operator keeps advertising internal FQDNs for peer traffic and advertises external addresses only for CCDR. Nothing about normal clusters changes. **Check this first (§9 Q1a) — a "yes" makes the rest of this section moot.**
+
+### 6.2 Option (b) — whole-cluster external addressing
+
+Every server advertises an externally routable address, and *all* traffic — including intra-cluster RAFT and transaction replication — routes through it.
+
+**How it would work.** One stable external endpoint per pod. Three ways to get them, in descending order of practicality:
+
+- **One load balancer, one port per server** (LB:16000 → server-0:6000, LB:16001 → server-1:6000, …). A single LB instead of N. Because `advertised_address` carries a port, a per-server port is perfectly legal. This is the cost-sane variant and the one to design for.
+- **One LoadBalancer Service per pod**, selected via `statefulset.kubernetes.io/pod-name`. Cleanest addressing, N cloud LBs, N× the standing cost.
+- **NodePort.** Cheapest, but node IPs are not stable and nodes must be externally reachable. Not recommended.
+
+**A chicken-and-egg to design around.** LoadBalancer IPs are not known until the Service is provisioned, but the config referencing them is rendered before pods start. That forces a two-phase reconcile — create Services, wait for `status.loadBalancer.ingress`, re-render, restart pods — *unless* addressing is by DNS name rather than IP, in which case names are known up front. The operator already integrates with external-dns via `spec.service.dnsName`, so the DNS-name variant avoids the extra phase entirely and should be the supported path.
+
+**What it costs, and why it is not free for non-CCDR users:**
+
+- **Hairpin routing.** Every RAFT heartbeat and every transaction ships pod → LB → pod. RAFT is latency-sensitive; added latency shows up as slower commits and more marginal leader elections.
+- **Data-processing charges.** Intra-cluster traffic that was free inside the VPC becomes billed LB throughput. For a write-heavy cluster this is the dominant new cost, and it scales with write volume rather than being a flat fee.
+- **Consensus now depends on the load balancer.** Today an LB blip affects clients only. Under (b) it affects RAFT. This couples cluster availability to a component that was previously outside the availability envelope — the most serious objection to this option.
+- **Hairpin NAT hazards.** A pod connecting to an LB address that routes back to itself is a well-known failure mode; behaviour varies by CNI and kube-proxy mode, and where kube-proxy short-circuits the LB IP to the backend the traffic path silently differs from the external one, which makes testing misleading.
+- **NetworkPolicy rule 2 breaks.** Peer traffic no longer arrives from a pod matching `neo4j.com/cluster` (B4), so the intra-cluster rule must be rewritten in CIDR terms — losing the identity-based restriction that makes it worth having.
+
+**Cost-reduction lever.** `advertised_address` is per-server, so a *subset* of servers could advertise externally while the rest stay internal — fewer exposed endpoints, hairpin confined to those servers. It complicates reasoning about which servers CCDR can dial and creates a mixed-mode cluster, so it is a lever to remember, not a default.
+
+**Verdict.** Self-contained — no dependency the operator cannot provision — but it degrades the common case to serve a rare one, and must therefore be strictly opt-in. Appropriate for small or read-heavy clusters; poor for write-heavy ones.
+
+### 6.3 Option (c) — split-horizon DNS
+
+One name, e.g. `prod-server-0.ccdr.example.com`, resolving to the pod IP inside the Kubernetes cluster and to the external endpoint outside it. The advertised address becomes that globally-meaningful name instead of a `.svc.cluster.local` FQDN.
+
+**How it would work.**
+
+- *Outside:* public DNS (Route53 or similar) maps the name to the LB endpoint. external-dns automates this, and the operator already understands external-dns.
+- *Inside:* CoreDNS must answer the same name with the pod IP — realistically a `rewrite` rule in the Corefile mapping `<cluster>-server-N.ccdr.example.com` to `<cluster>-server-N.<cluster>-headless.<ns>.svc.cluster.local`.
+
+**Why it is technically the better option.** Intra-cluster traffic resolves to pod IPs and never leaves the cluster. So: no hairpin, no added RAFT latency, no LB data-processing charges on internal traffic, **and no coupling of consensus to the load balancer** — the objection that most damns (b). NetworkPolicy rule 2 also keeps working unchanged, because peer traffic still arrives pod-to-pod; only the remote-CIDR rule needs adding. Certificate SANs are simple too: one name per server, valid from both sides.
+
+**Why it is not obviously the right choice.** The Corefile lives in `kube-system` and is shared cluster-wide infrastructure. **The operator must not mutate it** — a bad edit breaks DNS for every workload on the cluster, not just Neo4j. So the inside half of split-horizon is a precondition the user supplies, and the operator's contract degrades to "you make the name resolve correctly on both sides; I will advertise it." When a user gets it wrong, the symptom is a cluster that will not form, at startup, with an opaque DNS error.
+
+**That failure mode is fixable, and the fix is what makes (c) viable.** The operator can *verify* what it must not *provision*: a preflight that resolves the advertised name from inside the pod and compares the result to the pod's own IP, failing loudly with an actionable message before the cluster attempts to form. That converts the worst property of (c) — a mysterious startup failure caused by infrastructure the operator does not own — into a clear, diagnosable precondition error. Any implementation of (c) should treat this preflight as part of the feature, not a nicety.
+
+**Verdict.** Better runtime properties than (b) on every axis; worse out-of-the-box experience, and only suitable for users with controllable DNS automation.
+
+### 6.4 Option (d) — decline network replication on Kubernetes
+
+Worth stating explicitly because it may be the correct *product* answer rather than a concession. Phase 1 delivers backup-based CCDR with **zero** cross-cluster networking, and the RPO difference is roughly one minute (`db.cluster.backup.pull_interval`) versus near-zero. For disaster recovery — the motivating use case behind the field demand — a one-minute RPO is very often acceptable.
+
+The position would be: *"CCDR on Kubernetes is supported via backup replication. Network replication is possible but requires cluster-wide external addressing (§6.2) or split-horizon DNS (§6.3), and is not a supported configuration."* That is honest, ships now, and avoids committing engineering to a cluster-wide addressing change on behalf of a minority of users.
+
+If network replication is later demanded by a specific customer with a hard sub-minute RPO requirement, (a)/(c) can be revisited with that requirement as justification.
+
+### 6.5 Recommendation
+
+**(a) if it exists — check first.** Otherwise **(d) as the shipped product position, with (c) as the documented-but-unsupported path** for users who already run controllable DNS. **(b) only** if a customer needs network replication in an environment where DNS cannot be controlled, and only with the RAFT-availability coupling stated plainly up front.
+
+**Do not start Phase 2 implementation until §9 Q1a resolves** — these produce materially different APIs, and (b) and (c) both change how every cluster talks to itself rather than adding a CCDR feature.
 
 ---
 
@@ -351,10 +413,10 @@ Item 2 is the hard one, and Q1's answer *sharpened* rather than removed it. Beca
 
 **Q2. Upstream version floor.** The manual states 2025.01, but mixed-version support is under active test upstream and the direction has not been finalised. Operator validation should therefore warn rather than reject on upstream version, and the floor should be a constant that is cheap to move.
 
-**Q3. Alias against a replica.** Can `CREATE ALIAS` target a database whose `type` is still `replica`, or only post-promotion? Determines whether the alias is set up ahead of time or during the failover window (§5.7).
+**Q3 — ANSWERED: yes.** Aliases can be created against a replica database. The alias is therefore pre-staged at replica-creation time and needs no action during the failover window; it silently gains write capability at promotion. See §5.7 — this also strengthens the case for pulling `Neo4jDatabaseAlias` (Q6) into Phase 1.
 
 **Q4. Does `dbms.promoteReplicaDatabase` error or no-op against an already-promoted database?** The §5.4 ordering makes the operator correct either way, so this is informational — but it affects the quality of the error surfaced to a user who re-applies a promotion CR.
 
 **Q5 — ANSWERED: yes.** `Neo4jBackup` gains `mode: replication-source`. Designed in §4.4. Note the honest limit recorded there: for cloud storage the operator delegates retention to bucket lifecycle rules it cannot see, so the mode reduces the footgun surface but cannot close it.
 
-**Q6. Alias CRD.** `Neo4jDatabaseAlias` as a follow-on (§5.7), which would also cover non-CCDR use cases.
+**Q6. Alias CRD — reopened as a Phase 1 scope question.** Filed as a follow-on, but Q3's answer moves the alias from a break-glass failover action into the *recommended steady-state configuration* for every replica (§5.7). A setup step that every user performs and the operator cannot express declaratively is a gap in the GitOps story, not a nicety. `Neo4jDatabaseAlias` would also cover ordinary non-CCDR aliasing. **Decide before the user guide is written**, since it determines whether the runbook says "apply this CR" or "exec into a pod and run Cypher".
