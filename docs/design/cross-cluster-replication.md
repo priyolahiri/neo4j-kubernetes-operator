@@ -3,7 +3,7 @@
 > **Status:** Draft for review. Not an official product or version commitment.
 > **Source:** Neo4j Operations Manual, *Replicating databases across clusters* (pre-publication preview, 2026.07 docs branch). The page requires a **downstream cluster on 2026.08 or later**; the upstream minimum is stated as 2025.01 but see §9 — mixed-version support is under active test upstream and should not be hardened into operator validation yet.
 > **Scope of this document:** what CCDR needs from a Kubernetes deployment, what this operator already provides, what actually blocks it, and a two-phase delivery shape. Phase 1 (backup-based) is designed to a level a contributor can implement from. Phase 2 (network-based) is deliberately left at the "what must be answered first" stage.
-> **Headline:** backup-based CCDR is largely deliverable on top of machinery the operator already has. Network-based CCDR is blocked on an addressing problem that no amount of Service configuration resolves — confirmed, not merely suspected (§9 Q1) — and the remaining question is which of three cluster-wide addressing strategies to adopt (§9 Q1a).
+> **Headline:** backup-based CCDR is largely deliverable on top of machinery the operator already has, and is unaffected by everything below. Network-based CCDR is blocked on an addressing problem that no amount of Service configuration resolves (§9 Q1, confirmed), and the clean fix — a cross-cluster address distinct from the intra-cluster one — **does not exist in Neo4j's documented setting surface** (§9 Q1a). What remains is a product decision: accept a cluster-wide addressing change that degrades something working today for every non-CCDR user (§6.2 / §6.3), or ship backup-based replication only and decline the network path on Kubernetes (§6.4). This design recommends the latter.
 
 ---
 
@@ -329,23 +329,39 @@ Item 2 is the hard one, and Q1's full answer makes it **mandatory rather than an
 
 **Shared prerequisite for (b) and (c): per-pod addressing.** The StatefulSet has one pod template, so per-pod values must be derived at runtime. The operator already does exactly this — `HOSTNAME_FQDN` is built from `${HOSTNAME}` in the startup script (`internal/resources/cluster.go:2249`) — so extending it to index a per-ordinal address list is a small change. Provisioning the endpoints is the hard part, not templating them.
 
-### 6.1 Option (a) — a distinct cross-cluster advertised address
+### 6.1 Option (a) — a distinct cross-cluster advertised address — *does not appear to exist*
 
-If Neo4j exposes a setting separate from `server.cluster.advertised_address` for cross-cluster identity, item 2 collapses to an ordinary additive field: the operator keeps advertising internal FQDNs for peer traffic and advertises external addresses only for CCDR. Nothing about normal clusters changes.
+The hope was a setting separate from `server.cluster.advertised_address` for cross-cluster identity, letting the operator keep advertising internal FQDNs to peers while advertising external addresses to replicas. **Three documentation pages say there is no such setting:**
 
-**Q1's answer sharpens what has to be true here.** It is not enough for a separate setting to exist — the upstream's routing response must *return that address* to the downstream rather than the intra-cluster one. A setting that is configurable but not reflected in what the server hands back solves nothing. Phrase the question to the clustering team accordingly (§9 Q1a).
+- *Cluster server discovery* names exactly one advertised-address setting: `server.cluster.advertised_address`.
+- *Clustering settings* enumerates the complete address surface — `server.cluster.advertised_address`, `server.cluster.raft.advertised_address`, `server.bolt.advertised_address`, plus the corresponding `listen_address` settings and `server.bolt.additional_listen_addresses`. **Nothing containing "replica", "remote" or "cross".**
+- *Connectors* covers only the client-facing bolt/http/https pair.
 
-**Check this first — a "yes" makes the rest of this section moot.**
+Worse, the settings reference documents `server.cluster.advertised_address` as *"Advertised hostname/IP address and port for the **transaction shipping server**"* — transaction shipping is precisely the channel CCDR catchup rides. So it is not merely that the two consumers happen to share a setting; **cross-cluster replication and intra-cluster transaction shipping are the same subsystem, addressed by the same value.** There is no seam to split.
+
+One near-miss worth noting: `server.bolt.additional_listen_addresses` shows Neo4j has considered multi-address binding, but it is a *listen* setting with no advertised counterpart, and there is no cluster-port equivalent. Binding to many addresses does not help when only one can be advertised.
+
+**Treat Q1a as confirming a negative** — ask whether anything undocumented or planned exists, but design on the assumption it does not. That leaves (b), (c) and (d).
+
+### 6.1a Note: the discovery resolver is not the fix
+
+Neo4j supports four discovery resolver types — `LIST` (what this operator uses, with static pod FQDNs), `DNS`, `SRV`, and `K8S` (`dbms.cluster.discovery.resolver_type`, with `dbms.kubernetes.label_selector`). Seeing a Kubernetes-native resolver, the natural guess is that switching to it resolves CCDR addressing. **It does not.**
+
+Discovery governs how a server finds *its own cluster's* peers at startup. The advertised address governs what identity a server hands out — including to a downstream replica. They are independent: a cluster using `K8S` discovery still advertises whatever `server.cluster.advertised_address` says, and a downstream replica in another Kubernetes cluster still receives an unroutable name. Changing resolver type is orthogonal to Phase 2 and should not be pursued as a fix for it.
 
 ### 6.2 Option (b) — whole-cluster external addressing
 
 Every server advertises an externally routable address, and *all* traffic — including intra-cluster RAFT and transaction replication — routes through it.
 
+**This is the documented purpose of `advertised_address`, not a hack.** The connectors page gives exactly this pattern as the motivating case — advertised addresses exist for when you are *"routing traffic via a proxy, or if port mappings are in use"*, with the worked example that *"if port 7687 on the Neo4j server is mapped from port 9000 on the external network, specify the `advertised_address` for the Bolt connector."* Advertising an externally-reachable address while listening internally is the intended use. The mechanism is sound; the objection to (b) is cost, not legitimacy.
+
 **How it would work.** One stable external endpoint per pod. Three ways to get them, in descending order of practicality:
 
-- **One load balancer, one port per server** (LB:16000 → server-0:6000, LB:16001 → server-1:6000, …). A single LB instead of N. Because `advertised_address` carries a port, a per-server port is perfectly legal. This is the cost-sane variant and the one to design for.
+- **One load balancer, one port per server** (LB:16000 → server-0:6000, LB:16001 → server-1:6000, …). A single LB instead of N. The connectors page confirms `advertised_address` *"consists of two parts; an address … and a port number"*, so a per-server port that differs from the listen port is explicitly legal. This is the cost-sane variant and the one to design for.
 - **One LoadBalancer Service per pod**, selected via `statefulset.kubernetes.io/pod-name`. Cleanest addressing, N cloud LBs, N× the standing cost.
 - **NodePort.** Cheapest, but node IPs are not stable and nodes must be externally reachable. Not recommended.
+
+**Security note.** The connectors page warns that *"Changing `server.default_listen_address` may expose cluster ports to the network."* Any implementation of (b) must widen listen addresses surgically per-connector rather than via the default, and pair the change with the NetworkPolicy work in item 5 — otherwise exposing :6000 for CCDR quietly exposes RAFT and routing too.
 
 **A chicken-and-egg to design around.** LoadBalancer IPs are not known until the Service is provisioned, but the config referencing them is rendered before pods start. That forces a two-phase reconcile — create Services, wait for `status.loadBalancer.ingress`, re-render, restart pods — *unless* addressing is by DNS name rather than IP, in which case names are known up front. The operator already integrates with external-dns via `spec.service.dnsName`, so the DNS-name variant avoids the extra phase entirely and should be the supported path.
 
@@ -370,9 +386,25 @@ One name, e.g. `prod-server-0.ccdr.example.com`, resolving to the pod IP inside 
 - *Outside:* public DNS (Route53 or similar) maps the name to the LB endpoint. external-dns automates this, and the operator already understands external-dns.
 - *Inside:* CoreDNS must answer the same name with the pod IP — realistically a `rewrite` rule in the Corefile mapping `<cluster>-server-N.ccdr.example.com` to `<cluster>-server-N.<cluster>-headless.<ns>.svc.cluster.local`.
 
-**Why it is technically the better option.** Intra-cluster traffic resolves to pod IPs and never leaves the cluster. So: no hairpin, no added RAFT latency, no LB data-processing charges on internal traffic, **and no coupling of consensus to the load balancer** — the objection that most damns (b). NetworkPolicy rule 2 also keeps working unchanged, because peer traffic still arrives pod-to-pod; only the remote-CIDR rule needs adding. Certificate SANs are simple too: one name per server, valid from both sides.
+**Why it is better on every runtime axis.** Intra-cluster traffic resolves to pod IPs and never leaves the cluster. So: no hairpin, no added RAFT latency, no LB data-processing charges on internal traffic, **and no coupling of consensus to the load balancer** — the objection that most damns (b). NetworkPolicy rule 2 also keeps working unchanged, because peer traffic still arrives pod-to-pod; only the remote-CIDR rule needs adding. Certificate SANs are simple too: one name per server, valid from both sides.
 
 **It also satisfies Q1's redirect requirement by construction**, which is the strongest argument for it. The address the upstream hands back is a single globally-meaningful name that is correct in *both* contexts — it resolves to a pod IP for an upstream peer and to the external endpoint for the downstream replica. Options (a) and (b) each make the returned address correct for cross-cluster use by changing what is advertised; (c) makes one advertised value simultaneously correct for both audiences, which is the only variant where the two consumers of `advertised_address` stop being in conflict at all.
+
+**A cost the earlier revision of this section got backwards.** (c) cannot use (b)'s one-LB-many-ports trick. There is a single advertised value carrying a single port, and it must be correct from *both* sides — so if a pod listens on 6000, the external endpoint must also serve 6000. That means **N distinct external IPs or hostnames, each on port 6000** — i.e. roughly N load balancers, against (b)'s one.
+
+So the cost comparison is not "(c) is cheaper", it is a swap of *fixed* cost for *variable* cost:
+
+| | (b) whole-cluster external | (c) split-horizon DNS |
+|---|---|---|
+| Standing LB cost | one LB, N ports | ~N LBs (one IP per server on :6000) |
+| Per-GB charges on intra-cluster traffic | yes — scales with write volume | none, traffic never leaves |
+| RAFT latency | added hop | unchanged |
+| Consensus depends on LB | yes | no |
+| NetworkPolicy rule 2 | breaks, degrades to CIDR | unchanged |
+
+(c) still wins on every runtime axis, and the variable cost is the one that grows with success. But for a small, low-write cluster (b) may genuinely be cheaper, and the guidance should say so rather than presenting (c) as uniformly better.
+
+*(Working around this by giving each pod a distinct `server.cluster.listen_address` port to match its advertised port is possible but breaks the uniform StatefulSet and headless-Service port model. Not recommended.)*
 
 **Why it is not obviously the right choice.** The Corefile lives in `kube-system` and is shared cluster-wide infrastructure. **The operator must not mutate it** — a bad edit breaks DNS for every workload on the cluster, not just Neo4j. So the inside half of split-horizon is a precondition the user supplies, and the operator's contract degrades to "you make the name resolve correctly on both sides; I will advertise it." When a user gets it wrong, the symptom is a cluster that will not form, at startup, with an opaque DNS error.
 
@@ -392,9 +424,13 @@ If network replication is later demanded by a specific customer with a hard sub-
 
 ### 6.5 Recommendation
 
-**(a) if it exists — check first**, phrased as in §6.1 (the routing response must return the cross-cluster address, not merely accept one in config). Otherwise **(d) as the shipped product position, with (c) as the documented-but-unsupported path** for users who already run controllable DNS. **(b) only** if a customer needs network replication in an environment where DNS cannot be controlled, and only with the RAFT-availability coupling stated plainly up front.
+**(a) is off the table** on the documented setting surface (§6.1), so the choice is among the remaining three.
 
-**Do not start Phase 2 implementation until §9 Q1a resolves** — these produce materially different APIs, and (b) and (c) both change how every cluster talks to itself rather than adding a CCDR feature.
+**(d) as the shipped product position**, with **(c) documented but unsupported** for users who already run controllable DNS, and **(b) only** for a customer who needs network replication where DNS cannot be controlled — with the RAFT-availability coupling stated plainly up front, and sized against write volume, since its per-GB cost is the one that grows with success.
+
+The case for (d) is now stronger than when it was written. With (a) eliminated, network replication on Kubernetes cannot be delivered as an additive feature at all: it requires changing how every cluster addresses itself, and both remaining routes degrade something that currently works well for every user who will never use CCDR. Against that, Phase 1 already delivers the DR use case at roughly a one-minute RPO with no networking changes whatsoever.
+
+**Do not start Phase 2 implementation until §9 Q1a is confirmed** — and treat the outcome as a product decision about acceptable blast radius, not an implementation choice.
 
 ---
 
@@ -425,7 +461,9 @@ If network replication is later demanded by a specific customer with a hard sub-
 
 Consequence: **B1 is confirmed in its strongest form.** `server.cluster.advertised_address` must be externally routable, and no amount of care on the listing side substitutes, because the downstream uses the addresses it is handed rather than the ones it was given. See B1 and §6. Phase 1 is unaffected.
 
-**Q1a (the blocker for Phase 2). Does Neo4j offer a cross-cluster advertised address distinct from `server.cluster.advertised_address`, *and is that address what the upstream returns in its routing response to a downstream replica*?** Both halves matter — a setting that is configurable but not reflected in what the server hands back solves nothing. If yes to both, Phase 2 item 2 collapses to an ordinary additive field. If no, the choice is between whole-cluster external addressing and split-horizon DNS (§6.2 / §6.3), both of which change how every cluster talks to itself and need an explicit product decision, not just an implementation — or option (d), declining network replication on Kubernetes altogether (§6.4). **Ask the clustering team before starting Phase 2.**
+**Q1a — ANSWERED from documentation, pending confirmation. No such setting exists.** The discovery, connectors and clustering-settings pages between them enumerate the whole advertised-address surface and contain nothing for cross-cluster, remote or replica addressing (§6.1). `server.cluster.advertised_address` is documented as the address of the *transaction shipping server* — the same subsystem CCDR catchup uses — so there is no seam between the two consumers to exploit.
+
+Remaining ask for the clustering team is narrow: **confirm nothing undocumented or planned changes this.** Design on the assumption it does not, which leaves the choice between (b), (c) and (d) — a product decision about how much cluster-wide addressing change CCDR-on-Kubernetes justifies, not an implementation question. **Still blocks Phase 2.**
 
 **Q2. Upstream version floor.** The manual states 2025.01, but mixed-version support is under active test upstream and the direction has not been finalised. Operator validation should therefore warn rather than reject on upstream version, and the floor should be a constant that is cheap to move.
 
