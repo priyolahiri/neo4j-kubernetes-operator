@@ -63,12 +63,17 @@ func hasReadyCondition(conds []metav1.Condition) bool {
 }
 
 // NewClient builds a Neo4j client appropriate for the resolved target.
+//
+// The admin secret name is resolved through the nil-safe helpers:
+// `spec.auth` is optional on both Cluster and Standalone, so dereferencing it
+// directly panics the reconciler for any deployment that omits it — which is
+// a legal, and for a quick standalone a natural, spec.
 func (r ResolvedTarget) NewClient(c client.Client) (*neo4j.Client, error) {
 	switch {
 	case r.Cluster != nil:
-		return neo4j.NewClientForEnterprise(r.Cluster, c, r.Cluster.Spec.Auth.AdminSecret)
+		return neo4j.NewClientForEnterprise(r.Cluster, c, getClusterAdminSecretName(r.Cluster))
 	case r.Standalone != nil:
-		return neo4j.NewClientForEnterpriseStandalone(r.Standalone, c, r.Standalone.Spec.Auth.AdminSecret)
+		return neo4j.NewClientForEnterpriseStandalone(r.Standalone, c, getStandaloneAdminSecretName(r.Standalone))
 	default:
 		return nil, fmt.Errorf("ResolvedTarget has neither Cluster nor Standalone")
 	}

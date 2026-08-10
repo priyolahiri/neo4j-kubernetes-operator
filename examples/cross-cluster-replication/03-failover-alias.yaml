@@ -1,0 +1,18 @@
+# DOWNSTREAM cluster — pre-stage the failover alias.
+#
+# Cypher has no RENAME DATABASE, so `inventory-replica` keeps that name through
+# promotion. An alias lets DR clients address `inventory` throughout:
+#
+#   steady state     -> resolves to a read-only replica  -> reads succeed
+#   after promotion  -> resolves to a standard database  -> reads AND writes
+#
+# Aliases can target a database that is still a replica, so create this NOW.
+# Nothing then needs running inside the failover window.
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jDatabaseAlias
+metadata:
+  name: inventory
+  namespace: dr
+spec:
+  clusterRef: dr-cluster
+  targetDatabase: inventory-replica

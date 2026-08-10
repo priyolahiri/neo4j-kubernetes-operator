@@ -54,6 +54,17 @@ jobs:
     - name: OperatorHub CSV coverage
       run: make check-csv-coverage
 
+    # The hand-written docs surfaces have no generator, so check-drift cannot
+    # see them. Both checks existed only as local pre-commit hooks, which a
+    # contributor without hooks installed (or a `--no-verify` commit) bypasses
+    # silently — the same "only surfaces later" failure mode as the CSV check
+    # above. Seconds-fast and static.
+    - name: api_reference in sync with CRD spec fields
+      run: make check-apiref-drift
+
+    - name: Every CRD listed on docs landing page, README and nav
+      run: make check-crd-catalog
+
     # Scoped to the drift step — a helm-lint or CSV-coverage failure has its
     # own error output and must not be misdiagnosed as stale artifacts.
     - name: Surface failure details

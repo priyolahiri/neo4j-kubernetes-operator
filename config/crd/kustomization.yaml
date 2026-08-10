@@ -17,10 +17,13 @@ resources:
   - bases/neo4j.neo4j.com_aurasnapshots.yaml
   - bases/neo4j.neo4j.com_neo4jauthrules.yaml
   - bases/neo4j.neo4j.com_neo4jbackups.yaml
+  - bases/neo4j.neo4j.com_neo4jdatabasealiases.yaml
   - bases/neo4j.neo4j.com_neo4jdatabases.yaml
   - bases/neo4j.neo4j.com_neo4jenterpriseclusters.yaml
   - bases/neo4j.neo4j.com_neo4jenterprisestandalones.yaml
   - bases/neo4j.neo4j.com_neo4jplugins.yaml
+  - bases/neo4j.neo4j.com_neo4jreplicadatabases.yaml
+  - bases/neo4j.neo4j.com_neo4jreplicapromotions.yaml
   - bases/neo4j.neo4j.com_neo4jrestores.yaml
   - bases/neo4j.neo4j.com_neo4jrolebindings.yaml
   - bases/neo4j.neo4j.com_neo4jroles.yaml

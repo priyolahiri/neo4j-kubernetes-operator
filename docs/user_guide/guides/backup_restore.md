@@ -866,6 +866,45 @@ spec:
 
 So reference the CR whose latest backup matches the recovery point you want — the DIFF CR for "latest", the FULL CR for "last full snapshot". Restoring via the parent FULL CR emits a `RestoreFromChainParent` Warning event naming the DIFF children, so a restore that intends "latest" but references the FULL CR isn't a silent surprise.
 
+#### Feeding a cross-cluster replica: `mode: replication-source`
+
+A backup chain can also be the **source a replica on another Kubernetes cluster
+pulls from**. Set `spec.mode: replication-source` to declare that:
+
+```yaml
+spec:
+  mode: replication-source
+  instanceRef: prod-cluster
+  database: inventory
+  schedule: "0 * * * *"
+  storage: { type: s3, bucket: prod-backups, path: inventory }
+status:
+  replicationPullURI: s3://prod-backups/inventory/inventory-chain/
+```
+
+The mode changes **no backup behaviour** — same command, same artifacts. It
+turns on validation for the constraints a replica depends on, and publishes
+`status.replicationPullURI` for the downstream CR to consume:
+
+| Rule | Why |
+|---|---|
+| single-database scope (no `allDatabases`/`shardedDatabase`) | the instance-wide artifact layout can't be consumed by a per-database `pullURI` |
+| no `spec.retention` | pruning a differential's parent breaks the chain |
+| no competing `Neo4jBackup` on the same storage location | a second writer interleaving artifacts breaks the chain (a CR joined via `chainFromBackup` is fine — that's the recommended shape) |
+| `schedule` required | without one the chain never advances and the replica's lag grows without bound |
+
+!!! danger "Bucket lifecycle rules will break the chain, and validation cannot catch it"
+
+    For cloud storage the operator **never prunes** — retention is delegated to
+    bucket lifecycle rules, which it can neither read nor validate. A lifecycle
+    rule that expires objects in this directory silently breaks the differential
+    chain and forces the replica to be rebuilt from scratch.
+
+    **Exclude the replication-source path from lifecycle expiry.** No
+    operator-side rule protects you here.
+
+See the [Cross-Cluster Replication guide](cross_cluster_replication.md).
+
 #### `preferDiffAsParent` (CalVer 2025.04+ only)
 
 By default, differential backups use the most recent **full** backup as their parent. On CalVer 2025.04 and later, you can instruct the operator to use the most recent **differential** backup as the parent instead, creating a chain of incrementally smaller backups:

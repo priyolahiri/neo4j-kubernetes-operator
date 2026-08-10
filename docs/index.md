@@ -38,6 +38,8 @@ enabled.
 
 ## Custom Resource Definitions
 
+### Self-managed Neo4j
+
 | Resource | Purpose |
 |---|---|
 | `Neo4jEnterpriseCluster` / `Neo4jEnterpriseStandalone` | Cluster and single-node deployments |
@@ -47,6 +49,32 @@ enabled.
 | `Neo4jPlugin` | Plugin installation for APOC, GDS, Bloom, GenAI, N10s, and GraphQL with automatic security configuration |
 | `Neo4jBackup`, `Neo4jRestore` | FULL, DIFF, and AUTO backup types with point-in-time recovery |
 | `Neo4jShardedDatabase` | Property sharding for horizontal scale (GA in Neo4j 2025.12 and later CalVer releases) |
+| `Neo4jDatabaseAlias` | Database aliases — decouple the name applications connect to from the database it resolves to (Cypher has no `RENAME DATABASE`) |
+| `Neo4jReplicaDatabase`, `Neo4jReplicaPromotion` | Cross-cluster replication — read-only replicas fed by a differential backup chain, with one-way promotion for disaster-recovery failover (Neo4j 2026.08+) |
+
+### Neo4j Aura (cloud) — beta
+
+The operator can also drive **Neo4j Aura** through the Aura API, alongside the
+self-managed resources above. These are **beta / best-effort**: the instance
+lifecycle runs on the Aura API **v1 (GA)**, while multi-database and console-RBAC
+run on **v2beta1**, which Neo4j may change without a version bump.
+
+| Resource | Purpose |
+|---|---|
+| `AuraProviderConfig` | Shared Aura API credentials plus default organization and project |
+| `AuraInstance` | Aura instance lifecycle — create, resize, pause/resume, upgrade, delete |
+| `AuraSnapshot`, `AuraRestore` | Instance-level snapshots and in-place restore |
+| `AuraCustomerManagedKey` | Customer-managed encryption keys (CMK). **Unproven — never exercised against the live API** |
+| `AuraIPFilter` | Organization-scoped network allowlists (v2beta1) |
+| `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore` | Per-database lifecycle and backups on an Aura instance (v2beta1). Requires an `AuraInstance` created with `multiDatabase: true` — Aura fixes that at creation and cannot convert an existing instance |
+| `AuraOrganizationMember`, `AuraProjectMember`, `AuraInvite` | Aura **console** RBAC — organization/project roles and email invites (v2beta1) |
+
+!!! note "Aura console RBAC is not in-database identity"
+
+    `AuraOrganizationMember` / `AuraProjectMember` / `AuraInvite` govern who can
+    use the Aura console and projects. In-database users, roles and privileges
+    are `Neo4jUser` / `Neo4jRole` / `Neo4jRoleBinding`, which target
+    self-managed clusters only.
 
 [Browse the full API reference →](api_reference/neo4jenterprisecluster.md)
 

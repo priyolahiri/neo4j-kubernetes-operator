@@ -1990,15 +1990,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) collectStandaloneDiagnostics(ctx c
 		logger.Error(dbErr, "Failed to collect SHOW DATABASES")
 		diagnostics.CollectionError = fmt.Sprintf("SHOW DATABASES failed: %v", dbErr)
 	} else {
-		for _, d := range databases {
-			diagnostics.Databases = append(diagnostics.Databases, neo4jv1beta1.DatabaseDiagnosticInfo{
-				Name:            d.Name,
-				Status:          d.Status,
-				RequestedStatus: d.RequestedStatus,
-				Role:            d.Role,
-				Default:         d.Default,
-			})
-		}
+		diagnostics.Databases = append(diagnostics.Databases, toDatabaseDiagnostics(databases)...)
 	}
 
 	collectUsersAndRoles(ctx, neo4jClient,

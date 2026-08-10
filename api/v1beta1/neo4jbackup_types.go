@@ -74,6 +74,30 @@ type Neo4jBackupSpec struct {
 	// Schedule for automated backups (cron format)
 	Schedule string `json:"schedule,omitempty"`
 
+	// Mode selects how strictly this backup's configuration is validated.
+	//
+	//   standard (default)   — an ordinary backup; existing behaviour.
+	//   replication-source   — this backup produces the differential chain a
+	//                          cross-cluster replica pulls from.
+	//
+	// A replication source has requirements an ordinary backup does not: the
+	// differential chain must stay unbroken from the replica's current point
+	// onward, and it must live in a stable directory nothing else writes to.
+	// Selecting this mode turns those requirements into apply-time validation
+	// errors (single-database scope, no operator-side retention, no competing
+	// writer to the same path, a schedule required) and publishes
+	// `status.replicationPullURI` for the downstream CR to consume.
+	//
+	// IMPORTANT — what this mode CANNOT protect against: for cloud storage the
+	// operator does not prune at all, because retention is delegated to bucket
+	// lifecycle rules it can neither read nor validate. A lifecycle rule that
+	// expires old objects will silently break the chain and force a replica
+	// rebuild, and no operator-side validation can catch it.
+	// +kubebuilder:validation:Enum=standard;replication-source
+	// +kubebuilder:default=standard
+	// +optional
+	Mode string `json:"mode,omitempty"`
+
 	// Retention policy for backup cleanup
 	Retention *RetentionPolicy `json:"retention,omitempty"`
 
@@ -307,6 +331,16 @@ type Neo4jBackupStatus struct {
 
 	// Backup statistics
 	Stats *BackupStats `json:"stats,omitempty"`
+
+	// ReplicationPullURI is the exact object-storage directory a downstream
+	// cross-cluster replica should pull this chain from — paste it into
+	// Neo4jReplicaDatabase.spec.source.pullURI.
+	//
+	// Populated only when spec.mode is "replication-source". Assembling this
+	// by hand from bucket + path + backupsPath is the single most likely thing
+	// for a user to get wrong, so the operator publishes it instead.
+	// +optional
+	ReplicationPullURI string `json:"replicationPullURI,omitempty"`
 
 	// History of recent backup runs
 	History []BackupRun `json:"history,omitempty"`
