@@ -1189,6 +1189,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -1249,6 +1253,62 @@
     
   
     Backup & Restore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/cross_cluster_replication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-Cluster Replication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/database_aliases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Aliases
   
 
     
@@ -1371,10 +1431,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_7" >
         
           
-          <label class="md-nav__link" for="__nav_5_5" id="__nav_5_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5_7" id="__nav_5_7_label" tabindex="0">
             
   
   
@@ -1392,8 +1452,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1518,10 +1578,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_8" >
         
           
-          <label class="md-nav__link" for="__nav_5_6" id="__nav_5_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5_8" id="__nav_5_8_label" tabindex="0">
             
   
   
@@ -1539,8 +1599,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_6">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1847,6 +1907,12 @@
   
     
     
+      
+        
+      
+        
+      
+        
       
         
       
@@ -2231,6 +2297,90 @@
     
   
     Neo4jRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaPromotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jdatabasealias/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jDatabaseAlias
   
 
     
@@ -3015,6 +3165,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#phase-5-cross-cluster-replication-two-deployments-run-sequentially-needs-202608" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 — Cross-cluster replication (two deployments, run sequentially; needs 2026.08+)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3389,6 +3550,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#phase-5-cross-cluster-replication-two-deployments-run-sequentially-needs-202608" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 — Cross-cluster replication (two deployments, run sequentially; needs 2026.08+)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3548,13 +3720,26 @@ cluster only when it <em>needs</em> clustering.</p>
 <td>Standalone (+ Aura creds for <code>provision</code>)</td>
 <td>The plugin/registration path is deployment-independent, so the cheap phase covers it; operator-driven <code>provision</code> additionally needs Aura API credentials</td>
 </tr>
+<tr>
+<td><strong>Cross-cluster replication</strong> (<code>Neo4jReplicaDatabase</code>, <code>Neo4jReplicaPromotion</code>)</td>
+<td><strong>Phase 5 — two deployments, run SEQUENTIALLY</strong>; needs a <code>2026.08+</code> image</td>
+<td>Needs an upstream <em>and</em> a downstream, which looks like it breaks the one-deployment-at-a-time rule — but backup-based replication couples the two only through a bucket, so the upstream can be torn down before the downstream comes up. See the phase</td>
+</tr>
+<tr>
+<td><strong>Database aliases</strong> (<code>Neo4jDatabaseAlias</code>)</td>
+<td>Standalone</td>
+<td>Alias DDL is deployment-independent; the CCDR failover behaviour is covered in Phase 5</td>
+</tr>
 </tbody>
 </table>
 <h2 id="the-phase-plan">The phase plan<a class="headerlink" href="#the-phase-plan" title="Anchor link to this section">&para;</a></h2>
 <p>Run <strong>Phases 1-3 every time</strong> (Phase 3 included — sharding regularly surfaces
 issues the lighter phases miss). Phase 4 (Aura) needs cloud credentials rather
 than a Kind cluster: run its <strong>read-only sweep</strong> whenever anything under
-<code>internal/aura/</code> or an <code>Aura*</code> CRD changed.</p>
+<code>internal/aura/</code> or an <code>Aura*</code> CRD changed. Phase 5 (CCDR) needs a <code>2026.08+</code>
+image, which is above the pinned CI anchor — run it whenever anything under the
+replication CRDs changed <strong>and</strong> such an image is available; if it is not, say
+so in the log rather than recording the phase as passed.</p>
 <h3 id="phase-1-standalone-1-pod-2gi">Phase 1 — Standalone (1 pod, ~2Gi)<a class="headerlink" href="#phase-1-standalone-1-pod-2gi" title="Anchor link to this section">&para;</a></h3>
 <p><code>Neo4jEnterpriseStandalone</code> → <code>Ready</code>, then on it:</p>
 <table>
@@ -3596,6 +3781,14 @@ than a Kind cluster: run its <strong>read-only sweep</strong> whenever anything 
 <tr>
 <td><code>system</code> is not restorable</td>
 <td>a <code>Neo4jRestore</code> with <code>database: system</code> → <code>Failed</code> with an actionable message</td>
+</tr>
+<tr>
+<td>Database alias</td>
+<td><code>Neo4jDatabaseAlias</code> → Ready; connect via the alias name and reach the target; <code>SHOW ALIASES FOR DATABASE</code> lists it. Then re-point <code>spec.targetDatabase</code> at a second database and confirm the same connection string now reaches the new one</td>
+</tr>
+<tr>
+<td>Alias drift is corrected</td>
+<td><code>ALTER ALIAS</code> it elsewhere by hand → next reconcile restores <code>spec.targetDatabase</code></td>
 </tr>
 </tbody>
 </table>
@@ -3799,6 +3992,89 @@ CRs is <strong>not</strong> sufficient proof: <code>deletionPolicy</code> defaul
 delete can leave a running instance behind. Confirm with
 <code>GET /v1/instances/&lt;id&gt;</code> → <strong>404</strong> and a project instance list of <strong>0</strong> before you
 call the phase done.</p>
+<h3 id="phase-5-cross-cluster-replication-two-deployments-run-sequentially-needs-202608">Phase 5 — Cross-cluster replication (two deployments, run sequentially; needs <code>2026.08+</code>)<a class="headerlink" href="#phase-5-cross-cluster-replication-two-deployments-run-sequentially-needs-202608" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Run this only when a <code>2026.08+</code> enterprise image is available.</strong> Hosting a
+replica requires it, and the check is enforced — on an older image the CR fails
+with <code>ReplicaVersionTooOld</code> and nothing else in this phase can proceed. That is
+itself scenario 1: confirm the gate fires rather than silently doing nothing.</p>
+<p>This phase looks like it breaks the <strong>one Enterprise deployment at a time</strong>
+ground rule. It does not, and the reason is the point of the feature: with
+backup-based replication the two clusters are coupled <strong>only through the
+object store</strong>, never over the network. So the upstream produces its chain,
+gets torn down, and <em>then</em> the downstream comes up and pulls from the bucket.
+Two deployments, never concurrent.</p>
+<p>Stand up MinIO as the shared bucket (same pattern the backup specs use).</p>
+<p><strong>Part A — upstream (standalone is enough):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Replication-source backup</td>
+<td><code>Neo4jBackup</code> <code>mode: replication-source</code> + <code>database</code> + <code>schedule</code> → <code>status.replicationPullURI</code> is populated and points at the chain directory. <strong>Copy this value</strong></td>
+</tr>
+<tr>
+<td>Chain-breaking configs rejected</td>
+<td>the same CR with <code>retention</code> set, or <code>allDatabases: true</code>, or no <code>schedule</code> → phase <code>Invalid</code>, message names the rule</td>
+</tr>
+<tr>
+<td>A FULL then a DIFF</td>
+<td>let (or force) two runs so the bucket holds a full <strong>and</strong> a differential — a seed-only chain does not exercise the pull path</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Tear the upstream down completely.</strong> Leave the MinIO bucket intact.</p>
+<p><strong>Part B — downstream (fresh deployment, <code>2026.08+</code>):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Replica seeds</td>
+<td><code>Neo4jReplicaDatabase</code> with <code>source.pullURI</code>/<code>seedURI</code> from Part A → phase <code>Replicating</code>; <code>SHOW DATABASES</code> shows <code>type=replica</code>, <code>access=read-only</code>, <code>writer=false</code> on <strong>every</strong> copy including primaries</td>
+</tr>
+<tr>
+<td>Replica is read-only</td>
+<td>a write via <code>cypher-shell</code> fails; the same query with <code>--access-mode=read</code> succeeds</td>
+</tr>
+<tr>
+<td>Alias pre-staged against a replica</td>
+<td><code>Neo4jDatabaseAlias</code> targeting the replica → <code>Ready</code> <strong>while the target is still a replica</strong> (this is what removes work from the failover window)</td>
+</tr>
+<tr>
+<td><code>network</code> mode rejected</td>
+<td><code>source.mode: network</code> → <code>Failed</code>, and the message names <code>advertised_address</code>. A bare "unsupported" would send someone off configuring Services</td>
+</tr>
+<tr>
+<td>Promotion</td>
+<td><code>Neo4jReplicaPromotion</code> → <code>Completed</code>; <code>status.observedLagTxIds</code> recorded; <code>SHOW DATABASES</code> now shows a standard read-write type</td>
+</tr>
+<tr>
+<td>Alias survives promotion</td>
+<td>the <strong>same</strong> alias now resolves to a read-write database — no CR change, no client reconfiguration</td>
+</tr>
+<tr>
+<td>Replica CR goes inert</td>
+<td>the <code>Neo4jReplicaDatabase</code> is <code>phase: Promoted</code>; <strong>delete it and confirm the database is NOT dropped</strong></td>
+</tr>
+<tr>
+<td>Out-of-band promotion is safe</td>
+<td>on a second replica, promote by hand at a <code>cypher-shell</code>, then let the operator reconcile → it goes <code>Promoted</code> (reason <code>DetectedOutOfBand</code>) rather than "correcting" the drift by dropping the database</td>
+</tr>
+</tbody>
+</table>
+<p>That last row is the one worth doing carefully: it is the failure mode the
+whole observe-before-act design exists to prevent, and it is invisible to unit
+tests.</p>
+<p>→ <strong>Tear down</strong>, then delete the Kind cluster.</p>
 <h2 id="coverage-at-a-glance">Coverage at a glance<a class="headerlink" href="#coverage-at-a-glance" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
@@ -3808,6 +4084,7 @@ call the phase done.</p>
 <th style="text-align: center;">Cluster (3)</th>
 <th style="text-align: center;">Sharding (2026.06)</th>
 <th style="text-align: center;">Aura (Phase 4)</th>
+<th style="text-align: center;">CCDR (Phase 5, 2026.08+)</th>
 </tr>
 </thead>
 <tbody>
@@ -3817,6 +4094,7 @@ call the phase done.</p>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅ (instance)</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Database lifecycle</td>
@@ -3824,6 +4102,7 @@ call the phase done.</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅ (<code>AuraDatabase</code>)</td>
+<td style="text-align: center;"></td>
 </tr>
 <tr>
 <td>Database topology</td>
@@ -3831,6 +4110,7 @@ call the phase done.</p>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">n/a (Aura-managed)</td>
+<td style="text-align: center;">✅ (replica)</td>
 </tr>
 <tr>
 <td>Users / Roles / Bindings</td>
@@ -3838,6 +4118,7 @@ call the phase done.</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">n/a (console-RBAC only)</td>
+<td style="text-align: center;"></td>
 </tr>
 <tr>
 <td>Plugins (APOC)</td>
@@ -3845,6 +4126,7 @@ call the phase done.</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">n/a</td>
+<td style="text-align: center;"></td>
 </tr>
 <tr>
 <td>Backup → restore</td>
@@ -3852,12 +4134,14 @@ call the phase done.</p>
 <td style="text-align: center;">✅ (Cypher)</td>
 <td style="text-align: center;">✅ (sharded)</td>
 <td style="text-align: center;">✅ (per-DB, API)</td>
+<td style="text-align: center;">✅ (chain as source)</td>
 </tr>
 <tr>
 <td>Property sharding</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 </tr>
 <tr>
@@ -3866,6 +4150,7 @@ call the phase done.</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅ (<code>provision</code>)</td>
+<td style="text-align: center;"></td>
 </tr>
 <tr>
 <td>Aura console RBAC</td>
@@ -3873,6 +4158,7 @@ call the phase done.</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
 </tr>
 <tr>
 <td>Aura read-contract sweep</td>
@@ -3880,6 +4166,23 @@ call the phase done.</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅ (GET-only)</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Cross-cluster replication</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Database aliases</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (survives promotion)</td>
 </tr>
 </tbody>
 </table>
@@ -3910,6 +4213,12 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.</p>
 <td>2026-06-14</td>
 <td>✅ all phases pass</td>
 <td>Doc bug: <code>backup_restore.md</code> sharded <code>target.name</code> said <em>logical name</em>, must be <em>CR name</em> (fixed, <code>#270</code> follow-up). v1.12.2 surfaces (#260/#268/#269/#270) verified live.</td>
+</tr>
+<tr>
+<td><em>(pre-merge, PR #333)</em></td>
+<td>2026-08-07</td>
+<td>⚠️ partial — Phases 1 (alias scenarios) + 5A/5B validation only</td>
+<td><strong>Bug found + fixed:</strong> <code>spec.auth</code> is optional on Cluster/Standalone, but five call sites dereferenced <code>Spec.Auth.AdminSecret</code> unguarded — a <code>Neo4jDatabase</code> against a standalone without <code>spec.auth</code> panicked the reconciler and the CR sat with an empty status forever, with nothing on the CR explaining why. Widest site was <code>ResolvedTarget.NewClient</code>, shared by the user/role/binding/authrule and replication controllers. Fixed to use the existing nil-safe helpers. <strong>Also:</strong> <code>make deploy-dev-local</code> reports "deployment configured" without restarting the pod when the <code>:dev</code> tag is unchanged, so a rebuilt binary silently does not take effect — needs <code>kubectl rollout restart</code>. <strong>Verified pass:</strong> alias create/resolve, blue-green re-point, drift correction, alias delete does not drop the target; replica version gate (2026.08 required, refused on 2026.06), network-mode rejection naming <code>advertised_address</code>, replication-source R1/R2/R4 rejections, <code>status.replicationPullURI</code> published. <strong>Not run:</strong> replica seeding, promotion, and alias-survives-promotion — need a 2026.08+ image, which is not yet published (highest on Docker Hub is 2026.06).</td>
 </tr>
 <tr>
 <td>v1.14.0</td>

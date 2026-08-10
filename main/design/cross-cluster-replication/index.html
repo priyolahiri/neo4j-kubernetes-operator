@@ -1,0 +1,4284 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A Kubernetes operator for Neo4j Enterprise — declarative clusters, databases, users, roles, backups, and plugins.">
+      
+      
+        <meta name="author" content="Priyo Lahiri">
+      
+      
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/design/cross-cluster-replication/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Design: Cross-Cluster Database Replication (CCDR) on Kubernetes - Neo4j Kubernetes Operator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/neo4j.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#design-cross-cluster-database-replication-ccdr-on-kubernetes" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Neo4j Kubernetes Operator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Design: Cross-Cluster Database Replication (CCDR) on Kubernetes
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    priyolahiri/neo4j-kubernetes-operator
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Neo4j Kubernetes Operator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    priyolahiri/neo4j-kubernetes-operator
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/getting_started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/operator-modes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operator Modes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/demo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Try the Demo
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/version_support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Neo4j Versions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/migration_guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configure & Deploy
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configure & Deploy
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/examples_gallery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/resource_sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/clustering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clustering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/topology_placement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology Placement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/property_sharding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Property Sharding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/external_access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External Access (LB / NodePort / Ingress / Route)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugin Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/seed-uri/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seed URI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/aura_fleet_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Aura Fleet Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/aura_orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Aura Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/mcp_client_setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Client Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication & Authorization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/tls_configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TLS Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/user_role_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Users, Roles & Auth Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operate
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/backup_restore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup & Restore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/cross_cluster_replication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-Cluster Replication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/database_aliases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Aliases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/upgrades/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrades
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/storage_expansion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage Expansion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/fault_tolerance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fault Tolerance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_7" id="__nav_5_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Monitoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/prometheus-grafana-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus & Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/kubernetes-events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kubernetes Events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_8" id="__nav_5_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Performance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tuning Neo4j Workloads
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tuning the Operator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshoot
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Troubleshoot
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    General Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/troubleshooting/backup_restore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup & Restore Issues
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/troubleshooting/split-brain-recovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Split-Brain Recovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../gitops/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_1" id="__nav_7_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CRD Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CRD Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jEnterpriseCluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jEnterpriseStandalone
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jdatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jShardedDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4juser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jUser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jrole/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jRole
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jrolebinding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jRoleBinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jauthrule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jAuthRule
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jplugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jPlugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jbackup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jBackup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jrestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaPromotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jdatabasealias/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jDatabaseAlias
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraproviderconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraProviderConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurainstance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraInstance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurasnapshot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraSnapshot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurarestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auracustomermanagedkey/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraCustomerManagedKey
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraipfilter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraIPFilter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabasebackup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseBackup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabaserestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraorganizationmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraOrganizationMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraprojectmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraProjectMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurainvite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraInvite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribute
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contribute
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/QUICKSTART/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/collaboration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Collaboration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/ci_and_workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD & Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/release_verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/makefile_reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Makefile Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/openshift_olm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenShift OLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI-Assisted Contribution
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    AI-Assisted Contribution
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/llm-contribution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing with an LLM Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/AGENT-GUARDRAILS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Guardrails
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../knowledge/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Invariants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-what-ccdr-requires" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What CCDR requires
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-what-this-operator-already-provides" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. What this operator already provides
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-blockers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Blockers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Blockers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#b1-advertised-addresses-are-hardcoded-to-in-cluster-dns-network-only-the-real-blocker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B1 — Advertised addresses are hardcoded to in-cluster DNS (network only; the real blocker)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b2-no-per-server-external-exposure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B2 — No per-server external exposure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b3-tls-sans-and-cross-cluster-trust-are-both-gapped-and-the-documented-workaround-does-not-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B3 — TLS: SANs and cross-cluster trust are both gapped, and the documented workaround does not work
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b4-networkpolicy-drops-inbound-cluster-protocol-traffic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B4 — NetworkPolicy drops inbound cluster-protocol traffic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b5-no-crd-or-cypher-surface-for-replicas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B5 — No CRD or Cypher surface for replicas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b6-the-operator-cannot-tell-a-replica-from-a-standard-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B6 — The operator cannot tell a replica from a standard database
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b7-version-gating-is-absent-implemented-delivery-item-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B7 — Version gating is absent — implemented, delivery item 2
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b8-restoring-or-recreating-an-upstream-database-silently-detaches-its-replicas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B8 — Restoring or recreating an upstream database silently detaches its replicas
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-phase-1-neo4jreplicadatabase-backup-based" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Phase 1 — Neo4jReplicaDatabase (backup-based)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Phase 1 — Neo4jReplicaDatabase (backup-based)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-why-a-new-crd-rather-than-fields-on-neo4jdatabase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Why a new CRD rather than fields on Neo4jDatabase
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Shape
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-reconcile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Reconcile
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-neo4jbackup-gains-a-replication-source-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Neo4jBackup gains a replication-source mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-the-promotion-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. The promotion lifecycle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. The promotion lifecycle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-the-hazard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 The hazard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-promotion-is-a-separate-one-shot-cr-not-a-spec-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Promotion is a separate one-shot CR, not a spec field
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-what-happens-to-the-neo4jreplicadatabase-cr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 What happens to the Neo4jReplicaDatabase CR
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-the-guard-is-observed-state-not-the-status-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 The guard is observed state, not the status field
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-deletion-after-promotion-must-never-drop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Deletion after promotion must never drop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-handing-back-to-declarative-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 Handing back to declarative management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#57-naming-and-why-aliases-are-the-answer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.7 Naming — and why aliases are the answer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#58-promoting-a-lagging-replica" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.8 Promoting a lagging replica
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-phase-2-network-replication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Phase 2 — network replication
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Phase 2 — network replication">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-option-a-a-distinct-cross-cluster-advertised-address-does-not-appear-to-exist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Option (a) — a distinct cross-cluster advertised address — does not appear to exist
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#61a-note-the-discovery-resolver-is-not-the-fix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1a Note: the discovery resolver is not the fix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-option-b-whole-cluster-external-addressing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Option (b) — whole-cluster external addressing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-option-split-horizon-dns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Option &copy; — split-horizon DNS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#64-option-d-decline-network-replication-on-kubernetes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.4 Option (d) — decline network replication on Kubernetes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#65-prior-art-the-official-neo4j-helm-charts-already-do-option-b" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.5 Prior art: the official Neo4j Helm charts already do option (b)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#66-recommendation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.6 Recommendation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Testing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-delivery-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Delivery order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-open-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Open questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/design/cross-cluster-replication.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="design-cross-cluster-database-replication-ccdr-on-kubernetes">Design: Cross-Cluster Database Replication (CCDR) on Kubernetes<a class="headerlink" href="#design-cross-cluster-database-replication-ccdr-on-kubernetes" title="Anchor link to this section">&para;</a></h1>
+<blockquote>
+<p><strong>Status:</strong> Draft for review. Not an official product or version commitment.
+<strong>Source:</strong> Neo4j Operations Manual, <em>Replicating databases across clusters</em> (pre-publication preview, 2026.07 docs branch). The page requires a <strong>downstream cluster on 2026.08 or later</strong>; the upstream minimum is stated as 2025.01 but see §9 — mixed-version support is under active test upstream and should not be hardened into operator validation yet.
+<strong>Scope of this document:</strong> what CCDR needs from a Kubernetes deployment, what this operator already provides, what actually blocks it, and a two-phase delivery shape. Phase 1 (backup-based) is designed to a level a contributor can implement from. Phase 2 (network-based) is deliberately left at the "what must be answered first" stage.
+<strong>Headline:</strong> backup-based CCDR is largely deliverable on top of machinery the operator already has, and is unaffected by everything below. Network-based CCDR is blocked on an addressing problem that no amount of Service configuration resolves (§9 Q1, confirmed), and the clean fix — a cross-cluster address distinct from the intra-cluster one — <strong>does not exist in Neo4j's documented setting surface</strong> (§9 Q1a). What remains is a product decision: accept a cluster-wide addressing change that degrades something working today for every non-CCDR user (§6.2 / §6.3), or ship backup-based replication only and decline the network path on Kubernetes (§6.4). This design recommends the latter.</p>
+</blockquote>
+<hr />
+<h2 id="1-what-ccdr-requires">1. What CCDR requires<a class="headerlink" href="#1-what-ccdr-requires" title="Anchor link to this section">&para;</a></h2>
+<p>CCDR replicates one database from an <strong>upstream</strong> cluster to a read-only <strong>replica</strong> on a downstream cluster. Two mechanisms, with very different infrastructure costs:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Network replication</th>
+<th>Backup replication</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Downstream needs</td>
+<td>routable <code>addresses</code> for the upstream's <strong>:6000</strong> cluster endpoints</td>
+<td>an object-store URI (<code>pullURI</code>)</td>
+</tr>
+<tr>
+<td>Cross-cluster networking</td>
+<td>required (L4), inter-cluster encryption + mutual CA trust strongly recommended</td>
+<td><strong>none</strong></td>
+</tr>
+<tr>
+<td>Upstream duty</td>
+<td>be reachable</td>
+<td><em>"the user is responsible for creating and pushing the complete backup chain"</em> + ongoing differentials</td>
+</tr>
+<tr>
+<td>RPO</td>
+<td>near-zero, modulo async lag</td>
+<td>bounded by <code>db.cluster.backup.pull_interval</code> (default <code>1m</code>)</td>
+</tr>
+<tr>
+<td>Failure mode</td>
+<td>connectivity</td>
+<td><em>"the differential backup chain must remain unbroken"</em> — a break requires recreating the replica</td>
+</tr>
+</tbody>
+</table>
+<p>Shared constraints, both mechanisms:</p>
+<ul>
+<li><strong>Replicas are read-only.</strong> Both primaries and secondaries refuse writes. Clients must use <code>AccessMode.READ</code> / <code>executeRead</code>; <code>cypher-shell --access-mode=read</code>.</li>
+<li><strong><code>system</code> cannot be replicated.</strong></li>
+<li><strong>Privileges and roles are not copied.</strong> They must be set up separately on the downstream.</li>
+<li><strong>Promotion is one-way.</strong> <code>CALL dbms.promoteReplicaDatabase(name, options)</code>; once promoted, <em>"it cannot be re-attached to the original source."</em></li>
+</ul>
+<p>Cypher surface:</p>
+<div class="language-cypher highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">CREATE</span><span class="w"> </span><span class="n">REPLICA</span><span class="w"> </span><span class="n">DATABASE</span><span class="w"> </span><span class="n">name</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="o">[[</span><span class="k">SET</span><span class="o">]</span><span class="w"> </span><span class="n">TOPOLOGY</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="n">PRIMARIES</span><span class="w"> </span><span class="o">[</span><span class="n">m</span><span class="w"> </span><span class="n">SECONDARIES</span><span class="o">]]</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">OPTIONS</span><span class="w"> </span><span class="p">{</span><span class="n">replicaConfig</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="n">remote</span><span class="p">:</span><span class="w"> </span><span class="n">upstreamName</span><span class="p">,</span><span class="w"> </span><span class="n">addresses</span><span class="p">:</span><span class="w"> </span><span class="o">[</span><span class="p">...</span><span class="o">]</span><span class="p">}}</span><span class="w">   </span><span class="err">--</span><span class="w"> </span><span class="n">network</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">OPTIONS</span><span class="w"> </span><span class="p">{</span><span class="n">seedURI</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;...&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">replicaConfig</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="n">remote</span><span class="p">:</span><span class="w"> </span><span class="n">upstreamName</span><span class="p">,</span><span class="w"> </span><span class="n">pullURI</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;...&quot;</span><span class="p">}}</span><span class="w">  </span><span class="err">--</span><span class="w"> </span><span class="n">backup</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="o">[</span><span class="n">WAIT</span><span class="p">|</span><span class="n">NOWAIT</span><span class="o">]</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="k">CALL</span><span class="w"> </span><span class="n">dbms</span><span class="p">.</span><span class="n">promoteReplicaDatabase</span><span class="p">(</span><span class="s">&#39;foo-replica&#39;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="n">primaries</span><span class="p">:</span><span class="w"> </span><span class="m">3</span><span class="p">,</span><span class="w"> </span><span class="n">secondaries</span><span class="p">:</span><span class="w"> </span><span class="m">4</span><span class="p">});</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">SHOW</span><span class="w"> </span><span class="n">DATABASE</span><span class="w"> </span><span class="nv">`foo-replica`</span><span class="w"> </span><span class="k">YIELD</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">type</span><span class="p">,</span><span class="w"> </span><span class="n">access</span><span class="p">,</span><span class="w"> </span><span class="n">address</span><span class="p">,</span><span class="w"> </span><span class="n">role</span><span class="p">,</span><span class="w"> </span><span class="n">writer</span><span class="p">,</span><span class="w"> </span><span class="n">options</span><span class="p">;</span>
+</span></code></pre></div>
+<hr />
+<h2 id="2-what-this-operator-already-provides">2. What this operator already provides<a class="headerlink" href="#2-what-this-operator-already-provides" title="Anchor link to this section">&para;</a></h2>
+<p>The backup-based mechanism's upstream half — <em>"the user is responsible for creating and pushing the complete backup chain"</em> — is already automated by <code>Neo4jBackup</code>:</p>
+<ul>
+<li><code>spec.options.backupType: FULL | DIFF | AUTO</code> (<code>api/v1beta1/neo4jbackup_types.go:197</code>)</li>
+<li><code>spec.chainFromBackup</code> (<code>:108</code>) — a daily FULL CR plus an hourly DIFF CR writing into one shared per-CR directory, with a <code>part-of</code> label interlock that refuses to submit a Job while another Job in the same chain is active. This is a differential-chain generator.</li>
+<li><code>spec.options.preferDiffAsParent</code> (<code>:238</code>, CalVer 2025.04+) — diffs chain off the previous diff rather than the last full.</li>
+<li><code>spec.storage</code> (<code>StorageLocation</code>, <code>api/v1beta1/neo4jenterprisecluster_types.go:770</code>) — s3/gcs/azure/pvc with <code>credentialsSecretRef</code> or workload identity.</li>
+<li><code>status.backupRuns[].backupsPath</code> (<code>api/v1beta1/neo4jbackup_types.go:365</code>) — <em>"SAME VALUE FOR EVERY RUN OF ONE CR — all runs accumulate in this directory so neo4j-admin can chain differential backups off the prior full."</em> <strong>This directory is exactly what a downstream <code>pullURI</code> must point at</strong>, and the operator already publishes it in status.</li>
+</ul>
+<p>Downstream-side pieces that also already exist:</p>
+<ul>
+<li><code>db.cluster.backup.pull_interval</code> needs no new API — <code>spec.config</code> passthrough covers it.</li>
+<li><code>Neo4jDatabase.spec.seedURI</code> / <code>seedConfig</code> / <code>seedCredentials</code> already model seeding from an object-store backup.</li>
+<li><strong>The "roles are not replicated" limitation is neutralised</strong> by applying the same <code>Neo4jUser</code> / <code>Neo4jRole</code> / <code>Neo4jRoleBinding</code> CRs to the downstream cluster. A documented CCDR caveat becomes a copy-paste. This is a real advantage of doing CCDR through the operator rather than by hand.</li>
+</ul>
+<p>Consequence: <strong>backup-based CCDR needs no cross-cluster networking, no load balancer, no advertised-address change, no mutual TLS, and no NetworkPolicy hole.</strong> It sidesteps blockers B1–B4 below entirely.</p>
+<hr />
+<h2 id="3-blockers">3. Blockers<a class="headerlink" href="#3-blockers" title="Anchor link to this section">&para;</a></h2>
+<p>Ranked. B1–B4 apply to the <strong>network</strong> mechanism only; B5–B8 apply to both.</p>
+<h3 id="b1-advertised-addresses-are-hardcoded-to-in-cluster-dns-network-only-the-real-blocker">B1 — Advertised addresses are hardcoded to in-cluster DNS <em>(network only; the real blocker)</em><a class="headerlink" href="#b1-advertised-addresses-are-hardcoded-to-in-cluster-dns-network-only-the-real-blocker" title="Anchor link to this section">&para;</a></h3>
+<p><code>internal/resources/cluster.go:2249,2272-2275</code> pins:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>export HOSTNAME_FQDN=&quot;${HOSTNAME}.&lt;cluster&gt;-headless.&lt;namespace&gt;.svc.cluster.local&quot;
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>server.default_advertised_address=${HOSTNAME_FQDN}
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>server.cluster.advertised_address=${HOSTNAME_FQDN}:6000
+</span></code></pre></div>
+<p>and <code>internal/validation/config_validator.go:85-91</code> <strong>forbids</strong> overriding any <code>*.advertised_address</code> via <code>spec.config</code> (<code>operatorRuntimeManagedSettings</code>).</p>
+<p><strong>Confirmed behaviour (§9 Q1).</strong> There <em>is</em> server-side routing and discovery. The downstream dials an address from <code>replicaConfig.addresses</code> — one is sufficient — and the upstream <strong>returns the addresses the downstream then reaches out to</strong>. Those returned addresses are the upstream servers' advertised cluster addresses. A listed address therefore need not host the upstream database; it only has to be reachable enough to answer the routing request.</p>
+<p>The consequence is the worst case for Kubernetes:</p>
+<blockquote>
+<p>The downstream connects to a listed address, receives <code>prod-server-N.prod-headless.neo4j.svc.cluster.local:6000</code> in reply, and fails — that name resolves only inside the upstream's own Kubernetes cluster.</p>
+</blockquote>
+<p><strong>There is no workaround on the listing side.</strong> Enumerating every server's external address in <code>replicaConfig.addresses</code> does not help, because the addresses the downstream actually uses are the ones the upstream hands back, not the ones it was given. <code>server.cluster.advertised_address</code> must itself be externally routable.</p>
+<p>That makes the structural conflict below unavoidable rather than merely awkward, and it is the central Phase 2 design problem:</p>
+<blockquote>
+<p>There is one <code>server.cluster.advertised_address</code> per server, and it serves two consumers with incompatible requirements — intra-cluster peer traffic (wants the internal FQDN; changing it re-routes all normal cluster traffic through an external hop) and cross-cluster CCDR identity (wants an externally routable address, because that value is what gets handed to the downstream).</p>
+</blockquote>
+<p>Resolving that is §9 Q1a. <strong>Phase 1 (backup-based) is entirely unaffected</strong> — it opens no network path between clusters and never consults an advertised address.</p>
+<h3 id="b2-no-per-server-external-exposure">B2 — No per-server external exposure<a class="headerlink" href="#b2-no-per-server-external-exposure" title="Anchor link to this section">&para;</a></h3>
+<p><code>spec.service</code> builds one front-facing Service selecting all pods (ClusterIP/NodePort/LoadBalancer), plus a single <code>spec.service.dnsName</code>. CCDR wants N stable, individually-addressable endpoints on :6000. There is no per-pod Service builder.</p>
+<h3 id="b3-tls-sans-and-cross-cluster-trust-are-both-gapped-and-the-documented-workaround-does-not-work">B3 — TLS: SANs and cross-cluster trust are both gapped, and the documented workaround does not work<a class="headerlink" href="#b3-tls-sans-and-cross-cluster-trust-are-both-gapped-and-the-documented-workaround-does-not-work" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><strong>SANs.</strong> <code>BuildCertificateForEnterprise</code> (<code>internal/resources/cluster.go:651-700</code>) enumerates internal service and pod FQDNs plus one optional <code>spec.service.dnsName</code>. With <code>strictPeerValidation: true</code> (the default) the cluster policy sets <code>verify_hostname=true</code> (<code>cluster.go:151-153</code>), so a handshake to an external per-server address fails unless that name is a SAN.</li>
+<li><strong>Trust.</strong> The manual requires each cluster to trust the other's CA. Neo4j's cluster policy reads its trust anchor from <code>/ssl/trusted/</code>, which the operator projects as a single item — the cluster's <em>own</em> <code>ca.crt</code> (<code>cluster.go:1408</code>). <code>spec.trustedCASecrets</code> does <strong>not</strong> land there: it builds a JVM JKS at <code>/truststore/truststore.jks</code>, which <code>dbms.ssl.policy.cluster.*</code> never reads — despite the field's own doc comment claiming it covers "cross-cluster replication".</li>
+<li><strong>The escape hatch is illusory.</strong> <code>docs/user_guide/tls_configuration.md:469</code> points users at <code>extraVolumes</code>/<code>extraVolumeMounts</code> for exactly this case. <code>/ssl</code> is reserved (<code>internal/validation/truststore_validator.go:38</code>), and although <code>isReservedMountPath</code> is an exact-match check so <code>/ssl/trusted</code> would technically pass validation, <strong>mounting there shadows the operator's own <code>trusted/ca.crt</code> and breaks intra-cluster TLS.</strong> Mutual trust cannot be achieved through the documented path.</li>
+</ul>
+<p><em>This is a docs-vs-code inconsistency worth fixing independently of CCDR.</em></p>
+<h3 id="b4-networkpolicy-drops-inbound-cluster-protocol-traffic">B4 — NetworkPolicy drops inbound cluster-protocol traffic<a class="headerlink" href="#b4-networkpolicy-drops-inbound-cluster-protocol-traffic" title="Anchor link to this section">&para;</a></h3>
+<p><code>internal/resources/networkpolicy.go</code> rule 2 gates 6000/7000/7688/7689 on <code>podSelector: neo4j.com/cluster=&lt;name&gt;</code>. Traffic from a remote cluster matches no local pod and is dropped. The policy is opt-in (<code>spec.networkPolicy.enabled</code>), so this is a silent breakage for anyone who has hardened, not a universal blocker.</p>
+<h3 id="b5-no-crd-or-cypher-surface-for-replicas">B5 — No CRD or Cypher surface for replicas<a class="headerlink" href="#b5-no-crd-or-cypher-surface-for-replicas" title="Anchor link to this section">&para;</a></h3>
+<p><code>internal/neo4j/client.go</code> only ever emits <code>CREATE DATABASE</code>. Nothing emits <code>CREATE REPLICA DATABASE</code>, and <code>Neo4jDatabase.spec.options</code> is <code>map[string]string</code>, which cannot express the nested <code>replicaConfig: {remote, addresses[]}</code> map. A replica is not reachable through the existing CRD surface even by hand.</p>
+<h3 id="b6-the-operator-cannot-tell-a-replica-from-a-standard-database">B6 — The operator cannot tell a replica from a standard database<a class="headerlink" href="#b6-the-operator-cannot-tell-a-replica-from-a-standard-database" title="Anchor link to this section">&para;</a></h3>
+<p><code>DatabaseInfo</code> (<code>internal/neo4j/client.go:129</code>) carries <code>Name, Status, Default, Home, Role, RequestedStatus</code> — no <code>type</code>, no <code>writer</code>, no <code>access</code>. <strong>This is a prerequisite for the promotion safety guard in §5.4, not a nice-to-have.</strong></p>
+<p>Health checking itself is unaffected: <code>updateDatabasesCondition</code> compares <code>Status</code> against <code>RequestedStatus</code>, so an online replica reads healthy and raises no false alarm.</p>
+<h3 id="b7-version-gating-is-absent-implemented-delivery-item-2">B7 — Version gating is absent — <em>implemented, delivery item 2</em><a class="headerlink" href="#b7-version-gating-is-absent-implemented-delivery-item-2" title="Anchor link to this section">&para;</a></h3>
+<p>Downstream must be ≥ 2026.08. Implemented in <code>internal/neo4j/version.go</code> as
+<strong><code>SupportsCCDRReplica()</code></strong>, alongside <code>MeetsCCDRUpstreamFloor()</code> and the
+<code>MinCCDRReplicaVersion</code> / <code>MinCCDRUpstreamVersion</code> constants.</p>
+<p>Named for the <em>role</em>, not the feature — the placeholder name <code>SupportsCCDR()</code>
+used earlier in this document was a trap, because upstream and downstream have
+different floors (2025.01 vs 2026.08) and a single predicate would silently
+answer the wrong question at half its call sites.</p>
+<p>The two gates are also enforced differently, deliberately. The operator manages
+the downstream cluster and can <em>observe</em> its version, so <code>SupportsCCDRReplica</code>
+is a hard gate. The upstream lives in another Kubernetes cluster the operator
+cannot inspect, so any upstream version is a user-supplied claim — callers must
+<strong>warn, not reject</strong>, on <code>MeetsCCDRUpstreamFloor</code> (§9 Q2).</p>
+<p>Note the CI anchor CalVer is currently 2026.06, so CCDR specs will be
+dispatch-gated and largely local-only until the anchor moves — the same
+treatment property sharding gets via <code>isPropertyShardingCompatible()</code>.</p>
+<h3 id="b8-restoring-or-recreating-an-upstream-database-silently-detaches-its-replicas">B8 — Restoring or recreating an upstream database silently detaches its replicas<a class="headerlink" href="#b8-restoring-or-recreating-an-upstream-database-silently-detaches-its-replicas" title="Anchor link to this section">&para;</a></h3>
+<p>A restore changes the database's internal ID; downstream replicas detach and must be recreated from a fresh chain. <code>Neo4jRestore</code> and the <code>dbms.recreateDatabase</code> path (<code>internal/neo4j/version.go:RecreateDatabaseProcedure</code>) have no notion that replicas exist — and cannot, since replicas live in a different Kubernetes cluster with no back-reference. Mitigation is documentation plus, optionally, an advisory annotation on the upstream <code>Neo4jDatabase</code> that the restore controller surfaces as a warning event before proceeding.</p>
+<hr />
+<h2 id="4-phase-1-neo4jreplicadatabase-backup-based">4. Phase 1 — <code>Neo4jReplicaDatabase</code> (backup-based)<a class="headerlink" href="#4-phase-1-neo4jreplicadatabase-backup-based" title="Anchor link to this section">&para;</a></h2>
+<h3 id="41-why-a-new-crd-rather-than-fields-on-neo4jdatabase">4.1 Why a new CRD rather than fields on <code>Neo4jDatabase</code><a class="headerlink" href="#41-why-a-new-crd-rather-than-fields-on-neo4jdatabase" title="Anchor link to this section">&para;</a></h3>
+<p>A replica is not a database with extra options:</p>
+<ul>
+<li>it is permanently read-only, so <code>initialData</code> and every write-path field are meaningless;</li>
+<li>it takes no <code>CREATE DATABASE</code> options, and <code>options map[string]string</code> cannot hold <code>replicaConfig</code> anyway (B5);</li>
+<li>it has a one-way terminal lifecycle (§5) that a standard database does not have;</li>
+<li>roughly half of <code>Neo4jDatabaseSpec</code> would have to be rejected by a validator for <code>kind: replica</code>, which is the usual signal that two things are being modelled as one.</li>
+</ul>
+<h3 id="42-shape">4.2 Shape<a class="headerlink" href="#42-shape" title="Anchor link to this section">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaDatabase</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span><span class="w">          </span><span class="c1"># downstream cluster, same namespace</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span><span class="w">               </span><span class="c1"># database name — permanent, see §5.6</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">upstreamDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span><span class="w">           </span><span class="c1"># -&gt; replicaConfig.remote</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span><span class="w">                  </span><span class="c1"># backup | network   (network = Phase 2)</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">    </span><span class="nt">pullURI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://backups/prod-foo/</span><span class="w">          </span><span class="c1"># -&gt; replicaConfig.pullURI</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">    </span><span class="nt">seedURI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://backups/prod-foo/foo-2026-08-01T01-00-00.backup</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">    </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-creds</span>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">  </span><span class="nt">pullInterval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1m</span><span class="w">                </span><span class="c1"># -&gt; db.cluster.backup.pull_interval</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">  </span><span class="nt">phase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Replicating</span><span class="w">              </span><span class="c1"># Pending | Seeding | Replicating | Promoted | Failed</span>
+</span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="w">  </span><span class="nt">databaseType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">replica</span><span class="w">           </span><span class="c1"># observed from SHOW DATABASE ... YIELD type</span>
+</span><span id="__span-2-22"><a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="w">  </span><span class="nt">lastAppliedTxId</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">918273</span>
+</span><span id="__span-2-23"><a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">...</span><span class="p p-Indicator">]</span>
+</span></code></pre></div>
+<p><code>pullURI</code> should point at the upstream <code>Neo4jBackup</code> CR's <code>status.backupRuns[].backupsPath</code> directory (§2). Document that correspondence explicitly — it is the single most likely thing for a user to get wrong.</p>
+<h3 id="43-reconcile">4.3 Reconcile<a class="headerlink" href="#43-reconcile" title="Anchor link to this section">&para;</a></h3>
+<p>Standard project patterns: finalizer, <code>retry.RetryOnConflict</code>, inline validation in <code>internal/validation/</code> (never a webhook), structured events from <code>internal/controller/events.go</code>.</p>
+<ol>
+<li>Resolve <code>clusterRef</code>; require downstream version ≥ 2026.08 via <code>Version.SupportsCCDRReplica()</code>. Quote <code>MinCCDRReplicaVersion</code> in the failure message rather than a literal, so gate and message cannot drift.</li>
+<li><strong>Observe before acting</strong> — <code>SHOW DATABASE &lt;name&gt; YIELD name, type, access, writer</code>. This drives every branch below and is the safety spine of §5.</li>
+<li>Absent → <code>CREATE REPLICA DATABASE ... OPTIONS {seedURI, replicaConfig:{remote, pullURI}}</code>.</li>
+<li>Present and <code>type = replica</code> → reconcile topology drift only. <strong>Do not</strong> attempt to change <code>replicaConfig</code>; treat <code>source</code> as immutable via a CEL <code>self == oldSelf</code> transition rule (the project uses apiserver-side CEL for immutability, consistent with invariant 1's no-webhook rule).</li>
+<li>Present and <code>type != replica</code> → <strong>promoted, out of band or otherwise.</strong> Go terminal. Never mutate. See §5.4.</li>
+</ol>
+<h3 id="44-neo4jbackup-gains-a-replication-source-mode">4.4 <code>Neo4jBackup</code> gains a replication-source mode<a class="headerlink" href="#44-neo4jbackup-gains-a-replication-source-mode" title="Anchor link to this section">&para;</a></h3>
+<p>Decided (§9 Q5). A backup that feeds a replica has requirements a general-purpose backup does not — an unbroken differential chain and a stable directory — and today nothing stops a user from configuring a chain-breaking setup. <code>mode: replication-source</code> turns that class of footgun into validation errors at apply time.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jBackup</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">replication-source</span><span class="w">        </span><span class="c1"># standard (default) | replication-source</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-cluster</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">schedule</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;0</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*&quot;</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">storage</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">s3</span><span class="p p-Indicator">,</span><span class="nt"> bucket</span><span class="p">:</span><span class="w"> </span><span class="nv">backups</span><span class="p p-Indicator">,</span><span class="nt"> path</span><span class="p">:</span><span class="w"> </span><span class="nv">prod-foo</span><span class="p p-Indicator">}</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="nt">replicationPullURI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://backups/prod-foo/&lt;chain-dir&gt;/</span>
+</span></code></pre></div>
+<p>Validator rules when <code>mode: replication-source</code>:</p>
+<ul>
+<li><strong>R1 — single-database scope required.</strong> Reject <code>allDatabases</code> (the instance-wide artifact layout is not what a per-database <code>pullURI</code> consumes). Reject <code>shardedDatabase</code> in Phase 1; sharded CCDR is its own track.</li>
+<li><strong>R2 — reject an operator-side <code>spec.retention</code>.</strong> For PVC storage the delete-time cleanup Job would prune a diff's parent and break the chain outright.</li>
+<li><strong>R3 — reject a competing writer.</strong> Another <code>Neo4jBackup</code> CR whose <code>storage</code> (type + bucket + path) collides, and which is not part of this chain via <code>chainFromBackup</code>, is rejected. The existing <code>part-of</code> label interlock only serialises <em>Jobs within one chain</em>; it does not stop an unrelated CR from sharing a directory.</li>
+<li><strong>R4 — require <code>schedule</code>.</strong> A replication source with no cadence is a replica that falls arbitrarily far behind.</li>
+<li><strong>R5 — publish <code>status.replicationPullURI</code>.</strong> The exact string to paste into the downstream <code>Neo4jReplicaDatabase.spec.source.pullURI</code>, so nobody hand-assembles bucket + path + <code>backupsPath</code>. This is the main ergonomic payoff.</li>
+</ul>
+<p>Mode is declared on the chain root and inherited by members; a member declaring a conflicting mode is rejected.</p>
+<p><strong>What this mode cannot protect against, and must say so.</strong> For cloud storage the operator does not prune at all — <code>RetentionPolicy</code> delegates to bucket lifecycle rules (<code>api/v1beta1/neo4jbackup_types.go:162-165</code>), which the operator can neither read nor validate. <strong>An S3 lifecycle rule expiring old objects will silently break the chain and force a replica rebuild, and no operator-side validation can catch it.</strong> <code>replication-source</code> must therefore emit a warning event on first reconcile naming this risk, and the user guide must state it plainly rather than implying the mode confers protection it does not.</p>
+<hr />
+<h2 id="5-the-promotion-lifecycle">5. The promotion lifecycle<a class="headerlink" href="#5-the-promotion-lifecycle" title="Anchor link to this section">&para;</a></h2>
+<p>This is the part of the design most likely to cause data loss if it is got wrong, so it is specified in full.</p>
+<h3 id="51-the-hazard">5.1 The hazard<a class="headerlink" href="#51-the-hazard" title="Anchor link to this section">&para;</a></h3>
+<p><code>dbms.promoteReplicaDatabase</code> strips the replicating-from configuration. The database keeps its name but its <code>type</code> changes from <code>replica</code> to a standard database, <code>access</code> becomes read-write, <code>writer</code> becomes true. It is irreversible.</p>
+<p>A <code>Neo4jReplicaDatabase</code> spec describes a <em>relationship</em> that, after promotion, no longer exists. A naive level-triggered reconciler compares <code>desired: replica of foo</code> against <code>observed: standard database</code> and "corrects the drift" — by dropping and recreating.</p>
+<p><strong>That drops the database you promoted precisely because it had become your live system.</strong> The design must close this by construction, not by care.</p>
+<h3 id="52-promotion-is-a-separate-one-shot-cr-not-a-spec-field">5.2 Promotion is a separate one-shot CR, not a spec field<a class="headerlink" href="#52-promotion-is-a-separate-one-shot-cr-not-a-spec-field" title="Anchor link to this section">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaPromotion</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failover-2026-08-07</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">replicaRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span><span class="w">         </span><span class="c1"># the Neo4jReplicaDatabase CR</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span><span class="w">                       </span><span class="c1"># optional; omitted = retain current topology</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span><span class="nt">phase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Completed</span><span class="w">                </span><span class="c1"># Pending | Promoting | Completed | Failed</span>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">  </span><span class="nt">completionTime</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2026-08-07T09:14:22Z&quot;</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">  </span><span class="nt">observedLagTxIds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">42</span><span class="w">            </span><span class="c1"># RPO actually taken — see §5.7</span>
+</span></code></pre></div>
+<p>Rejected alternative: <code>spec.promote: true</code> on the replica CR. A boolean in a level-triggered spec can be flipped back, and "false" would mean <em>make it a replica again</em>, which Neo4j cannot do — the only way to honour it is drop-and-reseed. A CEL immutability rule closes the interactive path but not the one that matters: <strong>a GitOps controller re-applying the pre-promotion manifest</strong>, or a manifest restored from backup, is indistinguishable from a deliberate flip. Argo/Flux drift-correction would actively re-assert <code>promote: false</code> after a failover. A one-shot CR is inert to re-apply.</p>
+<p>It also matches the house idiom (<code>Neo4jBackup</code>, <code>Neo4jRestore</code> are both one-shot CRs with terminal phases) and gives promotion its own pollable status, which the equivalent cloud-side API design also concluded it needed.</p>
+<h3 id="53-what-happens-to-the-neo4jreplicadatabase-cr">5.3 What happens to the <code>Neo4jReplicaDatabase</code> CR<a class="headerlink" href="#53-what-happens-to-the-neo4jreplicadatabase-cr" title="Anchor link to this section">&para;</a></h3>
+<p><strong>It stays, and it goes inert.</strong> Concretely:</p>
+<ul>
+<li><code>status.phase: Promoted</code>, plus <code>promotedAt</code> and <code>promotedBy: &lt;Neo4jReplicaPromotion name&gt;</code>.</li>
+<li>The controller short-circuits at the top of <code>Reconcile</code> — same shape as <code>internal/controller/neo4jrestore_controller.go:257-259</code>. No <code>CREATE REPLICA</code>, no topology reconciliation, no <code>pullURI</code> re-application, no drift correction of any kind.</li>
+<li>The CR remains as the audit record of where the database came from, and as the holder of a now-declawed finalizer (§5.5).</li>
+</ul>
+<p>Deleting the CR is <em>not</em> required after promotion, and nothing breaks if the user leaves it in place indefinitely.</p>
+<h3 id="54-the-guard-is-observed-state-not-the-status-field">5.4 The guard is observed state, not the status field<a class="headerlink" href="#54-the-guard-is-observed-state-not-the-status-field" title="Anchor link to this section">&para;</a></h3>
+<p>Status is a fast path, not a correctness mechanism — it can be lost to a status-subresource wipe or an etcd restore. <strong>Before any mutating call, the controller re-checks <code>SHOW DATABASE &lt;name&gt; YIELD type</code>.</strong> If <code>type != 'replica'</code>:</p>
+<ul>
+<li>refuse to act,</li>
+<li>set <code>phase: Promoted</code> with reason <code>DetectedOutOfBand</code>,</li>
+<li>emit a Warning event,</li>
+<li>requeue nothing.</li>
+</ul>
+<p>This is what makes an out-of-band <code>cypher-shell</code> promotion safe, and it is the load-bearing guard. It also makes promotion <strong>crash-safe without an idempotency token</strong>: the ordering is <em>check → promote → check → record</em>, so a crash between the procedure call and the status write is recovered by the next reconcile observing <code>type != replica</code> and concluding the promotion succeeded, rather than calling the procedure a second time against an already-promoted database.</p>
+<p>This is the concrete reason B6 (<code>DatabaseInfo</code> has no <code>type</code> field) is a prerequisite and not a nicety — <strong>today the operator has no way to make this check at all.</strong></p>
+<h3 id="55-deletion-after-promotion-must-never-drop">5.5 Deletion after promotion must never drop<a class="headerlink" href="#55-deletion-after-promotion-must-never-drop" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><strong>Before promotion:</strong> the finalizer drops the replica. Consistent with <code>Neo4jDatabase</code>, whose finalizer always drops (<code>internal/controller/neo4jdatabase_controller.go:326-340</code>).</li>
+<li><strong>After promotion:</strong> the finalizer <strong>releases without dropping</strong>, and emits a Warning event naming the retained database.</li>
+</ul>
+<p>Rationale: you promoted because this database became the live system. Removing a CR that no longer describes anything must not be a data-loss event. This is a deliberate asymmetry with <code>Neo4jDatabase</code> (which has no retain policy at all) and should be called out in the user guide.</p>
+<h3 id="56-handing-back-to-declarative-management">5.6 Handing back to declarative management<a class="headerlink" href="#56-handing-back-to-declarative-management" title="Anchor link to this section">&para;</a></h3>
+<p>After promotion the database is an ordinary standard database, so its natural long-term home is <code>Neo4jDatabase</code>.</p>
+<p><strong>Recommended for Phase 1 — explicit manual handoff.</strong> <code>status</code> publishes the exact <code>Neo4jDatabase</code> spec to apply. The user applies it with <code>ifNotExists: true</code>, so <code>CREATE DATABASE ... IF NOT EXISTS</code> is a no-op and the CR <strong>adopts</strong> the promoted database. The replica CR can then be deleted (harmlessly, per §5.5) or kept as history.</p>
+<p><strong>Rejected for Phase 1 — operator-authored handoff.</strong> Having the controller create the <code>Neo4jDatabase</code> CR itself fights GitOps (Argo immediately flags an undeclared object as out-of-sync, and may prune it), and the ownerRef question has no good answer: owned by the replica CR means deleting the replica CR cascades and drops the production database; not owned means an orphan.</p>
+<p><strong>Double-ownership.</strong> During handoff both CRs exist and both nominally carry a database finalizer. This is safe <em>because</em> the replica CR's finalizer is already declawed by §5.5 — only <code>Neo4jDatabase</code> can drop. Order of operations does not matter. Worth stating explicitly in the user guide, because it is the kind of thing an operator-savvy user will (correctly) worry about.</p>
+<h3 id="57-naming-and-why-aliases-are-the-answer">5.7 Naming — and why aliases are the answer<a class="headerlink" href="#57-naming-and-why-aliases-are-the-answer" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Cypher has no <code>RENAME DATABASE</code>.</strong> <code>ALTER DATABASE</code> covers access mode, default language, options and topology only. A replica named <code>foo-replica</code> therefore keeps that name forever, including after it becomes the production database — and applications failing over to DR would have to target <code>foo-replica</code>.</p>
+<p>The clean fix is a <strong>database alias</strong> on the downstream cluster:</p>
+<div class="language-cypher highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">CREATE</span><span class="w"> </span><span class="n">ALIAS</span><span class="w"> </span><span class="nv">`foo`</span><span class="w"> </span><span class="n">FOR</span><span class="w"> </span><span class="n">DATABASE</span><span class="w"> </span><span class="nv">`foo-replica`</span><span class="p">;</span>
+</span></code></pre></div>
+<p><strong>Aliases can target a database that is still a replica</strong> (§9 Q3, answered), which is better than it first appears — it means the alias is <strong>pre-staged at replica-creation time, not created during the failover window</strong>:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Alias <code>foo</code> on the DR cluster resolves to</th>
+<th>Client experience</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Steady state</td>
+<td><code>foo-replica</code>, a read-only replica</td>
+<td>reads succeed, writes refused</td>
+</tr>
+<tr>
+<td>After promotion</td>
+<td><code>foo-replica</code>, now a standard database</td>
+<td>reads and writes succeed</td>
+</tr>
+</tbody>
+</table>
+<p>So applications on the DR side address <code>foo</code> throughout and <strong>need no reconfiguration at failover</strong> — the same connection string silently gains write capability the moment promotion completes. Nothing has to be executed inside the outage window, which is exactly when you least want a manual <code>cypher-shell</code> step.</p>
+<p>Two consequences for this design:</p>
+<ol>
+<li>The failover runbook's alias step moves <em>left</em>, to replica setup. Document it there, and make the sample manifests create it by default rather than presenting it as an optional extra.</li>
+<li>The operator has no alias surface today, so this is currently a manual step at setup time. Because it is now part of the recommended steady-state configuration rather than a break-glass action, <strong><code>Neo4jDatabaseAlias</code> has a stronger claim on Phase 1 scope than when it was filed as a follow-on</strong> (§9 Q6). Flagged, not decided.</li>
+</ol>
+<h3 id="58-promoting-a-lagging-replica">5.8 Promoting a lagging replica<a class="headerlink" href="#58-promoting-a-lagging-replica" title="Anchor link to this section">&para;</a></h3>
+<p>Promotion freezes the current lag as permanent data loss — there is no re-attaching to catch up afterwards. The promotion CR should therefore record the observed lag at promote time (<code>status.observedLagTxIds</code>) so the RPO actually taken is auditable after an incident. The manual's suggested signal is the delta in <code>&lt;prefix&gt;.database.&lt;db&gt;.transaction.last_committed_tx_id</code> between upstream and replica; where the upstream is unreachable (the usual reason for a failover) record the replica's last applied id alone.</p>
+<p>This is deliberately <em>recorded</em>, not <em>enforced</em>. Blocking a failover on a lag threshold is the wrong default — during a real outage the operator does not get to second-guess the human.</p>
+<hr />
+<h2 id="6-phase-2-network-replication">6. Phase 2 — network replication<a class="headerlink" href="#6-phase-2-network-replication" title="Anchor link to this section">&para;</a></h2>
+<p>Still not designed here, but Q1's answer bounds it. Phase 2 requires all of:</p>
+<ol>
+<li>a per-server exposure API emitting one Service per pod on :6000 (B2);</li>
+<li>an externally-routable <code>server.cluster.advertised_address</code>, which means carving it out of <code>operatorRuntimeManagedSettings</code> and managing it as a first-class field rather than a runtime-appended constant (B1);</li>
+<li>external per-server SANs on the cert-manager <code>Certificate</code> (B3);</li>
+<li>a supported path for the remote CA into the cluster SSL policy's trust directory — most likely projecting a new <code>spec.tls.additionalClusterTrustCAs</code> into <code>/ssl/trusted/</code> alongside the operator's own <code>ca.crt</code>, since the <code>extraVolumes</code> route is structurally unavailable (B3);</li>
+<li>a NetworkPolicy rule admitting remote CIDRs on :6000 (B4).</li>
+</ol>
+<p>Item 2 is the hard one, and Q1's full answer makes it <strong>mandatory rather than an optimisation</strong>. Because the upstream hands the downstream its advertised cluster addresses to connect to, those addresses must be externally routable — and the same value carries all intra-cluster peer traffic. Options (b) and &copy; below are therefore not competing cost profiles for achieving the same thing; <strong>one of them (or (a)) is a precondition for network replication working at all on Kubernetes.</strong></p>
+<p><strong>Shared prerequisite for (b) and &copy;: per-pod addressing.</strong> The StatefulSet has one pod template, so per-pod values must be derived at runtime. The operator already does exactly this — <code>HOSTNAME_FQDN</code> is built from <code>${HOSTNAME}</code> in the startup script (<code>internal/resources/cluster.go:2249</code>) — so extending it to index a per-ordinal address list is a small change. Provisioning the endpoints is the hard part, not templating them.</p>
+<h3 id="61-option-a-a-distinct-cross-cluster-advertised-address-does-not-appear-to-exist">6.1 Option (a) — a distinct cross-cluster advertised address — <em>does not appear to exist</em><a class="headerlink" href="#61-option-a-a-distinct-cross-cluster-advertised-address-does-not-appear-to-exist" title="Anchor link to this section">&para;</a></h3>
+<p>The hope was a setting separate from <code>server.cluster.advertised_address</code> for cross-cluster identity, letting the operator keep advertising internal FQDNs to peers while advertising external addresses to replicas. <strong>Three documentation pages say there is no such setting:</strong></p>
+<ul>
+<li><em>Cluster server discovery</em> names exactly one advertised-address setting: <code>server.cluster.advertised_address</code>.</li>
+<li><em>Clustering settings</em> enumerates the complete address surface — <code>server.cluster.advertised_address</code>, <code>server.cluster.raft.advertised_address</code>, <code>server.bolt.advertised_address</code>, plus the corresponding <code>listen_address</code> settings and <code>server.bolt.additional_listen_addresses</code>. <strong>Nothing containing "replica", "remote" or "cross".</strong></li>
+<li><em>Connectors</em> covers only the client-facing bolt/http/https pair.</li>
+</ul>
+<p>Worse, the settings reference documents <code>server.cluster.advertised_address</code> as <em>"Advertised hostname/IP address and port for the </em><em>transaction shipping server</em><em>"</em> — transaction shipping is precisely the channel CCDR catchup rides. So it is not merely that the two consumers happen to share a setting; <strong>cross-cluster replication and intra-cluster transaction shipping are the same subsystem, addressed by the same value.</strong> There is no seam to split.</p>
+<p>One near-miss worth noting: <code>server.bolt.additional_listen_addresses</code> shows Neo4j has considered multi-address binding, but it is a <em>listen</em> setting with no advertised counterpart, and there is no cluster-port equivalent. Binding to many addresses does not help when only one can be advertised.</p>
+<p><strong>Treat Q1a as confirming a negative</strong> — ask whether anything undocumented or planned exists, but design on the assumption it does not. That leaves (b), &copy; and (d).</p>
+<h3 id="61a-note-the-discovery-resolver-is-not-the-fix">6.1a Note: the discovery resolver is not the fix<a class="headerlink" href="#61a-note-the-discovery-resolver-is-not-the-fix" title="Anchor link to this section">&para;</a></h3>
+<p>Neo4j supports four discovery resolver types — <code>LIST</code> (what this operator uses, with static pod FQDNs), <code>DNS</code>, <code>SRV</code>, and <code>K8S</code> (<code>dbms.cluster.discovery.resolver_type</code>, with <code>dbms.kubernetes.label_selector</code>). Seeing a Kubernetes-native resolver, the natural guess is that switching to it resolves CCDR addressing. <strong>It does not.</strong></p>
+<p>Discovery governs how a server finds <em>its own cluster's</em> peers at startup. The advertised address governs what identity a server hands out — including to a downstream replica. They are independent: a cluster using <code>K8S</code> discovery still advertises whatever <code>server.cluster.advertised_address</code> says, and a downstream replica in another Kubernetes cluster still receives an unroutable name. Changing resolver type is orthogonal to Phase 2 and should not be pursued as a fix for it.</p>
+<h3 id="62-option-b-whole-cluster-external-addressing">6.2 Option (b) — whole-cluster external addressing<a class="headerlink" href="#62-option-b-whole-cluster-external-addressing" title="Anchor link to this section">&para;</a></h3>
+<p>Every server advertises an externally routable address, and <em>all</em> traffic — including intra-cluster RAFT and transaction replication — routes through it.</p>
+<p><strong>This is the documented purpose of <code>advertised_address</code>, not a hack.</strong> The connectors page gives exactly this pattern as the motivating case — advertised addresses exist for when you are <em>"routing traffic via a proxy, or if port mappings are in use"</em>, with the worked example that <em>"if port 7687 on the Neo4j server is mapped from port 9000 on the external network, specify the <code>advertised_address</code> for the Bolt connector."</em> Advertising an externally-reachable address while listening internally is the intended use. The mechanism is sound; the objection to (b) is cost, not legitimacy.</p>
+<p><strong>How it would work.</strong> One stable external endpoint per pod. Three ways to get them, in descending order of practicality:</p>
+<ul>
+<li><strong>One load balancer, one port per server</strong> (LB:16000 → server-0:6000, LB:16001 → server-1:6000, …). A single LB instead of N. The connectors page confirms <code>advertised_address</code> <em>"consists of two parts; an address … and a port number"</em>, so a per-server port that differs from the listen port is explicitly legal. This is the cost-sane variant and the one to design for.</li>
+<li><strong>One LoadBalancer Service per pod</strong>, selected via <code>statefulset.kubernetes.io/pod-name</code>. Cleanest addressing, N cloud LBs, N× the standing cost.</li>
+<li><strong>NodePort.</strong> Cheapest, but node IPs are not stable and nodes must be externally reachable. Not recommended.</li>
+</ul>
+<p><strong>Security note.</strong> The connectors page warns that <em>"Changing <code>server.default_listen_address</code> may expose cluster ports to the network."</em> Any implementation of (b) must widen listen addresses surgically per-connector rather than via the default, and pair the change with the NetworkPolicy work in item 5 — otherwise exposing :6000 for CCDR quietly exposes RAFT and routing too.</p>
+<p><strong>A chicken-and-egg to design around.</strong> LoadBalancer IPs are not known until the Service is provisioned, but the config referencing them is rendered before pods start. That forces a two-phase reconcile — create Services, wait for <code>status.loadBalancer.ingress</code>, re-render, restart pods — <em>unless</em> addressing is by DNS name rather than IP, in which case names are known up front. The operator already integrates with external-dns via <code>spec.service.dnsName</code>, so the DNS-name variant avoids the extra phase entirely and should be the supported path.</p>
+<p><strong>What it costs, and why it is not free for non-CCDR users:</strong></p>
+<ul>
+<li><strong>Hairpin routing.</strong> Every RAFT heartbeat and every transaction ships pod → LB → pod. RAFT is latency-sensitive; added latency shows up as slower commits and more marginal leader elections.</li>
+<li><strong>Data-processing charges.</strong> Intra-cluster traffic that was free inside the VPC becomes billed LB throughput. For a write-heavy cluster this is the dominant new cost, and it scales with write volume rather than being a flat fee.</li>
+<li><strong>Consensus now depends on the load balancer.</strong> Today an LB blip affects clients only. Under (b) it affects RAFT. This couples cluster availability to a component that was previously outside the availability envelope — the most serious objection to this option.</li>
+<li><strong>Hairpin NAT hazards.</strong> A pod connecting to an LB address that routes back to itself is a well-known failure mode; behaviour varies by CNI and kube-proxy mode, and where kube-proxy short-circuits the LB IP to the backend the traffic path silently differs from the external one, which makes testing misleading.</li>
+<li><strong>NetworkPolicy rule 2 breaks.</strong> Peer traffic no longer arrives from a pod matching <code>neo4j.com/cluster</code> (B4), so the intra-cluster rule must be rewritten in CIDR terms — losing the identity-based restriction that makes it worth having.</li>
+</ul>
+<p><strong>The obvious cost-reduction lever mostly does not work.</strong> <code>advertised_address</code> is per-server, so in principle only a subset need advertise externally. But the upstream returns addresses for whichever servers currently host the database, and hosting moves with topology changes and failover. Any server that could ever host the upstream database must therefore be externally routable, or replication breaks at an unpredictable later moment rather than at setup. Exposing a subset is only safe if the upstream database's placement is pinned, which is not a constraint worth taking on for this.</p>
+<p><strong>Verdict.</strong> Self-contained — no dependency the operator cannot provision — but it degrades the common case to serve a rare one, and must therefore be strictly opt-in. Appropriate for small or read-heavy clusters; poor for write-heavy ones.</p>
+<h3 id="63-option-split-horizon-dns">6.3 Option &copy; — split-horizon DNS<a class="headerlink" href="#63-option-split-horizon-dns" title="Anchor link to this section">&para;</a></h3>
+<p>One name, e.g. <code>prod-server-0.ccdr.example.com</code>, resolving to the pod IP inside the Kubernetes cluster and to the external endpoint outside it. The advertised address becomes that globally-meaningful name instead of a <code>.svc.cluster.local</code> FQDN.</p>
+<p><strong>How it would work.</strong></p>
+<ul>
+<li><em>Outside:</em> public DNS (Route53 or similar) maps the name to the LB endpoint. external-dns automates this, and the operator already understands external-dns.</li>
+<li><em>Inside:</em> CoreDNS must answer the same name with the pod IP — realistically a <code>rewrite</code> rule in the Corefile mapping <code>&lt;cluster&gt;-server-N.ccdr.example.com</code> to <code>&lt;cluster&gt;-server-N.&lt;cluster&gt;-headless.&lt;ns&gt;.svc.cluster.local</code>.</li>
+</ul>
+<p><strong>Why it is better on every runtime axis.</strong> Intra-cluster traffic resolves to pod IPs and never leaves the cluster. So: no hairpin, no added RAFT latency, no LB data-processing charges on internal traffic, <strong>and no coupling of consensus to the load balancer</strong> — the objection that most damns (b). NetworkPolicy rule 2 also keeps working unchanged, because peer traffic still arrives pod-to-pod; only the remote-CIDR rule needs adding. Certificate SANs are simple too: one name per server, valid from both sides.</p>
+<p><strong>It also satisfies Q1's redirect requirement by construction</strong>, which is the strongest argument for it. The address the upstream hands back is a single globally-meaningful name that is correct in <em>both</em> contexts — it resolves to a pod IP for an upstream peer and to the external endpoint for the downstream replica. Options (a) and (b) each make the returned address correct for cross-cluster use by changing what is advertised; &copy; makes one advertised value simultaneously correct for both audiences, which is the only variant where the two consumers of <code>advertised_address</code> stop being in conflict at all.</p>
+<p><strong>A cost the earlier revision of this section got backwards.</strong> &copy; cannot use (b)'s one-LB-many-ports trick. There is a single advertised value carrying a single port, and it must be correct from <em>both</em> sides — so if a pod listens on 6000, the external endpoint must also serve 6000. That means <strong>N distinct external IPs or hostnames, each on port 6000</strong> — i.e. roughly N load balancers, against (b)'s one.</p>
+<p>So the cost comparison is not "&copy; is cheaper", it is a swap of <em>fixed</em> cost for <em>variable</em> cost:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>(b) whole-cluster external</th>
+<th>&copy; split-horizon DNS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Standing LB cost</td>
+<td>one LB, N ports</td>
+<td>~N LBs (one IP per server on :6000)</td>
+</tr>
+<tr>
+<td>Per-GB charges on intra-cluster traffic</td>
+<td>yes — scales with write volume</td>
+<td>none, traffic never leaves</td>
+</tr>
+<tr>
+<td>RAFT latency</td>
+<td>added hop</td>
+<td>unchanged</td>
+</tr>
+<tr>
+<td>Consensus depends on LB</td>
+<td>yes</td>
+<td>no</td>
+</tr>
+<tr>
+<td>NetworkPolicy rule 2</td>
+<td>breaks, degrades to CIDR</td>
+<td>unchanged</td>
+</tr>
+</tbody>
+</table>
+<p>&copy; still wins on every runtime axis, and the variable cost is the one that grows with success. But for a small, low-write cluster (b) may genuinely be cheaper, and the guidance should say so rather than presenting &copy; as uniformly better.</p>
+<p><em>(Working around this by giving each pod a distinct <code>server.cluster.listen_address</code> port to match its advertised port is possible but breaks the uniform StatefulSet and headless-Service port model. Not recommended.)</em></p>
+<p><strong>Why it is not obviously the right choice.</strong> The Corefile lives in <code>kube-system</code> and is shared cluster-wide infrastructure. <strong>The operator must not mutate it</strong> — a bad edit breaks DNS for every workload on the cluster, not just Neo4j. So the inside half of split-horizon is a precondition the user supplies, and the operator's contract degrades to "you make the name resolve correctly on both sides; I will advertise it." When a user gets it wrong, the symptom is a cluster that will not form, at startup, with an opaque DNS error.</p>
+<p><strong>That failure mode is fixable, and the fix is what makes &copy; viable.</strong> The operator can <em>verify</em> what it must not <em>provision</em>: a preflight that resolves the advertised name from inside the pod and compares the result to the pod's own IP, failing loudly with an actionable message before the cluster attempts to form. That converts the worst property of &copy; — a mysterious startup failure caused by infrastructure the operator does not own — into a clear, diagnosable precondition error. Any implementation of &copy; should treat this preflight as part of the feature, not a nicety.</p>
+<p><strong>Verdict.</strong> Better runtime properties than (b) on every axis; worse out-of-the-box experience, and only suitable for users with controllable DNS automation.</p>
+<h3 id="64-option-d-decline-network-replication-on-kubernetes">6.4 Option (d) — decline network replication on Kubernetes<a class="headerlink" href="#64-option-d-decline-network-replication-on-kubernetes" title="Anchor link to this section">&para;</a></h3>
+<p>Worth stating explicitly because it may be the correct <em>product</em> answer rather than a concession. Phase 1 delivers backup-based CCDR with <strong>zero</strong> cross-cluster networking, and the RPO difference is roughly one minute (<code>db.cluster.backup.pull_interval</code>) versus near-zero. For disaster recovery — the motivating use case behind the field demand — a one-minute RPO is very often acceptable.</p>
+<p>The position would be: <em>"CCDR on Kubernetes is supported via backup replication. Network replication is possible but requires cluster-wide external addressing (§6.2) or split-horizon DNS (§6.3), and is not a supported configuration."</em> That is honest, ships now, and avoids committing engineering to a cluster-wide addressing change on behalf of a minority of users.</p>
+<p><strong>Q1's full answer strengthens this option considerably.</strong> Before it, network replication looked like it might be reachable by exposing services and listing the right addresses — an additive feature. It is not: the upstream hands back its advertised addresses, so supporting network replication means changing how every cluster addresses itself. That is a much larger commitment than the feature's likely demand justifies, and it is worth deciding deliberately rather than drifting into.</p>
+<p>If network replication is later demanded by a specific customer with a hard sub-minute RPO requirement, (a)/&copy; can be revisited with that requirement as justification.</p>
+<h3 id="65-prior-art-the-official-neo4j-helm-charts-already-do-option-b">6.5 Prior art: the official Neo4j Helm charts already do option (b)<a class="headerlink" href="#65-prior-art-the-official-neo4j-helm-charts-already-do-option-b" title="Anchor link to this section">&para;</a></h3>
+<p>Checked against <code>neo4j/helm-charts</code> at chart <code>2026.6.0</code> / appVersion <code>2026.06.0</code>.</p>
+<p><strong>By default the charts have exactly our problem.</strong> <code>neo4j/templates/neo4j-config.yaml</code> sets:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>server.cluster.advertised_address: &quot;$(bash -c &#39;echo ${SERVICE_NEO4J_INTERNALS}&#39;)&quot;
+</span></code></pre></div>
+<p>where <code>SERVICE_NEO4J_INTERNALS</code> is <code>&lt;release&gt;-internals.&lt;namespace&gt;.svc.&lt;clusterDomain&gt;</code> — an in-cluster FQDN, unroutable from anywhere else, same as ours.</p>
+<p><strong>But the charts ship a supported escape hatch, and we do not.</strong> <code>services.neo4j.multiCluster: true</code> makes <code>neo4j-loadbalancer.yaml</code> open the internal cluster ports on the LoadBalancer — <code>tcp-tx</code> (6000), <code>tcp-raft</code> (7000), <code>tcp-discovery</code> (5000), <code>tcp-boltrouting</code> (7688) — and sets <code>publishNotReadyAddresses: true</code>. The <code>examples/multi-cluster/</code> values then simply override the advertised addresses to the load balancer's IP:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">services</span><span class="p">:</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">neo4j</span><span class="p">:</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">      </span><span class="nt">service.beta.kubernetes.io/azure-load-balancer-internal</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">loadBalancerIP</span><span class="p">:</span><span class="w"> </span><span class="nv">10.30.1.101</span><span class="p p-Indicator">}</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">    </span><span class="nt">multiCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="nt">server.cluster.advertised_address</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;10.30.1.101:6000&quot;</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">  </span><span class="nt">server.cluster.raft.advertised_address</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;10.30.1.101:7000&quot;</span>
+</span></code></pre></div>
+<p>That is option (b), shipped and documented.</p>
+<p><strong>Why it is easy there and hard here — an architectural difference, not a missing feature.</strong> The Helm charts deploy <strong>one Neo4j server per Helm release</strong>: each cluster member is its own release with its own Service and its own load balancer IP. So <code>server.cluster.advertised_address</code> is a <em>scalar per member</em> and a user can override it in plain values. This operator deploys <strong>one StatefulSet with N pods under a single CR</strong>, so there is exactly one rendered config for all pods and no scalar override is possible. Getting the same result requires the per-ordinal address templating described in §6.2 — operator code, not a values field.</p>
+<p><strong>Consequences worth taking seriously:</strong></p>
+<ul>
+<li><strong>The advice that "exposing the cluster port via Helm should just work" is essentially right — for the Helm charts.</strong> <code>multiCluster: true</code> plus advertised-address overrides is a real, existing answer for the network path. Any field-facing CCDR-on-Kubernetes guidance should say so.</li>
+<li><strong>This operator currently has a capability gap against the Helm charts.</strong> A user migrating from charts to the operator would <em>lose</em> the ability to run cross-K8s-cluster networking. That reframes Phase 2 from "a new feature for a minority" to "parity with the sibling deployment method", which is a stronger claim on roadmap than §6.4 assumed.</li>
+<li><strong>The proven design is (b), not &copy;.</strong> The charts' example mitigates the hairpin objection by using an <strong>internal</strong> load balancer with a private IP routable across peered VNets, not a public one — so intra-cluster traffic hairpins within the private network. That is a meaningful and copyable mitigation of §6.2's main cost.</li>
+</ul>
+<p><strong>Three caveats before treating the chart example as a template:</strong></p>
+<ol>
+<li><strong>The example is 4.4-era and stale.</strong> It sets <code>dbms.cluster.discovery.resolver_type: LIST</code> with <code>dbms.cluster.discovery.endpoints: "...:5000"</code> — V1 discovery on port 5000 — and its README links to the 4.4 manual. The chart's own current default is the <code>K8S</code> resolver on the <code>tcp-tx</code> port. The <em>capability</em> is current; the <em>example values</em> need modernising for 5.26/CalVer before anyone follows them.</li>
+<li><strong><code>multiCluster</code> mode forces abandoning the chart's default discovery.</strong> <code>dbms.cluster.discovery.resolver_type: K8S</code> with <code>dbms.kubernetes.label_selector</code> queries the <em>local</em> Kubernetes API and cannot see members in another cluster, which is why the example switches to LIST. Anyone enabling multi-cluster gives up K8S discovery.</li>
+<li><strong>It opens more than CCDR needs.</strong> The flag exposes 5000/6000/7000/7688 together. A downstream replica needs only the cluster/catchup port. An operator-side equivalent should expose 6000 alone, and pair it with the NetworkPolicy work (B4) rather than inheriting the chart's broader surface.</li>
+</ol>
+<h3 id="66-recommendation">6.6 Recommendation<a class="headerlink" href="#66-recommendation" title="Anchor link to this section">&para;</a></h3>
+<p><strong>(a) is off the table</strong> on the documented setting surface (§6.1), so the choice is among the remaining three.</p>
+<p><strong>(d) for the current release, but no longer as a permanent stance — §6.5 undercuts that.</strong> Ship Phase 1 (backup-based) now and decline network replication <em>for this operator, for now</em>, while pointing field questions about the network path at the Helm charts' <code>multiCluster</code> mode, which already supports it.</p>
+<p>Then <strong>(b) as the eventual operator implementation</strong>, following the charts' proven shape: per-pod external endpoints, advertised addresses overridden per ordinal (§6.2), and an <em>internal</em> load balancer on a privately-routable IP to keep the hairpin off the public network. <strong>&copy; documented but unsupported</strong> for users who already run controllable DNS and want to avoid the hairpin entirely.</p>
+<p>Two things changed the weighting here. With (a) eliminated, network replication cannot be an additive feature — it requires changing how every cluster addresses itself. That argues for (d). But §6.5 shows the sibling Helm charts already ship exactly this, which makes a permanent "not supported in the operator" position a <strong>parity gap</strong> rather than a scoping decision: a user moving from charts to the operator would lose a capability. So (d) is the right sequencing call and the wrong end state.</p>
+<p><strong>Do not start Phase 2 implementation until §9 Q1a is confirmed</strong> — and treat the outcome as a product decision about acceptable blast radius, not an implementation choice.</p>
+<hr />
+<h2 id="7-testing">7. Testing<a class="headerlink" href="#7-testing" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li><strong>Unit:</strong> Cypher construction for <code>CREATE REPLICA DATABASE</code> in both modes; version gating (<code>SupportsCCDRReplica</code> / <code>MeetsCCDRUpstreamFloor</code> — landed, including a drift guard pinning the floor constants to the gate logic); validator table tests; the §5.4 terminal guard, including the out-of-band-promotion branch.</li>
+<li><strong>Integration:</strong> gated behind a dispatch input the way property sharding is (<code>isPropertyShardingCompatible()</code>), because the CI anchor CalVer is below 2026.08 (B7). Label every new spec <code>Label("extended")</code>.</li>
+<li><strong>Two-cluster testing is the hard part.</strong> Backup-based replication is testable on a <em>single</em> Kind cluster with two Neo4j deployments and a shared MinIO bucket — but the project invariant is <strong>one Enterprise deployment at a time</strong> (concurrent JVMs wedge Bolt on a laptop). So this lands in the manual pre-release journey (<code>docs/developer_guide/release_verification.md</code>) rather than the automated suite, at least initially. Add the scenario there in the same PR that adds the capability.</li>
+</ul>
+<hr />
+<h2 id="8-delivery-order">8. Delivery order<a class="headerlink" href="#8-delivery-order" title="Anchor link to this section">&para;</a></h2>
+<ol>
+<li><code>DatabaseInfo</code> gains <code>Type</code> / <code>Access</code> / <code>Writer</code> (B6) — unblocks everything and is independently useful for diagnostics.</li>
+<li><del><code>Version.SupportsCCDR()</code></del> → <strong>done</strong>: <code>Version.SupportsCCDRReplica()</code> + <code>MeetsCCDRUpstreamFloor()</code> + floor constants (B7).</li>
+<li>Fix the B3 docs-vs-code inconsistency in <code>tls_configuration.md</code> — currently the docs point users at a path that cannot work.</li>
+<li><code>Neo4jReplicaDatabase</code> + validator + backup-mode reconcile.</li>
+<li><code>Neo4jBackup</code> <code>mode: replication-source</code> + rules R1–R5 (§4.4). Independent of 4, so it can land in parallel.</li>
+<li><code>Neo4jReplicaPromotion</code> + the §5 terminal-guard behaviour.</li>
+<li>User guide: the end-to-end backup-based runbook, the failover procedure including the alias step, the bucket-lifecycle warning from §4.4, and the B8 warning about restoring an upstream.</li>
+<li>Phase 2, pending §9 Q1a.</li>
+</ol>
+<hr />
+<h2 id="9-open-questions">9. Open questions<a class="headerlink" href="#9-open-questions" title="Anchor link to this section">&para;</a></h2>
+<p><strong>Q1 — ANSWERED, in two parts.</strong> The downstream dials only the addresses in <code>replicaConfig.addresses</code> — but there <em>is</em> server-side routing and discovery: one listed address is sufficient, and the upstream <strong>returns the addresses the downstream then reaches out to</strong>. Those are the upstream's advertised cluster addresses. A listed address need not host the upstream database.</p>
+<p>Consequence: <strong>B1 is confirmed in its strongest form.</strong> <code>server.cluster.advertised_address</code> must be externally routable, and no amount of care on the listing side substitutes, because the downstream uses the addresses it is handed rather than the ones it was given. See B1 and §6. Phase 1 is unaffected.</p>
+<p><strong>Q1a — ANSWERED from documentation, pending confirmation. No such setting exists.</strong> The discovery, connectors and clustering-settings pages between them enumerate the whole advertised-address surface and contain nothing for cross-cluster, remote or replica addressing (§6.1). <code>server.cluster.advertised_address</code> is documented as the address of the <em>transaction shipping server</em> — the same subsystem CCDR catchup uses — so there is no seam between the two consumers to exploit.</p>
+<p>Remaining ask for the clustering team is narrow: <strong>confirm nothing undocumented or planned changes this.</strong> Design on the assumption it does not, which leaves the choice between (b), &copy; and (d) — a product decision about how much cluster-wide addressing change CCDR-on-Kubernetes justifies, not an implementation question. <strong>Still blocks Phase 2.</strong></p>
+<p><strong>Q2. Upstream version floor — still open, but the code is ready for the answer.</strong> The manual states 2025.01, and mixed-version support remains under active test upstream. Implemented as <code>MeetsCCDRUpstreamFloor()</code> + the <code>MinCCDRUpstreamVersion</code> constant, so moving the floor is a one-line change that corrects every caller at once. Callers must <strong>warn, not reject</strong>: the upstream is in another Kubernetes cluster the operator cannot inspect, so its version is always a user-supplied claim rather than an observation, and refusing to reconcile on an unverifiable claim is worse than surfacing a warning. Note the predicate is currently equivalent to <code>IsCalver</code> by construction (CalVer minors start at 01); it exists as its own function because this floor is the most likely thing in that file to move.</p>
+<p><strong>Q3 — ANSWERED: yes.</strong> Aliases can be created against a replica database. The alias is therefore pre-staged at replica-creation time and needs no action during the failover window; it silently gains write capability at promotion. See §5.7 — this also strengthens the case for pulling <code>Neo4jDatabaseAlias</code> (Q6) into Phase 1.</p>
+<p><strong>Q4. Does <code>dbms.promoteReplicaDatabase</code> error or no-op against an already-promoted database?</strong> The §5.4 ordering makes the operator correct either way, so this is informational — but it affects the quality of the error surfaced to a user who re-applies a promotion CR.</p>
+<p><strong>Q5 — ANSWERED: yes.</strong> <code>Neo4jBackup</code> gains <code>mode: replication-source</code>. Designed in §4.4. Note the honest limit recorded there: for cloud storage the operator delegates retention to bucket lifecycle rules it cannot see, so the mode reduces the footgun surface but cannot close it.</p>
+<p><strong>Q6. Alias CRD — reopened as a Phase 1 scope question.</strong> Filed as a follow-on, but Q3's answer moves the alias from a break-glass failover action into the <em>recommended steady-state configuration</em> for every replica (§5.7). A setup step that every user performs and the operator cannot express declaratively is a gap in the GitOps story, not a nicety. <code>Neo4jDatabaseAlias</code> would also cover ordinary non-CCDR aliasing. <strong>Decide before the user guide is written</strong>, since it determines whether the runbook says "apply this CR" or "exec into a pod and run Cypher".</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://hub.docker.com/r/neo4j/neo4j-enterprise" target="_blank" rel="noopener" title="hub.docker.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M349.9 236.3h-66.1v-59.4h66.1zm0-204.3h-66.1v60.7h66.1zm78.2 144.8H362v59.4h66.1zm-156.3-72.1h-66.1v60.1h66.1zm78.1 0h-66.1v60.1h66.1zm276.8 100c-14.4-9.7-47.6-13.2-73.1-8.4-3.3-24-16.7-44.9-41.1-63.7l-14-9.3-9.3 14c-18.4 27.8-23.4 73.6-3.7 103.8-8.7 4.7-25.8 11.1-48.4 10.7H2.4c-8.7 50.8 5.8 116.8 44 162.1 37.1 43.9 92.7 66.2 165.4 66.2 157.4 0 273.9-72.5 328.4-204.2 21.4.4 67.6.1 91.3-45.2 1.5-2.5 6.6-13.2 8.5-17.1zm-511.1-27.9h-66v59.4h66.1v-59.4zm78.1 0h-66.1v59.4h66.1zm78.1 0h-66.1v59.4h66.1zm-78.1-72.1h-66.1v60.1h66.1z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

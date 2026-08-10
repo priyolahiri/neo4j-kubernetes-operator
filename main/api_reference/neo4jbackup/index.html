@@ -1189,6 +1189,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -1249,6 +1253,62 @@
     
   
     Backup & Restore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/cross_cluster_replication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-Cluster Replication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/database_aliases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Aliases
   
 
     
@@ -1371,10 +1431,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_7" >
         
           
-          <label class="md-nav__link" for="__nav_5_5" id="__nav_5_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5_7" id="__nav_5_7_label" tabindex="0">
             
   
   
@@ -1392,8 +1452,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1518,10 +1578,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_8" >
         
           
-          <label class="md-nav__link" for="__nav_5_6" id="__nav_5_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5_8" id="__nav_5_8_label" tabindex="0">
             
   
   
@@ -1539,8 +1599,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_6">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1851,6 +1911,12 @@
   
     
     
+      
+        
+      
+        
+      
+        
       
         
       
@@ -2663,6 +2729,90 @@
     
   
     Neo4jRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../neo4jreplicadatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../neo4jreplicapromotion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaPromotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../neo4jdatabasealias/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jDatabaseAlias
   
 
     
@@ -4042,6 +4192,12 @@
 <td><code>string</code></td>
 <td>❌</td>
 <td>Cron expression for automated backups (e.g., <code>"0 2 * * *"</code>). Plain 5-field UTC syntax only — <code>TZ=</code>/<code>CRON_TZ=</code> prefixes are <strong>rejected</strong> (Kubernetes refuses timezone-embedded CronJob schedules). Scheduled backup names are limited to <strong>40 characters</strong> (the generated <code>&lt;name&gt;-backup-cron</code> CronJob must fit Kubernetes' 52-char CronJob-name limit). Removing <code>schedule</code> from an existing CR <strong>deletes the CronJob</strong> (the CR becomes a one-shot backup).</td>
+</tr>
+<tr>
+<td><code>mode</code></td>
+<td><code>string</code></td>
+<td>❌</td>
+<td><code>standard</code> (default) or <code>replication-source</code>. <code>replication-source</code> marks this backup as the differential chain a cross-cluster replica pulls from, and enforces the constraints that keep that chain usable: single-database scope, no operator-side <code>retention</code>, no competing <code>Neo4jBackup</code> writing to the same storage location, and a required <code>schedule</code>. It also publishes <code>status.replicationPullURI</code>. <strong>Limit:</strong> for cloud storage the operator never prunes — retention is delegated to bucket lifecycle rules it cannot read — so a lifecycle rule expiring objects in this directory will silently break the chain and force a replica rebuild. Exclude the path from lifecycle expiry. See the <a href="../../user_guide/guides/cross_cluster_replication/">Cross-Cluster Replication guide</a>.</td>
 </tr>
 <tr>
 <td><code>retention</code></td>

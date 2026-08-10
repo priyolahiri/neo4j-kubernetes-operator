@@ -1189,6 +1189,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -1249,6 +1253,62 @@
     
   
     Backup & Restore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user_guide/guides/cross_cluster_replication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-Cluster Replication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user_guide/guides/database_aliases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Aliases
   
 
     
@@ -1371,10 +1431,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_7" >
         
           
-          <label class="md-nav__link" for="__nav_5_5" id="__nav_5_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5_7" id="__nav_5_7_label" tabindex="0">
             
   
   
@@ -1392,8 +1452,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1518,10 +1578,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_8" >
         
           
-          <label class="md-nav__link" for="__nav_5_6" id="__nav_5_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5_8" id="__nav_5_8_label" tabindex="0">
             
   
   
@@ -1539,8 +1599,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_6">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1849,6 +1909,12 @@
   
     
     
+      
+        
+      
+        
+      
+        
       
         
       
@@ -2233,6 +2299,90 @@
     
   
     Neo4jRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api_reference/neo4jreplicadatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api_reference/neo4jreplicapromotion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaPromotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api_reference/neo4jdatabasealias/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jDatabaseAlias
   
 
     
@@ -3228,11 +3378,26 @@ to interpret Neo4j operator resource states.</p>
 </tr>
 </tbody>
 </table>
-<p>Health checks are configured for all 11 CRDs in the <code>neo4j.neo4j.com</code> group:
-the 7 workload CRDs (<code>Neo4jEnterpriseCluster</code>, <code>Neo4jEnterpriseStandalone</code>,
-<code>Neo4jDatabase</code>, <code>Neo4jBackup</code>, <code>Neo4jRestore</code>, <code>Neo4jPlugin</code>,
-<code>Neo4jShardedDatabase</code>) and the 4 identity CRDs (<code>Neo4jUser</code>, <code>Neo4jRole</code>,
-<code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>).</p>
+<p>Health checks are configured for <strong>all 26 CRDs</strong> in the <code>neo4j.neo4j.com</code>
+group — the 14 self-managed CRDs (7 workload, 4 identity, 3 replication) and
+all 12 Aura CRDs. <code>make check-crd-catalog</code> fails the build if a CRD is added
+without one.</p>
+<p><strong>Self-managed CRDs</strong> key off <code>status.phase</code>, per the table above.</p>
+<p><strong>Aura CRDs</strong> key off the <code>Ready</code> <strong>condition</strong> instead. Their <code>status.phase</code>
+largely mirrors Aura's <em>own</em> API status (<code>AuraInstance</code> copies the live instance
+status verbatim), which is an open vocabulary Neo4j can extend without a version
+bump — enumerating running states would silently report any new one as
+<code>Degraded</code>. <code>phase</code> is still consulted first for the terminal <code>Error</code>/<code>Failed</code>
+values, because the <code>Ready</code> condition can lag a failure by a reconcile.</p>
+<div class="admonition note">
+<p class="admonition-title">A promoted replica reports Healthy, not Degraded</p>
+<p><code>Neo4jReplicaDatabase</code> reaching <code>phase: Promoted</code> is a <strong>completed
+failover</strong>, not a fault — its health check maps that to <code>Healthy</code>. Mapping
+it to <code>Degraded</code> would show a successful DR promotion as broken, and could
+prompt an operator (or an automated remediation) to try to "fix" something
+that is working as designed. The CR is inert from that point on and will
+never modify the database again.</p>
+</div>
 <h2 id="flux-health-checks">Flux Health Checks<a class="headerlink" href="#flux-health-checks" title="Anchor link to this section">&para;</a></h2>
 <p>Flux automatically detects readiness via <code>status.conditions</code> when CRDs expose a
 standard <code>Ready</code> condition (type <code>Ready</code>, using <code>metav1.Condition</code>). No extra

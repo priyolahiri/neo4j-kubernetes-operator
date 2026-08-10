@@ -12,31 +12,31 @@
         <meta name="author" content="Priyo Lahiri">
       
       
-        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/developer_guide/openshift_olm/">
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/database_aliases/">
       
       
-        <link rel="prev" href="../makefile_reference/">
+        <link rel="prev" href="../cross_cluster_replication/">
       
       
-        <link rel="next" href="../llm-contribution/">
+        <link rel="next" href="../upgrades/">
       
       
         
       
       
-      <link rel="icon" href="../../assets/images/favicon.png">
+      <link rel="icon" href="../../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>OpenShift OLM - Neo4j Kubernetes Operator</title>
+        <title>Database Aliases - Neo4j Kubernetes Operator</title>
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -55,9 +55,9 @@
       
     
     
-      <link rel="stylesheet" href="../../stylesheets/neo4j.css">
+      <link rel="stylesheet" href="../../../stylesheets/neo4j.css">
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#openshift-olm-packaging" class="md-skip">
+        <a href="#database-aliases" class="md-skip">
           Skip to content
         </a>
       
@@ -102,7 +102,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+    <a href="../../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -122,7 +122,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              OpenShift OLM
+              Database Aliases
             
           </span>
         </div>
@@ -245,7 +245,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+    <a href="../../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -275,7 +275,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../.." class="md-nav__link">
+      <a href="../../.." class="md-nav__link">
         
   
   
@@ -370,7 +370,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/getting_started/" class="md-nav__link">
+      <a href="../../getting_started/" class="md-nav__link">
         
   
   
@@ -398,7 +398,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/installation/" class="md-nav__link">
+      <a href="../../installation/" class="md-nav__link">
         
   
   
@@ -426,7 +426,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/deployment/" class="md-nav__link">
+      <a href="../../deployment/" class="md-nav__link">
         
   
   
@@ -454,7 +454,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/operator-modes/" class="md-nav__link">
+      <a href="../../operator-modes/" class="md-nav__link">
         
   
   
@@ -482,7 +482,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/demo/" class="md-nav__link">
+      <a href="../demo/" class="md-nav__link">
         
   
   
@@ -510,7 +510,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/version_support/" class="md-nav__link">
+      <a href="../../version_support/" class="md-nav__link">
         
   
   
@@ -538,7 +538,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/migration_guide/" class="md-nav__link">
+      <a href="../../migration_guide/" class="md-nav__link">
         
   
   
@@ -651,7 +651,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/configuration/" class="md-nav__link">
+      <a href="../../configuration/" class="md-nav__link">
         
   
   
@@ -679,7 +679,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/examples_gallery/" class="md-nav__link">
+      <a href="../../examples_gallery/" class="md-nav__link">
         
   
   
@@ -707,7 +707,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/resource_sizing/" class="md-nav__link">
+      <a href="../resource_sizing/" class="md-nav__link">
         
   
   
@@ -735,7 +735,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/clustering/" class="md-nav__link">
+      <a href="../../clustering/" class="md-nav__link">
         
   
   
@@ -763,7 +763,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/topology_placement/" class="md-nav__link">
+      <a href="../../topology_placement/" class="md-nav__link">
         
   
   
@@ -791,7 +791,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/property_sharding/" class="md-nav__link">
+      <a href="../../property_sharding/" class="md-nav__link">
         
   
   
@@ -819,7 +819,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/external_access/" class="md-nav__link">
+      <a href="../../external_access/" class="md-nav__link">
         
   
   
@@ -847,7 +847,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/plugins/" class="md-nav__link">
+      <a href="../plugins/" class="md-nav__link">
         
   
   
@@ -875,7 +875,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/seed-uri/" class="md-nav__link">
+      <a href="../seed-uri/" class="md-nav__link">
         
   
   
@@ -903,7 +903,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/aura_fleet_management/" class="md-nav__link">
+      <a href="../../aura_fleet_management/" class="md-nav__link">
         
   
   
@@ -931,7 +931,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/aura_orchestration/" class="md-nav__link">
+      <a href="../../aura_orchestration/" class="md-nav__link">
         
   
   
@@ -959,7 +959,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/mcp_client_setup/" class="md-nav__link">
+      <a href="../mcp_client_setup/" class="md-nav__link">
         
   
   
@@ -1056,7 +1056,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/security/" class="md-nav__link">
+      <a href="../../security/" class="md-nav__link">
         
   
   
@@ -1084,7 +1084,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/security/" class="md-nav__link">
+      <a href="../security/" class="md-nav__link">
         
   
   
@@ -1112,7 +1112,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/tls_configuration/" class="md-nav__link">
+      <a href="../../tls_configuration/" class="md-nav__link">
         
   
   
@@ -1140,7 +1140,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/user_role_management/" class="md-nav__link">
+      <a href="../../user_role_management/" class="md-nav__link">
         
   
   
@@ -1172,8 +1172,10 @@
       
   
   
+    
   
   
+  
     
     
       
@@ -1202,11 +1204,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
         
           
           <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
@@ -1227,7 +1229,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1245,7 +1247,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/backup_restore/" class="md-nav__link">
+      <a href="../backup_restore/" class="md-nav__link">
         
   
   
@@ -1273,7 +1275,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/cross_cluster_replication/" class="md-nav__link">
+      <a href="../cross_cluster_replication/" class="md-nav__link">
         
   
   
@@ -1298,10 +1300,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../user_guide/guides/database_aliases/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Aliases
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1317,6 +1346,153 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#why-aliases-matter-here" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why aliases matter here
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#use-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use cases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Use cases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bluegreen-database-swaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Blue/green database swaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stable-names-across-a-rebuild" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stable names across a rebuild
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment-neutral-connection-strings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment-neutral connection strings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cross-cluster-replication-failover" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-cluster replication failover
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#restrictions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restrictions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#aliases-and-privileges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aliases and privileges
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1329,7 +1505,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/upgrades/" class="md-nav__link">
+      <a href="../upgrades/" class="md-nav__link">
         
   
   
@@ -1357,7 +1533,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/storage_expansion/" class="md-nav__link">
+      <a href="../storage_expansion/" class="md-nav__link">
         
   
   
@@ -1385,7 +1561,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/fault_tolerance/" class="md-nav__link">
+      <a href="../fault_tolerance/" class="md-nav__link">
         
   
   
@@ -1470,7 +1646,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/monitoring/" class="md-nav__link">
+      <a href="../monitoring/" class="md-nav__link">
         
   
   
@@ -1498,7 +1674,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/prometheus-grafana-setup/" class="md-nav__link">
+      <a href="../prometheus-grafana-setup/" class="md-nav__link">
         
   
   
@@ -1526,7 +1702,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/kubernetes-events/" class="md-nav__link">
+      <a href="../kubernetes-events/" class="md-nav__link">
         
   
   
@@ -1617,7 +1793,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/performance/" class="md-nav__link">
+      <a href="../../performance/" class="md-nav__link">
         
   
   
@@ -1645,7 +1821,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/performance/" class="md-nav__link">
+      <a href="../performance/" class="md-nav__link">
         
   
   
@@ -1748,7 +1924,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/troubleshooting/" class="md-nav__link">
+      <a href="../troubleshooting/" class="md-nav__link">
         
   
   
@@ -1776,7 +1952,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/troubleshooting/backup_restore/" class="md-nav__link">
+      <a href="../../troubleshooting/backup_restore/" class="md-nav__link">
         
   
   
@@ -1804,7 +1980,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/troubleshooting/split-brain-recovery/" class="md-nav__link">
+      <a href="../../troubleshooting/split-brain-recovery/" class="md-nav__link">
         
   
   
@@ -1864,7 +2040,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../gitops/" class="md-nav__link ">
+            <a href="../../../gitops/" class="md-nav__link ">
               
   
   
@@ -2009,7 +2185,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
         
   
   
@@ -2037,7 +2213,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
         
   
   
@@ -2065,7 +2241,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jdatabase/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jdatabase/" class="md-nav__link">
         
   
   
@@ -2093,7 +2269,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
         
   
   
@@ -2121,7 +2297,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4juser/" class="md-nav__link">
+      <a href="../../../api_reference/neo4juser/" class="md-nav__link">
         
   
   
@@ -2149,7 +2325,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jrole/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jrole/" class="md-nav__link">
         
   
   
@@ -2177,7 +2353,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jrolebinding/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jrolebinding/" class="md-nav__link">
         
   
   
@@ -2205,7 +2381,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jauthrule/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jauthrule/" class="md-nav__link">
         
   
   
@@ -2233,7 +2409,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jplugin/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jplugin/" class="md-nav__link">
         
   
   
@@ -2261,7 +2437,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jbackup/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jbackup/" class="md-nav__link">
         
   
   
@@ -2289,7 +2465,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jrestore/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jrestore/" class="md-nav__link">
         
   
   
@@ -2317,7 +2493,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
         
   
   
@@ -2345,7 +2521,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
         
   
   
@@ -2373,7 +2549,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jdatabasealias/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jdatabasealias/" class="md-nav__link">
         
   
   
@@ -2401,7 +2577,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraproviderconfig/" class="md-nav__link">
+      <a href="../../../api_reference/auraproviderconfig/" class="md-nav__link">
         
   
   
@@ -2429,7 +2605,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurainstance/" class="md-nav__link">
+      <a href="../../../api_reference/aurainstance/" class="md-nav__link">
         
   
   
@@ -2457,7 +2633,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurasnapshot/" class="md-nav__link">
+      <a href="../../../api_reference/aurasnapshot/" class="md-nav__link">
         
   
   
@@ -2485,7 +2661,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurarestore/" class="md-nav__link">
+      <a href="../../../api_reference/aurarestore/" class="md-nav__link">
         
   
   
@@ -2513,7 +2689,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auracustomermanagedkey/" class="md-nav__link">
+      <a href="../../../api_reference/auracustomermanagedkey/" class="md-nav__link">
         
   
   
@@ -2541,7 +2717,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraipfilter/" class="md-nav__link">
+      <a href="../../../api_reference/auraipfilter/" class="md-nav__link">
         
   
   
@@ -2569,7 +2745,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auradatabase/" class="md-nav__link">
+      <a href="../../../api_reference/auradatabase/" class="md-nav__link">
         
   
   
@@ -2597,7 +2773,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auradatabasebackup/" class="md-nav__link">
+      <a href="../../../api_reference/auradatabasebackup/" class="md-nav__link">
         
   
   
@@ -2625,7 +2801,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auradatabaserestore/" class="md-nav__link">
+      <a href="../../../api_reference/auradatabaserestore/" class="md-nav__link">
         
   
   
@@ -2653,7 +2829,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraorganizationmember/" class="md-nav__link">
+      <a href="../../../api_reference/auraorganizationmember/" class="md-nav__link">
         
   
   
@@ -2681,7 +2857,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraprojectmember/" class="md-nav__link">
+      <a href="../../../api_reference/auraprojectmember/" class="md-nav__link">
         
   
   
@@ -2709,7 +2885,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurainvite/" class="md-nav__link">
+      <a href="../../../api_reference/aurainvite/" class="md-nav__link">
         
   
   
@@ -2751,10 +2927,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -2789,11 +2963,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
           <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
@@ -2814,7 +2988,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2832,7 +3006,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../QUICKSTART/" class="md-nav__link">
+      <a href="../../../developer_guide/QUICKSTART/" class="md-nav__link">
         
   
   
@@ -2860,7 +3034,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../development/" class="md-nav__link">
+      <a href="../../../developer_guide/development/" class="md-nav__link">
         
   
   
@@ -2888,7 +3062,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/" class="md-nav__link">
+      <a href="../../../developer_guide/contributing/" class="md-nav__link">
         
   
   
@@ -2916,7 +3090,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../collaboration/" class="md-nav__link">
+      <a href="../../../developer_guide/collaboration/" class="md-nav__link">
         
   
   
@@ -2944,7 +3118,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../ci_and_workflows/" class="md-nav__link">
+      <a href="../../../developer_guide/ci_and_workflows/" class="md-nav__link">
         
   
   
@@ -2972,7 +3146,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../architecture/" class="md-nav__link">
+      <a href="../../../developer_guide/architecture/" class="md-nav__link">
         
   
   
@@ -3000,7 +3174,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../testing/" class="md-nav__link">
+      <a href="../../../developer_guide/testing/" class="md-nav__link">
         
   
   
@@ -3028,7 +3202,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../release_verification/" class="md-nav__link">
+      <a href="../../../developer_guide/release_verification/" class="md-nav__link">
         
   
   
@@ -3056,7 +3230,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../makefile_reference/" class="md-nav__link">
+      <a href="../../../developer_guide/makefile_reference/" class="md-nav__link">
         
   
   
@@ -3081,37 +3255,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    OpenShift OLM
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../../developer_guide/openshift_olm/" class="md-nav__link">
         
   
   
@@ -3127,70 +3274,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#build-the-bundle" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Build the bundle
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#buildpush-catalog-index" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Build/push catalog index
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#install-via-olm-on-openshift" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Install via OLM on OpenShift
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#openshift-smoke-testing-manual" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        OpenShift smoke testing (manual)
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -3260,7 +3343,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../llm-contribution/" class="md-nav__link">
+      <a href="../../../developer_guide/llm-contribution/" class="md-nav__link">
         
   
   
@@ -3288,7 +3371,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../AGENT-GUARDRAILS/" class="md-nav__link">
+      <a href="../../../developer_guide/AGENT-GUARDRAILS/" class="md-nav__link">
         
   
   
@@ -3316,7 +3399,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../knowledge/invariants/" class="md-nav__link">
+      <a href="../../../knowledge/invariants/" class="md-nav__link">
         
   
   
@@ -3379,10 +3462,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#build-the-bundle" class="md-nav__link">
+  <a href="#why-aliases-matter-here" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Build the bundle
+        Why aliases matter here
       
     </span>
   </a>
@@ -3390,10 +3473,71 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#buildpush-catalog-index" class="md-nav__link">
+  <a href="#use-cases" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Build/push catalog index
+        Use cases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Use cases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bluegreen-database-swaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Blue/green database swaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stable-names-across-a-rebuild" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stable names across a rebuild
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment-neutral-connection-strings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment-neutral connection strings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cross-cluster-replication-failover" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-cluster replication failover
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour
       
     </span>
   </a>
@@ -3401,10 +3545,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-via-olm-on-openshift" class="md-nav__link">
+  <a href="#restrictions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install via OLM on OpenShift
+        Restrictions
       
     </span>
   </a>
@@ -3412,10 +3556,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#openshift-smoke-testing-manual" class="md-nav__link">
+  <a href="#aliases-and-privileges" class="md-nav__link">
     <span class="md-ellipsis">
       
-        OpenShift smoke testing (manual)
+        Aliases and privileges
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
       
     </span>
   </a>
@@ -3439,7 +3605,7 @@
 
 
   
-    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/developer_guide/openshift_olm.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/guides/database_aliases.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -3447,54 +3613,176 @@
   
 
 
-<h1 id="openshift-olm-packaging">OpenShift OLM Packaging<a class="headerlink" href="#openshift-olm-packaging" title="Anchor link to this section">&para;</a></h1>
-<p>This project includes make targets for building an Operator Lifecycle Manager (OLM) bundle and catalog for OpenShift. Use these steps on a workstation with Docker/Podman and operator-sdk/opm available (Makefile will download pinned versions).</p>
-<h2 id="build-the-bundle">Build the bundle<a class="headerlink" href="#build-the-bundle" title="Anchor link to this section">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Generate bundle manifests from the current workspace.</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1"># `make bundle` pins the CSV&#39;s createdAt: annotation to a stable placeholder</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># (2020-01-01T00:00:00Z) so concurrent PRs don&#39;t conflict on the timestamp</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># and `make check-drift` stays deterministic. Use this target for local</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># development, drift checks, and CI.</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>make<span class="w"> </span>bundle<span class="w"> </span><span class="nv">VERSION</span><span class="o">=</span><span class="m">0</span>.0.1<span class="w"> </span><span class="nv">IMG</span><span class="o">=</span>ghcr.io/priyolahiri/neo4j-kubernetes-operator:latest
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="c1"># Build and push bundle image</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># (the Makefile default tag is v$(VERSION), e.g. v0.0.1 — keep the `v` prefix)</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>make<span class="w"> </span>bundle-build<span class="w"> </span><span class="nv">BUNDLE_IMG</span><span class="o">=</span>quay.io/your-org/neo4j-operator-bundle:v0.0.1
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>make<span class="w"> </span>bundle-push<span class="w"> </span><span class="nv">BUNDLE_IMG</span><span class="o">=</span>quay.io/your-org/neo4j-operator-bundle:v0.0.1
+<h1 id="database-aliases">Database aliases<a class="headerlink" href="#database-aliases" title="Anchor link to this section">&para;</a></h1>
+<p>A <strong>database alias</strong> is a second name for an existing database. Applications
+connect to the alias; the operator controls what it points at. Re-pointing an
+alias is instant and requires no client change.</p>
+<p><code>Neo4jDatabaseAlias</code> manages local aliases declaratively — created, re-pointed
+on drift, and dropped with the CR.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jDatabaseAlias</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-cluster</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app-v2</span>
 </span></code></pre></div>
-<blockquote>
-<p><strong>Release flow:</strong> when publishing to OperatorHub, run <code>make bundle-release</code>
-instead of <code>make bundle</code>. That target stamps the real <code>createdAt:</code>
-timestamp before image build; it's invoked by the release workflow in
-<code>.github/workflows/release.yml</code> and should not be run on PR branches
-(it would dirty the working tree and fail the drift gate).</p>
-</blockquote>
-<h2 id="buildpush-catalog-index">Build/push catalog index<a class="headerlink" href="#buildpush-catalog-index" title="Anchor link to this section">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Build catalog index containing the bundle</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>make<span class="w"> </span>catalog-build<span class="w"> </span><span class="nv">BUNDLE_IMGS</span><span class="o">=</span>quay.io/your-org/neo4j-operator-bundle:v0.0.1<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nv">CATALOG_IMG</span><span class="o">=</span>quay.io/your-org/neo4j-operator-catalog:v0.0.1
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>make<span class="w"> </span>catalog-push<span class="w"> </span><span class="nv">CATALOG_IMG</span><span class="o">=</span>quay.io/your-org/neo4j-operator-catalog:v0.0.1
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jdatabasealias<span class="w"> </span>-n<span class="w"> </span>neo4j
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># NAME   CLUSTER        TARGET   PHASE   READY   AGE</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># app    prod-cluster   app-v2   Ready   True    30s</span>
 </span></code></pre></div>
-<h2 id="install-via-olm-on-openshift">Install via OLM on OpenShift<a class="headerlink" href="#install-via-olm-on-openshift" title="Anchor link to this section">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Create CatalogSource in openshift-marketplace (edit image)</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>oc<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>config/samples/olm/catalogsource.yaml
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Create operator namespace if not present</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>oc<span class="w"> </span>new-project<span class="w"> </span>neo4j-operator-system<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">true</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Create Subscription (edit channel/name if you changed defaults)</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>oc<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>config/samples/olm/subscription.yaml
+<p>Connect with <code>neo4j://…/app</code> and you reach <code>app-v2</code>.</p>
+<hr />
+<h2 id="why-aliases-matter-here">Why aliases matter here<a class="headerlink" href="#why-aliases-matter-here" title="Anchor link to this section">&para;</a></h2>
+<p><strong>Cypher has no <code>RENAME DATABASE</code>.</strong> <code>ALTER DATABASE</code> can change access mode,
+topology, default language and options — but not the name. Once a database is
+created, its name is permanent, and the only "rename" available is
+create-copy-drop.</p>
+<p>An alias is the supported way to decouple <em>the name applications use</em> from <em>the
+name the database has</em>.</p>
+<hr />
+<h2 id="use-cases">Use cases<a class="headerlink" href="#use-cases" title="Anchor link to this section">&para;</a></h2>
+<h3 id="bluegreen-database-swaps">Blue/green database swaps<a class="headerlink" href="#bluegreen-database-swaps" title="Anchor link to this section">&para;</a></h3>
+<p>Rebuild a dataset alongside the live one, then cut over atomically:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Applications only ever address `app`.</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-cluster</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app-blue</span><span class="w">     </span><span class="c1"># change to app-green to cut over</span>
 </span></code></pre></div>
-<p>Default bundle channels can be set via <code>CHANNELS</code>/<code>DEFAULT_CHANNEL</code> when running <code>make bundle</code>.</p>
-<h2 id="openshift-smoke-testing-manual">OpenShift smoke testing (manual)<a class="headerlink" href="#openshift-smoke-testing-manual" title="Anchor link to this section">&para;</a></h2>
-<p>OLM/OperatorHub is a supported <strong>manual</strong> install path; it is not exercised in
-CI (a smoke test needs an OpenShift cluster, which standard GitHub runners can't
-provide). To validate the bundle on OpenShift, build and push the bundle and
-catalog (<code>make bundle bundle-build bundle-push catalog-build catalog-push</code>),
-then install via the sample <code>CatalogSource</code>/<code>Subscription</code> under
-<code>config/samples/olm/</code>. OpenShift Local (CRC) works for a local check on a
-virtualization-capable host; a remote OpenShift cluster works equally well.</p>
+<p>Change <code>targetDatabase</code>, and the operator issues
+<code>ALTER ALIAS … SET DATABASE TARGET</code>. No connection strings change, no
+application redeploy. Roll back by changing it back.</p>
+<h3 id="stable-names-across-a-rebuild">Stable names across a rebuild<a class="headerlink" href="#stable-names-across-a-rebuild" title="Anchor link to this section">&para;</a></h3>
+<p>Import pipelines that produce <code>catalog-2026-08-01</code>, <code>catalog-2026-08-08</code>, … can
+keep applications on <code>catalog</code> and re-point the alias when a new build passes
+validation. The dated databases remain available for rollback.</p>
+<h3 id="environment-neutral-connection-strings">Environment-neutral connection strings<a class="headerlink" href="#environment-neutral-connection-strings" title="Anchor link to this section">&para;</a></h3>
+<p>The same manifest set can address <code>graph</code> in every environment, with the alias
+resolving to <code>graph-dev</code>, <code>graph-staging</code> or <code>graph-prod</code> per cluster — without
+templating the database name into every client.</p>
+<h3 id="cross-cluster-replication-failover">Cross-cluster replication failover<a class="headerlink" href="#cross-cluster-replication-failover" title="Anchor link to this section">&para;</a></h3>
+<p>The case that motivated this CRD. A replica created as <code>foo-replica</code> keeps that
+name through promotion, so DR clients would otherwise have to change connection
+strings mid-incident. An alias avoids that entirely:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>foo</code> on the DR cluster resolves to</th>
+<th>Clients get</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Steady state</td>
+<td><code>foo-replica</code>, a read-only replica</td>
+<td>reads</td>
+</tr>
+<tr>
+<td>After promotion</td>
+<td><code>foo-replica</code>, now a standard database</td>
+<td>reads <strong>and writes</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Aliases can target a database that is <strong>still a replica</strong>, so create it at
+replica-setup time. Nothing needs running inside the failover window — the same
+connection string silently gains write capability when promotion completes.</p>
+<p>See the <a href="../cross_cluster_replication/">Cross-Cluster Replication guide</a>.</p>
+<hr />
+<h2 id="behaviour">Behaviour<a class="headerlink" href="#behaviour" title="Anchor link to this section">&para;</a></h2>
+<p><strong>Drift is reconciled.</strong> If someone re-points the alias out of band, the
+controller restores <code>spec.targetDatabase</code> on the next loop. <code>spec</code> is
+authoritative.</p>
+<p><strong>The target need not exist yet.</strong> The CR reports <code>Pending</code> and retries, so an
+alias and the database it fronts can be applied together in one <code>kubectl apply</code>.</p>
+<p><strong>Dropping an alias never touches the database behind it.</strong> <code>deletionPolicy:
+Delete</code> (the default) removes only the alias; <code>Retain</code> leaves even that in
+place and just releases the finalizer.</p>
+<p><strong>Observed state is published.</strong> <code>status.observedTarget</code> is read back from
+<code>SHOW ALIASES FOR DATABASE</code>, so you can see what the alias actually resolves to
+rather than only what was requested.</p>
+<hr />
+<h2 id="restrictions">Restrictions<a class="headerlink" href="#restrictions" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The alias name may not equal its target</td>
+<td>Neo4j rejects it, and it is never what was meant</td>
+</tr>
+<tr>
+<td><code>system</code> can be neither aliased nor used as an alias name</td>
+<td>Not permitted by Neo4j</td>
+</tr>
+<tr>
+<td>Names may not contain a backtick</td>
+<td>Alias DDL takes no query parameters for identifiers, so names are interpolated; the validator rejects backticks as an injection guard</td>
+</tr>
+<tr>
+<td>Local aliases only</td>
+<td>Remote aliases (<code>… AT '&lt;url&gt;' USER … PASSWORD …</code>) and composite-database constituents are not modelled by this CRD</td>
+</tr>
+</tbody>
+</table>
+<p>Alias names follow the same rules as database names: 3–63 characters, starting
+with an ASCII letter.</p>
+<hr />
+<h2 id="aliases-and-privileges">Aliases and privileges<a class="headerlink" href="#aliases-and-privileges" title="Anchor link to this section">&para;</a></h2>
+<p>Privileges are granted on the <strong>database</strong>, not the alias. Granting access on
+<code>app-v2</code> is what lets a user reach it through the <code>app</code> alias — there is no
+separate privilege surface to maintain, and re-pointing an alias does not
+require any privilege change.</p>
+<p>If you re-point <code>app</code> from <code>app-blue</code> to <code>app-green</code>, make sure the relevant
+roles hold privileges on <code>app-green</code> <em>before</em> the cutover, or users will lose
+access at exactly the wrong moment. <code>Neo4jRole</code> makes this a spec change on the
+role rather than a manual <code>GRANT</code>.</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Pending</code>, "target database … does not exist yet"</td>
+<td>The target has not been created. Normal when applying alias and database together.</td>
+</tr>
+<tr>
+<td><code>Pending</code>, cluster not Ready</td>
+<td>Cluster still bootstrapping.</td>
+</tr>
+<tr>
+<td><code>Failed</code>, "an alias cannot target a database of the same name"</td>
+<td><code>spec.targetDatabase</code> equals the alias name (which defaults to <code>metadata.name</code>).</td>
+</tr>
+<tr>
+<td>Alias keeps reverting</td>
+<td>Expected — <code>spec.targetDatabase</code> is authoritative and out-of-band changes are corrected.</td>
+</tr>
+</tbody>
+</table>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jdatabasealias<span class="w"> </span>app<span class="w"> </span>-n<span class="w"> </span>neo4j
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jdatabasealias<span class="w"> </span>app<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.status.observedTarget}&#39;</span>
+</span></code></pre></div>
+<p>Verify directly in Neo4j:</p>
+<div class="language-cypher highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">SHOW</span><span class="w"> </span><span class="n">ALIASES</span><span class="w"> </span><span class="n">FOR</span><span class="w"> </span><span class="n">DATABASE</span><span class="w"> </span><span class="k">YIELD</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">database</span><span class="p">,</span><span class="w"> </span><span class="n">location</span><span class="p">;</span>
+</span></code></pre></div>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li><a href="../../../api_reference/neo4jdatabasealias/">Neo4jDatabaseAlias API reference</a></li>
+<li><a href="../cross_cluster_replication/">Cross-Cluster Replication</a></li>
+<li>Neo4j Operations Manual → Database administration → <em>Managing database aliases</em></li>
+</ul>
 
 
 
@@ -3532,7 +3820,7 @@ virtualization-capable host; a remote OpenShift cluster works equally well.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../makefile_reference/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Makefile Reference">
+          <a href="../cross_cluster_replication/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Cross-Cluster Replication">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3542,20 +3830,20 @@ virtualization-capable host; a remote OpenShift cluster works equally well.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Makefile Reference
+                Cross-Cluster Replication
               </div>
             </div>
           </a>
         
         
           
-          <a href="../llm-contribution/" class="md-footer__link md-footer__link--next" aria-label="Next: Contributing with an LLM Agent">
+          <a href="../upgrades/" class="md-footer__link md-footer__link--next" aria-label="Next: Upgrades">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Contributing with an LLM Agent
+                Upgrades
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -3619,10 +3907,10 @@ virtualization-capable host; a remote OpenShift cluster works equally well.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

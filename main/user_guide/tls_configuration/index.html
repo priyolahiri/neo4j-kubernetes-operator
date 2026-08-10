@@ -1715,6 +1715,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -1775,6 +1779,62 @@
     
   
     Backup & Restore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/cross_cluster_replication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-Cluster Replication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/database_aliases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Aliases
   
 
     
@@ -1897,10 +1957,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_7" >
         
           
-          <label class="md-nav__link" for="__nav_5_5" id="__nav_5_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5_7" id="__nav_5_7_label" tabindex="0">
             
   
   
@@ -1918,8 +1978,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_5">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2044,10 +2104,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_8" >
         
           
-          <label class="md-nav__link" for="__nav_5_6" id="__nav_5_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5_8" id="__nav_5_8_label" tabindex="0">
             
   
   
@@ -2065,8 +2125,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_6">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2373,6 +2433,12 @@
   
     
     
+      
+        
+      
+        
+      
+        
       
         
       
@@ -2757,6 +2823,90 @@
     
   
     Neo4jRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaPromotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jdatabasealias/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jDatabaseAlias
   
 
     
@@ -4587,10 +4737,33 @@ For those, Neo4j needs to <em>trust</em> the remote endpoint's CA.</p>
 </tr>
 <tr>
 <td><code>spec.extraVolumes</code> + <code>spec.extraVolumeMounts</code></td>
-<td>When a Neo4j SSL policy (e.g. cross-cluster replication) needs a CA at a specific filesystem path via <code>dbms.ssl.policy.&lt;name&gt;.truststore_path</code>.</td>
+<td>When a <strong>custom</strong> Neo4j SSL policy needs a CA at a specific filesystem path via <code>dbms.ssl.policy.&lt;name&gt;.truststore_path</code>. Mount it at a path of your own — see the limitation below.</td>
 </tr>
 </tbody>
 </table>
+<div class="admonition warning">
+<p class="admonition-title">This cannot add trust to the operator-managed <code>cluster</code> SSL policy</p>
+<p><code>spec.extraVolumes</code> is <strong>not</strong> a way to make the built-in <code>cluster</code> policy
+trust an additional CA, and earlier revisions of this page implied it was.</p>
+<p>The <code>cluster</code> policy reads its trust anchors from <code>/ssl/trusted/</code>, which the
+operator projects from the cluster's own cert-manager Secret with exactly one
+entry (<code>ca.crt</code> → <code>trusted/ca.crt</code>). Two things block augmenting it:</p>
+<ul>
+<li><code>/ssl</code> is a reserved mount path and is rejected by the validator.</li>
+<li><code>/ssl/trusted</code> is not itself reserved, so the validator permits it — but
+  mounting a volume there <strong>shadows the operator's own <code>trusted/ca.crt</code></strong>
+  and breaks intra-cluster TLS. Do not do this.</li>
+</ul>
+<p>So <code>spec.trustedCASecrets</code> covers outbound TLS from Neo4j-the-server (it
+builds a JVM truststore at <code>/truststore/truststore.jks</code>), and
+<code>spec.extraVolumes</code> covers SSL policies <strong>you</strong> define at paths you choose.
+Neither can add a peer CA to the operator-managed <code>cluster</code> policy.</p>
+<p><strong>Consequence for cross-cluster replication:</strong> mutual CA trust between two
+Neo4j clusters — which CCDR's network-replication mode requires — is <em>not</em>
+currently expressible through this operator. Backup-based replication needs
+no cross-cluster TLS trust at all and is unaffected. See
+<code>docs/design/cross-cluster-replication.md</code> (B3).</p>
+</div>
 <p>The legacy singular <code>spec.auth.trustStore</code> continues to work and is folded
 into the same JKS at reconcile time.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="c1"># cert-manager Certificate produces a Secret with ca.crt; reference it directly</span>

@@ -12,13 +12,13 @@
         <meta name="author" content="Priyo Lahiri">
       
       
-        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/storage_expansion/">
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/cross_cluster_replication/">
       
       
-        <link rel="prev" href="../upgrades/">
+        <link rel="prev" href="../backup_restore/">
       
       
-        <link rel="next" href="../fault_tolerance/">
+        <link rel="next" href="../database_aliases/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Storage Expansion - Neo4j Kubernetes Operator</title>
+        <title>Cross-Cluster Replication - Neo4j Kubernetes Operator</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#storage-expansion" class="md-skip">
+        <a href="#cross-cluster-database-replication-ccdr" class="md-skip">
           Skip to content
         </a>
       
@@ -122,7 +122,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Storage Expansion
+              Cross-Cluster Replication
             
           </span>
         </div>
@@ -1272,10 +1272,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../cross_cluster_replication/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-Cluster Replication
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1291,6 +1318,181 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-fits-together" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it fits together
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-upstream-produce-the-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Upstream: produce the chain
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Upstream: produce the chain">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mixed-cadence-recommended-for-large-databases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mixed cadence (recommended for large databases)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-downstream-create-the-replica" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Downstream: create the replica
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-downstream-pre-stage-the-failover-alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Downstream: pre-stage the failover alias
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-downstream-replicate-users-and-roles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Downstream: replicate users and roles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-failover-promoting-the-replica" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Failover: promoting the replica
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Failover: promoting the replica">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-promotion-is-a-separate-cr-not-a-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why promotion is a separate CR, not a field
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-happens-to-the-neo4jreplicadatabase-cr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What happens to the Neo4jReplicaDatabase CR
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#handing-back-to-declarative-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Handing back to declarative management
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hazards-worth-knowing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hazards worth knowing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1356,37 +1558,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Storage Expansion
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../storage_expansion/" class="md-nav__link">
         
   
   
@@ -1402,231 +1577,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prerequisites
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#expanding-data-storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Expanding Data Storage
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#expanding-standalone-storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Expanding Standalone Storage
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#monitoring-expansion" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Monitoring Expansion
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Monitoring Expansion">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#events" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Events
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cluster-status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cluster Status
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pvc-status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PVC Status
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#limitations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Limitations
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Limitations">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#storage-shrink-is-not-supported" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Storage Shrink Is Not Supported
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#storageclass-changes-are-not-supported" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        StorageClass Changes Are Not Supported
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#filesystem-expansion-timing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Filesystem Expansion Timing
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#storageclass-does-not-allow-volume-expansion" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        "StorageClass does not allow volume expansion"
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#expansion-stuck-in-expanding-phase" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Expansion Stuck in "Expanding" Phase
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pvcs-not-found" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PVCs Not Found
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Example
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -3540,10 +3490,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#how-it-fits-together" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        How it fits together
       
     </span>
   </a>
@@ -3551,77 +3501,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
+  <a href="#1-upstream-produce-the-chain" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Prerequisites
+        1. Upstream: produce the chain
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#expanding-data-storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Expanding Data Storage
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#expanding-standalone-storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Expanding Standalone Storage
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#monitoring-expansion" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Monitoring Expansion
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Monitoring Expansion">
+    <nav class="md-nav" aria-label="1. Upstream: produce the chain">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#events" class="md-nav__link">
+  <a href="#mixed-cadence-recommended-for-large-databases" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Events
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cluster-status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cluster Status
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pvc-status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PVC Status
+        Mixed cadence (recommended for large databases)
       
     </span>
   </a>
@@ -3634,22 +3529,55 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#limitations" class="md-nav__link">
+  <a href="#2-downstream-create-the-replica" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Limitations
+        2. Downstream: create the replica
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Limitations">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-downstream-pre-stage-the-failover-alias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Downstream: pre-stage the failover alias
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-downstream-replicate-users-and-roles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Downstream: replicate users and roles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-failover-promoting-the-replica" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Failover: promoting the replica
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Failover: promoting the replica">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#storage-shrink-is-not-supported" class="md-nav__link">
+  <a href="#why-promotion-is-a-separate-cr-not-a-field" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Storage Shrink Is Not Supported
+        Why promotion is a separate CR, not a field
       
     </span>
   </a>
@@ -3657,10 +3585,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#storageclass-changes-are-not-supported" class="md-nav__link">
+  <a href="#what-happens-to-the-neo4jreplicadatabase-cr" class="md-nav__link">
     <span class="md-ellipsis">
       
-        StorageClass Changes Are Not Supported
+        What happens to the Neo4jReplicaDatabase CR
       
     </span>
   </a>
@@ -3668,10 +3596,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#filesystem-expansion-timing" class="md-nav__link">
+  <a href="#handing-back-to-declarative-management" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Filesystem Expansion Timing
+        Handing back to declarative management
       
     </span>
   </a>
@@ -3680,6 +3608,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hazards-worth-knowing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hazards worth knowing
+      
+    </span>
+  </a>
   
 </li>
       
@@ -3692,52 +3631,13 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#storageclass-does-not-allow-volume-expansion" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        "StorageClass does not allow volume expansion"
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#expansion-stuck-in-expanding-phase" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Expansion Stuck in "Expanding" Phase
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pvcs-not-found" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PVCs Not Found
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
+  <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
+        See also
       
     </span>
   </a>
@@ -3761,7 +3661,7 @@
 
 
   
-    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/guides/storage_expansion.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/guides/cross_cluster_replication.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -3769,137 +3669,327 @@
   
 
 
-<h1 id="storage-expansion">Storage Expansion<a class="headerlink" href="#storage-expansion" title="Anchor link to this section">&para;</a></h1>
-<p>This guide explains how to expand the persistent storage of a running <code>Neo4jEnterpriseCluster</code> or <code>Neo4jEnterpriseStandalone</code> without downtime.</p>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
-<p>As datasets grow, you may need to increase the storage allocated to your Neo4j deployment. The operator handles this automatically when you update <code>spec.storage.size</code> — no manual PVC patching or cluster recreation required. This works for both cluster and standalone deployments.</p>
-<p><strong>What happens under the hood:</strong></p>
-<ol>
-<li>You increase <code>spec.storage.size</code> in the cluster spec.</li>
-<li>The operator detects that existing PVCs are smaller than the desired size.</li>
-<li>It validates that the StorageClass supports volume expansion.</li>
-<li>It patches each PVC with the new size.</li>
-<li>It orphan-deletes the StatefulSet (pods keep running — zero downtime).</li>
-<li>On the next reconcile, the StatefulSet is recreated with updated VolumeClaimTemplates.</li>
-<li>The cluster transitions through <code>Expanding</code> → <code>Ready</code>.</li>
-</ol>
-<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h2>
-<p>Your StorageClass must have <code>allowVolumeExpansion: true</code>. Most cloud provider default StorageClasses support this. Verify with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>storageclass<span class="w"> </span>&lt;your-storage-class&gt;<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.allowVolumeExpansion}&#39;</span>
-</span></code></pre></div>
-<p>If it returns <code>false</code> or empty, patch it:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>storageclass<span class="w"> </span>&lt;your-storage-class&gt;<span class="w"> </span>-p<span class="w"> </span><span class="s1">&#39;{&quot;allowVolumeExpansion&quot;: true}&#39;</span>
-</span></code></pre></div>
-<blockquote>
-<p><strong>Note:</strong> Not all storage provisioners support online volume expansion. Check your provider's documentation. Most CSI drivers (AWS EBS, GCP PD, Azure Disk) do support it.</p>
-</blockquote>
-<h2 id="expanding-data-storage">Expanding Data Storage<a class="headerlink" href="#expanding-data-storage" title="Anchor link to this section">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Check current storage size</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.spec.storage.size}&#39;</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># 100Gi</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># Expand to 200Gi</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span>--type<span class="o">=</span>merge<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">&#39;{&quot;spec&quot;:{&quot;storage&quot;:{&quot;size&quot;:&quot;200Gi&quot;}}}&#39;</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># Watch the expansion progress</span>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span>-w
-</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># NAME         PHASE       ...</span>
-</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># my-cluster   Ready       ...  &lt;- before</span>
-</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="c1"># my-cluster   Expanding   ...  &lt;- patching PVCs + recreating StatefulSet</span>
-</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="c1"># my-cluster   Ready       ...  &lt;- done</span>
-</span></code></pre></div>
-<h2 id="expanding-standalone-storage">Expanding Standalone Storage<a class="headerlink" href="#expanding-standalone-storage" title="Anchor link to this section">&para;</a></h2>
-<p>The same approach works for <code>Neo4jEnterpriseStandalone</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>neo4jenterprisestandalone<span class="w"> </span>my-standalone<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--type<span class="o">=</span>merge<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">&#39;{&quot;spec&quot;:{&quot;storage&quot;:{&quot;size&quot;:&quot;200Gi&quot;}}}&#39;</span>
-</span></code></pre></div>
-<p>The operator expands the single PVC and recreates the StatefulSet with zero downtime.</p>
-<h2 id="monitoring-expansion">Monitoring Expansion<a class="headerlink" href="#monitoring-expansion" title="Anchor link to this section">&para;</a></h2>
-<h3 id="events">Events<a class="headerlink" href="#events" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Watch storage expansion events</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>StorageExpansionStarted
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>StorageExpansionCompleted
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>StorageExpansionFailed
-</span></code></pre></div>
-<h3 id="cluster-status">Cluster Status<a class="headerlink" href="#cluster-status" title="Anchor link to this section">&para;</a></h3>
-<p>The cluster phase changes during expansion:</p>
+<h1 id="cross-cluster-database-replication-ccdr">Cross-cluster database replication (CCDR)<a class="headerlink" href="#cross-cluster-database-replication-ccdr" title="Anchor link to this section">&para;</a></h1>
+<p>Replicate a database from one Neo4j cluster to a read-only replica on another,
+for disaster recovery or to serve reads closer to a second region.</p>
+<div class="admonition info">
+<p class="admonition-title">What this operator supports</p>
+<p><strong>Backup-based replication only.</strong> The replica pulls a differential backup
+chain from object storage. It needs <strong>no network path between the two
+Kubernetes clusters</strong> — no load balancer, no cross-cluster TLS trust, no
+NetworkPolicy changes.</p>
+<p><strong>Network replication is not supported</strong> and is rejected by the validator.
+It requires the upstream servers' <code>server.cluster.advertised_address</code> to be
+externally routable, and the operator pins those to in-cluster DNS. Exposing
+a Service does not work around it, because the upstream hands the downstream
+the addresses to connect to. See
+<code>docs/design/cross-cluster-replication.md</code> for the full analysis.</p>
+</div>
+<p><strong>Requirements</strong></p>
 <table>
 <thead>
 <tr>
-<th>Phase</th>
-<th>Meaning</th>
+<th></th>
+<th></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>Ready</code></td>
-<td>Normal operation</td>
+<td>Downstream (replica) cluster</td>
+<td>Neo4j <strong>2026.08+</strong> — enforced</td>
 </tr>
 <tr>
-<td><code>Expanding</code></td>
-<td>PVCs being patched and StatefulSet being recreated</td>
+<td>Upstream cluster</td>
+<td>Neo4j 2025.01+ — not enforced (the operator cannot inspect another cluster)</td>
 </tr>
 <tr>
-<td><code>Ready</code></td>
-<td>Expansion complete</td>
-</tr>
-<tr>
-<td><code>Failed</code></td>
-<td>Expansion failed (check events for details)</td>
+<td>Shared object storage</td>
+<td>S3, GCS or Azure Blob, reachable from both clusters</td>
 </tr>
 </tbody>
 </table>
-<h3 id="pvc-status">PVC Status<a class="headerlink" href="#pvc-status" title="Anchor link to this section">&para;</a></h3>
-<p>You can verify the expansion at the PVC level:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Check PVC sizes (spec.resources shows the requested size)</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span>neo4j.com/cluster<span class="o">=</span>my-cluster<span class="w"> </span>-o<span class="w"> </span>custom-columns<span class="o">=</span>NAME:.metadata.name,REQUESTED:.spec.resources.requests.storage,CAPACITY:.status.capacity.storage
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Example output during expansion:</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># NAME                          REQUESTED   CAPACITY</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># data-my-cluster-server-0      200Gi       100Gi    &lt;- expanding (CSI driver working)</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># data-my-cluster-server-1      200Gi       200Gi    &lt;- done</span>
+<hr />
+<h2 id="how-it-fits-together">How it fits together<a class="headerlink" href="#how-it-fits-together" title="Anchor link to this section">&para;</a></h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>UPSTREAM cluster (K8s cluster A)          DOWNSTREAM cluster (K8s cluster B)
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>┌──────────────────────────────┐          ┌──────────────────────────────────┐
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│ Neo4jEnterpriseCluster       │          │ Neo4jEnterpriseCluster           │
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   database: foo              │          │                                  │
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│                              │          │ Neo4jReplicaDatabase             │
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│ Neo4jBackup                  │  s3://   │   name: foo-replica  (read-only) │
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   mode: replication-source   │ ───────► │   source.pullURI: s3://…         │
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   schedule: hourly DIFF      │  chain   │                                  │
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   status.replicationPullURI ─┼──────────┤─► paste into source.pullURI      │
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>└──────────────────────────────┘          │                                  │
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                                          │ Neo4jDatabaseAlias               │
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                                          │   name: foo → foo-replica        │
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                                          └──────────────────────────────────┘
 </span></code></pre></div>
-<blockquote>
-<p><strong>Note:</strong> The <code>CAPACITY</code> column reflects the actual filesystem size, which is updated asynchronously by the CSI driver. The operator does not wait for capacity to catch up — it only patches the request. Some providers (especially Azure) may take several minutes.</p>
-</blockquote>
-<h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Anchor link to this section">&para;</a></h2>
-<h3 id="storage-shrink-is-not-supported">Storage Shrink Is Not Supported<a class="headerlink" href="#storage-shrink-is-not-supported" title="Anchor link to this section">&para;</a></h3>
-<p>Reducing <code>spec.storage.size</code> below the current PVC size is rejected by the operator. Kubernetes does not support PVC shrink. If you attempt it, you'll see:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>PHASE: Failed
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>EVENT: StorageExpansionFailed - Storage shrink rejected: spec.storage.size (50Gi)
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>       is smaller than existing data PVCs; PVC shrink is not supported by Kubernetes
+<p>The two clusters never talk to each other. The only coupling is the bucket.</p>
+<hr />
+<h2 id="1-upstream-produce-the-chain">1. Upstream: produce the chain<a class="headerlink" href="#1-upstream-produce-the-chain" title="Anchor link to this section">&para;</a></h2>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jBackup</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-chain</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">replication-source</span><span class="w">        </span><span class="c1"># turns chain-breaking configs into errors</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-cluster</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span><span class="w">                   </span><span class="c1"># single-database scope is required</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="nt">schedule</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;0</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*&quot;</span><span class="w">           </span><span class="c1"># hourly; bounds the replica&#39;s staleness</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="nt">backupType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AUTO</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="nt">preferDiffAsParent</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">  </span><span class="nt">storage</span><span class="p">:</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">    </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-backups</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="nt">cloud</span><span class="p">:</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">      </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws</span>
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">      </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-creds</span>
 </span></code></pre></div>
-<p>To recover, set <code>spec.storage.size</code> back to the current size or larger.</p>
-<h3 id="storageclass-changes-are-not-supported">StorageClass Changes Are Not Supported<a class="headerlink" href="#storageclass-changes-are-not-supported" title="Anchor link to this section">&para;</a></h3>
-<p>Changing <code>spec.storage.className</code> after creation requires manual migration (different operation, out of scope for this feature).</p>
-<h3 id="filesystem-expansion-timing">Filesystem Expansion Timing<a class="headerlink" href="#filesystem-expansion-timing" title="Anchor link to this section">&para;</a></h3>
-<p>The operator patches PVC <code>.spec.resources.requests</code> but does not wait for <code>.status.capacity</code> to reflect the new size. The actual filesystem resize is handled asynchronously by the CSI driver and kubelet. For most providers this takes seconds to a few minutes.</p>
+<p><code>mode: replication-source</code> enforces:</p>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>single-database scope</td>
+<td>an instance-wide backup's layout can't be consumed by a per-database <code>pullURI</code></td>
+</tr>
+<tr>
+<td>no <code>spec.retention</code></td>
+<td>pruning a differential's parent breaks the chain</td>
+</tr>
+<tr>
+<td>no competing writer to the same <code>storage</code></td>
+<td>a second CR interleaving artifacts breaks the chain</td>
+</tr>
+<tr>
+<td><code>schedule</code> required</td>
+<td>without one the chain never advances and lag grows without bound</td>
+</tr>
+</tbody>
+</table>
+<p>Read the pull URI back once the first backup has run:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jbackup<span class="w"> </span>foo-chain<span class="w"> </span>-n<span class="w"> </span>prod<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.status.replicationPullURI}&#39;</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># s3://prod-backups/foo/foo-chain/</span>
+</span></code></pre></div>
+<div class="admonition danger">
+<p class="admonition-title">The operator cannot protect the chain from your bucket lifecycle rules</p>
+<p>For cloud storage the operator <strong>never prunes</strong> — retention is delegated to
+bucket lifecycle rules, which it can neither read nor validate. A lifecycle
+rule that expires objects in this directory <strong>will silently break the
+differential chain</strong> and force the replica to be rebuilt from scratch.</p>
+<p>Exclude the replication-source path from lifecycle expiry. No operator-side
+validation can catch this for you.</p>
+</div>
+<h3 id="mixed-cadence-recommended-for-large-databases">Mixed cadence (recommended for large databases)<a class="headerlink" href="#mixed-cadence-recommended-for-large-databases" title="Anchor link to this section">&para;</a></h3>
+<p>A daily FULL plus an hourly DIFF, sharing one directory:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Daily full — the chain root</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">spec</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> mode</span><span class="p">:</span><span class="w"> </span><span class="nv">replication-source</span><span class="p p-Indicator">,</span><span class="nt"> schedule</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;0</span><span class="nv"> </span><span class="s">2</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*&quot;</span><span class="p p-Indicator">,</span><span class="nt"> options</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> backupType</span><span class="p">:</span><span class="w"> </span><span class="nv">FULL</span><span class="w"> </span><span class="p p-Indicator">},</span><span class="w"> </span><span class="nv">…</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nn">---</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Hourly differential — chains off it</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nt">spec</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> chainFromBackup</span><span class="p">:</span><span class="w"> </span><span class="nv">foo-chain</span><span class="p p-Indicator">,</span><span class="nt"> schedule</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;0</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*&quot;</span><span class="p p-Indicator">,</span><span class="nt"> options</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> backupType</span><span class="p">:</span><span class="w"> </span><span class="nv">DIFF</span><span class="w"> </span><span class="p p-Indicator">},</span><span class="w"> </span><span class="nv">…</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span></code></pre></div>
+<p><code>chainFromBackup</code> makes both write into the same directory, and the operator
+refuses to run them concurrently. This is <em>not</em> flagged as a competing writer.</p>
+<hr />
+<h2 id="2-downstream-create-the-replica">2. Downstream: create the replica<a class="headerlink" href="#2-downstream-create-the-replica" title="Anchor link to this section">&para;</a></h2>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaDatabase</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="nt">upstreamDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span><span class="nt">pullInterval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1m</span><span class="w">                </span><span class="c1"># bounds the recovery point objective</span>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">    </span><span class="nt">pullURI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://prod-backups/foo/foo-chain/</span><span class="w">        </span><span class="c1"># from step 1</span>
+</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">    </span><span class="nt">seedURI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://prod-backups/foo/foo-chain/foo-2026-08-01T02-00-00.backup</span>
+</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">    </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-creds</span>
+</span></code></pre></div>
+<p><code>spec.source</code> is <strong>immutable</strong>. Neo4j offers no way to re-point an existing
+replica, so changing it would mean dropping and re-seeding — delete and recreate
+the CR instead if you need to.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jreplicadatabase<span class="w"> </span>-n<span class="w"> </span>dr
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># NAME          CLUSTER      UPSTREAM   PHASE         LAG   AGE</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># foo-replica   dr-cluster   foo        Replicating   3     12m</span>
+</span></code></pre></div>
+<p><strong>Replicas are read-only.</strong> Both primaries and secondaries refuse writes.
+Clients must use <code>AccessMode.READ</code> / <code>executeRead</code>, or
+<code>cypher-shell --access-mode=read</code>.</p>
+<hr />
+<h2 id="3-downstream-pre-stage-the-failover-alias">3. Downstream: pre-stage the failover alias<a class="headerlink" href="#3-downstream-pre-stage-the-failover-alias" title="Anchor link to this section">&para;</a></h2>
+<p>Cypher has <strong>no <code>RENAME DATABASE</code></strong>, so <code>foo-replica</code> keeps that name forever —
+including after promotion. An alias lets applications address <code>foo</code> throughout:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jDatabaseAlias</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>foo</code> on the DR cluster resolves to</th>
+<th>Clients get</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Steady state</td>
+<td><code>foo-replica</code>, a read-only replica</td>
+<td>reads</td>
+</tr>
+<tr>
+<td>After promotion</td>
+<td><code>foo-replica</code>, now a standard database</td>
+<td>reads <strong>and writes</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Create this <strong>now, not during the outage</strong>. Aliases can target a database that
+is still a replica, so there is nothing to do inside the failover window — the
+same connection string silently gains write capability the moment promotion
+completes.</p>
+<hr />
+<h2 id="4-downstream-replicate-users-and-roles">4. Downstream: replicate users and roles<a class="headerlink" href="#4-downstream-replicate-users-and-roles" title="Anchor link to this section">&para;</a></h2>
+<p>Privileges and roles are <strong>not</strong> replicated by CCDR. Apply the same
+<code>Neo4jUser</code> / <code>Neo4jRole</code> / <code>Neo4jRoleBinding</code> CRs to the downstream cluster
+that you apply upstream — with <code>clusterRef</code> pointed at the DR cluster. The
+operator makes this a copy-paste rather than a manual re-creation.</p>
+<hr />
+<h2 id="5-failover-promoting-the-replica">5. Failover: promoting the replica<a class="headerlink" href="#5-failover-promoting-the-replica" title="Anchor link to this section">&para;</a></h2>
+<div class="admonition danger">
+<p class="admonition-title">Promotion is irreversible</p>
+<p>A promoted database <strong>cannot be re-attached</strong> to its upstream. Any
+replication lag outstanding at that moment becomes <strong>permanent data loss</strong>.
+Check <code>status.replicationLag</code> first if the upstream is still reachable.</p>
+</div>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaPromotion</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failover-2026-08-07</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">replicaRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span><span class="w">                       </span><span class="c1"># optional; omit to retain current topology</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span></code></pre></div>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jreplicapromotion<span class="w"> </span>-n<span class="w"> </span>dr
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1"># NAME                  REPLICA       PHASE       LAGTAKEN   COMPLETED</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># failover-2026-08-07   foo-replica   Completed   3          2026-08-07T09:14:22Z</span>
+</span></code></pre></div>
+<p><code>status.observedLagTxIds</code> records the RPO the promotion actually took, so it is
+auditable after the incident. The operator records it; it never blocks a
+failover on it.</p>
+<h3 id="why-promotion-is-a-separate-cr-not-a-field">Why promotion is a separate CR, not a field<a class="headerlink" href="#why-promotion-is-a-separate-cr-not-a-field" title="Anchor link to this section">&para;</a></h3>
+<p>A <code>promote: true</code> field in a level-triggered spec could be set back to <code>false</code>,
+which would mean "make it a replica again" — impossible in Neo4j, and honourable
+only by dropping and re-seeding. More importantly, a GitOps controller
+re-applying the pre-promotion manifest after a failover is byte-identical to a
+deliberate revert. A one-shot CR is inert to re-apply.</p>
+<h3 id="what-happens-to-the-neo4jreplicadatabase-cr">What happens to the Neo4jReplicaDatabase CR<a class="headerlink" href="#what-happens-to-the-neo4jreplicadatabase-cr" title="Anchor link to this section">&para;</a></h3>
+<p>It <strong>stays, and goes inert</strong>:</p>
+<ul>
+<li><code>status.phase: Promoted</code> — terminal. The controller stops touching the
+  database entirely: no create, no topology reconciliation, no drift correction.</li>
+<li><strong>Deleting it will NOT drop the database.</strong> Once promoted, the finalizer
+  releases without dropping regardless of <code>deletionPolicy</code>. A promoted database
+  is your live system; removing a CR that no longer describes it must not be a
+  data-loss event.</li>
+<li>The guard is live state, not status: before any mutating action the controller
+  re-reads the database's <code>type</code> from <code>SHOW DATABASES</code>. <strong>Promoting by hand at a
+  <code>cypher-shell</code> is therefore safe too</strong> — the operator notices and goes
+  terminal rather than "correcting" the drift by dropping your database.</li>
+</ul>
+<h3 id="handing-back-to-declarative-management">Handing back to declarative management<a class="headerlink" href="#handing-back-to-declarative-management" title="Anchor link to this section">&para;</a></h3>
+<p>The promoted database is now an ordinary standard database. Adopt it with a
+<code>Neo4jDatabase</code> CR — <code>ifNotExists: true</code> makes <code>CREATE DATABASE</code> a no-op:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jDatabase</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">metadata</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">foo-replica</span><span class="p p-Indicator">,</span><span class="nt"> namespace</span><span class="p">:</span><span class="w"> </span><span class="nv">dr</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span></code></pre></div>
+<p>The <code>Neo4jReplicaDatabase</code> CR can then be deleted (harmlessly) or kept as the
+record of where the database came from. Both CRs may coexist safely: the replica
+CR's finalizer no longer drops, so only <code>Neo4jDatabase</code> can.</p>
+<hr />
+<h2 id="hazards-worth-knowing">Hazards worth knowing<a class="headerlink" href="#hazards-worth-knowing" title="Anchor link to this section">&para;</a></h2>
+<p><strong>Restoring or recreating the upstream database detaches every replica.</strong>
+A restore changes the database's internal ID; downstream replicas detach and
+must be recreated from a fresh chain. <code>Neo4jRestore</code> has no way to know replicas
+exist — they are in a different Kubernetes cluster with no back-reference. If
+you restore an upstream, plan to rebuild its replicas.</p>
+<p><strong>A broken chain requires a rebuild, not a repair.</strong> If the differential chain
+is interrupted — a lifecycle rule, a competing writer, a deleted artifact — the
+replica cannot resume. Delete the <code>Neo4jReplicaDatabase</code> and recreate it from a
+complete chain.</p>
+<p><strong>The seed must belong to the chain.</strong> A <code>seedURI</code> outside the <code>pullURI</code>
+directory produces a replica that seeds successfully and then can never apply a
+differential. The validator warns about this; it cannot verify it, because the
+operator cannot see the bucket.</p>
+<hr />
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
-<h3 id="storageclass-does-not-allow-volume-expansion">"StorageClass does not allow volume expansion"<a class="headerlink" href="#storageclass-does-not-allow-volume-expansion" title="Anchor link to this section">&para;</a></h3>
-<p>Your StorageClass has <code>allowVolumeExpansion: false</code> or unset. Patch it:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>storageclass<span class="w"> </span>&lt;name&gt;<span class="w"> </span>-p<span class="w"> </span><span class="s1">&#39;{&quot;allowVolumeExpansion&quot;: true}&#39;</span>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Failed</code>, "requires Neo4j 2026.08 or later"</td>
+<td>downstream cluster predates replica support</td>
+</tr>
+<tr>
+<td><code>Failed</code>, "network replication is not supported"</td>
+<td>set <code>source.mode: backup</code></td>
+</tr>
+<tr>
+<td><code>Pending</code>, cluster not Ready</td>
+<td>downstream cluster still bootstrapping</td>
+</tr>
+<tr>
+<td>Lag grows without bound</td>
+<td>upstream backup CR not running — check its schedule and <code>status</code></td>
+</tr>
+<tr>
+<td><code>Promoted</code> unexpectedly</td>
+<td>someone promoted out of band; the CR is now inert by design</td>
+</tr>
+</tbody>
+</table>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jreplicadatabase<span class="w"> </span>foo-replica<span class="w"> </span>-n<span class="w"> </span>dr
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>-n<span class="w"> </span>dr<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>ReplicaPromotionDetected
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jbackup<span class="w"> </span>foo-chain<span class="w"> </span>-n<span class="w"> </span>prod<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.status.replicationPullURI}&#39;</span>
 </span></code></pre></div>
-<p>Then retry the expansion (the operator will pick it up on the next reconcile).</p>
-<h3 id="expansion-stuck-in-expanding-phase">Expansion Stuck in "Expanding" Phase<a class="headerlink" href="#expansion-stuck-in-expanding-phase" title="Anchor link to this section">&para;</a></h3>
-<ol>
-<li>Check events: <code>kubectl get events --field-selector involvedObject.name=my-cluster</code></li>
-<li>Check PVC conditions: <code>kubectl describe pvc data-my-cluster-server-0</code></li>
-<li>Look for <code>FileSystemResizePending</code> condition — this means the CSI driver is waiting for a pod restart to complete the resize (some drivers require this).</li>
-</ol>
-<h3 id="pvcs-not-found">PVCs Not Found<a class="headerlink" href="#pvcs-not-found" title="Anchor link to this section">&para;</a></h3>
-<p>If the operator can't find PVCs to expand, check that PVCs have the expected labels:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Server PVCs</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span>neo4j.com/cluster<span class="o">=</span>my-cluster<span class="w"> </span>-l<span class="w"> </span>neo4j.com/role<span class="o">=</span>server
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Standalone PVCs</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span>neo4j.com/cluster<span class="o">=</span>my-standalone<span class="w"> </span>-l<span class="w"> </span>neo4j.com/role<span class="o">=</span>data
-</span></code></pre></div>
-<p>For clusters created before labeling was added, the operator falls back to name-based discovery (<code>data-{cluster-name}-server-{ordinal}</code>).</p>
-<h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
-<p>See <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/clusters/storage-expansion.yaml"><code>examples/clusters/storage-expansion.yaml</code></a> for a complete example.</p>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li><code>docs/design/cross-cluster-replication.md</code> — design rationale, and why network
+  replication is not supported</li>
+<li><code>docs/user_guide/guides/backup_restore.md</code> — the backup machinery this builds on</li>
+<li>Neo4j Operations Manual → Clustering → <em>Replicating databases across clusters</em></li>
+</ul>
 
 
 
@@ -3937,7 +4027,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../upgrades/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Upgrades">
+          <a href="../backup_restore/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Backup &amp; Restore">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3947,20 +4037,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Upgrades
+                Backup & Restore
               </div>
             </div>
           </a>
         
         
           
-          <a href="../fault_tolerance/" class="md-footer__link md-footer__link--next" aria-label="Next: Fault Tolerance">
+          <a href="../database_aliases/" class="md-footer__link md-footer__link--next" aria-label="Next: Database Aliases">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Fault Tolerance
+                Database Aliases
               </div>
             </div>
             <div class="md-footer__button md-icon">
