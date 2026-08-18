@@ -3695,7 +3695,7 @@ OperatorHub bundle) or CI's drift gate will fail your PR:</p>
 <p>Deploys a minimal Neo4j Enterprise standalone (<code>hack/smoke-test-standalone.yaml</code>),
 waits for <code>Ready</code> (up to 5 min), then cleans up — a quick real-cluster sanity
 check. To run one integration test by name:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>make<span class="w"> </span>test-one<span class="w"> </span><span class="nv">TEST</span><span class="o">=</span><span class="s2">&quot;should create standalone&quot;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>make<span class="w"> </span>test-one<span class="w"> </span><span class="nv">TEST</span><span class="o">=</span><span class="s2">"should create standalone"</span>
 </span></code></pre></div>
 <p>(Wraps Ginkgo <code>--focus</code>; assumes a cluster + operator already exist.)</p>
 <h2 id="7-tear-down">7. Tear down<a class="headerlink" href="#7-tear-down" title="Anchor link to this section">&para;</a></h2>

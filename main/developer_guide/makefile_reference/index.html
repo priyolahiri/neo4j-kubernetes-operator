@@ -6770,7 +6770,7 @@
 <strong>Usage</strong>: <code>make all</code> or just <code>make</code>
 <strong>Dependencies</strong>: <code>build</code>
 <strong>Example</strong>:
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>make<span class="w">         </span><span class="c1"># Same as &#39;make all&#39;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>make<span class="w">         </span><span class="c1"># Same as 'make all'</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>make<span class="w"> </span>all<span class="w">     </span><span class="c1"># Explicit call</span>
 </span></code></pre></div></p>
 <h2 id="code-generation">Code Generation<a class="headerlink" href="#code-generation" title="Anchor link to this section">&para;</a></h2>
@@ -6799,7 +6799,7 @@
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># After editing api/v1beta1/*_types.go and adding +kubebuilder:rbac markers:</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>make<span class="w"> </span>ship-prep<span class="w">    </span><span class="c1"># one command — runs every regeneration step</span>
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>git<span class="w"> </span>add<span class="w"> </span>-A
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;...&quot;</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"..."</span>
 </span></code></pre></div>
 <h3 id="make-sync-all"><code>make sync-all</code><a class="headerlink" href="#make-sync-all" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Description</strong>: Run every code-generation and sync step (does not build the bundle).
@@ -6904,7 +6904,7 @@ Chains: <code>manifests</code> → <code>generate</code> → <code>sync-kustomiz
 <strong>Duration</strong>: ~30 seconds
 <strong>Test runner override</strong>: the recipe runs <code>$(GO_TEST_CMD)</code> (default <code>go test</code>). CI swaps in <a href="#make-gotestsum">gotestsum</a> for richer reporting:
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>make<span class="w"> </span>gotestsum
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>make<span class="w"> </span>test-unit<span class="w"> </span><span class="nv">GO_TEST_CMD</span><span class="o">=</span><span class="s2">&quot;./bin/gotestsum --format=testname --junitfile=unit-junit.xml --jsonfile=unit-tests.json --&quot;</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>make<span class="w"> </span>test-unit<span class="w"> </span><span class="nv">GO_TEST_CMD</span><span class="o">=</span><span class="s2">"./bin/gotestsum --format=testname --junitfile=unit-junit.xml --jsonfile=unit-tests.json --"</span>
 </span></code></pre></div>
 <strong>Example</strong>:
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>make<span class="w"> </span>test-unit

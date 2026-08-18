@@ -3785,23 +3785,23 @@
 </ol>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h2>
 <p>Your StorageClass must have <code>allowVolumeExpansion: true</code>. Most cloud provider default StorageClasses support this. Verify with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>storageclass<span class="w"> </span>&lt;your-storage-class&gt;<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.allowVolumeExpansion}&#39;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>storageclass<span class="w"> </span>&lt;your-storage-class&gt;<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.allowVolumeExpansion}'</span>
 </span></code></pre></div>
 <p>If it returns <code>false</code> or empty, patch it:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>storageclass<span class="w"> </span>&lt;your-storage-class&gt;<span class="w"> </span>-p<span class="w"> </span><span class="s1">&#39;{&quot;allowVolumeExpansion&quot;: true}&#39;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>storageclass<span class="w"> </span>&lt;your-storage-class&gt;<span class="w"> </span>-p<span class="w"> </span><span class="s1">'{"allowVolumeExpansion": true}'</span>
 </span></code></pre></div>
 <blockquote>
 <p><strong>Note:</strong> Not all storage provisioners support online volume expansion. Check your provider's documentation. Most CSI drivers (AWS EBS, GCP PD, Azure Disk) do support it.</p>
 </blockquote>
 <h2 id="expanding-data-storage">Expanding Data Storage<a class="headerlink" href="#expanding-data-storage" title="Anchor link to this section">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Check current storage size</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.spec.storage.size}&#39;</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.storage.size}'</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># 100Gi</span>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># Expand to 200Gi</span>
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span>--type<span class="o">=</span>merge<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">&#39;{&quot;spec&quot;:{&quot;storage&quot;:{&quot;size&quot;:&quot;200Gi&quot;}}}&#39;</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">'{"spec":{"storage":{"size":"200Gi"}}}'</span>
 </span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
 </span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># Watch the expansion progress</span>
 </span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span>-w
@@ -3814,7 +3814,7 @@
 <p>The same approach works for <code>Neo4jEnterpriseStandalone</code>:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>neo4jenterprisestandalone<span class="w"> </span>my-standalone<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--type<span class="o">=</span>merge<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">&#39;{&quot;spec&quot;:{&quot;storage&quot;:{&quot;size&quot;:&quot;200Gi&quot;}}}&#39;</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">'{"spec":{"storage":{"size":"200Gi"}}}'</span>
 </span></code></pre></div>
 <p>The operator expands the single PVC and recreates the StatefulSet with zero downtime.</p>
 <h2 id="monitoring-expansion">Monitoring Expansion<a class="headerlink" href="#monitoring-expansion" title="Anchor link to this section">&para;</a></h2>
@@ -3880,7 +3880,7 @@
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <h3 id="storageclass-does-not-allow-volume-expansion">"StorageClass does not allow volume expansion"<a class="headerlink" href="#storageclass-does-not-allow-volume-expansion" title="Anchor link to this section">&para;</a></h3>
 <p>Your StorageClass has <code>allowVolumeExpansion: false</code> or unset. Patch it:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>storageclass<span class="w"> </span>&lt;name&gt;<span class="w"> </span>-p<span class="w"> </span><span class="s1">&#39;{&quot;allowVolumeExpansion&quot;: true}&#39;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>storageclass<span class="w"> </span>&lt;name&gt;<span class="w"> </span>-p<span class="w"> </span><span class="s1">'{"allowVolumeExpansion": true}'</span>
 </span></code></pre></div>
 <p>Then retry the expansion (the operator will pick it up on the next reconcile).</p>
 <h3 id="expansion-stuck-in-expanding-phase">Expansion Stuck in "Expanding" Phase<a class="headerlink" href="#expansion-stuck-in-expanding-phase" title="Anchor link to this section">&para;</a></h3>
