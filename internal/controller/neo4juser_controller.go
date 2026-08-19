@@ -197,17 +197,41 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return r.fail(ctx, user, "post-create read failed", err, requeue)
 		}
 		if info == nil {
-			// Should be impossible — we just created it. Treat as transient.
-			return r.fail(ctx, user, "user not visible after create (eventual consistency?)", nil, requeue)
+			// The user demonstrably exists — CREATE USER just succeeded — but
+			// the system database has not made it visible to this session yet.
+			// That is benign eventual consistency on a multi-server cluster,
+			// NOT a failure: requeue and re-read rather than recording Failed.
+			//
+			// Returning an error here used to be the entry point to a
+			// permanent livelock. The applied password hash is written to
+			// status only at the end of a successful pass, so failing here
+			// left it empty; the next reconcile then saw "password needs
+			// rotating", issued an ALTER to the SAME password, and Neo4j
+			// rejects that outright — forever. IsPasswordUnchangedError below
+			// closes that trap too, but not entering it is cheaper.
+			r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserCreated,
+				"User %q created; awaiting visibility in the system database", username)
+			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 	} else {
 		// Diff and ALTER existing user.
 		opts := r.computeAlter(user, info, passwordHash, passwordValue, desiredSuspended)
 		if !opts.IsEmpty() {
 			if err := nc.AlterUser(ctx, username, &opts); err != nil {
-				return r.fail(ctx, user, "alter user failed", err, requeue)
+				// "Old password and new password cannot be the same" means the
+				// stored password ALREADY equals what the spec asks for — the
+				// desired state holds. Treat it as success so the reconcile
+				// proceeds and records the hash; failing here instead makes the
+				// condition permanent, because the hash is what would stop us
+				// re-issuing the same ALTER next time.
+				if !neo4jclient.IsPasswordUnchangedError(err) {
+					return r.fail(ctx, user, "alter user failed", err, requeue)
+				}
+				r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserUpdated,
+					"User %q password already matches spec; recording as applied", username)
+			} else {
+				r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserUpdated, "User %q updated", username)
 			}
-			r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserUpdated, "User %q updated", username)
 		}
 	}
 
