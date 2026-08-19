@@ -50,6 +50,22 @@ runs:
           done
         done
 
+        # cert-manager state. A TLS spec fails as "no TLS secret found" or a
+        # cluster stuck Initializing, and the cause is usually one level up:
+        # ca-cluster-issuer not Ready, or a CertificateRequest stuck pending.
+        # None of that is visible from pods or operator logs, and it is exactly
+        # what was missing when integration run 32226204116 failed both TLS
+        # specs with "IssuerNotReady".
+        echo "=== cert-manager: Issuers / Certificates / Requests ===" >> cluster-debug.log
+        kubectl get clusterissuers,issuers,certificates,certificaterequests -A -o wide >> cluster-debug.log 2>&1 || true
+        echo "--- ca-cluster-issuer detail ---" >> cluster-debug.log
+        kubectl describe clusterissuer ca-cluster-issuer >> cluster-debug.log 2>&1 || true
+        echo "--- not-Ready certificates ---" >> cluster-debug.log
+        kubectl get certificates -A -o json 2>/dev/null \
+          | jq -r '.items[] | select([.status.conditions[]? | select(.type=="Ready" and .status=="True")] | length == 0)
+                   | "\(.metadata.namespace)/\(.metadata.name): \([.status.conditions[]? | "\(.type)=\(.status) \(.reason) \(.message)"] | join("; "))"' \
+          >> cluster-debug.log 2>&1 || true
+
         echo "=== CRD Status ===" >> cluster-debug.log
         kubectl get crd | grep neo4j >> cluster-debug.log 2>&1 || true
 
@@ -155,6 +171,32 @@ runs:
 
         echo "::group::operator log tail (last 150 lines)"
         tail -150 "$log"
+        echo "::endgroup::"
+
+    # TLS specs fail with a symptom ("no TLS secret found") whose cause lives in
+    # cert-manager, not in the operator or the pod. Surface a NOT-READY issuer or
+    # certificate directly in the job log; stay silent when everything is Ready
+    # so this adds no noise to unrelated failures.
+    - name: Surface not-Ready cert-manager objects in the job log
+      if: always()
+      shell: bash
+      run: |
+        problems=0
+        echo "::group::cert-manager readiness"
+        for kind in clusterissuer issuer certificate certificaterequest; do
+          out=$(kubectl get "$kind" -A -o json 2>/dev/null \
+            | jq -r '.items[]? | select([.status.conditions[]? | select(.type=="Ready" and .status=="True")] | length == 0)
+                     | "\(.kind) \(.metadata.namespace // "-")/\(.metadata.name): \([.status.conditions[]? | "\(.type)=\(.status) (\(.reason // "-")) \(.message // "")"] | join(" | "))"' 2>/dev/null || true)
+          if [ -n "$out" ]; then printf '%s\n' "$out"; problems=1; fi
+        done
+        if [ "$problems" = 0 ]; then
+          echo "(all cert-manager issuers/certificates report Ready)"
+        else
+          echo ""
+          echo "A not-Ready issuer explains TLS specs failing with 'no TLS secret found'"
+          echo "or a cluster stuck Initializing — the operator is waiting on a Secret"
+          echo "cert-manager will never produce."
+        fi
         echo "::endgroup::"
 
     - name: Archive cluster logs

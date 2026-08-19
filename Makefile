@@ -990,6 +990,10 @@ dev-cluster: ## Create a Kind cluster for development
 		kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s; \
 		echo "Creating self-signed ClusterIssuer for development..."; \
 		kubectl apply -f config/dev/self-signed-issuer.yaml || echo "Self-signed issuer creation skipped (file may not exist)"; \
+		echo "Waiting for ca-cluster-issuer to become Ready (TLS deployments depend on it)..."; \
+		kubectl wait --for=condition=Ready certificate/selfsigned-ca -n cert-manager --timeout=180s || true; \
+		kubectl wait --for=condition=Ready clusterissuer/ca-cluster-issuer --timeout=180s || \
+			echo "WARNING: ca-cluster-issuer not Ready — spec.tls.mode=cert-manager deployments will hang waiting for a Secret"; \
 		echo "Development cluster ready!"; \
 	else \
 		echo "Development cluster already exists"; \
