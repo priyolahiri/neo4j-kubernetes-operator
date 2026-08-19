@@ -89,6 +89,74 @@ runs:
           echo "(every pod reported Ready — nothing to surface)"
         fi
 
+    # The step above only fires for a NOT-READY pod. A failure where every pod
+    # is healthy and the OPERATOR is the thing erroring produces "(every pod
+    # reported Ready — nothing to surface)" and nothing else, leaving the job
+    # log with no signal at all — the operator log goes only to the artifact.
+    #
+    # That cost a full extra diagnosis pass on the PR #337 failure: a Neo4jUser
+    # never reached Ready while its cluster was entirely healthy, and the cause
+    # (the same reconcile error repeating for 10 minutes) was invisible until
+    # someone downloaded the artifact. The frequency summary below is the part
+    # that matters for that shape of failure: it collapses hundreds of identical
+    # reconcile errors into one counted line.
+    - name: Surface operator errors in the job log
+      if: always()
+      shell: bash
+      run: |
+        ns=neo4j-operator-system
+        dep=deployment/neo4j-operator-controller-manager
+        if ! kubectl get -n "$ns" "$dep" >/dev/null 2>&1; then
+          echo "(no operator deployment in $ns — nothing to surface)"
+          exit 0
+        fi
+
+        log=$(mktemp)
+        kubectl logs -n "$ns" "$dep" --tail=-1 > "$log" 2>&1 || true
+        if [ ! -s "$log" ]; then
+          echo "(operator log empty)"
+          exit 0
+        fi
+
+        # A stuck reconcile repeats one error many times, so the COUNT is the
+        # tell. Strip the per-reconcile noise (ids, timestamps) so repetitions
+        # collapse onto one line.
+        echo "::group::operator errors by frequency (top 10)"
+        if grep -qE '\bERROR\b' "$log"; then
+          grep -E '\bERROR\b' "$log" \
+            | sed -E 's/.*"error": "([^"]{0,180}).*/\1/' \
+            | sed -E 's/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/<uuid>/g' \
+            | sort | uniq -c | sort -rn | head -10
+        else
+          echo "(no ERROR lines)"
+        fi
+        echo "::endgroup::"
+
+        # cut -f4 (tab-delimited by default) pulls the message out of the
+        # operator's "<ts>\t<level>\t<logger>\t<message>\t<json>" line. Do NOT
+        # swap this for `sed 's/[^\t]*\t//'`: \t inside a bracket expression is
+        # GNU-only, so it silently no-ops on BSD sed and the timestamp stays in
+        # the key, defeating the deduplication.
+        #
+        # Warnings get the same counted treatment. A plain "last N" is useless
+        # here: benign topology advisories ("2 servers provide limited fault
+        # tolerance") repeat constantly and would push the one interesting
+        # warning off the end.
+        echo "::group::operator warning events by frequency (top 10)"
+        if grep -qF '"type": "Warning"' "$log"; then
+          grep -F '"type": "Warning"' "$log" \
+            | cut -f4 \
+            | cut -c1-180 \
+            | sort | uniq -c | sort -rn | head -10
+        else
+          echo "(no Warning events)"
+        fi
+        echo "::endgroup::"
+
+        echo "::group::operator log tail (last 150 lines)"
+        tail -150 "$log"
+        echo "::endgroup::"
+
     - name: Archive cluster logs
       uses: actions/upload-artifact@v7
       if: always()
