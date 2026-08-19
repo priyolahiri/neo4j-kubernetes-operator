@@ -93,6 +93,73 @@ var _ = Describe("Neo4jUser end-to-end", Label("core"), func() {
 		}
 	})
 
+	// Regression: a Neo4jUser must recover when its recorded password hash is
+	// lost while the Neo4j user already exists with the desired password.
+	//
+	// This used to livelock permanently. The hash is written to status only at
+	// the end of a fully successful pass, so any interruption before that —
+	// operator restart, update conflict, or the post-create SHOW USERS racing
+	// the system database's eventual consistency — left it empty. The next
+	// reconcile then saw "password needs rotating", issued ALTER USER ... SET
+	// PASSWORD with the value already stored, and Neo4j rejects same-password
+	// ALTER as a hard ArgumentError. The hash was therefore never recorded and
+	// the loop repeated forever (CI: PR #337, 630s spec timeout).
+	//
+	// Clearing the hash directly reproduces the trapped state deterministically,
+	// without needing to win the original race. Before the fix this spec hangs
+	// until timeout; after it, the user returns to Ready.
+	It("recovers when the applied password hash is lost", SpecTimeout(testTimeout), func(ctx SpecContext) {
+		By("Creating a Neo4jUser and waiting for it to become Ready")
+		user = &neo4jv1beta1.Neo4jUser{
+			ObjectMeta: metav1.ObjectMeta{Name: "hashloss", Namespace: namespace.Name},
+			Spec: neo4jv1beta1.Neo4jUserSpec{
+				ClusterRef:        clusterName,
+				Username:          "hashloss",
+				PasswordSecretRef: &neo4jv1beta1.SecretKeyRef{Name: "appuser-creds"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, user)).To(Succeed())
+
+		key := types.NamespacedName{Name: "hashloss", Namespace: namespace.Name}
+		Eventually(func() string {
+			u := &neo4jv1beta1.Neo4jUser{}
+			if err := k8sClient.Get(ctx, key, u); err != nil {
+				return ""
+			}
+			return u.Status.Phase
+		}, clusterTimeout, interval).Should(Equal("Ready"))
+
+		By("Clearing status.passwordSecretHash to simulate an interrupted reconcile")
+		Eventually(func() error {
+			u := &neo4jv1beta1.Neo4jUser{}
+			if err := k8sClient.Get(ctx, key, u); err != nil {
+				return err
+			}
+			u.Status.PasswordSecretHash = ""
+			u.Status.Phase = "Pending"
+			return k8sClient.Status().Update(ctx, u)
+		}, time.Minute, interval).Should(Succeed())
+
+		By("Expecting the user to reconcile back to Ready rather than livelock")
+		// The controller now re-issues ALTER USER with the password already in
+		// place. Neo4j rejects it; the fix classifies that rejection as the
+		// desired state already holding, so the pass completes and re-records
+		// the hash instead of failing forever.
+		Eventually(func() string {
+			u := &neo4jv1beta1.Neo4jUser{}
+			if err := k8sClient.Get(ctx, key, u); err != nil {
+				return ""
+			}
+			return u.Status.Phase
+		}, clusterTimeout, interval).Should(Equal("Ready"),
+			"Neo4jUser livelocked: it re-ALTERs to the same password and never recovers")
+
+		By("Confirming the hash was re-recorded, so the loop cannot repeat")
+		u := &neo4jv1beta1.Neo4jUser{}
+		Expect(k8sClient.Get(ctx, key, u)).To(Succeed())
+		Expect(u.Status.PasswordSecretHash).ToNot(BeEmpty())
+	})
+
 	It("creates, rotates and drops a user", SpecTimeout(testTimeout), func(ctx SpecContext) {
 		By("Creating a Neo4jUser bound to the reader role")
 		user = &neo4jv1beta1.Neo4jUser{

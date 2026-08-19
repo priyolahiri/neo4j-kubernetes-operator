@@ -96,3 +96,35 @@ func IsNotFoundError(err error) bool {
 	return strings.Contains(msg, "not found") ||
 		strings.Contains(msg, "does not exist")
 }
+
+// IsPasswordUnchangedError reports whether err is Neo4j rejecting an
+// `ALTER USER … SET PASSWORD` because the new password equals the current one.
+//
+// Neo4j treats this as a hard ArgumentError, but for a reconciler it is the
+// DESIRED state already holding: the stored password is exactly what the spec
+// asks for. Callers should treat it as success, otherwise a benign no-op ALTER
+// becomes a permanent failure.
+//
+// This is not hypothetical. The Neo4jUser reconciler records the applied
+// password hash in status only after a fully successful pass. If anything
+// interrupts between CREATE USER and that status write — an operator restart, a
+// conflict, or the post-create read racing the system database's eventual
+// consistency — the next reconcile sees an empty status hash, decides the
+// password needs rotating, and issues an ALTER to the same value. Without this
+// classification that ALTER fails forever and the user never reaches Ready
+// (observed in CI: PR #337's 2026.06 lane, a 630s spec timeout).
+//
+// Matched on the error CODE plus the message, because ArgumentError alone
+// covers many unrelated failures.
+func IsPasswordUnchangedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if !strings.Contains(msg, "argumenterror") {
+		return false
+	}
+	// Neo4j: "Failed to alter the specified user 'x': Old password and new
+	// password cannot be the same."
+	return strings.Contains(msg, "old password and new password cannot be the same")
+}
