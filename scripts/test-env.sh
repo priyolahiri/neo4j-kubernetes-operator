@@ -58,16 +58,53 @@ cluster() {
     kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.yaml"
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s
 
-    # Create self-signed ClusterIssuer for testing
+    # Create self-signed ClusterIssuer for testing.
+    #
+    # The TLS specs issue certificates from ca-cluster-issuer, which is THREE
+    # objects deep:
+    #
+    #   selfsigned-cluster-issuer (selfSigned)
+    #     -> Certificate selfsigned-ca
+    #       -> Secret selfsigned-ca-secret
+    #         -> ClusterIssuer ca-cluster-issuer
+    #
+    # This previously waited only on the Certificate, with `|| log warning` so a
+    # timeout was swallowed and the suite started anyway. Both parts were wrong:
+    #
+    #  1. A Ready Certificate does NOT imply a Ready ClusterIssuer — the issuer
+    #     goes Ready only after cert-manager observes the resulting Secret, a
+    #     further reconcile.
+    #  2. Continuing past a timeout turns a setup problem into confusing red TLS
+    #     specs 20 minutes later. Observed on a slow runner (main @5f5d17c,
+    #     integration run 32226204116): both TLS specs failed with
+    #     "IssuerNotReady: Referenced issuer does not have a Ready status
+    #     condition" while every non-TLS spec passed.
+    #
+    # So: wait for what the tests actually depend on, with a timeout that suits a
+    # loaded CI runner, and FAIL LOUDLY rather than handing back a cluster whose
+    # TLS is broken.
     log "Creating self-signed ClusterIssuer for testing..."
-    if kubectl apply -f "${PROJECT_ROOT}/config/dev/self-signed-issuer.yaml"; then
-        # Wait for the bootstrap CA certificate to be issued so ca-cluster-issuer becomes Ready
-        log "Waiting for CA certificate to be issued..."
-        kubectl wait --for=condition=Ready certificate/selfsigned-ca -n cert-manager --timeout=60s || \
-            log "Warning: CA certificate not yet ready (TLS tests may fail)"
-    else
-        echo "Self-signed issuer creation skipped (file may not exist)"
+    if ! kubectl apply -f "${PROJECT_ROOT}/config/dev/self-signed-issuer.yaml"; then
+        log "ERROR: could not apply ${PROJECT_ROOT}/config/dev/self-signed-issuer.yaml"
+        log "       Every TLS spec depends on it; refusing to hand back a half-configured cluster."
+        exit 1
     fi
+
+    log "Waiting for the bootstrap CA certificate (selfsigned-ca)..."
+    if ! kubectl wait --for=condition=Ready certificate/selfsigned-ca -n cert-manager --timeout=180s; then
+        log "ERROR: bootstrap CA certificate selfsigned-ca never became Ready."
+        kubectl describe certificate/selfsigned-ca -n cert-manager 2>&1 | tail -30 || true
+        exit 1
+    fi
+
+    log "Waiting for ca-cluster-issuer to become Ready..."
+    if ! kubectl wait --for=condition=Ready clusterissuer/ca-cluster-issuer --timeout=180s; then
+        log "ERROR: ca-cluster-issuer never became Ready — every TLS spec would fail against this cluster."
+        kubectl get clusterissuer,certificate -A 2>&1 || true
+        kubectl describe clusterissuer/ca-cluster-issuer 2>&1 | tail -30 || true
+        exit 1
+    fi
+    log "ca-cluster-issuer is Ready."
 
     log "Test cluster ready!"
 }
