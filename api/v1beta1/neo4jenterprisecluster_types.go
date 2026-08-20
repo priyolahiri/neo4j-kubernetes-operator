@@ -317,6 +317,16 @@ type TLSSpec struct {
 	// No effect on Neo4jEnterpriseStandalone (single-server deployments
 	// have no intra-cluster traffic).
 	//
+	// SECOND-ORDER EFFECT, easy to miss: the reason to set this false is an
+	// issuer that does not populate the Secret's ca.crt — and ca.crt is also
+	// what the OPERATOR uses to verify the Neo4j server certificate on its own
+	// Bolt connection. So in that configuration the operator connects with
+	// certificate verification DISABLED, on the channel carrying the admin
+	// password. It is not silent: the operator logs a WARNING naming the cause
+	// on every such connection (see buildTLSConfig in internal/neo4j). This
+	// field's name only mentions peer validation, so the coupling is called
+	// out here explicitly.
+	//
 	// +optional
 	// +kubebuilder:default=true
 	StrictPeerValidation *bool `json:"strictPeerValidation,omitempty"`

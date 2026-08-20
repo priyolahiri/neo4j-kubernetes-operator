@@ -468,6 +468,25 @@ The operator exposes two fields for this:
 | `spec.trustedCASecrets` (list of `{name, key}`) | Most cases. Adds each Secret's CA to Neo4j's JVM-default truststore. Works for OIDC, LDAPS, generic outbound HTTPS. Cert-manager-issued Secrets reference directly — default key `ca.crt` matches. |
 | `spec.extraVolumes` + `spec.extraVolumeMounts` | When a **custom** Neo4j SSL policy needs a CA at a specific filesystem path via `dbms.ssl.policy.<name>.truststore_path`. Mount it at a path of your own — see the limitation below. |
 
+!!! danger "`strictPeerValidation: false` also disables the operator's own certificate verification"
+
+    The reason to set `strictPeerValidation: false` is an issuer that does not
+    populate `ca.crt` in the TLS Secret. That same `ca.crt` is what the
+    **operator** uses to verify the Neo4j server certificate on its own Bolt
+    connection — the connection it authenticates over **as the admin user**.
+
+    So in that configuration the operator connects with certificate
+    verification **disabled**, and an attacker positioned on in-cluster traffic
+    could capture the admin credentials. The field's name mentions only *peer*
+    validation, which is why this is spelled out.
+
+    It is not silent: the operator logs a `WARNING: Neo4j TLS certificate
+    verification is DISABLED for this connection` line naming the cause on
+    every affected connection. Grep your operator logs for it.
+
+    Prefer an issuer that populates `ca.crt` (cert-manager's CA and
+    self-signed issuers both do) over turning this off.
+
 !!! warning "This cannot add trust to the operator-managed `cluster` SSL policy"
 
     `spec.extraVolumes` is **not** a way to make the built-in `cluster` policy

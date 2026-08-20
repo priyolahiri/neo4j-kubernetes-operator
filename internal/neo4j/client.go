@@ -35,6 +35,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -51,8 +52,27 @@ type Client struct {
 	// Connection pool metrics
 	poolMetrics *ConnectionPoolMetrics
 
+	// tlsVerificationDisabled records that this client connected WITHOUT
+	// verifying the server certificate (buildTLSConfig fell back to
+	// InsecureSkipVerify because no usable ca.crt was found). Exposed so
+	// callers can surface it — the credentials on this channel are admin
+	// credentials, so an unverified connection is worth reporting, not hiding.
+	tlsVerificationDisabled bool
+
 	// Mutex for thread-safe operations
 	mutex sync.RWMutex
+}
+
+// TLSVerificationDisabled reports whether this client's connection skips server
+// certificate verification. True only when spec.tls.mode is cert-manager and no
+// usable ca.crt could be loaded; see buildTLSConfig.
+func (c *Client) TLSVerificationDisabled() bool {
+	if c == nil {
+		return false
+	}
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tlsVerificationDisabled
 }
 
 // CircuitBreaker implements the circuit breaker pattern for connection failures
@@ -194,6 +214,9 @@ type ServerInfo struct {
 
 // NewClientForPod creates a Neo4j client that connects to a specific pod
 func NewClientForPod(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sClient client.Client, adminSecretName, podURL string) (*Client, error) {
+	// Tracks whether buildTLSConfig had to disable certificate verification.
+	var tlsVerificationDisabled bool
+
 	// Get credentials from secret
 	credentials, err := getCredentials(context.Background(), k8sClient, cluster.Namespace, adminSecretName)
 	if err != nil {
@@ -212,7 +235,8 @@ func NewClientForPod(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sClient cli
 		c.ConnectionLivenessCheckTimeout = 5 * time.Second
 
 		// Configure TLS if enabled
-		if tlsCfg := buildTLSConfig(context.Background(), k8sClient, cluster.Namespace, cluster.Name, cluster.Spec.TLS); tlsCfg != nil {
+		if tlsCfg, insecure := buildTLSConfig(context.Background(), k8sClient, cluster.Namespace, cluster.Name, cluster.Spec.TLS); tlsCfg != nil {
+			tlsVerificationDisabled = insecure
 			c.TlsConfig = tlsCfg
 		}
 	}
@@ -224,11 +248,12 @@ func NewClientForPod(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sClient cli
 	}
 
 	return &Client{
-		driver:            driver,
-		enterpriseCluster: cluster,
-		credentials:       credentials,
-		circuitBreaker:    newCircuitBreaker(),
-		poolMetrics:       newConnectionPoolMetrics(),
+		driver:                  driver,
+		enterpriseCluster:       cluster,
+		credentials:             credentials,
+		tlsVerificationDisabled: tlsVerificationDisabled,
+		circuitBreaker:          newCircuitBreaker(),
+		poolMetrics:             newConnectionPoolMetrics(),
 	}, nil
 }
 
@@ -239,11 +264,31 @@ func NewClientForPod(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sClient cli
 //  2. Auto-discover CA cert from the cert-manager-generated Secret ("{resourceName}-tls-secret").
 //  3. Fall back to InsecureSkipVerify: true only if no CA cert can be loaded.
 //
-// This ensures proper TLS verification by default when cert-manager provides a CA,
-// while remaining compatible with development setups where CA certs may not be available.
-func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, resourceName string, tlsSpec *neo4jv1beta1.TLSSpec) *tls.Config {
+// Returns (config, verificationDisabled). The second value is true only for
+// case 3, and callers surface it via Client.TLSVerificationDisabled().
+//
+// WHY THE SECOND RETURN VALUE EXISTS. Case 3 disables certificate verification
+// on the channel the operator uses to authenticate to Neo4j AS THE ADMIN USER,
+// so an in-cluster MITM could capture the admin password and every statement
+// the operator issues. It used to happen SILENTLY and indefinitely — no log, no
+// event, no status — which meant an operator could run permanently unverified
+// while its spec said `tls.mode: cert-manager`.
+//
+// The trigger is not only the transient startup window the old comment
+// described. It keys on the `ca.crt` entry of the TLS Secret, which is exactly
+// what `spec.tls.strictPeerValidation: false` exists to accommodate: issuers
+// that never populate `ca.crt`. So opting out of strict CLUSTER PEER validation
+// also, and undocumentedly, opted out of the operator's own CLIENT
+// verification — a coupling the field name gives no hint of. That is now
+// documented on the field and in the TLS guide.
+//
+// Deliberately NOT failing closed here: some deployments legitimately run
+// against issuers with no `ca.crt`, and turning that into a hard failure would
+// break them on upgrade. Making it loud and observable is the fix; a
+// fail-closed opt-in is a follow-up with an API surface of its own.
+func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, resourceName string, tlsSpec *neo4jv1beta1.TLSSpec) (*tls.Config, bool) {
 	if tlsSpec == nil || tlsSpec.Mode != "cert-manager" {
-		return nil
+		return nil, false
 	}
 
 	// Try loading CA cert from secrets in priority order:
@@ -270,24 +315,40 @@ func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, res
 				return &tls.Config{
 					RootCAs:    pool,
 					MinVersion: tls.VersionTLS12,
-				}
+				}, false
 			}
 		}
 	}
 
-	// Fallback: no CA cert available — skip verification for self-signed certificates.
-	// This path is reached during initial startup (before cert-manager issues the cert)
-	// or when the issuer doesn't provide ca.crt in the Secret.
-	// The operator reconciler will retry, and once cert-manager issues the cert, the
-	// proper CA-verified path (above) will be used on subsequent reconciliations.
-	// codeql[go/disabled-certificate-check]: Intentional fallback for transient startup window before cert-manager issues certs
+	// Fallback: no usable ca.crt in any candidate Secret, so certificate
+	// verification is DISABLED for this connection. See the function comment for
+	// why this is not a hard failure.
+	//
+	// Log every time rather than once: this is a security-relevant downgrade and
+	// a single startup line would scroll away long before anyone looked.
+	log.FromContext(ctx).Info(
+		"WARNING: Neo4j TLS certificate verification is DISABLED for this connection — "+
+			"no usable 'ca.crt' was found, so the operator cannot verify the server it is "+
+			"sending admin credentials to. Populate 'ca.crt' in the TLS Secret (cert-manager "+
+			"issuers usually do) to restore verification. NOTE: setting "+
+			"spec.tls.strictPeerValidation=false also reaches this path.",
+		"namespace", namespace,
+		"resource", resourceName,
+		"secretsTried", secretNames,
+	)
+
+	// codeql[go/disabled-certificate-check]: deliberate, logged fallback; see the function comment
 	return &tls.Config{
-		InsecureSkipVerify: true, //nolint:gosec // Fallback when CA cert unavailable
-	}
+		InsecureSkipVerify: true, //nolint:gosec // logged, observable fallback when no CA cert is available
+		MinVersion:         tls.VersionTLS12,
+	}, true
 }
 
 // NewClientForEnterpriseStandalone creates a new optimized Neo4j client for standalone deployments
 func NewClientForEnterpriseStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, k8sClient client.Client, adminSecretName string) (*Client, error) {
+	// Tracks whether buildTLSConfig had to disable certificate verification.
+	var tlsVerificationDisabled bool
+
 	// Get credentials from secret
 	credentials, err := getCredentials(context.Background(), k8sClient, standalone.Namespace, adminSecretName)
 	if err != nil {
@@ -314,7 +375,8 @@ func NewClientForEnterpriseStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseSt
 		c.FetchSize = 1000 // Optimized fetch size for memory efficiency
 
 		// Configure TLS if enabled
-		if tlsCfg := buildTLSConfig(context.Background(), k8sClient, standalone.Namespace, standalone.Name, standalone.Spec.TLS); tlsCfg != nil {
+		if tlsCfg, insecure := buildTLSConfig(context.Background(), k8sClient, standalone.Namespace, standalone.Name, standalone.Spec.TLS); tlsCfg != nil {
+			tlsVerificationDisabled = insecure
 			c.TlsConfig = tlsCfg
 		}
 	}
@@ -349,17 +411,21 @@ func NewClientForEnterpriseStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseSt
 	}
 
 	client := &Client{
-		driver:            driver,
-		enterpriseCluster: nil, // No cluster for standalone
-		credentials:       credentials,
-		circuitBreaker:    circuitBreaker,
-		poolMetrics:       poolMetrics,
+		tlsVerificationDisabled: tlsVerificationDisabled,
+		driver:                  driver,
+		enterpriseCluster:       nil, // No cluster for standalone
+		credentials:             credentials,
+		circuitBreaker:          circuitBreaker,
+		poolMetrics:             poolMetrics,
 	}
 
 	return client, nil
 }
 
 func NewClientForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sClient client.Client, adminSecretName string) (*Client, error) {
+	// Tracks whether buildTLSConfig had to disable certificate verification.
+	var tlsVerificationDisabled bool
+
 	// Get credentials from secret
 	credentials, err := getCredentials(context.Background(), k8sClient, cluster.Namespace, adminSecretName)
 	if err != nil {
@@ -392,7 +458,8 @@ func NewClientForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sCli
 		c.FetchSize = 1000 // Optimized fetch size for memory efficiency
 
 		// Configure TLS if enabled
-		if tlsCfg := buildTLSConfig(context.Background(), k8sClient, cluster.Namespace, cluster.Name, cluster.Spec.TLS); tlsCfg != nil {
+		if tlsCfg, insecure := buildTLSConfig(context.Background(), k8sClient, cluster.Namespace, cluster.Name, cluster.Spec.TLS); tlsCfg != nil {
+			tlsVerificationDisabled = insecure
 			c.TlsConfig = tlsCfg
 		}
 
@@ -422,11 +489,12 @@ func NewClientForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sCli
 	}
 
 	client := &Client{
-		driver:            driver,
-		enterpriseCluster: cluster,
-		credentials:       credentials,
-		circuitBreaker:    circuitBreaker,
-		poolMetrics:       poolMetrics,
+		tlsVerificationDisabled: tlsVerificationDisabled,
+		driver:                  driver,
+		enterpriseCluster:       cluster,
+		credentials:             credentials,
+		circuitBreaker:          circuitBreaker,
+		poolMetrics:             poolMetrics,
 	}
 
 	return client, nil

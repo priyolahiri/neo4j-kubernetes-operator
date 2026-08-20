@@ -21,6 +21,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -164,11 +165,21 @@ func TestBuildTLSConfig(t *testing.T) {
 			}
 			k8sClient := builder.Build()
 
-			result := buildTLSConfig(context.Background(), k8sClient, tt.namespace, tt.resourceName, tt.tlsSpec)
+			result, insecure := buildTLSConfig(context.Background(), k8sClient, tt.namespace, tt.resourceName, tt.tlsSpec)
+
+			// The returned flag is what lets callers report a verification
+			// downgrade instead of it passing unnoticed, so it must track
+			// InsecureSkipVerify exactly — not merely be set "often enough".
+			if insecure != tt.wantInsecureSkip {
+				t.Errorf("verificationDisabled flag = %v, want %v", insecure, tt.wantInsecureSkip)
+			}
 
 			if tt.wantNil {
 				if result != nil {
 					t.Errorf("expected nil TLS config, got %+v", result)
+				}
+				if insecure {
+					t.Error("verificationDisabled must be false when TLS is not configured at all")
 				}
 				return
 			}
@@ -180,6 +191,9 @@ func TestBuildTLSConfig(t *testing.T) {
 			if tt.wantInsecureSkip {
 				if !result.InsecureSkipVerify {
 					t.Error("expected InsecureSkipVerify=true")
+				}
+				if result.MinVersion != tls.VersionTLS12 {
+					t.Errorf("insecure fallback must still pin MinVersion TLS1.2, got %x", result.MinVersion)
 				}
 				if result.RootCAs != nil {
 					t.Error("expected nil RootCAs when falling back to insecure")
