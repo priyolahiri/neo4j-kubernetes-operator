@@ -3730,6 +3730,11 @@ cluster only when it <em>needs</em> clustering.</p>
 <td>Standalone</td>
 <td>Alias DDL is deployment-independent; the CCDR failover behaviour is covered in Phase 5</td>
 </tr>
+<tr>
+<td><strong>Operator→Neo4j TLS verification</strong> (CA path + <code>tls.crt</code> pinning)</td>
+<td>Standalone</td>
+<td>Standalone never reads <code>ca.crt</code> server-side (no cluster SSL policy), so removing that key from the TLS Secret isolates the <em>operator's</em> client verification with nothing else changing. On a cluster the same edit also breaks intra-cluster mTLS and the two failures are indistinguishable</td>
+</tr>
 </tbody>
 </table>
 <h2 id="the-phase-plan">The phase plan<a class="headerlink" href="#the-phase-plan" title="Anchor link to this section">&para;</a></h2>
@@ -3789,6 +3794,18 @@ so in the log rather than recording the phase as passed.</p>
 <tr>
 <td>Alias drift is corrected</td>
 <td><code>ALTER ALIAS</code> it elsewhere by hand → next reconcile restores <code>spec.targetDatabase</code></td>
+</tr>
+<tr>
+<td>TLS: CA path</td>
+<td><code>spec.tls.mode: cert-manager</code> + <code>ca-cluster-issuer</code> → Ready, diagnostics collected, and <strong>no</strong> <code>PINNING</code> line in the operator log</td>
+</tr>
+<tr>
+<td>TLS: certificate pinning</td>
+<td>scale <code>cert-manager</code> to 0 (so it cannot restore the key), <code>kubectl patch secret &lt;name&gt;-tls-secret --type=json -p '[{"op":"remove","path":"/data/ca.crt"}]'</code>, then nudge a reconcile. Expect the operator to log <code>verifying the server by PINNING its certificate from 'tls.crt'</code> with a <code>pinnedFingerprintSHA256</code> equal to <code>openssl x509 -in tls.crt -noout -fingerprint -sha256</code>, <strong>and</strong> <code>status.diagnostics.lastCollected</code> to keep advancing — the pinned connection is a real authenticated session, not a fallback that merely logs</td>
+</tr>
+<tr>
+<td>TLS: pin rejects a mismatch</td>
+<td>with <code>ca.crt</code> still absent, replace the Secret's <code>tls.crt</code> with a <em>different</em> certificate carrying the same SANs and do <strong>not</strong> restart the Neo4j pod (it keeps serving the keystore it loaded at startup). Next reconcile must fail with <code>x509: certificate signed by unknown authority</code> in <code>status.diagnostics.collectionError</code>. Restore <code>tls.crt</code> → the next reconcile recovers. This is the only place the pin is proven to <em>reject</em>; CI cannot reach it because every CI Secret has <code>ca.crt</code></td>
 </tr>
 </tbody>
 </table>
@@ -4184,6 +4201,14 @@ tests.</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅ (survives promotion)</td>
 </tr>
+<tr>
+<td>Operator→Neo4j TLS (CA + pinned)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">n/a (HTTPS to Aura)</td>
+<td style="text-align: center;"></td>
+</tr>
 </tbody>
 </table>
 <h2 id="keeping-this-current">Keeping this current<a class="headerlink" href="#keeping-this-current" title="Anchor link to this section">&para;</a></h2>
@@ -4219,6 +4244,12 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.</p>
 <td>2026-08-07</td>
 <td>⚠️ partial — Phases 1 (alias scenarios) + 5A/5B validation only</td>
 <td><strong>Bug found + fixed:</strong> <code>spec.auth</code> is optional on Cluster/Standalone, but five call sites dereferenced <code>Spec.Auth.AdminSecret</code> unguarded — a <code>Neo4jDatabase</code> against a standalone without <code>spec.auth</code> panicked the reconciler and the CR sat with an empty status forever, with nothing on the CR explaining why. Widest site was <code>ResolvedTarget.NewClient</code>, shared by the user/role/binding/authrule and replication controllers. Fixed to use the existing nil-safe helpers. <strong>Also:</strong> <code>make deploy-dev-local</code> reports "deployment configured" without restarting the pod when the <code>:dev</code> tag is unchanged, so a rebuilt binary silently does not take effect — needs <code>kubectl rollout restart</code>. <strong>Verified pass:</strong> alias create/resolve, blue-green re-point, drift correction, alias delete does not drop the target; replica version gate (2026.08 required, refused on 2026.06), network-mode rejection naming <code>advertised_address</code>, replication-source R1/R2/R4 rejections, <code>status.replicationPullURI</code> published. <strong>Not run:</strong> replica seeding, promotion, and alias-survives-promotion — need a 2026.08+ image, which is not yet published (highest on Docker Hub is 2026.06).</td>
+</tr>
+<tr>
+<td><em>(pre-merge, PR #343)</em></td>
+<td>2026-08-21</td>
+<td>⚠️ partial — Phase 1 TLS scenarios only</td>
+<td><strong>Bug found + fixed:</strong> the operator's "insecure TLS fallback" for Secrets without <code>ca.crt</code> had never worked. It set <code>InsecureSkipVerify: true</code>, but the Bolt driver derives that field from the URI scheme and resets it (<code>connector.tlsConfig()</code>), so Go verified against system roots and every connection failed <code>x509: certificate signed by unknown authority</code> — while the operator logged that verification was disabled. So <code>spec.tls.strictPeerValidation: false</code> could not connect at all, and the warning named a state that never existed. Replaced with pinning <code>tls.crt</code> as a one-certificate <code>RootCAs</code>. <strong>A/B on one cluster, same Secret:</strong> pre-pinning binary failed 6/6 reconciles; pinning binary connected and collected diagnostics. <strong>Also verified:</strong> CA path unchanged (no <code>PINNING</code> line, diagnostics fresh), pinned fingerprint matches <code>openssl</code>, a mismatched <code>tls.crt</code> is refused, and restoring it recovers. <strong>Lesson:</strong> handshake unit tests dialed the config verbatim and so could not see the driver's override — they now emulate it (<code>asDriverWouldUse</code>).</td>
 </tr>
 <tr>
 <td>v1.14.0</td>
