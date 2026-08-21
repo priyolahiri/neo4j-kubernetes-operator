@@ -5557,6 +5557,18 @@ spec:
 
                       No effect on Neo4jEnterpriseStandalone (single-server deployments
                       have no intra-cluster traffic).
+
+                      SECOND-ORDER EFFECT, easy to miss: the reason to set this false is an
+                      issuer that does not populate the Secret's ca.crt — and ca.crt is also
+                      what the OPERATOR uses to verify the Neo4j server certificate on its own
+                      Bolt connection, the channel carrying the admin password. With no CA to
+                      verify against, the operator PINS the server certificate from the same
+                      Secret's tls.crt instead, and logs that it did so; the connection stays
+                      authenticated. What remains is an operational consequence rather than a
+                      security one: if the server's certificate is rotated to one that is not
+                      in that Secret, the operator's connection fails until the Secret catches
+                      up. See buildTLSConfig in internal/neo4j. This field's name mentions only
+                      peer validation, so the coupling is called out here explicitly.
                     type: boolean
                   subject:
                     description: Additional certificate subject fields

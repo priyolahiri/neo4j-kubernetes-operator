@@ -154,15 +154,24 @@ type Neo4jUserStatus struct {
 	// +optional
 	CurrentRoles []string `json:"currentRoles,omitempty"`
 
-	// PasswordSecretHash is a SHA-256 fingerprint of the password value
-	// last applied to the cluster. It is a change-detection fingerprint —
-	// not a password-storage hash and not used in any authentication path.
-	// The controller uses it to answer "did the Secret rotate since the
-	// last reconcile?" via equality comparison; the actual password lives
-	// in the referenced Kubernetes Secret and Neo4j stores its own hash
-	// (currently scrypt-based) inside the `system` database. SHA-256 is
-	// the right choice here — collision resistance is what matters for
-	// change detection; computational cost would only slow the loop.
+	// PasswordSecretHash is an opaque change-detection token for the
+	// password Secret last applied to the cluster. The controller compares it
+	// for equality to answer "did the Secret rotate since the last
+	// reconcile?"; it is not used in any authentication path.
+	//
+	// It is derived from the Secret's namespace, name, key and
+	// resourceVersion — deliberately NOT from the password value.
+	//
+	// This field previously held sha256(password). That is an unsalted hash
+	// of a human-chosen secret, published in CR status and readable by anyone
+	// holding the deliberately-low-privilege neo4juser-viewer-role, which
+	// made a live database credential recoverable offline. Nothing needs the
+	// password to detect that the password changed, so it no longer derives
+	// from it. The name is retained for API compatibility.
+	//
+	// A cosmetic write to the Secret also changes resourceVersion and so
+	// triggers one no-op password re-apply; that is harmless because a
+	// same-password ALTER is treated as already-satisfied.
 	// +optional
 	PasswordSecretHash string `json:"passwordSecretHash,omitempty"`
 

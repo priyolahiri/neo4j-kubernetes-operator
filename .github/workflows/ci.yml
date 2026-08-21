@@ -26,6 +26,10 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7
+      with:
+        # Full history so the gitleaks step below scans more than the tip
+        # commit. Only this job needs it; the other jobs keep a shallow clone.
+        fetch-depth: 0
 
     - name: Setup Go environment
       uses: ./.github/actions/setup-go
@@ -64,6 +68,16 @@ jobs:
 
     - name: Every CRD listed on docs landing page, README and nav
       run: make check-crd-catalog
+
+    # Secret scanning was pre-commit-only, so an uninstalled hook or any
+    # --no-verify commit bypassed it entirely — the same bypass class as the two
+    # doc checks above. A committed credential is not something to discover
+    # later, so it runs here too. The checkout for this job sets fetch-depth: 0
+    # so the scan covers history rather than only the tip commit.
+    - name: Secret scan (gitleaks)
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     # Scoped to the drift step — a helm-lint or CSV-coverage failure has its
     # own error output and must not be misdiagnosed as stale artifacts.

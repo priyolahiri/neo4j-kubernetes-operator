@@ -141,14 +141,15 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	var passwordValue string
 	var passwordHash string
 	if user.Spec.PasswordSecretRef != nil {
-		pw, err := r.readPasswordSecret(ctx, user)
+		pw, token, err := r.readPasswordSecret(ctx, user)
 		if err != nil {
 			msg := fmt.Sprintf("password secret read failed: %v", err)
 			r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserSyncFailed, msg, nil, "", nil)
 			return ctrl.Result{RequeueAfter: requeue}, err
 		}
 		passwordValue = pw
-		passwordHash = sha256Hex([]byte(pw))
+		// NOT a hash of the password — see readPasswordSecret.
+		passwordHash = token
 	}
 
 	// Connect
@@ -514,7 +515,27 @@ func (r *Neo4jUserReconciler) roleResourceExists(ctx context.Context, namespace,
 	return roleNameExists(ctx, r.Client, namespace, targetKey, roleName)
 }
 
-func (r *Neo4jUserReconciler) readPasswordSecret(ctx context.Context, user *neo4jv1beta1.Neo4jUser) (string, error) {
+// readPasswordSecret returns the password and a CHANGE TOKEN for it.
+//
+// The token deliberately does NOT derive from the password value. status.
+// passwordSecretHash used to be sha256(password) — an unsalted hash of a
+// human-chosen secret, published in CR status and readable by anyone holding
+// the deliberately-low-privilege neo4juser-viewer-role. That is offline-
+// crackable with commodity hardware, so a read-only viewer could recover a live
+// database credential.
+//
+// The field only ever needed to answer "did the password change since I last
+// applied it?", which the Secret's namespace/name/key/resourceVersion answers
+// without involving the secret material at all. resourceVersion changes on
+// every write to the Secret, so a real rotation is always detected.
+//
+// Trade-off, accepted deliberately: a cosmetic write to the Secret (a label
+// edit, say) also changes resourceVersion and triggers one no-op rotation. That
+// is harmless because a same-password ALTER is now tolerated as
+// already-satisfied (IsPasswordUnchangedError, #340) — before that fix this
+// change would have livelocked every affected user, which is why the ordering
+// mattered.
+func (r *Neo4jUserReconciler) readPasswordSecret(ctx context.Context, user *neo4jv1beta1.Neo4jUser) (password, changeToken string, err error) {
 	ref := user.Spec.PasswordSecretRef
 	key := ref.Key
 	if key == "" {
@@ -522,16 +543,21 @@ func (r *Neo4jUserReconciler) readPasswordSecret(ctx context.Context, user *neo4
 	}
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: user.Namespace, Name: ref.Name}, secret); err != nil {
-		return "", err
+		return "", "", err
 	}
 	val, ok := secret.Data[key]
 	if !ok {
-		return "", fmt.Errorf("secret %q has no key %q", ref.Name, key)
+		return "", "", fmt.Errorf("secret %q has no key %q", ref.Name, key)
 	}
 	if len(val) == 0 {
-		return "", fmt.Errorf("secret %q key %q is empty", ref.Name, key)
+		return "", "", fmt.Errorf("secret %q key %q is empty", ref.Name, key)
 	}
-	return string(val), nil
+	// Namespace/name/key are included so re-pointing PasswordSecretRef at a
+	// different Secret is detected even if resourceVersions happen to collide.
+	token := sha256Hex([]byte(strings.Join([]string{
+		secret.Namespace, secret.Name, key, secret.ResourceVersion,
+	}, "\x00")))
+	return string(val), token, nil
 }
 
 func (r *Neo4jUserReconciler) requeueAfter() time.Duration {

@@ -21,6 +21,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -77,6 +78,7 @@ func TestBuildTLSConfig(t *testing.T) {
 		secrets          []corev1.Secret
 		wantNil          bool
 		wantInsecureSkip bool
+		wantPinned       bool
 		wantRootCAs      bool
 	}{
 		{
@@ -90,7 +92,7 @@ func TestBuildTLSConfig(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			name:             "cert-manager with no secrets falls back to insecure",
+			name:             "cert-manager with no secrets fails closed (nil config)",
 			tlsSpec:          &neo4jv1beta1.TLSSpec{Mode: "cert-manager"},
 			resourceName:     "my-cluster",
 			namespace:        "default",
@@ -131,7 +133,7 @@ func TestBuildTLSConfig(t *testing.T) {
 			wantRootCAs: true,
 		},
 		{
-			name: "TrustedCASecret missing falls back to insecure",
+			name: "TrustedCASecret missing and no tls.crt fails closed",
 			tlsSpec: &neo4jv1beta1.TLSSpec{
 				Mode:            "cert-manager",
 				TrustedCASecret: "nonexistent",
@@ -142,7 +144,11 @@ func TestBuildTLSConfig(t *testing.T) {
 			wantInsecureSkip: true,
 		},
 		{
-			name:         "secret exists but no ca.crt key falls back to insecure",
+			// tls.crt here is the literal string "cert" — NOT valid PEM. So this
+			// asserts that unparseable material is NOT pinned and instead fails
+			// closed. Pinning with real certificates, including refusing an
+			// impostor mid-handshake, is covered in tls_pinning_test.go.
+			name:         "unparseable tls.crt is not pinned and fails closed",
 			tlsSpec:      &neo4jv1beta1.TLSSpec{Mode: "cert-manager"},
 			resourceName: "my-cluster",
 			namespace:    "default",
@@ -154,6 +160,21 @@ func TestBuildTLSConfig(t *testing.T) {
 			},
 			wantInsecureSkip: true,
 		},
+		{
+			// No ca.crt, valid tls.crt: the strictPeerValidation:false shape.
+			// Verification is achieved by pinning, so wantInsecureSkip is false.
+			name:         "no ca.crt but valid tls.crt pins that certificate",
+			tlsSpec:      &neo4jv1beta1.TLSSpec{Mode: "cert-manager"},
+			resourceName: "my-cluster",
+			namespace:    "default",
+			secrets: []corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-tls-secret", Namespace: "default"},
+					Data:       map[string][]byte{"tls.crt": caPEM, "tls.key": []byte("key")},
+				},
+			},
+			wantPinned: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -164,11 +185,31 @@ func TestBuildTLSConfig(t *testing.T) {
 			}
 			k8sClient := builder.Build()
 
-			result := buildTLSConfig(context.Background(), k8sClient, tt.namespace, tt.resourceName, tt.tlsSpec)
+			result, insecure := buildTLSConfig(context.Background(), k8sClient, tt.namespace, tt.resourceName, tt.tlsSpec)
+
+			// wantInsecureSkip means "verification was NOT achieved", which after
+			// the pinning change is only the no-material case: pinning verifies
+			// the peer, so it reports false. See tls_pinning_test.go for the
+			// handshake proof that the pinned config really does verify.
+			if insecure != tt.wantInsecureSkip {
+				t.Errorf("verificationDisabled flag = %v, want %v", insecure, tt.wantInsecureSkip)
+			}
+
+			// No CA and no tls.crt: fail closed with a nil config so the driver
+			// verifies against system roots.
+			if tt.wantInsecureSkip {
+				if result != nil {
+					t.Errorf("expected nil config when no verification material exists, got %+v", result)
+				}
+				return
+			}
 
 			if tt.wantNil {
 				if result != nil {
 					t.Errorf("expected nil TLS config, got %+v", result)
+				}
+				if insecure {
+					t.Error("verificationDisabled must be false when TLS is not configured at all")
 				}
 				return
 			}
@@ -177,12 +218,18 @@ func TestBuildTLSConfig(t *testing.T) {
 				t.Fatal("expected non-nil TLS config, got nil")
 			}
 
-			if tt.wantInsecureSkip {
-				if !result.InsecureSkipVerify {
-					t.Error("expected InsecureSkipVerify=true")
+			if tt.wantPinned {
+				// The pin is a one-certificate trust store, not a callback: the
+				// Bolt driver overwrites InsecureSkipVerify from the URI scheme,
+				// so a VerifyPeerCertificate-based pin never runs in production.
+				if result.RootCAs == nil {
+					t.Error("expected the pinned certificate as RootCAs when ca.crt is absent but tls.crt is present")
 				}
-				if result.RootCAs != nil {
-					t.Error("expected nil RootCAs when falling back to insecure")
+				if result.InsecureSkipVerify {
+					t.Error("pinned config must not rely on InsecureSkipVerify — the driver resets it")
+				}
+				if result.MinVersion != tls.VersionTLS12 {
+					t.Errorf("pinned config must pin MinVersion TLS1.2, got %x", result.MinVersion)
 				}
 			}
 

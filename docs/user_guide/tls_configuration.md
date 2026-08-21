@@ -468,6 +468,42 @@ The operator exposes two fields for this:
 | `spec.trustedCASecrets` (list of `{name, key}`) | Most cases. Adds each Secret's CA to Neo4j's JVM-default truststore. Works for OIDC, LDAPS, generic outbound HTTPS. Cert-manager-issued Secrets reference directly — default key `ca.crt` matches. |
 | `spec.extraVolumes` + `spec.extraVolumeMounts` | When a **custom** Neo4j SSL policy needs a CA at a specific filesystem path via `dbms.ssl.policy.<name>.truststore_path`. Mount it at a path of your own — see the limitation below. |
 
+!!! warning "`strictPeerValidation: false` also changes how the operator verifies the server"
+
+    The reason to set `strictPeerValidation: false` is an issuer that does not
+    populate `ca.crt` in the TLS Secret. That same `ca.crt` is what the
+    **operator** uses to verify the Neo4j server certificate on its own Bolt
+    connection — the connection it authenticates over **as the admin user**.
+
+    With no CA available, the operator uses **certificate pinning**: it reads
+    `tls.crt` from the same Secret — the server's own certificate — and trusts
+    exactly that one certificate, nothing else. The connection is verified, and
+    more narrowly than CA verification would be: another certificate from the
+    same issuer is refused too.
+
+    It is not silent: the operator logs `Neo4j TLS: no usable 'ca.crt';
+    verifying the server by PINNING its certificate from 'tls.crt'` with the
+    pinned certificate's SHA-256 fingerprint, SANs and expiry, on every affected
+    connection. The fingerprint is directly comparable to
+    `openssl x509 -in tls.crt -noout -fingerprint -sha256`.
+
+    What pinning costs you is rotation tolerance: if the server is restarted
+    onto a certificate that is not the one in the Secret, the operator's
+    connection is refused (`x509: certificate signed by unknown authority`)
+    until the Secret catches up.
+
+    **Before operator v1.15 this configuration could not connect at all.** The
+    old code asked the Bolt driver to skip verification, but the driver derives
+    that setting from the URI scheme and reset it, so the connection was
+    verified against system roots and a privately-issued certificate failed —
+    while the operator logged that verification was disabled. If you set
+    `strictPeerValidation: false` on an older version and saw
+    `x509: certificate signed by unknown authority` in the operator log, that is
+    the bug, and pinning is the fix.
+
+    Prefer an issuer that populates `ca.crt` (cert-manager's CA and
+    self-signed issuers both do) over turning this off.
+
 !!! warning "This cannot add trust to the operator-managed `cluster` SSL policy"
 
     `spec.extraVolumes` is **not** a way to make the built-in `cluster` policy
