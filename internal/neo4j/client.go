@@ -19,8 +19,10 @@ package neo4j
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"regexp"
@@ -262,30 +264,53 @@ func NewClientForPod(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sClient cli
 // Resolution order:
 //  1. If tlsSpec.TrustedCASecret is set, load CA cert from that Secret (user override).
 //  2. Auto-discover CA cert from the cert-manager-generated Secret ("{resourceName}-tls-secret").
-//  3. Fall back to InsecureSkipVerify: true only if no CA cert can be loaded.
+//  3. No usable ca.crt, but tls.crt is present: VERIFY BY PINNING that certificate.
+//  4. Neither: return nil and let the driver verify against system roots, which
+//     fails closed for a private CA and succeeds for a publicly-trusted one.
 //
-// Returns (config, verificationDisabled). The second value is true only for
-// case 3, and callers surface it via Client.TLSVerificationDisabled().
+// There is deliberately NO InsecureSkipVerify path, and the history is worth
+// keeping because the code this replaced did not do what its comment claimed.
 //
-// WHY THE SECOND RETURN VALUE EXISTS. Case 3 disables certificate verification
-// on the channel the operator uses to authenticate to Neo4j AS THE ADMIN USER,
-// so an in-cluster MITM could capture the admin password and every statement
-// the operator issues. It used to happen SILENTLY and indefinitely — no log, no
-// event, no status — which meant an operator could run permanently unverified
-// while its spec said `tls.mode: cert-manager`.
+// KEY FACT: the Bolt driver overwrites two fields of any caller-supplied
+// TlsConfig before dialing — InsecureSkipVerify from the URI scheme and
+// ServerName from the URI host (neo4j/internal/connector/connector.go,
+// tlsConfig(); documented on config.Config.TlsConfig). The operator dials
+// neo4j+s://, so InsecureSkipVerify is forced to FALSE whatever this function
+// sets.
 //
-// The trigger is not only the transient startup window the old comment
-// described. It keys on the `ca.crt` entry of the TLS Secret, which is exactly
-// what `spec.tls.strictPeerValidation: false` exists to accommodate: issuers
-// that never populate `ca.crt`. So opting out of strict CLUSTER PEER validation
-// also, and undocumentedly, opted out of the operator's own CLIENT
-// verification — a coupling the field name gives no hint of. That is now
-// documented on the field and in the TLS guide.
+// That made the old fallback inert. It set InsecureSkipVerify: true and logged
+// that verification was disabled; the driver reset the flag, Go verified against
+// system roots, and a privately-issued certificate failed. Confirmed on a live
+// Kind cluster: the pre-pinning binary, against a Secret holding tls.crt and no
+// ca.crt, failed every connection with "x509: certificate signed by unknown
+// authority" while logging that verification was disabled. So the configuration
+// the fallback existed for — spec.tls.strictPeerValidation: false, whose whole
+// purpose is issuers that never populate ca.crt — could not connect at all, and
+// the warning described a state that never existed. (The other justification the
+// old comment offered, covering "initial startup before cert-manager issues the
+// cert", cannot arise either: the Neo4j pod mounts {resourceName}-tls-secret as
+// a non-optional Secret volume, so during that window there is nothing
+// listening.)
 //
-// Deliberately NOT failing closed here: some deployments legitimately run
-// against issuers with no `ca.crt`, and turning that into a hard failure would
-// break them on upgrade. Making it loud and observable is the fix; a
-// fail-closed opt-in is a follow-up with an API surface of its own.
+// Case 3 makes that configuration both work and verified. tls.crt is the
+// server's own certificate, sitting in the same Secret this function already
+// reads, so the pin is expressed as a trust store containing exactly that
+// certificate: RootCAs, nothing else. Go accepts a chain of length one when the
+// presented leaf is itself in the root pool, so the real server verifies and
+// anything else does not — including another certificate from the same CA, since
+// the CA is not in the pool. Being ordinary RootCAs it survives the driver's
+// overrides untouched, keeps hostname verification (the issued certificate
+// carries the pod/service FQDNs as SANs), and needs no gosec or CodeQL
+// suppression.
+//
+// Which in turn means case 4 can fail closed without breaking anyone: reaching
+// it requires a Secret with neither key, and the pod cannot boot in that state.
+//
+// Returns (config, verificationDisabled).
+//
+// The second return value reports that verification was NOT achieved, so
+// callers can surface it via Client.TLSVerificationDisabled(). With pinning in
+// place it is true only for case 4.
 func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, resourceName string, tlsSpec *neo4jv1beta1.TLSSpec) (*tls.Config, bool) {
 	if tlsSpec == nil || tlsSpec.Mode != "cert-manager" {
 		return nil, false
@@ -299,6 +324,10 @@ func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, res
 		secretNames = append(secretNames, tlsSpec.TrustedCASecret)
 	}
 	secretNames = append(secretNames, fmt.Sprintf("%s-tls-secret", resourceName))
+
+	// serverCert holds the first tls.crt seen, as the pinning fallback for
+	// case 3. Collected on the same pass so a missing ca.crt costs no extra Get.
+	var serverCertPEM []byte
 
 	for _, secretName := range secretNames {
 		secret := &corev1.Secret{}
@@ -318,30 +347,97 @@ func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, res
 				}, false
 			}
 		}
+		if serverCertPEM == nil {
+			if crt, ok := secret.Data["tls.crt"]; ok && len(crt) > 0 {
+				serverCertPEM = crt
+			}
+		}
 	}
 
-	// Fallback: no usable ca.crt in any candidate Secret, so certificate
-	// verification is DISABLED for this connection. See the function comment for
-	// why this is not a hard failure.
-	//
-	// Log every time rather than once: this is a security-relevant downgrade and
-	// a single startup line would scroll away long before anyone looked.
+	// Case 3: no usable CA, but we know the server's own certificate — verify
+	// against a trust store holding exactly that certificate. Equal or better
+	// than CA verification for this purpose: it authenticates one certificate
+	// rather than anything the CA is willing to sign. See the function comment
+	// for why this is spelled as RootCAs and not InsecureSkipVerify + a callback.
+	if pool, leaf := serverCertPool(serverCertPEM); pool != nil {
+		log.FromContext(ctx).Info(
+			"Neo4j TLS: no usable 'ca.crt'; verifying the server by PINNING its certificate from 'tls.crt'. "+
+				"Connection is authenticated, but it will fail if the server is restarted onto a certificate "+
+				"that is not in this Secret. Populate 'ca.crt' for CA-based verification.",
+			"namespace", namespace,
+			"resource", resourceName,
+			// Identify the pin by fingerprint and SANs, not Subject: cert-manager
+			// issues SAN-only certificates, so Subject is routinely empty and
+			// would log as "".
+			"pinnedFingerprintSHA256", fingerprintSHA256(leaf),
+			"pinnedDNSNames", leaf.DNSNames,
+			"pinnedNotAfter", leaf.NotAfter.Format(time.RFC3339),
+		)
+		return &tls.Config{
+			RootCAs:    pool,
+			MinVersion: tls.VersionTLS12,
+		}, false
+	}
+
+	// Case 4: neither ca.crt nor tls.crt. Returning nil leaves the driver to
+	// verify against system roots — correct for a publicly-trusted issuer, and a
+	// clean failure for a private one. Reaching here needs a Secret with neither
+	// key, and the Neo4j pod cannot start in that state, so there is nothing to
+	// connect to anyway.
 	log.FromContext(ctx).Info(
-		"WARNING: Neo4j TLS certificate verification is DISABLED for this connection — "+
-			"no usable 'ca.crt' was found, so the operator cannot verify the server it is "+
-			"sending admin credentials to. Populate 'ca.crt' in the TLS Secret (cert-manager "+
-			"issuers usually do) to restore verification. NOTE: setting "+
-			"spec.tls.strictPeerValidation=false also reaches this path.",
+		"WARNING: Neo4j TLS Secret has neither 'ca.crt' nor 'tls.crt', so the operator cannot verify "+
+			"the server it sends admin credentials to. Falling back to system root verification, which "+
+			"will fail for a private CA. Check that the issuer is populating the Secret.",
 		"namespace", namespace,
 		"resource", resourceName,
 		"secretsTried", secretNames,
 	)
+	return nil, true
+}
 
-	// codeql[go/disabled-certificate-check]: deliberate, logged fallback; see the function comment
-	return &tls.Config{
-		InsecureSkipVerify: true, //nolint:gosec // logged, observable fallback when no CA cert is available
-		MinVersion:         tls.VersionTLS12,
-	}, true
+// serverCertPool turns the tls.crt of a TLS Secret into a trust store holding
+// exactly the certificates that Secret contains, and returns the leaf alongside
+// it for logging. Nil, nil if the input holds no parseable certificate — the
+// caller treats that as "no pinning material".
+//
+// tls.crt may be a chain; the leaf is the certificate the server presents and
+// therefore the one whose presence makes verification succeed.
+func serverCertPool(pemBytes []byte) (*x509.CertPool, *x509.Certificate) {
+	leaf := parseLeafCertificate(pemBytes)
+	if leaf == nil {
+		return nil, nil
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return nil, nil
+	}
+	return pool, leaf
+}
+
+// fingerprintSHA256 renders a certificate's SHA-256 fingerprint in the colon-
+// separated hex form openssl prints, so a logged pin can be compared against
+// `openssl x509 -fingerprint -sha256` output directly.
+func fingerprintSHA256(cert *x509.Certificate) string {
+	sum := sha256.Sum256(cert.Raw)
+	out := make([]string, 0, len(sum))
+	for _, b := range sum {
+		out = append(out, fmt.Sprintf("%02X", b))
+	}
+	return strings.Join(out, ":")
+}
+
+// parseLeafCertificate returns the first certificate in a PEM bundle, or nil if
+// the input is empty or contains no parseable certificate.
+func parseLeafCertificate(pemBytes []byte) *x509.Certificate {
+	for block, rest := pem.Decode(pemBytes); block != nil; block, rest = pem.Decode(rest) {
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		if cert, err := x509.ParseCertificate(block.Bytes); err == nil {
+			return cert
+		}
+	}
+	return nil
 }
 
 // NewClientForEnterpriseStandalone creates a new optimized Neo4j client for standalone deployments

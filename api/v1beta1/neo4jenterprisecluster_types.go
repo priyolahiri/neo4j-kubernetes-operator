@@ -320,12 +320,14 @@ type TLSSpec struct {
 	// SECOND-ORDER EFFECT, easy to miss: the reason to set this false is an
 	// issuer that does not populate the Secret's ca.crt — and ca.crt is also
 	// what the OPERATOR uses to verify the Neo4j server certificate on its own
-	// Bolt connection. So in that configuration the operator connects with
-	// certificate verification DISABLED, on the channel carrying the admin
-	// password. It is not silent: the operator logs a WARNING naming the cause
-	// on every such connection (see buildTLSConfig in internal/neo4j). This
-	// field's name only mentions peer validation, so the coupling is called
-	// out here explicitly.
+	// Bolt connection, the channel carrying the admin password. With no CA to
+	// verify against, the operator PINS the server certificate from the same
+	// Secret's tls.crt instead, and logs that it did so; the connection stays
+	// authenticated. What remains is an operational consequence rather than a
+	// security one: if the server's certificate is rotated to one that is not
+	// in that Secret, the operator's connection fails until the Secret catches
+	// up. See buildTLSConfig in internal/neo4j. This field's name mentions only
+	// peer validation, so the coupling is called out here explicitly.
 	//
 	// +optional
 	// +kubebuilder:default=true
