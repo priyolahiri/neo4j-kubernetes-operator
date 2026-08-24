@@ -75,7 +75,7 @@ jobs:
     # later, so it runs here too. The checkout for this job sets fetch-depth: 0
     # so the scan covers history rather than only the tip commit.
     - name: Secret scan (gitleaks)
-      uses: gitleaks/gitleaks-action@v2
+      uses: gitleaks/gitleaks-action@v3
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
