@@ -4,7 +4,7 @@ The front door for every contributor — human or LLM. Read this first. It state
 
 ## Project identity
 
-Neo4j Enterprise Operator for Kubernetes — manages Neo4j Enterprise (5.26.x LTS + 2025.x/2026.x CalVer) via the Kubebuilder framework. Go 1.26, `sigs.k8s.io/controller-runtime` v0.24.1, `k8s.io/*` v0.36.1, `neo4j-go-driver/v5` (Bolt). Two deployment CRDs: `Neo4jEnterpriseCluster` (HA, min 2 servers) and `Neo4jEnterpriseStandalone` (single-node).
+Neo4j Enterprise Operator for Kubernetes — manages Neo4j Enterprise (5.26.x LTS + 2025.x/2026.x CalVer) via the Kubebuilder framework. Go 1.27, `sigs.k8s.io/controller-runtime` v0.24.1, `k8s.io/*` v0.36.1, `neo4j-go-driver/v5` (Bolt). Two deployment CRDs: `Neo4jEnterpriseCluster` (HA, min 2 servers) and `Neo4jEnterpriseStandalone` (single-node).
 
 ## The 5 hard invariants — NEVER violate
 
