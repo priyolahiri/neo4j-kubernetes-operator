@@ -1,0 +1,323 @@
+[
+  {
+    "id": "proc-backup-job",
+    "name": "Neo4j Backup Job",
+    "description": "Creating or updating a Neo4jBackup CR runs exactly one Job per one-time backup (or a CronJob spawning one Job per scheduled firing), records the outcome in status.history, and never stands up a long-running backup pod.",
+    "triggerKind": "api",
+    "triggerRefId": "ent-neo4jbackup",
+    "moduleId": "mod-backup-restore",
+    "steps": [
+      {
+        "refKind": "entity",
+        "refId": "ent-neo4jbackup",
+        "note": "User creates/updates a Neo4jBackup CR naming instanceRef, database/allDatabases/shardedDatabase scope, storage, and optional schedule"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-reconcile-backup",
+        "note": "Validates the spec, resolves the target cluster/standalone, checks readiness/suspend, runs sharded preflight"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-create-backup-job",
+        "note": "One-time backups: creates the single Job running neo4j-admin backup"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-create-backup-cronjob",
+        "note": "Scheduled backups: creates/updates the CronJob that spawns a Job per firing"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-backup-started",
+        "note": "Emitted when the one-time backup Job is created"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-backup-scheduled",
+        "note": "Emitted when the CronJob is created/updated"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-record-backup-run",
+        "note": "On Job completion, parses the backup pod log and appends a BackupRun to status.history"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-backup-completed",
+        "note": "Emitted when the backup Job succeeds"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-backup-failed",
+        "note": "Emitted when the backup Job fails terminally"
+      }
+    ],
+    "audience": "system"
+  },
+  {
+    "id": "proc-restore-job",
+    "name": "Neo4j Restore Job",
+    "description": "Creating a Neo4jRestore CR resolves a backup source and drives either a standalone offline neo4j-admin Job, a cluster in-place Cypher recreate, or a per-database all-databases restore loop, then brings the restored database(s) back online.",
+    "triggerKind": "api",
+    "triggerRefId": "ent-neo4jrestore",
+    "moduleId": "mod-backup-restore",
+    "steps": [
+      {
+        "refKind": "entity",
+        "refId": "ent-neo4jrestore",
+        "note": "Staff creates a Neo4jRestore CR naming instanceRef, source (backupRef or storage), and options"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-reconcile-restore",
+        "note": "Resolves the target, checks terminal phases and version compatibility"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-start-restore",
+        "note": "Validates the request and pins the resolved backup source onto status before branching by target type"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-resolve-backup-chain",
+        "note": "Resolves spec.source.backupRef to a StorageLocation + BackupsPath via the referenced Neo4jBackup's status.history"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-cluster-cypher-restore",
+        "note": "Cluster targets: issues dbms.recreateDatabase and polls until online"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-restore-all-databases",
+        "note": "All-databases cluster restores: recreates one database per reconcile pass from the backup's per-database artifact map"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-create-restore-job",
+        "note": "Standalone targets: scales the instance to 0 and runs an offline neo4j-admin restore Job"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-restore-started",
+        "note": "Emitted when the restore Job or Cypher recreate is issued"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-handle-restore-success",
+        "note": "On success, restarts the instance, registers/starts the restored database(s), runs post-restore hooks"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-restore-completed",
+        "note": "Emitted when the restore reaches Completed"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-restore-failed",
+        "note": "Emitted when the restore fails terminally"
+      }
+    ],
+    "audience": "staff"
+  },
+  {
+    "id": "proc-sharded-seed",
+    "name": "Sharded Database Seeding",
+    "description": "A Neo4jShardedDatabase CR's spec.seedBackupRef is resolved into per-shard seed URIs — a cloud directory URI, or an operator-managed PVC HTTP proxy — so the sharded CREATE DATABASE can seed every graph and property shard from a prior backup.",
+    "triggerKind": "api",
+    "triggerRefId": "ent-neo4jshardeddatabase",
+    "moduleId": "mod-database",
+    "steps": [
+      {
+        "refKind": "entity",
+        "refId": "ent-neo4jshardeddatabase",
+        "note": "User sets spec.seedBackupRef on a Neo4jShardedDatabase CR (or spec.replaceExisting+force for a destructive re-seed of an existing one)"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-reconcile-sharded-database",
+        "note": "Validates config and checks the cluster's property-sharding readiness"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-resolve-backup-chain",
+        "note": "Looks up the referenced Neo4jBackup's Succeeded run and its per-shard/per-family artifacts"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-seed-shard",
+        "note": "Cloud backups become per-shard cloud seedURIs; PVC backups spin up a busybox-httpd proxy Deployment+Service serving each shard's .backup file"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-seed-backup-pending",
+        "note": "Emitted while waiting for the referenced Neo4jBackup to produce a Succeeded run"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-seed-proxy-starting",
+        "note": "Emitted while waiting for the PVC seed-proxy Deployment to become Ready"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-create-sharded-database",
+        "note": "Issues CYPHER 25 CREATE DATABASE ... SET GRAPH SHARD ... SET PROPERTY SHARDS ... OPTIONS { seedURI: ... }"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-sharded-database-ready",
+        "note": "Emitted once the sharded database is operational; the PVC seed proxy (if any) is then torn down"
+      }
+    ],
+    "audience": "staff"
+  },
+  {
+    "id": "proc-replica-promotion",
+    "name": "Replica Promotion",
+    "description": "A Neo4jReplicaPromotion CR performs a one-shot, irreversible promotion of a Neo4jReplicaDatabase's cross-cluster replica into a standalone read-write database, using a check-promote-check-record sequence for crash safety — typically during a DR failover.",
+    "triggerKind": "api",
+    "triggerRefId": "ent-neo4jreplicapromotion",
+    "moduleId": "mod-database",
+    "steps": [
+      {
+        "refKind": "entity",
+        "refId": "ent-neo4jreplicapromotion",
+        "note": "Staff creates a Neo4jReplicaPromotion CR naming replicaRef (a Neo4jReplicaDatabase)"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-promote-replica",
+        "note": "Observes the live database type, calls PromoteReplicaDatabase, and re-observes before recording completion"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-replica-promotion-started",
+        "note": "Emitted before the irreversible promotion call, warning that in-flight replication lag becomes permanent"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-replica-promotion-completed",
+        "note": "Emitted once the live database type is confirmed no longer replica"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-detect-replica-promotion",
+        "note": "The Neo4jReplicaDatabase controller's own reconcile independently detects the type change and marks the replica CR terminal Promoted"
+      }
+    ],
+    "audience": "staff"
+  },
+  {
+    "id": "proc-user-role-reconcile",
+    "name": "Reconcile Neo4jUser password and role state",
+    "audience": "staff",
+    "triggerKind": "api",
+    "moduleId": "mod-security",
+    "steps": [
+      {
+        "refKind": "function",
+        "refId": "sf-reconcile-user",
+        "note": "Neo4jUser reconciler picks up a create/update to the CR (or a requeue) and drives it toward its desired state."
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-validate-user",
+        "note": "Inline validator checks username shape, requires an auth provider, and treats a not-yet-applied password Secret as Pending rather than Failed."
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-create-user",
+        "note": "If the user does not yet exist in Neo4j, CREATE USER is issued with staged password/status/home-database/auth-provider clauses."
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-alter-user",
+        "note": "If the user already exists, only the attributes that drifted from spec (password hash, suspended status, home database, external auth) are ALTERed."
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-grant-role",
+        "note": "Desired roles not yet granted are added via GRANT ROLE; roles no longer desired are removed via REVOKE ROLE (never touching the implicit PUBLIC role)."
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-user-ready",
+        "note": "Once granted roles match spec.roles exactly and no roles are missing, the reconciler emits UserReady and sets status.phase=Ready."
+      }
+    ],
+    "notes": "Neo4jUser.spec is authoritative for password (via the Secret's change-detection hash), accountStatus, homeDatabase, and roles — drift from any of these is reverted every reconcile loop. Privileges are never set here: they live exclusively on Neo4jRole.spec.privileges, never on Neo4jUser or Neo4jRoleBinding."
+  },
+  {
+    "id": "proc-aura-instance-provision",
+    "name": "Aura instance provisioning",
+    "description": "Validate the organization's Aura API credentials, then create or adopt the Aura cloud instance and track it through to Running via the instance phase status flow.",
+    "triggerKind": "api",
+    "moduleId": "mod-aura-core",
+    "steps": [
+      {
+        "refKind": "function",
+        "refId": "sf-validate-aura-credentials",
+        "note": "AuraProviderConfigReconciler proves the referenced credentials work (token exchange + ListInstances) before any instance create is attempted"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-create-aura-instance",
+        "note": "AuraInstanceReconciler.observeOrCreate lists instances by name first, then creates via v1 CreateInstance or v2beta1 CreateInstanceV2 when multiDatabase is requested"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-aura-instance-created"
+      },
+      {
+        "refKind": "entity",
+        "refId": "ent-aurainstance",
+        "note": "Progress is tracked via the sfw-aura-instance-phase status flow on this entity"
+      }
+    ],
+    "audience": "staff"
+  },
+  {
+    "id": "proc-aura-database-lifecycle",
+    "name": "Aura multi-database lifecycle",
+    "description": "Create a database on a multi-database Aura instance, confirm it reconciles to Ready, and track it via the database phase status flow; optionally back it up and restore it in place through the paired per-database CRDs.",
+    "triggerKind": "api",
+    "moduleId": "mod-aura-database",
+    "steps": [
+      {
+        "refKind": "function",
+        "refId": "sf-reconcile-aura-instance",
+        "note": "the referenced AuraInstance must be Ready and probed/created with multiDatabase:true before a database can target it (aura_multidatabase.go)"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-reconcile-aura-database",
+        "note": "creates or adopts the database via the v2beta1 API, refusing when the instance's multiDatabase verdict is explicitly false"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-aura-database-created"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-aura-database-ready"
+      },
+      {
+        "refKind": "entity",
+        "refId": "ent-auradatabase",
+        "note": "Progress is tracked via the sfw-aura-database-phase status flow on this entity"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-reconcile-aura-database-backup",
+        "note": "optional: takes an on-demand per-database backup once the database is Ready"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-reconcile-aura-database-restore",
+        "note": "optional: restores the database in place from a backup, one-shot and non-retryable once submitted"
+      }
+    ],
+    "audience": "staff"
+  }
+]

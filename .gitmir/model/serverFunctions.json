@@ -1,0 +1,1704 @@
+[
+  {
+    "id": "sf-reconcile-cluster",
+    "name": "Reconcile Cluster",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "Top-level Reconcile loop: validates the spec, provisions TLS/RBAC/Services/ConfigMap, applies the server StatefulSet (holding replicas during a scale-down drain), and marks the cluster Ready once formation and rollout are both verified.",
+    "readsFieldIds": [
+      "status.phase"
+    ],
+    "writesFieldIds": [
+      "status.phase"
+    ],
+    "callsFunctionIds": [
+      "sf-hold-image-drift-until-ready",
+      "sf-is-upgrade-required",
+      "sf-advance-rolling-upgrade",
+      "sf-schedule-topology",
+      "sf-apply-topology-constraints",
+      "sf-expand-storage",
+      "sf-drain-server",
+      "sf-verify-cluster-formation",
+      "sf-collect-diagnostics",
+      "sf-merge-env-vars"
+    ],
+    "emitsEventIds": [
+      "ev-topology-warning",
+      "ev-validation-failed",
+      "ev-server-role-validation-failed",
+      "ev-property-sharding-validation-failed",
+      "ev-storage-class-not-found",
+      "ev-cluster-ready",
+      "ev-route-api-not-found",
+      "ev-mcp-apoc-missing",
+      "ev-aura-fleet-management-failed",
+      "ev-aura-fleet-management-plugin-patch-failed",
+      "ev-aura-fleet-management-registered"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-reconcile-standalone",
+    "name": "Reconcile Standalone",
+    "serverUnitId": "su-neo4jenterprisestandalone",
+    "operation": "business_action",
+    "description": "Top-level standalone reconcile: validates the spec (including admin-secret password shape), reconciles TLS/ConfigMap/Service/StatefulSet/Ingress, runs a pre-upgrade health check on image-tag drift, and updates status once the StatefulSet reports one ready replica.",
+    "readsFieldIds": [
+      "status.phase"
+    ],
+    "writesFieldIds": [
+      "status.phase"
+    ],
+    "callsFunctionIds": [
+      "sf-expand-standalone-storage",
+      "sf-collect-standalone-diagnostics"
+    ],
+    "emitsEventIds": [
+      "ev-validation-failed",
+      "ev-storage-class-not-found",
+      "ev-reconcile-failed",
+      "ev-upgrade-started",
+      "ev-upgrade-failed",
+      "ev-route-api-not-found",
+      "ev-mcp-apoc-missing",
+      "ev-aura-fleet-management-failed",
+      "ev-aura-fleet-management-plugin-patch-failed",
+      "ev-aura-fleet-management-registered"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-standalone"
+  },
+  {
+    "id": "sf-merge-env-vars",
+    "name": "Merge Env Vars",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "Computes the StatefulSet container's next env-var list: applies the cluster controller's desired vars, drops names in the previously-owned annotation that are no longer desired, and preserves foreign vars added by plugin/fleet/Aura controllers.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-collect-diagnostics",
+    "name": "Collect Cluster Diagnostics",
+    "serverUnitId": "su-diagnostics",
+    "operation": "business_action",
+    "description": "Runs SHOW SERVERS and SHOW DATABASES against a Ready cluster and writes results plus ServersHealthy/DatabasesHealthy conditions into status.diagnostics; non-fatal — every error is surfaced only in status.diagnostics.collectionError, never returned to the caller.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-collect-users-and-roles"
+    ],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-collect-standalone-diagnostics",
+    "name": "Collect Standalone Diagnostics",
+    "serverUnitId": "su-diagnostics",
+    "operation": "business_action",
+    "description": "Runs SHOW DATABASES (plus users/roles) against a Ready standalone instance and writes status.diagnostics; non-fatal, mirroring the cluster path's collectionError-only error handling.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-collect-users-and-roles"
+    ],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-standalone"
+  },
+  {
+    "id": "sf-collect-users-and-roles",
+    "name": "Collect Users And Roles",
+    "serverUnitId": "su-diagnostics",
+    "operation": "business_action",
+    "description": "Runs SHOW USERS and SHOW ROLES, sorts and caps each result list at 50 rows, and appends any query failure to the shared collectionError string without aborting the rest of diagnostics collection (e.g. when the connecting user lacks SHOW USER/SHOW ROLE privilege).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-advance-rolling-upgrade",
+    "name": "Advance Rolling Upgrade",
+    "serverUnitId": "su-rolling-upgrade",
+    "operation": "business_action",
+    "description": "Dispatches exactly one non-blocking state-machine step per reconcile (Staging, Rolling, Stabilizing, Verifying) and re-stages from any active phase if the target image tag changes mid-flight, so an in-flight upgrade never blocks reconciliation of other clusters.",
+    "readsFieldIds": [
+      "status.upgradeStatus.phase"
+    ],
+    "writesFieldIds": [
+      "status.upgradeStatus.phase"
+    ],
+    "callsFunctionIds": [
+      "sf-verify-version-upgrade",
+      "sf-pause-rolling-upgrade"
+    ],
+    "emitsEventIds": [
+      "ev-upgrade-started",
+      "ev-upgrade-deferred",
+      "ev-upgrade-completed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-pause-rolling-upgrade",
+    "name": "Pause Or Fail Rolling Upgrade",
+    "serverUnitId": "su-rolling-upgrade",
+    "operation": "business_action",
+    "description": "Routes a failed upgrade step to a terminal Paused state (manual intervention required, never auto-resumed) when upgradeStrategy.autoPauseOnFailure is set, or to Failed so image drift can retry the upgrade automatically once the underlying problem is resolved.",
+    "readsFieldIds": [],
+    "writesFieldIds": [
+      "status.upgradeStatus.phase"
+    ],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-upgrade-paused",
+      "ev-upgrade-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-verify-version-upgrade",
+    "name": "Verify Version Upgrade",
+    "serverUnitId": "su-rolling-upgrade",
+    "operation": "business_action",
+    "description": "Confirms every Enabled server in SHOW SERVERS reports the target image version, applying a kernel-alias normalization for the one CalVer release (2025.01.x) that self-reports as kernel 5.27.x, before the upgrade is allowed to complete.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-detect-split-brain",
+    "name": "Detect Split Brain",
+    "serverUnitId": "su-splitbrain-detector",
+    "operation": "business_action",
+    "description": "Queries each running server pod's own SHOW SERVERS view, groups pods that see similar cluster configurations, and flags a split-brain when a minority group's servers are not a subset of the majority group's visible servers.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-splitbrain-detected"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-restart-orphan-pod",
+    "name": "Restart Orphaned Pods",
+    "serverUnitId": "su-splitbrain-detector",
+    "operation": "business_action",
+    "description": "Repairs a detected split-brain by deleting the orphaned pods (or, in the nuclear-option repair action, every server pod) so the StatefulSet recreates them and they rejoin the majority cluster view.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-detect-split-brain"
+    ],
+    "emitsEventIds": [
+      "ev-splitbrain-repaired",
+      "ev-splitbrain-repair-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-drain-server",
+    "name": "Drain Server For Scale-Down",
+    "serverUnitId": "su-scale-down",
+    "operation": "business_action",
+    "description": "Drives one cordon/deallocate/wait/drop step per reconcile for servers being removed by a topology scale-down, gating on a DEALLOCATE dry-run and the system database's minimum-voting-member floor before ever cordoning a server.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-plan-scale-down-step"
+    ],
+    "emitsEventIds": [
+      "ev-scale-down-blocked",
+      "ev-scale-down-draining"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-plan-scale-down-step",
+    "name": "Plan Scale-Down Step",
+    "serverUnitId": "su-scale-down",
+    "operation": "business_action",
+    "description": "Pure decision function that inspects the live State/Hosting of each drain-target server and picks the single next drain action (cordon, deallocate, wait, or drop) for the caller to execute — a draining server hosting only `system` is droppable even if stuck in Deallocating.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-expand-storage",
+    "name": "Expand Cluster Storage",
+    "serverUnitId": "su-storage-expansion",
+    "operation": "business_action",
+    "description": "Compares each server-StatefulSet PVC's current size against spec.storage.size, rejects any shrink attempt, and on growth patches the PVCs then orphan-deletes the StatefulSet so it is recreated with the updated VolumeClaimTemplates.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-check-storage-expansion-needed"
+    ],
+    "emitsEventIds": [
+      "ev-storage-expansion-started",
+      "ev-storage-expansion-completed",
+      "ev-storage-expansion-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-expand-standalone-storage",
+    "name": "Expand Standalone Storage",
+    "serverUnitId": "su-storage-expansion",
+    "operation": "business_action",
+    "description": "Standalone twin of sf-expand-storage: compares the neo4j-data PVC size against spec.storage.size, rejects shrinks, and patches plus orphan-deletes the single-replica StatefulSet on growth so it is recreated with the enlarged claim template.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-storage-expansion-started",
+      "ev-storage-expansion-completed",
+      "ev-storage-expansion-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-standalone"
+  },
+  {
+    "id": "sf-check-storage-expansion-needed",
+    "name": "Check Storage Expansion Needed",
+    "serverUnitId": "su-storage-expansion",
+    "operation": "business_action",
+    "description": "Compares desired PVC storage size from spec.storage.size against the live PVCs' storage requests and reports match, expand, or shrink so the caller can decide whether to proceed, no-op, or hard-reject.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-schedule-topology",
+    "name": "Calculate Topology Placement",
+    "serverUnitId": "su-topology-scheduler",
+    "operation": "business_action",
+    "description": "Determines whether topology-spread and/or anti-affinity should be applied, auto-discovers availability zones from cluster-scoped Nodes when none are configured, and degrades to best-effort zone spread (rather than failing) when node listing is unavailable in namespace-scoped installs.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-topology-placement-calculated",
+      "ev-topology-zone-discovery-degraded",
+      "ev-topology-placement-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-apply-topology-constraints",
+    "name": "Apply Topology Constraints",
+    "serverUnitId": "su-topology-scheduler",
+    "operation": "business_action",
+    "description": "Applies the calculated topology-spread constraints and/or pod anti-affinity rules onto the server StatefulSet's pod template before it is created or updated.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-schedule-topology"
+    ],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-verify-cluster-formation",
+    "name": "Verify Cluster Formation",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "Checks Bolt connectivity (tracking a consecutive-failure streak for outage forensics), then runs split-brain detection with a legacy SHOW SERVERS count fallback to decide whether the cluster has formed with the expected number of Enabled+Available servers.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-detect-split-brain",
+      "sf-restart-orphan-pod"
+    ],
+    "emitsEventIds": [
+      "ev-cluster-formation-started",
+      "ev-cluster-formation-failed",
+      "ev-connectivity-degraded"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-hold-image-drift-until-ready",
+    "name": "Hold Image Drift Until Ready",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "While the cluster is not Ready, pins the in-memory spec image back to whatever the live StatefulSet currently runs so the normal reconcile path can't apply a version change outside the upgrade state machine, unless zero replicas are ready (nothing to protect).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-is-upgrade-required",
+    "name": "Is Upgrade Required",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "Detects image drift on the server StatefulSet (or a stalled Failed-phase retry whose target and status.version still disagree) to decide whether a new rolling upgrade should start; never fires while Paused or already mid-flight.",
+    "readsFieldIds": [
+      "status.phase",
+      "status.upgradeStatus.phase"
+    ],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-ensure-seed-creds-projected",
+    "name": "Ensure Seed Credentials Projected",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "Validates that a hosting cluster or standalone CR's spec.extraEnvFrom projects the cloud-credentials Secret a seedURI restore needs, auto-patching it in (and triggering a rolling restart) only when the CR carries the neo4j.com/auto-inherit-seed-creds annotation.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-ensure-pvc-seed-proxy",
+    "name": "Ensure PVC Seed Proxy",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "Idempotently creates the busybox-httpd Deployment, Service, and ingress-restricting NetworkPolicy that expose a backup PVC over HTTP so Neo4j's URLConnectionSeedProvider can seed a database from it during a restore.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-reconcile-database",
+    "name": "Reconcile Neo4jDatabase",
+    "serverUnitId": "su-neo4jdatabase",
+    "operation": "business_action",
+    "description": "Main reconcile loop: validates the spec inline, resolves the target host, checks readiness, projects seed credentials if needed, and ensures the database exists.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-create-database",
+      "sf-drop-database",
+      "sf-import-initial-data",
+      "sf-update-database-status"
+    ],
+    "emitsEventIds": [
+      "ev-validation-warning",
+      "ev-validation-failed",
+      "ev-cluster-not-found",
+      "ev-connection-failed",
+      "ev-seed-creds-missing",
+      "ev-seed-creds-auto-inherited",
+      "ev-database-ready"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-create-database",
+    "name": "Create Or Verify Database",
+    "serverUnitId": "su-neo4jdatabase",
+    "operation": "create",
+    "description": "ensureDatabase() checks DatabaseExists, then issues CREATE DATABASE (plain, with TOPOLOGY, or from seedURI/seedURIs via OPTIONS) and refreshes status.state/status.servers from SHOW DATABASES.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-creation-failed",
+      "ev-database-created-from-seed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-alter-database-topology",
+    "name": "Alter Database Topology",
+    "serverUnitId": "su-neo4jdatabase",
+    "operation": "update",
+    "description": "internal/neo4j/client.go's AlterDatabaseTopology issues ALTER DATABASE `name` SET TOPOLOGY n PRIMARIES m SECONDARIES for a post-bootstrap topology change; a capability of the Neo4j client, not currently auto-invoked from the Neo4jDatabase reconcile loop (CLAUDE.md documents it as an operator-triggered change).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-drop-database",
+    "name": "Drop Database On Deletion",
+    "serverUnitId": "su-neo4jdatabase",
+    "operation": "delete",
+    "description": "handleDeletion() resolves the host and issues DROP DATABASE for spec.name, releasing the finalizer on success or on a non-retryable failure.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-deletion-failed",
+      "ev-database-deleted"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-import-initial-data",
+    "name": "Import Initial Data",
+    "serverUnitId": "su-neo4jdatabase",
+    "operation": "business_action",
+    "description": "importInitialData() executes each spec.initialData.cypherStatements entry against the new database once, skipped when the database was created from a seedURI.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-data-import-failed",
+      "ev-data-imported",
+      "ev-data-seeded"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-update-database-status",
+    "name": "Update Neo4jDatabase Status",
+    "serverUnitId": "su-neo4jdatabase",
+    "operation": "update",
+    "description": "updateDatabaseStatus() re-fetches the CR under retry.RetryOnConflict and sets the Ready condition, status.phase, and status.message.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-reconcile-alias",
+    "name": "Reconcile Neo4jDatabaseAlias",
+    "serverUnitId": "su-neo4jdatabasealias",
+    "operation": "business_action",
+    "description": "Main reconcile loop: validates the spec inline, resolves clusterRef, waits for the target database to exist, then compares the live alias (if any) against spec.targetDatabase.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-resolve-cluster-ref",
+      "sf-create-alias",
+      "sf-retarget-alias",
+      "sf-drop-alias"
+    ],
+    "emitsEventIds": [
+      "ev-validation-warning",
+      "ev-validation-failed",
+      "ev-connection-failed",
+      "ev-alias-ready",
+      "ev-alias-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-create-alias",
+    "name": "Create Alias",
+    "serverUnitId": "su-neo4jdatabasealias",
+    "operation": "create",
+    "description": "Issues CREATE ALIAS when ShowAlias reports no existing alias with this name.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-alias-created"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-retarget-alias",
+    "name": "Retarget Alias",
+    "serverUnitId": "su-neo4jdatabasealias",
+    "operation": "update",
+    "description": "Issues ALTER ALIAS ... SET TARGET when the live alias's database differs from spec.targetDatabase (drift correction; spec wins).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-alias-retargeted"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-drop-alias",
+    "name": "Drop Alias On Deletion",
+    "serverUnitId": "su-neo4jdatabasealias",
+    "operation": "delete",
+    "description": "handleDeletion() issues DROP ALIAS IF EXISTS unless spec.deletionPolicy=Retain; a failed drop releases the finalizer rather than wedging deletion.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-alias-dropped",
+      "ev-alias-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-reconcile-sharded-database",
+    "name": "Reconcile Neo4jShardedDatabase",
+    "serverUnitId": "su-neo4jshardeddatabase",
+    "operation": "business_action",
+    "description": "Main reconcile loop: validates the spec, resolves the referenced cluster, checks property-sharding readiness, opens a Neo4j client, and drives seed resolution plus create/status refresh.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-create-sharded-database",
+      "sf-drop-sharded-database",
+      "sf-seed-shard",
+      "sf-update-shard-status"
+    ],
+    "emitsEventIds": [
+      "ev-validation-failed",
+      "ev-cluster-not-found",
+      "ev-cluster-not-ready",
+      "ev-client-creation-failed",
+      "ev-reconcile-failed",
+      "ev-sharded-database-ready"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-create-sharded-database",
+    "name": "Create Sharded Database",
+    "serverUnitId": "su-neo4jshardeddatabase",
+    "operation": "create",
+    "description": "createShardedDatabase() builds and executes `CYPHER 25 CREATE DATABASE ... SET GRAPH SHARD {...} SET PROPERTY SHARDS {...} OPTIONS {...}`, binding every seed/user-supplied value as a driver parameter.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-drop-sharded-database",
+    "name": "Drop Sharded Database For Replace",
+    "serverUnitId": "su-neo4jshardeddatabase",
+    "operation": "delete",
+    "description": "dropShardedDatabaseIfExists() issues `CYPHER 25 DROP DATABASE ... IF EXISTS DESTROY DATA WAIT`, gated to the spec.replaceExisting+force path and guarded by status.lastDestructiveRestoreGeneration so it never re-fires at the same generation.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-sharded-database-dropped"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-seed-shard",
+    "name": "Resolve And Serve Sharded Seed",
+    "serverUnitId": "su-neo4jshardeddatabase",
+    "operation": "business_action",
+    "description": "resolveShardedSeed()/resolvePVCShardedSeed() turn spec.seedBackupRef into either per-shard cloud seedURIs or an operator-managed PVC seed-proxy Deployment+Service serving each shard's .backup file over HTTP.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-resolve-backup-chain"
+    ],
+    "emitsEventIds": [
+      "ev-seed-backup-pending",
+      "ev-seed-backup-resolution-failed",
+      "ev-seed-proxy-starting",
+      "ev-seed-creds-missing",
+      "ev-seed-creds-auto-inherited"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-update-shard-status",
+    "name": "Update Shard Status",
+    "serverUnitId": "su-neo4jshardeddatabase",
+    "operation": "update",
+    "description": "updateShardStatus() reads SHOW DATABASES to confirm the `{name}-g000` graph shard exists and is online.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-reconcile-replica-database",
+    "name": "Reconcile Neo4jReplicaDatabase",
+    "serverUnitId": "su-neo4jreplicadatabase",
+    "operation": "business_action",
+    "description": "Main reconcile loop: validates the spec, resolves clusterRef, checks the version gate for cross-cluster replicas, then OBSERVES the live database's type before creating, reporting, or terminally marking it promoted.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-resolve-cluster-ref",
+      "sf-create-replica-database",
+      "sf-detect-replica-promotion",
+      "sf-drop-replica-database"
+    ],
+    "emitsEventIds": [
+      "ev-validation-warning",
+      "ev-validation-failed",
+      "ev-replica-version-too-old",
+      "ev-connection-failed",
+      "ev-replica-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-create-replica-database",
+    "name": "Create Replica Database",
+    "serverUnitId": "su-neo4jreplicadatabase",
+    "operation": "create",
+    "description": "Calls CreateReplicaDatabaseFromBackup with the upstream database, pull/seed URI, and optional topology when the target database does not yet exist.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-replica-created"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-detect-replica-promotion",
+    "name": "Detect Out-Of-Band Promotion",
+    "serverUnitId": "su-neo4jreplicadatabase",
+    "operation": "business_action",
+    "description": "markPromoted() records the terminal Promoted phase the moment the live database's `type` column is observed to no longer be replica, whether caused by this operator's own Neo4jReplicaPromotion or an external actor.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-replica-promotion-detected"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-drop-replica-database",
+    "name": "Drop Replica Database On Deletion",
+    "serverUnitId": "su-neo4jreplicadatabase",
+    "operation": "delete",
+    "description": "handleDeletion() re-checks the live database type and only issues DROP DATABASE while it is still type=replica; a promoted database is retained instead.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-replica-dropped",
+      "ev-replica-retained-after-promotion",
+      "ev-replica-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-promote-replica",
+    "name": "Promote Replica Database",
+    "serverUnitId": "su-neo4jreplicapromotion",
+    "operation": "business_action",
+    "description": "Reconcile() runs CHECK (live type=replica) -> PROMOTE (PromoteReplicaDatabase) -> CHECK (type no longer replica) -> RECORD, so a crash between the call and the status write is recovered as an idempotent success rather than a repeat promote.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-resolve-cluster-ref"
+    ],
+    "emitsEventIds": [
+      "ev-replica-promotion-started",
+      "ev-replica-promotion-completed",
+      "ev-replica-promotion-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-reconcile-backup",
+    "name": "Reconcile Neo4jBackup",
+    "serverUnitId": "su-neo4jbackup",
+    "operation": "business_action",
+    "description": "Main reconcile loop: validates the spec (including replication-source chain rules), resolves the target cluster/standalone, checks readiness/suspend, runs sharded preflight, and branches to the scheduled or one-time backup path.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-create-backup-job",
+      "sf-create-backup-cronjob",
+      "sf-record-backup-run",
+      "sf-cleanup-backup-artifacts"
+    ],
+    "emitsEventIds": [
+      "ev-backup-failed",
+      "ev-replication-source-caveat"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-create-backup-job",
+    "name": "Create One-Time Backup Job",
+    "serverUnitId": "su-neo4jbackup",
+    "operation": "job",
+    "description": "createBackupJob() creates exactly one Kubernetes Job per Neo4jBackup CR running `neo4j-admin database backup` (invariant: Job-per-CR, never a long-running backup pod/StatefulSet).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-backup-started",
+      "ev-backup-validate-unsupported"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-create-backup-cronjob",
+    "name": "Create Scheduled Backup CronJob",
+    "serverUnitId": "su-neo4jbackup",
+    "operation": "job",
+    "description": "createBackupCronJob() creates/updates one CronJob per Neo4jBackup CR with spec.schedule set; each firing spawns its own child Job (still Job-per-run, never a persistent backup pod).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-backup-scheduled",
+      "ev-backup-validate-unsupported"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-record-backup-run",
+    "name": "Record Backup Run Outcome",
+    "serverUnitId": "su-neo4jbackup",
+    "operation": "business_action",
+    "description": "recordOneShotBackupRun() / reconcileScheduledHistory() observe a completed Job's conditions, parse its pod log, and append a BackupRun to status.history, deferring finalization until restore-critical artifact filenames are captured.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-parse-backup-log"
+    ],
+    "emitsEventIds": [
+      "ev-backup-completed",
+      "ev-backup-failed",
+      "ev-backup-sharded-databases-excluded"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-parse-backup-log",
+    "name": "Parse Backup Pod Log",
+    "serverUnitId": "su-neo4jbackup",
+    "operation": "business_action",
+    "description": "neo4jbackup_log_parser.go's regex-based parsers extract per-shard/per-database .backup filenames, sizes, and neo4j-admin backup validate results from a completed backup pod's stdout.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-cleanup-backup-artifacts",
+    "name": "Cleanup Backup Artifacts",
+    "serverUnitId": "su-neo4jbackup",
+    "operation": "job",
+    "description": "cleanupBackupArtifacts() runs an alpine-based cleanup Job (deterministic UID-derived name) enforcing spec.retention (maxCount/maxAge) against a PVC-backed chain directory; cloud storage retention is delegated to bucket lifecycle rules.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-backup-retention-caveat"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-reconcile-restore",
+    "name": "Reconcile Neo4jRestore",
+    "serverUnitId": "su-neo4jrestore",
+    "operation": "business_action",
+    "description": "Main reconcile loop: resolves the target, checks terminal phases and version compatibility, and either polls in-flight progress or starts a fresh restore attempt.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-start-restore"
+    ],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-start-restore",
+    "name": "Start Restore",
+    "serverUnitId": "su-neo4jrestore",
+    "operation": "business_action",
+    "description": "startRestore() validates the request, pins the resolved backup source onto status, and branches to the cluster Cypher path, the all-databases path, or the standalone Job path (stopping the instance first when spec.stopCluster is set).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-resolve-backup-chain",
+      "sf-create-restore-job",
+      "sf-cluster-cypher-restore",
+      "sf-restore-all-databases"
+    ],
+    "emitsEventIds": [
+      "ev-restore-started",
+      "ev-restore-failed",
+      "ev-service-account-annotation-conflict"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-create-restore-job",
+    "name": "Create Standalone Restore Job",
+    "serverUnitId": "su-neo4jrestore",
+    "operation": "job",
+    "description": "createRestoreJob() builds and creates the offline `neo4j-admin database restore` Job used for Neo4jEnterpriseStandalone targets (neo4j-admin restore --overwrite-destination is documented as unsafe on clusters).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-cluster-cypher-restore",
+    "name": "Cluster In-Place Cypher Restore",
+    "serverUnitId": "su-neo4jrestore",
+    "operation": "business_action",
+    "description": "startClusterCypherRestore() issues dbms.[cluster.]recreateDatabase against a live cluster and polls SHOW DATABASE until every allocation is online, per the documented cluster restore-via-recreate procedure (never a Job on cluster targets).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-restore-from-chain-parent",
+      "ev-seed-endpoint-not-projected"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-restore-all-databases",
+    "name": "All-Databases Restore Loop",
+    "serverUnitId": "su-neo4jrestore",
+    "operation": "business_action",
+    "description": "startAllDatabasesRestore() drives one per-database CREATE/recreate-with-seedURI action per reconcile pass from the resolved backup's per-database artifact map, tracking progress in status.databaseResults; property-sharded families are excluded and must restore via their own Neo4jShardedDatabase CR.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-restore-sharded-databases-not-covered",
+      "ev-restore-started",
+      "ev-restore-seed-progress",
+      "ev-seed-endpoint-not-projected",
+      "ev-restore-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-handle-restore-success",
+    "name": "Handle Restore Success",
+    "serverUnitId": "su-neo4jrestore",
+    "operation": "business_action",
+    "description": "handleRestoreSuccess() restarts a stopped cluster, registers/starts the restored database(s) (or all restored databases), runs post-restore hooks, and forces a cross-server recreate-from-seed so every server converges on the restored server-0 data.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-restore-completed",
+      "ev-database-create-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-resolve-cluster-ref",
+    "name": "Resolve Cluster Reference",
+    "serverUnitId": "su-cluster-resolver",
+    "operation": "resolver",
+    "description": "ResolveClusterRef() looks up a clusterRef, trying Neo4jEnterpriseCluster first and falling back to Neo4jEnterpriseStandalone of the same name, returning a ResolvedTarget with IsReady()/NewClient() helpers.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-resolve-backup-chain",
+    "name": "Resolve Backup Reference",
+    "serverUnitId": "su-backup-resolver",
+    "operation": "resolver",
+    "description": "ResolveBackupRef() dereferences a Neo4jBackup CR name into a concrete StorageLocation and the BackupsPath of its most recent Succeeded run, returning a wrapped ErrBackupNotReady when no Succeeded run exists yet.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-reconcile-user",
+    "name": "Reconcile Neo4jUser",
+    "serverUnitId": "su-neo4juser",
+    "operation": "business_action",
+    "description": "Drives a Neo4jUser to its desired state each loop: validates the spec (routing a not-yet-applied password Secret to Pending, not Failed), resolves the clusterRef target, creates or ALTERs the Neo4j user over Bolt, diffs granted vs. desired roles and issues GRANT/REVOKE ROLE, then records RolesSynced/PasswordSynced conditions and the Ready phase.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-validate-user",
+      "sf-create-user",
+      "sf-alter-user",
+      "sf-grant-role",
+      "sf-revoke-role",
+      "sf-drop-user"
+    ],
+    "emitsEventIds": [
+      "ev-user-created",
+      "ev-user-updated",
+      "ev-user-deleted",
+      "ev-user-ready",
+      "ev-user-deletion-failed",
+      "ev-user-sync-failed",
+      "ev-password-rotated",
+      "ev-roles-granted",
+      "ev-roles-revoked",
+      "ev-roles-resolved",
+      "ev-role-pending"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "sf-reconcile-role",
+    "name": "Reconcile Neo4jRole",
+    "serverUnitId": "su-neo4jrole",
+    "operation": "business_action",
+    "description": "Drives a Neo4jRole to its desired state each loop: validates the spec, creates the role if absent (refusing built-ins without adoptBuiltin), canonicalises spec.privileges against live SHOW ROLE PRIVILEGES AS COMMANDS output to diff them, applies missing GRANT/DENY statements verbatim, and derives REVOKE statements textually for privileges no longer desired (never revoking immutable ones).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-validate-role",
+      "sf-create-role",
+      "sf-grant-privilege",
+      "sf-revoke-privilege",
+      "sf-show-role-privileges",
+      "sf-drop-role"
+    ],
+    "emitsEventIds": [
+      "ev-role-created",
+      "ev-role-deleted",
+      "ev-role-ready",
+      "ev-role-deletion-failed",
+      "ev-role-sync-failed",
+      "ev-privileges-applied",
+      "ev-privileges-drift-kept"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "sf-reconcile-rolebinding",
+    "name": "Reconcile Neo4jRoleBinding",
+    "serverUnitId": "su-neo4jrolebinding",
+    "operation": "business_action",
+    "description": "Drives a Neo4jRoleBinding to its desired state each loop: verifies the target Neo4j user already exists (bindings never create/drop users), resolves Neo4jRole CR names to Neo4j role names, and diffs/grants/revokes role membership — non-exclusive by default, but always revoking roles this binding previously granted that were removed from spec.roles.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-validate-rolebinding",
+      "sf-grant-role",
+      "sf-revoke-role"
+    ],
+    "emitsEventIds": [
+      "ev-binding-created",
+      "ev-binding-updated",
+      "ev-binding-deleted",
+      "ev-binding-failed",
+      "ev-user-not-found",
+      "ev-roles-granted",
+      "ev-roles-revoked",
+      "ev-roles-resolved",
+      "ev-role-pending"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "sf-reconcile-authrule",
+    "name": "Reconcile Neo4jAuthRule",
+    "serverUnitId": "su-neo4jauthrule",
+    "operation": "business_action",
+    "description": "Drives a Neo4jAuthRule to its desired state each loop: gates on the cluster running Neo4j 2026.03+ and configuring an OIDC authorization provider, then CREATE OR REPLACEs the rule's condition/enabled flag (which clears prior grants) and re-grants the desired role set via GRANT/REVOKE ROLES ... TO/FROM AUTH RULE.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-validate-authrule",
+      "sf-create-or-replace-authrule",
+      "sf-grant-role-to-authrule",
+      "sf-revoke-role-from-authrule",
+      "sf-drop-authrule"
+    ],
+    "emitsEventIds": [
+      "ev-authrule-created",
+      "ev-authrule-updated",
+      "ev-authrule-deleted",
+      "ev-authrule-failed",
+      "ev-authrule-version-too-old",
+      "ev-oidc-provider-not-configured",
+      "ev-roles-granted",
+      "ev-roles-revoked",
+      "ev-role-pending"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "sf-create-user",
+    "name": "Create Neo4j user",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "create",
+    "description": "CreateUserAdvanced issues CREATE USER `name` IF NOT EXISTS with staged SET PASSWORD/SET STATUS/SET HOME DATABASE/SET AUTH clauses against the system database (internal/neo4j/users.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-alter-user",
+    "name": "Alter Neo4j user",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "update",
+    "description": "AlterUser issues ALTER USER with REMOVE clauses ordered before SET clauses (password, password-change-required, suspended status, home database, external auth providers) against the system database (internal/neo4j/users.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-drop-user",
+    "name": "Drop Neo4j user",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "delete",
+    "description": "DropUserIfExists issues DROP USER `name` IF EXISTS against the system database, making user removal idempotent (internal/neo4j/users.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-grant-role",
+    "name": "Grant role to user",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "business_action",
+    "description": "GrantRoleToUser issues GRANT ROLE `role` TO `user` against the system database (internal/neo4j/client.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-revoke-role",
+    "name": "Revoke role from user",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "business_action",
+    "description": "RevokeRoleFromUser issues REVOKE ROLE `role` FROM `user` against the system database (internal/neo4j/client.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-create-role",
+    "name": "Create Neo4j role",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "create",
+    "description": "CreateRoleAdvanced issues CREATE ROLE `name` [IF NOT EXISTS] [AS COPY OF `copyOf`] against the system database (internal/neo4j/users.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-drop-role",
+    "name": "Drop Neo4j role",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "delete",
+    "description": "DropRoleIfExists issues DROP ROLE `name` IF EXISTS against the system database; built-in roles are never dropped by any caller (internal/neo4j/users.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-grant-privilege",
+    "name": "Apply privilege statement",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "business_action",
+    "description": "ExecutePrivilegeStatement runs the role's original (non-canonicalised) GRANT/DENY privilege statement text as auto-commit Cypher against the system database, with bounded retry on transient GQLSTATUS 25N11 conflicting-transaction errors (internal/neo4j/client.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-revoke-privilege",
+    "name": "Revoke privilege statement",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "business_action",
+    "description": "Runs a REVOKE statement derived textually from the role's currently-applied GRANT/DENY command via DerivePrivilegeRevoke (internal/neo4j/privileges.go) through ExecutePrivilegeStatement — REVOKEs are never accepted directly from Neo4jRole.spec.privileges, and immutable privileges are skipped rather than attempted.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-show-role-privileges",
+    "name": "Show role privileges",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "list",
+    "description": "ShowRolePrivileges runs SHOW ROLE `name` PRIVILEGES AS COMMANDS YIELD command, immutable (falling back to a legacy projection without immutable on older Neo4j) to read a role's currently-applied privilege set from the system database (internal/neo4j/users.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-create-or-replace-authrule",
+    "name": "Create or replace auth rule",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "business_action",
+    "description": "CreateOrReplaceAuthRule issues CYPHER 25 CREATE OR REPLACE AUTH RULE `name` SET CONDITION <expr> SET ENABLED true|false against the system database, subsuming ALTER semantics by replacing the rule outright (and clearing its prior role grants) (internal/neo4j/auth_rules.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-grant-role-to-authrule",
+    "name": "Grant roles to auth rule",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "business_action",
+    "description": "GrantRolesToAuthRule issues CYPHER 25 GRANT ROLES r1, r2, ... TO AUTH RULE `name` against the system database (internal/neo4j/auth_rules.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-revoke-role-from-authrule",
+    "name": "Revoke roles from auth rule",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "business_action",
+    "description": "RevokeRolesFromAuthRule issues CYPHER 25 REVOKE ROLES r1, r2, ... FROM AUTH RULE `name` against the system database (internal/neo4j/auth_rules.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-drop-authrule",
+    "name": "Drop auth rule",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "delete",
+    "description": "DropAuthRuleIfExists issues CYPHER 25 DROP AUTH RULE `name` IF EXISTS against the system database during Neo4jAuthRule deletion cleanup (internal/neo4j/auth_rules.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-validate-user",
+    "name": "Validate Neo4jUser spec",
+    "serverUnitId": "su-validation",
+    "operation": "business_action",
+    "description": "UserValidator.Validate enforces the Neo4j username shape/length, requires at least one auth provider (passwordSecretRef or externalAuth), rejects the reserved 'system' username and the 'native' externalAuth provider, and reports a not-yet-applied password Secret as a transient Pending gap rather than a Failed error (internal/validation/user_validator.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-validate-role",
+    "name": "Validate Neo4jRole spec",
+    "serverUnitId": "su-validation",
+    "operation": "business_action",
+    "description": "RoleValidator.Validate enforces the Neo4j role-name pattern, requires spec.adoptBuiltin=true to manage a built-in role name, requires every spec.privileges entry to start with GRANT/DENY and end with `TO <this role>`, and rejects property-based-access-control privileges that target a Neo4jShardedDatabase (internal/validation/role_validator.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-validate-rolebinding",
+    "name": "Validate Neo4jRoleBinding spec",
+    "serverUnitId": "su-validation",
+    "operation": "business_action",
+    "description": "RoleBindingValidator.Validate enforces the shared username shape check, requires spec.roles to be non-empty with no blank entries, and warns (never errors) when PUBLIC is listed since it is implicit and always ignored (internal/validation/rolebinding_validator.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-validate-authrule",
+    "name": "Validate Neo4jAuthRule spec",
+    "serverUnitId": "su-validation",
+    "operation": "business_action",
+    "description": "AuthRuleValidator.Validate enforces the auth-rule name pattern, requires spec.condition to be a pure expression free of DDL keywords (CREATE/DROP/ALTER/GRANT/DENY/REVOKE/SHOW/RENAME/semicolon) to block Cypher injection, and requires at least one entry in spec.grantedRoles (internal/validation/authrule_validator.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-reconcile-aura-instance",
+    "name": "Reconcile AuraInstance",
+    "serverUnitId": "su-aurainstance",
+    "operation": "job",
+    "description": "Top-level AuraInstanceReconciler.Reconcile loop: resolves credentials, handles the paused annotation and finalizer, dispatches to create/adopt, drift, tier-upgrade, pause/resume and deletion, then writes status.atProvider plus the Ready/Synced conditions.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-create-aura-instance",
+      "sf-resize-aura-instance",
+      "sf-pause-aura-instance",
+      "sf-resume-aura-instance",
+      "sf-upgrade-aura-instance",
+      "sf-delete-aura-instance",
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-instance-adopted",
+      "ev-aura-instance-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-create-aura-instance",
+    "name": "Create or adopt Aura instance",
+    "serverUnitId": "su-aurainstance",
+    "operation": "create",
+    "description": "observeOrCreate: lists instances by name to adopt before creating (avoiding a duplicate paid instance), validates the type/region/cloudProvider combo against the project's instance_configurations, and creates via v1 CreateInstance or, when spec.multiDatabase is true, via v2beta1 CreateInstanceV2 (createMultiDatabaseInstance in aura_multidatabase.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-instance-created"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-resize-aura-instance",
+    "name": "Resize/patch Aura instance",
+    "serverUnitId": "su-aurainstance",
+    "operation": "update",
+    "description": "reconcileDrift: PATCHes memory, storage, name, secondariesCount and cdcEnrichmentMode when they diverge from the observed instance, gated by the Update management policy.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-instance-updated"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-pause-aura-instance",
+    "name": "Pause Aura instance",
+    "serverUnitId": "su-aurainstance",
+    "operation": "business_action",
+    "description": "reconcilePauseResume: calls PauseInstance when spec.paused=true and the observed instance is running.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-instance-paused"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-resume-aura-instance",
+    "name": "Resume Aura instance",
+    "serverUnitId": "su-aurainstance",
+    "operation": "business_action",
+    "description": "reconcilePauseResume: calls ResumeInstance when spec.paused=false and the observed instance is paused.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-instance-resumed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-upgrade-aura-instance",
+    "name": "Upgrade Aura instance tier",
+    "serverUnitId": "su-aurainstance",
+    "operation": "business_action",
+    "description": "reconcileUpgrade: performs the single supported in-place tier upgrade (professional-db to business-critical) via UpgradeInstance when spec.type requests it; the CRD's CEL transition rule already rejects every other type change.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-instance-upgraded"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-delete-aura-instance",
+    "name": "Delete/orphan Aura instance",
+    "serverUnitId": "su-aurainstance",
+    "operation": "delete",
+    "description": "handleDeletion: honours deletionPolicy (Delete calls DeleteInstance unless deletionProtection is set; Orphan, the default, leaves the cloud instance running) before releasing the finalizer.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-instance-deleted",
+      "ev-aura-instance-orphaned",
+      "ev-aura-instance-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-reconcile-aura-snapshot",
+    "name": "Reconcile AuraSnapshot",
+    "serverUnitId": "su-aurasnapshot",
+    "operation": "job",
+    "description": "AuraSnapshotReconciler.Reconcile: requests a snapshot exactly once via CreateSnapshot, then polls GetSnapshot until Completed/Failed/Cancelled; the create response carries only snapshot_id so the initial phase is recorded as Pending rather than copying fields that are not yet present.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-snapshot-created"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-reconcile-aura-restore",
+    "name": "Reconcile AuraRestore",
+    "serverUnitId": "su-aurarestore",
+    "operation": "job",
+    "description": "AuraRestoreReconciler.Reconcile: resolves the target AuraInstance and a snapshot (spec.snapshotId or an AuraSnapshot ref), waits for the instance to be Running, calls RestoreSnapshot, then drives Pending->Restoring->Completed/Failed and never re-fires once terminal.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-restore-started",
+      "ev-aura-restore-completed",
+      "ev-aura-restore-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-reconcile-aura-database",
+    "name": "Reconcile AuraDatabase",
+    "serverUnitId": "su-auradatabase",
+    "operation": "job",
+    "description": "AuraDatabaseReconciler.Reconcile: resolves org/project/instance coordinates from the referenced AuraInstance (which must have been created with multiDatabase:true), refuses creation when the instance's probed multiDatabase verdict is explicitly false, and otherwise creates/adopts the database by the external-database-id annotation since the v2beta1 API returns no database names to adopt by.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-database-adopted",
+      "ev-aura-database-created",
+      "ev-aura-database-ready",
+      "ev-aura-database-deleted",
+      "ev-aura-database-orphaned",
+      "ev-aura-database-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "sf-reconcile-aura-database-backup",
+    "name": "Reconcile AuraDatabaseBackup",
+    "serverUnitId": "su-auradatabasebackup",
+    "operation": "job",
+    "description": "AuraDatabaseBackupReconciler.Reconcile: resolves the target database via spec.databaseRef, takes the backup exactly once via CreateDatabaseBackup, then polls GetDatabaseBackup, treating only Completed/Failed as terminal and never inferring completion from an empty just-scheduled status.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-database-backup-created",
+      "ev-aura-database-backup-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "sf-reconcile-aura-database-restore",
+    "name": "Reconcile AuraDatabaseRestore",
+    "serverUnitId": "su-auradatabaserestore",
+    "operation": "job",
+    "description": "AuraDatabaseRestoreReconciler.Reconcile: resolves the database and backup (by spec.backupId or an AuraDatabaseBackup ref), persists a Submitting marker before calling RestoreDatabase (the destructive, non-idempotent call), and records Submitted (not Completed, since v2beta1 exposes no way to observe restore completion) or RestoreOutcomeUnknown if the process died mid-flight.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-database-restore-started",
+      "ev-aura-database-restore-completed",
+      "ev-aura-database-restore-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "sf-reconcile-aura-member",
+    "name": "Reconcile Aura org/project member",
+    "serverUnitId": "su-auraorganizationmember",
+    "operation": "job",
+    "description": "AuraOrganizationMemberReconciler.Reconcile and its AuraProjectMemberReconciler counterpart find an existing Aura console user by email (ListOrgMembers/ListProjectMembers), update their org or project role when it drifts from spec.role, and remove membership on CR deletion; a project member with no project membership yet but an existing org membership is added via AddProjectMember rather than requiring a fresh invite.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-member-not-found",
+      "ev-aura-member-role-updated",
+      "ev-aura-member-ready",
+      "ev-aura-member-removed",
+      "ev-aura-member-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "sf-reconcile-aura-invite",
+    "name": "Reconcile AuraInvite",
+    "serverUnitId": "su-aurainvite",
+    "operation": "job",
+    "description": "AuraInviteReconciler.Reconcile: builds the two-slot invite body (an organization-* role plus an optional namespace-* project role, refusing a project-only invite since Aura requires an organization role on every invite), adopts a matching pending invite by email+project scope, and since v2beta1 has no GET /invites/{id}, observes status via FindInvite over the LIST endpoint, reporting Sent/Accepted/Revoked/Expired/Declined/Gone.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-invite-adopted",
+      "ev-aura-invite-created",
+      "ev-aura-invite-ready",
+      "ev-aura-invite-deleted",
+      "ev-aura-invite-orphaned",
+      "ev-aura-invite-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "sf-validate-aura-credentials",
+    "name": "Validate Aura credentials",
+    "serverUnitId": "su-aura-client",
+    "operation": "business_action",
+    "description": "AuraProviderConfigReconciler.Reconcile: resolves the referenced credentials Secret, forces a token exchange and a real ListInstances call to prove the credentials work, and reports CredentialsValidated/CredentialsInvalid on the Ready condition every 10 minutes.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-credentials-validated",
+      "ev-aura-credentials-invalid"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-call-aura-api",
+    "name": "Call Aura API (shared client)",
+    "serverUnitId": "su-aura-client",
+    "operation": "business_action",
+    "description": "auraClientForCreds / resolveClient family: returns a shared *aura.Client per credential (keyed by baseURL+clientID+sha256(secret)[:8]) with one OAuth token cache and rate-limit budget (default 25/min), instrumented via metrics.RecordAuraAPICall, that every Aura reconciler's ClientFactory wraps to call ListInstances/CreateInstance/PatchInstance/GetSnapshot/etc.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-reconcile-aura-customer-managed-key",
+    "name": "Reconcile AuraCustomerManagedKey",
+    "serverUnitId": "su-auracustomermanagedkey",
+    "operation": "job",
+    "description": "AuraCustomerManagedKeyReconciler.Reconcile: adopts an existing key by matching keyId/region/cloudProvider/instanceType (the LIST endpoint returns only summaries, so each name-matched candidate is fetched by GetCustomerManagedKey to confirm before adopting), otherwise creates one, then polls to Ready and on deletion either orphans or deregisters (refused with KeyInUse while any instance still uses it).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-customer-managed-key-adopted",
+      "ev-aura-customer-managed-key-created",
+      "ev-aura-customer-managed-key-ready",
+      "ev-aura-customer-managed-key-delete-blocked",
+      "ev-aura-customer-managed-key-deleted",
+      "ev-aura-customer-managed-key-orphaned",
+      "ev-aura-customer-managed-key-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-reconcile-aura-ip-filter",
+    "name": "Reconcile AuraIPFilter",
+    "serverUnitId": "su-auraipfilter",
+    "operation": "job",
+    "description": "AuraIPFilterReconciler.Reconcile: resolves spec.instanceRefs to Aura instance IDs, adopts an existing filter by name or creates one via CreateIPFilter, then converges allow_list/filtered_entities/name/filteringDisabled drift via UpdateIPFilter, and on deletion deletes or orphans the filter.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-ip-filter-adopted",
+      "ev-aura-ip-filter-created",
+      "ev-aura-ip-filter-updated",
+      "ev-aura-ip-filter-ready",
+      "ev-aura-ip-filter-deleted",
+      "ev-aura-ip-filter-orphaned",
+      "ev-aura-ip-filter-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "sf-reconcile-plugin",
+    "name": "Reconcile Neo4jPlugin",
+    "serverUnitId": "su-neo4jplugin",
+    "operation": "business_action",
+    "description": "Main reconcile loop: validates the spec, resolves clusterRef, refuses to install when another CR in the namespace already targets the same clusterRef with the same plugin name (older CR by creationTimestamp wins), then merges the plugin into the target's env/init-containers.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-merge-plugin-list"
+    ],
+    "emitsEventIds": [
+      "ev-plugin-installed",
+      "ev-plugin-install-failed",
+      "ev-plugin-duplicate"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-plugins"
+  },
+  {
+    "id": "sf-merge-plugin-list",
+    "name": "Merge NEO4J_PLUGINS list",
+    "serverUnitId": "su-neo4jplugin",
+    "operation": "update",
+    "description": "MergeNeo4jPluginList live-patches the target StatefulSet's NEO4J_PLUGINS env var to add/remove this plugin without wholesale-replacing the list, so it never clobbers a value another Neo4jPlugin/Aura Fleet controller wrote.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-plugins"
+  }
+]

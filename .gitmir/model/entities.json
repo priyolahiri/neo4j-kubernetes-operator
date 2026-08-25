@@ -1,0 +1,2729 @@
+[
+  {
+    "id": "ent-neo4jenterprisecluster",
+    "name": "Neo4jEnterpriseCluster",
+    "tableName": "Neo4jEnterpriseCluster",
+    "description": "Declaratively manages a Neo4j Enterprise causal cluster (minimum 2 servers) built as a single {name}-server StatefulSet whose pods self-organize into primary/secondary roles via serverModeConstraint, with V2 discovery, cert-manager TLS, plugin installation, backup/restore integration, optional Aura Fleet Management, optional MCP server, and live cluster diagnostics.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "moduleId": "mod-cluster",
+    "paths": [
+      "api/v1beta1/neo4jenterprisecluster_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-neo4jenterprisecluster-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "isNullable": false,
+        "isUnique": true,
+        "note": "metadata.name of the Neo4jEnterpriseCluster custom resource"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-image-repo",
+        "name": "image.repo",
+        "type": "string",
+        "isNullable": false,
+        "note": "Enterprise image repository (invariant: neo4j:5.26-enterprise / neo4j:2025.01.0-enterprise, never community)"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-image-tag",
+        "name": "image.tag",
+        "type": "string",
+        "isNullable": false
+      },
+      {
+        "id": "f-neo4jenterprisecluster-topology-servers",
+        "name": "topology.servers",
+        "type": "int",
+        "isNullable": false,
+        "note": "Number of Neo4j servers in the {name}-server StatefulSet; min 2, operator-imposed cap 100"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-topology-server-mode-constraint",
+        "name": "topology.serverModeConstraint",
+        "type": "enum",
+        "isNullable": true,
+        "note": "NONE|PRIMARY|SECONDARY — global mode hint for all servers; per-server override via topology.serverRoles"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-storage-size",
+        "name": "storage.size",
+        "type": "string",
+        "isNullable": false,
+        "note": "Size of the data PVC per server pod"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-accept-license-agreement",
+        "name": "acceptLicenseAgreement",
+        "type": "enum",
+        "isNullable": true,
+        "note": "yes|eval — explicit acceptance of the Neo4j Enterprise commercial or 30-day evaluation license; operator refuses to deploy until set"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-tls-mode",
+        "name": "tls.mode",
+        "type": "enum",
+        "isNullable": true,
+        "note": "cert-manager|disabled"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-tls-issuer-ref-name",
+        "name": "tls.issuerRef.name",
+        "type": "ref",
+        "isNullable": true,
+        "note": "Name of a cert-manager ClusterIssuer (or compatible external issuer); ClusterIssuer is not modeled as an entity here"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-tls-strict-peer-validation",
+        "name": "tls.strictPeerValidation",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default true; controls intra-cluster mTLS trust_all/client_auth/verify_hostname posture"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-auth-admin-secret",
+        "name": "auth.adminSecret",
+        "type": "ref",
+        "isNullable": true,
+        "note": "Name of a Kubernetes Secret (keys: username, password) holding initial admin credentials; Secret is not modeled here"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-monitoring-enabled",
+        "name": "monitoring.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default true; enables Prometheus metrics, query logging, and live diagnostics collection"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-audit-enabled",
+        "name": "audit.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Opts into compliance-oriented defaults (e.g. query-literal obfuscation) for PCI/HIPAA/GDPR"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-network-policy-enabled",
+        "name": "networkPolicy.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default false; emits a NetworkPolicy restricting ingress, notably closing backup port 6362 to non-operator pods"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-mcp-enabled",
+        "name": "mcp.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default false; deploys the official mcp/neo4j MCP server for this cluster"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-mcp-transport",
+        "name": "mcp.transport",
+        "type": "enum",
+        "isNullable": true,
+        "note": "http|stdio; default http. In stdio mode the operator injects NEO4J_URI + credentials; in http mode credentials come per-request from the client"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-property-sharding-enabled",
+        "name": "propertySharding.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Enables property sharding support (Infinigraph) on Neo4j 2025.12+ clusters"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-aura-fleet-management-enabled",
+        "name": "auraFleetManagement.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Installs the pre-bundled fleet-management plugin and registers the deployment with Neo4j Aura Fleet Management"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-aura-fleet-management-token-secret-ref-name",
+        "name": "auraFleetManagement.tokenSecretRef.name",
+        "type": "ref",
+        "isNullable": true,
+        "note": "Name of a Kubernetes Secret containing the Aura Fleet Management registration token; Secret is not modeled here"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-upgrade-strategy-strategy",
+        "name": "upgradeStrategy.strategy",
+        "type": "enum",
+        "isNullable": true,
+        "note": "RollingUpgrade|Recreate; default RollingUpgrade"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "isNullable": true,
+        "note": "Current phase of the cluster as observed by the controller"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-ready",
+        "name": "status.ready",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Whether the cluster is ready for connections"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-replicas-ready",
+        "name": "status.replicas.ready",
+        "type": "int",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-version",
+        "name": "status.version",
+        "type": "string",
+        "isNullable": true,
+        "note": "Current observed Neo4j version running in the cluster"
+      }
+    ]
+  },
+  {
+    "id": "ent-neo4jenterprisestandalone",
+    "name": "Neo4jEnterpriseStandalone",
+    "tableName": "Neo4jEnterpriseStandalone",
+    "description": "Declaratively manages a single-node Neo4j Enterprise deployment for development, testing, and low-availability production workloads, built on the same clustering infrastructure as Neo4jEnterpriseCluster but with replicas=1, remaining compatible with the rest of the CRD ecosystem (Neo4jDatabase, Neo4jPlugin, Neo4jBackup, etc.).",
+    "storage": "table",
+    "serverUnitId": "su-neo4jenterprisestandalone",
+    "moduleId": "mod-standalone",
+    "paths": [
+      "api/v1beta1/neo4jenterprisestandalone_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-neo4jenterprisestandalone-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "isNullable": false,
+        "isUnique": true,
+        "note": "metadata.name of the Neo4jEnterpriseStandalone custom resource"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-image-repo",
+        "name": "image.repo",
+        "type": "string",
+        "isNullable": false,
+        "note": "Enterprise image repository (invariant: neo4j:5.26-enterprise / neo4j:2025.01.0-enterprise, never community)"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-image-tag",
+        "name": "image.tag",
+        "type": "string",
+        "isNullable": false
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-storage-size",
+        "name": "storage.size",
+        "type": "string",
+        "isNullable": false,
+        "note": "Size of the data PVC for the single Neo4j pod"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-accept-license-agreement",
+        "name": "acceptLicenseAgreement",
+        "type": "enum",
+        "isNullable": true,
+        "note": "yes|eval — explicit acceptance of the Neo4j Enterprise commercial or 30-day evaluation license"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-tls-mode",
+        "name": "tls.mode",
+        "type": "enum",
+        "isNullable": true,
+        "note": "cert-manager|disabled"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-tls-issuer-ref-name",
+        "name": "tls.issuerRef.name",
+        "type": "ref",
+        "isNullable": true,
+        "note": "Name of a cert-manager ClusterIssuer (or compatible external issuer); ClusterIssuer is not modeled as an entity here"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-auth-admin-secret",
+        "name": "auth.adminSecret",
+        "type": "ref",
+        "isNullable": true,
+        "note": "Name of a Kubernetes Secret (keys: username, password) holding initial admin credentials; also required for NEO4J_AUTH / Neo4jDatabase support. Secret is not modeled here"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-monitoring-enabled",
+        "name": "monitoring.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default true; enables Prometheus metrics, query logging, and live diagnostics collection"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-audit-enabled",
+        "name": "audit.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Shares AuditSpec with Neo4jEnterpriseCluster; compliance-oriented log tuning"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-network-policy-enabled",
+        "name": "networkPolicy.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default false; restricts ingress to the standalone pod, notably closing backup port 6362"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-mcp-enabled",
+        "name": "mcp.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default false; deploys the official mcp/neo4j MCP server for this standalone deployment"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-mcp-transport",
+        "name": "mcp.transport",
+        "type": "enum",
+        "isNullable": true,
+        "note": "http|stdio; default http"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-aura-fleet-management-enabled",
+        "name": "auraFleetManagement.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Installs the pre-bundled fleet-management plugin and registers this standalone with Neo4j Aura Fleet Management"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-upgrade-strategy-strategy",
+        "name": "upgradeStrategy.strategy",
+        "type": "enum",
+        "isNullable": true,
+        "note": "RollingUpgrade|Recreate; default RollingUpgrade"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-trusted-ca-secrets",
+        "name": "trustedCASecrets",
+        "type": "json",
+        "isNullable": true,
+        "note": "List of {name,key} Secret references imported into the JVM truststore for outgoing TLS (OIDC, LDAPS, Aura Fleet Management, plugin mirrors); Secrets not modeled here"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "isNullable": true,
+        "note": "Current phase of the standalone deployment"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-status-ready",
+        "name": "status.ready",
+        "type": "bool",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-status-version",
+        "name": "status.version",
+        "type": "string",
+        "isNullable": true,
+        "note": "Current observed Neo4j version"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-status-pod-status-pod-name",
+        "name": "status.podStatus.podName",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-status-database-status-database-mode",
+        "name": "status.databaseStatus.databaseMode",
+        "type": "string",
+        "isNullable": true,
+        "note": "Expected to read \"SINGLE\" for a standalone deployment"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-status-database-status-health-status",
+        "name": "status.databaseStatus.healthStatus",
+        "type": "string",
+        "isNullable": true
+      }
+    ]
+  },
+  {
+    "id": "ent-neo4jplugin",
+    "name": "Neo4jPlugin",
+    "tableName": "Neo4jPlugin",
+    "description": "Declaratively installs and manages a Neo4j plugin (APOC, Graph Data Science, Bloom, GenAI, n10s, GraphQL, or a custom plugin) on a referenced cluster or standalone by merging it into the target StatefulSet's NEO4J_PLUGINS env var (or, for installMode VerifiedDownload, a checksum-verified init container) and triggering a controlled rolling restart.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jplugin",
+    "moduleId": "mod-plugins",
+    "paths": [
+      "api/v1beta1/neo4jplugin_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-neo4jplugin-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "isNullable": false,
+        "isUnique": true,
+        "note": "metadata.name of the Neo4jPlugin custom resource"
+      },
+      {
+        "id": "f-neo4jplugin-cluster-ref",
+        "name": "clusterRef",
+        "type": "ref",
+        "isNullable": false,
+        "note": "Name of the target Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone in the same namespace; ambiguous which Kind, so refEntityId left unset (could be ent-neo4jenterprisecluster or ent-neo4jenterprisestandalone)"
+      },
+      {
+        "id": "f-neo4jplugin-plugin-name",
+        "name": "name",
+        "type": "string",
+        "isNullable": false,
+        "note": "spec.name — the plugin identifier (e.g. \"apoc\", \"graph-data-science\"), distinct from the CR's own metadata.name"
+      },
+      {
+        "id": "f-neo4jplugin-version",
+        "name": "version",
+        "type": "string",
+        "isNullable": false
+      },
+      {
+        "id": "f-neo4jplugin-enabled",
+        "name": "enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default true"
+      },
+      {
+        "id": "f-neo4jplugin-install-mode",
+        "name": "installMode",
+        "type": "enum",
+        "isNullable": true,
+        "note": "Managed|PreBaked|VerifiedDownload; default Managed. VerifiedDownload injects a checksum-verifying init container instead of using NEO4J_PLUGINS"
+      },
+      {
+        "id": "f-neo4jplugin-source-type",
+        "name": "source.type",
+        "type": "enum",
+        "isNullable": true,
+        "note": "official|community|custom|url; default official"
+      },
+      {
+        "id": "f-neo4jplugin-source-url",
+        "name": "source.url",
+        "type": "string",
+        "isNullable": true,
+        "note": "Required (https only) when installMode=VerifiedDownload or source.type=url/custom"
+      },
+      {
+        "id": "f-neo4jplugin-source-checksum",
+        "name": "source.checksum",
+        "type": "string",
+        "isNullable": true,
+        "note": "sha256:<64 hex> or sha512:<128 hex>; required when installMode=VerifiedDownload"
+      },
+      {
+        "id": "f-neo4jplugin-source-auth-secret",
+        "name": "source.authSecret",
+        "type": "ref",
+        "isNullable": true,
+        "note": "Name of a Kubernetes Secret with credentials for a private plugin repository/mirror; Secret not modeled here"
+      },
+      {
+        "id": "f-neo4jplugin-config",
+        "name": "config",
+        "type": "json",
+        "isNullable": true,
+        "note": "map[string]string of plugin-specific configuration entries"
+      },
+      {
+        "id": "f-neo4jplugin-dependencies",
+        "name": "dependencies",
+        "type": "json",
+        "isNullable": true,
+        "note": "List of {name, versionConstraint, optional} plugin dependencies; unsupported when installMode=VerifiedDownload"
+      },
+      {
+        "id": "f-neo4jplugin-security-allowed-procedures",
+        "name": "security.allowedProcedures",
+        "type": "json",
+        "isNullable": true,
+        "note": "Procedure allowlist entries applied to dbms.security.procedures.unrestricted-style config"
+      },
+      {
+        "id": "f-neo4jplugin-security-sandbox",
+        "name": "security.sandbox",
+        "type": "bool",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jplugin-resources-memory-limit",
+        "name": "resources.memoryLimit",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jplugin-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jplugin-status-installed-version",
+        "name": "status.installedVersion",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jplugin-status-health-status",
+        "name": "status.health.status",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jplugin-status-usage-usage-frequency",
+        "name": "status.usage.usageFrequency",
+        "type": "string",
+        "isNullable": true
+      }
+    ]
+  },
+  {
+    "id": "ent-neo4jdatabase",
+    "name": "Neo4jDatabase",
+    "tableName": "Neo4jDatabase",
+    "description": "Neo4jDatabase declaratively manages a single named Neo4j database inside a referenced cluster or standalone, issuing CREATE / ALTER / DROP DATABASE statements against the system database.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jdatabase",
+    "moduleId": "mod-database",
+    "fields": [
+      {
+        "id": "f-neo4jdatabase-cluster-ref",
+        "name": "clusterRef",
+        "type": "ref",
+        "isNullable": false,
+        "refEntityId": "ent-neo4jenterprisecluster",
+        "note": "References a Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone (same namespace) whose DBMS hosts this database; ambiguous target kind, resolved at runtime."
+      },
+      {
+        "id": "f-neo4jdatabase-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Required database name issued in CREATE/ALTER/DROP DATABASE statements."
+      },
+      {
+        "id": "f-neo4jdatabase-options",
+        "name": "options",
+        "type": "json",
+        "isNullable": true,
+        "note": "Database creation options map."
+      },
+      {
+        "id": "f-neo4jdatabase-initial-data-source",
+        "name": "initialData.source",
+        "type": "enum",
+        "isNullable": true,
+        "note": "One of cypher; dump; csv."
+      },
+      {
+        "id": "f-neo4jdatabase-initial-data-cypher-statements",
+        "name": "initialData.cypherStatements",
+        "type": "json",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jdatabase-initial-data-config-map-ref",
+        "name": "initialData.configMapRef",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jdatabase-initial-data-secret-ref",
+        "name": "initialData.secretRef",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jdatabase-wait",
+        "name": "wait",
+        "type": "bool",
+        "note": "Defaults true; wait for database creation to complete."
+      },
+      {
+        "id": "f-neo4jdatabase-if-not-exists",
+        "name": "ifNotExists",
+        "type": "bool",
+        "note": "Defaults true; create database only if it doesn't exist."
+      },
+      {
+        "id": "f-neo4jdatabase-topology-primaries",
+        "name": "topology.primaries",
+        "type": "int",
+        "isNullable": true,
+        "note": "Primaries for this database; primaries+secondaries <= cluster.spec.topology.servers."
+      },
+      {
+        "id": "f-neo4jdatabase-topology-secondaries",
+        "name": "topology.secondaries",
+        "type": "int",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jdatabase-default-cypher-language",
+        "name": "defaultCypherLanguage",
+        "type": "enum",
+        "isNullable": true,
+        "note": "\"5\" or \"25\"; Neo4j 2025.x only."
+      },
+      {
+        "id": "f-neo4jdatabase-seed-uri",
+        "name": "seedURI",
+        "type": "string",
+        "isNullable": true,
+        "note": "URI (s3/gs/azb/http/ftp) of an existing backup/dump to seed the database from."
+      },
+      {
+        "id": "f-neo4jdatabase-seed-config-restore-until",
+        "name": "seedConfig.restoreUntil",
+        "type": "string",
+        "isNullable": true,
+        "note": "RFC3339 timestamp or txId:N for point-in-time recovery (2025.x only)."
+      },
+      {
+        "id": "f-neo4jdatabase-seed-config-config",
+        "name": "seedConfig.config",
+        "type": "json",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jdatabase-seed-credentials-secret-ref",
+        "name": "seedCredentials.secretRef",
+        "type": "string",
+        "isNullable": true,
+        "note": "Secret with seed-URI credentials when system-wide cloud auth is unavailable."
+      },
+      {
+        "id": "f-neo4jdatabase-status-phase",
+        "name": "status.phase",
+        "type": "string"
+      },
+      {
+        "id": "f-neo4jdatabase-status-message",
+        "name": "status.message",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jdatabase-status-data-imported",
+        "name": "status.dataImported",
+        "type": "bool",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jdatabase-status-creation-time",
+        "name": "status.creationTime",
+        "type": "timestamp",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jdatabase-status-size",
+        "name": "status.size",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jdatabase-status-state",
+        "name": "status.state",
+        "type": "string",
+        "isNullable": true,
+        "note": "online, offline, started, stopped."
+      },
+      {
+        "id": "f-neo4jdatabase-status-servers",
+        "name": "status.servers",
+        "type": "json",
+        "isNullable": true,
+        "note": "Cluster servers currently hosting this database."
+      }
+    ],
+    "paths": [
+      "api/v1beta1/neo4jdatabase_types.go"
+    ]
+  },
+  {
+    "id": "ent-neo4jdatabasealias",
+    "name": "Neo4jDatabaseAlias",
+    "tableName": "Neo4jDatabaseAlias",
+    "description": "Neo4jDatabaseAliasSpec defines a local database alias — a second name for an existing database in the same DBMS, used to give a cross-cluster-replication replica a stable client-facing name across promotion.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jdatabasealias",
+    "moduleId": "mod-database",
+    "fields": [
+      {
+        "id": "f-neo4jdatabasealias-cluster-ref",
+        "name": "clusterRef",
+        "type": "ref",
+        "refEntityId": "ent-neo4jenterprisecluster",
+        "note": "The Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone (same namespace) that hosts both the alias and its target."
+      },
+      {
+        "id": "f-neo4jdatabasealias-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Alias name in Neo4j; defaults to metadata.name when empty."
+      },
+      {
+        "id": "f-neo4jdatabasealias-target-database",
+        "name": "targetDatabase",
+        "type": "string",
+        "note": "Name of the database (standard or a cross-cluster replica) this alias points at; not a Kubernetes object reference, and need not already exist."
+      },
+      {
+        "id": "f-neo4jdatabasealias-deletion-policy",
+        "name": "deletionPolicy",
+        "type": "enum",
+        "note": "Delete (default, DROP ALIAS) or Retain."
+      },
+      {
+        "id": "f-neo4jdatabasealias-status-conditions",
+        "name": "status.conditions",
+        "type": "json",
+        "isNullable": true,
+        "note": "Ready, ClusterNotReady."
+      },
+      {
+        "id": "f-neo4jdatabasealias-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "isNullable": true,
+        "note": "Pending, Ready, Failed."
+      },
+      {
+        "id": "f-neo4jdatabasealias-status-message",
+        "name": "status.message",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jdatabasealias-status-observed-generation",
+        "name": "status.observedGeneration",
+        "type": "bigint",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jdatabasealias-status-observed-target",
+        "name": "status.observedTarget",
+        "type": "string",
+        "isNullable": true,
+        "note": "Read back from SHOW ALIASES FOR DATABASE; differs from spec.targetDatabase only between an out-of-band change and the next reconcile."
+      }
+    ],
+    "paths": [
+      "api/v1beta1/neo4jdatabasealias_types.go"
+    ]
+  },
+  {
+    "id": "ent-neo4jshardeddatabase",
+    "name": "Neo4jShardedDatabase",
+    "tableName": "Neo4jShardedDatabase",
+    "description": "Neo4jShardedDatabase declaratively manages a property-sharded Neo4j database (Neo4j 2025.12+ feature), coordinating the graph shard and N property shards each with its own topology.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jshardeddatabase",
+    "moduleId": "mod-database",
+    "fields": [
+      {
+        "id": "f-neo4jshardeddatabase-cluster-ref",
+        "name": "clusterRef",
+        "type": "ref",
+        "refEntityId": "ent-neo4jenterprisecluster",
+        "note": "Reference to the Neo4j cluster (or standalone) that will host this sharded database."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Name of the sharded database to create."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-default-cypher-language",
+        "name": "defaultCypherLanguage",
+        "type": "enum",
+        "note": "Required; \"25\" only — property sharding requires Cypher 25 syntax."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-property-sharding-property-shards",
+        "name": "propertySharding.propertyShards",
+        "type": "int",
+        "note": "Number of property shards to create (1-1000)."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-property-sharding-graph-shard-primaries",
+        "name": "propertySharding.graphShard.primaries",
+        "type": "int"
+      },
+      {
+        "id": "f-neo4jshardeddatabase-property-sharding-graph-shard-secondaries",
+        "name": "propertySharding.graphShard.secondaries",
+        "type": "int"
+      },
+      {
+        "id": "f-neo4jshardeddatabase-property-sharding-property-shard-topology-replicas",
+        "name": "propertySharding.propertyShardTopology.replicas",
+        "type": "int",
+        "note": "Replicas per property shard; same topology applied to all property shards."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-wait",
+        "name": "wait",
+        "type": "bool"
+      },
+      {
+        "id": "f-neo4jshardeddatabase-if-not-exists",
+        "name": "ifNotExists",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Pointer type so explicit false survives round-trips; mutually exclusive with replaceExisting:true."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-replace-existing",
+        "name": "replaceExisting",
+        "type": "bool",
+        "note": "Destructive: DROP DATABASE ... DESTROY DATA WAIT then recreate from seedBackupRef. Requires force:true."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-force",
+        "name": "force",
+        "type": "bool",
+        "note": "Separate confirmation field required alongside replaceExisting."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-seed-uri",
+        "name": "seedURI",
+        "type": "string",
+        "isNullable": true,
+        "note": "Single seed URI; backup artifacts expected under shard-suffixed names."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-seed-backup-ref",
+        "name": "seedBackupRef",
+        "type": "ref",
+        "isNullable": true,
+        "refEntityId": "ent-neo4jbackup",
+        "note": "Names a Neo4jBackup CR whose most-recent Succeeded run seeds this sharded database; resolved into a concrete seedURI at reconcile time. Cloud-storage-backed backups only."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-seed-uris",
+        "name": "seedURIs",
+        "type": "json",
+        "isNullable": true,
+        "note": "Seed URIs keyed by shard name."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-seed-source-database",
+        "name": "seedSourceDatabase",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jshardeddatabase-seed-config-restore-until",
+        "name": "seedConfig.restoreUntil",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jshardeddatabase-seed-credentials-secret-ref",
+        "name": "seedCredentials.secretRef",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jshardeddatabase-tx-log-enrichment",
+        "name": "txLogEnrichment",
+        "type": "string",
+        "isNullable": true,
+        "note": "e.g. FULL."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jshardeddatabase-status-sharding-ready",
+        "name": "status.shardingReady",
+        "type": "bool",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jshardeddatabase-status-creation-time",
+        "name": "status.creationTime",
+        "type": "timestamp",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jshardeddatabase-status-last-backup-backup-ref",
+        "name": "status.lastBackup.backupRef",
+        "type": "ref",
+        "isNullable": true,
+        "refEntityId": "ent-neo4jbackup",
+        "note": "Reverse-lookup pointer populated when a Neo4jBackup of kind=ShardedDatabase targeting this CR succeeds."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-status-last-destructive-restore-generation",
+        "name": "status.lastDestructiveRestoreGeneration",
+        "type": "bigint",
+        "isNullable": true,
+        "note": "Generation at which the last successful destructive restore ran; prevents re-triggering DROP on every reconcile."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-status-total-size",
+        "name": "status.totalSize",
+        "type": "string",
+        "isNullable": true
+      }
+    ],
+    "paths": [
+      "api/v1beta1/neo4jshardeddatabase_types.go"
+    ]
+  },
+  {
+    "id": "ent-neo4jreplicadatabase",
+    "name": "Neo4jReplicaDatabase",
+    "tableName": "Neo4jReplicaDatabase",
+    "description": "Neo4jReplicaDatabaseSpec defines a read-only cross-cluster replica of a database hosted on another Neo4j cluster, applied to the downstream cluster and coupled to the upstream only via an object-storage differential-backup chain.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jreplicadatabase",
+    "moduleId": "mod-database",
+    "fields": [
+      {
+        "id": "f-neo4jreplicadatabase-cluster-ref",
+        "name": "clusterRef",
+        "type": "ref",
+        "refEntityId": "ent-neo4jenterprisecluster",
+        "note": "The downstream Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone (same namespace) that will host the replica."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Replica database name; defaults to metadata.name; permanent (no RENAME DATABASE), survives promotion."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-upstream-database",
+        "name": "upstreamDatabase",
+        "type": "string",
+        "note": "Name of the database being replicated as known on the upstream cluster; becomes replicaConfig.remote. Not a Kubernetes object reference — the upstream cluster is not visible to this operator."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-topology-primaries",
+        "name": "topology.primaries",
+        "type": "int",
+        "isNullable": true,
+        "note": "Both primaries and secondaries are read-only for a replica."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-topology-secondaries",
+        "name": "topology.secondaries",
+        "type": "int",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jreplicadatabase-source-mode",
+        "name": "source.mode",
+        "type": "enum",
+        "note": "backup (only supported mode) or network (rejected by validator)."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-source-pull-uri",
+        "name": "source.pullURI",
+        "type": "ref",
+        "isNullable": true,
+        "refEntityId": "ent-neo4jbackup",
+        "note": "Object-storage directory holding the upstream's differential backup chain; must be the directory the upstream Neo4jBackup CR writes into (its status.replicationPullURI) — a cross-cluster string URI, not an in-namespace object reference. Becomes replicaConfig.pullURI."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-source-seed-uri",
+        "name": "source.seedURI",
+        "type": "ref",
+        "isNullable": true,
+        "refEntityId": "ent-neo4jbackup",
+        "note": "Full backup artifact the replica is initially seeded from, from the same chain as pullURI."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-source-addresses",
+        "name": "source.addresses",
+        "type": "json",
+        "isNullable": true,
+        "note": "Upstream cluster endpoints for network mode; unused while network mode is rejected."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-source-credentials-secret-ref",
+        "name": "source.credentialsSecretRef",
+        "type": "string",
+        "isNullable": true,
+        "note": "Secret with object-storage credentials for pullURI/seedURI."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-pull-interval",
+        "name": "pullInterval",
+        "type": "string",
+        "isNullable": true,
+        "note": "Maps to Neo4j's db.cluster.backup.pull_interval, default 1m; bounds the replica's RPO."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-deletion-policy",
+        "name": "deletionPolicy",
+        "type": "enum",
+        "note": "Delete (default) or Retain; never drops once promoted, regardless of setting."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-status-phase",
+        "name": "status.phase",
+        "type": "enum",
+        "isNullable": true,
+        "note": "Pending, Seeding, Replicating, Promoted (terminal), Failed."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-status-database-type",
+        "name": "status.databaseType",
+        "type": "string",
+        "isNullable": true,
+        "note": "Live `type` column from SHOW DATABASES; the operator's authoritative signal over status.phase."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-status-last-committed-txn",
+        "name": "status.lastCommittedTxn",
+        "type": "bigint",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jreplicadatabase-status-replication-lag",
+        "name": "status.replicationLag",
+        "type": "bigint",
+        "isNullable": true,
+        "note": "Transactions behind upstream; the data loss a promotion right now would make permanent."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-status-promoted-at",
+        "name": "status.promotedAt",
+        "type": "timestamp",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jreplicadatabase-status-promoted-by",
+        "name": "status.promotedBy",
+        "type": "ref",
+        "isNullable": true,
+        "refEntityId": "ent-neo4jreplicapromotion",
+        "note": "Names the Neo4jReplicaPromotion CR that promoted it, or the sentinel string \"out-of-band\"."
+      }
+    ],
+    "paths": [
+      "api/v1beta1/neo4jreplicadatabase_types.go"
+    ]
+  },
+  {
+    "id": "ent-neo4jreplicapromotion",
+    "name": "Neo4jReplicaPromotion",
+    "tableName": "Neo4jReplicaPromotion",
+    "description": "Neo4jReplicaPromotionSpec requests the one-way, irreversible promotion of a cross-cluster replica into an ordinary read-write database, deliberately modeled as a one-shot CR rather than a mutable field.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jreplicapromotion",
+    "moduleId": "mod-database",
+    "fields": [
+      {
+        "id": "f-neo4jreplicapromotion-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Kubernetes object name (metadata.name) — this one-shot CR has no separate spec.name field."
+      },
+      {
+        "id": "f-neo4jreplicapromotion-replica-ref",
+        "name": "replicaRef",
+        "type": "ref",
+        "refEntityId": "ent-neo4jreplicadatabase",
+        "note": "The Neo4jReplicaDatabase CR (same namespace) to promote; immutable via CEL rule."
+      },
+      {
+        "id": "f-neo4jreplicapromotion-topology-primaries",
+        "name": "topology.primaries",
+        "type": "int",
+        "isNullable": true,
+        "note": "Optional topology change applied via dbms.promoteReplicaDatabase; immutable; omitted retains the replica's existing topology."
+      },
+      {
+        "id": "f-neo4jreplicapromotion-topology-secondaries",
+        "name": "topology.secondaries",
+        "type": "int",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jreplicapromotion-status-conditions",
+        "name": "status.conditions",
+        "type": "json",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jreplicapromotion-status-phase",
+        "name": "status.phase",
+        "type": "enum",
+        "isNullable": true,
+        "note": "Pending, Promoting, Completed (terminal), Failed (terminal)."
+      },
+      {
+        "id": "f-neo4jreplicapromotion-status-message",
+        "name": "status.message",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jreplicapromotion-status-observed-generation",
+        "name": "status.observedGeneration",
+        "type": "bigint",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jreplicapromotion-status-completion-time",
+        "name": "status.completionTime",
+        "type": "timestamp",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jreplicapromotion-status-observed-lag-tx-ids",
+        "name": "status.observedLagTxIds",
+        "type": "bigint",
+        "isNullable": true,
+        "note": "Replica's replicationLag immediately before promotion — the RPO recorded (never enforced) for audit."
+      },
+      {
+        "id": "f-neo4jreplicapromotion-status-last-committed-txn",
+        "name": "status.lastCommittedTxn",
+        "type": "bigint",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jreplicapromotion-status-promoted-database",
+        "name": "status.promotedDatabase",
+        "type": "string",
+        "isNullable": true
+      }
+    ],
+    "paths": [
+      "api/v1beta1/neo4jreplicapromotion_types.go"
+    ]
+  },
+  {
+    "id": "ent-neo4jbackup",
+    "name": "Neo4jBackup",
+    "tableName": "Neo4jBackup",
+    "description": "Neo4jBackup declaratively manages a Neo4j backup: the operator runs `neo4j-admin database backup` against the referenced cluster or standalone target, writes the artifact to local PVC or a supported cloud bucket (S3/GCS/Azure/MinIO), records the outcome on status, and optionally enforces retention or chains differentials off another Neo4jBackup CR.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jbackup",
+    "moduleId": "mod-backup-restore",
+    "fields": [
+      {
+        "id": "f-neo4jbackup-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "isNullable": false,
+        "note": "Kubernetes object name (metadata.name); identifies this backup CR."
+      },
+      {
+        "id": "f-neo4jbackup-instance-ref",
+        "name": "instanceRef",
+        "type": "ref",
+        "isNullable": true,
+        "note": "Names the Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone (in this namespace) to back up; operator resolves cluster vs standalone itself. Preferred over the legacy target block as of v1.13."
+      },
+      {
+        "id": "f-neo4jbackup-database",
+        "name": "database",
+        "type": "string",
+        "isNullable": true,
+        "note": "Single-database scope; mutually exclusive with allDatabases and shardedDatabase."
+      },
+      {
+        "id": "f-neo4jbackup-all-databases",
+        "name": "allDatabases",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Instance-wide scope: backs up every user database (system DB excluded)."
+      },
+      {
+        "id": "f-neo4jbackup-sharded-database",
+        "name": "shardedDatabase",
+        "type": "string",
+        "isNullable": true,
+        "note": "Name of the Neo4jShardedDatabase CR to back up as a unit (graph shard + all property shards in one neo4j-admin run)."
+      },
+      {
+        "id": "f-neo4jbackup-storage-type",
+        "name": "storage.type",
+        "type": "enum",
+        "isNullable": false,
+        "note": "StorageLocation.Type enum: s3;gcs;azure;pvc."
+      },
+      {
+        "id": "f-neo4jbackup-storage-bucket",
+        "name": "storage.bucket",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jbackup-storage-path",
+        "name": "storage.path",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jbackup-schedule",
+        "name": "schedule",
+        "type": "string",
+        "isNullable": true,
+        "note": "Cron expression for automated backups."
+      },
+      {
+        "id": "f-neo4jbackup-mode",
+        "name": "mode",
+        "type": "enum",
+        "isNullable": true,
+        "note": "standard (default) or replication-source; replication-source enforces single-database scope, unbroken diff chain, and publishes status.replicationPullURI."
+      },
+      {
+        "id": "f-neo4jbackup-retention-max-age",
+        "name": "retention.maxAge",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jbackup-retention-max-count",
+        "name": "retention.maxCount",
+        "type": "int",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jbackup-retention-delete-policy",
+        "name": "retention.deletePolicy",
+        "type": "enum",
+        "isNullable": true,
+        "note": "Only \"Delete\" supported (Archive removed in v1.14, never had archival logic)."
+      },
+      {
+        "id": "f-neo4jbackup-options-backup-type",
+        "name": "options.backupType",
+        "type": "enum",
+        "isNullable": true,
+        "note": "FULL;DIFF;AUTO, default AUTO."
+      },
+      {
+        "id": "f-neo4jbackup-options-compress",
+        "name": "options.compress",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Pointer type; default true. Use CompressEffective(), never dereference directly."
+      },
+      {
+        "id": "f-neo4jbackup-suspend",
+        "name": "suspend",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Suspends the backup schedule."
+      },
+      {
+        "id": "f-neo4jbackup-chain-from-backup",
+        "name": "chainFromBackup",
+        "type": "ref",
+        "refEntityId": "ent-neo4jbackup",
+        "isNullable": true,
+        "note": "Names another Neo4jBackup CR in the same namespace whose shared directory this CR writes into instead of its own, for mixed-cadence FULL/DIFF chains."
+      },
+      {
+        "id": "f-neo4jbackup-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jbackup-status-last-run-time",
+        "name": "status.lastRunTime",
+        "type": "timestamp",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jbackup-status-last-success-time",
+        "name": "status.lastSuccessTime",
+        "type": "timestamp",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jbackup-status-replication-pull-uri",
+        "name": "status.replicationPullURI",
+        "type": "string",
+        "isNullable": true,
+        "note": "Exact object-storage directory a downstream cross-cluster replica should pull from; populated only when spec.mode=replication-source."
+      }
+    ],
+    "paths": [
+      "api/v1beta1/neo4jbackup_types.go"
+    ]
+  },
+  {
+    "id": "ent-neo4jrestore",
+    "name": "Neo4jRestore",
+    "tableName": "Neo4jRestore",
+    "description": "Neo4jRestore declaratively restores a Neo4j database from a previously-completed Neo4jBackup or a direct storage location, driving point-in-time recovery (PITR) via source.type=pitr / source.pointInTime, and runs a neo4j-admin restore Job (standalone) or a cluster Cypher recreateDatabase/seedURI path against the referenced target.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jrestore",
+    "moduleId": "mod-backup-restore",
+    "fields": [
+      {
+        "id": "f-neo4jrestore-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "isNullable": false,
+        "note": "Kubernetes object name (metadata.name)."
+      },
+      {
+        "id": "f-neo4jrestore-instance-ref",
+        "name": "instanceRef",
+        "type": "ref",
+        "isNullable": true,
+        "note": "Names the Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone to restore INTO; the operator picks the restore engine from the target's topology."
+      },
+      {
+        "id": "f-neo4jrestore-source-type",
+        "name": "source.type",
+        "type": "enum",
+        "isNullable": false,
+        "note": "backup;storage;pitr."
+      },
+      {
+        "id": "f-neo4jrestore-source-backup-ref",
+        "name": "source.backupRef",
+        "type": "ref",
+        "refEntityId": "ent-neo4jbackup",
+        "isNullable": true,
+        "note": "Reference to a Neo4jBackup CR (when source.type=backup); resolved once into status.resolvedSource so the restore survives the backup CR's deletion."
+      },
+      {
+        "id": "f-neo4jrestore-source-storage-type",
+        "name": "source.storage.type",
+        "type": "enum",
+        "isNullable": true,
+        "note": "Direct StorageLocation (when source.type=storage): s3;gcs;azure;pvc."
+      },
+      {
+        "id": "f-neo4jrestore-source-storage-bucket",
+        "name": "source.storage.bucket",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jrestore-source-backup-path",
+        "name": "source.backupPath",
+        "type": "string",
+        "isNullable": true,
+        "note": "Specific backup path within storage."
+      },
+      {
+        "id": "f-neo4jrestore-source-point-in-time",
+        "name": "source.pointInTime",
+        "type": "timestamp",
+        "isNullable": true,
+        "note": "Point-in-time target for restore (type=pitr, or PITR on top of a backup/storage source)."
+      },
+      {
+        "id": "f-neo4jrestore-database",
+        "name": "database",
+        "type": "string",
+        "isNullable": true,
+        "note": "Mutually exclusive with allDatabases."
+      },
+      {
+        "id": "f-neo4jrestore-all-databases",
+        "name": "allDatabases",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Restores every user database recorded in the source backup; requires source.type=backup; per-database progress tracked in status.databaseResults."
+      },
+      {
+        "id": "f-neo4jrestore-options-replace-existing",
+        "name": "options.replaceExisting",
+        "type": "bool",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jrestore-options-additional-args",
+        "name": "options.additionalArgs",
+        "type": "json",
+        "isNullable": true,
+        "note": "Additional neo4j-admin restore arguments (string array)."
+      },
+      {
+        "id": "f-neo4jrestore-stop-cluster",
+        "name": "stopCluster",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Stop cluster before restore (required for some restore operations)."
+      },
+      {
+        "id": "f-neo4jrestore-timeout",
+        "name": "timeout",
+        "type": "string",
+        "isNullable": true,
+        "note": "Go duration bounding the cluster Cypher restore's online-convergence wait; default 5m."
+      },
+      {
+        "id": "f-neo4jrestore-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jrestore-status-start-time",
+        "name": "status.startTime",
+        "type": "timestamp",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jrestore-status-completion-time",
+        "name": "status.completionTime",
+        "type": "timestamp",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jrestore-status-stats-duration",
+        "name": "status.stats.duration",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jrestore-status-database-results",
+        "name": "status.databaseResults",
+        "type": "json",
+        "isNullable": true,
+        "note": "Per-database phase/message/completionTime for an allDatabases restore."
+      },
+      {
+        "id": "f-neo4jrestore-status-resolved-source-artifact-filename",
+        "name": "status.resolvedSource.artifactFilename",
+        "type": "string",
+        "isNullable": true,
+        "note": "Exact .backup filename resolved from source.type=backup; required by cluster Cypher restore paths (cloud seedURI / PVC proxy)."
+      }
+    ],
+    "paths": [
+      "api/v1beta1/neo4jrestore_types.go"
+    ]
+  },
+  {
+    "id": "ent-neo4juser",
+    "name": "Neo4jUser",
+    "tableName": "Neo4jUser",
+    "description": "Neo4jUser maps 1:1 to a user in the referenced Neo4j cluster's `system` database, reconciling identity, password (via a Secret reference, never a raw password field), account status, home database, and role-name bindings on every loop — privileges are never managed here, only on Neo4jRole.",
+    "storage": "table",
+    "serverUnitId": "su-neo4juser",
+    "moduleId": "mod-security",
+    "sensitivity": "high",
+    "fields": [
+      {
+        "id": "f-neo4juser-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "isNullable": false,
+        "note": "spec.username, defaulting to metadata.name; the Neo4j username."
+      },
+      {
+        "id": "f-neo4juser-cluster-ref",
+        "name": "clusterRef",
+        "type": "ref",
+        "isNullable": false,
+        "note": "Name of the Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone whose security graph owns this user. Not applicable to Aura (console-RBAC only)."
+      },
+      {
+        "id": "f-neo4juser-password-secret-ref",
+        "name": "passwordSecretRef",
+        "type": "ref",
+        "isNullable": true,
+        "note": "Reference (name+key) to a Kubernetes Secret holding the native-auth password; the CR never stores the plaintext password. Required unless externalAuth is set. The referenced Secret's value is SHA-256-hashed only for change detection, never for authentication."
+      },
+      {
+        "id": "f-neo4juser-require-password-change",
+        "name": "requirePasswordChange",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Maps to Neo4j's SET PASSWORD CHANGE REQUIRED."
+      },
+      {
+        "id": "f-neo4juser-account-status",
+        "name": "accountStatus",
+        "type": "enum",
+        "isNullable": true,
+        "note": "active (default) or suspended."
+      },
+      {
+        "id": "f-neo4juser-home-database",
+        "name": "homeDatabase",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4juser-roles",
+        "name": "roles",
+        "type": "json",
+        "isNullable": true,
+        "note": "List of Neo4jRole names (built-in or custom) to grant; privileges are never set here, only on Neo4jRole. PUBLIC is implicit and never revoked."
+      },
+      {
+        "id": "f-neo4juser-external-auth-provider",
+        "name": "externalAuth.provider",
+        "type": "string",
+        "isNullable": true,
+        "note": "Non-native auth provider name (e.g. oidc-okta, ldap1, saml1), maps to SET AUTH '<provider>' { SET ID '...' }."
+      },
+      {
+        "id": "f-neo4juser-external-auth-id",
+        "name": "externalAuth.id",
+        "type": "string",
+        "isNullable": true,
+        "note": "User's identifier within the external provider (e.g. OIDC sub claim or LDAP DN)."
+      },
+      {
+        "id": "f-neo4juser-deletion-policy",
+        "name": "deletionPolicy",
+        "type": "enum",
+        "isNullable": true,
+        "note": "Delete (default, DROP USER) or Retain."
+      },
+      {
+        "id": "f-neo4juser-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4juser-status-current-roles",
+        "name": "status.currentRoles",
+        "type": "json",
+        "isNullable": true,
+        "note": "Role names actually granted, observed via SHOW USERS YIELD roles."
+      },
+      {
+        "id": "f-neo4juser-status-password-secret-hash",
+        "name": "status.passwordSecretHash",
+        "type": "string",
+        "isNullable": true,
+        "note": "Change-detection token derived from the Secret's namespace/name/key/resourceVersion — deliberately NOT sha256(password) (a prior unsalted-hash-of-password design was removed as a credential-recovery risk); never used in any auth path."
+      },
+      {
+        "id": "f-neo4juser-status-password-last-rotated",
+        "name": "status.passwordLastRotated",
+        "type": "timestamp",
+        "isNullable": true
+      }
+    ],
+    "paths": [
+      "api/v1beta1/neo4juser_types.go"
+    ]
+  },
+  {
+    "id": "ent-neo4jrole",
+    "name": "Neo4jRole",
+    "tableName": "Neo4jRole",
+    "description": "Neo4jRole maps 1:1 to a role in the referenced Neo4j cluster's `system` database; the controller diffs spec.privileges against `SHOW ROLE <r> PRIVILEGES AS COMMANDS` and applies the difference declaratively, with built-in roles (PUBLIC, reader, editor, publisher, architect, admin) manageable only when adoptBuiltin is true and never dropped on CR delete.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jrole",
+    "moduleId": "mod-security",
+    "fields": [
+      {
+        "id": "f-neo4jrole-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "isNullable": false,
+        "note": "spec.name, defaulting to metadata.name; the Neo4j role name."
+      },
+      {
+        "id": "f-neo4jrole-cluster-ref",
+        "name": "clusterRef",
+        "type": "ref",
+        "isNullable": false,
+        "note": "Name of the Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone whose security graph owns this role. Not applicable to Aura."
+      },
+      {
+        "id": "f-neo4jrole-copy-of",
+        "name": "copyOf",
+        "type": "string",
+        "isNullable": true,
+        "note": "Existing role to seed privileges from at creation time only; ignored thereafter."
+      },
+      {
+        "id": "f-neo4jrole-privileges",
+        "name": "privileges",
+        "type": "json",
+        "isNullable": true,
+        "note": "Desired set of complete GRANT/DENY Cypher statements ending 'TO <role-name>'. Privileges live ONLY on Neo4jRole, never on Neo4jUser or Neo4jRoleBinding. REVOKEs are derived textually by the controller, not user-supplied."
+      },
+      {
+        "id": "f-neo4jrole-enforce-privileges",
+        "name": "enforcePrivileges",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default true: controller reverts manual privilege drift. False: applies only at creation, never revokes out-of-band grants."
+      },
+      {
+        "id": "f-neo4jrole-adopt-builtin",
+        "name": "adoptBuiltin",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Required to manage a built-in role name; such roles are never dropped on CR delete."
+      },
+      {
+        "id": "f-neo4jrole-deletion-policy",
+        "name": "deletionPolicy",
+        "type": "enum",
+        "isNullable": true,
+        "note": "Delete (default, DROP ROLE) or Retain."
+      },
+      {
+        "id": "f-neo4jrole-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jrole-status-applied-privileges",
+        "name": "status.appliedPrivileges",
+        "type": "json",
+        "isNullable": true,
+        "note": "Canonicalised privilege statements last observed via SHOW ROLE PRIVILEGES AS COMMANDS."
+      },
+      {
+        "id": "f-neo4jrole-status-privilege-drift",
+        "name": "status.privilegeDrift",
+        "type": "bool",
+        "isNullable": true,
+        "note": "True when live privileges differ from spec at end of reconcile (e.g. immutable privileges that cannot be removed)."
+      }
+    ],
+    "paths": [
+      "api/v1beta1/neo4jrole_types.go"
+    ]
+  },
+  {
+    "id": "ent-neo4jrolebinding",
+    "name": "Neo4jRoleBinding",
+    "tableName": "Neo4jRoleBinding",
+    "description": "Neo4jRoleBinding declares a desired set of Neo4j role grants for a username the operator does not manage as a Neo4jUser — typically an SSO/LDAP/OIDC-provisioned user — keeping that user's role grants in sync with spec.roles without creating or dropping the user itself; the validator rejects overlap with a Neo4jUser managing the same username.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jrolebinding",
+    "moduleId": "mod-security",
+    "fields": [
+      {
+        "id": "f-neo4jrolebinding-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "isNullable": false,
+        "note": "Kubernetes object name (metadata.name); the CR has no separate spec.name field."
+      },
+      {
+        "id": "f-neo4jrolebinding-cluster-ref",
+        "name": "clusterRef",
+        "type": "ref",
+        "isNullable": false,
+        "note": "Name of the Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone whose security graph owns the user. Not applicable to Aura."
+      },
+      {
+        "id": "f-neo4jrolebinding-username",
+        "name": "username",
+        "type": "string",
+        "isNullable": false,
+        "note": "Neo4j username to manage role grants for; must already exist in Neo4j (created externally, e.g. SSO first-login provisioning)."
+      },
+      {
+        "id": "f-neo4jrolebinding-roles",
+        "name": "roles",
+        "type": "json",
+        "isNullable": false,
+        "note": "List of Neo4jRole names to grant (built-ins accepted directly; custom names must exist, typically via Neo4jRole CRs). Only role names live here — no privileges. PUBLIC is implicit, never granted/revoked."
+      },
+      {
+        "id": "f-neo4jrolebinding-enforce-exclusive",
+        "name": "enforceExclusive",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default false. True makes spec.roles authoritative for the user's full role set, REVOKEing out-of-band grants on every reconcile."
+      },
+      {
+        "id": "f-neo4jrolebinding-deletion-policy",
+        "name": "deletionPolicy",
+        "type": "enum",
+        "isNullable": true,
+        "note": "Revoke (default) or Retain."
+      },
+      {
+        "id": "f-neo4jrolebinding-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jrolebinding-status-message",
+        "name": "status.message",
+        "type": "string",
+        "isNullable": true
+      },
+      {
+        "id": "f-neo4jrolebinding-status-granted-roles",
+        "name": "status.grantedRoles",
+        "type": "json",
+        "isNullable": true,
+        "note": "Subset of spec.roles successfully granted, observed via SHOW USERS YIELD roles."
+      },
+      {
+        "id": "f-neo4jrolebinding-status-conditions",
+        "name": "status.conditions",
+        "type": "json",
+        "isNullable": true,
+        "note": "Includes Ready, RolesSynced, UserNotFound, PendingDependencies, ClusterNotReady."
+      }
+    ],
+    "paths": [
+      "api/v1beta1/neo4jrolebinding_types.go"
+    ]
+  },
+  {
+    "id": "ent-neo4jauthrule",
+    "name": "Neo4jAuthRule",
+    "tableName": "Neo4jAuthRule",
+    "description": "Neo4jAuthRule defines a Neo4j attribute-based access control (ABAC) AUTH RULE that conditionally grants one or more roles when its Cypher condition — referencing OIDC-token claims via abac.oidc.user_attribute('claim_key') — evaluates true at authentication time; available only on Neo4j 2026.03+ clusters, and granted roles must never carry DENY privileges.",
+    "storage": "table",
+    "serverUnitId": "su-neo4jauthrule",
+    "moduleId": "mod-security",
+    "fields": [
+      {
+        "id": "f-neo4jauthrule-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "isNullable": false,
+        "note": "spec.name, defaulting to metadata.name; identifier shown in SHOW AUTH RULES."
+      },
+      {
+        "id": "f-neo4jauthrule-cluster-ref",
+        "name": "clusterRef",
+        "type": "ref",
+        "isNullable": false,
+        "note": "Name of the Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone whose security graph owns this rule; must be Neo4j 2026.03+."
+      },
+      {
+        "id": "f-neo4jauthrule-condition",
+        "name": "condition",
+        "type": "text",
+        "isNullable": false,
+        "note": "Cypher expression evaluated against the user's OIDC token at auth time (e.g. abac.oidc.user_attribute('department') = 'sales'); this is the claims-to-roles mapping logic. Must be a pure expression — no DDL."
+      },
+      {
+        "id": "f-neo4jauthrule-enabled",
+        "name": "enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default true. Disabled rules are preserved in Neo4j but affect no session."
+      },
+      {
+        "id": "f-neo4jauthrule-granted-roles",
+        "name": "grantedRoles",
+        "type": "json",
+        "isNullable": false,
+        "note": "Neo4j roles granted when condition evaluates true. Must exist (directly or as Neo4jRole CRs) and MUST NOT contain DENY privileges."
+      },
+      {
+        "id": "f-neo4jauthrule-enforce-roles",
+        "name": "enforceRoles",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default true: revokes out-of-band roles not in grantedRoles. False: only adds, never revokes."
+      },
+      {
+        "id": "f-neo4jauthrule-deletion-policy",
+        "name": "deletionPolicy",
+        "type": "enum",
+        "isNullable": true,
+        "note": "Drop (default, DROP AUTH RULE) or Retain."
+      },
+      {
+        "id": "f-neo4jauthrule-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "isNullable": true,
+        "note": "Pending, Ready, Failed, or PendingDependencies."
+      },
+      {
+        "id": "f-neo4jauthrule-status-applied-roles",
+        "name": "status.appliedRoles",
+        "type": "json",
+        "isNullable": true,
+        "note": "Roles last observed as granted via SHOW AUTH RULES."
+      },
+      {
+        "id": "f-neo4jauthrule-status-applied-enabled",
+        "name": "status.appliedEnabled",
+        "type": "bool",
+        "isNullable": true
+      }
+    ],
+    "paths": [
+      "api/v1beta1/neo4jauthrule_types.go"
+    ]
+  },
+  {
+    "id": "ent-auraproviderconfig",
+    "name": "AuraProviderConfig",
+    "tableName": "AuraProviderConfig",
+    "description": "Holds Neo4j Aura API OAuth client credentials and account-level defaults (default project ID, default organization ID for v2beta1 resources, and an overridable base URL), and is referenced by AuraInstance and other Aura resources via spec.providerConfigRef, with the controller owning one shared token cache and Aura API rate limiter (25/125 req/min) per config.",
+    "storage": "table",
+    "serverUnitId": "su-auraproviderconfig",
+    "moduleId": "mod-aura-core",
+    "sensitivity": "high",
+    "paths": [
+      "api/v1beta1/auraproviderconfig_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-auraproviderconfig-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Kubernetes object name identifying this provider config."
+      },
+      {
+        "id": "f-auraproviderconfig-spec-credentials-secret-ref-name",
+        "name": "spec.credentialsSecretRef.name",
+        "type": "string",
+        "note": "Secret (same namespace) holding the Aura OAuth client credentials."
+      },
+      {
+        "id": "f-auraproviderconfig-spec-credentials-secret-ref-client-id-key",
+        "name": "spec.credentialsSecretRef.clientIdKey",
+        "type": "string"
+      },
+      {
+        "id": "f-auraproviderconfig-spec-credentials-secret-ref-client-secret-key",
+        "name": "spec.credentialsSecretRef.clientSecretKey",
+        "type": "string"
+      },
+      {
+        "id": "f-auraproviderconfig-spec-default-project-id",
+        "name": "spec.defaultProjectId",
+        "type": "string"
+      },
+      {
+        "id": "f-auraproviderconfig-spec-default-organization-id",
+        "name": "spec.defaultOrganizationId",
+        "type": "string",
+        "note": "Used by v2beta1 resources (e.g. AuraIPFilter) that reference this config without their own organizationId."
+      },
+      {
+        "id": "f-auraproviderconfig-spec-base-url",
+        "name": "spec.baseUrl",
+        "type": "string",
+        "note": "Overrides the Aura API base URL; intended for testing against a fake API server."
+      },
+      {
+        "id": "f-auraproviderconfig-status-conditions",
+        "name": "status.conditions",
+        "type": "json",
+        "note": "Ready=True once an access token was successfully obtained with the referenced credentials."
+      },
+      {
+        "id": "f-auraproviderconfig-status-observed-generation",
+        "name": "status.observedGeneration",
+        "type": "bigint"
+      }
+    ]
+  },
+  {
+    "id": "ent-aurainstance",
+    "name": "AuraInstance",
+    "tableName": "AuraInstance",
+    "description": "Declaratively manages a Neo4j Aura cloud instance via the Aura REST API — provision, resize, pause/resume, and optionally delete — using the Aura API v1 for the whole lifecycle except that setting spec.multiDatabase routes the CREATE call through the v2beta1 API instead, which accepts a narrower set of fields and silently ignores the rest.",
+    "storage": "table",
+    "serverUnitId": "su-aurainstance",
+    "moduleId": "mod-aura-core",
+    "paths": [
+      "api/v1beta1/aurainstance_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-aurainstance-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "spec.name, the Aura instance display name; defaults to metadata.name."
+      },
+      {
+        "id": "f-aurainstance-spec-provider-config-ref",
+        "name": "spec.providerConfigRef",
+        "type": "ref",
+        "refEntityId": "ent-auraproviderconfig",
+        "note": "Selects the AuraProviderConfig providing credentials, defaults, and the shared token cache/rate limiter."
+      },
+      {
+        "id": "f-aurainstance-spec-project-id",
+        "name": "spec.projectId",
+        "type": "string"
+      },
+      {
+        "id": "f-aurainstance-spec-organization-id",
+        "name": "spec.organizationId",
+        "type": "string",
+        "note": "Only needed for the v2beta1 code paths (multiDatabase creation and the multi-database status probe)."
+      },
+      {
+        "id": "f-aurainstance-spec-cloud-provider",
+        "name": "spec.cloudProvider",
+        "type": "enum",
+        "note": "aws;gcp;azure. Immutable."
+      },
+      {
+        "id": "f-aurainstance-spec-region",
+        "name": "spec.region",
+        "type": "string",
+        "note": "Immutable."
+      },
+      {
+        "id": "f-aurainstance-spec-type",
+        "name": "spec.type",
+        "type": "enum",
+        "note": "free-db;professional-db;business-critical;enterprise-db;professional-ds;enterprise-ds. Immutable except professional-db -> business-critical."
+      },
+      {
+        "id": "f-aurainstance-spec-version",
+        "name": "spec.version",
+        "type": "string",
+        "note": "Coarse Aura Neo4j major version (e.g. \"5\"). Immutable."
+      },
+      {
+        "id": "f-aurainstance-spec-memory",
+        "name": "spec.memory",
+        "type": "string"
+      },
+      {
+        "id": "f-aurainstance-spec-storage",
+        "name": "spec.storage",
+        "type": "string",
+        "note": "Not configurable for type=free-db."
+      },
+      {
+        "id": "f-aurainstance-spec-paused",
+        "name": "spec.paused",
+        "type": "bool",
+        "note": "Desired paused state, drives pause/resume."
+      },
+      {
+        "id": "f-aurainstance-spec-multi-database",
+        "name": "spec.multiDatabase",
+        "type": "bool",
+        "note": "Immutable; only kind of instance AuraDatabase/AuraDatabaseBackup/AuraDatabaseRestore can target; switches the CREATE call to the v2beta1 API."
+      },
+      {
+        "id": "f-aurainstance-spec-customer-managed-key-id",
+        "name": "spec.customerManagedKeyId",
+        "type": "ref",
+        "refEntityId": "ent-auracustomermanagedkey",
+        "note": "Value-based link (not a K8s name ref) to the Aura-assigned key ID published in AuraCustomerManagedKey.status.customerManagedKeyId; immutable once set; enterprise-db/enterprise-ds only."
+      },
+      {
+        "id": "f-aurainstance-spec-source-instance-ref",
+        "name": "spec.source.instanceRef",
+        "type": "ref",
+        "refEntityId": "ent-aurainstance",
+        "note": "Clones a new instance from another AuraInstance (same namespace) at create time; immutable."
+      },
+      {
+        "id": "f-aurainstance-spec-instance-id",
+        "name": "spec.instanceId",
+        "type": "string",
+        "note": "Adopts/imports an existing Aura instance by ID rather than creating one; immutable once set."
+      },
+      {
+        "id": "f-aurainstance-spec-deletion-policy",
+        "name": "spec.deletionPolicy",
+        "type": "enum",
+        "note": "Orphan (default) or Delete."
+      },
+      {
+        "id": "f-aurainstance-status-instance-id",
+        "name": "status.instanceId",
+        "type": "string"
+      },
+      {
+        "id": "f-aurainstance-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "note": "Creating, Running, Pausing, Paused, Resuming, Updating, Restoring, Destroying, ..."
+      },
+      {
+        "id": "f-aurainstance-status-connection-url",
+        "name": "status.connectionUrl",
+        "type": "string",
+        "note": "Bolt routing URL (neo4j+s://...)."
+      },
+      {
+        "id": "f-aurainstance-status-at-provider-multi-database",
+        "name": "status.atProvider.multiDatabase",
+        "type": "bool",
+        "note": "Unset means UNKNOWN, not false; probed once from the v2beta1 instance detail (unavailable for v1-created instances) and cached."
+      }
+    ]
+  },
+  {
+    "id": "ent-aurasnapshot",
+    "name": "AuraSnapshot",
+    "tableName": "AuraSnapshot",
+    "description": "Takes an on-demand snapshot of an AuraInstance (the Aura equivalent of Neo4jBackup); because the Aura API cannot delete snapshots, deleting this CR only releases its finalizer and drops it from cluster state — the Aura snapshot itself persists.",
+    "storage": "table",
+    "serverUnitId": "su-aurasnapshot",
+    "moduleId": "mod-aura-core",
+    "paths": [
+      "api/v1beta1/aurasnapshot_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-aurasnapshot-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Kubernetes object name (this CRD has no spec.name field)."
+      },
+      {
+        "id": "f-aurasnapshot-spec-instance-ref",
+        "name": "spec.instanceRef",
+        "type": "ref",
+        "refEntityId": "ent-aurainstance",
+        "note": "AuraInstance (same namespace) being snapshotted; immutable."
+      },
+      {
+        "id": "f-aurasnapshot-status-snapshot-id",
+        "name": "status.snapshotId",
+        "type": "string"
+      },
+      {
+        "id": "f-aurasnapshot-status-profile",
+        "name": "status.profile",
+        "type": "string",
+        "note": "AdHoc or Scheduled."
+      },
+      {
+        "id": "f-aurasnapshot-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "note": "Pending, InProgress, Completed, Failed."
+      },
+      {
+        "id": "f-aurasnapshot-status-exportable",
+        "name": "status.exportable",
+        "type": "bool",
+        "note": "Whether the snapshot can seed a new instance."
+      },
+      {
+        "id": "f-aurasnapshot-status-snapshot-time",
+        "name": "status.snapshotTime",
+        "type": "timestamp"
+      },
+      {
+        "id": "f-aurasnapshot-status-conditions",
+        "name": "status.conditions",
+        "type": "json"
+      }
+    ]
+  },
+  {
+    "id": "ent-aurarestore",
+    "name": "AuraRestore",
+    "tableName": "AuraRestore",
+    "description": "Restores an AuraInstance in place from one of its snapshots (the Aura equivalent of Neo4jRestore) as a one-shot action recorded as an auditable object: on completion the CR stays as history and does not re-fire.",
+    "storage": "table",
+    "serverUnitId": "su-aurarestore",
+    "moduleId": "mod-aura-core",
+    "paths": [
+      "api/v1beta1/aurarestore_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-aurarestore-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Kubernetes object name (this CRD has no spec.name field)."
+      },
+      {
+        "id": "f-aurarestore-spec-instance-ref",
+        "name": "spec.instanceRef",
+        "type": "ref",
+        "refEntityId": "ent-aurainstance",
+        "note": "Target AuraInstance (same namespace) restored in place; immutable."
+      },
+      {
+        "id": "f-aurarestore-spec-snapshot-id",
+        "name": "spec.snapshotId",
+        "type": "string",
+        "note": "Mutually exclusive with spec.snapshotRef; immutable."
+      },
+      {
+        "id": "f-aurarestore-spec-snapshot-ref",
+        "name": "spec.snapshotRef",
+        "type": "ref",
+        "refEntityId": "ent-aurasnapshot",
+        "note": "Resolves the snapshot ID from an AuraSnapshot CR in the same namespace; mutually exclusive with spec.snapshotId; immutable."
+      },
+      {
+        "id": "f-aurarestore-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "note": "Pending, Restoring, Completed, Failed."
+      },
+      {
+        "id": "f-aurarestore-status-snapshot-id",
+        "name": "status.snapshotId",
+        "type": "string",
+        "note": "Snapshot actually restored (resolved from snapshotRef when used)."
+      },
+      {
+        "id": "f-aurarestore-status-start-time",
+        "name": "status.startTime",
+        "type": "timestamp"
+      },
+      {
+        "id": "f-aurarestore-status-completion-time",
+        "name": "status.completionTime",
+        "type": "timestamp"
+      },
+      {
+        "id": "f-aurarestore-status-message",
+        "name": "status.message",
+        "type": "string"
+      },
+      {
+        "id": "f-aurarestore-status-conditions",
+        "name": "status.conditions",
+        "type": "json"
+      }
+    ]
+  },
+  {
+    "id": "ent-auracustomermanagedkey",
+    "name": "AuraCustomerManagedKey",
+    "tableName": "AuraCustomerManagedKey",
+    "description": "Registers a customer-managed encryption key (CMK) with Aura for use by dedicated-tier AuraInstances (enterprise-db / enterprise-ds only); the key material lives in the customer's own cloud KMS and Aura stores only a reference to it, with every placement field (cloud provider, region, instance type, KMS key) permanently immutable once set. UNPROVEN — never exercised against the live Aura API.",
+    "storage": "table",
+    "serverUnitId": "su-auracustomermanagedkey",
+    "moduleId": "mod-aura-core",
+    "sensitivity": "high",
+    "paths": [
+      "api/v1beta1/auracustomermanagedkey_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-auracustomermanagedkey-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "spec.name, the CMK's display name in Aura; defaults to metadata.name."
+      },
+      {
+        "id": "f-auracustomermanagedkey-spec-provider-config-ref",
+        "name": "spec.providerConfigRef",
+        "type": "ref",
+        "refEntityId": "ent-auraproviderconfig"
+      },
+      {
+        "id": "f-auracustomermanagedkey-spec-project-id",
+        "name": "spec.projectId",
+        "type": "string",
+        "note": "Immutable once set."
+      },
+      {
+        "id": "f-auracustomermanagedkey-spec-cloud-provider",
+        "name": "spec.cloudProvider",
+        "type": "enum",
+        "note": "aws;gcp;azure. Immutable."
+      },
+      {
+        "id": "f-auracustomermanagedkey-spec-region",
+        "name": "spec.region",
+        "type": "string",
+        "note": "Immutable."
+      },
+      {
+        "id": "f-auracustomermanagedkey-spec-instance-type",
+        "name": "spec.instanceType",
+        "type": "enum",
+        "note": "enterprise-db;enterprise-ds. Immutable."
+      },
+      {
+        "id": "f-auracustomermanagedkey-spec-key-id",
+        "name": "spec.keyId",
+        "type": "string",
+        "note": "AWS KMS key ARN / GCP KMS key resource name / Azure Key Vault key URL; the customer must grant Aura access out of band; immutable."
+      },
+      {
+        "id": "f-auracustomermanagedkey-spec-deletion-policy",
+        "name": "spec.deletionPolicy",
+        "type": "enum",
+        "note": "Orphan (default) or Delete (deregister — fails while any instance still uses it)."
+      },
+      {
+        "id": "f-auracustomermanagedkey-status-customer-managed-key-id",
+        "name": "status.customerManagedKeyId",
+        "type": "string",
+        "note": "Aura-assigned key ID; referenced from an AuraInstance's spec.customerManagedKeyId."
+      },
+      {
+        "id": "f-auracustomermanagedkey-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "note": "Pending, Ready, Deleting, Error."
+      },
+      {
+        "id": "f-auracustomermanagedkey-status-conditions",
+        "name": "status.conditions",
+        "type": "json"
+      },
+      {
+        "id": "f-auracustomermanagedkey-status-last-synced-time",
+        "name": "status.lastSyncedTime",
+        "type": "timestamp"
+      }
+    ]
+  },
+  {
+    "id": "ent-auraipfilter",
+    "name": "AuraIPFilter",
+    "tableName": "AuraIPFilter",
+    "description": "Manages a Neo4j Aura network IP filter (allowlist) via the Aura API v2beta1, an unstable BETA endpoint; IP filters are ORGANIZATION-scoped in the API, but this CRD models the common case of applying one to a set of AuraInstances.",
+    "storage": "table",
+    "serverUnitId": "su-auraipfilter",
+    "moduleId": "mod-aura-core",
+    "paths": [
+      "api/v1beta1/auraipfilter_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-auraipfilter-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "spec.name, the filter's display name in Aura; defaults to metadata.name."
+      },
+      {
+        "id": "f-auraipfilter-spec-provider-config-ref",
+        "name": "spec.providerConfigRef",
+        "type": "ref",
+        "refEntityId": "ent-auraproviderconfig"
+      },
+      {
+        "id": "f-auraipfilter-spec-organization-id",
+        "name": "spec.organizationId",
+        "type": "string",
+        "note": "Filters are org-scoped in v2beta1."
+      },
+      {
+        "id": "f-auraipfilter-spec-description",
+        "name": "spec.description",
+        "type": "string"
+      },
+      {
+        "id": "f-auraipfilter-spec-allow-list",
+        "name": "spec.allowList",
+        "type": "json",
+        "note": "Array of {address, prefixLen, description} CIDR entries; at least one required, max 1000."
+      },
+      {
+        "id": "f-auraipfilter-spec-instance-refs",
+        "name": "spec.instanceRefs",
+        "type": "ref",
+        "refEntityId": "ent-aurainstance",
+        "note": "AuraInstances (same namespace) the filter applies to; resolved to Aura instance IDs (filtered_entities.instances)."
+      },
+      {
+        "id": "f-auraipfilter-spec-filtering-disabled",
+        "name": "spec.filteringDisabled",
+        "type": "bool",
+        "note": "Turns the filter off without deleting it."
+      },
+      {
+        "id": "f-auraipfilter-spec-deletion-policy",
+        "name": "spec.deletionPolicy",
+        "type": "enum",
+        "note": "Orphan (default) or Delete."
+      },
+      {
+        "id": "f-auraipfilter-status-filter-id",
+        "name": "status.filterId",
+        "type": "string"
+      },
+      {
+        "id": "f-auraipfilter-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "note": "Pending, Ready, Error."
+      },
+      {
+        "id": "f-auraipfilter-status-conditions",
+        "name": "status.conditions",
+        "type": "json"
+      },
+      {
+        "id": "f-auraipfilter-status-last-synced-time",
+        "name": "status.lastSyncedTime",
+        "type": "timestamp"
+      }
+    ]
+  },
+  {
+    "id": "ent-auradatabase",
+    "name": "AuraDatabase",
+    "tableName": "AuraDatabase",
+    "description": "Manages a database on a managed Neo4j Aura instance via the Aura API v2beta1 (BETA / best-effort — v2beta1 is an unstable beta and the database create body is not fully schema'd upstream); Aura manages replication/topology per tier itself, so unlike the self-managed Neo4jDatabase CRD this one has no topology knob.",
+    "storage": "table",
+    "serverUnitId": "su-auradatabase",
+    "moduleId": "mod-aura-database",
+    "paths": [
+      "api/v1beta1/auradatabase_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-auradatabase-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "spec.name, the database name in Aura; defaults to metadata.name."
+      },
+      {
+        "id": "f-auradatabase-spec-instance-ref",
+        "name": "spec.instanceRef",
+        "type": "ref",
+        "refEntityId": "ent-aurainstance",
+        "note": "Hosts the database; must be an AuraInstance created with spec.multiDatabase=true."
+      },
+      {
+        "id": "f-auradatabase-spec-organization-id",
+        "name": "spec.organizationId",
+        "type": "string",
+        "note": "Overrides the organization resolved from the instance's AuraProviderConfig."
+      },
+      {
+        "id": "f-auradatabase-spec-deletion-policy",
+        "name": "spec.deletionPolicy",
+        "type": "enum",
+        "note": "Delete (default) or Orphan."
+      },
+      {
+        "id": "f-auradatabase-spec-management-policies",
+        "name": "spec.managementPolicies",
+        "type": "json",
+        "note": "List of Observe;Create;Update;Delete;* restricting operator actions."
+      },
+      {
+        "id": "f-auradatabase-status-database-id",
+        "name": "status.databaseId",
+        "type": "string"
+      },
+      {
+        "id": "f-auradatabase-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "note": "Pending, Ready, Error."
+      },
+      {
+        "id": "f-auradatabase-status-conditions",
+        "name": "status.conditions",
+        "type": "json"
+      },
+      {
+        "id": "f-auradatabase-status-last-synced-time",
+        "name": "status.lastSyncedTime",
+        "type": "timestamp"
+      }
+    ]
+  },
+  {
+    "id": "ent-auradatabasebackup",
+    "name": "AuraDatabaseBackup",
+    "tableName": "AuraDatabaseBackup",
+    "description": "Takes an on-demand per-database backup of a database on a managed Neo4j Aura instance via the Aura API v2beta1 (BETA / best-effort); per-database backups exist only on multi-database tiers.",
+    "storage": "table",
+    "serverUnitId": "su-auradatabasebackup",
+    "moduleId": "mod-aura-database",
+    "paths": [
+      "api/v1beta1/auradatabasebackup_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-auradatabasebackup-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Kubernetes object name (this CRD has no spec.name field)."
+      },
+      {
+        "id": "f-auradatabasebackup-spec-database-ref",
+        "name": "spec.databaseRef",
+        "type": "ref",
+        "refEntityId": "ent-auradatabase",
+        "note": "Database backed up; credentials, organization, project and instance are resolved from it."
+      },
+      {
+        "id": "f-auradatabasebackup-spec-management-policies",
+        "name": "spec.managementPolicies",
+        "type": "json",
+        "note": "Observe;Create;Delete;*."
+      },
+      {
+        "id": "f-auradatabasebackup-status-backup-id",
+        "name": "status.backupId",
+        "type": "string",
+        "note": "Mirrored into the neo4j.com/external-backup-id annotation so the backup is taken once."
+      },
+      {
+        "id": "f-auradatabasebackup-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "note": "Pending, Completed, Error."
+      },
+      {
+        "id": "f-auradatabasebackup-status-timestamp",
+        "name": "status.timestamp",
+        "type": "timestamp",
+        "note": "Raw string Aura reports for the backup's timestamp; not parsed."
+      },
+      {
+        "id": "f-auradatabasebackup-status-exportable",
+        "name": "status.exportable",
+        "type": "bool",
+        "note": "Whether Aura can export/download this backup; populated only once read back."
+      },
+      {
+        "id": "f-auradatabasebackup-status-conditions",
+        "name": "status.conditions",
+        "type": "json"
+      },
+      {
+        "id": "f-auradatabasebackup-status-last-synced-time",
+        "name": "status.lastSyncedTime",
+        "type": "timestamp"
+      }
+    ]
+  },
+  {
+    "id": "ent-auradatabaserestore",
+    "name": "AuraDatabaseRestore",
+    "tableName": "AuraDatabaseRestore",
+    "description": "Restores a database on a managed Neo4j Aura instance from one of its per-database backups via the Aura API v2beta1 (BETA / best-effort), one-shot and in place; it is never reported Completed because Aura restores asynchronously and the v2beta1 database endpoint exposes no restore status, so the terminal success phase is Submitted.",
+    "storage": "table",
+    "serverUnitId": "su-auradatabaserestore",
+    "moduleId": "mod-aura-database",
+    "paths": [
+      "api/v1beta1/auradatabaserestore_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-auradatabaserestore-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Kubernetes object name (this CRD has no spec.name field)."
+      },
+      {
+        "id": "f-auradatabaserestore-spec-database-ref",
+        "name": "spec.databaseRef",
+        "type": "ref",
+        "refEntityId": "ent-auradatabase",
+        "note": "Database restored in place."
+      },
+      {
+        "id": "f-auradatabaserestore-spec-backup-id",
+        "name": "spec.backupId",
+        "type": "string",
+        "note": "Mutually exclusive with spec.backupRef."
+      },
+      {
+        "id": "f-auradatabaserestore-spec-backup-ref",
+        "name": "spec.backupRef",
+        "type": "ref",
+        "refEntityId": "ent-auradatabasebackup",
+        "note": "Resolves the backup ID from an AuraDatabaseBackup CR in the same namespace; mutually exclusive with spec.backupId."
+      },
+      {
+        "id": "f-auradatabaserestore-spec-management-policies",
+        "name": "spec.managementPolicies",
+        "type": "json",
+        "note": "Observe;Create;*."
+      },
+      {
+        "id": "f-auradatabaserestore-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "note": "Restoring, Submitting, Submitted (terminal success), or Error — never Completed; a CR found in Submitting is not retried since repeating a restore overwrites the database again."
+      },
+      {
+        "id": "f-auradatabaserestore-status-started-at",
+        "name": "status.startedAt",
+        "type": "timestamp"
+      },
+      {
+        "id": "f-auradatabaserestore-status-finished-at",
+        "name": "status.finishedAt",
+        "type": "timestamp"
+      },
+      {
+        "id": "f-auradatabaserestore-status-conditions",
+        "name": "status.conditions",
+        "type": "json"
+      }
+    ]
+  },
+  {
+    "id": "ent-auraorganizationmember",
+    "name": "AuraOrganizationMember",
+    "tableName": "AuraOrganizationMember",
+    "description": "Manages the organization-level role of an existing Aura console user (identified by email) via the Aura API v2beta1 (BETA / best-effort); this is Aura PLATFORM identity (console/org access), not an in-database Neo4j user, and bringing in a brand-new person instead requires an AuraInvite.",
+    "storage": "table",
+    "serverUnitId": "su-auraorganizationmember",
+    "moduleId": "mod-aura-rbac",
+    "paths": [
+      "api/v1beta1/auraorganizationmember_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-auraorganizationmember-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Kubernetes object name (this CRD has no spec.name field; identity is spec.email)."
+      },
+      {
+        "id": "f-auraorganizationmember-spec-provider-config-ref",
+        "name": "spec.providerConfigRef",
+        "type": "ref",
+        "refEntityId": "ent-auraproviderconfig"
+      },
+      {
+        "id": "f-auraorganizationmember-spec-organization-id",
+        "name": "spec.organizationId",
+        "type": "string"
+      },
+      {
+        "id": "f-auraorganizationmember-spec-email",
+        "name": "spec.email",
+        "type": "string",
+        "note": "Identifies the existing org member whose role is managed."
+      },
+      {
+        "id": "f-auraorganizationmember-spec-role",
+        "name": "spec.role",
+        "type": "enum",
+        "note": "organization-owner;organization-admin;organization-member (Aura's own v2beta1 organization_roles values)."
+      },
+      {
+        "id": "f-auraorganizationmember-spec-deletion-policy",
+        "name": "spec.deletionPolicy",
+        "type": "enum",
+        "note": "Orphan (default) or Delete (remove them from the organization)."
+      },
+      {
+        "id": "f-auraorganizationmember-status-user-id",
+        "name": "status.userId",
+        "type": "string",
+        "note": "Aura user ID resolved from the email."
+      },
+      {
+        "id": "f-auraorganizationmember-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "note": "Pending, Ready, NotAMember, Error."
+      },
+      {
+        "id": "f-auraorganizationmember-status-conditions",
+        "name": "status.conditions",
+        "type": "json"
+      },
+      {
+        "id": "f-auraorganizationmember-status-last-synced-time",
+        "name": "status.lastSyncedTime",
+        "type": "timestamp"
+      }
+    ]
+  },
+  {
+    "id": "ent-auraprojectmember",
+    "name": "AuraProjectMember",
+    "tableName": "AuraProjectMember",
+    "description": "Manages the project-level role of an existing Aura console user (identified by email) via the Aura API v2beta1 (BETA / best-effort); this is Aura PLATFORM identity (project access), not an in-database Neo4j user, and a wholly unknown email still needs an AuraInvite.",
+    "storage": "table",
+    "serverUnitId": "su-auraprojectmember",
+    "moduleId": "mod-aura-rbac",
+    "paths": [
+      "api/v1beta1/auraprojectmember_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-auraprojectmember-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Kubernetes object name (this CRD has no spec.name field; identity is spec.email)."
+      },
+      {
+        "id": "f-auraprojectmember-spec-provider-config-ref",
+        "name": "spec.providerConfigRef",
+        "type": "ref",
+        "refEntityId": "ent-auraproviderconfig"
+      },
+      {
+        "id": "f-auraprojectmember-spec-organization-id",
+        "name": "spec.organizationId",
+        "type": "string"
+      },
+      {
+        "id": "f-auraprojectmember-spec-project-id",
+        "name": "spec.projectId",
+        "type": "string"
+      },
+      {
+        "id": "f-auraprojectmember-spec-email",
+        "name": "spec.email",
+        "type": "string",
+        "note": "Identifies the existing project member whose role is managed."
+      },
+      {
+        "id": "f-auraprojectmember-spec-role",
+        "name": "spec.role",
+        "type": "enum",
+        "note": "project-admin;project-member;project-viewer;project-metrics-integration-reader; the invite API spells the same concepts namespace-* (see AuraInvite.spec.role)."
+      },
+      {
+        "id": "f-auraprojectmember-spec-deletion-policy",
+        "name": "spec.deletionPolicy",
+        "type": "enum",
+        "note": "Orphan (default) or Delete (remove them from the project)."
+      },
+      {
+        "id": "f-auraprojectmember-status-user-id",
+        "name": "status.userId",
+        "type": "string",
+        "note": "Aura user ID resolved from the email."
+      },
+      {
+        "id": "f-auraprojectmember-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "note": "Pending, Ready, NotAMember, Error."
+      },
+      {
+        "id": "f-auraprojectmember-status-conditions",
+        "name": "status.conditions",
+        "type": "json"
+      },
+      {
+        "id": "f-auraprojectmember-status-last-synced-time",
+        "name": "status.lastSyncedTime",
+        "type": "timestamp"
+      }
+    ]
+  },
+  {
+    "id": "ent-aurainvite",
+    "name": "AuraInvite",
+    "tableName": "AuraInvite",
+    "description": "Invites an email address to a Neo4j Aura organization, or to a project within it, with a role via the Aura API v2beta1 (BETA / best-effort); this is how a new person is granted Aura console access, while an existing member's role is instead managed with AuraOrganizationMember / AuraProjectMember.",
+    "storage": "table",
+    "serverUnitId": "su-aurainvite",
+    "moduleId": "mod-aura-rbac",
+    "paths": [
+      "api/v1beta1/aurainvite_types.go"
+    ],
+    "fields": [
+      {
+        "id": "f-aurainvite-name",
+        "name": "name",
+        "type": "string",
+        "isPrimary": true,
+        "note": "Kubernetes object name (this CRD has no spec.name field; identity is spec.email)."
+      },
+      {
+        "id": "f-aurainvite-spec-provider-config-ref",
+        "name": "spec.providerConfigRef",
+        "type": "ref",
+        "refEntityId": "ent-auraproviderconfig"
+      },
+      {
+        "id": "f-aurainvite-spec-organization-id",
+        "name": "spec.organizationId",
+        "type": "string"
+      },
+      {
+        "id": "f-aurainvite-spec-project-id",
+        "name": "spec.projectId",
+        "type": "string",
+        "note": "Scopes the invite to a project (a namespace-* role); omit for an organization-level invite."
+      },
+      {
+        "id": "f-aurainvite-spec-email",
+        "name": "spec.email",
+        "type": "string"
+      },
+      {
+        "id": "f-aurainvite-spec-role",
+        "name": "spec.role",
+        "type": "enum",
+        "note": "organization-owner;organization-admin;organization-member;namespace-admin;namespace-member;namespace-viewer;namespace-metrics-integration-reader."
+      },
+      {
+        "id": "f-aurainvite-spec-organization-role",
+        "name": "spec.organizationRole",
+        "type": "enum",
+        "note": "organization-owner;organization-admin;organization-member. Required alongside a namespace-* role — Aura requires an organization role on every invite, an empty roles list is rejected outright; verified live 2026-08-01."
+      },
+      {
+        "id": "f-aurainvite-spec-deletion-policy",
+        "name": "spec.deletionPolicy",
+        "type": "enum",
+        "note": "Delete (default; revoke a still-pending invite) or Orphan."
+      },
+      {
+        "id": "f-aurainvite-status-invite-id",
+        "name": "status.inviteId",
+        "type": "string"
+      },
+      {
+        "id": "f-aurainvite-status-phase",
+        "name": "status.phase",
+        "type": "string",
+        "note": "Pending, Sent, Accepted, Error."
+      },
+      {
+        "id": "f-aurainvite-status-conditions",
+        "name": "status.conditions",
+        "type": "json"
+      },
+      {
+        "id": "f-aurainvite-status-last-synced-time",
+        "name": "status.lastSyncedTime",
+        "type": "timestamp"
+      }
+    ]
+  }
+]

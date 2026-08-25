@@ -1,0 +1,51 @@
+[
+  {
+    "id": "rx-env-vars-owned-keys",
+    "name": "Env Var Owned-Keys Reconciliation",
+    "description": "Whenever the cluster's desired env vars change (spec.config, spec.env, or a plugin/fleet controller live-patching NEO4J_PLUGINS or a fleet token onto the live StatefulSet), the cluster controller recomputes the container's env as owned-vars-applied plus foreign-vars-preserved, then re-stamps the owned-keys annotation so a later removal is detected without disturbing foreign additions.",
+    "moduleId": "mod-cluster",
+    "trigger": {
+      "entityId": "ent-neo4jenterprisecluster",
+      "fieldName": "spec.config",
+      "change": "update"
+    },
+    "effects": [
+      {
+        "kind": "recalculate",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "StatefulSet.spec.template.spec.containers[neo4j].env",
+        "description": "mergeEnvVars applies desired vars, drops names in the previously-owned annotation that are no longer desired, and preserves any foreign vars added by the Neo4jPlugin/Aura Fleet controllers."
+      },
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "StatefulSet annotation neo4j.com/cluster-controller-env-vars",
+        "description": "Rewrites the owned-env-var-names annotation each reconcile so the next loop can distinguish a true removal from a foreign var it never owned."
+      }
+    ]
+  },
+  {
+    "id": "rx-splitbrain-auto-restart",
+    "name": "Split-Brain Auto-Restart",
+    "description": "When split-brain detection finds server pods whose SHOW SERVERS view disagrees with the majority cluster group (and the repair action is restart_pods), the operator automatically deletes the orphaned pods so the StatefulSet recreates them and they rejoin the majority, surfaced via SplitBrainDetected and SplitBrainRepaired/SplitBrainRepairFailed events.",
+    "moduleId": "mod-cluster",
+    "trigger": {
+      "entityId": "ent-neo4jenterprisecluster",
+      "fieldName": "status.diagnostics.servers",
+      "change": "update"
+    },
+    "effects": [
+      {
+        "kind": "delete",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "Pod (orphaned server pod)",
+        "description": "Deletes each orphaned pod identified by split-brain analysis; the StatefulSet controller recreates it so it can rejoin the majority cluster view."
+      },
+      {
+        "kind": "notify",
+        "entityId": "ent-neo4jenterprisecluster",
+        "description": "Emits a SplitBrainDetected Warning event on detection, then a SplitBrainRepaired Normal event on successful repair or SplitBrainRepairFailed if a pod deletion errors."
+      }
+    ]
+  }
+]

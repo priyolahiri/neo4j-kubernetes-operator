@@ -17,6 +17,12 @@ Dockerfile.cross
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 
+# GitMir dashboard telemetry (local-only, regenerated per machine) — the
+# product model itself (.gitmir/model/*.json) IS committed and tracked.
+.gitmir/footprint.json
+.gitmir/usage.jsonl
+.gitmir/progress.json
+
 # Test binary, built with `go test -c`
 *.test
 e2e.test

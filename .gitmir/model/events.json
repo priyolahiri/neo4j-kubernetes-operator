@@ -1,0 +1,998 @@
+[
+  {
+    "id": "ev-cluster-formation-started",
+    "name": "ClusterFormationStarted",
+    "description": "Fires the first time verifyNeo4jClusterFormation finds the cluster not yet formed, as status.phase transitions into Forming.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-cluster-formation-failed",
+    "name": "ClusterFormationFailed",
+    "description": "Fires when the SHOW SERVERS / split-brain check used to verify cluster formation itself errors, distinct from the cluster simply not being formed yet.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-cluster-ready",
+    "name": "ClusterReady",
+    "description": "Fires once per Ready transition, when updateClusterStatusWithVersion actually changes status.phase to Ready after formation and full StatefulSet rollout are both verified.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-topology-warning",
+    "name": "TopologyWarning",
+    "description": "Fires for each non-fatal warning returned by the spec validator's ValidateCreateWithWarnings/ValidateUpdateWithWarnings during Reconcile.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-validation-failed",
+    "name": "ValidationFailed",
+    "description": "Fires when an inline spec validator (cluster, standalone, database, alias, sharded database, replica, backup, restore, user, role, etc.) rejects the CR's spec with hard errors; reconciliation halts until the spec is fixed.",
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "ev-topology-placement-failed",
+    "name": "TopologyPlacementFailed",
+    "description": "Fires when CalculateTopologyPlacement errors, e.g. enforceDistribution requested with fewer discoverable availability zones than servers.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-topology-placement-calculated",
+    "name": "TopologyPlacementCalculated",
+    "description": "Fires after a successful topology placement calculation that found at least one availability zone to spread servers across.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-topology-zone-discovery-degraded",
+    "name": "TopologyZoneDiscoveryDegraded",
+    "description": "Fires when cluster-scoped Node listing for AZ auto-discovery fails (typically a namespace-scoped install lacking node RBAC) but zone-based spread/anti-affinity is still applied via the topology label key.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-property-sharding-validation-failed",
+    "name": "PropertyShardingValidationFailed",
+    "description": "Fires when spec.propertySharding is enabled but fails version, cluster-size, required-config-key, or resource-minimum validation.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-server-role-validation-failed",
+    "name": "ServerRoleValidationFailed",
+    "description": "Fires when ValidateServerRoleHints rejects spec.topology.serverRoles, e.g. an out-of-range serverIndex, a duplicate index, or every server set to SECONDARY.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-storage-class-not-found",
+    "name": "StorageClassNotFound",
+    "description": "Fires when spec.storage.className names a StorageClass that doesn't exist, before any StatefulSet is created — otherwise the pod would stay Pending indefinitely with no signal.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-route-api-not-found",
+    "name": "RouteAPINotFound",
+    "description": "Fires when an OpenShift Route (or MCP Route) is configured but route.openshift.io/v1 isn't registered in the cluster, so Route reconciliation is skipped.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-mcp-apoc-missing",
+    "name": "MCPApocMissing",
+    "description": "Fires when spec.mcp.enabled is true but no enabled Neo4jPlugin named apoc/apoc-extended targets this cluster or standalone, since MCP stdio mode needs APOC procedures.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-reconcile-failed",
+    "name": "ReconcileFailed",
+    "description": "Fires when a controller's inner reconcile helper chain (TLS/ConfigMap/Service/StatefulSet for standalone; create/drop/status-refresh for a Neo4jShardedDatabase) returns an error, before status is set to Failed.",
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "ev-upgrade-started",
+    "name": "UpgradeStarted",
+    "description": "Fires when a rolling upgrade's pre-flight gates (version compatibility, StatefulSet readiness, pre-upgrade health) pass and the state machine transitions into Staging (cluster), or when the standalone begins its own pre-upgrade check on image-tag drift.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-upgrade-completed",
+    "name": "UpgradeCompleted",
+    "description": "Fires when stepUpgradeVerifying confirms every server reports the target version and the Completed phase is persisted.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-upgrade-paused",
+    "name": "UpgradePaused",
+    "description": "Fires when a rolling-upgrade step fails and upgradeStrategy.autoPauseOnFailure is set, halting the state machine for manual intervention.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-upgrade-failed",
+    "name": "UpgradeFailed",
+    "description": "Fires when a rolling-upgrade step's deadline or gate is exceeded without autoPauseOnFailure set, or when the standalone's pre-upgrade health check fails with autoPauseOnFailure set.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-upgrade-deferred",
+    "name": "UpgradeDeferred",
+    "description": "Fires when a rolling upgrade is deferred because a scale-down drain is still in progress (mutual exclusion — the drain must finish first).",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-scale-down-blocked",
+    "name": "ScaleDownBlocked",
+    "description": "Fires when a scale-down cannot proceed: below the system database's minimum voting-member floor, a DEALLOCATE dry-run fails, or a DROP SERVER fails — replicas stay held at the current count.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-scale-down-draining",
+    "name": "ScaleDownDraining",
+    "description": "Fires on each successful drain step (cordon, deallocate, or drop) as the scale-down worker walks servers being removed by a topology shrink toward zero.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-storage-expansion-started",
+    "name": "StorageExpansionStarted",
+    "description": "Fires when a PVC size comparison finds at least one PVC smaller than spec.storage.size, before any PVC is patched.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-storage-expansion-completed",
+    "name": "StorageExpansionCompleted",
+    "description": "Fires after every undersized PVC has been patched to the new size and the owning StatefulSet orphan-deleted for recreation with updated VolumeClaimTemplates.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-storage-expansion-failed",
+    "name": "StorageExpansionFailed",
+    "description": "Fires when a storage shrink is rejected, the StorageClass doesn't allow expansion, or patching a PVC / orphan-deleting the StatefulSet itself errors.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-connectivity-degraded",
+    "name": "ConnectivityDegraded",
+    "description": "Fires once per outage streak, at the 10th consecutive reconcile that fails to reach Neo4j over Bolt, so a persistent outage is distinguishable from a transient rolling-restart blip.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-splitbrain-detected",
+    "name": "SplitBrainDetected",
+    "description": "Fires when per-pod SHOW SERVERS views diverge into more than one cluster group and at least one minority pod sees servers outside the majority's view.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-splitbrain-repaired",
+    "name": "SplitBrainRepaired",
+    "description": "Fires after the orphaned pods identified by split-brain analysis have been deleted for the StatefulSet to recreate and rejoin the majority.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-splitbrain-repair-failed",
+    "name": "SplitBrainRepairFailed",
+    "description": "Fires when deleting an orphaned pod during automatic split-brain repair itself errors.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-aura-fleet-management-failed",
+    "name": "AuraFleetManagementFailed",
+    "description": "Fires when Phase 2 Aura Fleet Management token registration fails (Secret unreadable, plugin not yet loaded, registerToken errors) — the cluster/standalone itself remains operational.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-aura-fleet-management-plugin-patch-failed",
+    "name": "AuraFleetManagementPluginPatchFailed",
+    "description": "Fires when the live StatefulSet patch that merges fleet-management into NEO4J_PLUGINS fails.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-aura-fleet-management-registered",
+    "name": "AuraFleetManagementRegistered",
+    "description": "Fires once fleetManagement.registerToken succeeds against a Ready cluster or standalone instance.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-validation-warning",
+    "name": "ValidationWarning",
+    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-cluster-not-found",
+    "name": "ClusterNotFound",
+    "description": "The CR's clusterRef/instanceRef did not resolve to any Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone in the namespace.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-cluster-not-ready",
+    "name": "ClusterNotReady",
+    "description": "The referenced cluster was found but is not yet Ready (or, for sharded databases, not yet property-sharding-operational).",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-connection-failed",
+    "name": "ConnectionFailed",
+    "description": "The operator could not open a Bolt client connection to the resolved cluster/standalone target.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-creation-failed",
+    "name": "CreationFailed",
+    "description": "The CREATE DATABASE Cypher call for a Neo4jDatabase failed.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-data-import-failed",
+    "name": "DataImportFailed",
+    "description": "One of spec.initialData.cypherStatements failed to execute against the newly created database.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-data-imported",
+    "name": "DataImported",
+    "description": "spec.initialData's Cypher statements executed successfully; status.dataImported is marked true.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-data-seeded",
+    "name": "DataSeeded",
+    "description": "A database created from spec.seedURI is marked as having its data sourced from the seed rather than initialData.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-database-ready",
+    "name": "DatabaseReady",
+    "description": "The Neo4jDatabase reconcile completed successfully and the Ready condition/status.phase is set to Ready.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-database-created-from-seed",
+    "name": "DatabaseCreatedFromSeed",
+    "description": "CREATE DATABASE with a seedURI/seedURIs OPTIONS clause (with or without an explicit topology) succeeded.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-deletion-failed",
+    "name": "DeletionFailed",
+    "description": "DROP DATABASE failed during Neo4jDatabase finalizer cleanup; the finalizer is retried or released depending on the error class.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-database-deleted",
+    "name": "DatabaseDeleted",
+    "description": "DROP DATABASE succeeded during Neo4jDatabase finalizer cleanup.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-alias-created",
+    "name": "AliasCreated",
+    "description": "CREATE ALIAS succeeded for a Neo4jDatabaseAlias that had no live alias yet.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-alias-retargeted",
+    "name": "AliasRetargeted",
+    "description": "The live alias's target database drifted from spec.targetDatabase and ALTER ALIAS ... SET TARGET corrected it (spec wins).",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-alias-ready",
+    "name": "AliasReady",
+    "description": "The Neo4jDatabaseAlias resolves to its intended target database.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-alias-dropped",
+    "name": "AliasDropped",
+    "description": "DROP ALIAS succeeded during Neo4jDatabaseAlias finalizer cleanup.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-alias-failed",
+    "name": "AliasFailed",
+    "description": "An alias lookup, CREATE, ALTER, or DROP Cypher call failed.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-client-creation-failed",
+    "name": "ClientCreationFailed",
+    "description": "The operator could not construct a Neo4j Bolt client for a Neo4jShardedDatabase's referenced cluster.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-sharded-database-ready",
+    "name": "ShardedDatabaseReady",
+    "description": "The property-sharded database's graph shard reports online in SHOW DATABASES and the CR is marked Ready.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-sharded-database-dropped",
+    "name": "ShardedDatabaseDropped",
+    "description": "DROP DATABASE ... DESTROY DATA succeeded ahead of a spec.replaceExisting+force destructive re-seed.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-seed-backup-pending",
+    "name": "SeedBackupPending",
+    "description": "The Neo4jShardedDatabase is waiting for its seedBackupRef's Neo4jBackup to produce a Succeeded run before it can seed.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-seed-backup-resolution-failed",
+    "name": "SeedBackupResolutionFailed",
+    "description": "Resolving seedBackupRef into concrete seed URIs failed permanently (missing Neo4jBackup CR, unsupported storage type, or missing per-shard filenames).",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-seed-proxy-starting",
+    "name": "SeedProxyStarting",
+    "description": "The operator-managed PVC seed-proxy Deployment fronting a PVC-backed backup is not yet Ready.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-seed-creds-missing",
+    "name": "SeedCredsMissing",
+    "description": "The target cluster/standalone lacks the cloud credentials Secret a seedURI/seedBackupRef needs, and auto-inherit is not enabled.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-seed-creds-auto-inherited",
+    "name": "SeedCredsAutoInherited",
+    "description": "The operator patched the target's spec.extraEnvFrom with the seed credentials Secret and is waiting for the resulting rolling restart.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-replica-created",
+    "name": "ReplicaCreated",
+    "description": "CreateReplicaDatabaseFromBackup succeeded, creating a new cross-cluster replica database on the Neo4jReplicaDatabase's target.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-replica-ready",
+    "name": "ReplicaReady",
+    "description": "The replica database is online and actively replicating from its upstream (reported with its current transaction lag).",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-replica-failed",
+    "name": "ReplicaFailed",
+    "description": "A replica database lookup, create, or drop Cypher call failed.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-replica-dropped",
+    "name": "ReplicaDropped",
+    "description": "DROP DATABASE succeeded for a still-type=replica database during Neo4jReplicaDatabase finalizer cleanup.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-replica-retained-after-promotion",
+    "name": "ReplicaRetainedAfterPromotion",
+    "description": "Deletion was refused because the live database's type is no longer replica (it was promoted); the finalizer is released without dropping the database.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-replica-promotion-detected",
+    "name": "ReplicaPromotionDetected",
+    "description": "The Neo4jReplicaDatabase reconciler observed the live database's type flip away from replica out of band (not via this operator's own Neo4jReplicaPromotion completing on this CR).",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-replica-version-too-old",
+    "name": "ReplicaVersionTooOld",
+    "description": "The target cluster's Neo4j version is below the minimum required to host a cross-cluster replica (MinCCDRReplicaVersion).",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-replica-promotion-started",
+    "name": "ReplicaPromotionStarted",
+    "description": "The irreversible replica-promote call is about to be issued; the in-flight replication lag at this instant becomes permanent data loss.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-replica-promotion-completed",
+    "name": "ReplicaPromotionCompleted",
+    "description": "A post-promote CHECK confirmed the live database's type is no longer replica; the promotion is recorded as terminal.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-replica-promotion-failed",
+    "name": "ReplicaPromotionFailed",
+    "description": "The promotion could not proceed or be confirmed (referenced Neo4jReplicaDatabase/database missing, unreachable cluster, or a failed promote call).",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-backup-scheduled",
+    "name": "BackupScheduled",
+    "description": "A CronJob was created or updated for a Neo4jBackup CR with spec.schedule set.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-backup-started",
+    "name": "BackupStarted",
+    "description": "A one-time backup Job was created for a Neo4jBackup CR.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-backup-completed",
+    "name": "BackupCompleted",
+    "description": "The backup Job reached JobComplete and its run (including artifact filenames) was recorded in status.history.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-backup-failed",
+    "name": "BackupFailed",
+    "description": "The Neo4jBackup spec was invalid, or the backup Job failed terminally (BackoffLimit exhausted or startup timeout).",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-backup-retention-caveat",
+    "name": "BackupRetentionCaveat",
+    "description": "Warns that filename-level PVC retention pruning can orphan differential artifacts whose parent FULL backup ages out (chain-aware pruning needs neo4j-admin backup aggregate).",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-backup-sharded-databases-excluded",
+    "name": "BackupShardedDatabasesExcluded",
+    "description": "An all-databases backup captured property-sharded databases as per-shard artifacts (status.shardedFamilies) that its own all-databases restore path cannot recreate; each must restore via its Neo4jShardedDatabase CR.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-replication-source-caveat",
+    "name": "ReplicationSourceCaveat",
+    "description": "Published the exact directory a downstream cross-cluster replica should pull from (spec.mode=replication-source), or warned that the storage type has no cross-cluster URI form.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-service-account-annotation-conflict",
+    "name": "ServiceAccountAnnotationConflict",
+    "description": "Two backup/restore CRs in the same namespace declared different workload-identity annotations on the shared neo4j-backup-sa/neo4j-restore-sa ServiceAccount; the last-reconciled CR's annotations win.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-backup-validate-unsupported",
+    "name": "BackupValidateUnsupported",
+    "description": "options.validate was requested but `neo4j-admin backup validate` doesn't exist on this Neo4j image (it requires a CalVer 2025.x+ image).",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-restore-started",
+    "name": "RestoreStarted",
+    "description": "A restore Job was created, a cluster-native Cypher recreate was issued, or an all-databases per-database seed began.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-restore-completed",
+    "name": "RestoreCompleted",
+    "description": "The Neo4jRestore reconcile reached its terminal Completed phase.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-restore-failed",
+    "name": "RestoreFailed",
+    "description": "The restore Job, Cypher recreate/online-wait, or seed-proxy/seed-config setup failed terminally.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-restore-from-chain-parent",
+    "name": "RestoreFromChainParent",
+    "description": "The resolved backup run is a differential artifact that depends on a FULL backup from a chainFromBackup parent CR.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-database-create-failed",
+    "name": "DatabaseCreateFailed",
+    "description": "The restored database (or one of several, in an all-databases restore) could not be created/started/brought online after an otherwise-successful restore.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-seed-endpoint-not-projected",
+    "name": "SeedEndpointNotProjected",
+    "description": "The target cluster's server pods cannot reach the seed source because cloud credentials or a custom S3 endpoint could not be projected/auto-inherited onto the cluster.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-restore-seed-progress",
+    "name": "RestoreSeedProgress",
+    "description": "Periodic progress update while an all-databases restore's per-database seed is still coming online (allocation counts or the last poll's error).",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-restore-sharded-databases-not-covered",
+    "name": "RestoreShardedDatabasesNotCovered",
+    "description": "An all-databases restore does not recreate property-sharded databases in its per-database loop; each must be restored via its own Neo4jShardedDatabase CR (spec.seedBackupRef) pointed at the same backup.",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-user-created",
+    "name": "UserCreated",
+    "description": "Emitted when CreateUserAdvanced successfully creates a new Neo4j user for a Neo4jUser CR (neo4juser_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-user-updated",
+    "name": "UserUpdated",
+    "description": "Emitted when an ALTER USER clause set is applied (or the password already matched, treated as satisfied) for an existing Neo4jUser CR (neo4juser_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-user-deleted",
+    "name": "UserDeleted",
+    "description": "Emitted after DROP USER succeeds during Neo4jUser deletion cleanup (neo4juser_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-user-ready",
+    "name": "UserReady",
+    "description": "Emitted the first time a Neo4jUser's granted roles fully match spec.roles with no pending dependencies (neo4juser_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-user-deletion-failed",
+    "name": "UserDeletionFailed",
+    "description": "Emitted when DROP USER fails during Neo4jUser deletion; a retryable failure requeues, otherwise the finalizer is released to avoid wedging deletion (neo4juser_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-user-sync-failed",
+    "name": "UserSyncFailed",
+    "description": "Emitted on any lookup/create/alter/role-grant failure during Neo4jUser reconciliation, moving the CR to phase Failed (neo4juser_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-password-rotated",
+    "name": "PasswordRotated",
+    "description": "Emitted when the password Secret's change-detection fingerprint differs from status.passwordSecretHash, indicating a real password rotation was applied (neo4juser_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-roles-granted",
+    "name": "RolesGranted",
+    "description": "Emitted after one or more GRANT ROLE statements succeed for a Neo4jUser or Neo4jRoleBinding (neo4juser_controller.go, neo4jrolebinding_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-roles-revoked",
+    "name": "RolesRevoked",
+    "description": "Emitted after one or more REVOKE ROLE statements succeed for a Neo4jUser or Neo4jRoleBinding (neo4juser_controller.go, neo4jrolebinding_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-roles-resolved",
+    "name": "RolesResolved",
+    "description": "Emitted when a Neo4jRole CR's Kubernetes metadata.name in spec.roles is resolved to its effective Neo4j role name (#260 CR-name resolution) (neo4juser_controller.go, neo4jrolebinding_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-role-pending",
+    "name": "RolePending",
+    "description": "Emitted when a desired role name matches neither a built-in nor any Neo4jRole CR, deferring the grant until the role exists (neo4juser_controller.go, neo4jrolebinding_controller.go, neo4jauthrule_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-role-created",
+    "name": "RoleCreated",
+    "description": "Emitted when CreateRoleAdvanced successfully creates a new Neo4j role for a Neo4jRole CR (neo4jrole_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-role-deleted",
+    "name": "RoleDeleted",
+    "description": "Emitted after DROP ROLE succeeds during Neo4jRole deletion cleanup (neo4jrole_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-role-ready",
+    "name": "RoleReady",
+    "description": "Emitted the first time a Neo4jRole's privileges fully match spec.privileges (neo4jrole_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-role-deletion-failed",
+    "name": "RoleDeletionFailed",
+    "description": "Emitted when DROP ROLE fails during Neo4jRole deletion; retryable failures requeue, otherwise the finalizer is released (neo4jrole_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-role-sync-failed",
+    "name": "RoleSyncFailed",
+    "description": "Emitted on any lookup/create/privilege-apply/revoke failure during Neo4jRole reconciliation, moving the CR to phase Failed (neo4jrole_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-privileges-applied",
+    "name": "PrivilegesApplied",
+    "description": "Emitted after any GRANT/DENY or derived REVOKE privilege statements are applied to bring a role's live privileges in line with spec.privileges (neo4jrole_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-privileges-drift-kept",
+    "name": "PrivilegesDriftKept",
+    "description": "Emitted when a currently-granted privilege cannot be reconciled away — either it is immutable or no REVOKE can be textually derived — leaving PrivilegesSynced false (neo4jrole_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-binding-created",
+    "name": "BindingCreated",
+    "description": "Emitted the first time a Neo4jRoleBinding reaches Ready with all desired roles granted to its target user (neo4jrolebinding_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-binding-updated",
+    "name": "BindingUpdated",
+    "description": "Emitted when an already-Ready Neo4jRoleBinding's granted-role set changes on a subsequent reconcile (neo4jrolebinding_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-binding-deleted",
+    "name": "BindingDeleted",
+    "description": "Emitted after all previously-granted roles are revoked during Neo4jRoleBinding deletion cleanup (neo4jrolebinding_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-binding-failed",
+    "name": "BindingFailed",
+    "description": "Emitted on any lookup/grant/revoke failure during Neo4jRoleBinding reconciliation or deletion (neo4jrolebinding_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-user-not-found",
+    "name": "UserNotFound",
+    "description": "Emitted when a Neo4jRoleBinding's target username does not exist in Neo4j; bindings never create the user, only manage grants for externally provisioned users (neo4jrolebinding_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-authrule-created",
+    "name": "AuthRuleCreated",
+    "description": "Emitted when CREATE OR REPLACE AUTH RULE runs for the first time for a Neo4jAuthRule CR (neo4jauthrule_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-authrule-updated",
+    "name": "AuthRuleUpdated",
+    "description": "Emitted when CREATE OR REPLACE AUTH RULE re-applies a changed condition or enabled flag for an existing Neo4jAuthRule (neo4jauthrule_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-authrule-deleted",
+    "name": "AuthRuleDeleted",
+    "description": "Emitted after DROP AUTH RULE succeeds during Neo4jAuthRule deletion cleanup (neo4jauthrule_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-authrule-failed",
+    "name": "AuthRuleFailed",
+    "description": "Emitted on any lookup/create/grant/revoke failure during Neo4jAuthRule reconciliation (neo4jauthrule_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-authrule-version-too-old",
+    "name": "AuthRuleVersionTooOld",
+    "description": "Emitted when the target cluster's Neo4j version does not support AUTH RULE (older than 2026.03), gating the Neo4jAuthRule to phase Failed (neo4jauthrule_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-oidc-provider-not-configured",
+    "name": "OIDCProviderNotConfigured",
+    "description": "Emitted when the target cluster's spec.config does not set dbms.security.abac.authorization_providers, a prerequisite for ABAC auth rules (neo4jauthrule_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-aura-instance-adopted",
+    "name": "AuraInstanceAdopted",
+    "description": "Emitted when observeOrCreate matches an existing Aura instance by name and binds the CR to it instead of creating a new one.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-instance-created",
+    "name": "AuraInstanceCreated",
+    "description": "Emitted after CreateInstance (v1) or CreateInstanceV2 (multi-database) succeeds and the external-instance-id annotation has been persisted.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-instance-updated",
+    "name": "AuraInstanceUpdated",
+    "description": "Emitted after reconcileDrift's PatchInstance call converges memory/storage/name/secondariesCount/cdcEnrichmentMode.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-instance-paused",
+    "name": "AuraInstancePaused",
+    "description": "Emitted when reconcilePauseResume calls PauseInstance because spec.paused=true on a running instance.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-instance-resumed",
+    "name": "AuraInstanceResumed",
+    "description": "Emitted when reconcilePauseResume calls ResumeInstance because spec.paused=false on a paused instance.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-instance-upgraded",
+    "name": "AuraInstanceUpgraded",
+    "description": "Emitted when reconcileUpgrade calls UpgradeInstance to move a professional-db instance to business-critical.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-instance-deleted",
+    "name": "AuraInstanceDeleted",
+    "description": "Emitted when handleDeletion calls DeleteInstance under deletionPolicy=Delete.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-instance-orphaned",
+    "name": "AuraInstanceOrphaned",
+    "description": "Emitted when handleDeletion leaves the cloud instance running under the default Orphan deletionPolicy.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-instance-failed",
+    "name": "AuraInstanceFailed",
+    "description": "Emitted by fail() on any reconcile failure (credentials, project ID, create, observe) and by handleDeletion when deletionProtection blocks a requested delete.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-snapshot-created",
+    "name": "AuraSnapshotCreated",
+    "description": "Emitted once CreateSnapshot is accepted and status.snapshotId is recorded.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-restore-started",
+    "name": "AuraRestoreStarted",
+    "description": "Emitted when RestoreSnapshot is accepted and the AuraRestore CR moves to Restoring.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-restore-completed",
+    "name": "AuraRestoreCompleted",
+    "description": "Emitted when the target instance returns to Running status after a restore was issued.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-restore-failed",
+    "name": "AuraRestoreFailed",
+    "description": "Emitted when the target instance enters an unexpected status during a restore, or RestoreSnapshot is rejected outright.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-database-adopted",
+    "name": "AuraDatabaseAdopted",
+    "description": "Emitted when the external-database-id annotation already pinned an existing database, since v2beta1 returns no database names to match by.",
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "ev-aura-database-created",
+    "name": "AuraDatabaseCreated",
+    "description": "Emitted after CreateDatabase succeeds; also used (as a Warning) to flag creating into an instance that already has other databases, since duplicates cannot be detected by name.",
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "ev-aura-database-ready",
+    "name": "AuraDatabaseReady",
+    "description": "Emitted every reconcile once GetDatabase succeeds and status is synced.",
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "ev-aura-database-deleted",
+    "name": "AuraDatabaseDeleted",
+    "description": "Emitted when handleDeletion calls DeleteDatabase under a non-Orphan deletionPolicy.",
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "ev-aura-database-orphaned",
+    "name": "AuraDatabaseOrphaned",
+    "description": "Emitted when handleDeletion leaves the database in place under deletionPolicy=Orphan.",
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "ev-aura-database-failed",
+    "name": "AuraDatabaseFailed",
+    "description": "Emitted by fail() for TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) and ObserveFailed reasons.",
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "ev-aura-database-backup-created",
+    "name": "AuraDatabaseBackupCreated",
+    "description": "Emitted once CreateDatabaseBackup accepts the one-shot backup request.",
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "ev-aura-database-backup-failed",
+    "name": "AuraDatabaseBackupFailed",
+    "description": "Emitted by fail() when resolving the database/target or taking the backup fails.",
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "ev-aura-database-restore-started",
+    "name": "AuraDatabaseRestoreStarted",
+    "description": "Emitted just before RestoreDatabase is called, after the ambiguous Submitting marker has been persisted.",
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "ev-aura-database-restore-completed",
+    "name": "AuraDatabaseRestoreCompleted",
+    "description": "Emitted when RestoreDatabase is accepted (202); named 'Completed' in events.go but the CR phase is Submitted because v2beta1 exposes no way to observe restore completion.",
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "ev-aura-database-restore-failed",
+    "name": "AuraDatabaseRestoreFailed",
+    "description": "Emitted by fail() when resolving the database/backup/target or the RestoreDatabase call itself fails.",
+    "moduleId": "mod-aura-database"
+  },
+  {
+    "id": "ev-aura-member-not-found",
+    "name": "AuraMemberNotFound",
+    "description": "Emitted (Warning) when the target email is not found as an org or project member and must be invited via AuraInvite first.",
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-aura-member-role-updated",
+    "name": "AuraMemberRoleUpdated",
+    "description": "Emitted when UpdateOrgMemberRole/UpdateProjectMemberRole changes a member's role, or AddProjectMember adds an org member to a project.",
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-aura-member-ready",
+    "name": "AuraMemberReady",
+    "description": "Emitted once the member's role matches spec.role and status is synced.",
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-aura-member-removed",
+    "name": "AuraMemberRemoved",
+    "description": "Emitted when handleDeletion calls DeleteOrgMember/DeleteProjectMember under deletionPolicy=Delete.",
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-aura-member-failed",
+    "name": "AuraMemberFailed",
+    "description": "Emitted by fail() for CredentialsUnavailable, TargetMissing, LookupFailed, AddFailed and UpdateFailed reasons.",
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-aura-invite-adopted",
+    "name": "AuraInviteAdopted",
+    "description": "Emitted when observeOrCreate matches an existing pending invite by email and project scope.",
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-aura-invite-created",
+    "name": "AuraInviteCreated",
+    "description": "Emitted after CreateInvite succeeds with the two-slot organization/project role body.",
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-aura-invite-ready",
+    "name": "AuraInviteReady",
+    "description": "Emitted every reconcile once the invite's v2beta1 status has been mapped to a CR phase.",
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-aura-invite-deleted",
+    "name": "AuraInviteDeleted",
+    "description": "Emitted when handleDeletion calls DeleteInvite under a non-Orphan deletionPolicy.",
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-aura-invite-orphaned",
+    "name": "AuraInviteOrphaned",
+    "description": "Emitted when handleDeletion leaves the invite pending under deletionPolicy=Orphan.",
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-aura-invite-failed",
+    "name": "AuraInviteFailed",
+    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors.",
+    "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-aura-credentials-validated",
+    "name": "AuraCredentialsValidated",
+    "description": "Emitted when the AuraProviderConfig's credentials produce a working token and a successful ListInstances call.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-credentials-invalid",
+    "name": "AuraCredentialsInvalid",
+    "description": "Emitted (Warning) when the credential exchange or the proving ListInstances call fails.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-customer-managed-key-adopted",
+    "name": "AuraCustomerManagedKeyAdopted",
+    "description": "Emitted when observeOrCreate matches an existing key by name and confirms it via keyId/region/cloudProvider/instanceType before adopting.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-customer-managed-key-created",
+    "name": "AuraCustomerManagedKeyCreated",
+    "description": "Emitted after CreateCustomerManagedKey succeeds and the external-cmk-id annotation is persisted.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-customer-managed-key-ready",
+    "name": "AuraCustomerManagedKeyReady",
+    "description": "Emitted once aura.IsCMKReady(observed.Status) is true.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-customer-managed-key-delete-blocked",
+    "name": "AuraCustomerManagedKeyDeleteBlocked",
+    "description": "Emitted (Warning) when DeleteCustomerManagedKey is refused (400 encryption-key-is-active) because an instance still uses the key.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-customer-managed-key-deleted",
+    "name": "AuraCustomerManagedKeyDeleted",
+    "description": "Emitted when DeleteCustomerManagedKey succeeds under deletionPolicy=Delete.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-customer-managed-key-orphaned",
+    "name": "AuraCustomerManagedKeyOrphaned",
+    "description": "Emitted when handleDeletion leaves the key registered under the default Orphan deletionPolicy.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-customer-managed-key-failed",
+    "name": "AuraCustomerManagedKeyFailed",
+    "description": "Emitted by fail() for CredentialsUnavailable, ProjectIDMissing, CreateFailed and ObserveFailed reasons.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-ip-filter-adopted",
+    "name": "AuraIPFilterAdopted",
+    "description": "Emitted when observeOrCreate matches an existing IP filter by name.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-ip-filter-created",
+    "name": "AuraIPFilterCreated",
+    "description": "Emitted after CreateIPFilter succeeds.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-ip-filter-updated",
+    "name": "AuraIPFilterUpdated",
+    "description": "Emitted after reconcileDrift's UpdateIPFilter call converges allow_list, filtered_entities, name or filteringDisabled.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-ip-filter-ready",
+    "name": "AuraIPFilterReady",
+    "description": "Emitted every reconcile once GetIPFilter succeeds and status is synced.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-ip-filter-deleted",
+    "name": "AuraIPFilterDeleted",
+    "description": "Emitted when handleDeletion calls DeleteIPFilter under deletionPolicy=Delete.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-ip-filter-orphaned",
+    "name": "AuraIPFilterOrphaned",
+    "description": "Emitted when handleDeletion leaves the filter in place under deletionPolicy=Orphan.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-ip-filter-failed",
+    "name": "AuraIPFilterFailed",
+    "description": "Emitted by fail() for CredentialsUnavailable, OrganizationMissing, InstanceRefUnresolved, CreateFailed and ObserveFailed reasons.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-plugin-installed",
+    "name": "PluginInstalled",
+    "description": "Emitted once a Neo4jPlugin's env/init-container merge succeeds and the target's rolling restart is triggered.",
+    "moduleId": "mod-plugins"
+  },
+  {
+    "id": "ev-plugin-install-failed",
+    "name": "PluginInstallFailed",
+    "description": "Emitted when validating or merging a Neo4jPlugin into its target fails.",
+    "moduleId": "mod-plugins"
+  },
+  {
+    "id": "ev-plugin-duplicate",
+    "name": "PluginDuplicate",
+    "description": "Emitted when another Neo4jPlugin CR in the same namespace already targets the same clusterRef with the same spec.name; the newer CR (by creationTimestamp) is marked Failed rather than racing on the shared NEO4J_PLUGINS value.",
+    "moduleId": "mod-plugins"
+  }
+]

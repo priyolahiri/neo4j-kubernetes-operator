@@ -1,0 +1,900 @@
+[
+  {
+    "id": "sfw-cluster-phase",
+    "name": "Neo4jEnterpriseCluster Phase Lifecycle",
+    "entityId": "ent-neo4jenterprisecluster",
+    "fieldName": "status.phase",
+    "description": "The top-level lifecycle phase the cluster reconciler drives the CR through, from first-reconcile Initializing to a verified Ready cluster, with Expanding and upgrade-driven Paused/Failed excursions along the way.",
+    "moduleId": "mod-cluster",
+    "states": [
+      {
+        "key": "Initializing",
+        "name": "Initializing",
+        "description": "First reconcile after creation; validation, TLS certificate issuance, and RBAC/Service resources are applied before the server StatefulSet is emitted."
+      },
+      {
+        "key": "Forming",
+        "name": "Forming",
+        "description": "Server StatefulSet applied; waiting for Bolt connectivity, a split-brain-free SHOW SERVERS quorum, and for the StatefulSet rollout to fully settle."
+      },
+      {
+        "key": "Expanding",
+        "name": "Expanding",
+        "description": "A PVC size increase was detected; volumes are being patched and the StatefulSet orphan-deleted so it can be recreated with the enlarged VolumeClaimTemplates."
+      },
+      {
+        "key": "Ready",
+        "name": "Ready",
+        "description": "Cluster formation is verified, the StatefulSet is fully rolled to the current template, and status.endpoints/status.replicas reflect the live serving cluster."
+      },
+      {
+        "key": "Paused",
+        "name": "Paused",
+        "description": "A rolling-upgrade step failed with upgradeStrategy.autoPauseOnFailure set; the operator stops driving the upgrade until a human intervenes."
+      },
+      {
+        "key": "Failed",
+        "name": "Failed",
+        "description": "A validation, resource-creation, storage-expansion, or rolling-upgrade error occurred; status.message and a Warning event carry the cause, and the next reconcile retries."
+      }
+    ],
+    "transitions": [
+      {
+        "from": "Initializing",
+        "to": "Forming",
+        "label": "TLS/RBAC/Service/ConfigMap/StatefulSet resources reconciled successfully",
+        "condition": "no validation, StorageClass, or resource-creation error"
+      },
+      {
+        "from": "Initializing",
+        "to": "Failed",
+        "label": "spec validation or resource creation failed",
+        "condition": "ValidateCreateWithWarnings/ValidateServerRoleHints errors, missing StorageClass, or a resource create/update error"
+      },
+      {
+        "from": "Forming",
+        "to": "Ready",
+        "label": "cluster formation and StatefulSet rollout verified",
+        "condition": "verifyNeo4jClusterFormation reports the expected Enabled+Available quorum AND serverStatefulSetFullyRolled is true",
+        "effects": [
+          {
+            "kind": "update",
+            "entityId": "ent-neo4jenterprisecluster",
+            "fieldName": "status.version",
+            "description": "Backfills status.version from spec.image.tag on the first Ready transition if it was never stamped by an upgrade."
+          }
+        ]
+      },
+      {
+        "from": "Forming",
+        "to": "Failed",
+        "label": "formation check itself errored",
+        "condition": "verifyNeo4jClusterFormation returns a non-nil error rather than merely reporting 'not yet formed'"
+      },
+      {
+        "from": "Ready",
+        "to": "Expanding",
+        "label": "storage size increased",
+        "condition": "spec.storage.size exceeds at least one live server PVC's current size"
+      },
+      {
+        "from": "Forming",
+        "to": "Expanding",
+        "label": "storage size increased",
+        "condition": "spec.storage.size exceeds at least one live server PVC's current size"
+      },
+      {
+        "from": "Expanding",
+        "to": "Forming",
+        "label": "PVCs patched, StatefulSet orphan-deleted",
+        "condition": "reconcileStorageExpansion returns requeue=true",
+        "effects": [
+          {
+            "kind": "update",
+            "entityId": "ent-neo4jenterprisecluster",
+            "fieldName": "PersistentVolumeClaim.spec.resources.requests.storage",
+            "description": "Each undersized PVC is patched to the desired size."
+          }
+        ]
+      },
+      {
+        "from": "Ready",
+        "to": "Failed",
+        "label": "update validation, storage shrink, or property-sharding validation failed on a later reconcile",
+        "condition": "ValidateUpdateWithWarnings errors, a shrink is detected, or property-sharding validation fails"
+      },
+      {
+        "from": "Ready",
+        "to": "Paused",
+        "label": "rolling-upgrade step failed with autoPauseOnFailure",
+        "condition": "image drift starts an upgrade and a later step's gate/deadline fails while upgradeStrategy.autoPauseOnFailure is true"
+      },
+      {
+        "from": "Ready",
+        "to": "Failed",
+        "label": "rolling-upgrade step failed without autoPauseOnFailure",
+        "condition": "a rolling-upgrade step's gate/deadline fails and autoPauseOnFailure is not set"
+      },
+      {
+        "from": "Failed",
+        "to": "Forming",
+        "label": "corrected spec re-validates",
+        "condition": "the underlying validation/resource error is resolved on a later reconcile"
+      }
+    ]
+  },
+  {
+    "id": "sfw-rolling-upgrade-phase",
+    "name": "Rolling Upgrade State Machine",
+    "entityId": "ent-neo4jenterprisecluster",
+    "fieldName": "status.upgradeStatus.phase",
+    "description": "The requeue-driven, per-reconcile-step state machine (#174) that performs an in-place image upgrade one ordinal at a time instead of blocking a single reconcile for the whole rollout.",
+    "moduleId": "mod-cluster",
+    "states": [
+      {
+        "key": "None",
+        "name": "No Upgrade Active",
+        "description": "status.upgradeStatus is nil or its phase is a terminal Completed/Failed/Paused; the normal reconcile path runs and isUpgradeRequired watches for image drift."
+      },
+      {
+        "key": "Staging",
+        "name": "Staging",
+        "description": "Applies the full target-version pod template (image plus version-correct discovery env) with the StatefulSet partition frozen at replicas, then reconciles the ConfigMap under the same freeze."
+      },
+      {
+        "key": "Rolling",
+        "name": "Rolling",
+        "description": "Lowers the StatefulSet partition one ordinal at a time, highest first, gating each step on the Kubernetes rollout AND the restarted server re-appearing as Enabled+Available in SHOW SERVERS."
+      },
+      {
+        "key": "Stabilizing",
+        "name": "Stabilizing",
+        "description": "One-shot post-upgrade health, consensus, and replication gate once every server has rolled to the target version."
+      },
+      {
+        "key": "Verifying",
+        "name": "Verifying",
+        "description": "Confirms every Enabled server reports the target version via SHOW SERVERS before declaring the upgrade complete."
+      },
+      {
+        "key": "Completed",
+        "name": "Completed",
+        "description": "Terminal success state: stamps CompletionTime, LastUpgradeTime, and status.version, then flips the cluster's top-level phase back to Ready."
+      },
+      {
+        "key": "Failed",
+        "name": "Failed",
+        "description": "Terminal failure state after a step's deadline or gate is exceeded; isUpgradeRequired can re-enter automatically from image drift if the target and status.version still disagree."
+      },
+      {
+        "key": "Paused",
+        "name": "Paused",
+        "description": "Terminal failure state when upgradeStrategy.autoPauseOnFailure is set; never auto-resumed, requires manual intervention."
+      },
+      {
+        "key": "InProgress",
+        "name": "Legacy In-Progress Marker",
+        "description": "The blocking-loop phase marker persisted by pre-#174 operator versions; resumed as Staging the first time a current operator sees it, since Staging is idempotent."
+      }
+    ],
+    "transitions": [
+      {
+        "from": "None",
+        "to": "Staging",
+        "label": "image drift detected on a Ready cluster with no upgrade active",
+        "condition": "isUpgradeRequired is true and pre-flight gates (version compatibility, StatefulSet readiness, optional pre-upgrade health check) pass",
+        "effects": [
+          {
+            "kind": "update",
+            "entityId": "ent-neo4jenterprisecluster",
+            "fieldName": "status.upgradeStatus",
+            "description": "Initializes upgradeStatus with StartTime, PreviousVersion, TargetVersion, and Progress totals."
+          }
+        ]
+      },
+      {
+        "from": "Staging",
+        "to": "Rolling",
+        "label": "target template staged, partition frozen, ConfigMap reconciled",
+        "effects": [
+          {
+            "kind": "update",
+            "entityId": "ent-neo4jenterprisecluster",
+            "fieldName": "status.upgradeStatus.currentPartition",
+            "description": "Records the frozen partition (= replicas) the Rolling phase will lower ordinal by ordinal."
+          }
+        ]
+      },
+      {
+        "from": "Staging",
+        "to": "Failed",
+        "label": "staging timed out or a pre-flight gate failed"
+      },
+      {
+        "from": "Rolling",
+        "to": "Rolling",
+        "label": "lower the partition by one ordinal",
+        "condition": "the current ordinal's StatefulSet rollout is settled and it reports Enabled+Available in SHOW SERVERS",
+        "effects": [
+          {
+            "kind": "update",
+            "entityId": "ent-neo4jenterprisecluster",
+            "fieldName": "status.upgradeStatus.currentPartition",
+            "description": "Decrements the partition by one so the next-lowest ordinal restarts."
+          }
+        ]
+      },
+      {
+        "from": "Rolling",
+        "to": "Stabilizing",
+        "label": "partition reached 0 and ordinal 0 verified"
+      },
+      {
+        "from": "Rolling",
+        "to": "Failed",
+        "label": "an ordinal failed to roll and rejoin within the upgrade timeout"
+      },
+      {
+        "from": "Stabilizing",
+        "to": "Verifying",
+        "label": "post-upgrade health/consensus/replication check passed (or disabled)"
+      },
+      {
+        "from": "Stabilizing",
+        "to": "Failed",
+        "label": "cluster failed to stabilize within the stabilization timeout"
+      },
+      {
+        "from": "Verifying",
+        "to": "Completed",
+        "label": "every enabled server confirmed running the target version",
+        "effects": [
+          {
+            "kind": "update",
+            "entityId": "ent-neo4jenterprisecluster",
+            "fieldName": "status.version",
+            "description": "Stamps status.version to the target tag alongside CompletionTime and LastUpgradeTime."
+          }
+        ]
+      },
+      {
+        "from": "Verifying",
+        "to": "Failed",
+        "label": "version verification failed to pass before the health-check timeout"
+      },
+      {
+        "from": "Failed",
+        "to": "Staging",
+        "label": "image drift persists against an unchanged target",
+        "condition": "status.upgradeStatus.targetVersion still equals spec.image.tag and status.version still doesn't match — isUpgradeRequired re-enters"
+      },
+      {
+        "from": "InProgress",
+        "to": "Staging",
+        "label": "legacy blocking-loop marker resumed on operator restart"
+      },
+      {
+        "from": "Staging",
+        "to": "Staging",
+        "label": "upgrade target changed mid-flight",
+        "condition": "spec.image.tag was edited again while any active phase (except the legacy marker) was in flight"
+      },
+      {
+        "from": "Rolling",
+        "to": "Staging",
+        "label": "upgrade target changed mid-flight",
+        "condition": "spec.image.tag was edited again during Rolling"
+      },
+      {
+        "from": "Stabilizing",
+        "to": "Staging",
+        "label": "upgrade target changed mid-flight",
+        "condition": "spec.image.tag was edited again during Stabilizing"
+      },
+      {
+        "from": "Verifying",
+        "to": "Staging",
+        "label": "upgrade target changed mid-flight",
+        "condition": "spec.image.tag was edited again during Verifying"
+      }
+    ]
+  },
+  {
+    "id": "sfw-backup-job-phase",
+    "name": "Neo4jBackup Job Phase",
+    "entityId": "ent-neo4jbackup",
+    "fieldName": "status.phase",
+    "description": "The Job/CronJob lifecycle the Neo4jBackup reconciler drives the CR through, from validation to a recorded backup outcome.",
+    "moduleId": "mod-backup-restore",
+    "states": [
+      {
+        "key": "Pending",
+        "name": "Pending",
+        "description": "The Neo4jBackup CR was just created or edited; not yet validated against a resolved target."
+      },
+      {
+        "key": "Invalid",
+        "name": "Invalid",
+        "description": "The inline BackupValidator (plus replication-source chain rules) rejected the spec; reconciliation halts until it is fixed."
+      },
+      {
+        "key": "Waiting",
+        "name": "Waiting",
+        "description": "The spec is valid but the target cluster/standalone has not been found yet, or is not yet Ready."
+      },
+      {
+        "key": "Suspended",
+        "name": "Suspended",
+        "description": "spec.suspend=true; any existing CronJob is also suspended and no new backup runs are started."
+      },
+      {
+        "key": "Scheduled",
+        "name": "Scheduled",
+        "description": "A CronJob exists for spec.schedule and will spawn a child Job on each firing."
+      },
+      {
+        "key": "Running",
+        "name": "Running",
+        "description": "A backup Job is currently executing neo4j-admin database backup."
+      },
+      {
+        "key": "Completed",
+        "name": "Completed",
+        "description": "The most recent backup Job reached JobComplete and its run was recorded in status.history."
+      },
+      {
+        "key": "Failed",
+        "name": "Failed",
+        "description": "The most recent backup Job reached JobFailed (BackoffLimit exhausted) or its pod never started within the startup deadline."
+      }
+    ],
+    "transitions": [
+      {
+        "from": "Pending",
+        "to": "Invalid",
+        "label": "Inline BackupValidator (plus replication-source chain rules) rejects the spec"
+      },
+      {
+        "from": "Pending",
+        "to": "Waiting",
+        "label": "Target cluster/standalone not found yet, or not Ready"
+      },
+      {
+        "from": "Pending",
+        "to": "Suspended",
+        "label": "spec.suspend=true; any existing CronJob is also suspended"
+      },
+      {
+        "from": "Suspended",
+        "to": "Scheduled",
+        "label": "spec.suspend flips back to false; CronJob resumed"
+      },
+      {
+        "from": "Waiting",
+        "to": "Scheduled",
+        "label": "Target becomes Ready and spec.schedule is set; CronJob created"
+      },
+      {
+        "from": "Waiting",
+        "to": "Running",
+        "label": "Target becomes Ready for a one-time backup; Job created"
+      },
+      {
+        "from": "Pending",
+        "to": "Scheduled",
+        "label": "spec.schedule is set; CronJob created/updated"
+      },
+      {
+        "from": "Pending",
+        "to": "Running",
+        "label": "One-time backup; Job created"
+      },
+      {
+        "from": "Scheduled",
+        "to": "Running",
+        "label": "CronJob spawns a child Job for a scheduled firing"
+      },
+      {
+        "from": "Running",
+        "to": "Completed",
+        "label": "Job reaches JobComplete; the run (with artifact metadata) is recorded in status.history"
+      },
+      {
+        "from": "Running",
+        "to": "Failed",
+        "label": "Job reaches JobFailed (BackoffLimit exhausted), or its pod never starts within the startup deadline"
+      }
+    ]
+  },
+  {
+    "id": "sfw-restore-phase",
+    "name": "Neo4jRestore Phase",
+    "entityId": "ent-neo4jrestore",
+    "fieldName": "status.phase",
+    "description": "The resolve-and-execute lifecycle the Neo4jRestore reconciler drives the CR through against a backup or storage source.",
+    "moduleId": "mod-backup-restore",
+    "states": [
+      {
+        "key": "Pending",
+        "name": "Pending",
+        "description": "The Neo4jRestore CR was just created; the backup/storage source has not yet been resolved."
+      },
+      {
+        "key": "Running",
+        "name": "Running",
+        "description": "The restore Job is executing (standalone), or the cluster in-place Cypher recreate / all-databases loop is in progress."
+      },
+      {
+        "key": "Completed",
+        "name": "Completed",
+        "description": "The restore Job succeeded (standalone) or the recreated database(s) were confirmed fully online (cluster / all-databases)."
+      },
+      {
+        "key": "Failed",
+        "name": "Failed",
+        "description": "The restore Job failed terminally, was TTL-collected before completion was observed, or the online-wait deadline elapsed."
+      }
+    ],
+    "transitions": [
+      {
+        "from": "Pending",
+        "to": "Running",
+        "label": "Target found and Ready, backup source resolved; restore Job created or Cypher recreate issued"
+      },
+      {
+        "from": "Pending",
+        "to": "Failed",
+        "label": "validateRestore rejects the spec, or the resolved backup source cannot be prepared (seed creds/endpoint not projectable)"
+      },
+      {
+        "from": "Running",
+        "to": "Completed",
+        "label": "Restore Job succeeds (standalone) or the recreated database is confirmed fully online (cluster / all-databases)"
+      },
+      {
+        "from": "Running",
+        "to": "Failed",
+        "label": "Restore Job fails terminally, is TTL-collected before completion is observed, or the online-wait deadline elapses"
+      },
+      {
+        "from": "Failed",
+        "to": "Running",
+        "label": "spec is bumped to a new generation (or the CR is recreated); a Failed CR at the SAME generation never re-enters"
+      }
+    ]
+  },
+  {
+    "id": "sfw-sharded-database-phase",
+    "name": "Neo4jShardedDatabase Phase",
+    "entityId": "ent-neo4jshardeddatabase",
+    "fieldName": "status.phase",
+    "description": "The validate/create/seed lifecycle the Neo4jShardedDatabase reconciler drives the CR through, including a destructive re-seed excursion.",
+    "moduleId": "mod-database",
+    "states": [
+      {
+        "key": "Validating",
+        "name": "Validating",
+        "description": "The Neo4jShardedDatabase spec is being checked by ShardedDatabaseValidator before any Cypher is issued."
+      },
+      {
+        "key": "Creating",
+        "name": "Creating",
+        "description": "Validation passed; the reconciler is checking cluster readiness and about to issue CREATE DATABASE."
+      },
+      {
+        "key": "Waiting",
+        "name": "Waiting",
+        "description": "The referenced cluster is not yet Ready with property sharding operational."
+      },
+      {
+        "key": "Pending",
+        "name": "Pending",
+        "description": "Waiting on seedBackupRef's Neo4jBackup to produce a Succeeded run, or on the PVC seed-proxy Deployment to become Ready."
+      },
+      {
+        "key": "Failed",
+        "name": "Failed",
+        "description": "The cluster doesn't support property sharding, seed resolution failed permanently, or CREATE DATABASE itself failed."
+      },
+      {
+        "key": "Ready",
+        "name": "Ready",
+        "description": "CREATE DATABASE succeeded and the graph shard reports online in SHOW DATABASES."
+      }
+    ],
+    "transitions": [
+      {
+        "from": "Validating",
+        "to": "Failed",
+        "label": "ShardedDatabaseValidator rejects the spec"
+      },
+      {
+        "from": "Validating",
+        "to": "Creating",
+        "label": "Validation passes"
+      },
+      {
+        "from": "Creating",
+        "to": "Waiting",
+        "label": "Referenced cluster isn't yet Ready with property sharding operational"
+      },
+      {
+        "from": "Creating",
+        "to": "Pending",
+        "label": "seedBackupRef's Neo4jBackup has no Succeeded run yet, or the PVC seed proxy isn't Ready"
+      },
+      {
+        "from": "Creating",
+        "to": "Failed",
+        "label": "Cluster doesn't support property sharding, seed resolution fails permanently, or CREATE DATABASE fails"
+      },
+      {
+        "from": "Creating",
+        "to": "Ready",
+        "label": "CREATE DATABASE succeeds and the graph shard reports online"
+      },
+      {
+        "from": "Ready",
+        "to": "Pending",
+        "label": "spec.replaceExisting+force re-triggers a destructive drop+recreate at a new generation"
+      }
+    ]
+  },
+  {
+    "id": "sfw-replica-promotion-phase",
+    "name": "Neo4jReplicaPromotion Phase",
+    "entityId": "ent-neo4jreplicapromotion",
+    "fieldName": "status.phase",
+    "description": "The one-shot check-promote-check-record lifecycle the Neo4jReplicaPromotion reconciler drives the CR through.",
+    "moduleId": "mod-database",
+    "states": [
+      {
+        "key": "Pending",
+        "name": "Pending",
+        "description": "The Neo4jReplicaPromotion CR was just created; the referenced Neo4jReplicaDatabase has not yet been checked."
+      },
+      {
+        "key": "Promoting",
+        "name": "Promoting",
+        "description": "The live database was confirmed type=replica and the irreversible PromoteReplicaDatabase call has been issued."
+      },
+      {
+        "key": "Completed",
+        "name": "Completed",
+        "description": "A post-promote CHECK confirmed the database's type is no longer replica; the promotion is recorded as terminal."
+      },
+      {
+        "key": "Failed",
+        "name": "Failed",
+        "description": "The referenced Neo4jReplicaDatabase/database does not exist, so the promotion cannot proceed."
+      }
+    ],
+    "transitions": [
+      {
+        "from": "Pending",
+        "to": "Promoting",
+        "label": "Referenced Neo4jReplicaDatabase resolved, target Ready, live database confirmed type=replica; the promote call is issued"
+      },
+      {
+        "from": "Pending",
+        "to": "Failed",
+        "label": "The referenced database does not exist"
+      },
+      {
+        "from": "Pending",
+        "to": "Completed",
+        "label": "The live database is already promoted (idempotent recovery from a prior attempt that crashed before recording)"
+      },
+      {
+        "from": "Promoting",
+        "to": "Completed",
+        "label": "A post-promote CHECK confirms the database's type is no longer replica"
+      },
+      {
+        "from": "Promoting",
+        "to": "Promoting",
+        "label": "The promote call failed or could not be confirmed; re-checked (never re-issued) on the next reconcile"
+      }
+    ]
+  },
+  {
+    "id": "sfw-user-lifecycle",
+    "entityId": "ent-neo4juser",
+    "name": "Neo4jUser reconcile lifecycle",
+    "description": "status.phase transitions (Pending/Failed/Ready) plus the ClusterNotReady, PendingDependencies, RolesSynced, and PasswordSynced named conditions driven each reconcile loop, and the deletion path guarded by the neo4j.com/user-finalizer.",
+    "moduleId": "mod-security",
+    "states": [
+      {
+        "key": "new",
+        "name": "New",
+        "description": "The Neo4jUser CR was just created; no reconcile has run yet."
+      },
+      {
+        "key": "pending",
+        "name": "Pending",
+        "description": "status.phase=Pending — set on a missing/not-ready cluster target, a not-yet-applied password Secret, or roles not yet fully synced (ConditionTypePendingDependencies/ConditionTypeRolesSynced=False)."
+      },
+      {
+        "key": "failed",
+        "name": "Failed",
+        "description": "status.phase=Failed — set on validator errors, a Bolt connection failure, or any create/alter/grant/revoke error (EventReasonUserSyncFailed)."
+      },
+      {
+        "key": "ready",
+        "name": "Ready",
+        "description": "status.phase=Ready — set when granted roles equal spec.roles and no roles are missing (ConditionReasonUserReady); ConditionTypeRolesSynced and ConditionTypePasswordSynced are True."
+      },
+      {
+        "key": "deleting",
+        "name": "Deleting",
+        "description": "metadata.deletionTimestamp is set; the neo4j.com/user-finalizer is still present and DROP USER is pending."
+      },
+      {
+        "key": "deletion-failed",
+        "name": "DeletionFailed",
+        "description": "DROP USER failed but was classified retryable (classifyFinalizerCleanup); the reconcile requeues and retries instead of releasing the finalizer."
+      },
+      {
+        "key": "removed",
+        "name": "Removed",
+        "description": "The finalizer is released and the Neo4jUser CR is deleted from the API server — after a successful DROP USER, a Retain deletionPolicy, a missing cluster target, or a non-retryable cleanup failure."
+      }
+    ],
+    "transitions": [
+      {
+        "from": "new",
+        "to": "pending",
+        "label": "Finalizer added; first reconcile requeued"
+      },
+      {
+        "from": "pending",
+        "to": "failed",
+        "label": "ValidationFailed — UserValidator.Validate returned field errors"
+      },
+      {
+        "from": "pending",
+        "to": "pending",
+        "label": "SecretPending — password Secret not yet applied (#259, apply order irrelevant)"
+      },
+      {
+        "from": "pending",
+        "to": "pending",
+        "label": "ClusterNotFound — clusterRef target does not exist"
+      },
+      {
+        "from": "pending",
+        "to": "pending",
+        "label": "ClusterNotReady (ConditionTypeClusterNotReady=True) — target cluster/standalone not Ready"
+      },
+      {
+        "from": "pending",
+        "to": "failed",
+        "label": "ConnectionFailed — NewClient() Bolt connection error"
+      },
+      {
+        "from": "pending",
+        "to": "failed",
+        "label": "UserSyncFailed — lookup/create/alter/grant/revoke error via r.fail()"
+      },
+      {
+        "from": "pending",
+        "to": "pending",
+        "label": "RolesPending (ConditionTypePendingDependencies=True, ConditionTypeRolesSynced=False) — a desired role is missing or not yet granted"
+      },
+      {
+        "from": "pending",
+        "to": "ready",
+        "label": "UserReady (ConditionReasonUserReady) — granted roles equal spec.roles, no missing roles"
+      },
+      {
+        "from": "ready",
+        "to": "pending",
+        "label": "RolesPending — a later spec.roles edit reopens a role gap"
+      },
+      {
+        "from": "ready",
+        "to": "failed",
+        "label": "UserSyncFailed — a subsequent reconcile hits a create/alter/grant/revoke error"
+      },
+      {
+        "from": "pending",
+        "to": "deleting",
+        "label": "metadata.deletionTimestamp set"
+      },
+      {
+        "from": "ready",
+        "to": "deleting",
+        "label": "metadata.deletionTimestamp set"
+      },
+      {
+        "from": "failed",
+        "to": "deleting",
+        "label": "metadata.deletionTimestamp set"
+      },
+      {
+        "from": "deleting",
+        "to": "removed",
+        "label": "DeletionPolicy=Retain — finalizer released without dropping the user"
+      },
+      {
+        "from": "deleting",
+        "to": "removed",
+        "label": "ClusterNotFound during deletion — target already gone, finalizer released"
+      },
+      {
+        "from": "deleting",
+        "to": "removed",
+        "label": "UserDeleted — DROP USER succeeded, finalizer released"
+      },
+      {
+        "from": "deleting",
+        "to": "deletion-failed",
+        "label": "UserDeletionFailed (retryable) — DROP USER failed, will retry"
+      },
+      {
+        "from": "deletion-failed",
+        "to": "deletion-failed",
+        "label": "UserDeletionFailed — repeated retry on requeue"
+      },
+      {
+        "from": "deletion-failed",
+        "to": "removed",
+        "label": "UserDeleted — a later retry of DROP USER succeeds"
+      },
+      {
+        "from": "deletion-failed",
+        "to": "removed",
+        "label": "UserDeletionFailed (non-retryable) — cleanup gives up, finalizer released to avoid wedging deletion"
+      }
+    ]
+  },
+  {
+    "id": "sfw-aura-instance-phase",
+    "name": "AuraInstance Phase Lifecycle",
+    "entityId": "ent-aurainstance",
+    "fieldName": "status.phase",
+    "description": "The status-poll state machine the AuraInstance reconciler drives the CR through against the remote Aura API's own instance lifecycle.",
+    "moduleId": "mod-aura-core",
+    "states": [
+      {
+        "key": "Creating",
+        "name": "Creating",
+        "description": "CreateInstance/CreateInstanceV2 was called and the operator is waiting for the first GetInstance observation to confirm the instance is running."
+      },
+      {
+        "key": "Running",
+        "name": "Running",
+        "description": "The Aura instance is up and serving; drift patches and pause/upgrade requests are evaluated from this state."
+      },
+      {
+        "key": "Pausing",
+        "name": "Pausing",
+        "description": "PauseInstance was called in response to spec.paused=true; waiting for Aura to report the instance paused."
+      },
+      {
+        "key": "Paused",
+        "name": "Paused",
+        "description": "The Aura instance is paused; only a resume request or deletion is evaluated from this state."
+      },
+      {
+        "key": "Resuming",
+        "name": "Resuming",
+        "description": "ResumeInstance was called in response to spec.paused=false; waiting for Aura to report the instance running again."
+      },
+      {
+        "key": "Updating",
+        "name": "Updating",
+        "description": "A drift-correcting PatchInstance or a tier UpgradeInstance call is in flight."
+      },
+      {
+        "key": "Deleting",
+        "name": "Deleting",
+        "description": "The CR was deleted with deletionPolicy=Delete; DeleteInstance has been called and the finalizer is pending release."
+      },
+      {
+        "key": "Failed",
+        "name": "Failed",
+        "description": "A non-transient, non-conflict error occurred during create, observe, patch, or upgrade; fail() set Ready=False."
+      }
+    ],
+    "transitions": [
+      {
+        "from": "Creating",
+        "to": "Running",
+        "label": "CreateInstance/CreateInstanceV2 succeeds and the first GetInstance observation satisfies aura.IsInstanceRunning"
+      },
+      {
+        "from": "Running",
+        "to": "Pausing",
+        "label": "spec.paused=true drives reconcilePauseResume to call PauseInstance"
+      },
+      {
+        "from": "Pausing",
+        "to": "Paused",
+        "label": "a later GetInstance observation satisfies aura.IsInstancePaused"
+      },
+      {
+        "from": "Paused",
+        "to": "Resuming",
+        "label": "spec.paused=false drives reconcilePauseResume to call ResumeInstance"
+      },
+      {
+        "from": "Resuming",
+        "to": "Running",
+        "label": "a later GetInstance observation satisfies aura.IsInstanceRunning again"
+      },
+      {
+        "from": "Running",
+        "to": "Updating",
+        "label": "reconcileDrift issues PatchInstance, or reconcileUpgrade issues UpgradeInstance (professional-db to business-critical)"
+      },
+      {
+        "from": "Updating",
+        "to": "Running",
+        "label": "GetInstance observes aura.IsInstanceRunning once the patch or upgrade converges"
+      },
+      {
+        "from": "Running",
+        "to": "Deleting",
+        "label": "the CR is deleted with deletionPolicy=Delete, triggering handleDeletion to call DeleteInstance"
+      },
+      {
+        "from": "Creating",
+        "to": "Failed",
+        "label": "observeOrCreate/CreateInstance returns a non-transient error; fail() sets Ready=False"
+      },
+      {
+        "from": "Running",
+        "to": "Failed",
+        "label": "GetInstance or PatchInstance/UpgradeInstance returns a non-transient, non-conflict error; fail() sets Ready=False"
+      }
+    ]
+  },
+  {
+    "id": "sfw-aura-database-phase",
+    "name": "AuraDatabase Phase Lifecycle",
+    "entityId": "ent-auradatabase",
+    "fieldName": "status.phase",
+    "description": "The simpler create/observe status flow for a database on a multi-database Aura instance.",
+    "moduleId": "mod-aura-database",
+    "states": [
+      {
+        "key": "Pending",
+        "name": "Pending",
+        "description": "The database has not yet been resolved/created, or the last GetDatabase observation failed."
+      },
+      {
+        "key": "Ready",
+        "name": "Ready",
+        "description": "observeOrCreate resolved or created the database and the most recent GetDatabase call succeeded."
+      },
+      {
+        "key": "Error",
+        "name": "Error",
+        "description": "TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase), or ObserveFailed; fail() set status.phase=Error."
+      }
+    ],
+    "transitions": [
+      {
+        "from": "Pending",
+        "to": "Ready",
+        "label": "observeOrCreate resolves or creates the database and GetDatabase succeeds; syncStatus sets status.phase=Ready"
+      },
+      {
+        "from": "Pending",
+        "to": "Error",
+        "label": "TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) or ObserveFailed; fail() sets status.phase=Error"
+      },
+      {
+        "from": "Ready",
+        "to": "Error",
+        "label": "a later reconcile's GetDatabase call fails; fail() sets status.phase=Error"
+      },
+      {
+        "from": "Error",
+        "to": "Ready",
+        "label": "a later reconcile succeeds again; syncStatus overwrites status.phase=Ready"
+      }
+    ]
+  }
+]

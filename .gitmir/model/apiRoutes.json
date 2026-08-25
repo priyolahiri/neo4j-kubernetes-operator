@@ -1,0 +1,32 @@
+[
+  {
+    "id": "rt-metrics",
+    "method": "GET",
+    "path": "/metrics",
+    "name": "Operator metrics",
+    "description": "Prometheus metrics endpoint for the operator's own controller-runtime manager (neo4j_operator_server_health and friends), bound to --metrics-bind-address (default :8080).",
+    "serverUnitId": "su-platform-manager",
+    "moduleId": "mod-platform",
+    "auth": false
+  },
+  {
+    "id": "rt-healthz",
+    "method": "GET",
+    "path": "/healthz",
+    "name": "Operator liveness probe",
+    "description": "controller-runtime's healthz.Ping liveness check, bound to --health-probe-bind-address (default :8081).",
+    "serverUnitId": "su-platform-manager",
+    "moduleId": "mod-platform",
+    "auth": false
+  },
+  {
+    "id": "rt-readyz",
+    "method": "GET",
+    "path": "/readyz",
+    "name": "Operator readiness probe",
+    "description": "Readiness check gated on the manager's cache having synced (createReadinessCheck), so the operator isn't marked Ready before it can actually reconcile.",
+    "serverUnitId": "su-platform-manager",
+    "moduleId": "mod-platform",
+    "auth": false
+  }
+]

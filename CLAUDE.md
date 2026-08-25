@@ -2,7 +2,7 @@
 
 Guidance to Claude Code (claude.ai/code) when working in this repository.
 
-Last updated: 2026-06-13
+Last updated: 2026-08-25
 
 This file is the **constitution + domain reference + index**. It holds the small set of
 non-negotiable invariants, the domain-knowledge sections an agent needs to make a change,
@@ -305,3 +305,26 @@ operator-owned vocabulary). Aura CRDs key off the `Ready` **condition** — thei
 `phase` largely mirrors Aura's own API status, an open vocabulary Neo4j can
 extend without a version bump, so enumerating running states would report new
 ones as `Degraded`.
+
+## GitMir model — source of truth (mandatory)
+
+This project maintains a `.gitmir/model/` — the authoritative object-information
+model of the product (entities, server units & functions, API routes, frontend
+units, events, business processes, status flows, reactions), cross-linked by id.
+
+- **Orient from it first.** Before answering questions about the product or
+  changing code, read the relevant `.gitmir/model/*.json` dimension(s) to see what
+  exists and how it connects. Treat the model as the source of truth over ad-hoc
+  code reading.
+- **Keep it current (mandatory).** After ANY change to code that affects the
+  model — an entity, field, server unit/function, API route, frontend unit, event,
+  business process, status flow, or reaction added, changed, or removed — update
+  the affected `.gitmir/model/*.json` in the SAME session before finishing, keeping
+  ids stable and integrity intact, and refresh `index.json`. Never leave the model
+  stale after a code change.
+- **Write the model in English.** Names, descriptions, notes, step text — every
+  word of it, whatever language the request came in. Identifiers that come from
+  the code (table names, route paths, status keys) stay exactly as the code
+  spells them. The model is read by teammates, clients and later sessions; one
+  written in two languages cannot be read straight through by any of them.
+- Rebuild/update the model with the `gitmir-model` skill.

@@ -1,0 +1,110 @@
+[
+  {
+    "id": "mod-cluster",
+    "name": "Cluster",
+    "key": "cluster",
+    "description": "Neo4j Enterprise HA cluster lifecycle: the Neo4jEnterpriseCluster CRD, rolling upgrades, scale-down drains, storage expansion, topology scheduling, split-brain detection, and live diagnostics.",
+    "paths": [
+      "api/v1beta1/neo4jenterprisecluster_types.go",
+      "internal/controller/neo4jenterprisecluster_controller.go"
+    ]
+  },
+  {
+    "id": "mod-standalone",
+    "name": "Standalone",
+    "key": "standalone",
+    "description": "Single-node Neo4j Enterprise deployments (dev/test/low-availability) via the Neo4jEnterpriseStandalone CRD, sharing most cluster infrastructure with replicas=1.",
+    "paths": [
+      "api/v1beta1/neo4jenterprisestandalone_types.go",
+      "internal/controller/neo4jenterprisestandalone_controller.go"
+    ]
+  },
+  {
+    "id": "mod-database",
+    "name": "Database Lifecycle",
+    "key": "database",
+    "description": "In-cluster database lifecycle CRDs: Neo4jDatabase, Neo4jDatabaseAlias, Neo4jShardedDatabase (property sharding), Neo4jReplicaDatabase and Neo4jReplicaPromotion (cross-cluster replication / DR failover).",
+    "paths": [
+      "api/v1beta1/neo4jdatabase_types.go",
+      "api/v1beta1/neo4jshardeddatabase_types.go",
+      "api/v1beta1/neo4jreplicadatabase_types.go"
+    ]
+  },
+  {
+    "id": "mod-backup-restore",
+    "name": "Backup & Restore",
+    "key": "backup-restore",
+    "description": "Neo4jBackup / Neo4jRestore: Job-per-CR backups (never a long-running backup pod), point-in-time recovery, and cluster-vs-standalone restore engines.",
+    "paths": [
+      "api/v1beta1/neo4jbackup_types.go",
+      "api/v1beta1/neo4jrestore_types.go",
+      "internal/controller/neo4jbackup_controller.go",
+      "internal/controller/neo4jrestore_controller.go"
+    ]
+  },
+  {
+    "id": "mod-security",
+    "name": "Users, Roles & ABAC",
+    "key": "security",
+    "description": "Identity and access management: Neo4jUser, Neo4jRole, Neo4jRoleBinding (privileges live only on Neo4jRole), and Neo4jAuthRule (attribute-based access control mapping OIDC claims to roles).",
+    "paths": [
+      "api/v1beta1/neo4juser_types.go",
+      "api/v1beta1/neo4jrole_types.go",
+      "api/v1beta1/neo4jrolebinding_types.go",
+      "api/v1beta1/neo4jauthrule_types.go"
+    ]
+  },
+  {
+    "id": "mod-plugins",
+    "name": "Plugins",
+    "key": "plugins",
+    "description": "Neo4jPlugin: installs and configures APOC, Graph Data Science, Bloom, GenAI, n10s, and GraphQL plugins with automatic security configuration.",
+    "paths": [
+      "api/v1beta1/neo4jplugin_types.go",
+      "internal/controller/plugin_controller.go"
+    ]
+  },
+  {
+    "id": "mod-aura-core",
+    "name": "Aura Instance Lifecycle",
+    "key": "aura-core",
+    "description": "Neo4j Aura cloud instance lifecycle via the Aura API: AuraProviderConfig, AuraInstance, AuraSnapshot, AuraRestore, AuraCustomerManagedKey, AuraIPFilter.",
+    "paths": [
+      "api/v1beta1/aurainstance_types.go",
+      "internal/controller/aurainstance_controller.go",
+      "internal/controller/aura_common.go"
+    ]
+  },
+  {
+    "id": "mod-aura-database",
+    "name": "Aura Databases",
+    "key": "aura-database",
+    "description": "Per-database lifecycle on a multi-database Aura instance: AuraDatabase, AuraDatabaseBackup, AuraDatabaseRestore (all Aura API v2beta1, beta/best-effort).",
+    "paths": [
+      "api/v1beta1/auradatabase_types.go",
+      "internal/controller/auradatabase_controller.go"
+    ]
+  },
+  {
+    "id": "mod-aura-rbac",
+    "name": "Aura Console RBAC",
+    "key": "aura-rbac",
+    "description": "Aura CONSOLE identity (who can use the Aura console/projects, not in-database Neo4j users): AuraOrganizationMember, AuraProjectMember, AuraInvite.",
+    "paths": [
+      "api/v1beta1/auraorganizationmember_types.go",
+      "api/v1beta1/aurainvite_types.go"
+    ]
+  },
+  {
+    "id": "mod-platform",
+    "name": "Platform",
+    "key": "platform",
+    "description": "Cross-cutting operator plumbing shared by every CRD: manager bootstrap and health/metrics endpoints, the Neo4j Bolt client, inline spec validators (never an admission webhook), clusterRef/backupRef resolvers, and K8s resource builders.",
+    "paths": [
+      "cmd/main.go",
+      "internal/neo4j/client.go",
+      "internal/validation/",
+      "internal/resources/"
+    ]
+  }
+]

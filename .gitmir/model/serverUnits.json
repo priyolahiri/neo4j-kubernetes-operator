@@ -1,0 +1,663 @@
+[
+  {
+    "id": "su-neo4jenterprisecluster",
+    "name": "Neo4jEnterpriseCluster Reconciler",
+    "kind": "controller",
+    "description": "Reconciles Neo4jEnterpriseCluster CRs into a single {cluster}-server StatefulSet plus Services/ConfigMap/RBAC/TLS, drives rolling upgrades, scale-down drains, and diagnostics, and reports the cluster phase (Initializing to Forming to Ready) via status and events.",
+    "entityIds": [
+      "ent-neo4jenterprisecluster"
+    ],
+    "dependsOn": [],
+    "moduleId": "mod-cluster",
+    "paths": [
+      "internal/controller/neo4jenterprisecluster_controller.go"
+    ]
+  },
+  {
+    "id": "su-neo4jenterprisestandalone",
+    "name": "Neo4jEnterpriseStandalone Reconciler",
+    "kind": "controller",
+    "description": "Reconciles Neo4jEnterpriseStandalone CRs into a single-replica StatefulSet plus Service/ConfigMap/Ingress/TLS, folds in Neo4jPlugin-derived neo4j.conf settings, and reports Ready once the StatefulSet has one ready replica.",
+    "entityIds": [
+      "ent-neo4jenterprisestandalone"
+    ],
+    "dependsOn": [],
+    "moduleId": "mod-standalone",
+    "paths": [
+      "internal/controller/neo4jenterprisestandalone_controller.go"
+    ]
+  },
+  {
+    "id": "su-rolling-upgrade",
+    "name": "Rolling Upgrade State Machine",
+    "kind": "worker",
+    "description": "Drives an image-version upgrade through a requeue-based state machine (Staging to Rolling to Stabilizing to Verifying to Completed) so one reconcile never blocks on a multi-pod rolling restart of the server StatefulSet.",
+    "entityIds": [
+      "ent-neo4jenterprisecluster"
+    ],
+    "dependsOn": [
+      "su-neo4jenterprisecluster"
+    ],
+    "moduleId": "mod-cluster",
+    "paths": [
+      "internal/controller/rolling_upgrade.go",
+      "internal/controller/rolling_upgrade_statemachine.go"
+    ]
+  },
+  {
+    "id": "su-scale-down",
+    "name": "Scale-Down Drain Worker",
+    "kind": "worker",
+    "description": "Automates the cordon-deallocate-wait-drop drain sequence for servers being removed by a topology shrink, holding StatefulSet replicas via an annotation until every drained server is Dropped or gone.",
+    "entityIds": [
+      "ent-neo4jenterprisecluster"
+    ],
+    "dependsOn": [
+      "su-neo4jenterprisecluster"
+    ],
+    "moduleId": "mod-cluster",
+    "paths": [
+      "internal/controller/scale_down.go"
+    ]
+  },
+  {
+    "id": "su-storage-expansion",
+    "name": "Storage Expansion Worker",
+    "kind": "worker",
+    "description": "Detects a spec.storage.size increase, patches the affected PVCs, and orphan-deletes the owning StatefulSet so it is recreated with the enlarged VolumeClaimTemplates, for both cluster and standalone deployments; rejects any shrink attempt outright.",
+    "entityIds": [
+      "ent-neo4jenterprisecluster",
+      "ent-neo4jenterprisestandalone"
+    ],
+    "dependsOn": [
+      "su-neo4jenterprisecluster",
+      "su-neo4jenterprisestandalone"
+    ],
+    "moduleId": "mod-cluster",
+    "paths": [
+      "internal/controller/storage_expansion.go",
+      "internal/controller/standalone_storage_expansion.go"
+    ]
+  },
+  {
+    "id": "su-splitbrain-detector",
+    "name": "Split-Brain Detector",
+    "kind": "worker",
+    "description": "Connects individually to each server pod via its headless-service DNS name, compares each pod's SHOW SERVERS view against the largest cluster group, and classifies the cluster as forming, healthy, or split-brain with orphaned pods needing repair.",
+    "entityIds": [
+      "ent-neo4jenterprisecluster"
+    ],
+    "dependsOn": [
+      "su-neo4jenterprisecluster"
+    ],
+    "moduleId": "mod-cluster",
+    "paths": [
+      "internal/controller/splitbrain_detector.go"
+    ]
+  },
+  {
+    "id": "su-topology-scheduler",
+    "name": "Topology Scheduler",
+    "kind": "scheduler",
+    "description": "Calculates topology-spread and pod anti-affinity placement for the server StatefulSet from spec.topology.placement, auto-discovering availability zones from cluster-scoped Nodes and degrading gracefully in namespace-scoped installs.",
+    "entityIds": [
+      "ent-neo4jenterprisecluster"
+    ],
+    "dependsOn": [
+      "su-neo4jenterprisecluster"
+    ],
+    "moduleId": "mod-cluster",
+    "paths": [
+      "internal/controller/topology_scheduler.go"
+    ]
+  },
+  {
+    "id": "su-diagnostics",
+    "name": "Live Diagnostics Collector",
+    "kind": "worker",
+    "description": "Collects live SHOW SERVERS / SHOW DATABASES / SHOW USERS / SHOW ROLES data from a Ready cluster or standalone instance into status.diagnostics and the ServersHealthy/DatabasesHealthy conditions, never failing the reconcile on a collection error.",
+    "entityIds": [
+      "ent-neo4jenterprisecluster",
+      "ent-neo4jenterprisestandalone"
+    ],
+    "dependsOn": [
+      "su-neo4jenterprisecluster",
+      "su-neo4jenterprisestandalone"
+    ],
+    "moduleId": "mod-cluster",
+    "paths": [
+      "internal/controller/diagnostics_databases.go",
+      "internal/controller/diagnostics_users_roles.go"
+    ]
+  },
+  {
+    "id": "su-neo4jdatabase",
+    "name": "Neo4jDatabase Controller",
+    "kind": "controller",
+    "description": "Reconciler for the Neo4jDatabase CRD: creates/verifies a single logical database (with optional topology and seedURI) against a resolved cluster or standalone, imports initial Cypher data, and drops the database on CR deletion.",
+    "entityIds": [
+      "ent-neo4jdatabase"
+    ],
+    "dependsOn": [
+      "su-cluster-resolver"
+    ],
+    "moduleId": "mod-database",
+    "paths": [
+      "internal/controller/neo4jdatabase_controller.go"
+    ]
+  },
+  {
+    "id": "su-neo4jdatabasealias",
+    "name": "Neo4jDatabaseAlias Controller",
+    "kind": "controller",
+    "description": "Reconciler for the Neo4jDatabaseAlias CRD: creates, retargets, and drops Neo4j database aliases (CREATE/ALTER/DROP ALIAS) against a resolved cluster or standalone.",
+    "entityIds": [
+      "ent-neo4jdatabasealias"
+    ],
+    "dependsOn": [
+      "su-cluster-resolver"
+    ],
+    "moduleId": "mod-database",
+    "paths": [
+      "internal/controller/neo4jdatabasealias_controller.go"
+    ]
+  },
+  {
+    "id": "su-neo4jshardeddatabase",
+    "name": "Neo4jShardedDatabase Controller",
+    "kind": "controller",
+    "description": "Reconciler for the Neo4jShardedDatabase CRD: issues Cypher 25 CREATE DATABASE ... SET GRAPH SHARD / SET PROPERTY SHARDS, resolves seedBackupRef into per-shard seed URIs, and manages a PVC seed-proxy Deployment/Service for PVC-backed seeds.",
+    "entityIds": [
+      "ent-neo4jshardeddatabase"
+    ],
+    "dependsOn": [
+      "su-cluster-resolver",
+      "su-backup-resolver"
+    ],
+    "moduleId": "mod-database",
+    "paths": [
+      "internal/controller/neo4jshardeddatabase_controller.go",
+      "internal/controller/neo4jshardeddatabase_pvc_proxy.go",
+      "internal/controller/neo4jshardeddatabase_seed.go"
+    ]
+  },
+  {
+    "id": "su-neo4jreplicadatabase",
+    "name": "Neo4jReplicaDatabase Controller",
+    "kind": "controller",
+    "description": "Reconciler for the Neo4jReplicaDatabase CRD: creates a cross-cluster replica database from an upstream backup/pull source and, on every pass, re-observes the live `type` column so an out-of-band promotion is detected before any mutating call is issued.",
+    "entityIds": [
+      "ent-neo4jreplicadatabase"
+    ],
+    "dependsOn": [
+      "su-cluster-resolver"
+    ],
+    "moduleId": "mod-database",
+    "paths": [
+      "internal/controller/neo4jreplicadatabase_controller.go"
+    ]
+  },
+  {
+    "id": "su-neo4jreplicapromotion",
+    "name": "Neo4jReplicaPromotion Controller",
+    "kind": "controller",
+    "description": "One-shot reconciler for the Neo4jReplicaPromotion CRD: performs the irreversible check-promote-check-record sequence that turns a Neo4jReplicaDatabase into a standalone read-write database.",
+    "entityIds": [
+      "ent-neo4jreplicapromotion"
+    ],
+    "dependsOn": [
+      "su-cluster-resolver",
+      "su-neo4jreplicadatabase"
+    ],
+    "moduleId": "mod-database",
+    "paths": [
+      "internal/controller/neo4jreplicapromotion_controller.go"
+    ]
+  },
+  {
+    "id": "su-neo4jbackup",
+    "name": "Neo4jBackup Controller",
+    "kind": "controller",
+    "description": "Reconciler for the Neo4jBackup CRD: creates exactly one Job per one-time backup CR, or a CronJob for scheduled backups, and parses each backup pod's neo4j-admin log into status.history (invariant: Job-per-CR only, no long-running backup pod/StatefulSet).",
+    "entityIds": [
+      "ent-neo4jbackup"
+    ],
+    "dependsOn": [
+      "su-cluster-resolver"
+    ],
+    "moduleId": "mod-backup-restore",
+    "paths": [
+      "internal/controller/neo4jbackup_controller.go",
+      "internal/controller/neo4jbackup_log_parser.go",
+      "internal/controller/neo4jbackup_sharded.go"
+    ]
+  },
+  {
+    "id": "su-neo4jrestore",
+    "name": "Neo4jRestore Controller",
+    "kind": "controller",
+    "description": "Reconciler for the Neo4jRestore CRD: drives a standalone offline neo4j-admin restore Job, a cluster in-place Cypher dbms.recreateDatabase, or a per-database all-databases restore loop, from a resolved backup artifact.",
+    "entityIds": [
+      "ent-neo4jrestore"
+    ],
+    "dependsOn": [
+      "su-cluster-resolver",
+      "su-backup-resolver"
+    ],
+    "moduleId": "mod-backup-restore",
+    "paths": [
+      "internal/controller/neo4jrestore_controller.go",
+      "internal/controller/neo4jrestore_alldatabases.go"
+    ]
+  },
+  {
+    "id": "su-cluster-resolver",
+    "name": "Cluster Reference Resolver",
+    "kind": "service",
+    "description": "Shared helper that resolves a CR's clusterRef to a Neo4jEnterpriseCluster or, failing that, a Neo4jEnterpriseStandalone, and builds the enqueue-on-cluster-status-change watch handler every dependent controller uses.",
+    "entityIds": [
+      "ent-neo4jenterprisecluster",
+      "ent-neo4jenterprisestandalone"
+    ],
+    "dependsOn": [],
+    "moduleId": "mod-platform",
+    "paths": [
+      "internal/controller/cluster_resolver.go"
+    ]
+  },
+  {
+    "id": "su-backup-resolver",
+    "name": "Backup Reference Resolver",
+    "kind": "service",
+    "description": "Shared helper that dereferences a Neo4jBackup CR name into a concrete StorageLocation (with cloud creds folded in) and the per-run BackupsPath of its most recent Succeeded run.",
+    "entityIds": [
+      "ent-neo4jbackup"
+    ],
+    "dependsOn": [],
+    "moduleId": "mod-backup-restore",
+    "paths": [
+      "internal/controller/backup_resolver.go"
+    ]
+  },
+  {
+    "id": "su-neo4juser",
+    "name": "Neo4jUser Controller",
+    "kind": "controller",
+    "description": "Reconciler for the Neo4jUser CRD: creates/ALTERs the Neo4j user over Bolt, diffs and grants/revokes role membership, and watches Neo4jRole so users stuck on a missing custom role re-reconcile the moment that role lands.",
+    "entityIds": [
+      "ent-neo4juser"
+    ],
+    "dependsOn": [
+      "su-neo4j-client",
+      "su-validation",
+      "su-cluster-resolver"
+    ],
+    "moduleId": "mod-security",
+    "paths": [
+      "internal/controller/neo4juser_controller.go",
+      "internal/controller/role_resolution.go"
+    ]
+  },
+  {
+    "id": "su-neo4jrole",
+    "name": "Neo4jRole Controller",
+    "kind": "controller",
+    "description": "Reconciler for the Neo4jRole CRD: creates the Neo4j role, canonicalises spec.privileges against SHOW ROLE PRIVILEGES AS COMMANDS to diff them, and applies GRANT/DENY statements verbatim while deriving REVOKE statements textually for privileges no longer desired.",
+    "entityIds": [
+      "ent-neo4jrole"
+    ],
+    "dependsOn": [
+      "su-neo4j-client",
+      "su-validation",
+      "su-cluster-resolver"
+    ],
+    "moduleId": "mod-security",
+    "paths": [
+      "internal/controller/neo4jrole_controller.go"
+    ]
+  },
+  {
+    "id": "su-neo4jrolebinding",
+    "name": "Neo4jRoleBinding Controller",
+    "kind": "controller",
+    "description": "Reconciler for the Neo4jRoleBinding CRD: grants/revokes role membership for a pre-existing, externally provisioned Neo4j user (typically SSO/LDAP first-login) without ever creating or dropping the underlying user.",
+    "entityIds": [
+      "ent-neo4jrolebinding"
+    ],
+    "dependsOn": [
+      "su-neo4j-client",
+      "su-validation",
+      "su-cluster-resolver"
+    ],
+    "moduleId": "mod-security",
+    "paths": [
+      "internal/controller/neo4jrolebinding_controller.go",
+      "internal/controller/role_resolution.go"
+    ]
+  },
+  {
+    "id": "su-neo4jauthrule",
+    "name": "Neo4jAuthRule Controller",
+    "kind": "controller",
+    "description": "Reconciler for the Neo4jAuthRule (ABAC) CRD: gates on the cluster running Neo4j 2026.03+ with an OIDC authorization provider configured, then converges the rule's condition/enabled flag and granted-role set via CREATE OR REPLACE AUTH RULE.",
+    "entityIds": [
+      "ent-neo4jauthrule"
+    ],
+    "dependsOn": [
+      "su-neo4j-client",
+      "su-validation",
+      "su-cluster-resolver"
+    ],
+    "moduleId": "mod-security",
+    "paths": [
+      "internal/controller/neo4jauthrule_controller.go"
+    ]
+  },
+  {
+    "id": "su-neo4j-client",
+    "name": "Neo4j Bolt Client",
+    "kind": "integration",
+    "description": "The Bolt-protocol Neo4j client package (internal/neo4j) that issues Cypher against the system database for user, role, privilege, and auth-rule management on behalf of every auth-model controller.",
+    "entityIds": [],
+    "dependsOn": [],
+    "moduleId": "mod-platform",
+    "paths": [
+      "internal/neo4j/users.go",
+      "internal/neo4j/privileges.go",
+      "internal/neo4j/auth_rules.go",
+      "internal/neo4j/client.go"
+    ]
+  },
+  {
+    "id": "su-validation",
+    "name": "Inline Spec Validators",
+    "kind": "service",
+    "description": "Inline spec validators under internal/validation/, one struct per CRD, called synchronously from each reconciler's Reconcile — explicitly NOT a Kubernetes admission webhook, which this project forbids (invariant 1).",
+    "entityIds": [],
+    "dependsOn": [],
+    "moduleId": "mod-platform",
+    "paths": [
+      "internal/validation/user_validator.go",
+      "internal/validation/role_validator.go",
+      "internal/validation/rolebinding_validator.go",
+      "internal/validation/authrule_validator.go",
+      "internal/validation/auth_validator.go"
+    ]
+  },
+  {
+    "id": "su-auraproviderconfig",
+    "name": "AuraProviderConfig Reconciler",
+    "kind": "controller",
+    "description": "Validates Aura API credentials referenced by an AuraProviderConfig by exchanging them for a token and calling ListInstances, then reports the result on the Ready condition (AuraProviderConfigReconciler).",
+    "entityIds": [
+      "ent-auraproviderconfig"
+    ],
+    "dependsOn": [
+      "su-aura-client"
+    ],
+    "moduleId": "mod-aura-core",
+    "paths": [
+      "internal/controller/auraproviderconfig_controller.go"
+    ]
+  },
+  {
+    "id": "su-aurainstance",
+    "name": "AuraInstance Reconciler",
+    "kind": "controller",
+    "description": "Provisions and manages a Neo4j Aura cloud instance via the Aura REST API as a status-poll state machine: idempotent create/adopt (external-name annotation), observe, drift-patch (memory/storage/name/secondariesCount/cdcEnrichmentMode), tier upgrade, pause/resume, and orphan-or-delete on CR deletion (AuraInstanceReconciler).",
+    "entityIds": [
+      "ent-aurainstance"
+    ],
+    "dependsOn": [
+      "su-aura-client",
+      "su-auraproviderconfig"
+    ],
+    "moduleId": "mod-aura-core",
+    "paths": [
+      "internal/controller/aurainstance_controller.go",
+      "internal/controller/aura_connection.go",
+      "internal/controller/aura_multidatabase.go"
+    ]
+  },
+  {
+    "id": "su-aurasnapshot",
+    "name": "AuraSnapshot Reconciler",
+    "kind": "controller",
+    "description": "Requests a one-shot Aura instance snapshot via CreateSnapshot and polls GetSnapshot to a terminal Completed/Failed/Cancelled state; no finalizer since Aura has no snapshot-delete API (AuraSnapshotReconciler).",
+    "entityIds": [
+      "ent-aurasnapshot"
+    ],
+    "dependsOn": [
+      "su-aura-client",
+      "su-auraproviderconfig",
+      "su-aurainstance"
+    ],
+    "moduleId": "mod-aura-core",
+    "paths": [
+      "internal/controller/aurasnapshot_controller.go"
+    ]
+  },
+  {
+    "id": "su-aurarestore",
+    "name": "AuraRestore Reconciler",
+    "kind": "controller",
+    "description": "Restores an Aura instance in place from a snapshot (by SnapshotID or via an AuraSnapshot CR ref), driving Pending -> Restoring -> Completed/Failed and refusing to re-fire once terminal (AuraRestoreReconciler).",
+    "entityIds": [
+      "ent-aurarestore"
+    ],
+    "dependsOn": [
+      "su-aura-client",
+      "su-auraproviderconfig",
+      "su-aurainstance",
+      "su-aurasnapshot"
+    ],
+    "moduleId": "mod-aura-core",
+    "paths": [
+      "internal/controller/aurarestore_controller.go"
+    ]
+  },
+  {
+    "id": "su-auracustomermanagedkey",
+    "name": "AuraCustomerManagedKey Reconciler",
+    "kind": "controller",
+    "description": "Registers and manages a customer-managed encryption key with Aura: idempotent create/adopt by matching keyId/region/cloudProvider/instanceType, polls to Ready, and on deletion either orphans (default) or deregisters (refused by the API while any instance still uses the key) (AuraCustomerManagedKeyReconciler).",
+    "entityIds": [
+      "ent-auracustomermanagedkey"
+    ],
+    "dependsOn": [
+      "su-aura-client",
+      "su-auraproviderconfig"
+    ],
+    "moduleId": "mod-aura-core",
+    "paths": [
+      "internal/controller/auracustomermanagedkey_controller.go"
+    ]
+  },
+  {
+    "id": "su-auraipfilter",
+    "name": "AuraIPFilter Reconciler",
+    "kind": "controller",
+    "description": "Manages an organization-scoped Aura network IP filter via the v2beta1 API: idempotent create/adopt by name, resolves spec.instanceRefs to Aura instance IDs for filtered_entities, and converges allow_list/entities/name/filteringDisabled drift (AuraIPFilterReconciler).",
+    "entityIds": [
+      "ent-auraipfilter"
+    ],
+    "dependsOn": [
+      "su-aura-client",
+      "su-auraproviderconfig",
+      "su-aurainstance"
+    ],
+    "moduleId": "mod-aura-core",
+    "paths": [
+      "internal/controller/auraipfilter_controller.go"
+    ]
+  },
+  {
+    "id": "su-auradatabase",
+    "name": "AuraDatabase Reconciler",
+    "kind": "controller",
+    "description": "Manages a database on a multi-database Aura instance via the v2beta1 API: refuses to create when the referenced AuraInstance's probed multiDatabase verdict is explicitly false, and otherwise creates/adopts by the external-database-id annotation since the API returns no database names to adopt by (AuraDatabaseReconciler).",
+    "entityIds": [
+      "ent-auradatabase"
+    ],
+    "dependsOn": [
+      "su-aura-client",
+      "su-auraproviderconfig",
+      "su-aurainstance"
+    ],
+    "moduleId": "mod-aura-database",
+    "paths": [
+      "internal/controller/auradatabase_controller.go"
+    ]
+  },
+  {
+    "id": "su-auradatabasebackup",
+    "name": "AuraDatabaseBackup Reconciler",
+    "kind": "controller",
+    "description": "Takes a one-shot on-demand per-database backup via the v2beta1 API and polls it to a terminal Completed/Failed status, never treating an empty just-created status as done (AuraDatabaseBackupReconciler).",
+    "entityIds": [
+      "ent-auradatabasebackup"
+    ],
+    "dependsOn": [
+      "su-aura-client",
+      "su-auraproviderconfig",
+      "su-auradatabase"
+    ],
+    "moduleId": "mod-aura-database",
+    "paths": [
+      "internal/controller/auradatabasebackup_controller.go"
+    ]
+  },
+  {
+    "id": "su-auradatabaserestore",
+    "name": "AuraDatabaseRestore Reconciler",
+    "kind": "controller",
+    "description": "Performs a one-shot in-place restore of a database from a per-database backup (by BackupID or AuraDatabaseRestore->AuraDatabaseBackup ref), with a Submitting marker persisted before the destructive call so a crash mid-flight surfaces as RestoreOutcomeUnknown instead of being silently replayed (AuraDatabaseRestoreReconciler).",
+    "entityIds": [
+      "ent-auradatabaserestore"
+    ],
+    "dependsOn": [
+      "su-aura-client",
+      "su-auraproviderconfig",
+      "su-auradatabase",
+      "su-auradatabasebackup"
+    ],
+    "moduleId": "mod-aura-database",
+    "paths": [
+      "internal/controller/auradatabaserestore_controller.go"
+    ]
+  },
+  {
+    "id": "su-auraorganizationmember",
+    "name": "AuraOrganizationMember Reconciler",
+    "kind": "controller",
+    "description": "Reconciles the organization role of an existing Aura console user found by email via ListOrgMembers/UpdateOrgMemberRole, and removes membership on CR deletion when deletionPolicy=Delete (AuraOrganizationMemberReconciler).",
+    "entityIds": [
+      "ent-auraorganizationmember"
+    ],
+    "dependsOn": [
+      "su-aura-client",
+      "su-auraproviderconfig"
+    ],
+    "moduleId": "mod-aura-rbac",
+    "paths": [
+      "internal/controller/auraorganizationmember_controller.go"
+    ]
+  },
+  {
+    "id": "su-auraprojectmember",
+    "name": "AuraProjectMember Reconciler",
+    "kind": "controller",
+    "description": "Reconciles the project role of an existing Aura console user: adds an org-level member to the project via AddProjectMember when not yet a project member, or updates their role, and removes them on CR deletion when deletionPolicy=Delete (AuraProjectMemberReconciler).",
+    "entityIds": [
+      "ent-auraprojectmember"
+    ],
+    "dependsOn": [
+      "su-aura-client",
+      "su-auraproviderconfig"
+    ],
+    "moduleId": "mod-aura-rbac",
+    "paths": [
+      "internal/controller/auraprojectmember_controller.go"
+    ]
+  },
+  {
+    "id": "su-aurainvite",
+    "name": "AuraInvite Reconciler",
+    "kind": "controller",
+    "description": "Manages an organization/project invite via the v2beta1 API: builds the two-slot invite body (organization role + optional project role), adopts a matching pending invite by email+project scope, and since there is no GET /invites/{id}, observes status via the LIST endpoint (AuraInviteReconciler).",
+    "entityIds": [
+      "ent-aurainvite"
+    ],
+    "dependsOn": [
+      "su-aura-client",
+      "su-auraproviderconfig"
+    ],
+    "moduleId": "mod-aura-rbac",
+    "paths": [
+      "internal/controller/aurainvite_controller.go"
+    ]
+  },
+  {
+    "id": "su-aura-client",
+    "name": "Aura API Client",
+    "kind": "integration",
+    "description": "Shared Aura HTTP API client/auth/connection helper: resolves credentials from an AuraProviderConfig or inline Secret, caches one *aura.Client per credential (OAuth token cache + rate-limit budget) keyed by baseURL+clientID+sha256(secret)[:8], and builds the connection Secret/ConfigMap every Aura reconciler that owns a cloud instance writes with the one-time create credentials (aura_common.go, aura_connection.go).",
+    "entityIds": [],
+    "dependsOn": [],
+    "moduleId": "mod-aura-core",
+    "paths": [
+      "internal/controller/aura_common.go",
+      "internal/controller/aura_connection.go"
+    ]
+  },
+  {
+    "id": "su-neo4jplugin",
+    "name": "Neo4jPlugin Controller",
+    "kind": "controller",
+    "description": "Reconciler for the Neo4jPlugin CRD; live-patches NEO4J_PLUGINS via MergeNeo4jPluginList (or injects a checksum-verified init container for installMode=VerifiedDownload) without clobbering env vars owned by other controllers, folds plugin-specific settings into neo4j.conf, and triggers a controlled rolling restart of the target.",
+    "entityIds": [
+      "ent-neo4jplugin"
+    ],
+    "dependsOn": [
+      "su-cluster-resolver",
+      "su-neo4jenterprisecluster",
+      "su-neo4jenterprisestandalone"
+    ],
+    "moduleId": "mod-plugins",
+    "paths": [
+      "internal/controller/plugin_controller.go",
+      "internal/controller/plugin_conf_settings.go"
+    ]
+  },
+  {
+    "id": "su-resource-builders",
+    "name": "K8s Resource Builders",
+    "kind": "service",
+    "description": "Builder functions under internal/resources/ that render the desired-state Kubernetes objects (server StatefulSet, Services, NetworkPolicy, MCP sidecar, memory config, resource recommendations) the cluster and standalone reconcilers apply.",
+    "entityIds": [],
+    "dependsOn": [],
+    "moduleId": "mod-platform",
+    "paths": [
+      "internal/resources/cluster.go",
+      "internal/resources/mcp.go",
+      "internal/resources/memory_config.go",
+      "internal/resources/networkpolicy.go",
+      "internal/resources/plugin_init_container.go",
+      "internal/resources/resource_recommendation.go",
+      "internal/resources/route.go",
+      "internal/resources/security_context.go"
+    ]
+  },
+  {
+    "id": "su-platform-manager",
+    "name": "Operator Manager Bootstrap",
+    "kind": "service",
+    "description": "cmd/main.go: builds the controller-runtime manager, registers every reconciler (devControllerKeys), and exposes the operator's own /metrics, /healthz, and /readyz endpoints.",
+    "entityIds": [],
+    "dependsOn": [],
+    "moduleId": "mod-platform",
+    "paths": [
+      "cmd/main.go"
+    ]
+  }
+]
