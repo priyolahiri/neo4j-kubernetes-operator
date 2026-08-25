@@ -638,7 +638,7 @@ GOTESTSUM ?= $(LOCALBIN)/gotestsum
 KUSTOMIZE_VERSION ?= v5.4.3
 CONTROLLER_TOOLS_VERSION ?= v0.19.0
 ENVTEST_VERSION ?= release-0.19
-GOLANGCI_LINT_VERSION ?= v1.64.8
+GOLANGCI_LINT_VERSION ?= v2.13.1
 GINKGO_VERSION ?= v2.29.0
 YQ_VERSION ?= v4.45.1
 GOTESTSUM_VERSION ?= v1.13.0
@@ -671,7 +671,7 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 		echo "golangci-lint was built with a stale Go toolchain; rebuilding for $$(go env GOVERSION)"; \
 		rm -f "$(GOLANGCI_LINT)" "$(GOLANGCI_LINT)-$(GOLANGCI_LINT_VERSION)"; \
 	fi
-	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
 .PHONY: gotestsum
 gotestsum: $(GOTESTSUM) ## Download gotestsum locally if necessary (CI unit-test reporter).
