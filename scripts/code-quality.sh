@@ -72,7 +72,7 @@ install_quality_tools() {
     log_header "Installing Code Quality Tools"
 
     local go_tools=(
-        "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
+        "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"
         "honnef.co/go/tools/cmd/staticcheck@latest"
         "github.com/kisielk/errcheck@latest"
         "github.com/fzipp/gocyclo/cmd/gocyclo@latest"
@@ -164,7 +164,7 @@ run_linting() {
     # golangci-lint (comprehensive)
     if command_exists golangci-lint; then
         log_info "Running golangci-lint..."
-        if golangci-lint run --out-format=colored-line-number,checkstyle:"${REPORTS_DIR}/golangci-lint.xml" --timeout=10m ./...; then
+        if golangci-lint run --output.text.path=stdout --output.checkstyle.path="${REPORTS_DIR}/golangci-lint.xml" --timeout=10m ./...; then
             log_success "golangci-lint passed"
         else
             log_warning "golangci-lint found issues"

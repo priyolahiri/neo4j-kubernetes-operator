@@ -1,0 +1,65 @@
+# Advanced-setup CodeQL (replaces the repo's former default Code Scanning
+# setup). Default setup runs Autobuild with whatever Go toolchain its own
+# bundle ships, which fell behind go.mod's `go 1.27.0` requirement
+# (`go.mod requires go >= 1.27.0 (running go 1.26.6; GOTOOLCHAIN=local)`,
+# autobuild failure) — the Go version here is pinned from go.mod via
+# ./.github/actions/setup-go so it can never drift out from under CodeQL
+# again.
+name: "CodeQL"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    # Weekly, off the hour/half-hour to avoid the top-of-hour thundering herd.
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: autobuild
+          - language: actions
+            build-mode: none
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Only the Go analysis needs a Go toolchain; "actions" (workflow YAML
+      # scanning) has none of this and build-mode: none skips Autobuild.
+      - name: Set up Go
+        if: matrix.language == 'go'
+        uses: ./.github/actions/setup-go
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Autobuild
+        if: matrix.build-mode == 'autobuild'
+        uses: github/codeql-action/autobuild@v4
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

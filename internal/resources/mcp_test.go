@@ -109,7 +109,7 @@ func TestBuildMCPDeploymentForCluster_HTTPWithTLS(t *testing.T) {
 
 	// TLS volume should be present.
 	require.Len(t, deployment.Spec.Template.Spec.Volumes, 1)
-	assert.Equal(t, "my-mcp-tls", deployment.Spec.Template.Spec.Volumes[0].VolumeSource.Secret.SecretName)
+	assert.Equal(t, "my-mcp-tls", deployment.Spec.Template.Spec.Volumes[0].Secret.SecretName)
 
 	// VolumeMount inside the container.
 	require.Len(t, container.VolumeMounts, 1)

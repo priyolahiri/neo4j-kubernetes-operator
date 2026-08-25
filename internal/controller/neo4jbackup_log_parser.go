@@ -295,7 +295,7 @@ func (r *Neo4jBackupReconciler) fetchBackupPodLog(ctx context.Context, jobName, 
 	// avoids a redundant HTTP call when the operator is operating in a
 	// hot reconcile loop.
 	var podList corev1.PodList
-	if err := r.Client.List(ctx, &podList,
+	if err := r.List(ctx, &podList,
 		client.InNamespace(namespace),
 		client.MatchingLabels{"batch.kubernetes.io/job-name": jobName}); err != nil {
 		return "", fmt.Errorf("list pods for Job %q: %w", jobName, err)

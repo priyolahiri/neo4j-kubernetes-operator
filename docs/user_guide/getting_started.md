@@ -9,7 +9,7 @@ This guide will walk you through the process of deploying your first Neo4j Enter
 *   Neo4j Enterprise Edition — **5.26 LTS or any CalVer release** (2025.x, 2026.x, …); evaluation license acceptable for testing. See [Supported Neo4j Versions](version_support.md) for the full support policy.
 *   cert-manager 1.20+ (optional, for TLS-enabled deployments)
 
-Building from source additionally needs Go 1.26+ — see the [Installation Guide](installation.md) for that path.
+Building from source additionally needs Go 1.27+ — see the [Installation Guide](installation.md) for that path.
 
 > **Neo4j version:** the examples below pin `5.26.0-enterprise`, but every one
 > works on a CalVer release too — just change the image `tag` (e.g.

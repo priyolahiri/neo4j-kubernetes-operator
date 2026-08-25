@@ -106,7 +106,7 @@ func TestBackupJobHasHardenedSecurityContext(t *testing.T) {
 		},
 	}
 	r := newBackupTestReconciler(t, cluster, backup)
-	require.NoError(t, r.Client.Create(context.Background(), &corev1.ServiceAccount{
+	require.NoError(t, r.Create(context.Background(), &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{Name: backupServiceAccountName, Namespace: ns},
 	}))
 
@@ -115,7 +115,7 @@ func TestBackupJobHasHardenedSecurityContext(t *testing.T) {
 	require.NotNil(t, job)
 
 	got := &batchv1.Job{}
-	require.NoError(t, r.Client.Get(context.Background(), types.NamespacedName{Name: job.Name, Namespace: ns}, got))
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: job.Name, Namespace: ns}, got))
 	assertHardenedPodSecurityContext(t, &got.Spec.Template.Spec)
 }
 
@@ -135,7 +135,7 @@ func TestBackupCronJobHasHardenedSecurityContext(t *testing.T) {
 		},
 	}
 	r := newBackupTestReconciler(t, cluster, backup)
-	require.NoError(t, r.Client.Create(context.Background(), &corev1.ServiceAccount{
+	require.NoError(t, r.Create(context.Background(), &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{Name: backupServiceAccountName, Namespace: ns},
 	}))
 
@@ -144,7 +144,7 @@ func TestBackupCronJobHasHardenedSecurityContext(t *testing.T) {
 	require.NotNil(t, cron)
 
 	got := &batchv1.CronJob{}
-	require.NoError(t, r.Client.Get(context.Background(), types.NamespacedName{Name: cron.Name, Namespace: ns}, got))
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: cron.Name, Namespace: ns}, got))
 	assertHardenedPodSecurityContext(t, &got.Spec.JobTemplate.Spec.Template.Spec)
 }
 
@@ -167,14 +167,14 @@ func TestBackupJobPropagatesImagePullSecrets(t *testing.T) {
 		},
 	}
 	r := newBackupTestReconciler(t, cluster, backup)
-	require.NoError(t, r.Client.Create(context.Background(), &corev1.ServiceAccount{
+	require.NoError(t, r.Create(context.Background(), &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{Name: backupServiceAccountName, Namespace: ns},
 	}))
 
 	job, err := r.createBackupJob(context.Background(), backup, cluster)
 	require.NoError(t, err)
 	got := &batchv1.Job{}
-	require.NoError(t, r.Client.Get(context.Background(), types.NamespacedName{Name: job.Name, Namespace: ns}, got))
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: job.Name, Namespace: ns}, got))
 
 	want := []corev1.LocalObjectReference{
 		{Name: "ghcr-creds"},
@@ -201,14 +201,14 @@ func TestBackupCronJobPropagatesImagePullSecrets(t *testing.T) {
 		},
 	}
 	r := newBackupTestReconciler(t, cluster, backup)
-	require.NoError(t, r.Client.Create(context.Background(), &corev1.ServiceAccount{
+	require.NoError(t, r.Create(context.Background(), &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{Name: backupServiceAccountName, Namespace: ns},
 	}))
 
 	cron, err := r.createBackupCronJob(context.Background(), backup, cluster)
 	require.NoError(t, err)
 	got := &batchv1.CronJob{}
-	require.NoError(t, r.Client.Get(context.Background(), types.NamespacedName{Name: cron.Name, Namespace: ns}, got))
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: cron.Name, Namespace: ns}, got))
 
 	assert.Equal(t,
 		[]corev1.LocalObjectReference{{Name: "ghcr-creds"}},

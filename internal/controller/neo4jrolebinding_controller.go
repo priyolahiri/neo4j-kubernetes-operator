@@ -95,7 +95,8 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		if err := r.Update(ctx, rb); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		// The Update above triggers a watch event that re-queues this object.
+		return ctrl.Result{}, nil
 	}
 
 	// Validate

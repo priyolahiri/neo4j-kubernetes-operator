@@ -459,8 +459,8 @@ func (v *DatabaseValidator) validateSeedConfiguration(database *neo4jv1beta1.Neo
 		// Format: a positive-integer txId, or an RFC3339 timestamp.
 		switch {
 		case strings.HasPrefix(restoreUntil, "txId:"):
-			txId := strings.TrimPrefix(restoreUntil, "txId:")
-			if !isValidRestoreUntilTxID(txId) {
+			txID := strings.TrimPrefix(restoreUntil, "txId:")
+			if !isValidRestoreUntilTxID(txID) {
 				result.Errors = append(result.Errors, field.Invalid(
 					restoreUntilPath,
 					restoreUntil,

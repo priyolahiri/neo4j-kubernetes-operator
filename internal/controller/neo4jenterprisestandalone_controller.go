@@ -155,7 +155,8 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		// The Update above triggers a watch event that re-queues this object.
+		return ctrl.Result{}, nil
 	}
 
 	// Validate the standalone configuration.
@@ -279,7 +280,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 	} else if requeue {
 		logger.Info("Storage expansion completed, requeueing to recreate StatefulSet")
-		return ctrl.Result{Requeue: true}, nil
+		// The orphan-delete above triggers an Owns(&appsv1.StatefulSet{}) watch
+		// event that re-queues this standalone instance.
+		return ctrl.Result{}, nil
 	}
 
 	// Reconcile StatefulSet

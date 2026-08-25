@@ -39,10 +39,6 @@ func TestNeo4jEnterpriseClusterSpec_BasicValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cluster := &Neo4jEnterpriseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-cluster",
-					Namespace: "test-namespace",
-				},
 				Spec: tt.spec,
 			}
 
@@ -218,26 +214,7 @@ func TestNeo4jEnterpriseCluster_ResourceRequirements(t *testing.T) {
 }
 
 func TestNeo4jEnterpriseCluster_StatusConditions(t *testing.T) {
-	cluster := &Neo4jEnterpriseCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-cluster",
-			Namespace: "test-namespace",
-		},
-		Spec: Neo4jEnterpriseClusterSpec{
-			AcceptLicenseAgreement: "eval",
-			Image: ImageSpec{
-				Repo: "neo4j",
-				Tag:  "5.26.0-enterprise",
-			},
-			Topology: TopologyConfiguration{
-				Servers: 2,
-			},
-			Storage: StorageSpec{
-				Size:      "10Gi",
-				ClassName: "standard",
-			},
-		},
-	}
+	cluster := &Neo4jEnterpriseCluster{}
 
 	// Test initial status
 	assert.Equal(t, "", cluster.Status.Phase)

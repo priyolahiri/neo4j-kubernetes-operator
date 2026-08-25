@@ -30,7 +30,7 @@ is wrong by definition — fix the change, not the invariant.
 
 ## Project Overview
 
-Neo4j Enterprise Operator for Kubernetes — manages Neo4j Enterprise deployments (v5.26+) using the Kubebuilder framework. Built on controller-runtime, Go 1.26.
+Neo4j Enterprise Operator for Kubernetes — manages Neo4j Enterprise deployments (v5.26+) using the Kubebuilder framework. Built on controller-runtime, Go 1.27.
 
 **Supported Neo4j versions**: 5.26.x (last semver LTS) and 2025.x.x+ (CalVer). No 5.27+ semver — Neo4j switched to CalVer after 5.26.
 

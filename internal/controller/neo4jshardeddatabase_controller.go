@@ -503,7 +503,7 @@ func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Conte
 	var query strings.Builder
 
 	// Start with Cypher 25 prefix and CREATE DATABASE
-	query.WriteString(fmt.Sprintf("CYPHER 25 CREATE DATABASE `%s`", shardedDB.Spec.Name))
+	fmt.Fprintf(&query, "CYPHER 25 CREATE DATABASE `%s`", shardedDB.Spec.Name)
 
 	// Add IF NOT EXISTS if specified
 	if shardedDB.Spec.IfNotExistsEffective() {
@@ -512,12 +512,12 @@ func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Conte
 
 	// Add default Cypher language
 	if shardedDB.Spec.DefaultCypherLanguage != "" {
-		query.WriteString(fmt.Sprintf(" SET DEFAULT LANGUAGE CYPHER %s", shardedDB.Spec.DefaultCypherLanguage))
+		fmt.Fprintf(&query, " SET DEFAULT LANGUAGE CYPHER %s", shardedDB.Spec.DefaultCypherLanguage)
 	}
 
 	// Add graph shard topology
 	graphShard := shardedDB.Spec.PropertySharding.GraphShard
-	query.WriteString(fmt.Sprintf(" SET GRAPH SHARD { TOPOLOGY %d", graphShard.Primaries))
+	fmt.Fprintf(&query, " SET GRAPH SHARD { TOPOLOGY %d", graphShard.Primaries)
 	if graphShard.Primaries == 1 {
 		query.WriteString(" PRIMARY")
 	} else {
@@ -525,7 +525,7 @@ func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Conte
 	}
 
 	if graphShard.Secondaries > 0 {
-		query.WriteString(fmt.Sprintf(" %d", graphShard.Secondaries))
+		fmt.Fprintf(&query, " %d", graphShard.Secondaries)
 		if graphShard.Secondaries == 1 {
 			query.WriteString(" SECONDARY")
 		} else {
@@ -538,12 +538,12 @@ func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Conte
 	propertyShards := shardedDB.Spec.PropertySharding.PropertyShards
 	propertyTopology := shardedDB.Spec.PropertySharding.PropertyShardTopology
 
-	query.WriteString(fmt.Sprintf(" SET PROPERTY SHARDS { COUNT %d", propertyShards))
+	fmt.Fprintf(&query, " SET PROPERTY SHARDS { COUNT %d", propertyShards)
 
 	// Property shards use replicas, not primaries/secondaries
 	replicas := propertyTopology.Replicas
 	if replicas > 0 {
-		query.WriteString(fmt.Sprintf(" TOPOLOGY %d", replicas))
+		fmt.Fprintf(&query, " TOPOLOGY %d", replicas)
 		if replicas == 1 {
 			query.WriteString(" REPLICA")
 		} else {

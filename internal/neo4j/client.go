@@ -3021,10 +3021,10 @@ func (c *Client) validateCredentialKeys(secret *corev1.Secret, scheme string) er
 		}
 	case "azb":
 		if !hasKey("AZURE_STORAGE_ACCOUNT") {
-			return fmt.Errorf("Azure credentials secret must contain AZURE_STORAGE_ACCOUNT")
+			return fmt.Errorf("the Azure credentials secret must contain AZURE_STORAGE_ACCOUNT")
 		}
 		if !hasKey("AZURE_STORAGE_KEY") && !hasKey("AZURE_STORAGE_SAS_TOKEN") {
-			return fmt.Errorf("Azure credentials secret must contain either AZURE_STORAGE_KEY or AZURE_STORAGE_SAS_TOKEN")
+			return fmt.Errorf("the Azure credentials secret must contain either AZURE_STORAGE_KEY or AZURE_STORAGE_SAS_TOKEN")
 		}
 	case "http", "https", "ftp":
 		// HTTP/FTP credentials are optional

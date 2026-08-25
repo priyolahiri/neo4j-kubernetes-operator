@@ -18,12 +18,12 @@ work but is unsupported.
 | Tool | Version | Why / check | Install |
 |------|---------|-------------|---------|
 | Docker | running daemon | image builds + Kind nodes; `docker info` must succeed | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
-| Go | 1.26 | matches `go.mod` (`go 1.26.0`) and CI (`GO_VERSION: '1.26'`) | [golang.org/doc/install](https://golang.org/doc/install) |
+| Go | 1.27 | matches `go.mod` (`go 1.27.0`) and CI (`GO_VERSION: '1.27'`) | [golang.org/doc/install](https://golang.org/doc/install) |
 | Kind | 0.27.0+ | local Kubernetes; `kind version` | `brew install kind` |
 | kubectl | 1.36.x | talks to the Kind cluster | [kubernetes.io/docs/tasks/tools](https://kubernetes.io/docs/tasks/tools/install-kubectl/) |
 | make + git | any | drives every workflow | pre-installed on macOS/Linux |
 
-Exact CI-pinned versions live in `.tool-versions` (Go 1.26.1, Kind 0.27.0,
+Exact CI-pinned versions live in `.tool-versions` (Go 1.27.0, Kind 0.27.0,
 kubectl 1.36.0, kustomize 5.4.3, helm 3.16.0, golangci-lint 1.64.8, ginkgo
 2.29.0). If you use [mise](https://mise.jdx.dev/) or asdf, `mise install`
 pins all of them. Go toolchains (kustomize, controller-gen, envtest, ginkgo,
