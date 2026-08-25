@@ -321,7 +321,8 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		// The Update above triggers a watch event that re-queues this object.
+		return ctrl.Result{}, nil
 	}
 
 	// Check if this is an upgrade scenario. A mid-flight state machine
@@ -570,7 +571,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
 	} else if requeue {
 		logger.Info("Storage expansion completed, requeueing to recreate StatefulSet")
-		return ctrl.Result{Requeue: true}, nil
+		// The orphan-delete above triggers an Owns(&appsv1.StatefulSet{}) watch
+		// event that re-queues this cluster.
+		return ctrl.Result{}, nil
 	}
 
 	// Create single StatefulSet for all servers
@@ -1450,16 +1453,17 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 		// Record Prometheus phase metric on every phase transition
 		clusterM := metrics.NewClusterMetrics(cluster.Name, cluster.Namespace)
 		clusterM.RecordClusterPhase(phase)
-		if phase == "Ready" {
+		switch phase {
+		case "Ready":
 			clusterM.RecordClusterHealth(true)
 			var ready int32
 			if latest.Status.Replicas != nil {
 				ready = latest.Status.Replicas.Ready
 			}
 			clusterM.RecordClusterReplicas(cluster.Spec.Topology.Servers, ready)
-		} else if phase == "Failed" || phase == "Degraded" {
+		case "Failed", "Degraded":
 			clusterM.RecordClusterHealth(false)
-		} else if phase == "Forming" {
+		case "Forming":
 			clusterM.RecordClusterHealth(false)
 		}
 

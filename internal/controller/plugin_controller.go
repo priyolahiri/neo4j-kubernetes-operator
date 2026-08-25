@@ -232,7 +232,8 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		// The Update above triggers a watch event that re-queues this object.
+		return ctrl.Result{}, nil
 	}
 
 	// Structural validation gate. Hard errors (missing name/version, bad

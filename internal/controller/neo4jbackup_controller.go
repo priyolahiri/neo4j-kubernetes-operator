@@ -137,7 +137,8 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		// The Update above triggers a watch event that re-queues this object.
+		return ctrl.Result{}, nil
 	}
 
 	// Validate the backup spec before touching any cluster or creating
@@ -1036,7 +1037,7 @@ func (r *Neo4jBackupReconciler) waitForChainConcurrencyClear(ctx context.Context
 	}
 	for i := range jobs.Items {
 		if jobs.Items[i].Status.Active > 0 {
-			return fmt.Errorf("Job %q (chain root %q): %w",
+			return fmt.Errorf("job %q (chain root %q): %w",
 				jobs.Items[i].Name, chainRoot(backup), errChainBusy)
 		}
 	}
@@ -2363,7 +2364,7 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 // forever.
 func (r *Neo4jBackupReconciler) backupPodExists(ctx context.Context, jobName, namespace string) bool {
 	var podList corev1.PodList
-	if err := r.Client.List(ctx, &podList,
+	if err := r.List(ctx, &podList,
 		client.InNamespace(namespace),
 		client.MatchingLabels{"batch.kubernetes.io/job-name": jobName}); err != nil {
 		return false

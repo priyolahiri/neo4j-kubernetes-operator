@@ -169,9 +169,14 @@ func handshake(t *testing.T, srvCert tls.Certificate, clientCfg *tls.Config) err
 		_ = conn.Close()
 	}()
 
-	conn, err := tls.Dial("tcp", ln.Addr().String(), asDriverWouldUse(clientCfg, "localhost"))
+	dialer := &tls.Dialer{Config: asDriverWouldUse(clientCfg, "localhost")}
+	netConn, err := dialer.DialContext(context.Background(), "tcp", ln.Addr().String())
 	if err != nil {
 		return err
+	}
+	conn, ok := netConn.(*tls.Conn)
+	if !ok {
+		t.Fatalf("dialer returned %T, want *tls.Conn", netConn)
 	}
 	defer func() { _ = conn.Close() }()
 	return conn.HandshakeContext(context.Background())

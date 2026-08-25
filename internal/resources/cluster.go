@@ -3047,14 +3047,14 @@ func buildOIDCProviderConfig(name string, provider *neo4jv1beta1.Neo4jOIDCProvid
 // "group1"=role1,role2;"group2"=role3
 func serializeGroupToRoleMapping(mapping map[string]string) string {
 	// Sort keys for deterministic output
-	var groupDNs []string
+	var groupDNS []string
 	for dn := range mapping {
-		groupDNs = append(groupDNs, dn)
+		groupDNS = append(groupDNS, dn)
 	}
-	sort.Strings(groupDNs)
+	sort.Strings(groupDNS)
 
 	var parts []string
-	for _, dn := range groupDNs {
+	for _, dn := range groupDNS {
 		roles := mapping[dn]
 		parts = append(parts, fmt.Sprintf(`"%s"=%s`, dn, roles))
 	}

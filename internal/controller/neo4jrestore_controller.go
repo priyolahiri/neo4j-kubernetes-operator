@@ -224,7 +224,8 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		// The Update above triggers a watch event that re-queues this object.
+		return ctrl.Result{}, nil
 	}
 
 	// Get target cluster. Not-found is TRANSIENT (#218): `kubectl apply -f
@@ -1949,7 +1950,7 @@ func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restor
 
 	// Add point-in-time restore if specified
 	if restore.Spec.Source.PointInTime != nil {
-		t := restore.Spec.Source.PointInTime.Time.UTC()
+		t := restore.Spec.Source.PointInTime.UTC()
 		cmd += fmt.Sprintf(` --restore-until="%s"`, t.Format("2006-01-02 15:04:05"))
 	}
 
@@ -2085,7 +2086,7 @@ func (r *Neo4jRestoreReconciler) buildPITRRestoreCommand(ctx context.Context, re
 
 	// --restore-until is the Neo4j PITR mechanism
 	if restore.Spec.Source.PointInTime != nil {
-		t := restore.Spec.Source.PointInTime.Time.UTC()
+		t := restore.Spec.Source.PointInTime.UTC()
 		cmd += fmt.Sprintf(` --restore-until="%s"`, t.Format("2006-01-02 15:04:05"))
 	}
 

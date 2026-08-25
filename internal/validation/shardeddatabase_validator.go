@@ -405,8 +405,8 @@ func (v *ShardedDatabaseValidator) validateDatabaseName(name string) error {
 
 	// Check for valid characters (alphanumeric, underscore, hyphen)
 	for _, char := range name {
-		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-			(char >= '0' && char <= '9') || char == '_' || char == '-') {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') &&
+			(char < '0' || char > '9') && char != '_' && char != '-' {
 			return fmt.Errorf("database name contains invalid character '%c'", char)
 		}
 	}

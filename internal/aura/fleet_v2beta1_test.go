@@ -222,8 +222,8 @@ func TestFleetDeleteTreats404AsSuccess(t *testing.T) {
 func TestFleetCreatesRejectEmptyIdentifiers(t *testing.T) {
 	const org, proj = "org-1", "proj-1"
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/oauth/token":
+		switch r.URL.Path {
+		case "/oauth/token":
 			writeToken(w, "tok")
 		default:
 			// Enveloped, 2xx, but carrying nothing useful.

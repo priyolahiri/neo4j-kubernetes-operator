@@ -138,7 +138,7 @@ func EnsureSeedCredsProjected(
 				"       extraEnvFrom:\n"+
 				"       - secretRef:\n"+
 				"           name: %s\n"+
-				"  2. Or set annotation `%s: \"true\"` on the CR to let the operator add it automatically (triggers a rolling restart of server pods).",
+				"  2. Or set annotation `%s: \"true\"` on the CR to let the operator add it automatically (triggers a rolling restart of server pods)",
 			target.TargetKindLabel(), target.GetName(), credsSecretName,
 			target.TargetKindLabel(), credsSecretName, AutoInheritSeedCredsAnnotation,
 		)

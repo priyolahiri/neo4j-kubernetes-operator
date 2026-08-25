@@ -304,7 +304,7 @@ func (v *BackupValidator) validateStorageProvider(storage *neo4jv1beta1.StorageL
 	case "gcs":
 		// GCS specific validations
 		if storage.Bucket == "" {
-			return fmt.Errorf("Google Cloud Storage requires bucket name for Neo4j 5.26+")
+			return fmt.Errorf("bucket name is required for Google Cloud Storage on Neo4j 5.26+")
 		}
 		if effectiveCloud == nil || effectiveCloud.Provider != "gcp" {
 			return fmt.Errorf("GCS storage requires cloud provider 'gcp' (set spec.storage.cloud.provider)")
@@ -312,10 +312,10 @@ func (v *BackupValidator) validateStorageProvider(storage *neo4jv1beta1.StorageL
 	case "azure":
 		// Azure specific validations
 		if storage.Bucket == "" {
-			return fmt.Errorf("Azure Blob Storage requires container name for Neo4j 5.26+")
+			return fmt.Errorf("container name is required for Azure Blob Storage on Neo4j 5.26+")
 		}
 		if effectiveCloud == nil || effectiveCloud.Provider != "azure" {
-			return fmt.Errorf("Azure storage requires cloud provider 'azure' (set spec.storage.cloud.provider)")
+			return fmt.Errorf("cloud provider 'azure' is required for Azure storage (set spec.storage.cloud.provider)")
 		}
 	case "pvc":
 		// PVC specific validations.

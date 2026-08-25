@@ -724,7 +724,7 @@ func installCRDsIfMissing() {
 	}
 	if len(missing) > 0 {
 		By(fmt.Sprintf("Installing missing CRDs for integration tests: %v", missing))
-		cmd := exec.Command("kubectl", "apply", "--validate=false", "-f", "../../config/crd/bases/")
+		cmd := exec.CommandContext(context.Background(), "kubectl", "apply", "--validate=false", "-f", "../../config/crd/bases/")
 		// Ensure the kubectl command uses the same environment as the test
 		cmd.Env = os.Environ()
 		cmd.Stdout = GinkgoWriter

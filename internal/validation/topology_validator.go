@@ -166,11 +166,12 @@ func (v *TopologyValidator) ValidateWithWarnings(cluster *neo4jv1beta1.Neo4jEnte
 	}
 
 	// Warn about server mode constraints
-	if cluster.Spec.Topology.ServerModeConstraint == "PRIMARY" {
+	switch cluster.Spec.Topology.ServerModeConstraint {
+	case "PRIMARY":
 		result.Warnings = append(result.Warnings,
 			"All servers are constrained to PRIMARY mode. "+
 				"This prevents databases from using secondary replicas for read scaling.")
-	} else if cluster.Spec.Topology.ServerModeConstraint == "SECONDARY" {
+	case "SECONDARY":
 		result.Warnings = append(result.Warnings,
 			"All servers are constrained to SECONDARY mode. "+
 				"Ensure other servers in the cluster can host primary database instances.")

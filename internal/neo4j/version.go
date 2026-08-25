@@ -273,6 +273,7 @@ func (v *Version) SupportsSkipRecovery() bool {
 }
 
 // SupportsAdvancedBackupFlags checks if version supports flags like --parallel-download and --skip-recovery.
+//
 // Deprecated: use SupportsParallelDownload instead.
 func (v *Version) SupportsAdvancedBackupFlags() bool {
 	return v.SupportsParallelDownload()

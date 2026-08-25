@@ -181,7 +181,7 @@ func upgradeStepDeadlineExceeded(us *neo4jv1beta1.UpgradeStatus, budget time.Dur
 	if us == nil || us.StepStartTime == nil {
 		return false
 	}
-	return now.After(us.StepStartTime.Time.Add(budget))
+	return now.After(us.StepStartTime.Add(budget))
 }
 
 // startRollingUpgrade runs the pre-upgrade gates and, when they pass,

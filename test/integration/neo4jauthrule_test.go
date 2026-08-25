@@ -41,8 +41,8 @@ const (
 	// nginx terminates TLS on this port and proxies to mock-oauth2-server
 	// on localhost:8080 inside the same Pod. Neo4j 2026.04 hard-requires
 	// https:// for OIDC URIs, so we cannot expose the plain HTTP port.
-	oidcStubTLSPort        = 8443
-	oidcStubName_TLSSecret = "oidc-stub-tls"
+	oidcStubTLSPort       = 8443
+	oidcStubNameTLSSecret = "oidc-stub-tls"
 )
 
 // These tests verify Neo4jAuthRule end-to-end. ABAC requires Neo4j 2026.03+;
@@ -175,7 +175,7 @@ var _ = Describe("Neo4jAuthRule end-to-end", Label("extended"), func() {
 				TLS: &neo4jv1beta1.TLSSpec{Mode: "disabled"},
 				Env: []corev1.EnvVar{{Name: "NEO4J_ACCEPT_LICENSE_AGREEMENT", Value: "eval"}},
 				TrustedCASecrets: []neo4jv1beta1.TrustedCASecret{
-					{Name: oidcStubName_TLSSecret}, // Secret produced by the cert-manager Certificate
+					{Name: oidcStubNameTLSSecret}, // Secret produced by the cert-manager Certificate
 				},
 				Config: map[string]string{
 					"dbms.security.abac.authorization_providers":            "oidc-test-oidc",
@@ -485,9 +485,9 @@ func setupOIDCStub(ctx context.Context, ns string) string {
 	// contains tls.crt, tls.key, and ca.crt — the cluster references it
 	// directly in spec.trustedCASecrets to add the CA to Neo4j's truststore.
 	cert := &certmgrv1.Certificate{
-		ObjectMeta: metav1.ObjectMeta{Name: oidcStubName_TLSSecret, Namespace: ns},
+		ObjectMeta: metav1.ObjectMeta{Name: oidcStubNameTLSSecret, Namespace: ns},
 		Spec: certmgrv1.CertificateSpec{
-			SecretName: oidcStubName_TLSSecret,
+			SecretName: oidcStubNameTLSSecret,
 			Duration:   &metav1.Duration{Duration: 24 * time.Hour},
 			IssuerRef: cmmeta.IssuerReference{
 				Name: "ca-cluster-issuer",
@@ -588,7 +588,7 @@ http {
 					Name: "tls",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: oidcStubName_TLSSecret,
+							SecretName: oidcStubNameTLSSecret,
 						},
 					},
 				},
