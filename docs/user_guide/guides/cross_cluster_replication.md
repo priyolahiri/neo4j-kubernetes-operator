@@ -8,10 +8,10 @@ for disaster recovery or to serve reads closer to a second region.
     | | Backup mode (`source.mode: backup`) | Network mode (`source.mode: network`) |
     |---|---|---|
     | Data path | Differential backup chain in object storage | Direct stream from the upstream's cluster endpoints |
-    | Network path between K8s clusters | **None** — no load balancer, no cross-cluster TLS trust, no NetworkPolicy changes | **Required** — upstream runs a self-hosted proxy (`spec.crossClusterReplication`), CA secrets exchanged both directions |
+    | Network path between K8s clusters | **None** — no load balancer, no cross-cluster TLS trust, no NetworkPolicy changes | **Required between separate clusters** — upstream runs a self-hosted proxy (`spec.crossClusterReplication`), CA secrets exchanged both directions. Not needed at all if both clusters are on the *same* Kubernetes cluster ([§1c](#1c-same-kubernetes-cluster-network-mode-without-the-proxy)) |
     | Recovery point objective | Bounded by `pullInterval` (default 1m) | Near-continuous |
-    | Upstream setup | A `Neo4jBackup` with `mode: replication-source` | `spec.crossClusterReplication.enabled: true` on the upstream cluster |
-    | Cost/latency tradeoff | None | Intra-cluster secondary catch-up traffic also routes through the load balancer while enabled |
+    | Upstream setup | A `Neo4jBackup` with `mode: replication-source` | `spec.crossClusterReplication.enabled: true` on the upstream cluster (skip if same Kubernetes cluster) |
+    | Cost/latency tradeoff | None | Intra-cluster secondary catch-up traffic also routes through the load balancer while enabled (only applies when the proxy is in use) |
 
     Both are documented below. If you don't need near-continuous replication,
     prefer backup mode — it has no operational surface on the network side at
@@ -74,6 +74,9 @@ UPSTREAM cluster (K8s cluster A)                    DOWNSTREAM cluster (K8s clus
 
 RAFT (7000) and routing (7688) are never exposed by the proxy — only the
 tx-shipping port (6000) that CCDR catchup rides.
+
+If both clusters happen to live on the **same** Kubernetes cluster (different
+namespaces), skip the proxy entirely — see [§1c](#1c-same-kubernetes-cluster-network-mode-without-the-proxy).
 
 ---
 
@@ -186,6 +189,74 @@ the default.)
 
 Only one entry from this list is needed on the downstream side — see step 2
 below.
+
+---
+
+## 1c. Same Kubernetes cluster? Network mode without the proxy
+
+If the upstream and downstream are both `Neo4jEnterpriseCluster` deployments
+in different namespaces **on the same Kubernetes cluster**, skip §1b
+entirely — you don't need `spec.crossClusterReplication` or a proxy. Kubernetes
+DNS resolves across namespaces on one cluster by default, and Neo4j's
+`server.cluster.advertised_address` (the pod's own FQDN) is already reachable
+from any namespace on that cluster. This is a legitimate way to run a live
+replica for isolation within one cluster — a reporting replica in its own
+namespace, say — not only a way to try network mode before standing up a
+second cluster.
+
+Deploy the upstream `Neo4jEnterpriseCluster` normally; nothing extra to set.
+Every server pod's address follows a fixed pattern, so you can construct it
+directly instead of waiting on any status field:
+
+```
+<upstream-cluster>-server-<ordinal>.<upstream-cluster>-headless.<upstream-namespace>.svc.cluster.local:6000
+```
+
+```bash
+# e.g. for cluster "prod-cluster" in namespace "prod", server 0:
+kubectl get pod prod-cluster-server-0 -n prod
+# prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000
+```
+
+Then create the replica exactly as in the Network mode tab of step 2, using
+this address in place of a proxy endpoint:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jReplicaDatabase
+metadata:
+  name: foo-replica
+  namespace: dr
+spec:
+  clusterRef: dr-cluster
+  upstreamDatabase: foo
+  topology:
+    primaries: 3
+    secondaries: 0
+  source:
+    mode: network
+    addresses: ["prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000"]
+```
+
+Two things differ from the cross-cluster path:
+
+- **TLS trust.** `spec.tls.additionalClusterTrustCAs` is only needed if the
+  two clusters use *different* cert-manager issuers. If they share one
+  issuer — and therefore the same root CA — each already trusts the other's
+  certificate without it.
+- **NetworkPolicy.** If the upstream has `spec.networkPolicy.enabled: true`,
+  this will **not** work as-is. The generated policy restricts port 6000 to
+  pods carrying that cluster's own `neo4j.com/cluster` label — the
+  downstream's server pods don't carry it, even though they're on the same
+  physical Kubernetes cluster. Either leave NetworkPolicy off on the
+  upstream, or use the full `crossClusterReplication` proxy path (§1b)
+  instead, which is specifically built to admit traffic from outside that
+  peer set.
+
+Everything else — the read-only replica, the failover alias (§3), user/role
+replication (§4), and promotion (§5) — works exactly as documented below;
+none of it depends on whether the two clusters are on one Kubernetes cluster
+or two.
 
 ---
 
@@ -406,6 +477,7 @@ formation is never blocked waiting for the proxy.
 | Warning: "source.pullURI is ignored in network mode" (or `seedURI`/`credentialsSecretRef`) | those fields are backup-mode only; harmless but likely a copy-paste leftover — remove them |
 | Network mode never connects, upstream `status.crossClusterReplication.ready` is `false` | the upstream's proxy LoadBalancer Service has no hostname/IP yet — check `kubectl get svc <cluster>-ccdr -n <upstream-ns>` |
 | Network mode TLS handshake fails | `spec.tls.additionalClusterTrustCAs` missing on one or both clusters — it must be set on **both**, each trusting the other's CA |
+| Network mode connection times out, both clusters on one Kubernetes cluster | the upstream has `spec.networkPolicy.enabled: true` — its port-6000 rule only admits pods carrying its own `neo4j.com/cluster` label; either disable NetworkPolicy on the upstream or use the proxy path (§1b) instead |
 | `Pending`, cluster not Ready | downstream cluster still bootstrapping |
 | Lag grows without bound | upstream backup CR not running — check its schedule and `status` |
 | `Promoted` unexpectedly | someone promoted out of band; the CR is now inert by design |
