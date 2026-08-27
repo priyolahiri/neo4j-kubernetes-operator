@@ -62,11 +62,18 @@ func TestBuildCCDRProxyConfigMap_OneFrontendBackendPerOrdinal(t *testing.T) {
 
 	cfg := cm.Data["haproxy.cfg"]
 	assert.Contains(t, cfg, "mode tcp")
+	// Runtime DNS resolution (not HAProxy's default synchronous, resolve-
+	// once-at-startup behavior) — without this the proxy crash-loops
+	// whenever it starts before the backend pods'/headless Service's DNS
+	// records exist, a real startup race caught by the integration suite.
+	assert.Contains(t, cfg, "resolvers k8s")
+	assert.Contains(t, cfg, "parse-resolv-conf")
 	for i := int32(0); i < 3; i++ {
 		port := resources.CCDRProxyBasePort + i
 		assert.Contains(t, cfg, fmt.Sprintf("bind *:%d", port))
 		backendAddr := fmt.Sprintf("prod-server-%d.prod-headless.ns.svc.cluster.local:%d", i, resources.DiscoveryPort)
 		assert.Contains(t, cfg, backendAddr)
+		assert.Contains(t, cfg, fmt.Sprintf("server s%d %s check resolvers k8s init-addr none", i, backendAddr))
 	}
 	// Never terminate or inspect TLS — the proxy is pure L4 passthrough so
 	// end-to-end mutual TLS between the two clusters is unaffected.

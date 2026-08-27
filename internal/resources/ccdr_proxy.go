@@ -71,6 +71,18 @@ func ccdrProxyLabels(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) map[string]st
 // TLS, so it needs no certificate of its own and end-to-end mutual TLS
 // between the two Neo4j clusters is unaffected by its presence.
 //
+// Backend servers are resolved via a `resolvers` section (parse-resolv-conf
+// picks up the pod's own /etc/resolv.conf — the cluster DNS service
+// kubelet already populates) with `init-addr none`, deferring DNS
+// resolution to runtime with retries instead of HAProxy's default: resolve
+// once, synchronously, at process startup, and refuse to start at all if
+// any backend hostname doesn't resolve yet. Without this, the proxy
+// crash-loops whenever it starts before the StatefulSet's pods/headless
+// Service DNS records exist — a real startup race, not a hypothetical one
+// (caught by test/integration/ccdr_proxy_test.go). Runtime resolution also
+// means the proxy notices a backend pod's IP changing after a reschedule,
+// which static resolution never would.
+//
 // Returns nil when spec.crossClusterReplication is unset or disabled.
 func BuildCCDRProxyConfigMap(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.ConfigMap {
 	if !ccdrReplicationEnabled(cluster) {
@@ -80,6 +92,7 @@ func BuildCCDRProxyConfigMap(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *core
 	var cfg strings.Builder
 	cfg.WriteString("global\n    log stdout format raw local0\n    maxconn 4096\n\n")
 	cfg.WriteString("defaults\n    mode tcp\n    timeout connect 5s\n    timeout client 1h\n    timeout server 1h\n    log global\n\n")
+	cfg.WriteString("resolvers k8s\n    parse-resolv-conf\n    hold valid 10s\n\n")
 
 	servers := cluster.Spec.Topology.Servers
 	for i := int32(0); i < servers; i++ {
@@ -87,7 +100,7 @@ func BuildCCDRProxyConfigMap(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *core
 		backendAddr := fmt.Sprintf("%s-server-%d.%s-headless.%s.svc.cluster.local:%d",
 			cluster.Name, i, cluster.Name, cluster.Namespace, DiscoveryPort)
 		fmt.Fprintf(&cfg, "frontend f%d\n    bind *:%d\n    default_backend b%d\n\n", i, port, i)
-		fmt.Fprintf(&cfg, "backend b%d\n    server s%d %s\n\n", i, i, backendAddr)
+		fmt.Fprintf(&cfg, "backend b%d\n    server s%d %s check resolvers k8s init-addr none\n\n", i, i, backendAddr)
 	}
 
 	return &corev1.ConfigMap{
