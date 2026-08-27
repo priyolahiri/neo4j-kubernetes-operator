@@ -600,6 +600,36 @@ only ever reach an upstream on this same physical cluster — never a
 genuinely separate one. For a separate Kubernetes cluster, `source.addresses`
 plus the proxy (this section) remains the only path.
 
+**Addendum 2 — the two remaining same-cluster friction points.** Two more
+pieces closed after the above landed, both raised directly against the
+same-cluster path:
+
+- **NetworkPolicy vs. same-cluster network mode.** The base peer-restriction
+  rule (§6, item 5) admits only pods carrying *this cluster's own*
+  `neo4j.com/cluster` label — a same-cluster downstream replica carries a
+  *different* cluster's label, so it was blocked whenever the upstream had
+  `spec.networkPolicy.enabled: true`, with no fix short of disabling
+  NetworkPolicy entirely or using the full proxy. `spec.networkPolicy.
+  allowReplicasFrom` adds an explicit, opt-in allow-list: each entry is a
+  `{name, namespace}` pair admitted on port 6000 only (never RAFT/routing),
+  scoped by both a `podSelector` and a `namespaceSelector` (Kubernetes'
+  well-known `kubernetes.io/metadata.name` label — the first
+  `namespaceSelector` use in this codebase). Nothing is admitted unless
+  listed. Purely declarative — no controller change, no RBAC, no live
+  lookup, since it only reads fields already on the CR being reconciled.
+- **The same manual-copy friction backup mode always had.** Setting up a
+  same-cluster backup-mode replica still meant `kubectl get neo4jbackup ...
+  -o jsonpath='{.status.replicationPullURI}'` and pasting the string by
+  hand — unrelated to NetworkPolicy (backup mode has no network coupling at
+  all), but the same ergonomic gap `upstreamClusterRef` had just closed for
+  network mode. `spec.source.upstreamBackupRef` on `Neo4jReplicaDatabase`
+  mirrors it exactly: resolves `pullURI` from an upstream `Neo4jBackup`'s
+  `status.replicationPullURI`, same same-Kubernetes-cluster-only constraint
+  and reasoning as `upstreamClusterRef` (a live `Get` against this cluster's
+  own API server), mutually exclusive with `pullURI`. `SeedURI` and
+  `CredentialsSecretRef` stay independent of it — set either alongside it if
+  needed.
+
 ---
 
 ## 7. Testing

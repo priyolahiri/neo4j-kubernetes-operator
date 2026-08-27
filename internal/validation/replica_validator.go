@@ -111,13 +111,29 @@ func (v *ReplicaValidator) Validate(_ context.Context, replica *neo4jv1beta1.Neo
 }
 
 func (v *ReplicaValidator) validateBackupSource(src neo4jv1beta1.ReplicaSourceSpec, srcPath *field.Path, res *ValidationResult) {
-	if src.PullURI == "" {
+	hasPullURI := src.PullURI != ""
+	hasBackupRef := src.UpstreamBackupRef != nil
+
+	switch {
+	case hasPullURI && hasBackupRef:
+		res.Errors = append(res.Errors, field.Invalid(srcPath.Child("upstreamBackupRef"), src.UpstreamBackupRef,
+			"source.pullURI and source.upstreamBackupRef are mutually exclusive; set exactly one"))
+	case !hasPullURI && !hasBackupRef:
 		res.Errors = append(res.Errors, field.Required(srcPath.Child("pullURI"),
-			"backup-based replication requires the object-storage directory holding the upstream's "+
-				"differential chain; read it from the upstream Neo4jBackup CR's status.replicationPullURI"))
-	} else if !hasSupportedScheme(src.PullURI) {
-		res.Errors = append(res.Errors, field.Invalid(srcPath.Child("pullURI"), src.PullURI,
-			"must use one of the supported schemes: "+strings.Join(replicaSeedSchemes, ", ")))
+			"backup-based replication requires either source.pullURI (the object-storage directory holding the "+
+				"upstream's differential chain — read it from the upstream Neo4jBackup CR's "+
+				"status.replicationPullURI) or source.upstreamBackupRef (only when the upstream Neo4jBackup is on "+
+				"this same Kubernetes cluster)"))
+	case hasBackupRef:
+		if src.UpstreamBackupRef.Name == "" {
+			res.Errors = append(res.Errors, field.Required(srcPath.Child("upstreamBackupRef").Child("name"),
+				"required when source.upstreamBackupRef is set"))
+		}
+	default: // hasPullURI only
+		if !hasSupportedScheme(src.PullURI) {
+			res.Errors = append(res.Errors, field.Invalid(srcPath.Child("pullURI"), src.PullURI,
+				"must use one of the supported schemes: "+strings.Join(replicaSeedSchemes, ", ")))
+		}
 	}
 
 	if src.SeedURI != "" && !hasSupportedScheme(src.SeedURI) {

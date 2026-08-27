@@ -37,11 +37,12 @@ See the [Cross-Cluster Replication guide](../user_guide/guides/cross_cluster_rep
 | Field | Type | Description |
 |---|---|---|
 | `mode` | `string` | `backup` (default) or `network`. |
-| `pullURI` | `string` | **Backup mode.** Object-storage directory holding the upstream's differential chain. Read it from the upstream `Neo4jBackup` CR's `status.replicationPullURI`. Ignored (warned) in network mode. |
-| `seedURI` | `string` | **Backup mode.** Full backup artifact the replica is seeded from. Must belong to the same chain as `pullURI`. Ignored (warned) in network mode. |
+| `pullURI` | `string` | **Backup mode.** Object-storage directory holding the upstream's differential chain. Read it from the upstream `Neo4jBackup` CR's `status.replicationPullURI`. Mutually exclusive with `upstreamBackupRef` — set exactly one. Ignored (warned) in network mode. |
+| `upstreamBackupRef` | [`object`](#upstreambackupref) | **Backup mode.** Resolves `pullURI` automatically from an upstream `Neo4jBackup` CR's `status.replicationPullURI`, instead of typing it by hand. Only works when the upstream `Neo4jBackup` is on this **same Kubernetes cluster** — see [`UpstreamBackupRef`](#upstreambackupref). Mutually exclusive with `pullURI`. |
+| `seedURI` | `string` | **Backup mode.** Full backup artifact the replica is seeded from. Must belong to the same chain as `pullURI`. Independent of `upstreamBackupRef` — set either alongside it. Ignored (warned) in network mode. |
 | `addresses` | `[]string` | **Network mode.** Upstream cluster endpoints (`host:port`, the upstream's port 6000 — or, when the upstream has `spec.crossClusterReplication` enabled, its proxy's external port). One reachable address is sufficient: the upstream hands back the addresses the downstream actually uses. Mutually exclusive with `upstreamClusterRef` — set exactly one. Ignored in backup mode. |
 | `upstreamClusterRef` | [`object`](#upstreamclusterref) | **Network mode.** Resolves `addresses` automatically from an upstream `Neo4jEnterpriseCluster`'s `status.internalAddresses`, instead of listing them by hand. Only works when the upstream is on this **same Kubernetes cluster** — see [`UpstreamClusterRef`](#upstreamclusterref). Mutually exclusive with `addresses`. |
-| `credentialsSecretRef` | `string` | **Backup mode.** Secret holding object-storage credentials, when workload identity is unavailable. Ignored (warned) in network mode. |
+| `credentialsSecretRef` | `string` | **Backup mode.** Secret holding object-storage credentials, when workload identity is unavailable. Independent of `upstreamBackupRef`. Ignored (warned) in network mode. |
 
 ### `upstreamClusterRef`
 
@@ -51,6 +52,15 @@ See the [Cross-Cluster Replication guide](../user_guide/guides/cross_cluster_rep
 | `namespace` | `string` | Namespace of the upstream `Neo4jEnterpriseCluster`. Defaults to this `Neo4jReplicaDatabase`'s own namespace when omitted. |
 
 Resolution is a live `Get` against this operator's own Kubernetes API server — it can **only** reach an upstream on this same Kubernetes cluster, never a genuinely separate physical cluster. For an upstream on a different Kubernetes cluster, use `addresses` instead, populated from the upstream's `spec.crossClusterReplication` proxy (see the note above). If the referenced cluster doesn't exist yet, or exists but hasn't published `status.internalAddresses` yet, the replica sits in phase `Pending` and retries — this is treated as an ordinary transient state, not a spec error.
+
+### `upstreamBackupRef`
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | **Required.** Name of the upstream `Neo4jBackup` CR. |
+| `namespace` | `string` | Namespace of the upstream `Neo4jBackup`. Defaults to this `Neo4jReplicaDatabase`'s own namespace when omitted. |
+
+Same same-Kubernetes-cluster-only constraint as `upstreamClusterRef`, for the same reason: resolution is a live `Get` against this operator's own API server. For a `Neo4jBackup` on a different Kubernetes cluster, use `pullURI` instead — paste it from that CR's own `status.replicationPullURI` by hand. If the referenced `Neo4jBackup` doesn't exist yet, or exists but hasn't run its first backup yet (empty `status.replicationPullURI`), the replica sits in phase `Pending` and retries.
 
 ## Status
 
@@ -95,6 +105,29 @@ spec:
     mode: backup
     pullURI: s3://prod-backups/foo/foo-chain/
     seedURI: s3://prod-backups/foo/foo-chain/foo-2026-08-01T02-00-00.backup
+    credentialsSecretRef: s3-creds
+```
+
+Backup mode, same Kubernetes cluster — `upstreamBackupRef` resolves `pullURI` automatically from the upstream `Neo4jBackup`'s `status.replicationPullURI`; no `kubectl get ... -o jsonpath=...` copy-paste needed:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jReplicaDatabase
+metadata:
+  name: foo-replica
+  namespace: dr
+spec:
+  clusterRef: dr-cluster
+  upstreamDatabase: foo
+  topology:
+    primaries: 3
+    secondaries: 0
+  pullInterval: 1m
+  source:
+    mode: backup
+    upstreamBackupRef:
+      name: foo-chain
+      namespace: prod
     credentialsSecretRef: s3-creds
 ```
 

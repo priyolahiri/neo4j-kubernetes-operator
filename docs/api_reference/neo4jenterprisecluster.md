@@ -677,6 +677,18 @@ in issue #128.
 | Field | Type | Description |
 |---|---|---|
 | `enabled` | `bool` | When `true`, the operator emits a NetworkPolicy named `<cluster>-server-netpol` (cluster) or `<standalone>-standalone-netpol` (standalone). Public client ports (7474/7473/7687) remain open to any pod; intra-cluster ports (6000/7000/7688) are restricted to peer servers; backup port (6362) is restricted to operator-managed backup pods. Default `false`. |
+| `allowReplicasFrom` | `[]`[`NetworkPolicyPeerCluster`](#networkpolicypeercluster) | Opt-in: additively admits named downstream `Neo4jEnterpriseCluster`(s) on port 6000 only (never RAFT/routing), for a same-Kubernetes-cluster network-mode CCDR replica that would otherwise be blocked by the peer-restriction rule (which only admits this cluster's own `neo4j.com/cluster` label). Nothing is admitted unless listed here. Irrelevant to backup-mode replication, which has no network coupling to restrict. |
+
+### NetworkPolicyPeerCluster
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | **Required.** Name of the downstream `Neo4jEnterpriseCluster` to admit. |
+| `namespace` | `string` | Namespace of the downstream `Neo4jEnterpriseCluster`. Defaults to this cluster's own namespace when omitted. |
+
+Scoped by both a `podSelector` (`neo4j.com/cluster: <name>`) and a `namespaceSelector`
+(Kubernetes' well-known `kubernetes.io/metadata.name` label) — a `podSelector` alone would
+match a same-named cluster in *any* namespace.
 
 **CNI prerequisite**: NetworkPolicy is enforced only by Calico, Cilium,
 Antrea, Weave, and most managed offerings. Flannel does NOT enforce

@@ -136,11 +136,26 @@ type ReplicaSourceSpec struct {
 	// This must be the directory the upstream Neo4jBackup CR writes into —
 	// read it from that CR's `status.replicationPullURI`. Pointing at the
 	// bucket root, or at a directory a second backup CR also writes to, breaks
-	// the chain.
+	// the chain. Mutually exclusive with UpstreamBackupRef — set exactly one
+	// for backup mode.
 	//
 	// Example: "s3://prod-backups/foo-chain/"
 	// +optional
 	PullURI string `json:"pullURI,omitempty"`
+
+	// UpstreamBackupRef resolves PullURI automatically from an upstream
+	// Neo4jBackup CR's status.replicationPullURI, instead of typing the URI
+	// by hand. Mutually exclusive with PullURI (SeedURI and
+	// CredentialsSecretRef remain independent — set either alongside this
+	// if needed).
+	//
+	// Only usable when the upstream Neo4jBackup is on this SAME Kubernetes
+	// cluster: resolution is a live Get against this cluster's own API
+	// server, which cannot reach a genuinely separate physical cluster. For
+	// a backup CR on a different Kubernetes cluster, use PullURI instead —
+	// paste it from that CR's own status.replicationPullURI by hand.
+	// +optional
+	UpstreamBackupRef *UpstreamBackupRef `json:"upstreamBackupRef,omitempty"`
 
 	// SeedURI is the full backup artifact the replica is initially seeded
 	// from, before it starts applying differentials. Must belong to the same
@@ -193,6 +208,18 @@ type UpstreamClusterRef struct {
 	Name string `json:"name"`
 
 	// Namespace of the upstream Neo4jEnterpriseCluster. Defaults to this
+	// Neo4jReplicaDatabase's own namespace when omitted.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// UpstreamBackupRef references an upstream Neo4jBackup CR to resolve
+// PullURI from automatically.
+type UpstreamBackupRef struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace of the upstream Neo4jBackup. Defaults to this
 	// Neo4jReplicaDatabase's own namespace when omitted.
 	// +optional
 	Namespace string `json:"namespace,omitempty"`

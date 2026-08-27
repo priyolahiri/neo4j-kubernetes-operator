@@ -197,6 +197,9 @@ func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1
 	// Aura Fleet Management validation
 	allErrs = append(allErrs, validateAuraFleetManagement(cluster.Spec.AuraFleetManagement, field.NewPath("spec", "auraFleetManagement"))...)
 
+	// NetworkPolicy validation (allowReplicasFrom entry shape)
+	allErrs = append(allErrs, validateNetworkPolicy(cluster.Spec.NetworkPolicy, field.NewPath("spec", "networkPolicy"))...)
+
 	// Trusted CA Secrets + extra volume mounts (operator-managed path collision check)
 	allErrs = append(allErrs, ValidateTrustedCASecrets(cluster.Spec.TrustedCASecrets, field.NewPath("spec", "trustedCASecrets"))...)
 	allErrs = append(allErrs, ValidateExtraVolumes(cluster.Spec.ExtraVolumes, field.NewPath("spec", "extraVolumes"))...)

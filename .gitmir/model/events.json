@@ -1006,5 +1006,17 @@
     "name": "UpstreamClusterNotReady",
     "description": "A Neo4jReplicaDatabase's source.upstreamClusterRef resolves to a real Neo4jEnterpriseCluster, but it has not yet published status.internalAddresses; the replica sits Pending and retries.",
     "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-upstream-backup-not-found",
+    "name": "UpstreamBackupNotFound",
+    "description": "A Neo4jReplicaDatabase's source.upstreamBackupRef names a Neo4jBackup CR that does not exist (yet) in the given namespace; the replica sits Pending and retries.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-upstream-backup-not-ready",
+    "name": "UpstreamBackupNotReady",
+    "description": "A Neo4jReplicaDatabase's source.upstreamBackupRef resolves to a real Neo4jBackup CR, but it has not yet run a backup (status.replicationPullURI is empty); the replica sits Pending and retries.",
+    "moduleId": "mod-database"
   }
 ]

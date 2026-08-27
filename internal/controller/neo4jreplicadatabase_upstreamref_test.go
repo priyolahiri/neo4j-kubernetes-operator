@@ -128,3 +128,97 @@ func TestResolveUpstreamClusterAddresses_DefaultsNamespace(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, upstream.Status.InternalAddresses, addrs)
 }
+
+func newTestReplicaDatabaseBackup(name, ns string) *neo4jv1beta1.Neo4jReplicaDatabase {
+	return &neo4jv1beta1.Neo4jReplicaDatabase{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+		Spec: neo4jv1beta1.Neo4jReplicaDatabaseSpec{
+			ClusterRef:       "dr-cluster",
+			UpstreamDatabase: "foo",
+			Source: neo4jv1beta1.ReplicaSourceSpec{
+				Mode:              neo4jv1beta1.ReplicaSourceModeBackup,
+				UpstreamBackupRef: &neo4jv1beta1.UpstreamBackupRef{Name: "foo-chain", Namespace: "prod"},
+			},
+		},
+	}
+}
+
+// TestResolveUpstreamBackupPullURI_Ready confirms a same-Kubernetes-cluster
+// upstream Neo4jBackup with status.replicationPullURI already populated
+// resolves cleanly.
+func TestResolveUpstreamBackupPullURI_Ready(t *testing.T) {
+	replica := newTestReplicaDatabaseBackup("foo-replica", "dr")
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo-chain", Namespace: "prod"},
+		Status:     neo4jv1beta1.Neo4jBackupStatus{ReplicationPullURI: "s3://prod-backups/foo/foo-chain/"},
+	}
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).
+		WithObjects(replica, backup).
+		WithStatusSubresource(&neo4jv1beta1.Neo4jReplicaDatabase{}, &neo4jv1beta1.Neo4jBackup{}).
+		Build()
+	r := &Neo4jReplicaDatabaseReconciler{Client: c, Recorder: record.NewFakeRecorder(50)}
+
+	pullURI, ok, err := r.resolveUpstreamBackupPullURI(context.Background(), replica, replica.Spec.Source.UpstreamBackupRef)
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, backup.Status.ReplicationPullURI, pullURI)
+}
+
+// TestResolveUpstreamBackupPullURI_NotFound confirms a missing upstream
+// Neo4jBackup is an ordinary Pending/requeue condition, not a terminal
+// error — it may simply not have been created yet.
+func TestResolveUpstreamBackupPullURI_NotFound(t *testing.T) {
+	replica := newTestReplicaDatabaseBackup("foo-replica", "dr")
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).
+		WithObjects(replica).
+		WithStatusSubresource(&neo4jv1beta1.Neo4jReplicaDatabase{}).
+		Build()
+	r := &Neo4jReplicaDatabaseReconciler{Client: c, Recorder: record.NewFakeRecorder(50)}
+
+	pullURI, ok, err := r.resolveUpstreamBackupPullURI(context.Background(), replica, replica.Spec.Source.UpstreamBackupRef)
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Empty(t, pullURI)
+}
+
+// TestResolveUpstreamBackupPullURI_NotReady confirms an upstream Neo4jBackup
+// that exists but hasn't run its first backup yet (empty
+// replicationPullURI) is Pending/requeue, not a failure.
+func TestResolveUpstreamBackupPullURI_NotReady(t *testing.T) {
+	replica := newTestReplicaDatabaseBackup("foo-replica", "dr")
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo-chain", Namespace: "prod"},
+	}
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).
+		WithObjects(replica, backup).
+		WithStatusSubresource(&neo4jv1beta1.Neo4jReplicaDatabase{}, &neo4jv1beta1.Neo4jBackup{}).
+		Build()
+	r := &Neo4jReplicaDatabaseReconciler{Client: c, Recorder: record.NewFakeRecorder(50)}
+
+	pullURI, ok, err := r.resolveUpstreamBackupPullURI(context.Background(), replica, replica.Spec.Source.UpstreamBackupRef)
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Empty(t, pullURI)
+}
+
+// TestResolveUpstreamBackupPullURI_DefaultsNamespace confirms an omitted
+// UpstreamBackupRef.Namespace defaults to the Neo4jReplicaDatabase's own
+// namespace.
+func TestResolveUpstreamBackupPullURI_DefaultsNamespace(t *testing.T) {
+	replica := newTestReplicaDatabaseBackup("foo-replica", "dr")
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "foo-chain", Namespace: "dr"}, // same namespace as the replica
+		Status:     neo4jv1beta1.Neo4jBackupStatus{ReplicationPullURI: "s3://dr-backups/foo/foo-chain/"},
+	}
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).
+		WithObjects(replica, backup).
+		WithStatusSubresource(&neo4jv1beta1.Neo4jReplicaDatabase{}, &neo4jv1beta1.Neo4jBackup{}).
+		Build()
+	r := &Neo4jReplicaDatabaseReconciler{Client: c, Recorder: record.NewFakeRecorder(50)}
+
+	ref := &neo4jv1beta1.UpstreamBackupRef{Name: "foo-chain"} // Namespace omitted
+	pullURI, ok, err := r.resolveUpstreamBackupPullURI(context.Background(), replica, ref)
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, backup.Status.ReplicationPullURI, pullURI)
+}

@@ -1714,6 +1714,29 @@ type NetworkPolicySpec struct {
 	// unauthorized user can make a copy of the database."
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
+
+	// AllowReplicasFrom additively admits named downstream
+	// Neo4jEnterpriseClusters' server pods on port 6000 (tx-shipping) only —
+	// never RAFT or routing — for same-Kubernetes-cluster network-mode CCDR
+	// replicas that would otherwise be blocked by the peer-restriction rule
+	// above (which only admits this cluster's own neo4j.com/cluster label).
+	// Opt-in: nothing is admitted unless explicitly listed here. Irrelevant
+	// to backup-mode replication, which has no network coupling to
+	// restrict.
+	// +optional
+	AllowReplicasFrom []NetworkPolicyPeerCluster `json:"allowReplicasFrom,omitempty"`
+}
+
+// NetworkPolicyPeerCluster names a downstream Neo4jEnterpriseCluster to
+// admit as a NetworkPolicy peer on port 6000.
+type NetworkPolicyPeerCluster struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace of the downstream Neo4jEnterpriseCluster. Defaults to this
+	// cluster's own namespace when omitted.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // CrossClusterReplicationSpec configures network-mode cross-cluster database

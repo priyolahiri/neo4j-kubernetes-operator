@@ -177,6 +177,53 @@ func TestReplicaValidator_PullURIRequired(t *testing.T) {
 	}
 }
 
+func TestReplicaValidator_ValidUpstreamBackupRef(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:              neo4jv1beta1.ReplicaSourceModeBackup,
+			UpstreamBackupRef: &neo4jv1beta1.UpstreamBackupRef{Name: "foo-chain"},
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) != 0 {
+		t.Fatalf("expected no errors, got %v", res.Errors)
+	}
+}
+
+// TestReplicaValidator_PullURIAndUpstreamBackupRefMutuallyExclusive pins
+// that exactly one of source.pullURI / source.upstreamBackupRef is required
+// in backup mode — mirrors the network-mode addresses/upstreamClusterRef
+// mutual-exclusivity rule.
+func TestReplicaValidator_PullURIAndUpstreamBackupRefMutuallyExclusive(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:              neo4jv1beta1.ReplicaSourceModeBackup,
+			PullURI:           "s3://backups/foo-chain/",
+			UpstreamBackupRef: &neo4jv1beta1.UpstreamBackupRef{Name: "foo-chain"},
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected setting both pullURI and upstreamBackupRef to be rejected")
+	}
+	if !strings.Contains(res.Errors.ToAggregate().Error(), "mutually exclusive") {
+		t.Errorf("expected a mutual-exclusivity error, got: %v", res.Errors)
+	}
+}
+
+func TestReplicaValidator_UpstreamBackupRefRequiresName(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:              neo4jv1beta1.ReplicaSourceModeBackup,
+			UpstreamBackupRef: &neo4jv1beta1.UpstreamBackupRef{},
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected an empty upstreamBackupRef.name to be rejected")
+	}
+}
+
 func TestReplicaValidator_UnsupportedScheme(t *testing.T) {
 	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
 		r.Spec.Source.PullURI = "wasb://bucket/chain/"

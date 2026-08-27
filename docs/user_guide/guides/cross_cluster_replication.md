@@ -121,6 +121,18 @@ kubectl get neo4jbackup foo-chain -n prod -o jsonpath='{.status.replicationPullU
 # s3://prod-backups/foo/foo-chain/
 ```
 
+!!! note "Same Kubernetes cluster? Skip the copy-paste"
+
+    If the upstream `Neo4jBackup` and the downstream `Neo4jReplicaDatabase`
+    are both on this same Kubernetes cluster (different namespaces is fine),
+    you can skip the `kubectl get ... -o jsonpath=...` step above entirely.
+    In step 2, set `source.upstreamBackupRef: {name: foo-chain, namespace:
+    prod}` instead of `source.pullURI` — the controller resolves it
+    automatically. Same constraint as `upstreamClusterRef` in §1c: resolution
+    is a live `Get` against this cluster's own API server, so it only works
+    same-cluster. For a backup CR on a different Kubernetes cluster, `pullURI`
+    (typed by hand, as below) remains the only option.
+
 !!! danger "The operator cannot protect the chain from your bucket lifecycle rules"
 
     For cloud storage the operator **never prunes** — retention is delegated to
@@ -266,10 +278,22 @@ Two things differ from the cross-cluster path, for either form above:
   this will **not** work as-is. The generated policy restricts port 6000 to
   pods carrying that cluster's own `neo4j.com/cluster` label — the
   downstream's server pods don't carry it, even though they're on the same
-  physical Kubernetes cluster. Either leave NetworkPolicy off on the
-  upstream, or use the full `crossClusterReplication` proxy path (§1b)
-  instead, which is specifically built to admit traffic from outside that
-  peer set.
+  physical Kubernetes cluster. Fix it with an explicit, opt-in allow-list
+  entry rather than disabling NetworkPolicy entirely:
+
+  ```yaml
+  spec:
+    networkPolicy:
+      enabled: true
+      allowReplicasFrom:
+        - name: dr-cluster
+          namespace: dr
+  ```
+
+  This admits only the named downstream cluster, on port 6000 only — never
+  RAFT or routing. Nothing is admitted unless listed here. (Leaving
+  NetworkPolicy off on the upstream, or using the full
+  `crossClusterReplication` proxy path (§1b), both still work too.)
 
 Everything else — the read-only replica, the failover alias (§3), user/role
 replication (§4), and promotion (§5) — works exactly as documented below;
@@ -299,6 +323,17 @@ or two.
         mode: backup
         pullURI: s3://prod-backups/foo/foo-chain/        # from step 1
         seedURI: s3://prod-backups/foo/foo-chain/foo-2026-08-01T02-00-00.backup
+        credentialsSecretRef: s3-creds
+    ```
+
+    Same Kubernetes cluster as the upstream `Neo4jBackup`? Use
+    `upstreamBackupRef` instead of `pullURI` and skip the `kubectl get`
+    step from step 1:
+
+    ```yaml
+      source:
+        mode: backup
+        upstreamBackupRef: { name: foo-chain, namespace: prod }
         credentialsSecretRef: s3-creds
     ```
 
@@ -495,9 +530,11 @@ formation is never blocked waiting for the proxy.
 | Warning: "source.pullURI is ignored in network mode" (or `seedURI`/`credentialsSecretRef`) | those fields are backup-mode only; harmless but likely a copy-paste leftover — remove them |
 | Network mode never connects, upstream `status.crossClusterReplication.ready` is `false` | the upstream's proxy LoadBalancer Service has no hostname/IP yet — check `kubectl get svc <cluster>-ccdr -n <upstream-ns>` |
 | Network mode TLS handshake fails | `spec.tls.additionalClusterTrustCAs` missing on one or both clusters — it must be set on **both**, each trusting the other's CA |
-| Network mode connection times out, both clusters on one Kubernetes cluster | the upstream has `spec.networkPolicy.enabled: true` — its port-6000 rule only admits pods carrying its own `neo4j.com/cluster` label; either disable NetworkPolicy on the upstream or use the proxy path (§1b) instead |
+| Network mode connection times out, both clusters on one Kubernetes cluster | the upstream has `spec.networkPolicy.enabled: true` — its port-6000 rule only admits pods carrying its own `neo4j.com/cluster` label; add the downstream to `spec.networkPolicy.allowReplicasFrom` (§1c), or disable NetworkPolicy on the upstream, or use the proxy path (§1b) |
 | `Pending`, event `UpstreamClusterNotFound` | `source.upstreamClusterRef` names a `Neo4jEnterpriseCluster` that doesn't exist (yet) in the given namespace — check the name/namespace, or wait if it's still being created |
 | `Pending`, event `UpstreamClusterNotReady` | the referenced upstream exists but hasn't published `status.internalAddresses` yet — normal briefly after the upstream is first created; check `kubectl get neo4jenterprisecluster <name> -n <ns> -o jsonpath='{.status.internalAddresses}'` if it persists |
+| `Pending`, event `UpstreamBackupNotFound` | `source.upstreamBackupRef` names a `Neo4jBackup` that doesn't exist (yet) in the given namespace — check the name/namespace |
+| `Pending`, event `UpstreamBackupNotReady` | the referenced `Neo4jBackup` exists but hasn't run its first backup yet (empty `status.replicationPullURI`) — check `kubectl get neo4jbackup <name> -n <ns>` for its own phase/schedule |
 | `Pending`, cluster not Ready | downstream cluster still bootstrapping |
 | Lag grows without bound | upstream backup CR not running — check its schedule and `status` |
 | `Promoted` unexpectedly | someone promoted out of band; the CR is now inert by design |

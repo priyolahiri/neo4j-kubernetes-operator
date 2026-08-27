@@ -391,5 +391,41 @@
       }
     ],
     "audience": "staff"
+  },
+  {
+    "id": "proc-same-cluster-backup-ccdr-setup",
+    "name": "Same-Cluster Backup-Mode CCDR Setup",
+    "description": "An operator deploys the upstream Neo4jBackup (mode: replication-source) and downstream Neo4jReplicaDatabase on the same Kubernetes cluster and sets source.upstreamBackupRef naming the upstream backup CR; the controller resolves pullURI from its status.replicationPullURI automatically, skipping the manual kubectl-get-and-paste step.",
+    "triggerKind": "api",
+    "triggerRefId": "ent-neo4jreplicadatabase",
+    "moduleId": "mod-database",
+    "steps": [
+      {
+        "refKind": "entity",
+        "refId": "ent-neo4jbackup",
+        "note": "Upstream Neo4jBackup CR with mode: replication-source produces the differential chain and publishes status.replicationPullURI"
+      },
+      {
+        "refKind": "entity",
+        "refId": "ent-neo4jreplicadatabase",
+        "note": "Operator creates a Neo4jReplicaDatabase with source.mode: backup and source.upstreamBackupRef naming the upstream Neo4jBackup"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-resolve-upstream-backup-ref",
+        "note": "Controller resolves the upstream's status.replicationPullURI via a live Get; Pending/retries if not found or not yet run"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-create-replica-database",
+        "note": "Replica database created seeding from the resolved pullURI"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-replica-created",
+        "note": "Replica database created and begins pulling the differential chain"
+      }
+    ],
+    "audience": "staff"
   }
 ]

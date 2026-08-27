@@ -176,6 +176,31 @@ func BuildNetworkPolicyForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluste
 		})
 	}
 
+	// Rule 5: opt-in peers for same-Kubernetes-cluster network-mode
+	// replicas (spec.networkPolicy.allowReplicasFrom). Each entry needs
+	// BOTH a podSelector (the downstream's neo4j.com/cluster label) and a
+	// namespaceSelector (Kubernetes' well-known, API-server-managed
+	// kubernetes.io/metadata.name label — the standard way to scope a
+	// NetworkPolicyPeer to one specific namespace by name, since 1.21) —
+	// podSelector alone would match same-named clusters in ANY namespace.
+	if peers := cluster.Spec.NetworkPolicy.AllowReplicasFrom; len(peers) > 0 {
+		var from []networkingv1.NetworkPolicyPeer
+		for _, p := range peers {
+			ns := p.Namespace
+			if ns == "" {
+				ns = cluster.Namespace
+			}
+			from = append(from, networkingv1.NetworkPolicyPeer{
+				PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"neo4j.com/cluster": p.Name}},
+				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": ns}},
+			})
+		}
+		ingressRules = append(ingressRules, networkingv1.NetworkPolicyIngressRule{
+			From:  from,
+			Ports: []networkingv1.NetworkPolicyPort{{Protocol: tcp, Port: &discoveryPort}},
+		})
+	}
+
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-server-netpol", cluster.Name),

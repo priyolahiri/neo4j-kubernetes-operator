@@ -58,6 +58,7 @@ type Neo4jReplicaDatabaseReconciler struct {
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jreplicadatabases/finalizers,verbs=update
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jenterpriseclusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jenterprisestandalones,verbs=get;list;watch
+// +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jbackups,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
@@ -211,9 +212,23 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 				return r.fail(ctx, replica, "create replica database failed", err, requeue)
 			}
 		default:
+			pullURI := src.PullURI
+			if src.UpstreamBackupRef != nil {
+				resolved, ok, err := r.resolveUpstreamBackupPullURI(ctx, replica, src.UpstreamBackupRef)
+				if err != nil {
+					return r.fail(ctx, replica, "resolve upstreamBackupRef failed", err, requeue)
+				}
+				if !ok {
+					// Not found or not ready yet — status already set inside
+					// the helper; this is an ordinary transient state, not a
+					// terminal failure.
+					return ctrl.Result{RequeueAfter: requeue}, nil
+				}
+				pullURI = resolved
+			}
 			backupSrc := neo4jclient.ReplicaBackupSource{
 				UpstreamDatabase: replica.Spec.UpstreamDatabase,
-				PullURI:          src.PullURI,
+				PullURI:          pullURI,
 				SeedURI:          src.SeedURI,
 			}
 			if t := replica.Spec.Topology; t != nil {
@@ -221,7 +236,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 				backupSrc.Secondaries = t.Secondaries
 			}
 			r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseSeeding, metav1.ConditionFalse,
-				"Seeding", fmt.Sprintf("creating replica %q from %s", dbName, src.PullURI), nil)
+				"Seeding", fmt.Sprintf("creating replica %q from %s", dbName, pullURI), nil)
 			if err := nc.CreateReplicaDatabaseFromBackup(ctx, dbName, backupSrc); err != nil {
 				return r.fail(ctx, replica, "create replica database failed", err, requeue)
 			}
@@ -418,6 +433,38 @@ func (r *Neo4jReplicaDatabaseReconciler) resolveUpstreamClusterAddresses(
 		return nil, false, nil
 	}
 	return upstream.Status.InternalAddresses, true, nil
+}
+
+// resolveUpstreamBackupPullURI reads the upstream Neo4jBackup named by ref
+// and returns its status.replicationPullURI. Same not-found/not-ready-is-
+// Pending-not-failed shape as resolveUpstreamClusterAddresses, for the same
+// reason: the upstream backup CR may simply not have run its first backup
+// yet.
+func (r *Neo4jReplicaDatabaseReconciler) resolveUpstreamBackupPullURI(
+	ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, ref *neo4jv1beta1.UpstreamBackupRef,
+) (string, bool, error) {
+	ns := ref.Namespace
+	if ns == "" {
+		ns = replica.Namespace
+	}
+	backup := &neo4jv1beta1.Neo4jBackup{}
+	err := r.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: ns}, backup)
+	if apierrors.IsNotFound(err) {
+		msg := fmt.Sprintf("upstream backup %s/%s (source.upstreamBackupRef) not found", ns, ref.Name)
+		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhasePending, metav1.ConditionFalse,
+			EventReasonUpstreamBackupNotFound, msg, nil)
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if backup.Status.ReplicationPullURI == "" {
+		msg := fmt.Sprintf("upstream backup %s/%s has not published status.replicationPullURI yet", ns, ref.Name)
+		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhasePending, metav1.ConditionFalse,
+			EventReasonUpstreamBackupNotReady, msg, nil)
+		return "", false, nil
+	}
+	return backup.Status.ReplicationPullURI, true, nil
 }
 
 func (r *Neo4jReplicaDatabaseReconciler) fail(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, label string, err error, requeue time.Duration) (ctrl.Result, error) {

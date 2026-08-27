@@ -674,7 +674,8 @@
       "sf-detect-replica-promotion",
       "sf-drop-replica-database",
       "sf-create-replica-database-network",
-      "sf-resolve-upstream-cluster-ref"
+      "sf-resolve-upstream-cluster-ref",
+      "sf-resolve-upstream-backup-ref"
     ],
     "emitsEventIds": [
       "ev-validation-warning",
@@ -691,7 +692,7 @@
     "name": "Create Replica Database From Backup",
     "serverUnitId": "su-neo4jreplicadatabase",
     "operation": "create",
-    "description": "Calls CreateReplicaDatabaseFromBackup with the upstream database, pull/seed URI, and optional topology when the target database does not yet exist (source.mode: backup).",
+    "description": "Calls CreateReplicaDatabaseFromBackup with the upstream database, pull/seed URI, and optional topology when the target database does not yet exist (source.mode: backup). pullURI is either set directly or resolved by sf-resolve-upstream-backup-ref from source.upstreamBackupRef.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1744,6 +1745,22 @@
     "emitsEventIds": [
       "ev-upstream-cluster-not-found",
       "ev-upstream-cluster-not-ready"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-resolve-upstream-backup-ref",
+    "name": "Resolve Upstream Backup Ref",
+    "serverUnitId": "su-neo4jreplicadatabase",
+    "operation": "resolver",
+    "description": "When source.upstreamBackupRef is set, reads the named Neo4jBackup CR's status.replicationPullURI via a live Get and returns it as the backup-mode pullURI; a missing Neo4jBackup or one that hasn't run its first backup yet is reported Pending and retried rather than failed.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-upstream-backup-not-found",
+      "ev-upstream-backup-not-ready"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-database"
