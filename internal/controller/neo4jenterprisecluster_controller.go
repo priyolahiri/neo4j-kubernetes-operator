@@ -423,6 +423,18 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
+	// Reconcile the network-mode CCDR exposure proxy BEFORE the server
+	// ConfigMap, so a freshly-observed load balancer hostname is already on
+	// cluster.Status when the startup script renders
+	// server.cluster.advertised_address below.
+	ccdrStatus, err := r.reconcileCrossClusterReplicationProxy(ctx, cluster)
+	if err != nil {
+		logger.Error(err, "Failed to reconcile CCDR proxy")
+		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to reconcile CCDR proxy: %v", err))
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+	}
+	cluster.Status.CrossClusterReplication = ccdrStatus
+
 	// Reconcile ConfigMap with immediate updates and pod restarts
 	if err := r.ConfigMapManager.ReconcileConfigMap(ctx, cluster); err != nil {
 		logger.Error(err, "Failed to reconcile ConfigMap")

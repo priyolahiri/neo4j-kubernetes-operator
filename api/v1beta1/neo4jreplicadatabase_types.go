@@ -113,13 +113,14 @@ type ReplicaSourceSpec struct {
 	// Mode selects the replication mechanism.
 	//
 	// "backup" pulls a differential backup chain from object storage and
-	// needs no network path between clusters. This is the only mode this
-	// operator supports.
+	// needs no network path between clusters.
 	//
-	// "network" streams directly from the upstream's cluster endpoints. It is
-	// rejected by the validator: it requires the upstream servers'
-	// `server.cluster.advertised_address` values to be externally routable,
-	// which this operator pins to in-cluster DNS. See
+	// "network" streams directly from the upstream's cluster endpoints
+	// (source.addresses). Requires the upstream servers'
+	// `server.cluster.advertised_address` to be externally routable — on the
+	// upstream Neo4jEnterpriseCluster, set `spec.crossClusterReplication.enabled:
+	// true` and read the ready-to-use endpoint list from its
+	// `status.crossClusterReplication.addresses`. See
 	// docs/design/cross-cluster-replication.md §6.
 	// +kubebuilder:validation:Enum=backup;network
 	// +kubebuilder:default=backup
@@ -146,9 +147,11 @@ type ReplicaSourceSpec struct {
 	// +optional
 	SeedURI string `json:"seedURI,omitempty"`
 
-	// Addresses lists upstream cluster endpoints for network mode. Unused
-	// while network mode is rejected; present so the API does not change shape
-	// if it later becomes supported.
+	// Addresses lists upstream cluster endpoints for network mode
+	// (host:port, the upstream's port 6000). One reachable address is
+	// sufficient: the upstream hands back the addresses the downstream then
+	// actually uses (its own advertised cluster addresses), so this list only
+	// needs to get the first connection made. Ignored in backup mode.
 	// +optional
 	Addresses []string `json:"addresses,omitempty"`
 

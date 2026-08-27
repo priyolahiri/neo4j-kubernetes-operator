@@ -21,7 +21,8 @@
       "sf-drain-server",
       "sf-verify-cluster-formation",
       "sf-collect-diagnostics",
-      "sf-merge-env-vars"
+      "sf-merge-env-vars",
+      "sf-reconcile-ccdr-proxy"
     ],
     "emitsEventIds": [
       "ev-topology-warning",
@@ -664,14 +665,15 @@
     "name": "Reconcile Neo4jReplicaDatabase",
     "serverUnitId": "su-neo4jreplicadatabase",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves clusterRef, checks the version gate for cross-cluster replicas, then OBSERVES the live database's type before creating, reporting, or terminally marking it promoted.",
+    "description": "Main reconcile loop: validates the spec, resolves clusterRef, checks the version gate for cross-cluster replicas, then OBSERVES the live database's type before dispatching on source.mode to create (backup or network), reporting, or terminally marking it promoted.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
       "sf-resolve-cluster-ref",
       "sf-create-replica-database",
       "sf-detect-replica-promotion",
-      "sf-drop-replica-database"
+      "sf-drop-replica-database",
+      "sf-create-replica-database-network"
     ],
     "emitsEventIds": [
       "ev-validation-warning",
@@ -685,10 +687,10 @@
   },
   {
     "id": "sf-create-replica-database",
-    "name": "Create Replica Database",
+    "name": "Create Replica Database From Backup",
     "serverUnitId": "su-neo4jreplicadatabase",
     "operation": "create",
-    "description": "Calls CreateReplicaDatabaseFromBackup with the upstream database, pull/seed URI, and optional topology when the target database does not yet exist.",
+    "description": "Calls CreateReplicaDatabaseFromBackup with the upstream database, pull/seed URI, and optional topology when the target database does not yet exist (source.mode: backup).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1700,5 +1702,33 @@
     "emitsEventIds": [],
     "subscribesEventIds": [],
     "moduleId": "mod-plugins"
+  },
+  {
+    "id": "sf-reconcile-ccdr-proxy",
+    "name": "Reconcile CCDR Proxy",
+    "serverUnitId": "su-ccdr-proxy",
+    "operation": "business_action",
+    "description": "Creates/updates the CCDR proxy's ConfigMap/Deployment/Service (or tears them down when disabled), then publishes status.crossClusterReplication.{ready,addresses,loadBalancerHostname} from the proxy Service's LoadBalancer ingress before the server ConfigMap is rendered.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-create-replica-database-network",
+    "name": "Create Replica Database From Network",
+    "serverUnitId": "su-neo4jreplicadatabase",
+    "operation": "create",
+    "description": "Calls CreateReplicaDatabaseFromNetwork with the upstream database name and one or more upstream cluster addresses when the target database does not yet exist (source.mode: network).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-replica-created"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
   }
 ]

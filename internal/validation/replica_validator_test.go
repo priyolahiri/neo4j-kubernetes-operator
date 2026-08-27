@@ -55,25 +55,64 @@ func TestReplicaValidator_ValidBackupSource(t *testing.T) {
 	}
 }
 
-// Network mode is rejected with the REASON, not a bare "unsupported" — the
-// operator pins advertised addresses to in-cluster DNS, and a user who is told
-// only "unsupported" will reasonably try to fix it with Service configuration,
-// which cannot work.
-func TestReplicaValidator_NetworkModeRejectedWithReason(t *testing.T) {
+func TestReplicaValidator_ValidNetworkSource(t *testing.T) {
 	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
-		r.Spec.Source.Mode = neo4jv1beta1.ReplicaSourceModeNetwork
-		r.Spec.Source.Addresses = []string{"upstream-0.example.com:6000"}
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:      neo4jv1beta1.ReplicaSourceModeNetwork,
+			Addresses: []string{"upstream-0.example.com:16000"},
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) != 0 {
+		t.Fatalf("expected no errors, got %v", res.Errors)
+	}
+	if len(res.Warnings) != 0 {
+		t.Errorf("expected no warnings, got %v", res.Warnings)
+	}
+}
+
+func TestReplicaValidator_NetworkSourceRequiresAddresses(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{Mode: neo4jv1beta1.ReplicaSourceModeNetwork}
 	})
 	res := NewReplicaValidator(nil).Validate(context.Background(), r)
 	if len(res.Errors) == 0 {
-		t.Fatal("expected network mode to be rejected")
+		t.Fatal("expected missing addresses to be rejected")
 	}
-	msg := res.Errors.ToAggregate().Error()
-	if !strings.Contains(msg, "advertised_address") {
-		t.Errorf("rejection should explain the advertised-address cause, got: %s", msg)
+	if !strings.Contains(res.Errors.ToAggregate().Error(), "addresses") {
+		t.Errorf("expected the error to mention addresses, got: %v", res.Errors)
 	}
-	if !strings.Contains(msg, "mode: backup") {
-		t.Errorf("rejection should point at the supported alternative, got: %s", msg)
+}
+
+func TestReplicaValidator_NetworkSourceMalformedAddress(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:      neo4jv1beta1.ReplicaSourceModeNetwork,
+			Addresses: []string{"upstream-0.example.com"}, // missing port
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected a host with no port to be rejected")
+	}
+}
+
+func TestReplicaValidator_NetworkSourceWarnsOnBackupFields(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:                 neo4jv1beta1.ReplicaSourceModeNetwork,
+			Addresses:            []string{"upstream-0.example.com:16000"},
+			PullURI:              "s3://backups/foo-chain/",
+			SeedURI:              "s3://backups/foo-chain/foo-2026-08-01.backup",
+			CredentialsSecretRef: "creds",
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) != 0 {
+		t.Fatalf("expected no errors, got %v", res.Errors)
+	}
+	if len(res.Warnings) != 3 {
+		t.Errorf("expected 3 warnings (pullURI, seedURI, credentialsSecretRef ignored), got %v", res.Warnings)
 	}
 }
 

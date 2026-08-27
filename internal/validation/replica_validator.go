@@ -19,6 +19,7 @@ package validation
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -75,17 +76,7 @@ func (v *ReplicaValidator) Validate(_ context.Context, replica *neo4jv1beta1.Neo
 	case neo4jv1beta1.ReplicaSourceModeBackup:
 		v.validateBackupSource(src, srcPath, &res)
 	case neo4jv1beta1.ReplicaSourceModeNetwork:
-		// Rejected, with the reason rather than a bare "unsupported": network
-		// replication needs the upstream's server.cluster.advertised_address
-		// values to be externally routable, and this operator pins them to
-		// in-cluster DNS. No Service configuration on the downstream side can
-		// work around it, because the upstream hands the downstream the
-		// addresses to use.
-		res.Errors = append(res.Errors, field.Invalid(srcPath.Child("mode"), mode,
-			"network replication is not supported by this operator: it requires the upstream servers' "+
-				"server.cluster.advertised_address to be externally routable, which the operator pins to "+
-				"in-cluster DNS. Use mode: backup, which needs no network path between clusters. "+
-				"See docs/design/cross-cluster-replication.md"))
+		v.validateNetworkSource(src, srcPath, &res)
 	}
 
 	// Topology sanity. Neo4j itself enforces the cluster-size relationship;
@@ -149,6 +140,36 @@ func (v *ReplicaValidator) validateBackupSource(src neo4jv1beta1.ReplicaSourceSp
 
 	if len(src.Addresses) > 0 {
 		res.Warnings = append(res.Warnings, "source.addresses is ignored in backup mode")
+	}
+}
+
+func (v *ReplicaValidator) validateNetworkSource(src neo4jv1beta1.ReplicaSourceSpec, srcPath *field.Path, res *ValidationResult) {
+	if len(src.Addresses) == 0 {
+		res.Errors = append(res.Errors, field.Required(srcPath.Child("addresses"),
+			"network replication requires at least one upstream cluster endpoint (host:port, the upstream's "+
+				"port 6000); one reachable address is sufficient, since the upstream hands back the addresses "+
+				"the downstream actually uses. On the upstream Neo4jEnterpriseCluster, set "+
+				"spec.crossClusterReplication.enabled: true and read status.crossClusterReplication.addresses"))
+	}
+	for i, addr := range src.Addresses {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil || host == "" || port == "" {
+			res.Errors = append(res.Errors, field.Invalid(srcPath.Child("addresses").Index(i), addr,
+				"must be of the form host:port"))
+		}
+	}
+
+	// These fields belong to backup mode; set alongside network mode they are
+	// silently ignored by Neo4j, which is worth surfacing rather than leaving
+	// the user to wonder why a configured credential/URI had no effect.
+	if src.PullURI != "" {
+		res.Warnings = append(res.Warnings, "source.pullURI is ignored in network mode")
+	}
+	if src.SeedURI != "" {
+		res.Warnings = append(res.Warnings, "source.seedURI is ignored in network mode")
+	}
+	if src.CredentialsSecretRef != "" {
+		res.Warnings = append(res.Warnings, "source.credentialsSecretRef is ignored in network mode")
 	}
 }
 

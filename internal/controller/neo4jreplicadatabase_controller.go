@@ -176,19 +176,41 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	case info == nil:
 		// Absent — create it.
 		src := replica.Spec.Source
-		backupSrc := neo4jclient.ReplicaBackupSource{
-			UpstreamDatabase: replica.Spec.UpstreamDatabase,
-			PullURI:          src.PullURI,
-			SeedURI:          src.SeedURI,
+		mode := src.Mode
+		if mode == "" {
+			mode = neo4jv1beta1.ReplicaSourceModeBackup
 		}
-		if t := replica.Spec.Topology; t != nil {
-			backupSrc.Primaries = t.Primaries
-			backupSrc.Secondaries = t.Secondaries
-		}
-		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseSeeding, metav1.ConditionFalse,
-			"Seeding", fmt.Sprintf("creating replica %q from %s", dbName, src.PullURI), nil)
-		if err := nc.CreateReplicaDatabaseFromBackup(ctx, dbName, backupSrc); err != nil {
-			return r.fail(ctx, replica, "create replica database failed", err, requeue)
+
+		switch mode {
+		case neo4jv1beta1.ReplicaSourceModeNetwork:
+			networkSrc := neo4jclient.ReplicaNetworkSource{
+				UpstreamDatabase: replica.Spec.UpstreamDatabase,
+				Addresses:        src.Addresses,
+			}
+			if t := replica.Spec.Topology; t != nil {
+				networkSrc.Primaries = t.Primaries
+				networkSrc.Secondaries = t.Secondaries
+			}
+			r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseSeeding, metav1.ConditionFalse,
+				"Seeding", fmt.Sprintf("creating replica %q streaming from %v", dbName, src.Addresses), nil)
+			if err := nc.CreateReplicaDatabaseFromNetwork(ctx, dbName, networkSrc); err != nil {
+				return r.fail(ctx, replica, "create replica database failed", err, requeue)
+			}
+		default:
+			backupSrc := neo4jclient.ReplicaBackupSource{
+				UpstreamDatabase: replica.Spec.UpstreamDatabase,
+				PullURI:          src.PullURI,
+				SeedURI:          src.SeedURI,
+			}
+			if t := replica.Spec.Topology; t != nil {
+				backupSrc.Primaries = t.Primaries
+				backupSrc.Secondaries = t.Secondaries
+			}
+			r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseSeeding, metav1.ConditionFalse,
+				"Seeding", fmt.Sprintf("creating replica %q from %s", dbName, src.PullURI), nil)
+			if err := nc.CreateReplicaDatabaseFromBackup(ctx, dbName, backupSrc); err != nil {
+				return r.fail(ctx, replica, "create replica database failed", err, requeue)
+			}
 		}
 		r.Recorder.Eventf(replica, corev1.EventTypeNormal, EventReasonReplicaCreated,
 			"Replica database %q created from %q", dbName, replica.Spec.UpstreamDatabase)

@@ -5371,6 +5371,40 @@ spec:
                   only when a tls block is present; the same checks stay inline in
                   internal/validation/tls_validator.go (shared by cluster + standalone).
                 properties:
+                  additionalClusterTrustCAs:
+                    description: |-
+                      AdditionalClusterTrustCAs references Secrets holding peer clusters' CA
+                      certificates. Each is projected as its own file directly into
+                      /ssl/trusted/ (Neo4j's cluster SSL policy trust directory — it scans
+                      every file present, not one fixed filename), alongside this cluster's
+                      own CA. Required for mutual TLS when replicating across clusters with
+                      different CAs (the normal case: separate Kubernetes clusters, separate
+                      cert-manager issuers) — e.g. network-mode cross-cluster replication
+                      (spec.crossClusterReplication). Must be set on BOTH clusters, each
+                      trusting the other's CA.
+
+                      Unlike TrustedCASecrets (a JVM-wide truststore that
+                      dbms.ssl.policy.cluster.* does not read), these land in the actual
+                      cluster-SSL trust anchor and are only relevant when
+                      strictPeerValidation is true.
+                    items:
+                      description: |-
+                        TrustedCASecret references a Secret containing a PEM-encoded CA certificate
+                        to be added to Neo4j-the-server's JVM truststore.
+
+                        The Secret name is also used as the keytool alias, so names must be unique
+                        across the list. Defaults to key "ca.crt" — which matches the layout used
+                        by cert-manager-issued Secrets.
+                      properties:
+                        key:
+                          description: Key within the Secret. Defaults to "ca.crt".
+                          type: string
+                        name:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
                   certificateSecret:
                     description: Manual certificate configuration
                     type: string

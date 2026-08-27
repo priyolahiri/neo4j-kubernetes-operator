@@ -319,5 +319,41 @@
       }
     ],
     "audience": "staff"
+  },
+  {
+    "id": "proc-network-mode-ccdr-setup",
+    "name": "Network-Mode CCDR Setup",
+    "description": "An operator enables the CCDR proxy on the upstream cluster, exchanges CA trust both directions, and creates a network-mode Neo4jReplicaDatabase on the downstream cluster that streams continuously from the upstream's published proxy addresses, instead of pulling a differential backup chain.",
+    "triggerKind": "api",
+    "triggerRefId": "ent-neo4jenterprisecluster",
+    "moduleId": "mod-database",
+    "steps": [
+      {
+        "refKind": "entity",
+        "refId": "ent-neo4jenterprisecluster",
+        "note": "Operator sets spec.crossClusterReplication.enabled: true and spec.tls.additionalClusterTrustCAs on the upstream cluster"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-reconcile-ccdr-proxy",
+        "note": "Upstream cluster provisions the HAProxy proxy and publishes status.crossClusterReplication.addresses once its LoadBalancer Service is assigned"
+      },
+      {
+        "refKind": "entity",
+        "refId": "ent-neo4jreplicadatabase",
+        "note": "Operator creates a Neo4jReplicaDatabase on the downstream cluster with source.mode: network and source.addresses copied from the upstream's status"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-create-replica-database-network",
+        "note": "Downstream reconciler issues CREATE REPLICA DATABASE ... OPTIONS {replicaConfig: {remote, addresses}}"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-replica-created",
+        "note": "Replica database created and begins streaming from the upstream"
+      }
+    ],
+    "audience": "staff"
   }
 ]

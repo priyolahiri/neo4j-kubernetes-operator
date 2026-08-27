@@ -1,6 +1,6 @@
 # Neo4jReplicaDatabase
 
-A read-only cross-cluster replica of a database hosted on **another** Neo4j cluster, fed by a differential backup chain in object storage.
+A read-only cross-cluster replica of a database hosted on **another** Neo4j cluster, fed either by a differential backup chain in object storage (`mode: backup`) or by streaming directly from the upstream's cluster endpoints (`mode: network`).
 
 ## Overview
 
@@ -14,11 +14,11 @@ A read-only cross-cluster replica of a database hosted on **another** Neo4j clus
 
 This CR is applied to the **downstream** cluster. The upstream lives in another Kubernetes cluster the operator cannot see; the only coupling between them is the object-storage location the upstream's `Neo4jBackup` chain writes to.
 
-!!! warning "Backup mode only"
+!!! note "Network mode requires the upstream to expose itself"
 
-    `source.mode: network` is **rejected**. Network replication requires the upstream servers' `server.cluster.advertised_address` to be externally routable, and the operator pins those to in-cluster DNS — exposing a Service does not work around it, because the upstream hands the downstream the addresses to connect to. See `docs/design/cross-cluster-replication.md`.
+    `source.mode: network` streams directly from the upstream's cluster endpoints, which requires the upstream servers' `server.cluster.advertised_address` to be externally routable. On the upstream `Neo4jEnterpriseCluster`, set `spec.crossClusterReplication.enabled: true` (see [`CrossClusterReplicationSpec`](neo4jenterprisecluster.md#crossclusterreplicationspec)) and read the ready-to-use endpoint list from its `status.crossClusterReplication.addresses`. `mode: backup` needs no such setup — it has no network path between clusters at all. See `docs/design/cross-cluster-replication.md` §6.
 
-See the [Cross-Cluster Replication guide](../user_guide/guides/cross_cluster_replication.md) for the end-to-end runbook.
+See the [Cross-Cluster Replication guide](../user_guide/guides/cross_cluster_replication.md) for the end-to-end runbook (both modes).
 
 ## Spec
 
@@ -36,11 +36,11 @@ See the [Cross-Cluster Replication guide](../user_guide/guides/cross_cluster_rep
 
 | Field | Type | Description |
 |---|---|---|
-| `mode` | `string` | `backup` (default) or `network`. Only `backup` is supported; `network` is rejected by the validator with the reason. |
-| `pullURI` | `string` | Object-storage directory holding the upstream's differential chain. Read it from the upstream `Neo4jBackup` CR's `status.replicationPullURI`. |
-| `seedURI` | `string` | Full backup artifact the replica is seeded from. Must belong to the same chain as `pullURI`. |
-| `addresses` | `[]string` | Upstream cluster endpoints for network mode. Unused while network mode is rejected. |
-| `credentialsSecretRef` | `string` | Secret holding object-storage credentials, when workload identity is unavailable. |
+| `mode` | `string` | `backup` (default) or `network`. |
+| `pullURI` | `string` | **Backup mode.** Object-storage directory holding the upstream's differential chain. Read it from the upstream `Neo4jBackup` CR's `status.replicationPullURI`. Ignored (warned) in network mode. |
+| `seedURI` | `string` | **Backup mode.** Full backup artifact the replica is seeded from. Must belong to the same chain as `pullURI`. Ignored (warned) in network mode. |
+| `addresses` | `[]string` | **Network mode.** Upstream cluster endpoints (`host:port`, the upstream's port 6000 — or, when the upstream has `spec.crossClusterReplication` enabled, its proxy's external port). One reachable address is sufficient: the upstream hands back the addresses the downstream actually uses. Ignored in backup mode. |
+| `credentialsSecretRef` | `string` | **Backup mode.** Secret holding object-storage credentials, when workload identity is unavailable. Ignored (warned) in network mode. |
 
 ## Status
 
@@ -86,4 +86,23 @@ spec:
     pullURI: s3://prod-backups/foo/foo-chain/
     seedURI: s3://prod-backups/foo/foo-chain/foo-2026-08-01T02-00-00.backup
     credentialsSecretRef: s3-creds
+```
+
+Network mode — `addresses` comes from the upstream cluster's `status.crossClusterReplication.addresses` (see [`CrossClusterReplicationSpec`](neo4jenterprisecluster.md#crossclusterreplicationspec)):
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jReplicaDatabase
+metadata:
+  name: foo-replica
+  namespace: dr
+spec:
+  clusterRef: dr-cluster
+  upstreamDatabase: foo
+  topology:
+    primaries: 3
+    secondaries: 0
+  source:
+    mode: network
+    addresses: ["prod-ccdr.example.com:16000"]
 ```
