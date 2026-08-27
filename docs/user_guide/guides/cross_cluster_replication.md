@@ -205,21 +205,9 @@ namespace, say — not only a way to try network mode before standing up a
 second cluster.
 
 Deploy the upstream `Neo4jEnterpriseCluster` normally; nothing extra to set.
-Every server pod's address follows a fixed pattern, so you can construct it
-directly instead of waiting on any status field:
-
-```
-<upstream-cluster>-server-<ordinal>.<upstream-cluster>-headless.<upstream-namespace>.svc.cluster.local:6000
-```
-
-```bash
-# e.g. for cluster "prod-cluster" in namespace "prod", server 0:
-kubectl get pod prod-cluster-server-0 -n prod
-# prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000
-```
-
-Then create the replica exactly as in the Network mode tab of step 2, using
-this address in place of a proxy endpoint:
+Then create the replica with `source.upstreamClusterRef` naming it — the
+controller resolves the address list itself, from the upstream's
+`status.internalAddresses`, no copying or constructing anything by hand:
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -235,10 +223,40 @@ spec:
     secondaries: 0
   source:
     mode: network
-    addresses: ["prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000"]
+    upstreamClusterRef:
+      name: prod-cluster
+      namespace: prod
 ```
 
-Two things differ from the cross-cluster path:
+`namespace` defaults to the replica's own namespace if the upstream is in the
+same one — set explicitly here since it isn't. If the upstream doesn't exist
+yet, or exists but hasn't published `status.internalAddresses` yet, the
+replica just sits in phase `Pending` and retries; nothing to do but wait.
+
+!!! note "Prefer typing the address by hand instead?"
+
+    `upstreamClusterRef` is resolved via a live `Get` against this Kubernetes
+    cluster's own API server — which is exactly why it only ever works
+    same-cluster. If you'd rather see the address explicit in the CR (or the
+    operator's RBAC to read `Neo4jEnterpriseCluster` cross-namespace is a
+    concern), every server pod's address follows a fixed, constructible
+    pattern — use `source.addresses` instead:
+
+    ```
+    <upstream-cluster>-server-<ordinal>.<upstream-cluster>-headless.<upstream-namespace>.svc.cluster.local:6000
+    ```
+
+    ```yaml
+    source:
+      mode: network
+      addresses: ["prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000"]
+    ```
+
+    Both forms resolve to the same address; `upstreamClusterRef` just saves
+    you computing it and keeps it correct if the upstream's naming ever
+    changes.
+
+Two things differ from the cross-cluster path, for either form above:
 
 - **TLS trust.** `spec.tls.additionalClusterTrustCAs` is only needed if the
   two clusters use *different* cert-manager issuers. If they share one
@@ -478,6 +496,8 @@ formation is never blocked waiting for the proxy.
 | Network mode never connects, upstream `status.crossClusterReplication.ready` is `false` | the upstream's proxy LoadBalancer Service has no hostname/IP yet — check `kubectl get svc <cluster>-ccdr -n <upstream-ns>` |
 | Network mode TLS handshake fails | `spec.tls.additionalClusterTrustCAs` missing on one or both clusters — it must be set on **both**, each trusting the other's CA |
 | Network mode connection times out, both clusters on one Kubernetes cluster | the upstream has `spec.networkPolicy.enabled: true` — its port-6000 rule only admits pods carrying its own `neo4j.com/cluster` label; either disable NetworkPolicy on the upstream or use the proxy path (§1b) instead |
+| `Pending`, event `UpstreamClusterNotFound` | `source.upstreamClusterRef` names a `Neo4jEnterpriseCluster` that doesn't exist (yet) in the given namespace — check the name/namespace, or wait if it's still being created |
+| `Pending`, event `UpstreamClusterNotReady` | the referenced upstream exists but hasn't published `status.internalAddresses` yet — normal briefly after the upstream is first created; check `kubectl get neo4jenterprisecluster <name> -n <ns> -o jsonpath='{.status.internalAddresses}'` if it persists |
 | `Pending`, cluster not Ready | downstream cluster still bootstrapping |
 | Lag grows without bound | upstream backup CR not running — check its schedule and `status` |
 | `Promoted` unexpectedly | someone promoted out of band; the CR is now inert by design |

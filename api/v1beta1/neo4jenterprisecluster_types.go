@@ -953,6 +953,18 @@ type Neo4jEnterpriseClusterStatus struct {
 	// +optional
 	CrossClusterReplication *CrossClusterReplicationStatus `json:"crossClusterReplication,omitempty"`
 
+	// InternalAddresses is the ready-to-paste "<pod-fqdn>:6000" list for a
+	// downstream Neo4jReplicaDatabase's spec.source.addresses (or
+	// spec.source.upstreamClusterRef, which reads this field directly), for
+	// when the downstream is on this SAME Kubernetes cluster. Unlike
+	// CrossClusterReplication.Addresses, this needs no proxy, no
+	// LoadBalancer, and is always populated — ordinary in-cluster DNS
+	// already resolves these across namespaces on one cluster. Not
+	// routable from a genuinely separate Kubernetes cluster; use
+	// CrossClusterReplication for that.
+	// +optional
+	InternalAddresses []string `json:"internalAddresses,omitempty"`
+
 	// ObservedGeneration reflects the generation most recently observed by the controller
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }

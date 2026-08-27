@@ -225,6 +225,21 @@ func BuildBackupFromAddresses(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) stri
 	return strings.Join(addrs, ",")
 }
 
+// ServerClusterAddresses returns the "<pod-fqdn>:6000" address for every
+// server ordinal — the same pattern buildVersionSpecificDiscoveryConfig and
+// BuildCCDRProxyConfigMap each already compute inline for their own needs.
+// Exported so the controller can stamp it onto status.internalAddresses
+// without duplicating the pattern a third time.
+func ServerClusterAddresses(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []string {
+	servers := int(cluster.Spec.Topology.Servers)
+	addrs := make([]string, servers)
+	for i := range servers {
+		addrs[i] = fmt.Sprintf("%s-server-%d.%s-headless.%s.svc.cluster.local:%d",
+			cluster.Name, i, cluster.Name, cluster.Namespace, DiscoveryPort)
+	}
+	return addrs
+}
+
 // BuildStandaloneBackupFromAddress returns the single "pod-fqdn:6362"
 // address for a standalone's pod, used as the --from flag of
 // neo4j-admin database backup.

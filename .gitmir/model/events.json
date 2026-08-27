@@ -994,5 +994,17 @@
     "name": "PluginDuplicate",
     "description": "Emitted when another Neo4jPlugin CR in the same namespace already targets the same clusterRef with the same spec.name; the newer CR (by creationTimestamp) is marked Failed rather than racing on the shared NEO4J_PLUGINS value.",
     "moduleId": "mod-plugins"
+  },
+  {
+    "id": "ev-upstream-cluster-not-found",
+    "name": "UpstreamClusterNotFound",
+    "description": "A Neo4jReplicaDatabase's source.upstreamClusterRef names a Neo4jEnterpriseCluster that does not exist (yet) in the given namespace; the replica sits Pending and retries.",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-upstream-cluster-not-ready",
+    "name": "UpstreamClusterNotReady",
+    "description": "A Neo4jReplicaDatabase's source.upstreamClusterRef resolves to a real Neo4jEnterpriseCluster, but it has not yet published status.internalAddresses; the replica sits Pending and retries.",
+    "moduleId": "mod-database"
   }
 ]

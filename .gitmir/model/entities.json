@@ -206,6 +206,13 @@
         "type": "json",
         "isNullable": true,
         "note": "Ready-to-paste host:port list for a downstream Neo4jReplicaDatabase's source.addresses, one entry per server ordinal."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-internal-addresses",
+        "name": "status.internalAddresses",
+        "type": "json",
+        "isNullable": true,
+        "note": "Always-populated \"<pod-fqdn>:6000\" list for a downstream Neo4jReplicaDatabase on this SAME Kubernetes cluster (source.upstreamClusterRef reads this directly). No proxy or LoadBalancer needed, unlike status.crossClusterReplication.addresses; not routable from a genuinely separate Kubernetes cluster."
       }
     ]
   },
@@ -988,7 +995,7 @@
         "name": "source.addresses",
         "type": "json",
         "isNullable": true,
-        "note": "Network mode only: upstream cluster endpoints (host:port). One reachable address is sufficient — the upstream hands back the addresses the downstream actually uses. Ignored in backup mode."
+        "note": "Network mode only: upstream cluster endpoints (host:port). One reachable address is sufficient — the upstream hands back the addresses the downstream actually uses. Mutually exclusive with source.upstreamClusterRef. Ignored in backup mode."
       },
       {
         "id": "f-neo4jreplicadatabase-source-credentials-secret-ref",
@@ -1050,6 +1057,14 @@
         "isNullable": true,
         "refEntityId": "ent-neo4jreplicapromotion",
         "note": "Names the Neo4jReplicaPromotion CR that promoted it, or the sentinel string \"out-of-band\"."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-source-upstream-cluster-ref",
+        "name": "source.upstreamClusterRef",
+        "type": "json",
+        "isNullable": true,
+        "refEntityId": "ent-neo4jenterprisecluster",
+        "note": "{name, namespace} reference to an upstream Neo4jEnterpriseCluster on this SAME Kubernetes cluster; the controller resolves addresses automatically from its status.internalAddresses. Mutually exclusive with source.addresses. Cannot reach a genuinely separate Kubernetes cluster (resolution is a live Get against this cluster's own API server)."
       }
     ],
     "paths": [

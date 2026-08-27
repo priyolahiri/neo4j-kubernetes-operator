@@ -355,5 +355,41 @@
       }
     ],
     "audience": "staff"
+  },
+  {
+    "id": "proc-same-cluster-ccdr-setup",
+    "name": "Same-Cluster Network-Mode CCDR Setup",
+    "description": "An operator deploys the upstream and downstream Neo4jEnterpriseCluster on the same Kubernetes cluster and creates a network-mode Neo4jReplicaDatabase with source.upstreamClusterRef naming the upstream; the controller resolves addresses from the upstream's status.internalAddresses automatically, with no proxy or spec.crossClusterReplication involved at all.",
+    "triggerKind": "api",
+    "triggerRefId": "ent-neo4jreplicadatabase",
+    "moduleId": "mod-database",
+    "steps": [
+      {
+        "refKind": "entity",
+        "refId": "ent-neo4jenterprisecluster",
+        "note": "Upstream Neo4jEnterpriseCluster deployed normally on the same Kubernetes cluster; status.internalAddresses is always published, no crossClusterReplication needed"
+      },
+      {
+        "refKind": "entity",
+        "refId": "ent-neo4jreplicadatabase",
+        "note": "Operator creates a Neo4jReplicaDatabase with source.mode: network and source.upstreamClusterRef naming the upstream cluster"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-resolve-upstream-cluster-ref",
+        "note": "Controller resolves the upstream's status.internalAddresses via a live Get; Pending/retries if the upstream isn't found or hasn't published it yet"
+      },
+      {
+        "refKind": "function",
+        "refId": "sf-create-replica-database-network",
+        "note": "Replica database created streaming from the resolved addresses"
+      },
+      {
+        "refKind": "event",
+        "refId": "ev-replica-created",
+        "note": "Replica database created and begins streaming from the upstream"
+      }
+    ],
+    "audience": "staff"
   }
 ]

@@ -1272,6 +1272,48 @@ func TestBuildBackupFromAddresses(t *testing.T) {
 	assert.Equal(t, expected, addrs)
 }
 
+// TestServerClusterAddresses pins the plain-FQDN, port-6000 address list
+// published unconditionally as status.internalAddresses — the
+// same-Kubernetes-cluster counterpart to BuildBackupFromAddresses (which is
+// port 6362, comma-joined into a single string rather than a slice).
+func TestServerClusterAddresses(t *testing.T) {
+	tests := []struct {
+		name    string
+		servers int32
+		want    []string
+	}{
+		{
+			name:    "three servers",
+			servers: 3,
+			want: []string{
+				"my-cluster-server-0.my-cluster-headless.default.svc.cluster.local:6000",
+				"my-cluster-server-1.my-cluster-headless.default.svc.cluster.local:6000",
+				"my-cluster-server-2.my-cluster-headless.default.svc.cluster.local:6000",
+			},
+		},
+		{
+			name:    "minimum two servers",
+			servers: 2,
+			want: []string{
+				"my-cluster-server-0.my-cluster-headless.default.svc.cluster.local:6000",
+				"my-cluster-server-1.my-cluster-headless.default.svc.cluster.local:6000",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "default"},
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					AcceptLicenseAgreement: "eval",
+					Topology:               neo4jv1beta1.TopologyConfiguration{Servers: tt.servers},
+				},
+			}
+			assert.Equal(t, tt.want, resources.ServerClusterAddresses(cluster))
+		})
+	}
+}
+
 // TestBuildStandaloneBackupFromAddress locks in the standalone-specific
 // FQDN: {name}-0.{name}-headless.<ns>.svc.cluster.local:6362. The
 // previous version of this test asserted the cluster-shape FQDN against

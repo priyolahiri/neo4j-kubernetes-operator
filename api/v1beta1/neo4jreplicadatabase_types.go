@@ -115,11 +115,14 @@ type ReplicaSourceSpec struct {
 	// "backup" pulls a differential backup chain from object storage and
 	// needs no network path between clusters.
 	//
-	// "network" streams directly from the upstream's cluster endpoints
-	// (source.addresses). Requires the upstream servers'
-	// `server.cluster.advertised_address` to be externally routable — on the
-	// upstream Neo4jEnterpriseCluster, set `spec.crossClusterReplication.enabled:
-	// true` and read the ready-to-use endpoint list from its
+	// "network" streams directly from the upstream's cluster endpoints —
+	// either listed explicitly (source.addresses) or resolved automatically
+	// from an upstream on this same Kubernetes cluster
+	// (source.upstreamClusterRef). For a genuinely separate upstream
+	// Kubernetes cluster, source.addresses requires the upstream servers'
+	// `server.cluster.advertised_address` to be externally routable — set
+	// `spec.crossClusterReplication.enabled: true` on the upstream
+	// Neo4jEnterpriseCluster and read the ready-to-use endpoint list from its
 	// `status.crossClusterReplication.addresses`. See
 	// docs/design/cross-cluster-replication.md §6.
 	// +kubebuilder:validation:Enum=backup;network
@@ -152,8 +155,23 @@ type ReplicaSourceSpec struct {
 	// sufficient: the upstream hands back the addresses the downstream then
 	// actually uses (its own advertised cluster addresses), so this list only
 	// needs to get the first connection made. Ignored in backup mode.
+	// Mutually exclusive with UpstreamClusterRef — set exactly one for
+	// network mode.
 	// +optional
 	Addresses []string `json:"addresses,omitempty"`
+
+	// UpstreamClusterRef resolves Addresses automatically from an upstream
+	// Neo4jEnterpriseCluster's status.internalAddresses, instead of listing
+	// them by hand. Mutually exclusive with Addresses — set exactly one for
+	// network mode.
+	//
+	// Only usable when the upstream is on this SAME Kubernetes cluster:
+	// resolution is a live Get against this cluster's own API server, which
+	// cannot reach a genuinely separate physical cluster. For an upstream on
+	// a different Kubernetes cluster, use Addresses instead, populated from
+	// the upstream's spec.crossClusterReplication proxy.
+	// +optional
+	UpstreamClusterRef *UpstreamClusterRef `json:"upstreamClusterRef,omitempty"`
 
 	// CredentialsSecretRef names a Secret holding object-storage credentials
 	// for PullURI/SeedURI, when the downstream cluster cannot reach the bucket
@@ -161,6 +179,23 @@ type ReplicaSourceSpec struct {
 	// credentials.
 	// +optional
 	CredentialsSecretRef string `json:"credentialsSecretRef,omitempty"`
+}
+
+// UpstreamClusterRef references an upstream Neo4jEnterpriseCluster to
+// resolve network-mode addresses from automatically, instead of listing
+// them in Addresses. Only usable when the upstream is on this SAME
+// Kubernetes cluster: resolution is a live Get against this cluster's own
+// API server, which cannot reach a genuinely separate physical cluster. For
+// an upstream on a different Kubernetes cluster, use Addresses instead,
+// populated from the upstream's spec.crossClusterReplication proxy.
+type UpstreamClusterRef struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace of the upstream Neo4jEnterpriseCluster. Defaults to this
+	// Neo4jReplicaDatabase's own namespace when omitted.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // Neo4jReplicaDatabaseStatus describes the observed state of a replica.

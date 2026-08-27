@@ -673,7 +673,8 @@
       "sf-create-replica-database",
       "sf-detect-replica-promotion",
       "sf-drop-replica-database",
-      "sf-create-replica-database-network"
+      "sf-create-replica-database-network",
+      "sf-resolve-upstream-cluster-ref"
     ],
     "emitsEventIds": [
       "ev-validation-warning",
@@ -1721,12 +1722,28 @@
     "name": "Create Replica Database From Network",
     "serverUnitId": "su-neo4jreplicadatabase",
     "operation": "create",
-    "description": "Calls CreateReplicaDatabaseFromNetwork with the upstream database name and one or more upstream cluster addresses when the target database does not yet exist (source.mode: network).",
+    "description": "Calls CreateReplicaDatabaseFromNetwork with the upstream database name and an address list — either source.addresses directly, or resolved by sf-resolve-upstream-cluster-ref from source.upstreamClusterRef — when the target database does not yet exist (source.mode: network).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
     "emitsEventIds": [
       "ev-replica-created"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "sf-resolve-upstream-cluster-ref",
+    "name": "Resolve Upstream Cluster Ref",
+    "serverUnitId": "su-neo4jreplicadatabase",
+    "operation": "resolver",
+    "description": "When source.upstreamClusterRef is set, reads the named Neo4jEnterpriseCluster's status.internalAddresses via a live Get and returns it as the network-mode address list; a missing or not-yet-ready upstream is reported Pending and retried rather than failed, since the upstream may simply not have reconciled yet.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-upstream-cluster-not-found",
+      "ev-upstream-cluster-not-ready"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-database"

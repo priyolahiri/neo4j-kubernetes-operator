@@ -584,6 +584,22 @@ future customer need justifies the added complexity, a short spike against a
 real cluster (capture the ClientHello on port 6000, check for an SNI
 extension) would resolve the open question before any design work resumes.
 
+**Addendum — same-Kubernetes-cluster ergonomics.** §1c of the user guide
+established that when the upstream and downstream `Neo4jEnterpriseCluster`s
+are on the *same* Kubernetes cluster, the proxy is unnecessary at all —
+ordinary in-cluster DNS already resolves the upstream's pod FQDN across
+namespaces. Two small additive pieces make that path usable without hand-
+computing FQDNs: `status.internalAddresses` on `Neo4jEnterpriseCluster`
+(the plain-FQDN counterpart to `status.crossClusterReplication.addresses`,
+always populated, no proxy or LoadBalancer needed) and
+`spec.source.upstreamClusterRef` on `Neo4jReplicaDatabase` (resolves that
+status field automatically instead of requiring `source.addresses` to be
+typed out). **Scoping caveat, stated plainly:** `upstreamClusterRef` resolves
+via a live `Get` against this operator's own Kubernetes API server, so it can
+only ever reach an upstream on this same physical cluster — never a
+genuinely separate one. For a separate Kubernetes cluster, `source.addresses`
+plus the proxy (this section) remains the only path.
+
 ---
 
 ## 7. Testing

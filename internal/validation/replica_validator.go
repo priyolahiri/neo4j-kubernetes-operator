@@ -144,18 +144,32 @@ func (v *ReplicaValidator) validateBackupSource(src neo4jv1beta1.ReplicaSourceSp
 }
 
 func (v *ReplicaValidator) validateNetworkSource(src neo4jv1beta1.ReplicaSourceSpec, srcPath *field.Path, res *ValidationResult) {
-	if len(src.Addresses) == 0 {
+	hasAddresses := len(src.Addresses) > 0
+	hasClusterRef := src.UpstreamClusterRef != nil
+
+	switch {
+	case hasAddresses && hasClusterRef:
+		res.Errors = append(res.Errors, field.Invalid(srcPath.Child("upstreamClusterRef"), src.UpstreamClusterRef,
+			"source.addresses and source.upstreamClusterRef are mutually exclusive; set exactly one"))
+	case !hasAddresses && !hasClusterRef:
 		res.Errors = append(res.Errors, field.Required(srcPath.Child("addresses"),
-			"network replication requires at least one upstream cluster endpoint (host:port, the upstream's "+
-				"port 6000); one reachable address is sufficient, since the upstream hands back the addresses "+
-				"the downstream actually uses. On the upstream Neo4jEnterpriseCluster, set "+
-				"spec.crossClusterReplication.enabled: true and read status.crossClusterReplication.addresses"))
-	}
-	for i, addr := range src.Addresses {
-		host, port, err := net.SplitHostPort(addr)
-		if err != nil || host == "" || port == "" {
-			res.Errors = append(res.Errors, field.Invalid(srcPath.Child("addresses").Index(i), addr,
-				"must be of the form host:port"))
+			"network replication requires either source.addresses (at least one upstream cluster endpoint, "+
+				"host:port; one reachable address is sufficient, since the upstream hands back the addresses "+
+				"the downstream actually uses) or source.upstreamClusterRef (only when the upstream "+
+				"Neo4jEnterpriseCluster is on this same Kubernetes cluster). For a separate upstream cluster, set "+
+				"spec.crossClusterReplication.enabled: true on it and read status.crossClusterReplication.addresses"))
+	case hasClusterRef:
+		if src.UpstreamClusterRef.Name == "" {
+			res.Errors = append(res.Errors, field.Required(srcPath.Child("upstreamClusterRef").Child("name"),
+				"required when source.upstreamClusterRef is set"))
+		}
+	default: // hasAddresses only
+		for i, addr := range src.Addresses {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil || host == "" || port == "" {
+				res.Errors = append(res.Errors, field.Invalid(srcPath.Child("addresses").Index(i), addr,
+					"must be of the form host:port"))
+			}
 		}
 	}
 

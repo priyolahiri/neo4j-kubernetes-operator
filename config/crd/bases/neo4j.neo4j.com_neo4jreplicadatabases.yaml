@@ -123,6 +123,8 @@ spec:
                       sufficient: the upstream hands back the addresses the downstream then
                       actually uses (its own advertised cluster addresses), so this list only
                       needs to get the first connection made. Ignored in backup mode.
+                      Mutually exclusive with UpstreamClusterRef — set exactly one for
+                      network mode.
                     items:
                       type: string
                     type: array
@@ -141,11 +143,14 @@ spec:
                       "backup" pulls a differential backup chain from object storage and
                       needs no network path between clusters.
 
-                      "network" streams directly from the upstream's cluster endpoints
-                      (source.addresses). Requires the upstream servers'
-                      `server.cluster.advertised_address` to be externally routable — on the
-                      upstream Neo4jEnterpriseCluster, set `spec.crossClusterReplication.enabled:
-                      true` and read the ready-to-use endpoint list from its
+                      "network" streams directly from the upstream's cluster endpoints —
+                      either listed explicitly (source.addresses) or resolved automatically
+                      from an upstream on this same Kubernetes cluster
+                      (source.upstreamClusterRef). For a genuinely separate upstream
+                      Kubernetes cluster, source.addresses requires the upstream servers'
+                      `server.cluster.advertised_address` to be externally routable — set
+                      `spec.crossClusterReplication.enabled: true` on the upstream
+                      Neo4jEnterpriseCluster and read the ready-to-use endpoint list from its
                       `status.crossClusterReplication.addresses`. See
                       docs/design/cross-cluster-replication.md §6.
                     enum:
@@ -172,6 +177,29 @@ spec:
 
                       Example: "s3://prod-backups/foo-chain/foo-2026-08-01T01-00-00.backup"
                     type: string
+                  upstreamClusterRef:
+                    description: |-
+                      UpstreamClusterRef resolves Addresses automatically from an upstream
+                      Neo4jEnterpriseCluster's status.internalAddresses, instead of listing
+                      them by hand. Mutually exclusive with Addresses — set exactly one for
+                      network mode.
+
+                      Only usable when the upstream is on this SAME Kubernetes cluster:
+                      resolution is a live Get against this cluster's own API server, which
+                      cannot reach a genuinely separate physical cluster. For an upstream on
+                      a different Kubernetes cluster, use Addresses instead, populated from
+                      the upstream's spec.crossClusterReplication proxy.
+                    properties:
+                      name:
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the upstream Neo4jEnterpriseCluster. Defaults to this
+                          Neo4jReplicaDatabase's own namespace when omitted.
+                        type: string
+                    required:
+                    - name
+                    type: object
                 type: object
                 x-kubernetes-validations:
                 - message: spec.source is immutable; delete and recreate the Neo4jReplicaDatabase

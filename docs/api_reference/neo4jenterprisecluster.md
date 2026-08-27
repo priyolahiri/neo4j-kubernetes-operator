@@ -824,6 +824,7 @@ The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
 | `observedGeneration` | `int64` | Last observed generation |
 | `diagnostics` | [`*DiagnosticsStatus`](#diagnosticsstatus) | Live diagnostics collected when `spec.monitoring.enabled=true` and cluster is `Ready`. |
 | `crossClusterReplication` | [`*CrossClusterReplicationStatus`](#crossclusterreplicationspec) | State of the network-mode CCDR exposure proxy, when `spec.crossClusterReplication.enabled` is `true`. |
+| `internalAddresses` | `[]string` | Ready-to-paste `<pod-fqdn>:6000` list for a downstream `Neo4jReplicaDatabase` on this **same** Kubernetes cluster (`source.upstreamClusterRef`, or pasted directly into `source.addresses`). Always populated — no proxy, no LoadBalancer needed — but not routable from a genuinely separate Kubernetes cluster; use `crossClusterReplication` for that. |
 
 ### EndpointStatus
 

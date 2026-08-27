@@ -1454,6 +1454,12 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 		// for the standalone path.
 		latest.Status.Endpoints = r.buildClusterEndpoints(ctx, cluster)
 
+		// Ready-to-paste in-cluster address list for a same-Kubernetes-cluster
+		// downstream Neo4jReplicaDatabase (source.upstreamClusterRef reads this
+		// directly). Pure function of spec — needs no proxy, no LoadBalancer,
+		// always populated, same as Endpoints above.
+		latest.Status.InternalAddresses = resources.ServerClusterAddresses(cluster)
+
 		// Replica count (desired vs ready). Pulls Ready directly off the
 		// server StatefulSet status — the controller-runtime cache already
 		// has the StatefulSet, so this is a free lookup.

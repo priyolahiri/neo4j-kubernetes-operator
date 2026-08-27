@@ -183,16 +183,30 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 
 		switch mode {
 		case neo4jv1beta1.ReplicaSourceModeNetwork:
+			addresses := src.Addresses
+			if src.UpstreamClusterRef != nil {
+				resolved, ok, err := r.resolveUpstreamClusterAddresses(ctx, replica, src.UpstreamClusterRef)
+				if err != nil {
+					return r.fail(ctx, replica, "resolve upstreamClusterRef failed", err, requeue)
+				}
+				if !ok {
+					// Not found or not ready yet — status already set inside
+					// the helper; this is an ordinary transient state, not a
+					// terminal failure.
+					return ctrl.Result{RequeueAfter: requeue}, nil
+				}
+				addresses = resolved
+			}
 			networkSrc := neo4jclient.ReplicaNetworkSource{
 				UpstreamDatabase: replica.Spec.UpstreamDatabase,
-				Addresses:        src.Addresses,
+				Addresses:        addresses,
 			}
 			if t := replica.Spec.Topology; t != nil {
 				networkSrc.Primaries = t.Primaries
 				networkSrc.Secondaries = t.Secondaries
 			}
 			r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseSeeding, metav1.ConditionFalse,
-				"Seeding", fmt.Sprintf("creating replica %q streaming from %v", dbName, src.Addresses), nil)
+				"Seeding", fmt.Sprintf("creating replica %q streaming from %v", dbName, addresses), nil)
 			if err := nc.CreateReplicaDatabaseFromNetwork(ctx, dbName, networkSrc); err != nil {
 				return r.fail(ctx, replica, "create replica database failed", err, requeue)
 			}
@@ -370,6 +384,40 @@ func (r *Neo4jReplicaDatabaseReconciler) requeueAfter() time.Duration {
 		return r.RequeueAfter
 	}
 	return 30 * time.Second
+}
+
+// resolveUpstreamClusterAddresses reads the upstream Neo4jEnterpriseCluster
+// named by ref and returns its status.internalAddresses. A cluster that
+// doesn't exist yet, or hasn't published internalAddresses yet, is an
+// ordinary Pending/requeue condition — not a terminal failure — since the
+// upstream may simply not have reconciled yet. The bool return is false in
+// both of those cases, with status/events already recorded by this
+// function; the caller just requeues.
+func (r *Neo4jReplicaDatabaseReconciler) resolveUpstreamClusterAddresses(
+	ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, ref *neo4jv1beta1.UpstreamClusterRef,
+) ([]string, bool, error) {
+	ns := ref.Namespace
+	if ns == "" {
+		ns = replica.Namespace
+	}
+	upstream := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	err := r.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: ns}, upstream)
+	if apierrors.IsNotFound(err) {
+		msg := fmt.Sprintf("upstream cluster %s/%s (source.upstreamClusterRef) not found", ns, ref.Name)
+		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhasePending, metav1.ConditionFalse,
+			EventReasonUpstreamClusterNotFound, msg, nil)
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if len(upstream.Status.InternalAddresses) == 0 {
+		msg := fmt.Sprintf("upstream cluster %s/%s has not published status.internalAddresses yet", ns, ref.Name)
+		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhasePending, metav1.ConditionFalse,
+			EventReasonUpstreamClusterNotReady, msg, nil)
+		return nil, false, nil
+	}
+	return upstream.Status.InternalAddresses, true, nil
 }
 
 func (r *Neo4jReplicaDatabaseReconciler) fail(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, label string, err error, requeue time.Duration) (ctrl.Result, error) {
