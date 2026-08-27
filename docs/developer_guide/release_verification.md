@@ -249,6 +249,15 @@ tests.
 
 **Part C — network mode core mechanism, same Kind cluster, no proxy (two concurrent deployments):**
 
+**Automated** — `test/integration/ccdr_same_cluster_network_mode_test.go`,
+`Label("extended")`, gated by `isCCDRReplicaCompatible()` (dormant on the
+default CI anchor; runs when dispatched with `neo4j-version:
+2026.08-enterprise+`). Uses `source.upstreamClusterRef` rather than a
+hand-typed `source.addresses` FQDN — exercises the same underlying mechanism
+via the newer, higher-level API. Re-run manually only if you want the
+hand-typed-address path specifically, or a version this repo's CI cannot yet
+dispatch.
+
 This is the highest-value scenario in this phase: it is the first time
 `CREATE REPLICA DATABASE ... OPTIONS {replicaConfig: {remote, addresses}}`
 runs against a real server, rather than being inferred from documentation.
@@ -289,6 +298,12 @@ replication *mechanism*, deliberately isolated from that gate.
 → **Tear down both deployments**, then delete the Kind cluster.
 
 **Part D — network mode proxy toggle, Kind-only smoke check (single deployment):**
+
+**Automated** — `test/integration/ccdr_proxy_test.go`, `Label("core")`. Needs
+no version gate (nothing here hosts a replica), so it runs on every PR
+against both CI anchors, not just on dispatch — the manual walk below is
+useful only for exploring interactively, not for verifying this before a
+release.
 
 Part C covers the replication mechanism; this part covers the one piece it
 deliberately left out — `spec.crossClusterReplication` itself. That gate
