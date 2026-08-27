@@ -107,7 +107,12 @@ var _ = Describe("Cross-Cluster Replication — API and validation", Label("exte
 		Expect(err.Error()).To(ContainSubstring("immutable"))
 	})
 
-	It("rejects network mode with an explanation, not a bare refusal", func() {
+	It("accepts network mode and goes Pending on a nonexistent cluster ref", func() {
+		// Network mode is a fully supported path (this session's work) — a
+		// syntactically valid address must be ACCEPTED, not rejected. The
+		// only reason this particular CR can't proceed is that its
+		// clusterRef doesn't exist yet, which is an ordinary Pending/retry
+		// condition, never Failed.
 		replica = &neo4jv1beta1.Neo4jReplicaDatabase{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "net-replica",
@@ -122,9 +127,35 @@ var _ = Describe("Cross-Cluster Replication — API and validation", Label("exte
 				},
 			},
 		}
-		// The enum permits "network" at the schema level; the inline validator
-		// rejects it during reconcile so the message can explain WHY (the
-		// advertised-address problem) rather than just refusing the value.
+		Expect(k8sClient.Create(ctx, replica)).To(Succeed())
+
+		Eventually(func() string {
+			fetched := &neo4jv1beta1.Neo4jReplicaDatabase{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: replica.Name, Namespace: testNamespace,
+			}, fetched); err != nil {
+				return ""
+			}
+			return fetched.Status.Phase
+		}, 300*time.Second, 2*time.Second).Should(Equal("Pending"))
+	})
+
+	It("rejects network mode with both addresses and upstreamClusterRef set", func() {
+		replica = &neo4jv1beta1.Neo4jReplicaDatabase{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "net-replica-both",
+				Namespace: testNamespace,
+			},
+			Spec: neo4jv1beta1.Neo4jReplicaDatabaseSpec{
+				ClusterRef:       "does-not-exist-yet",
+				UpstreamDatabase: "foo",
+				Source: neo4jv1beta1.ReplicaSourceSpec{
+					Mode:               neo4jv1beta1.ReplicaSourceModeNetwork,
+					Addresses:          []string{"upstream-0.example.com:6000"},
+					UpstreamClusterRef: &neo4jv1beta1.UpstreamClusterRef{Name: "prod-cluster"},
+				},
+			},
+		}
 		Expect(k8sClient.Create(ctx, replica)).To(Succeed())
 
 		Eventually(func() string {
@@ -141,8 +172,125 @@ var _ = Describe("Cross-Cluster Replication — API and validation", Label("exte
 		Expect(k8sClient.Get(ctx, types.NamespacedName{
 			Name: replica.Name, Namespace: testNamespace,
 		}, fetched)).To(Succeed())
-		Expect(fetched.Status.Message).To(ContainSubstring("advertised_address"),
-			"the rejection must name the cause, or users will try to fix it with Service config")
+		Expect(fetched.Status.Message).To(ContainSubstring("mutually exclusive"))
+	})
+
+	It("rejects network mode with neither addresses nor upstreamClusterRef set", func() {
+		replica = &neo4jv1beta1.Neo4jReplicaDatabase{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "net-replica-neither",
+				Namespace: testNamespace,
+			},
+			Spec: neo4jv1beta1.Neo4jReplicaDatabaseSpec{
+				ClusterRef:       "does-not-exist-yet",
+				UpstreamDatabase: "foo",
+				Source: neo4jv1beta1.ReplicaSourceSpec{
+					Mode: neo4jv1beta1.ReplicaSourceModeNetwork,
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, replica)).To(Succeed())
+
+		Eventually(func() string {
+			fetched := &neo4jv1beta1.Neo4jReplicaDatabase{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: replica.Name, Namespace: testNamespace,
+			}, fetched); err != nil {
+				return ""
+			}
+			return fetched.Status.Phase
+		}, 300*time.Second, 2*time.Second).Should(Equal(neo4jv1beta1.ReplicaPhaseFailed))
+	})
+
+	It("rejects an upstreamClusterRef with an empty name", func() {
+		replica = &neo4jv1beta1.Neo4jReplicaDatabase{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "net-replica-empty-ref",
+				Namespace: testNamespace,
+			},
+			Spec: neo4jv1beta1.Neo4jReplicaDatabaseSpec{
+				ClusterRef:       "does-not-exist-yet",
+				UpstreamDatabase: "foo",
+				Source: neo4jv1beta1.ReplicaSourceSpec{
+					Mode:               neo4jv1beta1.ReplicaSourceModeNetwork,
+					UpstreamClusterRef: &neo4jv1beta1.UpstreamClusterRef{},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, replica)).To(Succeed())
+
+		Eventually(func() string {
+			fetched := &neo4jv1beta1.Neo4jReplicaDatabase{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: replica.Name, Namespace: testNamespace,
+			}, fetched); err != nil {
+				return ""
+			}
+			return fetched.Status.Phase
+		}, 300*time.Second, 2*time.Second).Should(Equal(neo4jv1beta1.ReplicaPhaseFailed))
+	})
+
+	It("rejects backup mode with both pullURI and upstreamBackupRef set", func() {
+		replica = &neo4jv1beta1.Neo4jReplicaDatabase{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "backup-replica-both",
+				Namespace: testNamespace,
+			},
+			Spec: neo4jv1beta1.Neo4jReplicaDatabaseSpec{
+				ClusterRef:       "does-not-exist-yet",
+				UpstreamDatabase: "foo",
+				Source: neo4jv1beta1.ReplicaSourceSpec{
+					Mode:              neo4jv1beta1.ReplicaSourceModeBackup,
+					PullURI:           "s3://bucket/chain/",
+					UpstreamBackupRef: &neo4jv1beta1.UpstreamBackupRef{Name: "foo-chain"},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, replica)).To(Succeed())
+
+		Eventually(func() string {
+			fetched := &neo4jv1beta1.Neo4jReplicaDatabase{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: replica.Name, Namespace: testNamespace,
+			}, fetched); err != nil {
+				return ""
+			}
+			return fetched.Status.Phase
+		}, 300*time.Second, 2*time.Second).Should(Equal(neo4jv1beta1.ReplicaPhaseFailed))
+
+		fetched := &neo4jv1beta1.Neo4jReplicaDatabase{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: replica.Name, Namespace: testNamespace,
+		}, fetched)).To(Succeed())
+		Expect(fetched.Status.Message).To(ContainSubstring("mutually exclusive"))
+	})
+
+	It("rejects an upstreamBackupRef with an empty name", func() {
+		replica = &neo4jv1beta1.Neo4jReplicaDatabase{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "backup-replica-empty-ref",
+				Namespace: testNamespace,
+			},
+			Spec: neo4jv1beta1.Neo4jReplicaDatabaseSpec{
+				ClusterRef:       "does-not-exist-yet",
+				UpstreamDatabase: "foo",
+				Source: neo4jv1beta1.ReplicaSourceSpec{
+					Mode:              neo4jv1beta1.ReplicaSourceModeBackup,
+					UpstreamBackupRef: &neo4jv1beta1.UpstreamBackupRef{},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, replica)).To(Succeed())
+
+		Eventually(func() string {
+			fetched := &neo4jv1beta1.Neo4jReplicaDatabase{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: replica.Name, Namespace: testNamespace,
+			}, fetched); err != nil {
+				return ""
+			}
+			return fetched.Status.Phase
+		}, 300*time.Second, 2*time.Second).Should(Equal(neo4jv1beta1.ReplicaPhaseFailed))
 	})
 
 	It("accepts an alias whose target database does not exist yet", func() {

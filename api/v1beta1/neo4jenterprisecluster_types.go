@@ -103,6 +103,17 @@ type Neo4jEnterpriseClusterSpec struct {
 	// +optional
 	NetworkPolicy *NetworkPolicySpec `json:"networkPolicy,omitempty"`
 
+	// CrossClusterReplication enables network-mode cross-cluster database
+	// replication (CCDR) by deploying a self-hosted TCP proxy that exposes
+	// this cluster's tx-shipping port (6000) externally via one LoadBalancer
+	// Service. A downstream Neo4jReplicaDatabase in another Kubernetes
+	// cluster can then use `source.mode: network` against the addresses
+	// published in status.crossClusterReplication.addresses.
+	//
+	// Disabled by default. See docs/design/cross-cluster-replication.md.
+	// +optional
+	CrossClusterReplication *CrossClusterReplicationSpec `json:"crossClusterReplication,omitempty"`
+
 	// MCP server configuration for this cluster
 	MCP *MCPServerSpec `json:"mcp,omitempty"`
 
@@ -160,8 +171,11 @@ type Neo4jEnterpriseClusterSpec struct {
 	// TrustedCASecrets references Secrets containing additional CA certificates
 	// (key defaults to "ca.crt") that Neo4j-the-server should trust for outgoing
 	// TLS connections — e.g. OIDC providers behind a corporate CA, LDAPS, Aura
-	// Fleet Management, plugin download mirrors, and cross-cluster replication
-	// when it uses default JVM trust.
+	// Fleet Management, and plugin download mirrors.
+	//
+	// This does NOT cover cross-cluster replication trust: dbms.ssl.policy.
+	// cluster.* never reads this JVM-wide truststore. For that, use
+	// spec.tls.additionalClusterTrustCAs instead.
 	//
 	// The operator copies the JDK default cacerts into a writable JKS truststore
 	// at `/truststore/truststore.jks` via an init container, then imports each
@@ -332,6 +346,23 @@ type TLSSpec struct {
 	// +optional
 	// +kubebuilder:default=true
 	StrictPeerValidation *bool `json:"strictPeerValidation,omitempty"`
+
+	// AdditionalClusterTrustCAs references Secrets holding peer clusters' CA
+	// certificates. Each is projected as its own file directly into
+	// /ssl/trusted/ (Neo4j's cluster SSL policy trust directory — it scans
+	// every file present, not one fixed filename), alongside this cluster's
+	// own CA. Required for mutual TLS when replicating across clusters with
+	// different CAs (the normal case: separate Kubernetes clusters, separate
+	// cert-manager issuers) — e.g. network-mode cross-cluster replication
+	// (spec.crossClusterReplication). Must be set on BOTH clusters, each
+	// trusting the other's CA.
+	//
+	// Unlike TrustedCASecrets (a JVM-wide truststore that
+	// dbms.ssl.policy.cluster.* does not read), these land in the actual
+	// cluster-SSL trust anchor and are only relevant when
+	// strictPeerValidation is true.
+	// +optional
+	AdditionalClusterTrustCAs []TrustedCASecret `json:"additionalClusterTrustCAs,omitempty"`
 }
 
 // CertificateSubject defines certificate subject fields
@@ -917,8 +948,48 @@ type Neo4jEnterpriseClusterStatus struct {
 	// +optional
 	Diagnostics *ClusterDiagnosticsStatus `json:"diagnostics,omitempty"`
 
+	// CrossClusterReplication reports the state of the network-mode CCDR
+	// exposure proxy, when spec.crossClusterReplication.enabled is true.
+	// +optional
+	CrossClusterReplication *CrossClusterReplicationStatus `json:"crossClusterReplication,omitempty"`
+
+	// InternalAddresses is the ready-to-paste "<pod-fqdn>:6000" list for a
+	// downstream Neo4jReplicaDatabase's spec.source.addresses (or
+	// spec.source.upstreamClusterRef, which reads this field directly), for
+	// when the downstream is on this SAME Kubernetes cluster. Unlike
+	// CrossClusterReplication.Addresses, this needs no proxy, no
+	// LoadBalancer, and is always populated — ordinary in-cluster DNS
+	// already resolves these across namespaces on one cluster. Not
+	// routable from a genuinely separate Kubernetes cluster; use
+	// CrossClusterReplication for that.
+	// +optional
+	InternalAddresses []string `json:"internalAddresses,omitempty"`
+
 	// ObservedGeneration reflects the generation most recently observed by the controller
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+}
+
+// CrossClusterReplicationStatus reports the state of the network-mode CCDR
+// exposure proxy.
+type CrossClusterReplicationStatus struct {
+	// Ready is true once the proxy's LoadBalancer Service has an assigned
+	// hostname/IP and every server's advertised address has been updated to
+	// route through it.
+	// +optional
+	Ready bool `json:"ready,omitempty"`
+
+	// Addresses is the ready-to-paste list for a downstream
+	// Neo4jReplicaDatabase's spec.source.addresses — one entry per server
+	// ordinal, "<lb-hostname>:<port>". Only one entry is actually required
+	// on the downstream side (Neo4j redirects to the rest), but the full
+	// list is published so any entry can be used.
+	// +optional
+	Addresses []string `json:"addresses,omitempty"`
+
+	// LoadBalancerHostname is the external hostname or IP assigned to the
+	// proxy's Service.
+	// +optional
+	LoadBalancerHostname string `json:"loadBalancerHostname,omitempty"`
 }
 
 // AuraFleetManagementStatus reports the registration state of the Aura Fleet Management plugin.
@@ -1643,6 +1714,62 @@ type NetworkPolicySpec struct {
 	// unauthorized user can make a copy of the database."
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
+
+	// AllowReplicasFrom additively admits named downstream
+	// Neo4jEnterpriseClusters' server pods on port 6000 (tx-shipping) only —
+	// never RAFT or routing — for same-Kubernetes-cluster network-mode CCDR
+	// replicas that would otherwise be blocked by the peer-restriction rule
+	// above (which only admits this cluster's own neo4j.com/cluster label).
+	// Opt-in: nothing is admitted unless explicitly listed here. Irrelevant
+	// to backup-mode replication, which has no network coupling to
+	// restrict.
+	// +optional
+	AllowReplicasFrom []NetworkPolicyPeerCluster `json:"allowReplicasFrom,omitempty"`
+}
+
+// NetworkPolicyPeerCluster names a downstream Neo4jEnterpriseCluster to
+// admit as a NetworkPolicy peer on port 6000.
+type NetworkPolicyPeerCluster struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace of the downstream Neo4jEnterpriseCluster. Defaults to this
+	// cluster's own namespace when omitted.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// CrossClusterReplicationSpec configures network-mode cross-cluster database
+// replication (CCDR) exposure for this cluster.
+type CrossClusterReplicationSpec struct {
+	// Enabled deploys a self-hosted TCP proxy (HAProxy, mode tcp) exposing
+	// this cluster's tx-shipping port (6000) externally via one LoadBalancer
+	// Service, and overrides server.cluster.advertised_address per-server to
+	// the proxy's external endpoint. server.cluster.raft.advertised_address
+	// (7000) and server.routing.advertised_address (7688) are left
+	// untouched — RAFT leader election never depends on this load balancer.
+	//
+	// Opt-in tradeoff, stated plainly: enabling this means intra-cluster
+	// secondary catch-up traffic (which shares port 6000 with cross-cluster
+	// replica traffic) also routes through the load balancer, adding
+	// latency and LB-dependent cost proportional to write volume.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// LoadBalancerInternal keeps the proxy's Service on a private/internal
+	// load balancer where the cloud provider supports it. Default true —
+	// this design has no DNS split to keep intra-cluster traffic off the
+	// load balancer, so defaulting to an internal LB is the main available
+	// mitigation against public exposure.
+	// +kubebuilder:default=true
+	// +optional
+	LoadBalancerInternal *bool `json:"loadBalancerInternal,omitempty"`
+
+	// Annotations are passed through to the proxy's Service, for
+	// cloud-specific load balancer tuning (e.g. the internal-LB annotation
+	// key, which differs per cloud provider).
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 // MonitoringSpec defines monitoring, metrics, and query logging configuration.

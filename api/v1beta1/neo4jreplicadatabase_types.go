@@ -113,13 +113,17 @@ type ReplicaSourceSpec struct {
 	// Mode selects the replication mechanism.
 	//
 	// "backup" pulls a differential backup chain from object storage and
-	// needs no network path between clusters. This is the only mode this
-	// operator supports.
+	// needs no network path between clusters.
 	//
-	// "network" streams directly from the upstream's cluster endpoints. It is
-	// rejected by the validator: it requires the upstream servers'
-	// `server.cluster.advertised_address` values to be externally routable,
-	// which this operator pins to in-cluster DNS. See
+	// "network" streams directly from the upstream's cluster endpoints —
+	// either listed explicitly (source.addresses) or resolved automatically
+	// from an upstream on this same Kubernetes cluster
+	// (source.upstreamClusterRef). For a genuinely separate upstream
+	// Kubernetes cluster, source.addresses requires the upstream servers'
+	// `server.cluster.advertised_address` to be externally routable — set
+	// `spec.crossClusterReplication.enabled: true` on the upstream
+	// Neo4jEnterpriseCluster and read the ready-to-use endpoint list from its
+	// `status.crossClusterReplication.addresses`. See
 	// docs/design/cross-cluster-replication.md §6.
 	// +kubebuilder:validation:Enum=backup;network
 	// +kubebuilder:default=backup
@@ -132,11 +136,26 @@ type ReplicaSourceSpec struct {
 	// This must be the directory the upstream Neo4jBackup CR writes into —
 	// read it from that CR's `status.replicationPullURI`. Pointing at the
 	// bucket root, or at a directory a second backup CR also writes to, breaks
-	// the chain.
+	// the chain. Mutually exclusive with UpstreamBackupRef — set exactly one
+	// for backup mode.
 	//
 	// Example: "s3://prod-backups/foo-chain/"
 	// +optional
 	PullURI string `json:"pullURI,omitempty"`
+
+	// UpstreamBackupRef resolves PullURI automatically from an upstream
+	// Neo4jBackup CR's status.replicationPullURI, instead of typing the URI
+	// by hand. Mutually exclusive with PullURI (SeedURI and
+	// CredentialsSecretRef remain independent — set either alongside this
+	// if needed).
+	//
+	// Only usable when the upstream Neo4jBackup is on this SAME Kubernetes
+	// cluster: resolution is a live Get against this cluster's own API
+	// server, which cannot reach a genuinely separate physical cluster. For
+	// a backup CR on a different Kubernetes cluster, use PullURI instead —
+	// paste it from that CR's own status.replicationPullURI by hand.
+	// +optional
+	UpstreamBackupRef *UpstreamBackupRef `json:"upstreamBackupRef,omitempty"`
 
 	// SeedURI is the full backup artifact the replica is initially seeded
 	// from, before it starts applying differentials. Must belong to the same
@@ -146,11 +165,28 @@ type ReplicaSourceSpec struct {
 	// +optional
 	SeedURI string `json:"seedURI,omitempty"`
 
-	// Addresses lists upstream cluster endpoints for network mode. Unused
-	// while network mode is rejected; present so the API does not change shape
-	// if it later becomes supported.
+	// Addresses lists upstream cluster endpoints for network mode
+	// (host:port, the upstream's port 6000). One reachable address is
+	// sufficient: the upstream hands back the addresses the downstream then
+	// actually uses (its own advertised cluster addresses), so this list only
+	// needs to get the first connection made. Ignored in backup mode.
+	// Mutually exclusive with UpstreamClusterRef — set exactly one for
+	// network mode.
 	// +optional
 	Addresses []string `json:"addresses,omitempty"`
+
+	// UpstreamClusterRef resolves Addresses automatically from an upstream
+	// Neo4jEnterpriseCluster's status.internalAddresses, instead of listing
+	// them by hand. Mutually exclusive with Addresses — set exactly one for
+	// network mode.
+	//
+	// Only usable when the upstream is on this SAME Kubernetes cluster:
+	// resolution is a live Get against this cluster's own API server, which
+	// cannot reach a genuinely separate physical cluster. For an upstream on
+	// a different Kubernetes cluster, use Addresses instead, populated from
+	// the upstream's spec.crossClusterReplication proxy.
+	// +optional
+	UpstreamClusterRef *UpstreamClusterRef `json:"upstreamClusterRef,omitempty"`
 
 	// CredentialsSecretRef names a Secret holding object-storage credentials
 	// for PullURI/SeedURI, when the downstream cluster cannot reach the bucket
@@ -158,6 +194,35 @@ type ReplicaSourceSpec struct {
 	// credentials.
 	// +optional
 	CredentialsSecretRef string `json:"credentialsSecretRef,omitempty"`
+}
+
+// UpstreamClusterRef references an upstream Neo4jEnterpriseCluster to
+// resolve network-mode addresses from automatically, instead of listing
+// them in Addresses. Only usable when the upstream is on this SAME
+// Kubernetes cluster: resolution is a live Get against this cluster's own
+// API server, which cannot reach a genuinely separate physical cluster. For
+// an upstream on a different Kubernetes cluster, use Addresses instead,
+// populated from the upstream's spec.crossClusterReplication proxy.
+type UpstreamClusterRef struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace of the upstream Neo4jEnterpriseCluster. Defaults to this
+	// Neo4jReplicaDatabase's own namespace when omitted.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// UpstreamBackupRef references an upstream Neo4jBackup CR to resolve
+// PullURI from automatically.
+type UpstreamBackupRef struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace of the upstream Neo4jBackup. Defaults to this
+	// Neo4jReplicaDatabase's own namespace when omitted.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // Neo4jReplicaDatabaseStatus describes the observed state of a replica.

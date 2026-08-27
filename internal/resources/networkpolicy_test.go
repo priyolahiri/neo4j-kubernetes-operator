@@ -182,6 +182,78 @@ func TestBuildNetworkPolicyForEnterprise_PeerPortsRestrictedToCluster(t *testing
 	}
 }
 
+// TestBuildNetworkPolicyForEnterprise_AllowReplicasFrom pins the opt-in
+// additive rule: an explicitly-listed downstream cluster is admitted on port
+// 6000 only, scoped by BOTH podSelector (neo4j.com/cluster) AND
+// namespaceSelector (kubernetes.io/metadata.name) — podSelector alone would
+// match a same-named cluster in any namespace.
+func TestBuildNetworkPolicyForEnterprise_AllowReplicasFrom(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod-cluster", Namespace: "prod"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			AcceptLicenseAgreement: "eval",
+			NetworkPolicy: &neo4jv1beta1.NetworkPolicySpec{
+				Enabled: true,
+				AllowReplicasFrom: []neo4jv1beta1.NetworkPolicyPeerCluster{
+					{Name: "dr-cluster", Namespace: "dr"},
+				},
+			},
+		},
+	}
+	np := resources.BuildNetworkPolicyForEnterprise(cluster)
+	require.NotNil(t, np)
+	require.Len(t, np.Spec.Ingress, 4, "expected the 3 baseline rules plus the new opt-in rule")
+
+	rule := np.Spec.Ingress[3]
+	require.Len(t, rule.Ports, 1)
+	assert.EqualValues(t, 6000, rule.Ports[0].Port.IntValue())
+
+	require.Len(t, rule.From, 1)
+	peer := rule.From[0]
+	require.NotNil(t, peer.PodSelector)
+	assert.Equal(t, "dr-cluster", peer.PodSelector.MatchLabels["neo4j.com/cluster"])
+	require.NotNil(t, peer.NamespaceSelector)
+	assert.Equal(t, "dr", peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+}
+
+// TestBuildNetworkPolicyForEnterprise_AllowReplicasFromDefaultsNamespace
+// confirms an omitted peer namespace defaults to this cluster's own
+// namespace (same-namespace replica, not the common case, but should still
+// resolve correctly).
+func TestBuildNetworkPolicyForEnterprise_AllowReplicasFromDefaultsNamespace(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod-cluster", Namespace: "prod"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			AcceptLicenseAgreement: "eval",
+			NetworkPolicy: &neo4jv1beta1.NetworkPolicySpec{
+				Enabled:           true,
+				AllowReplicasFrom: []neo4jv1beta1.NetworkPolicyPeerCluster{{Name: "dr-cluster"}},
+			},
+		},
+	}
+	np := resources.BuildNetworkPolicyForEnterprise(cluster)
+	require.NotNil(t, np)
+	rule := np.Spec.Ingress[len(np.Spec.Ingress)-1]
+	require.Len(t, rule.From, 1)
+	assert.Equal(t, "prod", rule.From[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
+}
+
+// TestBuildNetworkPolicyForEnterprise_NoAllowReplicasFromRuleByDefault
+// confirms an empty (or unset) AllowReplicasFrom renders no extra rule —
+// opt-in means nothing changes unless explicitly configured.
+func TestBuildNetworkPolicyForEnterprise_NoAllowReplicasFromRuleByDefault(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod-cluster", Namespace: "prod"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			AcceptLicenseAgreement: "eval",
+			NetworkPolicy:          &neo4jv1beta1.NetworkPolicySpec{Enabled: true},
+		},
+	}
+	np := resources.BuildNetworkPolicyForEnterprise(cluster)
+	require.NotNil(t, np)
+	assert.Len(t, np.Spec.Ingress, 3)
+}
+
 // TestBuildNetworkPolicyForStandalone covers the standalone shape:
 // minimal podSelector (just `app: <name>`), public ports open, backup
 // port restricted to operator-managed backup pods.

@@ -553,6 +553,111 @@ func TestBuildCertificateForEnterprise_DNSNames(t *testing.T) {
 	}
 }
 
+// TestBuildCertificateForEnterprise_CCDRProxySAN pins the additive SAN
+// covering the CCDR proxy's external load balancer hostname: absent until
+// cluster.Status.CrossClusterReplication.LoadBalancerHostname is known, one
+// SAN added (not per-ordinal — only the port differs, which SAN matching
+// ignores) once it is.
+func TestBuildCertificateForEnterprise_CCDRProxySAN(t *testing.T) {
+	baseCluster := func() *neo4jv1beta1.Neo4jEnterpriseCluster {
+		return &neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "ns"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				AcceptLicenseAgreement: "eval",
+				Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 2},
+				TLS: &neo4jv1beta1.TLSSpec{
+					Mode:      "cert-manager",
+					IssuerRef: &neo4jv1beta1.IssuerRef{Name: "test-issuer", Kind: "ClusterIssuer"},
+				},
+			},
+		}
+	}
+
+	t.Run("no SAN when the load balancer hostname is unknown", func(t *testing.T) {
+		cert := resources.BuildCertificateForEnterprise(baseCluster())
+		require.NotNil(t, cert)
+		assert.NotContains(t, cert.Spec.DNSNames, "prod-ccdr.example.com")
+	})
+
+	t.Run("SAN added once the load balancer hostname is known", func(t *testing.T) {
+		cluster := baseCluster()
+		cluster.Status.CrossClusterReplication = &neo4jv1beta1.CrossClusterReplicationStatus{
+			Ready:                true,
+			LoadBalancerHostname: "prod-ccdr.example.com",
+		}
+		cert := resources.BuildCertificateForEnterprise(cluster)
+		require.NotNil(t, cert)
+		assert.Contains(t, cert.Spec.DNSNames, "prod-ccdr.example.com")
+	})
+}
+
+// TestBuildPodSpecForEnterprise_AdditionalClusterTrustCAs pins the additive
+// trust-directory wiring for spec.tls.additionalClusterTrustCAs: one
+// Secret-backed volume + one SubPath-mounted VolumeMount per entry, landing
+// in /ssl/trusted/ alongside (never replacing) the existing single-Secret
+// CertsVolume mount.
+func TestBuildPodSpecForEnterprise_AdditionalClusterTrustCAs(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "ns"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			AcceptLicenseAgreement: "eval",
+			Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
+			Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 2},
+			TLS: &neo4jv1beta1.TLSSpec{
+				Mode:      "cert-manager",
+				IssuerRef: &neo4jv1beta1.IssuerRef{Name: "test-issuer", Kind: "ClusterIssuer"},
+				AdditionalClusterTrustCAs: []neo4jv1beta1.TrustedCASecret{
+					{Name: "dr-cluster-ca"},
+					{Name: "dr-cluster-ca-2", Key: "tls.crt"},
+				},
+			},
+		},
+	}
+
+	podSpec := resources.BuildPodSpecForEnterprise(cluster, "prod-server-0", "prod-admin-secret")
+
+	var mounts []corev1.VolumeMount
+	for _, c := range podSpec.Containers {
+		if c.Name == resources.Neo4jContainer {
+			mounts = c.VolumeMounts
+		}
+	}
+	require.NotEmpty(t, mounts)
+
+	assert.Contains(t, mounts, corev1.VolumeMount{
+		Name:      "cluster-trust-ca-dr-cluster-ca",
+		MountPath: "/ssl/trusted/peer-ca-0.crt",
+		SubPath:   "ca.crt",
+		ReadOnly:  true,
+	})
+	assert.Contains(t, mounts, corev1.VolumeMount{
+		Name:      "cluster-trust-ca-dr-cluster-ca-2",
+		MountPath: "/ssl/trusted/peer-ca-1.crt",
+		SubPath:   "ca.crt",
+		ReadOnly:  true,
+	})
+
+	// The existing single-Secret CertsVolume mount at /ssl must be untouched.
+	assert.Contains(t, mounts, corev1.VolumeMount{
+		Name:      resources.CertsVolume,
+		MountPath: "/ssl",
+		ReadOnly:  true,
+	})
+
+	var volNames []string
+	for _, v := range podSpec.Volumes {
+		volNames = append(volNames, v.Name)
+		if v.Name == "cluster-trust-ca-dr-cluster-ca-2" {
+			require.NotNil(t, v.Secret)
+			require.Len(t, v.Secret.Items, 1)
+			assert.Equal(t, "tls.crt", v.Secret.Items[0].Key)
+			assert.Equal(t, "ca.crt", v.Secret.Items[0].Path)
+		}
+	}
+	assert.Contains(t, volNames, "cluster-trust-ca-dr-cluster-ca")
+	assert.Contains(t, volNames, "cluster-trust-ca-dr-cluster-ca-2")
+}
+
 func TestBuildClientServiceForEnterprise_WithEnhancedFeatures(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -1165,6 +1270,48 @@ func TestBuildBackupFromAddresses(t *testing.T) {
 		"my-cluster-server-1.my-cluster-headless.default.svc.cluster.local:6362," +
 		"my-cluster-server-2.my-cluster-headless.default.svc.cluster.local:6362"
 	assert.Equal(t, expected, addrs)
+}
+
+// TestServerClusterAddresses pins the plain-FQDN, port-6000 address list
+// published unconditionally as status.internalAddresses — the
+// same-Kubernetes-cluster counterpart to BuildBackupFromAddresses (which is
+// port 6362, comma-joined into a single string rather than a slice).
+func TestServerClusterAddresses(t *testing.T) {
+	tests := []struct {
+		name    string
+		servers int32
+		want    []string
+	}{
+		{
+			name:    "three servers",
+			servers: 3,
+			want: []string{
+				"my-cluster-server-0.my-cluster-headless.default.svc.cluster.local:6000",
+				"my-cluster-server-1.my-cluster-headless.default.svc.cluster.local:6000",
+				"my-cluster-server-2.my-cluster-headless.default.svc.cluster.local:6000",
+			},
+		},
+		{
+			name:    "minimum two servers",
+			servers: 2,
+			want: []string{
+				"my-cluster-server-0.my-cluster-headless.default.svc.cluster.local:6000",
+				"my-cluster-server-1.my-cluster-headless.default.svc.cluster.local:6000",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "default"},
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					AcceptLicenseAgreement: "eval",
+					Topology:               neo4jv1beta1.TopologyConfiguration{Servers: tt.servers},
+				},
+			}
+			assert.Equal(t, tt.want, resources.ServerClusterAddresses(cluster))
+		})
+	}
 }
 
 // TestBuildStandaloneBackupFromAddress locks in the standalone-specific

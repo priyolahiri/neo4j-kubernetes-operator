@@ -471,3 +471,63 @@ func TestBuildConfigMapForEnterprise_NoDuplicateKeys(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildStartupScript_CrossClusterReplicationAdvertisedAddress pins the
+// conditional override of server.cluster.advertised_address: absent (or not
+// yet ready) it must render byte-identical to the plain FQDN default; once
+// the CCDR proxy's load balancer hostname is known in cluster.Status, it must
+// override to the proxy's external endpoint on exactly one line, and must
+// never touch the RAFT (7000) or routing (7688) advertised addresses.
+func TestBuildStartupScript_CrossClusterReplicationAdvertisedAddress(t *testing.T) {
+	baseSpec := neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+		AcceptLicenseAgreement: "eval",
+		Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
+		Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 3},
+	}
+
+	t.Run("crossClusterReplication unset renders the plain FQDN default", func(t *testing.T) {
+		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "ns"},
+			Spec:       baseSpec,
+		}
+		script := resources.BuildConfigMapForEnterprise(cluster).Data["startup.sh"]
+		assert.Contains(t, script, "server.cluster.advertised_address=${HOSTNAME_FQDN}:6000")
+	})
+
+	t.Run("enabled but load balancer hostname not yet known still renders the plain FQDN default", func(t *testing.T) {
+		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "ns"},
+			Spec:       baseSpec,
+		}
+		cluster.Spec.CrossClusterReplication = &neo4jv1beta1.CrossClusterReplicationSpec{Enabled: true}
+		script := resources.BuildConfigMapForEnterprise(cluster).Data["startup.sh"]
+		assert.Contains(t, script, "server.cluster.advertised_address=${HOSTNAME_FQDN}:6000")
+	})
+
+	t.Run("load balancer hostname known overrides to the proxy endpoint", func(t *testing.T) {
+		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "ns"},
+			Spec:       baseSpec,
+		}
+		cluster.Spec.CrossClusterReplication = &neo4jv1beta1.CrossClusterReplicationSpec{Enabled: true}
+		cluster.Status.CrossClusterReplication = &neo4jv1beta1.CrossClusterReplicationStatus{
+			Ready:                true,
+			LoadBalancerHostname: "prod-ccdr.example.com",
+		}
+		script := resources.BuildConfigMapForEnterprise(cluster).Data["startup.sh"]
+
+		assert.NotContains(t, script, "server.cluster.advertised_address=${HOSTNAME_FQDN}:6000")
+		assert.Contains(t, script,
+			fmt.Sprintf("server.cluster.advertised_address=prod-ccdr.example.com:$((%d + SERVER_INDEX))",
+				resources.CCDRProxyBasePort))
+
+		// server.cluster.advertised_address must be declared exactly once —
+		// Neo4j refuses to start otherwise.
+		assert.Equal(t, 1, strings.Count(script, "server.cluster.advertised_address="))
+
+		// RAFT and routing advertised addresses are never touched by this
+		// override.
+		assert.Contains(t, script, "server.routing.advertised_address=${HOSTNAME_FQDN}:7688")
+		assert.Contains(t, script, "server.cluster.raft.advertised_address=${HOSTNAME_FQDN}:7000")
+	})
+}

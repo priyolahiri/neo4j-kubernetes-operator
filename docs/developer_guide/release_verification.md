@@ -28,7 +28,10 @@ teardown, reporting) and defers to this page for *what* to test.
   rule). Running standalone + cluster + sharding JVMs concurrently on a laptop
   VM wedges Bolt (the HTTP probe reports `Ready` but ports 7687/6362 time out).
   Phases run **sequentially with full teardown between them**; the Kind cluster,
-  operator, and cert-manager stay up across phases.
+  operator, and cert-manager stay up across phases. **One deliberate exception:**
+  Phase 5 Part C runs two small clusters concurrently, because network-mode
+  replication cannot be tested sequentially — kept small (2 servers each) to
+  bound the wedging risk this rule exists to avoid.
 - **Restore must be walked on BOTH standalone and cluster** — the mechanism
   differs (see the routing table) and one never covers the other.
 
@@ -190,21 +193,33 @@ delete can leave a running instance behind. Confirm with
 `GET /v1/instances/<id>` → **404** and a project instance list of **0** before you
 call the phase done.
 
-### Phase 5 — Cross-cluster replication (two deployments, run sequentially; needs `2026.08+`)
+### Phase 5 — Cross-cluster replication (two deployments; sequential for backup mode, concurrent for network mode; needs `2026.08+`)
 
 **Run this only when a `2026.08+` enterprise image is available.** Hosting a
 replica requires it, and the check is enforced — on an older image the CR fails
 with `ReplicaVersionTooOld` and nothing else in this phase can proceed. That is
 itself scenario 1: confirm the gate fires rather than silently doing nothing.
 
-This phase looks like it breaks the **one Enterprise deployment at a time**
-ground rule. It does not, and the reason is the point of the feature: with
-backup-based replication the two clusters are coupled **only through the
-object store**, never over the network. So the upstream produces its chain,
-gets torn down, and *then* the downstream comes up and pulls from the bucket.
-Two deployments, never concurrent.
+Parts A/B below (backup mode, `source.mode: backup`) look like they break the
+**one Enterprise deployment at a time** ground rule. They do not, and the
+reason is the point of that mode: the two clusters are coupled **only through
+the object store**, never over the network. So the upstream produces its
+chain, gets torn down, and *then* the downstream comes up and pulls from the
+bucket. Two deployments, never concurrent.
 
-Stand up MinIO as the shared bucket (same pattern the backup specs use).
+Network mode (`source.mode: network`, Parts C/D below) needs a live network
+path, but "two clusters" doesn't mean leaving Kind or leaving this single
+deployment session: Part C runs the real replication mechanism between two
+`Neo4jEnterpriseCluster`s in different namespaces on **this same Kind
+cluster**, reachable over ordinary in-cluster DNS — no proxy, no
+`crossClusterReplication`, no LoadBalancer needed. Part D then smoke-tests
+the `crossClusterReplication` proxy toggle itself, which plain Kind cannot
+exercise end-to-end (see Part D for why). Between them they cover everything
+this journey can reach; see each part for exactly what it does and does not
+cover.
+
+Stand up MinIO as the shared bucket (same pattern the backup specs use) for
+Parts A/B.
 
 **Part A — upstream (standalone is enough):**
 
@@ -223,7 +238,6 @@ Stand up MinIO as the shared bucket (same pattern the backup specs use).
 | Replica seeds | `Neo4jReplicaDatabase` with `source.pullURI`/`seedURI` from Part A → phase `Replicating`; `SHOW DATABASES` shows `type=replica`, `access=read-only`, `writer=false` on **every** copy including primaries |
 | Replica is read-only | a write via `cypher-shell` fails; the same query with `--access-mode=read` succeeds |
 | Alias pre-staged against a replica | `Neo4jDatabaseAlias` targeting the replica → `Ready` **while the target is still a replica** (this is what removes work from the failover window) |
-| `network` mode rejected | `source.mode: network` → `Failed`, and the message names `advertised_address`. A bare "unsupported" would send someone off configuring Services |
 | Promotion | `Neo4jReplicaPromotion` → `Completed`; `status.observedLagTxIds` recorded; `SHOW DATABASES` now shows a standard read-write type |
 | Alias survives promotion | the **same** alias now resolves to a read-write database — no CR change, no client reconfiguration |
 | Replica CR goes inert | the `Neo4jReplicaDatabase` is `phase: Promoted`; **delete it and confirm the database is NOT dropped** |
@@ -232,6 +246,88 @@ Stand up MinIO as the shared bucket (same pattern the backup specs use).
 That last row is the one worth doing carefully: it is the failure mode the
 whole observe-before-act design exists to prevent, and it is invisible to unit
 tests.
+
+**Part C — network mode core mechanism, same Kind cluster, no proxy (two concurrent deployments):**
+
+**Automated** — `test/integration/ccdr_same_cluster_network_mode_test.go`,
+`Label("extended")`, gated by `isCCDRReplicaCompatible()` (dormant on the
+default CI anchor; runs when dispatched with `neo4j-version:
+2026.08-enterprise+`). Uses `source.upstreamClusterRef` rather than a
+hand-typed `source.addresses` FQDN — exercises the same underlying mechanism
+via the newer, higher-level API. Re-run manually only if you want the
+hand-typed-address path specifically, or a version this repo's CI cannot yet
+dispatch.
+
+This is the highest-value scenario in this phase: it is the first time
+`CREATE REPLICA DATABASE ... OPTIONS {replicaConfig: {remote, addresses}}`
+runs against a real server, rather than being inferred from documentation.
+
+Deploy two small `Neo4jEnterpriseCluster`s (2 servers each, CI-sized
+resources) in different namespaces on **this same Kind cluster** — e.g.
+`prod-cluster` in namespace `prod`, `dr-cluster` in namespace `dr`. Leave
+`spec.crossClusterReplication` **unset** on the upstream; do not create the
+proxy at all. Point the downstream `Neo4jReplicaDatabase` directly at the
+upstream's plain internal pod FQDN — reachable across namespaces on the same
+cluster by ordinary in-cluster DNS, no Service changes needed:
+
+```
+prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000
+```
+
+**This deliberately breaks the one-deployment-at-a-time rule** — network
+replication cannot be tested sequentially the way backup mode can, the two
+clusters must be up together. Keep both small (2 servers, CI-appropriate
+resource requirements) to limit the Bolt-wedging risk the anti-wedge rule
+exists for; if Bolt does wedge here, that is itself a real finding about
+concurrent-deployment resource limits, not a test artifact to work around.
+
+| Scenario | Verify |
+|---|---|
+| Network replica seeds from a plain internal FQDN | `Neo4jReplicaDatabase` with `source.mode: network`, `source.addresses` set to the upstream's server-0 pod FQDN above → phase `Replicating`; `SHOW DATABASES` shows `type=replica`, `access=read-only`, `writer=false` |
+| One address is sufficient | list only server-0's address, not all N — replication still reaches every ordinal, confirming the design doc's Q1 finding that the upstream hands back the addresses the downstream actually uses |
+| Malformed/missing address rejected before any Cypher runs | `source.addresses: []` or a host with no port → validator error, no `CREATE REPLICA DATABASE` attempt |
+| Promotion works the same as backup mode | `Neo4jReplicaPromotion` against this replica → `Completed`, `SHOW DATABASES` now shows a standard read-write type |
+
+This scenario does **not** exercise `spec.crossClusterReplication` itself —
+no proxy, no advertised-address override, no cert SAN, no NetworkPolicy rule.
+That gate depends on the proxy's Service reaching a real
+`status.loadBalancer.ingress` state, which is identical whether one Kind
+cluster or two are involved (see Part D) — this scenario is about the
+replication *mechanism*, deliberately isolated from that gate.
+
+→ **Tear down both deployments**, then delete the Kind cluster.
+
+**Part D — network mode proxy toggle, Kind-only smoke check (single deployment):**
+
+**Automated** — `test/integration/ccdr_proxy_test.go`, `Label("core")`. Needs
+no version gate (nothing here hosts a replica), so it runs on every PR
+against both CI anchors, not just on dispatch — the manual walk below is
+useful only for exploring interactively, not for verifying this before a
+release.
+
+Part C covers the replication mechanism; this part covers the one piece it
+deliberately left out — `spec.crossClusterReplication` itself. That gate
+depends on the proxy's Service reaching a real `status.loadBalancer.ingress`
+state, and a `type: LoadBalancer` Service never gets one on plain Kind (no
+cloud provider) — this repo has **no LoadBalancer-on-Kind tooling today**, no
+MetalLB, no `cloud-provider-kind`, in the Makefile, dev scripts, or Kind
+cluster config. That's unbuilt local tooling, not a hard requirement for real
+cloud infrastructure or even for a second Kind cluster (two Kind clusters
+share a Docker network by default and can already route to each other, the
+same trick used for local multi-cluster testing elsewhere — Cilium
+ClusterMesh, Istio multi-cluster). Until the LoadBalancer piece exists, full
+end-to-end verification of the proxy path itself is not run here.
+
+What *is* verifiable on a single plain Kind cluster is that the toggle itself
+is safe — it must never break normal cluster formation, whether or not a real
+load balancer is present to service it:
+
+| Scenario | Verify |
+|---|---|
+| Proxy resources render | `Neo4jEnterpriseCluster` with `spec.crossClusterReplication.enabled: true` → a `<name>-ccdr` ConfigMap/Deployment/Service appear, and the cluster still reaches `Ready` (this proves the toggle doesn't wedge formation even when the LoadBalancer never gets an address on plain Kind) |
+| NetworkPolicy stays additive | with `spec.networkPolicy.enabled: true` too → the existing 3 ingress rules are unchanged and a 4th rule admits only the `ccdr-proxy` pod on port 6000 |
+| Advertised address stays internal until ready | `status.crossClusterReplication.ready` stays `false` (Kind has no LoadBalancer controller by default) → `server.cluster.advertised_address` in the rendered ConfigMap is still the pod FQDN, not the proxy's hostname |
+| Toggling off tears down cleanly | flip `enabled` back to `false` → the ConfigMap/Deployment/Service are deleted and `status.crossClusterReplication` clears |
 
 → **Tear down**, then delete the Kind cluster.
 
@@ -249,7 +345,7 @@ tests.
 | Aura Fleet Management | ✅ (plugin + token) | | | ✅ (`provision`) | |
 | Aura console RBAC | | | | ✅ | |
 | Aura read-contract sweep | | | | ✅ (GET-only) | |
-| Cross-cluster replication | | | | | ✅ |
+| Cross-cluster replication | | | | | ✅ backup mode + network mode mechanism (same-cluster); network mode proxy is toggle-only (needs LoadBalancer-on-Kind tooling this repo doesn't have yet) |
 | Database aliases | ✅ | | | | ✅ (survives promotion) |
 | Operator→Neo4j TLS (CA + pinned) | ✅ | | | n/a (HTTPS to Aura) | |
 

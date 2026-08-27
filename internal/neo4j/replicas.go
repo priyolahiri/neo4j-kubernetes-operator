@@ -98,6 +98,80 @@ func (c *Client) CreateReplicaDatabaseFromBackup(ctx context.Context, databaseNa
 	return nil
 }
 
+// ReplicaNetworkSource describes a network-based replication source: the
+// downstream streams directly from the upstream cluster's advertised
+// cluster addresses rather than pulling a backup chain from object storage.
+type ReplicaNetworkSource struct {
+	// UpstreamDatabase is the database name on the upstream cluster
+	// (replicaConfig.remote).
+	UpstreamDatabase string
+	// Addresses lists upstream cluster endpoints (host:port, port 6000) to
+	// dial. Per the design doc's confirmed behaviour, one reachable address
+	// is sufficient — the upstream hands back the addresses the downstream
+	// actually uses (its own advertised cluster addresses), so this list
+	// only needs to get the first connection made, not enumerate every
+	// server that could ever host the database.
+	Addresses []string
+	// Primaries / Secondaries set the replica's topology. Zero means "let
+	// Neo4j choose" and the TOPOLOGY clause is omitted.
+	Primaries   int32
+	Secondaries int32
+}
+
+// CreateReplicaDatabaseFromNetwork issues CREATE REPLICA DATABASE for the
+// network-streaming replication mode.
+//
+// Shape (Neo4j 2026.08+):
+//
+//	CREATE REPLICA DATABASE `foo-replica`
+//	TOPOLOGY 3 PRIMARIES 1 SECONDARY
+//	OPTIONS {replicaConfig: {remote: $remote, addresses: $addresses}}
+//	WAIT
+//
+// The upstream name and addresses go through query parameters rather than
+// string interpolation, matching CreateReplicaDatabaseFromBackup; only the
+// database name and TOPOLOGY counts are interpolated.
+func (c *Client) CreateReplicaDatabaseFromNetwork(ctx context.Context, databaseName string, src ReplicaNetworkSource) error {
+	if src.UpstreamDatabase == "" {
+		return fmt.Errorf("upstream database is required to create replica %q", databaseName)
+	}
+	if len(src.Addresses) == 0 {
+		return fmt.Errorf("at least one address is required to create network-based replica %q", databaseName)
+	}
+
+	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+		AccessMode:   neo4j.AccessModeWrite,
+		DatabaseName: "system",
+	})
+	defer c.closeSession(ctx, session)
+
+	query, params := buildCreateReplicaFromNetworkCypher(databaseName, src)
+	if _, err := session.Run(ctx, query, params); err != nil {
+		return fmt.Errorf("failed to create replica database %s: %w", databaseName, err)
+	}
+	return nil
+}
+
+// buildCreateReplicaFromNetworkCypher renders the CREATE REPLICA DATABASE
+// statement and parameters for network mode, split out from
+// CreateReplicaDatabaseFromNetwork so the Cypher construction is unit
+// testable without a live driver (mirrors buildOptionsClause's split).
+func buildCreateReplicaFromNetworkCypher(databaseName string, src ReplicaNetworkSource) (string, map[string]any) {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "CREATE REPLICA DATABASE `%s`", escapeBackticks(databaseName))
+	if clause := topologyClause(src.Primaries, src.Secondaries); clause != "" {
+		sb.WriteString(" " + clause)
+	}
+	sb.WriteString(" OPTIONS {replicaConfig: {remote: $remote, addresses: $addresses}}")
+	sb.WriteString(" WAIT")
+
+	params := map[string]any{
+		"remote":    src.UpstreamDatabase,
+		"addresses": src.Addresses,
+	}
+	return sb.String(), params
+}
+
 // PromoteReplicaDatabase converts a replica into an ordinary read-write
 // database via dbms.promoteReplicaDatabase.
 //

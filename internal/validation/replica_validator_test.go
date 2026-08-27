@@ -55,25 +55,111 @@ func TestReplicaValidator_ValidBackupSource(t *testing.T) {
 	}
 }
 
-// Network mode is rejected with the REASON, not a bare "unsupported" — the
-// operator pins advertised addresses to in-cluster DNS, and a user who is told
-// only "unsupported" will reasonably try to fix it with Service configuration,
-// which cannot work.
-func TestReplicaValidator_NetworkModeRejectedWithReason(t *testing.T) {
+func TestReplicaValidator_ValidNetworkSource(t *testing.T) {
 	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
-		r.Spec.Source.Mode = neo4jv1beta1.ReplicaSourceModeNetwork
-		r.Spec.Source.Addresses = []string{"upstream-0.example.com:6000"}
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:      neo4jv1beta1.ReplicaSourceModeNetwork,
+			Addresses: []string{"upstream-0.example.com:16000"},
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) != 0 {
+		t.Fatalf("expected no errors, got %v", res.Errors)
+	}
+	if len(res.Warnings) != 0 {
+		t.Errorf("expected no warnings, got %v", res.Warnings)
+	}
+}
+
+func TestReplicaValidator_NetworkSourceRequiresAddresses(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{Mode: neo4jv1beta1.ReplicaSourceModeNetwork}
 	})
 	res := NewReplicaValidator(nil).Validate(context.Background(), r)
 	if len(res.Errors) == 0 {
-		t.Fatal("expected network mode to be rejected")
+		t.Fatal("expected missing addresses to be rejected")
 	}
-	msg := res.Errors.ToAggregate().Error()
-	if !strings.Contains(msg, "advertised_address") {
-		t.Errorf("rejection should explain the advertised-address cause, got: %s", msg)
+	if !strings.Contains(res.Errors.ToAggregate().Error(), "addresses") {
+		t.Errorf("expected the error to mention addresses, got: %v", res.Errors)
 	}
-	if !strings.Contains(msg, "mode: backup") {
-		t.Errorf("rejection should point at the supported alternative, got: %s", msg)
+}
+
+func TestReplicaValidator_NetworkSourceMalformedAddress(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:      neo4jv1beta1.ReplicaSourceModeNetwork,
+			Addresses: []string{"upstream-0.example.com"}, // missing port
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected a host with no port to be rejected")
+	}
+}
+
+func TestReplicaValidator_ValidUpstreamClusterRef(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:               neo4jv1beta1.ReplicaSourceModeNetwork,
+			UpstreamClusterRef: &neo4jv1beta1.UpstreamClusterRef{Name: "prod-cluster"},
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) != 0 {
+		t.Fatalf("expected no errors, got %v", res.Errors)
+	}
+}
+
+// TestReplicaValidator_AddressesAndUpstreamClusterRefMutuallyExclusive pins
+// that exactly one of source.addresses / source.upstreamClusterRef is
+// required in network mode — setting both is ambiguous about which the
+// controller should resolve from.
+func TestReplicaValidator_AddressesAndUpstreamClusterRefMutuallyExclusive(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:               neo4jv1beta1.ReplicaSourceModeNetwork,
+			Addresses:          []string{"upstream-0.example.com:6000"},
+			UpstreamClusterRef: &neo4jv1beta1.UpstreamClusterRef{Name: "prod-cluster"},
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected setting both addresses and upstreamClusterRef to be rejected")
+	}
+	if !strings.Contains(res.Errors.ToAggregate().Error(), "mutually exclusive") {
+		t.Errorf("expected a mutual-exclusivity error, got: %v", res.Errors)
+	}
+}
+
+func TestReplicaValidator_UpstreamClusterRefRequiresName(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:               neo4jv1beta1.ReplicaSourceModeNetwork,
+			UpstreamClusterRef: &neo4jv1beta1.UpstreamClusterRef{},
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected an empty upstreamClusterRef.name to be rejected")
+	}
+}
+
+func TestReplicaValidator_NetworkSourceWarnsOnBackupFields(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:                 neo4jv1beta1.ReplicaSourceModeNetwork,
+			Addresses:            []string{"upstream-0.example.com:16000"},
+			PullURI:              "s3://backups/foo-chain/",
+			SeedURI:              "s3://backups/foo-chain/foo-2026-08-01.backup",
+			CredentialsSecretRef: "creds",
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) != 0 {
+		t.Fatalf("expected no errors, got %v", res.Errors)
+	}
+	if len(res.Warnings) != 3 {
+		t.Errorf("expected 3 warnings (pullURI, seedURI, credentialsSecretRef ignored), got %v", res.Warnings)
 	}
 }
 
@@ -88,6 +174,53 @@ func TestReplicaValidator_PullURIRequired(t *testing.T) {
 	}
 	if !strings.Contains(res.Errors.ToAggregate().Error(), "replicationPullURI") {
 		t.Error("error should point the user at the upstream backup CR's status field")
+	}
+}
+
+func TestReplicaValidator_ValidUpstreamBackupRef(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:              neo4jv1beta1.ReplicaSourceModeBackup,
+			UpstreamBackupRef: &neo4jv1beta1.UpstreamBackupRef{Name: "foo-chain"},
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) != 0 {
+		t.Fatalf("expected no errors, got %v", res.Errors)
+	}
+}
+
+// TestReplicaValidator_PullURIAndUpstreamBackupRefMutuallyExclusive pins
+// that exactly one of source.pullURI / source.upstreamBackupRef is required
+// in backup mode — mirrors the network-mode addresses/upstreamClusterRef
+// mutual-exclusivity rule.
+func TestReplicaValidator_PullURIAndUpstreamBackupRefMutuallyExclusive(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:              neo4jv1beta1.ReplicaSourceModeBackup,
+			PullURI:           "s3://backups/foo-chain/",
+			UpstreamBackupRef: &neo4jv1beta1.UpstreamBackupRef{Name: "foo-chain"},
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected setting both pullURI and upstreamBackupRef to be rejected")
+	}
+	if !strings.Contains(res.Errors.ToAggregate().Error(), "mutually exclusive") {
+		t.Errorf("expected a mutual-exclusivity error, got: %v", res.Errors)
+	}
+}
+
+func TestReplicaValidator_UpstreamBackupRefRequiresName(t *testing.T) {
+	r := replicaCR(func(r *neo4jv1beta1.Neo4jReplicaDatabase) {
+		r.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:              neo4jv1beta1.ReplicaSourceModeBackup,
+			UpstreamBackupRef: &neo4jv1beta1.UpstreamBackupRef{},
+		}
+	})
+	res := NewReplicaValidator(nil).Validate(context.Background(), r)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected an empty upstreamBackupRef.name to be rejected")
 	}
 }
 

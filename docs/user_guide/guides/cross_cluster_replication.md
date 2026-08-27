@@ -3,31 +3,57 @@
 Replicate a database from one Neo4j cluster to a read-only replica on another,
 for disaster recovery or to serve reads closer to a second region.
 
-!!! info "What this operator supports"
+## Which configuration do you need?
 
-    **Backup-based replication only.** The replica pulls a differential backup
-    chain from object storage. It needs **no network path between the two
-    Kubernetes clusters** — no load balancer, no cross-cluster TLS trust, no
-    NetworkPolicy changes.
+Two independent questions decide your setup: **where** the two clusters live,
+and **how fresh** the replica needs to be.
 
-    **Network replication is not supported** and is rejected by the validator.
-    It requires the upstream servers' `server.cluster.advertised_address` to be
-    externally routable, and the operator pins those to in-cluster DNS. Exposing
-    a Service does not work around it, because the upstream hands the downstream
-    the addresses to connect to. See
-    `docs/design/cross-cluster-replication.md` for the full analysis.
+| Your situation | Mode | Field you set |
+|---|---|---|
+| Separate Kubernetes clusters, ~1 minute of lag is fine (most DR) | `source.mode: backup` | `source.pullURI` |
+| Separate Kubernetes clusters, need near-continuous replication | `source.mode: network` | `source.addresses` (upstream also needs `spec.crossClusterReplication`) |
+| Same Kubernetes cluster (different namespaces), ~1 minute of lag is fine | `source.mode: backup` | `source.upstreamBackupRef` |
+| Same Kubernetes cluster, need near-continuous replication | `source.mode: network` | `source.upstreamClusterRef` |
 
-**Requirements**
+**Unsure?** Start with backup mode. It never needs any network setup — same
+Kubernetes cluster or not — and a bounded ~1 minute RPO is enough for most
+disaster-recovery scenarios. Reach for network mode only when you specifically
+need near-continuous replication.
+
+Step 1 below is organized the same way: pick your **mode** tab, then your
+**topology** paragraph inside it.
+
+---
+
+## How the two modes differ
+
+| | Backup mode | Network mode |
+|---|---|---|
+| Data path | Differential backup chain in object storage | Direct stream from the upstream's cluster endpoints |
+| Recovery point objective | Bounded by `pullInterval` (default `1m`) | Near-continuous |
+| Network path, separate Kubernetes clusters | **None** — no load balancer, no cross-cluster TLS trust, no NetworkPolicy changes | A self-hosted proxy (`spec.crossClusterReplication`) plus CA exchange — see step 1 |
+| Cost/latency tradeoff | None | Intra-cluster secondary catch-up traffic also shares the load balancer while the proxy is in use |
+
+See `docs/design/cross-cluster-replication.md` for the full design rationale,
+including why network mode uses a proxy rather than exposed per-pod Services
+or split-horizon DNS.
+
+## Requirements
 
 | | |
 |---|---|
 | Downstream (replica) cluster | Neo4j **2026.08+** — enforced |
 | Upstream cluster | Neo4j 2025.01+ — not enforced (the operator cannot inspect another cluster) |
-| Shared object storage | S3, GCS or Azure Blob, reachable from both clusters |
+| Backup mode | Shared object storage (S3, GCS, or Azure Blob) reachable from both clusters |
+| Network mode, **separate** Kubernetes clusters | The upstream's Kubernetes cluster must support `type: LoadBalancer` Services |
+| Network mode, **same** Kubernetes cluster | No extra requirement — ordinary in-cluster DNS already reaches across namespaces |
 
 ---
 
 ## How it fits together
+
+Backup mode, separate clusters — the two clusters never talk to each other,
+the bucket is the only coupling:
 
 ```
 UPSTREAM cluster (K8s cluster A)          DOWNSTREAM cluster (K8s cluster B)
@@ -45,99 +71,295 @@ UPSTREAM cluster (K8s cluster A)          DOWNSTREAM cluster (K8s cluster B)
                                           └──────────────────────────────────┘
 ```
 
-The two clusters never talk to each other. The only coupling is the bucket.
+Network mode, separate clusters — a real network path, mediated by a proxy
+the operator manages — no per-pod Services, no DNS setup required of you:
+
+```
+UPSTREAM cluster (K8s cluster A)                    DOWNSTREAM cluster (K8s cluster B)
+┌───────────────────────────────────────┐            ┌──────────────────────────────────┐
+│ Neo4jEnterpriseCluster                │            │ Neo4jEnterpriseCluster           │
+│   database: foo                       │            │                                  │
+│   crossClusterReplication.enabled     │            │ Neo4jReplicaDatabase             │
+│                                        │            │   name: foo-replica  (read-only) │
+│ ┌────────────┐   LoadBalancer   :6000  │  stream    │   source.mode: network           │
+│ │ CCDR proxy │◄──────────────── server-0│◄───────────┤   source.addresses: [...]        │
+│ │ (HAProxy)  │   :16000+i       server-N│            │                                  │
+│ └────────────┘                         │            │ Neo4jDatabaseAlias               │
+│   status.crossClusterReplication      ─┼────────────┤─► paste one address into         │
+│   .addresses                          │             │   source.addresses               │
+└───────────────────────────────────────┘             └──────────────────────────────────┘
+```
+
+RAFT (7000) and routing (7688) are never exposed by the proxy — only the
+tx-shipping port (6000) that CCDR catchup rides.
+
+**Same Kubernetes cluster, either mode:** simpler than both diagrams above —
+one Kubernetes cluster, two namespaces, no bucket-only or proxy-only
+choreography needed at all. Backup mode: point `upstreamBackupRef` at the
+`Neo4jBackup` in the other namespace. Network mode: point `upstreamClusterRef`
+at the `Neo4jEnterpriseCluster` in the other namespace. Full walkthroughs are
+in step 1's "Same Kubernetes cluster" paragraphs, below.
 
 ---
 
-## 1. Upstream: produce the chain
+## 1. Upstream: set it up
 
-```yaml
-apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jBackup
-metadata:
-  name: foo-chain
-  namespace: prod
-spec:
-  mode: replication-source        # turns chain-breaking configs into errors
-  instanceRef: prod-cluster
-  database: foo                   # single-database scope is required
-  schedule: "0 * * * *"           # hourly; bounds the replica's staleness
-  options:
-    backupType: AUTO
-    preferDiffAsParent: true
-  storage:
-    type: s3
-    bucket: prod-backups
-    path: foo
-    cloud:
-      provider: aws
-      credentialsSecretRef: s3-creds
-```
+=== "Backup mode"
 
-`mode: replication-source` enforces:
+    ```yaml
+    apiVersion: neo4j.neo4j.com/v1beta1
+    kind: Neo4jBackup
+    metadata:
+      name: foo-chain
+      namespace: prod
+    spec:
+      mode: replication-source        # turns chain-breaking configs into errors
+      instanceRef: prod-cluster
+      database: foo                   # single-database scope is required
+      schedule: "0 * * * *"           # hourly; bounds the replica's staleness
+      options:
+        backupType: AUTO
+        preferDiffAsParent: true
+      storage:
+        type: s3
+        bucket: prod-backups
+        path: foo
+        cloud:
+          provider: aws
+          credentialsSecretRef: s3-creds
+    ```
 
-| Rule | Why |
-|---|---|
-| single-database scope | an instance-wide backup's layout can't be consumed by a per-database `pullURI` |
-| no `spec.retention` | pruning a differential's parent breaks the chain |
-| no competing writer to the same `storage` | a second CR interleaving artifacts breaks the chain |
-| `schedule` required | without one the chain never advances and lag grows without bound |
+    `mode: replication-source` enforces:
 
-Read the pull URI back once the first backup has run:
+    | Rule | Why |
+    |---|---|
+    | single-database scope | an instance-wide backup's layout can't be consumed by a per-database `pullURI` |
+    | no `spec.retention` | pruning a differential's parent breaks the chain |
+    | no competing writer to the same `storage` | a second CR interleaving artifacts breaks the chain |
+    | `schedule` required | without one the chain never advances and lag grows without bound |
 
-```bash
-kubectl get neo4jbackup foo-chain -n prod -o jsonpath='{.status.replicationPullURI}'
-# s3://prod-backups/foo/foo-chain/
-```
+    **Separate Kubernetes clusters:** read the pull URI back once the first
+    backup has run, and paste it into `source.pullURI` in step 2:
 
-!!! danger "The operator cannot protect the chain from your bucket lifecycle rules"
+    ```bash
+    kubectl get neo4jbackup foo-chain -n prod -o jsonpath='{.status.replicationPullURI}'
+    # s3://prod-backups/foo/foo-chain/
+    ```
 
-    For cloud storage the operator **never prunes** — retention is delegated to
-    bucket lifecycle rules, which it can neither read nor validate. A lifecycle
-    rule that expires objects in this directory **will silently break the
-    differential chain** and force the replica to be rebuilt from scratch.
+    **Same Kubernetes cluster:** skip the `kubectl get` step above entirely.
+    In step 2, set `source.upstreamBackupRef: {name: foo-chain, namespace:
+    prod}` instead of `source.pullURI` — the controller resolves it
+    automatically. Same constraint as network mode's `upstreamClusterRef`
+    (see the Network mode tab): resolution is a live `Get` against this
+    cluster's own API server, so it only works same-cluster. For a backup CR
+    on a different Kubernetes cluster, `pullURI` (typed by hand) remains the
+    only option.
 
-    Exclude the replication-source path from lifecycle expiry. No operator-side
-    validation can catch this for you.
+    !!! danger "The operator cannot protect the chain from your bucket lifecycle rules"
 
-### Mixed cadence (recommended for large databases)
+        For cloud storage the operator **never prunes** — retention is delegated to
+        bucket lifecycle rules, which it can neither read nor validate. A lifecycle
+        rule that expires objects in this directory **will silently break the
+        differential chain** and force the replica to be rebuilt from scratch.
 
-A daily FULL plus an hourly DIFF, sharing one directory:
+        Exclude the replication-source path from lifecycle expiry. No operator-side
+        validation can catch this for you.
 
-```yaml
-# Daily full — the chain root
-spec: { mode: replication-source, schedule: "0 2 * * *", options: { backupType: FULL }, … }
----
-# Hourly differential — chains off it
-spec: { chainFromBackup: foo-chain, schedule: "0 * * * *", options: { backupType: DIFF }, … }
-```
+    ### Mixed cadence (recommended for large databases)
 
-`chainFromBackup` makes both write into the same directory, and the operator
-refuses to run them concurrently. This is *not* flagged as a competing writer.
+    A daily FULL plus an hourly DIFF, sharing one directory:
+
+    ```yaml
+    # Daily full — the chain root
+    spec: { mode: replication-source, schedule: "0 2 * * *", options: { backupType: FULL }, … }
+    ---
+    # Hourly differential — chains off it
+    spec: { chainFromBackup: foo-chain, schedule: "0 * * * *", options: { backupType: DIFF }, … }
+    ```
+
+    `chainFromBackup` makes both write into the same directory, and the operator
+    refuses to run them concurrently. This is *not* flagged as a competing writer.
+
+=== "Network mode"
+
+    **Separate Kubernetes clusters:** enable the proxy on the **upstream**
+    `Neo4jEnterpriseCluster`:
+
+    ```yaml
+    apiVersion: neo4j.neo4j.com/v1beta1
+    kind: Neo4jEnterpriseCluster
+    metadata:
+      name: prod-cluster
+      namespace: prod
+    spec:
+      crossClusterReplication:
+        enabled: true
+      tls:
+        additionalClusterTrustCAs:
+          - name: dr-cluster-ca   # the DOWNSTREAM cluster's CA — copy it here
+    ```
+
+    `additionalClusterTrustCAs` must be set on **both** clusters, each trusting
+    the other's CA — copy `prod-cluster`'s CA Secret into the `dr` namespace
+    and vice versa. This is separate from `trustedCASecrets`: that field feeds
+    a JVM-wide truststore the cluster SSL policy never reads.
+
+    Wait for the proxy's load balancer to be assigned, then read the address list:
+
+    ```bash
+    kubectl get neo4jenterprisecluster prod-cluster -n prod \
+      -o jsonpath='{.status.crossClusterReplication.addresses}'
+    # ["prod-cluster-ccdr.prod.svc.cluster.local:16000","...:16001","...:16002"]
+    ```
+
+    (An in-cluster hostname is shown above for illustration; in practice this
+    is whatever hostname or IP your cloud provider's load balancer controller
+    assigns — often a public-facing name unless
+    `spec.crossClusterReplication.loadBalancerInternal` keeps it private,
+    which is the default.) Only one entry from this list is needed on the
+    downstream side — see step 2.
+
+    **Same Kubernetes cluster:** skip `crossClusterReplication` and the proxy
+    entirely — you don't need either. Kubernetes DNS resolves across
+    namespaces on one cluster by default, and Neo4j's
+    `server.cluster.advertised_address` (the pod's own FQDN) is already
+    reachable from any namespace on that cluster. This is a legitimate way to
+    run a live replica for isolation within one cluster — a reporting replica
+    in its own namespace, say — not only a way to try network mode before
+    standing up a second cluster.
+
+    Deploy the upstream `Neo4jEnterpriseCluster` normally — nothing extra to
+    set — then in step 2 use `source.upstreamClusterRef` naming it instead of
+    `source.addresses`. The controller resolves the address list itself, from
+    the upstream's `status.internalAddresses`, no copying or constructing
+    anything by hand. `namespace` defaults to the replica's own namespace if
+    the upstream is in the same one. If the upstream doesn't exist yet, or
+    exists but hasn't published `status.internalAddresses` yet, the replica
+    just sits in phase `Pending` and retries; nothing to do but wait.
+
+    !!! note "Prefer typing the address by hand instead?"
+
+        `upstreamClusterRef` is resolved via a live `Get` against this
+        Kubernetes cluster's own API server — which is exactly why it only
+        ever works same-cluster. If you'd rather see the address explicit in
+        the CR (or the operator's RBAC to read `Neo4jEnterpriseCluster`
+        cross-namespace is a concern), every server pod's address follows a
+        fixed, constructible pattern — use `source.addresses` instead:
+
+        ```
+        <upstream-cluster>-server-<ordinal>.<upstream-cluster>-headless.<upstream-namespace>.svc.cluster.local:6000
+        ```
+
+        ```yaml
+        source:
+          mode: network
+          addresses: ["prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000"]
+        ```
+
+        Both forms resolve to the same address; `upstreamClusterRef` just
+        saves you computing it and keeps it correct if the upstream's naming
+        ever changes.
+
+    Two things differ from the separate-clusters path above, for either
+    addressing form:
+
+    - **TLS trust.** `spec.tls.additionalClusterTrustCAs` is only needed if
+      the two clusters use *different* cert-manager issuers. If they share
+      one issuer — and therefore the same root CA — each already trusts the
+      other's certificate without it.
+    - **NetworkPolicy.** If the upstream has `spec.networkPolicy.enabled:
+      true`, this will **not** work as-is. The generated policy restricts
+      port 6000 to pods carrying that cluster's own `neo4j.com/cluster`
+      label — the downstream's server pods don't carry it, even though
+      they're on the same physical Kubernetes cluster. Fix it with an
+      explicit, opt-in allow-list entry rather than disabling NetworkPolicy
+      entirely:
+
+      ```yaml
+      spec:
+        networkPolicy:
+          enabled: true
+          allowReplicasFrom:
+            - name: dr-cluster
+              namespace: dr
+      ```
+
+      This admits only the named downstream cluster, on port 6000 only —
+      never RAFT or routing. Nothing is admitted unless listed here.
+      (Leaving NetworkPolicy off on the upstream, or using the full
+      `crossClusterReplication` proxy path above, both still work too.)
+
+Everything from step 2 onward — the read-only replica, the failover alias
+(step 3), user/role replication (step 4), and promotion (step 5) — works
+exactly the same regardless of mode or topology.
 
 ---
 
 ## 2. Downstream: create the replica
 
-```yaml
-apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jReplicaDatabase
-metadata:
-  name: foo-replica
-  namespace: dr
-spec:
-  clusterRef: dr-cluster
-  upstreamDatabase: foo
-  topology:
-    primaries: 3
-    secondaries: 0
-  pullInterval: 1m                # bounds the recovery point objective
-  source:
-    mode: backup
-    pullURI: s3://prod-backups/foo/foo-chain/        # from step 1
-    seedURI: s3://prod-backups/foo/foo-chain/foo-2026-08-01T02-00-00.backup
-    credentialsSecretRef: s3-creds
-```
+=== "Backup mode"
+
+    ```yaml
+    apiVersion: neo4j.neo4j.com/v1beta1
+    kind: Neo4jReplicaDatabase
+    metadata:
+      name: foo-replica
+      namespace: dr
+    spec:
+      clusterRef: dr-cluster
+      upstreamDatabase: foo
+      topology:
+        primaries: 3
+        secondaries: 0
+      pullInterval: 1m                # bounds the recovery point objective
+      source:
+        mode: backup
+        pullURI: s3://prod-backups/foo/foo-chain/        # from step 1
+        seedURI: s3://prod-backups/foo/foo-chain/foo-2026-08-01T02-00-00.backup
+        credentialsSecretRef: s3-creds
+    ```
+
+    Same Kubernetes cluster as the upstream `Neo4jBackup`? Use
+    `upstreamBackupRef` instead of `pullURI` and skip the `kubectl get`
+    step from step 1:
+
+    ```yaml
+      source:
+        mode: backup
+        upstreamBackupRef: { name: foo-chain, namespace: prod }
+        credentialsSecretRef: s3-creds
+    ```
+
+=== "Network mode"
+
+    ```yaml
+    apiVersion: neo4j.neo4j.com/v1beta1
+    kind: Neo4jReplicaDatabase
+    metadata:
+      name: foo-replica
+      namespace: dr
+    spec:
+      clusterRef: dr-cluster
+      upstreamDatabase: foo
+      topology:
+        primaries: 3
+        secondaries: 0
+      source:
+        mode: network
+        addresses: ["prod-cluster-ccdr.prod.svc.cluster.local:16000"]   # one entry from step 1
+    ```
+
+    `pullInterval` is backup-mode only and has no effect here — network mode
+    streams continuously, it does not poll.
+
+    Same Kubernetes cluster as the upstream `Neo4jEnterpriseCluster`? Use
+    `upstreamClusterRef` instead of `addresses`:
+
+    ```yaml
+      source:
+        mode: network
+        upstreamClusterRef: { name: prod-cluster, namespace: prod }
+    ```
 
 `spec.source` is **immutable**. Neo4j offers no way to re-point an existing
 replica, so changing it would mean dropping and re-seeding — delete and recreate
@@ -272,7 +494,7 @@ CR's finalizer no longer drops, so only `Neo4jDatabase` can.
 **Restoring or recreating the upstream database detaches every replica.**
 A restore changes the database's internal ID; downstream replicas detach and
 must be recreated from a fresh chain. `Neo4jRestore` has no way to know replicas
-exist — they are in a different Kubernetes cluster with no back-reference. If
+exist — they may be in a different Kubernetes cluster with no back-reference. If
 you restore an upstream, plan to rebuild its replicas.
 
 **A broken chain requires a rebuild, not a repair.** If the differential chain
@@ -285,6 +507,20 @@ directory produces a replica that seeds successfully and then can never apply a
 differential. The validator warns about this; it cannot verify it, because the
 operator cannot see the bucket.
 
+**Network mode: enabling `crossClusterReplication` affects the whole cluster, not just replication.** The upstream's tx-shipping port (6000) is shared by intra-cluster
+secondary catch-up and CCDR catchup. Enabling the proxy routes **both** through
+the load balancer while it is on — added latency and LB-dependent cost
+proportional to write volume, not just replication volume. This is why the
+field defaults to disabled and is documented as an explicit tradeoff, not a
+free toggle. (Irrelevant to the same-Kubernetes-cluster path, which never
+enables the proxy at all.)
+
+**Network mode, separate clusters: the proxy's load balancer hostname isn't known immediately.**
+`status.crossClusterReplication.ready` stays `false` and `addresses` stays
+empty until the cloud provider assigns the LoadBalancer Service a hostname/IP.
+Until then the upstream keeps advertising its internal FQDN — cluster
+formation is never blocked waiting for the proxy.
+
 ---
 
 ## Troubleshooting
@@ -292,7 +528,16 @@ operator cannot see the bucket.
 | Symptom | Cause |
 |---|---|
 | `Failed`, "requires Neo4j 2026.08 or later" | downstream cluster predates replica support |
-| `Failed`, "network replication is not supported" | set `source.mode: backup` |
+| `Failed`, "network replication requires at least one upstream cluster endpoint" | `source.addresses` is empty — paste an entry from the upstream's `status.crossClusterReplication.addresses`, or use `source.upstreamClusterRef` if same-cluster |
+| `Failed`, "must be of the form host:port" | an entry in `source.addresses` is missing its port |
+| Warning: "source.pullURI is ignored in network mode" (or `seedURI`/`credentialsSecretRef`) | those fields are backup-mode only; harmless but likely a copy-paste leftover — remove them |
+| Network mode never connects, upstream `status.crossClusterReplication.ready` is `false` | the upstream's proxy LoadBalancer Service has no hostname/IP yet — check `kubectl get svc <cluster>-ccdr -n <upstream-ns>` |
+| Network mode TLS handshake fails | `spec.tls.additionalClusterTrustCAs` missing on one or both clusters — it must be set on **both**, each trusting the other's CA |
+| Network mode connection times out, both clusters on one Kubernetes cluster | the upstream has `spec.networkPolicy.enabled: true` — its port-6000 rule only admits pods carrying its own `neo4j.com/cluster` label; add the downstream to `spec.networkPolicy.allowReplicasFrom` (step 1, Network mode), or disable NetworkPolicy on the upstream, or use the proxy path instead |
+| `Pending`, event `UpstreamClusterNotFound` | `source.upstreamClusterRef` names a `Neo4jEnterpriseCluster` that doesn't exist (yet) in the given namespace — check the name/namespace, or wait if it's still being created |
+| `Pending`, event `UpstreamClusterNotReady` | the referenced upstream exists but hasn't published `status.internalAddresses` yet — normal briefly after the upstream is first created; check `kubectl get neo4jenterprisecluster <name> -n <ns> -o jsonpath='{.status.internalAddresses}'` if it persists |
+| `Pending`, event `UpstreamBackupNotFound` | `source.upstreamBackupRef` names a `Neo4jBackup` that doesn't exist (yet) in the given namespace — check the name/namespace |
+| `Pending`, event `UpstreamBackupNotReady` | the referenced `Neo4jBackup` exists but hasn't run its first backup yet (empty `status.replicationPullURI`) — check `kubectl get neo4jbackup <name> -n <ns>` for its own phase/schedule |
 | `Pending`, cluster not Ready | downstream cluster still bootstrapping |
 | Lag grows without bound | upstream backup CR not running — check its schedule and `status` |
 | `Promoted` unexpectedly | someone promoted out of band; the CR is now inert by design |
@@ -305,7 +550,10 @@ kubectl get neo4jbackup foo-chain -n prod -o jsonpath='{.status.replicationPullU
 
 ## See also
 
-- `docs/design/cross-cluster-replication.md` — design rationale, and why network
-  replication is not supported
+- `docs/design/cross-cluster-replication.md` — design rationale for both modes,
+  including why network mode is a proxy rather than exposed per-pod Services
+  or split-horizon DNS
+- [`Neo4jEnterpriseCluster` API reference](../../api_reference/neo4jenterprisecluster.md#crossclusterreplicationspec) — `spec.crossClusterReplication` fields
+- [`Neo4jReplicaDatabase` API reference](../../api_reference/neo4jreplicadatabase.md) — full `source` field reference for both modes
 - `docs/user_guide/guides/backup_restore.md` — the backup machinery this builds on
 - Neo4j Operations Manual → Clustering → *Replicating databases across clusters*

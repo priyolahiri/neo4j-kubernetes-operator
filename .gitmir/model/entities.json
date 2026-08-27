@@ -3,7 +3,7 @@
     "id": "ent-neo4jenterprisecluster",
     "name": "Neo4jEnterpriseCluster",
     "tableName": "Neo4jEnterpriseCluster",
-    "description": "Declaratively manages a Neo4j Enterprise causal cluster (minimum 2 servers) built as a single {name}-server StatefulSet whose pods self-organize into primary/secondary roles via serverModeConstraint, with V2 discovery, cert-manager TLS, plugin installation, backup/restore integration, optional Aura Fleet Management, optional MCP server, and live cluster diagnostics.",
+    "description": "Declaratively manages a Neo4j Enterprise causal cluster (minimum 2 servers) built as a single {name}-server StatefulSet whose pods self-organize into primary/secondary roles via serverModeConstraint, with V2 discovery, cert-manager TLS, plugin installation, backup/restore integration, optional Aura Fleet Management, optional MCP server, live cluster diagnostics, and an optional self-hosted TCP proxy exposing the cluster for network-mode cross-cluster database replication (CCDR).",
     "storage": "table",
     "serverUnitId": "su-neo4jenterprisecluster",
     "moduleId": "mod-cluster",
@@ -178,6 +178,49 @@
         "type": "string",
         "isNullable": true,
         "note": "Current observed Neo4j version running in the cluster"
+      },
+      {
+        "id": "f-neo4jenterprisecluster-cross-cluster-replication-enabled",
+        "name": "crossClusterReplication.enabled",
+        "type": "bool",
+        "isNullable": true,
+        "note": "Default false. Deploys a self-hosted TCP proxy (HAProxy) exposing this cluster's tx-shipping port (6000) via one LoadBalancer Service, for a downstream Neo4jReplicaDatabase using source.mode: network. RAFT (7000) and routing (7688) stay internal-only."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-tls-additional-cluster-trust-cas",
+        "name": "tls.additionalClusterTrustCAs",
+        "type": "json",
+        "isNullable": true,
+        "note": "Peer clusters' CA certificates, each projected into /ssl/trusted/ alongside this cluster's own CA — required for mutual TLS when replicating across clusters with different CAs. Must be set on both clusters."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-cross-cluster-replication-ready",
+        "name": "status.crossClusterReplication.ready",
+        "type": "bool",
+        "isNullable": true,
+        "note": "True once the CCDR proxy's LoadBalancer Service has an assigned hostname/IP and every server's advertised address routes through it."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-cross-cluster-replication-addresses",
+        "name": "status.crossClusterReplication.addresses",
+        "type": "json",
+        "isNullable": true,
+        "note": "Ready-to-paste host:port list for a downstream Neo4jReplicaDatabase's source.addresses, one entry per server ordinal."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-internal-addresses",
+        "name": "status.internalAddresses",
+        "type": "json",
+        "isNullable": true,
+        "note": "Always-populated \"<pod-fqdn>:6000\" list for a downstream Neo4jReplicaDatabase on this SAME Kubernetes cluster (source.upstreamClusterRef reads this directly). No proxy or LoadBalancer needed, unlike status.crossClusterReplication.addresses; not routable from a genuinely separate Kubernetes cluster."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-network-policy-allow-replicas-from",
+        "name": "spec.networkPolicy.allowReplicasFrom",
+        "type": "json",
+        "isNullable": true,
+        "refEntityId": "ent-neo4jenterprisecluster",
+        "note": "Opt-in list of {name, namespace} downstream Neo4jEnterpriseClusters admitted as a NetworkPolicy peer on port 6000 only (never RAFT/routing) — fixes same-Kubernetes-cluster network-mode CCDR being blocked by the base peer-restriction rule. Nothing admitted unless listed; purely declarative, no controller change."
       }
     ]
   },
@@ -895,7 +938,7 @@
     "id": "ent-neo4jreplicadatabase",
     "name": "Neo4jReplicaDatabase",
     "tableName": "Neo4jReplicaDatabase",
-    "description": "Neo4jReplicaDatabaseSpec defines a read-only cross-cluster replica of a database hosted on another Neo4j cluster, applied to the downstream cluster and coupled to the upstream only via an object-storage differential-backup chain.",
+    "description": "Neo4jReplicaDatabaseSpec defines a read-only cross-cluster replica of a database hosted on another Neo4j cluster, applied to the downstream cluster and fed either by an object-storage differential-backup chain (source.mode: backup) or by streaming directly from the upstream's cluster endpoints (source.mode: network, which requires the upstream to have spec.crossClusterReplication enabled).",
     "storage": "table",
     "serverUnitId": "su-neo4jreplicadatabase",
     "moduleId": "mod-database",
@@ -937,7 +980,7 @@
         "id": "f-neo4jreplicadatabase-source-mode",
         "name": "source.mode",
         "type": "enum",
-        "note": "backup (only supported mode) or network (rejected by validator)."
+        "note": "backup (default; pulls a differential chain, no network path needed) or network (streams directly from source.addresses; requires the upstream cluster's spec.crossClusterReplication.enabled: true)."
       },
       {
         "id": "f-neo4jreplicadatabase-source-pull-uri",
@@ -945,7 +988,7 @@
         "type": "ref",
         "isNullable": true,
         "refEntityId": "ent-neo4jbackup",
-        "note": "Object-storage directory holding the upstream's differential backup chain; must be the directory the upstream Neo4jBackup CR writes into (its status.replicationPullURI) — a cross-cluster string URI, not an in-namespace object reference. Becomes replicaConfig.pullURI."
+        "note": "Object-storage directory holding the upstream's differential backup chain; must be the directory the upstream Neo4jBackup CR writes into (its status.replicationPullURI) — a cross-cluster string URI, not an in-namespace object reference. Becomes replicaConfig.pullURI. Mutually exclusive with source.upstreamBackupRef."
       },
       {
         "id": "f-neo4jreplicadatabase-source-seed-uri",
@@ -960,7 +1003,7 @@
         "name": "source.addresses",
         "type": "json",
         "isNullable": true,
-        "note": "Upstream cluster endpoints for network mode; unused while network mode is rejected."
+        "note": "Network mode only: upstream cluster endpoints (host:port). One reachable address is sufficient — the upstream hands back the addresses the downstream actually uses. Mutually exclusive with source.upstreamClusterRef. Ignored in backup mode."
       },
       {
         "id": "f-neo4jreplicadatabase-source-credentials-secret-ref",
@@ -1022,6 +1065,22 @@
         "isNullable": true,
         "refEntityId": "ent-neo4jreplicapromotion",
         "note": "Names the Neo4jReplicaPromotion CR that promoted it, or the sentinel string \"out-of-band\"."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-source-upstream-cluster-ref",
+        "name": "source.upstreamClusterRef",
+        "type": "json",
+        "isNullable": true,
+        "refEntityId": "ent-neo4jenterprisecluster",
+        "note": "{name, namespace} reference to an upstream Neo4jEnterpriseCluster on this SAME Kubernetes cluster; the controller resolves addresses automatically from its status.internalAddresses. Mutually exclusive with source.addresses. Cannot reach a genuinely separate Kubernetes cluster (resolution is a live Get against this cluster's own API server)."
+      },
+      {
+        "id": "f-neo4jreplicadatabase-source-upstream-backup-ref",
+        "name": "source.upstreamBackupRef",
+        "type": "json",
+        "isNullable": true,
+        "refEntityId": "ent-neo4jbackup",
+        "note": "{name, namespace} reference to an upstream Neo4jBackup CR on this SAME Kubernetes cluster; the controller resolves source.pullURI automatically from its status.replicationPullURI. Mutually exclusive with source.pullURI. Cannot reach a genuinely separate Kubernetes cluster (live Get against this cluster's own API server)."
       }
     ],
     "paths": [

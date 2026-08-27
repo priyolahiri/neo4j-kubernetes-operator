@@ -19,6 +19,7 @@ package validation
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -75,17 +76,7 @@ func (v *ReplicaValidator) Validate(_ context.Context, replica *neo4jv1beta1.Neo
 	case neo4jv1beta1.ReplicaSourceModeBackup:
 		v.validateBackupSource(src, srcPath, &res)
 	case neo4jv1beta1.ReplicaSourceModeNetwork:
-		// Rejected, with the reason rather than a bare "unsupported": network
-		// replication needs the upstream's server.cluster.advertised_address
-		// values to be externally routable, and this operator pins them to
-		// in-cluster DNS. No Service configuration on the downstream side can
-		// work around it, because the upstream hands the downstream the
-		// addresses to use.
-		res.Errors = append(res.Errors, field.Invalid(srcPath.Child("mode"), mode,
-			"network replication is not supported by this operator: it requires the upstream servers' "+
-				"server.cluster.advertised_address to be externally routable, which the operator pins to "+
-				"in-cluster DNS. Use mode: backup, which needs no network path between clusters. "+
-				"See docs/design/cross-cluster-replication.md"))
+		v.validateNetworkSource(src, srcPath, &res)
 	}
 
 	// Topology sanity. Neo4j itself enforces the cluster-size relationship;
@@ -120,13 +111,29 @@ func (v *ReplicaValidator) Validate(_ context.Context, replica *neo4jv1beta1.Neo
 }
 
 func (v *ReplicaValidator) validateBackupSource(src neo4jv1beta1.ReplicaSourceSpec, srcPath *field.Path, res *ValidationResult) {
-	if src.PullURI == "" {
+	hasPullURI := src.PullURI != ""
+	hasBackupRef := src.UpstreamBackupRef != nil
+
+	switch {
+	case hasPullURI && hasBackupRef:
+		res.Errors = append(res.Errors, field.Invalid(srcPath.Child("upstreamBackupRef"), src.UpstreamBackupRef,
+			"source.pullURI and source.upstreamBackupRef are mutually exclusive; set exactly one"))
+	case !hasPullURI && !hasBackupRef:
 		res.Errors = append(res.Errors, field.Required(srcPath.Child("pullURI"),
-			"backup-based replication requires the object-storage directory holding the upstream's "+
-				"differential chain; read it from the upstream Neo4jBackup CR's status.replicationPullURI"))
-	} else if !hasSupportedScheme(src.PullURI) {
-		res.Errors = append(res.Errors, field.Invalid(srcPath.Child("pullURI"), src.PullURI,
-			"must use one of the supported schemes: "+strings.Join(replicaSeedSchemes, ", ")))
+			"backup-based replication requires either source.pullURI (the object-storage directory holding the "+
+				"upstream's differential chain — read it from the upstream Neo4jBackup CR's "+
+				"status.replicationPullURI) or source.upstreamBackupRef (only when the upstream Neo4jBackup is on "+
+				"this same Kubernetes cluster)"))
+	case hasBackupRef:
+		if src.UpstreamBackupRef.Name == "" {
+			res.Errors = append(res.Errors, field.Required(srcPath.Child("upstreamBackupRef").Child("name"),
+				"required when source.upstreamBackupRef is set"))
+		}
+	default: // hasPullURI only
+		if !hasSupportedScheme(src.PullURI) {
+			res.Errors = append(res.Errors, field.Invalid(srcPath.Child("pullURI"), src.PullURI,
+				"must use one of the supported schemes: "+strings.Join(replicaSeedSchemes, ", ")))
+		}
 	}
 
 	if src.SeedURI != "" && !hasSupportedScheme(src.SeedURI) {
@@ -149,6 +156,50 @@ func (v *ReplicaValidator) validateBackupSource(src neo4jv1beta1.ReplicaSourceSp
 
 	if len(src.Addresses) > 0 {
 		res.Warnings = append(res.Warnings, "source.addresses is ignored in backup mode")
+	}
+}
+
+func (v *ReplicaValidator) validateNetworkSource(src neo4jv1beta1.ReplicaSourceSpec, srcPath *field.Path, res *ValidationResult) {
+	hasAddresses := len(src.Addresses) > 0
+	hasClusterRef := src.UpstreamClusterRef != nil
+
+	switch {
+	case hasAddresses && hasClusterRef:
+		res.Errors = append(res.Errors, field.Invalid(srcPath.Child("upstreamClusterRef"), src.UpstreamClusterRef,
+			"source.addresses and source.upstreamClusterRef are mutually exclusive; set exactly one"))
+	case !hasAddresses && !hasClusterRef:
+		res.Errors = append(res.Errors, field.Required(srcPath.Child("addresses"),
+			"network replication requires either source.addresses (at least one upstream cluster endpoint, "+
+				"host:port; one reachable address is sufficient, since the upstream hands back the addresses "+
+				"the downstream actually uses) or source.upstreamClusterRef (only when the upstream "+
+				"Neo4jEnterpriseCluster is on this same Kubernetes cluster). For a separate upstream cluster, set "+
+				"spec.crossClusterReplication.enabled: true on it and read status.crossClusterReplication.addresses"))
+	case hasClusterRef:
+		if src.UpstreamClusterRef.Name == "" {
+			res.Errors = append(res.Errors, field.Required(srcPath.Child("upstreamClusterRef").Child("name"),
+				"required when source.upstreamClusterRef is set"))
+		}
+	default: // hasAddresses only
+		for i, addr := range src.Addresses {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil || host == "" || port == "" {
+				res.Errors = append(res.Errors, field.Invalid(srcPath.Child("addresses").Index(i), addr,
+					"must be of the form host:port"))
+			}
+		}
+	}
+
+	// These fields belong to backup mode; set alongside network mode they are
+	// silently ignored by Neo4j, which is worth surfacing rather than leaving
+	// the user to wonder why a configured credential/URI had no effect.
+	if src.PullURI != "" {
+		res.Warnings = append(res.Warnings, "source.pullURI is ignored in network mode")
+	}
+	if src.SeedURI != "" {
+		res.Warnings = append(res.Warnings, "source.seedURI is ignored in network mode")
+	}
+	if src.CredentialsSecretRef != "" {
+		res.Warnings = append(res.Warnings, "source.credentialsSecretRef is ignored in network mode")
 	}
 }
 

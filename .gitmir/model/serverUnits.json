@@ -659,5 +659,22 @@
     "paths": [
       "cmd/main.go"
     ]
+  },
+  {
+    "id": "su-ccdr-proxy",
+    "name": "CCDR Proxy Reconciler",
+    "kind": "worker",
+    "description": "Reconciles the optional network-mode CCDR exposure proxy (HAProxy Deployment/Service/ConfigMap) for a Neo4jEnterpriseCluster when spec.crossClusterReplication.enabled is true, publishing the proxy's load-balancer endpoints to status.crossClusterReplication so a downstream Neo4jReplicaDatabase can stream directly from this cluster.",
+    "entityIds": [
+      "ent-neo4jenterprisecluster"
+    ],
+    "dependsOn": [
+      "su-neo4jenterprisecluster"
+    ],
+    "moduleId": "mod-cluster",
+    "paths": [
+      "internal/controller/ccdr_proxy.go",
+      "internal/resources/ccdr_proxy.go"
+    ]
   }
 ]

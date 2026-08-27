@@ -225,6 +225,21 @@ func BuildBackupFromAddresses(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) stri
 	return strings.Join(addrs, ",")
 }
 
+// ServerClusterAddresses returns the "<pod-fqdn>:6000" address for every
+// server ordinal — the same pattern buildVersionSpecificDiscoveryConfig and
+// BuildCCDRProxyConfigMap each already compute inline for their own needs.
+// Exported so the controller can stamp it onto status.internalAddresses
+// without duplicating the pattern a third time.
+func ServerClusterAddresses(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []string {
+	servers := int(cluster.Spec.Topology.Servers)
+	addrs := make([]string, servers)
+	for i := range servers {
+		addrs[i] = fmt.Sprintf("%s-server-%d.%s-headless.%s.svc.cluster.local:%d",
+			cluster.Name, i, cluster.Name, cluster.Namespace, DiscoveryPort)
+	}
+	return addrs
+}
+
 // BuildStandaloneBackupFromAddress returns the single "pod-fqdn:6362"
 // address for a standalone's pod, used as the --from flag of
 // neo4j-admin database backup.
@@ -696,6 +711,18 @@ func BuildCertificateForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 	// service / pod FQDNs.
 	if cluster.Spec.Service != nil && cluster.Spec.Service.DNSName != "" {
 		dnsNames = append(dnsNames, cluster.Spec.Service.DNSName)
+	}
+
+	// Same reasoning as the spec.service.dnsName SAN above: once the CCDR
+	// proxy's load balancer hostname is known (cluster.Status, populated by
+	// reconcileCrossClusterReplicationProxy in ../controller/ccdr_proxy.go),
+	// a cross-cluster replica's TLS handshake to <lb-hostname>:16000+i must
+	// pass hostname verification against this cluster's cert. One SAN
+	// covers every server ordinal — only the port differs, and hostname
+	// verification ignores port. Until the hostname is known, no SAN is
+	// added; cert-manager reissues once it appears.
+	if status := cluster.Status.CrossClusterReplication; status != nil && status.LoadBalancerHostname != "" {
+		dnsNames = append(dnsNames, status.LoadBalancerHostname)
 	}
 
 	// Build certificate spec.
@@ -1241,6 +1268,21 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 		volumeMounts = append(volumeMounts, TrustStoreVolumeMount)
 	}
 
+	// Add one mount per spec.tls.additionalClusterTrustCAs entry, landing
+	// each peer cluster's CA directly in the cluster SSL policy's trust
+	// directory (/ssl/trusted/) — additive to the single-Secret CertsVolume
+	// mount above, never touching it.
+	if cluster.Spec.TLS != nil {
+		for i, ca := range cluster.Spec.TLS.AdditionalClusterTrustCAs {
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      clusterTrustCAVolumeName(ca.Name),
+				MountPath: clusterTrustCAMountPath(i),
+				SubPath:   "ca.crt",
+				ReadOnly:  true,
+			})
+		}
+	}
+
 	// User-supplied extra volume mounts (must reference volumes in spec.extraVolumes
 	// or one of the built-in volumes). Validated for path collisions upstream.
 	if len(cluster.Spec.ExtraVolumeMounts) > 0 {
@@ -1418,6 +1460,27 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 	// up Secret-backed volumes + the writable EmptyDir for the truststore.
 	if len(trustedCAs) > 0 {
 		volumes = append(volumes, BuildTrustStoreVolumes(trustedCAs)...)
+	}
+
+	// One Secret-backed volume per spec.tls.additionalClusterTrustCAs entry,
+	// projecting only the CA key (defaulting to "ca.crt") so it can be
+	// mounted as a single file via the matching VolumeMount's SubPath above.
+	if cluster.Spec.TLS != nil {
+		for _, ca := range cluster.Spec.TLS.AdditionalClusterTrustCAs {
+			key := ca.Key
+			if key == "" {
+				key = "ca.crt"
+			}
+			volumes = append(volumes, corev1.Volume{
+				Name: clusterTrustCAVolumeName(ca.Name),
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: ca.Name,
+						Items:      []corev1.KeyToPath{{Key: key, Path: "ca.crt"}},
+					},
+				},
+			})
+		}
 	}
 
 	// User-supplied extra volumes (escape hatch for arbitrary mounts —
@@ -2230,6 +2293,21 @@ func buildPropertyShardingConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) m
 }
 
 func buildStartupScriptForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	// server.cluster.advertised_address is normally the pod's own FQDN on
+	// port 6000. Once the CCDR proxy's load balancer hostname is known (see
+	// reconcileCrossClusterReplicationProxy in ../controller/ccdr_proxy.go,
+	// which reconciles before this ConfigMap is rendered each pass and
+	// publishes it to cluster.Status), override it to the proxy's external
+	// endpoint so cross-cluster replicas can reach this server. Neo4j
+	// rejects a config key declared twice, so this must replace the single
+	// existing declaration below rather than append a second one. RAFT
+	// (7000) and routing (7688) are never overridden — only tx-shipping/
+	// catchup traffic on 6000 needs to cross the proxy.
+	clusterAdvertisedAddress := "${HOSTNAME_FQDN}:6000"
+	if status := cluster.Status.CrossClusterReplication; status != nil && status.LoadBalancerHostname != "" {
+		clusterAdvertisedAddress = fmt.Sprintf("%s:$((%d + SERVER_INDEX))", status.LoadBalancerHostname, CCDRProxyBasePort)
+	}
+
 	// Unified startup script for all deployments
 	return `#!/bin/bash
 set -e
@@ -2270,7 +2348,7 @@ cat >> /tmp/neo4j-config/neo4j.conf << EOF
 
 # Advertised addresses using pod FQDN (applies to all supported versions)
 server.default_advertised_address=${HOSTNAME_FQDN}
-server.cluster.advertised_address=${HOSTNAME_FQDN}:6000
+server.cluster.advertised_address=` + clusterAdvertisedAddress + `
 server.routing.advertised_address=${HOSTNAME_FQDN}:7688
 server.cluster.raft.advertised_address=${HOSTNAME_FQDN}:7000
 EOF
@@ -3096,6 +3174,23 @@ func BuildAuthEnvVars(auth *neo4jv1beta1.AuthSpec) []corev1.EnvVar {
 			},
 		},
 	}
+}
+
+// clusterTrustCAVolumeName returns the volume name for a single entry in
+// spec.tls.additionalClusterTrustCAs. Namespaced separately from
+// trustedCASecretVolumeName (the JVM truststore) since the same Secret could
+// legitimately appear in both lists.
+func clusterTrustCAVolumeName(secretName string) string {
+	return "cluster-trust-ca-" + secretName
+}
+
+// clusterTrustCAMountPath returns the mount path for the i-th entry in
+// spec.tls.additionalClusterTrustCAs. Neo4j's cluster SSL policy trust
+// directory (/ssl/trusted/) is scanned for every file present, not a single
+// fixed filename, so each peer CA lands as its own distinct file alongside
+// this cluster's own ca.crt.
+func clusterTrustCAMountPath(index int) string {
+	return fmt.Sprintf("/ssl/trusted/peer-ca-%d.crt", index)
 }
 
 // trustedCASecretVolumeName returns the volume name for a single trusted-CA Secret.

@@ -82,6 +82,125 @@ func BuildNetworkPolicyForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluste
 	backupPort := intstr.FromInt(BackupPort)
 	metricsPort := intstr.FromInt(MetricsPort)
 
+	ingressRules := []networkingv1.NetworkPolicyIngressRule{
+		// Rule 1: public client + scrape ports — open to any pod
+		// in any namespace. From: omitted ⇒ all sources.
+		//
+		// Port 2004 (Prometheus metrics) is here because
+		// scrape mechanisms vary widely (Prometheus operator,
+		// kube-prometheus-stack, vendor-specific scrapers,
+		// OpenTelemetry collectors) and the policy can't
+		// reasonably encode all their Pod-label conventions.
+		// "Any pod" matches the Service-level access model —
+		// the cluster's ClusterIP Service already exposes 2004
+		// inside the namespace, so the NetworkPolicy doesn't
+		// add or remove a security boundary here; it just has
+		// to not BREAK scrape. The Neo4j docs warn that
+		// "you should never expose the Prometheus endpoint
+		// directly to the Internet"; that's a Service / Ingress
+		// boundary (which we don't expose externally by
+		// default) and is documented in security.md.
+		{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: tcp, Port: &httpPort},
+				{Protocol: tcp, Port: &httpsPort},
+				{Protocol: tcp, Port: &boltPort},
+				{Protocol: tcp, Port: &metricsPort},
+			},
+		},
+		// Rule 2: intra-cluster ports — peer servers only. Same
+		// label that the cluster headless service uses for
+		// pod-to-pod discovery.
+		//
+		// Port set must mirror the cluster server pod's
+		// ContainerPort declarations — search
+		// internal/resources/cluster.go for `Ports:
+		// []corev1.ContainerPort{` on the Neo4j server
+		// container (line numbers shift, the structure
+		// doesn't). Missing one here doesn't break the
+		// cluster on a
+		// non-enforcing CNI but DOES break it on
+		// Calico/Cilium/Antrea — pod-to-pod traffic on the
+		// missing port silently fails after the policy lands.
+		//
+		// - 6000: V2 discovery + tcp-tx
+		// - 7000: RAFT consensus
+		// - 7688: routing service
+		// - 7689: transaction streaming / catchup protocol
+		//   (store-copy and log shipping between cluster
+		//   members). Declared on both the headless Service
+		//   and the Pod ContainerPort list; future cluster
+		//   modes (read-replicas, store-copy bootstrap) need
+		//   this open between peers even if the steady-state
+		//   workload doesn't constantly use it.
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{PodSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"neo4j.com/cluster": cluster.Name},
+				}},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: tcp, Port: &discoveryPort},
+				{Protocol: tcp, Port: &raftPort},
+				{Protocol: tcp, Port: &routingPort},
+				{Protocol: tcp, Port: &transactionPort},
+			},
+		},
+		// Rule 3: backup port — operator-managed backup pods only.
+		// The OR semantics across multiple From peers means a Pod
+		// matching ANY of these selectors can connect on 6362.
+		{
+			From: backupPodPeers(),
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: tcp, Port: &backupPort},
+			},
+		},
+	}
+
+	// Rule 4: network-mode CCDR proxy port — the operator-managed proxy
+	// pod only. Smaller than a "remote CIDR" rule: the Neo4j server pods
+	// are never directly internet-facing, only the proxy pod is, so this
+	// only needs to admit that one, operator-owned, data-free pod by
+	// label. Added only when the feature is actually enabled, so clusters
+	// not using it don't get a wider policy than before.
+	if ccdrReplicationEnabled(cluster) {
+		ingressRules = append(ingressRules, networkingv1.NetworkPolicyIngressRule{
+			From: []networkingv1.NetworkPolicyPeer{
+				{PodSelector: &metav1.LabelSelector{
+					MatchLabels: ccdrProxyLabels(cluster),
+				}},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: tcp, Port: &discoveryPort},
+			},
+		})
+	}
+
+	// Rule 5: opt-in peers for same-Kubernetes-cluster network-mode
+	// replicas (spec.networkPolicy.allowReplicasFrom). Each entry needs
+	// BOTH a podSelector (the downstream's neo4j.com/cluster label) and a
+	// namespaceSelector (Kubernetes' well-known, API-server-managed
+	// kubernetes.io/metadata.name label — the standard way to scope a
+	// NetworkPolicyPeer to one specific namespace by name, since 1.21) —
+	// podSelector alone would match same-named clusters in ANY namespace.
+	if peers := cluster.Spec.NetworkPolicy.AllowReplicasFrom; len(peers) > 0 {
+		var from []networkingv1.NetworkPolicyPeer
+		for _, p := range peers {
+			ns := p.Namespace
+			if ns == "" {
+				ns = cluster.Namespace
+			}
+			from = append(from, networkingv1.NetworkPolicyPeer{
+				PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"neo4j.com/cluster": p.Name}},
+				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": ns}},
+			})
+		}
+		ingressRules = append(ingressRules, networkingv1.NetworkPolicyIngressRule{
+			From:  from,
+			Ports: []networkingv1.NetworkPolicyPort{{Protocol: tcp, Port: &discoveryPort}},
+		})
+	}
+
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-server-netpol", cluster.Name),
@@ -108,80 +227,7 @@ func BuildNetworkPolicyForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluste
 				},
 			},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
-			Ingress: []networkingv1.NetworkPolicyIngressRule{
-				// Rule 1: public client + scrape ports — open to any pod
-				// in any namespace. From: omitted ⇒ all sources.
-				//
-				// Port 2004 (Prometheus metrics) is here because
-				// scrape mechanisms vary widely (Prometheus operator,
-				// kube-prometheus-stack, vendor-specific scrapers,
-				// OpenTelemetry collectors) and the policy can't
-				// reasonably encode all their Pod-label conventions.
-				// "Any pod" matches the Service-level access model —
-				// the cluster's ClusterIP Service already exposes 2004
-				// inside the namespace, so the NetworkPolicy doesn't
-				// add or remove a security boundary here; it just has
-				// to not BREAK scrape. The Neo4j docs warn that
-				// "you should never expose the Prometheus endpoint
-				// directly to the Internet"; that's a Service / Ingress
-				// boundary (which we don't expose externally by
-				// default) and is documented in security.md.
-				{
-					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: tcp, Port: &httpPort},
-						{Protocol: tcp, Port: &httpsPort},
-						{Protocol: tcp, Port: &boltPort},
-						{Protocol: tcp, Port: &metricsPort},
-					},
-				},
-				// Rule 2: intra-cluster ports — peer servers only. Same
-				// label that the cluster headless service uses for
-				// pod-to-pod discovery.
-				//
-				// Port set must mirror the cluster server pod's
-				// ContainerPort declarations — search
-				// internal/resources/cluster.go for `Ports:
-				// []corev1.ContainerPort{` on the Neo4j server
-				// container (line numbers shift, the structure
-				// doesn't). Missing one here doesn't break the
-				// cluster on a
-				// non-enforcing CNI but DOES break it on
-				// Calico/Cilium/Antrea — pod-to-pod traffic on the
-				// missing port silently fails after the policy lands.
-				//
-				// - 6000: V2 discovery + tcp-tx
-				// - 7000: RAFT consensus
-				// - 7688: routing service
-				// - 7689: transaction streaming / catchup protocol
-				//   (store-copy and log shipping between cluster
-				//   members). Declared on both the headless Service
-				//   and the Pod ContainerPort list; future cluster
-				//   modes (read-replicas, store-copy bootstrap) need
-				//   this open between peers even if the steady-state
-				//   workload doesn't constantly use it.
-				{
-					From: []networkingv1.NetworkPolicyPeer{
-						{PodSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"neo4j.com/cluster": cluster.Name},
-						}},
-					},
-					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: tcp, Port: &discoveryPort},
-						{Protocol: tcp, Port: &raftPort},
-						{Protocol: tcp, Port: &routingPort},
-						{Protocol: tcp, Port: &transactionPort},
-					},
-				},
-				// Rule 3: backup port — operator-managed backup pods only.
-				// The OR semantics across multiple From peers means a Pod
-				// matching ANY of these selectors can connect on 6362.
-				{
-					From: backupPodPeers(),
-					Ports: []networkingv1.NetworkPolicyPort{
-						{Protocol: tcp, Port: &backupPort},
-					},
-				},
-			},
+			Ingress:     ingressRules,
 		},
 	}
 }

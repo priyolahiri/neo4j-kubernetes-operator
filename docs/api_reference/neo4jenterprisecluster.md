@@ -96,6 +96,7 @@ cluster reaches `Ready` — see [`Neo4jRestore`](neo4jrestore.md).
 | `monitoring` | [`MonitoringSpec`](#monitoringspec) | Query monitoring configuration |
 | `audit` | [`AuditSpec`](#auditspec) | Compliance-oriented logging — security.log + query.log tuning for PCI / HIPAA / GDPR. `audit.enabled=true` is a one-flag opt-in to secure-by-default query-literal redaction. |
 | `networkPolicy` | [`NetworkPolicySpec`](#networkpolicyspec) | Optional NetworkPolicy emission that restricts ingress to port 6362 to operator-managed backup pods. Disabled by default. Requires a CNI that enforces NetworkPolicy (Calico/Cilium/Antrea/Weave). |
+| `crossClusterReplication` | [`CrossClusterReplicationSpec`](#crossclusterreplicationspec) | Network-mode cross-cluster database replication (CCDR): deploys a self-hosted TCP proxy exposing this cluster's tx-shipping port (6000) externally via one LoadBalancer Service, for use by a `Neo4jReplicaDatabase` with `source.mode: network` in another Kubernetes cluster. Disabled by default. |
 | `auraFleetManagement` | [`AuraFleetManagementSpec`](#aurafleetmanagementspec) | Aura Fleet Management integration (optional) |
 | `trustedCASecrets` | `[]`[`TrustedCASecret`](#trustedcasecret) | CA bundles to add to Neo4j's JVM truststore (OIDC, LDAPS, plugin downloads, peer-cluster replication) |
 | `extraVolumes` | `[]corev1.Volume` | Arbitrary pod volumes mounted into the Neo4j pod; reference them via `extraVolumeMounts` |
@@ -309,6 +310,7 @@ not parse policy config to wire up filesystem mounts automatically.
 | `subject` | [`*CertificateSubject`](#certificatesubject) | Certificate subject fields |
 | `usages` | `[]string` | Certificate usages |
 | `strictPeerValidation` | `*bool` | Intra-cluster TLS posture. **Default: `true`** (Neo4j's canonical production posture). When `true`, the operator emits `dbms.ssl.policy.cluster.trust_all=false`, `client_auth=REQUIRE` (mutual TLS), and `verify_hostname=true`, and projects the cert-manager Secret's `ca.crt` to `/ssl/trusted/ca.crt` as the trust anchor. When `false`, reverts to the legacy `trust_all=true` + `client_auth=NONE` posture — Neo4j's own docs flag this as *"debugging only, since it does not offer security."* The opt-out exists for external issuers that do not populate `ca.crt` in their Secret output. See the [TLS Configuration Guide](../user_guide/tls_configuration.md) for details. |
+| `additionalClusterTrustCAs` | `[]`[`TrustedCASecret`](#trustedcasecret) | Peer clusters' CA certificates, each projected as its own file directly into `/ssl/trusted/` (the cluster SSL policy's trust directory — Neo4j scans every file present there, not one fixed filename) alongside this cluster's own CA. Required for mutual TLS when replicating across clusters with different CAs — the normal case for [`crossClusterReplication`](#crossclusterreplicationspec) — since `trustedCASecrets` above is a JVM-wide truststore that `dbms.ssl.policy.cluster.*` never reads. Must be set on **both** clusters, each trusting the other's CA. Only relevant when `strictPeerValidation` is `true`. |
 
 ### IssuerRef
 
@@ -422,6 +424,61 @@ See [Aura Fleet Management Guide](../user_guide/aura_fleet_management.md) for fu
 |---|---|---|
 | `name` | `string` | **Required.** Name of the Kubernetes Secret containing the registration token |
 | `key` | `string` | Key within the Secret (default: `"token"`) |
+
+---
+
+### CrossClusterReplicationSpec
+
+Enables network-mode cross-cluster database replication (CCDR): the operator
+deploys a self-hosted TCP proxy (HAProxy, `mode tcp`, pure L4 passthrough —
+it never terminates or inspects TLS) that exposes this cluster's tx-shipping
+port (6000) externally via one `LoadBalancer` Service, and overrides
+`server.cluster.advertised_address` per-server to the proxy's external
+endpoint. `server.cluster.raft.advertised_address` (7000) and
+`server.routing.advertised_address` (7688) are left untouched — RAFT leader
+election never depends on this load balancer.
+
+**Opt-in tradeoff, stated plainly:** enabling this means intra-cluster
+secondary catch-up traffic (which shares port 6000 with cross-cluster replica
+traffic) also routes through the load balancer, adding latency and
+LB-dependent cost proportional to write volume.
+
+| Field | Type | Description |
+|---|---|---|
+| `enabled` | `bool` | Deploy the proxy and override advertised addresses. Default `false`. |
+| `loadBalancerInternal` | `*bool` | Keep the proxy's Service on a private/internal load balancer where the cloud provider supports it. Default `true` — this design has no DNS split to keep intra-cluster traffic off the load balancer, so an internal LB is the main available mitigation against public exposure. |
+| `annotations` | `map[string]string` | Passed through to the proxy's Service, for cloud-specific load balancer tuning (e.g. the internal-LB annotation key, which differs per cloud provider). |
+
+**Status fields** (read-only, set by the operator):
+
+| Field | Description |
+|---|---|
+| `status.crossClusterReplication.ready` | `true` once the proxy's LoadBalancer Service has an assigned hostname/IP and every server's advertised address has been updated to route through it |
+| `status.crossClusterReplication.loadBalancerHostname` | External hostname or IP assigned to the proxy's Service |
+| `status.crossClusterReplication.addresses` | Ready-to-paste list for a downstream `Neo4jReplicaDatabase`'s `spec.source.addresses` — one entry per server ordinal, `<lb-hostname>:<port>`. Only one entry is actually required on the downstream side (Neo4j redirects to the rest), but the full list is published so any entry can be used. |
+
+**Example** — enable on the upstream cluster, then feed its status into a
+downstream `Neo4jReplicaDatabase` in another Kubernetes cluster:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jEnterpriseCluster
+metadata: { name: prod }
+spec:
+  acceptLicenseAgreement: "eval"
+  crossClusterReplication:
+    enabled: true
+  tls:
+    mode: cert-manager
+    issuerRef: { name: ca-cluster-issuer, kind: ClusterIssuer }
+    additionalClusterTrustCAs:
+      - name: dr-cluster-ca   # the downstream cluster's CA Secret, copied here
+---
+# status.crossClusterReplication.addresses on `prod`, once ready, becomes
+# spec.source.addresses on the downstream Neo4jReplicaDatabase — see
+# docs/api_reference/neo4jreplicadatabase.md and
+# docs/design/cross-cluster-replication.md §6.
+```
 
 ---
 
@@ -620,6 +677,18 @@ in issue #128.
 | Field | Type | Description |
 |---|---|---|
 | `enabled` | `bool` | When `true`, the operator emits a NetworkPolicy named `<cluster>-server-netpol` (cluster) or `<standalone>-standalone-netpol` (standalone). Public client ports (7474/7473/7687) remain open to any pod; intra-cluster ports (6000/7000/7688) are restricted to peer servers; backup port (6362) is restricted to operator-managed backup pods. Default `false`. |
+| `allowReplicasFrom` | `[]`[`NetworkPolicyPeerCluster`](#networkpolicypeercluster) | Opt-in: additively admits named downstream `Neo4jEnterpriseCluster`(s) on port 6000 only (never RAFT/routing), for a same-Kubernetes-cluster network-mode CCDR replica that would otherwise be blocked by the peer-restriction rule (which only admits this cluster's own `neo4j.com/cluster` label). Nothing is admitted unless listed here. Irrelevant to backup-mode replication, which has no network coupling to restrict. |
+
+### NetworkPolicyPeerCluster
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | **Required.** Name of the downstream `Neo4jEnterpriseCluster` to admit. |
+| `namespace` | `string` | Namespace of the downstream `Neo4jEnterpriseCluster`. Defaults to this cluster's own namespace when omitted. |
+
+Scoped by both a `podSelector` (`neo4j.com/cluster: <name>`) and a `namespaceSelector`
+(Kubernetes' well-known `kubernetes.io/metadata.name` label) — a `podSelector` alone would
+match a same-named cluster in *any* namespace.
 
 **CNI prerequisite**: NetworkPolicy is enforced only by Calico, Cilium,
 Antrea, Weave, and most managed offerings. Flannel does NOT enforce
@@ -766,6 +835,8 @@ The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
 | `auraFleetManagement` | `object` | State of the Aura Fleet Management integration (when `spec.auraFleetManagement.enabled=true`) |
 | `observedGeneration` | `int64` | Last observed generation |
 | `diagnostics` | [`*DiagnosticsStatus`](#diagnosticsstatus) | Live diagnostics collected when `spec.monitoring.enabled=true` and cluster is `Ready`. |
+| `crossClusterReplication` | [`*CrossClusterReplicationStatus`](#crossclusterreplicationspec) | State of the network-mode CCDR exposure proxy, when `spec.crossClusterReplication.enabled` is `true`. |
+| `internalAddresses` | `[]string` | Ready-to-paste `<pod-fqdn>:6000` list for a downstream `Neo4jReplicaDatabase` on this **same** Kubernetes cluster (`source.upstreamClusterRef`, or pasted directly into `source.addresses`). Always populated — no proxy, no LoadBalancer needed — but not routable from a genuinely separate Kubernetes cluster; use `crossClusterReplication` for that. |
 
 ### EndpointStatus
 

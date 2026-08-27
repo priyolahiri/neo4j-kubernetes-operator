@@ -286,6 +286,10 @@ const (
 	EventReasonPromotionStarted        = "ReplicaPromotionStarted"
 	EventReasonPromotionCompleted      = "ReplicaPromotionCompleted"
 	EventReasonPromotionFailed         = "ReplicaPromotionFailed"
+	EventReasonUpstreamClusterNotFound = "UpstreamClusterNotFound"
+	EventReasonUpstreamClusterNotReady = "UpstreamClusterNotReady"
+	EventReasonUpstreamBackupNotFound  = "UpstreamBackupNotFound"
+	EventReasonUpstreamBackupNotReady  = "UpstreamBackupNotReady"
 
 	// Database alias event reasons.
 	EventReasonAliasCreated    = "AliasCreated"
