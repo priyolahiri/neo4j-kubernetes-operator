@@ -584,7 +584,8 @@ future customer need justifies the added complexity, a short spike against a
 real cluster (capture the ClientHello on port 6000, check for an SNI
 extension) would resolve the open question before any design work resumes.
 
-**Addendum — same-Kubernetes-cluster ergonomics.** §1c of the user guide
+**Addendum — same-Kubernetes-cluster ergonomics.** The user guide's
+same-Kubernetes-cluster guidance (`docs/user_guide/guides/cross_cluster_replication.md`)
 established that when the upstream and downstream `Neo4jEnterpriseCluster`s
 are on the *same* Kubernetes cluster, the proxy is unnecessary at all —
 ordinary in-cluster DNS already resolves the upstream's pod FQDN across
