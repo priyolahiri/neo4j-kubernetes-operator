@@ -243,10 +243,17 @@ tests.
 Network mode (`source.mode: network`, `spec.crossClusterReplication` on the
 upstream) is architecturally different from Part A/B: the two clusters need a
 *live* network path, not just a shared bucket, so it cannot be verified as two
-sequential deployments the way backup mode is. Full end-to-end verification
-needs **two real Kubernetes clusters with LoadBalancer support** (cloud, or a
-local setup with MetalLB / `cloud-provider-kind` installed) — out of reach of
-this **KIND-only, no-LoadBalancer** journey, and not run here.
+sequential deployments the way backup mode is. That does **not** rule out
+Kind — two Kind clusters land on the same Docker network by default and can
+route to each other, same trick used for local multi-cluster testing
+elsewhere (Cilium ClusterMesh, Istio multi-cluster). The actual blocker is
+narrower: a `type: LoadBalancer` Service never gets an address on plain Kind
+(no cloud provider), and this repo has **no LoadBalancer-on-Kind tooling
+today** — no MetalLB, no `cloud-provider-kind` — in the Makefile, dev
+scripts, or Kind cluster config. Building that (plus scripting the CA-secret
+exchange across two kubeconfig contexts) is real, unbuilt work, not a
+fundamental limitation of the journey being Kind-only. Until it exists, full
+end-to-end network-mode verification is not run here.
 
 What *is* verifiable on a single plain Kind cluster is that the toggle itself
 is safe — it must never break normal cluster formation, whether or not a real
@@ -275,7 +282,7 @@ load balancer is present to service it:
 | Aura Fleet Management | ✅ (plugin + token) | | | ✅ (`provision`) | |
 | Aura console RBAC | | | | ✅ | |
 | Aura read-contract sweep | | | | ✅ (GET-only) | |
-| Cross-cluster replication | | | | | ✅ backup mode; network mode proxy-toggle only (needs 2 real clusters for live streaming) |
+| Cross-cluster replication | | | | | ✅ backup mode; network mode proxy-toggle only (live streaming needs LoadBalancer-on-Kind tooling this repo doesn't have yet) |
 | Database aliases | ✅ | | | | ✅ (survives promotion) |
 | Operator→Neo4j TLS (CA + pinned) | ✅ | | | n/a (HTTPS to Aura) | |
 
