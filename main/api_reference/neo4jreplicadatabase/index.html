@@ -2414,6 +2414,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#upstreamclusterref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        upstreamClusterRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#upstreambackupref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        upstreamBackupRef
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3442,6 +3464,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#upstreamclusterref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        upstreamClusterRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#upstreambackupref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        upstreamBackupRef
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3506,7 +3550,7 @@
 
 
 <h1 id="neo4jreplicadatabase">Neo4jReplicaDatabase<a class="headerlink" href="#neo4jreplicadatabase" title="Anchor link to this section">&para;</a></h1>
-<p>A read-only cross-cluster replica of a database hosted on <strong>another</strong> Neo4j cluster, fed by a differential backup chain in object storage.</p>
+<p>A read-only cross-cluster replica of a database hosted on <strong>another</strong> Neo4j cluster, fed either by a differential backup chain in object storage (<code>mode: backup</code>) or by streaming directly from the upstream's cluster endpoints (<code>mode: network</code>).</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>API version</strong>: <code>neo4j.neo4j.com/v1beta1</code></li>
@@ -3518,11 +3562,11 @@
 <li><strong>Reconciliation</strong>: replica existence and observed replication lag, via <code>SHOW DATABASES</code></li>
 </ul>
 <p>This CR is applied to the <strong>downstream</strong> cluster. The upstream lives in another Kubernetes cluster the operator cannot see; the only coupling between them is the object-storage location the upstream's <code>Neo4jBackup</code> chain writes to.</p>
-<div class="admonition warning">
-<p class="admonition-title">Backup mode only</p>
-<p><code>source.mode: network</code> is <strong>rejected</strong>. Network replication requires the upstream servers' <code>server.cluster.advertised_address</code> to be externally routable, and the operator pins those to in-cluster DNS — exposing a Service does not work around it, because the upstream hands the downstream the addresses to connect to. See <code>docs/design/cross-cluster-replication.md</code>.</p>
+<div class="admonition note">
+<p class="admonition-title">Network mode requires the upstream to expose itself — unless it's the same Kubernetes cluster</p>
+<p><code>source.mode: network</code> streams directly from the upstream's cluster endpoints. Between <strong>separate</strong> Kubernetes clusters, this requires the upstream servers' <code>server.cluster.advertised_address</code> to be externally routable: set <code>spec.crossClusterReplication.enabled: true</code> on the upstream <code>Neo4jEnterpriseCluster</code> (see <a href="../neo4jenterprisecluster/#crossclusterreplicationspec"><code>CrossClusterReplicationSpec</code></a>) and list its <code>status.crossClusterReplication.addresses</code> in <code>source.addresses</code>. When both clusters are on the <strong>same</strong> Kubernetes cluster, skip all of that and set <code>source.upstreamClusterRef</code> instead — the controller resolves the address list itself. <code>mode: backup</code> needs no network setup of either kind — it has no network path between clusters at all. See <code>docs/design/cross-cluster-replication.md</code> §6.</p>
 </div>
-<p>See the <a href="../../user_guide/guides/cross_cluster_replication/">Cross-Cluster Replication guide</a> for the end-to-end runbook.</p>
+<p>See the <a href="../../user_guide/guides/cross_cluster_replication/">Cross-Cluster Replication guide</a> for the end-to-end runbook (both modes).</p>
 <h2 id="spec">Spec<a class="headerlink" href="#spec" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
@@ -3583,30 +3627,86 @@
 <tr>
 <td><code>mode</code></td>
 <td><code>string</code></td>
-<td><code>backup</code> (default) or <code>network</code>. Only <code>backup</code> is supported; <code>network</code> is rejected by the validator with the reason.</td>
+<td><code>backup</code> (default) or <code>network</code>.</td>
 </tr>
 <tr>
 <td><code>pullURI</code></td>
 <td><code>string</code></td>
-<td>Object-storage directory holding the upstream's differential chain. Read it from the upstream <code>Neo4jBackup</code> CR's <code>status.replicationPullURI</code>.</td>
+<td><strong>Backup mode.</strong> Object-storage directory holding the upstream's differential chain. Read it from the upstream <code>Neo4jBackup</code> CR's <code>status.replicationPullURI</code>. Mutually exclusive with <code>upstreamBackupRef</code> — set exactly one. Ignored (warned) in network mode.</td>
+</tr>
+<tr>
+<td><code>upstreamBackupRef</code></td>
+<td><a href="#upstreambackupref"><code>object</code></a></td>
+<td><strong>Backup mode.</strong> Resolves <code>pullURI</code> automatically from an upstream <code>Neo4jBackup</code> CR's <code>status.replicationPullURI</code>, instead of typing it by hand. Only works when the upstream <code>Neo4jBackup</code> is on this <strong>same Kubernetes cluster</strong> — see <a href="#upstreambackupref"><code>UpstreamBackupRef</code></a>. Mutually exclusive with <code>pullURI</code>.</td>
 </tr>
 <tr>
 <td><code>seedURI</code></td>
 <td><code>string</code></td>
-<td>Full backup artifact the replica is seeded from. Must belong to the same chain as <code>pullURI</code>.</td>
+<td><strong>Backup mode.</strong> Full backup artifact the replica is seeded from. Must belong to the same chain as <code>pullURI</code>. Independent of <code>upstreamBackupRef</code> — set either alongside it. Ignored (warned) in network mode.</td>
 </tr>
 <tr>
 <td><code>addresses</code></td>
 <td><code>[]string</code></td>
-<td>Upstream cluster endpoints for network mode. Unused while network mode is rejected.</td>
+<td><strong>Network mode.</strong> Upstream cluster endpoints (<code>host:port</code>, the upstream's port 6000 — or, when the upstream has <code>spec.crossClusterReplication</code> enabled, its proxy's external port). One reachable address is sufficient: the upstream hands back the addresses the downstream actually uses. Mutually exclusive with <code>upstreamClusterRef</code> — set exactly one. Ignored in backup mode.</td>
+</tr>
+<tr>
+<td><code>upstreamClusterRef</code></td>
+<td><a href="#upstreamclusterref"><code>object</code></a></td>
+<td><strong>Network mode.</strong> Resolves <code>addresses</code> automatically from an upstream <code>Neo4jEnterpriseCluster</code>'s <code>status.internalAddresses</code>, instead of listing them by hand. Only works when the upstream is on this <strong>same Kubernetes cluster</strong> — see <a href="#upstreamclusterref"><code>UpstreamClusterRef</code></a>. Mutually exclusive with <code>addresses</code>.</td>
 </tr>
 <tr>
 <td><code>credentialsSecretRef</code></td>
 <td><code>string</code></td>
-<td>Secret holding object-storage credentials, when workload identity is unavailable.</td>
+<td><strong>Backup mode.</strong> Secret holding object-storage credentials, when workload identity is unavailable. Independent of <code>upstreamBackupRef</code>. Ignored (warned) in network mode.</td>
 </tr>
 </tbody>
 </table>
+<h3 id="upstreamclusterref"><code>upstreamClusterRef</code><a class="headerlink" href="#upstreamclusterref" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td><code>string</code></td>
+<td><strong>Required.</strong> Name of the upstream <code>Neo4jEnterpriseCluster</code>.</td>
+</tr>
+<tr>
+<td><code>namespace</code></td>
+<td><code>string</code></td>
+<td>Namespace of the upstream <code>Neo4jEnterpriseCluster</code>. Defaults to this <code>Neo4jReplicaDatabase</code>'s own namespace when omitted.</td>
+</tr>
+</tbody>
+</table>
+<p>Resolution is a live <code>Get</code> against this operator's own Kubernetes API server — it can <strong>only</strong> reach an upstream on this same Kubernetes cluster, never a genuinely separate physical cluster. For an upstream on a different Kubernetes cluster, use <code>addresses</code> instead, populated from the upstream's <code>spec.crossClusterReplication</code> proxy (see the note above). If the referenced cluster doesn't exist yet, or exists but hasn't published <code>status.internalAddresses</code> yet, the replica sits in phase <code>Pending</code> and retries — this is treated as an ordinary transient state, not a spec error.</p>
+<h3 id="upstreambackupref"><code>upstreamBackupRef</code><a class="headerlink" href="#upstreambackupref" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td><code>string</code></td>
+<td><strong>Required.</strong> Name of the upstream <code>Neo4jBackup</code> CR.</td>
+</tr>
+<tr>
+<td><code>namespace</code></td>
+<td><code>string</code></td>
+<td>Namespace of the upstream <code>Neo4jBackup</code>. Defaults to this <code>Neo4jReplicaDatabase</code>'s own namespace when omitted.</td>
+</tr>
+</tbody>
+</table>
+<p>Same same-Kubernetes-cluster-only constraint as <code>upstreamClusterRef</code>, for the same reason: resolution is a live <code>Get</code> against this operator's own API server. For a <code>Neo4jBackup</code> on a different Kubernetes cluster, use <code>pullURI</code> instead — paste it from that CR's own <code>status.replicationPullURI</code> by hand. If the referenced <code>Neo4jBackup</code> doesn't exist yet, or exists but hasn't run its first backup yet (empty <code>status.replicationPullURI</code>), the replica sits in phase <code>Pending</code> and retries.</p>
 <h2 id="status">Status<a class="headerlink" href="#status" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
@@ -3690,6 +3790,60 @@
 </span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="nt">pullURI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://prod-backups/foo/foo-chain/</span>
 </span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">seedURI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://prod-backups/foo/foo-chain/foo-2026-08-01T02-00-00.backup</span>
 </span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">    </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-creds</span>
+</span></code></pre></div>
+<p>Backup mode, same Kubernetes cluster — <code>upstreamBackupRef</code> resolves <code>pullURI</code> automatically from the upstream <code>Neo4jBackup</code>'s <code>status.replicationPullURI</code>; no <code>kubectl get ... -o jsonpath=...</code> copy-paste needed:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaDatabase</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">upstreamDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">  </span><span class="nt">pullInterval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1m</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="nt">upstreamBackupRef</span><span class="p">:</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-chain</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">      </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-creds</span>
+</span></code></pre></div>
+<p>Network mode — <code>addresses</code> comes from the upstream cluster's <code>status.crossClusterReplication.addresses</code> (see <a href="../neo4jenterprisecluster/#crossclusterreplicationspec"><code>CrossClusterReplicationSpec</code></a>):</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaDatabase</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">upstreamDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">network</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="nt">addresses</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"prod-ccdr.example.com:16000"</span><span class="p p-Indicator">]</span>
+</span></code></pre></div>
+<p>Network mode, same Kubernetes cluster — <code>upstreamClusterRef</code> resolves addresses automatically from the upstream's <code>status.internalAddresses</code>; no <code>crossClusterReplication</code> proxy needed:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaDatabase</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="nt">upstreamDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">network</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">    </span><span class="nt">upstreamClusterRef</span><span class="p">:</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-cluster</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">      </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod</span>
 </span></code></pre></div>
 
 

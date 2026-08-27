@@ -3653,10 +3653,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#66-recommendation" class="md-nav__link">
+  <a href="#66-what-shipped-option-3-a-single-self-hosted-proxy-port-based-routing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6.6 Recommendation
+        6.6 What shipped: Option 3 — a single self-hosted proxy, port-based routing
       
     </span>
   </a>
@@ -3728,10 +3728,10 @@
 
 <h1 id="design-cross-cluster-database-replication-ccdr-on-kubernetes">Design: Cross-Cluster Database Replication (CCDR) on Kubernetes<a class="headerlink" href="#design-cross-cluster-database-replication-ccdr-on-kubernetes" title="Anchor link to this section">&para;</a></h1>
 <blockquote>
-<p><strong>Status:</strong> Draft for review. Not an official product or version commitment.
+<p><strong>Status:</strong> Both phases implemented and shipped.
 <strong>Source:</strong> Neo4j Operations Manual, <em>Replicating databases across clusters</em> (pre-publication preview, 2026.07 docs branch). The page requires a <strong>downstream cluster on 2026.08 or later</strong>; the upstream minimum is stated as 2025.01 but see §9 — mixed-version support is under active test upstream and should not be hardened into operator validation yet.
-<strong>Scope of this document:</strong> what CCDR needs from a Kubernetes deployment, what this operator already provides, what actually blocks it, and a two-phase delivery shape. Phase 1 (backup-based) is designed to a level a contributor can implement from. Phase 2 (network-based) is deliberately left at the "what must be answered first" stage.
-<strong>Headline:</strong> backup-based CCDR is largely deliverable on top of machinery the operator already has, and is unaffected by everything below. Network-based CCDR is blocked on an addressing problem that no amount of Service configuration resolves (§9 Q1, confirmed), and the clean fix — a cross-cluster address distinct from the intra-cluster one — <strong>does not exist in Neo4j's documented setting surface</strong> (§9 Q1a). What remains is a product decision: accept a cluster-wide addressing change that degrades something working today for every non-CCDR user (§6.2 / §6.3), or ship backup-based replication only and decline the network path on Kubernetes (§6.4). This design recommends the latter.</p>
+<strong>Scope of this document:</strong> what CCDR needs from a Kubernetes deployment, what this operator already provides, and the two-phase delivery shape both phases actually took. Phase 1 (backup-based, <code>source.mode: backup</code>) needed no cluster-wide addressing change. Phase 2 (network-based, <code>source.mode: network</code>) turned out to require exactly that — see the walk through options (a)–(d) in §6.1–§6.5 for why, and §6.6 for what shipped instead of any of them.
+<strong>Headline:</strong> backup-based CCDR was largely deliverable on top of machinery the operator already had. Network-based CCDR looked blocked on an addressing problem that no amount of Service configuration resolves on its own (§9 Q1, confirmed) — Neo4j has no cross-cluster address distinct from the intra-cluster one (§9 Q1a). The fix that shipped does not try to find or fake such a setting: an opt-in, operator-managed proxy (<code>spec.crossClusterReplication</code>, §6.6) fronts the cluster's tx-shipping port only, leaving RAFT and routing untouched, so the cost of exposing the cluster falls on users who opt in rather than on the addressing model of every cluster.</p>
 </blockquote>
 <hr />
 <h2 id="1-what-ccdr-requires">1. What CCDR requires<a class="headerlink" href="#1-what-ccdr-requires" title="Anchor link to this section">&para;</a></h2>
@@ -4020,13 +4020,18 @@ treatment property sharding gets via <code>isPropertyShardingCompatible()</code>
 <p>This is deliberately <em>recorded</em>, not <em>enforced</em>. Blocking a failover on a lag threshold is the wrong default — during a real outage the operator does not get to second-guess the human.</p>
 <hr />
 <h2 id="6-phase-2-network-replication">6. Phase 2 — network replication<a class="headerlink" href="#6-phase-2-network-replication" title="Anchor link to this section">&para;</a></h2>
-<p>Still not designed here, but Q1's answer bounds it. Phase 2 requires all of:</p>
+<p><strong>Status: implemented.</strong> §6.1–§6.5 below is the option analysis that led to the
+design, kept as background for <em>why</em> the simpler paths were not chosen. Jump
+to §6.6 for what actually shipped, or to
+<a href="../../api_reference/neo4jenterprisecluster/#crossclusterreplicationspec"><code>spec.crossClusterReplication</code></a>
+for the API reference.</p>
+<p>Q1's answer bounds the design space. Network replication requires all of:</p>
 <ol>
-<li>a per-server exposure API emitting one Service per pod on :6000 (B2);</li>
-<li>an externally-routable <code>server.cluster.advertised_address</code>, which means carving it out of <code>operatorRuntimeManagedSettings</code> and managing it as a first-class field rather than a runtime-appended constant (B1);</li>
-<li>external per-server SANs on the cert-manager <code>Certificate</code> (B3);</li>
-<li>a supported path for the remote CA into the cluster SSL policy's trust directory — most likely projecting a new <code>spec.tls.additionalClusterTrustCAs</code> into <code>/ssl/trusted/</code> alongside the operator's own <code>ca.crt</code>, since the <code>extraVolumes</code> route is structurally unavailable (B3);</li>
-<li>a NetworkPolicy rule admitting remote CIDRs on :6000 (B4).</li>
+<li>a per-server exposure API emitting one Service per pod on :6000 (B2) — <em>shipped as one proxy Deployment/Service fanning out to N ordinals, not N Services (§6.6 item 1);</em></li>
+<li>an externally-routable <code>server.cluster.advertised_address</code>, which means carving it out of <code>operatorRuntimeManagedSettings</code> and managing it as a first-class field rather than a runtime-appended constant (B1) — <em>shipped simpler than this framing suggests: the setting stays in <code>operatorRuntimeManagedSettings</code> (still forbidden in <code>spec.config</code>), and only the operator's own computed value became conditional (§6.6 item 2);</em></li>
+<li>external per-server SANs on the cert-manager <code>Certificate</code> (B3) — <em>shipped as one shared SAN, not per-server (§6.6 item 3): only the port differs per ordinal, which hostname verification ignores;</em></li>
+<li>a supported path for the remote CA into the cluster SSL policy's trust directory — most likely projecting a new <code>spec.tls.additionalClusterTrustCAs</code> into <code>/ssl/trusted/</code> alongside the operator's own <code>ca.crt</code>, since the <code>extraVolumes</code> route is structurally unavailable (B3) — <em>shipped exactly as speculated (§6.6 item 4);</em></li>
+<li>a NetworkPolicy rule admitting remote CIDRs on :6000 (B4) — <em>shipped narrower: the proxy pod's own label selector, not a remote CIDR — only the proxy is ever internet-facing, never the Neo4j pods themselves (§6.6 item 5).</em></li>
 </ol>
 <p>Item 2 is the hard one, and Q1's full answer makes it <strong>mandatory rather than an optimisation</strong>. Because the upstream hands the downstream its advertised cluster addresses to connect to, those addresses must be externally routable — and the same value carries all intra-cluster peer traffic. Options (b) and &copy; below are therefore not competing cost profiles for achieving the same thing; <strong>one of them (or (a)) is a precondition for network replication working at all on Kubernetes.</strong></p>
 <p><strong>Shared prerequisite for (b) and &copy;: per-pod addressing.</strong> The StatefulSet has one pod template, so per-pod values must be derived at runtime. The operator already does exactly this — <code>HOSTNAME_FQDN</code> is built from <code>${HOSTNAME}</code> in the startup script (<code>internal/resources/cluster.go:2249</code>) — so extending it to index a per-ordinal address list is a small change. Provisioning the endpoints is the hard part, not templating them.</p>
@@ -4152,18 +4157,153 @@ treatment property sharding gets via <code>isPropertyShardingCompatible()</code>
 <li><strong><code>multiCluster</code> mode forces abandoning the chart's default discovery.</strong> <code>dbms.cluster.discovery.resolver_type: K8S</code> with <code>dbms.kubernetes.label_selector</code> queries the <em>local</em> Kubernetes API and cannot see members in another cluster, which is why the example switches to LIST. Anyone enabling multi-cluster gives up K8S discovery.</li>
 <li><strong>It opens more than CCDR needs.</strong> The flag exposes 5000/6000/7000/7688 together. A downstream replica needs only the cluster/catchup port. An operator-side equivalent should expose 6000 alone, and pair it with the NetworkPolicy work (B4) rather than inheriting the chart's broader surface.</li>
 </ol>
-<h3 id="66-recommendation">6.6 Recommendation<a class="headerlink" href="#66-recommendation" title="Anchor link to this section">&para;</a></h3>
-<p><strong>(a) is off the table</strong> on the documented setting surface (§6.1), so the choice is among the remaining three.</p>
-<p><strong>(d) for the current release, but no longer as a permanent stance — §6.5 undercuts that.</strong> Ship Phase 1 (backup-based) now and decline network replication <em>for this operator, for now</em>, while pointing field questions about the network path at the Helm charts' <code>multiCluster</code> mode, which already supports it.</p>
-<p>Then <strong>(b) as the eventual operator implementation</strong>, following the charts' proven shape: per-pod external endpoints, advertised addresses overridden per ordinal (§6.2), and an <em>internal</em> load balancer on a privately-routable IP to keep the hairpin off the public network. <strong>&copy; documented but unsupported</strong> for users who already run controllable DNS and want to avoid the hairpin entirely.</p>
-<p>Two things changed the weighting here. With (a) eliminated, network replication cannot be an additive feature — it requires changing how every cluster addresses itself. That argues for (d). But §6.5 shows the sibling Helm charts already ship exactly this, which makes a permanent "not supported in the operator" position a <strong>parity gap</strong> rather than a scoping decision: a user moving from charts to the operator would lose a capability. So (d) is the right sequencing call and the wrong end state.</p>
-<p><strong>Do not start Phase 2 implementation until §9 Q1a is confirmed</strong> — and treat the outcome as a product decision about acceptable blast radius, not an implementation choice.</p>
+<h3 id="66-what-shipped-option-3-a-single-self-hosted-proxy-port-based-routing">6.6 What shipped: Option 3 — a single self-hosted proxy, port-based routing<a class="headerlink" href="#66-what-shipped-option-3-a-single-self-hosted-proxy-port-based-routing" title="Anchor link to this section">&para;</a></h3>
+<p>The user-facing decision, after walking (b), &copy;, and a proxy+split-horizon-DNS
+hybrid (below) in detail: <strong>all of them were too complicated for the ease-of-use
+bar this feature needs to clear.</strong> &copy; requires the user to own and correctly
+configure split-horizon DNS, with a failure mode that surfaces as an opaque
+cluster-formation error. The hybrid depends on an unverifiable assumption about
+Neo4j's closed-source cluster-transport TLS behaviour (does it honour SNI on
+the tx-shipping port at all?) that could not be confirmed from documentation
+alone, and would have meant shipping a design whose correctness rests on an
+unverified guess. (b) itself is sound but has no port-consolidation story: N
+servers means N load-balanced ports or N load balancers, either way pushed onto
+the user to provision and wire up correctly.</p>
+<p><strong>What actually shipped is a simplification of (b): the operator, not the user
+or a cloud load balancer, does the per-server port fan-out.</strong> One
+operator-managed TCP proxy (HAProxy, <code>mode tcp</code>, pure L4 — it never terminates
+or inspects TLS) sits in front of the cluster. It listens on one port per
+server ordinal (<code>16000+i</code>) and forwards each to that ordinal's pod on the
+cluster port (6000). A single <code>LoadBalancer</code> Service fronts the proxy. This
+gets (b)'s core mechanism — advertise an external endpoint, let the LB/proxy
+absorb the port remapping — without requiring the user to provision N anything,
+and without any DNS precondition at all. The tradeoff carried over from (b) is
+the same one, made explicit and opt-in: enabling this routes intra-cluster
+secondary catch-up traffic (which shares port 6000 with CCDR catchup) through
+the load balancer too, adding latency and cost proportional to write volume.</p>
+<p><strong>One toggle, one API round-trip.</strong> On the upstream <code>Neo4jEnterpriseCluster</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">crossClusterReplication</span><span class="p">:</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">tls</span><span class="p">:</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="nt">additionalClusterTrustCAs</span><span class="p">:</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster-ca</span><span class="w">   </span><span class="c1"># the downstream cluster's CA, copied here</span>
+</span></code></pre></div>
+<p>Once the proxy's <code>LoadBalancer</code> Service is assigned a hostname/IP,
+<code>status.crossClusterReplication.addresses</code> publishes the ready-to-paste
+<code>&lt;lb-hostname&gt;:&lt;port&gt;</code> list — the same "publish the exact string the user
+pastes elsewhere" ergonomics <code>Neo4jBackup.status.replicationPullURI</code> already
+uses for Phase 1. On the downstream <code>Neo4jReplicaDatabase</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">network</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span><span class="nt">addresses</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"&lt;one</span><span class="nv"> </span><span class="s">address</span><span class="nv"> </span><span class="s">from</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">upstream's</span><span class="nv"> </span><span class="s">status.crossClusterReplication.addresses&gt;"</span><span class="p p-Indicator">]</span>
+</span></code></pre></div>
+<p>One address is sufficient — see Q1: the upstream hands back the addresses the
+downstream actually uses, so the list only needs to get the first connection
+made.</p>
+<p><strong>Implementation, mapped onto §6's item list:</strong></p>
+<ol>
+<li><em>Per-server exposure</em> — one proxy Deployment/Service/ConfigMap
+   (<code>internal/resources/ccdr_proxy.go</code>, <code>internal/controller/ccdr_proxy.go</code>),
+   not N per-pod Services. A plain Kubernetes Service cannot do per-ordinal
+   port-to-specific-pod mapping (every StatefulSet replica shares the same
+   <code>containerPort</code>), which is why a self-hosted L4 proxy — not N Services — is
+   the mechanism.</li>
+<li><em>Externally-routable advertised address</em> — <code>server.cluster.advertised_address</code>
+   is overridden per-server, in <code>buildStartupScriptForEnterprise</code>
+   (<code>internal/resources/cluster.go</code>), to <code>&lt;proxy-lb-hostname&gt;:$((16000 +
+   SERVER_INDEX))</code> once the proxy's load balancer hostname is known.
+   <code>server.cluster.raft.advertised_address</code> (7000) and
+   <code>server.routing.advertised_address</code> (7688) are <strong>never</strong> touched — RAFT
+   leader election never depends on the load balancer, narrowing the blast
+   radius from §6.2's "all cluster traffic hairpins" framing to "tx-shipping
+   traffic only, opt-in."</li>
+<li><em>External per-server SANs</em> — one SAN on the cert-manager <code>Certificate</code>
+   (<code>BuildCertificateForEnterprise</code>) covering the proxy's load balancer
+   hostname. One SAN suffices for every ordinal: only the port differs, and
+   hostname verification ignores port.</li>
+<li><em>Remote CA trust</em> — <code>spec.tls.additionalClusterTrustCAs</code>, projecting each
+   peer cluster's CA directly into <code>/ssl/trusted/</code> (confirmed
+   directory-scanned, not a single fixed filename) alongside the cluster's own
+   CA. Additive: the existing single-Secret <code>CertsVolume</code> mount is untouched.</li>
+<li><em>NetworkPolicy</em> — a 4<sup>th</sup>, additive ingress rule admitting the proxy pod
+   (matched by its <code>app.kubernetes.io/component: ccdr-proxy</code> label, not a
+   remote CIDR — the Neo4j pods are never directly internet-facing, only the
+   proxy pod is) on port 6000 only.</li>
+</ol>
+<p><strong>The proxy+split-horizon-DNS hybrid — considered, deferred.</strong> Before
+converging on Option 3, a hybrid was explored: keep the split-horizon DNS
+approach from §6.3 but front it with a proxy that uses TLS SNI to route a
+single external port to the correct backend pod, avoiding &copy;'s N-load-balancer
+cost. This depends entirely on whether Neo4j's cluster-transport TLS (the
+<code>dbms.ssl.policy.cluster.*</code> handshake on port 6000) sends or honours SNI at
+all — undocumented, and Neo4j's cluster transport is closed-source, so it
+cannot be verified by reading code either. <strong>Deferred, not ruled out</strong>: if a
+future customer need justifies the added complexity, a short spike against a
+real cluster (capture the ClientHello on port 6000, check for an SNI
+extension) would resolve the open question before any design work resumes.</p>
+<p><strong>Addendum — same-Kubernetes-cluster ergonomics.</strong> The user guide's
+same-Kubernetes-cluster guidance (<code>docs/user_guide/guides/cross_cluster_replication.md</code>)
+established that when the upstream and downstream <code>Neo4jEnterpriseCluster</code>s
+are on the <em>same</em> Kubernetes cluster, the proxy is unnecessary at all —
+ordinary in-cluster DNS already resolves the upstream's pod FQDN across
+namespaces. Two small additive pieces make that path usable without hand-
+computing FQDNs: <code>status.internalAddresses</code> on <code>Neo4jEnterpriseCluster</code>
+(the plain-FQDN counterpart to <code>status.crossClusterReplication.addresses</code>,
+always populated, no proxy or LoadBalancer needed) and
+<code>spec.source.upstreamClusterRef</code> on <code>Neo4jReplicaDatabase</code> (resolves that
+status field automatically instead of requiring <code>source.addresses</code> to be
+typed out). <strong>Scoping caveat, stated plainly:</strong> <code>upstreamClusterRef</code> resolves
+via a live <code>Get</code> against this operator's own Kubernetes API server, so it can
+only ever reach an upstream on this same physical cluster — never a
+genuinely separate one. For a separate Kubernetes cluster, <code>source.addresses</code>
+plus the proxy (this section) remains the only path.</p>
+<p><strong>Addendum 2 — the two remaining same-cluster friction points.</strong> Two more
+pieces closed after the above landed, both raised directly against the
+same-cluster path:</p>
+<ul>
+<li><strong>NetworkPolicy vs. same-cluster network mode.</strong> The base peer-restriction
+  rule (§6, item 5) admits only pods carrying <em>this cluster's own</em>
+  <code>neo4j.com/cluster</code> label — a same-cluster downstream replica carries a
+  <em>different</em> cluster's label, so it was blocked whenever the upstream had
+  <code>spec.networkPolicy.enabled: true</code>, with no fix short of disabling
+  NetworkPolicy entirely or using the full proxy. <code>spec.networkPolicy.
+  allowReplicasFrom</code> adds an explicit, opt-in allow-list: each entry is a
+  <code>{name, namespace}</code> pair admitted on port 6000 only (never RAFT/routing),
+  scoped by both a <code>podSelector</code> and a <code>namespaceSelector</code> (Kubernetes'
+  well-known <code>kubernetes.io/metadata.name</code> label — the first
+  <code>namespaceSelector</code> use in this codebase). Nothing is admitted unless
+  listed. Purely declarative — no controller change, no RBAC, no live
+  lookup, since it only reads fields already on the CR being reconciled.</li>
+<li><strong>The same manual-copy friction backup mode always had.</strong> Setting up a
+  same-cluster backup-mode replica still meant <code>kubectl get neo4jbackup ...
+  -o jsonpath='{.status.replicationPullURI}'</code> and pasting the string by
+  hand — unrelated to NetworkPolicy (backup mode has no network coupling at
+  all), but the same ergonomic gap <code>upstreamClusterRef</code> had just closed for
+  network mode. <code>spec.source.upstreamBackupRef</code> on <code>Neo4jReplicaDatabase</code>
+  mirrors it exactly: resolves <code>pullURI</code> from an upstream <code>Neo4jBackup</code>'s
+  <code>status.replicationPullURI</code>, same same-Kubernetes-cluster-only constraint
+  and reasoning as <code>upstreamClusterRef</code> (a live <code>Get</code> against this cluster's
+  own API server), mutually exclusive with <code>pullURI</code>. <code>SeedURI</code> and
+  <code>CredentialsSecretRef</code> stay independent of it — set either alongside it if
+  needed.</li>
+</ul>
 <hr />
 <h2 id="7-testing">7. Testing<a class="headerlink" href="#7-testing" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><strong>Unit:</strong> Cypher construction for <code>CREATE REPLICA DATABASE</code> in both modes; version gating (<code>SupportsCCDRReplica</code> / <code>MeetsCCDRUpstreamFloor</code> — landed, including a drift guard pinning the floor constants to the gate logic); validator table tests; the §5.4 terminal guard, including the out-of-band-promotion branch.</li>
-<li><strong>Integration:</strong> gated behind a dispatch input the way property sharding is (<code>isPropertyShardingCompatible()</code>), because the CI anchor CalVer is below 2026.08 (B7). Label every new spec <code>Label("extended")</code>.</li>
-<li><strong>Two-cluster testing is the hard part.</strong> Backup-based replication is testable on a <em>single</em> Kind cluster with two Neo4j deployments and a shared MinIO bucket — but the project invariant is <strong>one Enterprise deployment at a time</strong> (concurrent JVMs wedge Bolt on a laptop). So this lands in the manual pre-release journey (<code>docs/developer_guide/release_verification.md</code>) rather than the automated suite, at least initially. Add the scenario there in the same PR that adds the capability.</li>
+<li><strong>Unit — landed:</strong> Cypher construction for <code>CREATE REPLICA DATABASE</code> in both
+  modes (<code>internal/neo4j/replicas_test.go</code>); version gating
+  (<code>SupportsCCDRReplica</code> / <code>MeetsCCDRUpstreamFloor</code>, including a drift guard
+  pinning the floor constants to the gate logic); validator table tests for
+  both <code>mode: backup</code> and <code>mode: network</code> (<code>internal/validation/replica_validator_test.go</code>);
+  the §5.4 terminal guard, including the out-of-band-promotion branch; the
+  proxy builders and the conditional advertised-address override, pinned
+  against the existing byte-identical-default-path assertions
+  (<code>internal/resources/ccdr_proxy_test.go</code>, <code>cluster_startup_test.go</code>,
+  <code>cluster_test.go</code>, <code>networkpolicy_test.go</code>).</li>
+<li><strong>Integration — landed:</strong> <code>test/integration/ccdr_replica_test.go</code> (<code>Label("extended")</code>) covers CRD admission and validator behaviour for both modes with no real cluster needed (runs on the default CI anchor). <code>test/integration/ccdr_proxy_test.go</code> (<code>Label("core")</code>) covers the proxy toggle, <code>status.internalAddresses</code>, and the <code>allowReplicasFrom</code> NetworkPolicy peer against a real cluster — none of it needs 2026.08, so it runs on every PR. <code>test/integration/ccdr_same_cluster_network_mode_test.go</code> (<code>Label("extended")</code>) covers the live replicate-and-promote path via <code>upstreamClusterRef</code>, gated behind a dispatch input the way property sharding is (<code>isCCDRReplicaCompatible()</code>, mirroring <code>isPropertyShardingCompatible()</code>), because the CI anchor CalVer is below 2026.08 (B7) — dormant until dispatched with <code>neo4j-version: 2026.08-enterprise+</code>.</li>
+<li><strong>Two-cluster testing is the hard part.</strong> Backup-based replication is testable on a <em>single</em> Kind cluster with two Neo4j deployments and a shared MinIO bucket — but the project invariant is <strong>one Enterprise deployment at a time</strong> (concurrent JVMs wedge Bolt on a laptop). So this lands in the manual pre-release journey (<code>docs/developer_guide/release_verification.md</code>) rather than the automated suite, at least initially. Network mode needs a genuine two-cluster setup, but that does not mean leaving Kind: two Kind clusters share a Docker network by default and can route to each other, the same technique used for local multi-cluster testing elsewhere (Cilium ClusterMesh, Istio multi-cluster). The actual gap is narrower — plain Kind has no cloud provider, so a <code>type: LoadBalancer</code> Service never gets an address, and this repo has no MetalLB / <code>cloud-provider-kind</code> tooling wired up yet. That is unbuilt local tooling, not a hard requirement for real cloud infrastructure; until it exists, <code>release_verification.md</code>'s Part C only smoke-tests the proxy toggle, not live cross-cluster streaming.</li>
 </ul>
 <hr />
 <h2 id="8-delivery-order">8. Delivery order<a class="headerlink" href="#8-delivery-order" title="Anchor link to this section">&para;</a></h2>
@@ -4175,14 +4315,13 @@ treatment property sharding gets via <code>isPropertyShardingCompatible()</code>
 <li><code>Neo4jBackup</code> <code>mode: replication-source</code> + rules R1–R5 (§4.4). Independent of 4, so it can land in parallel.</li>
 <li><code>Neo4jReplicaPromotion</code> + the §5 terminal-guard behaviour.</li>
 <li>User guide: the end-to-end backup-based runbook, the failover procedure including the alias step, the bucket-lifecycle warning from §4.4, and the B8 warning about restoring an upstream.</li>
-<li>Phase 2, pending §9 Q1a.</li>
+<li><del>Phase 2, pending §9 Q1a</del> → <strong>done</strong>: Option 3 (§6.6) — <code>spec.crossClusterReplication</code> on <code>Neo4jEnterpriseCluster</code>, <code>mode: network</code> on <code>Neo4jReplicaDatabase</code>, and the user guide runbook in <code>docs/user_guide/guides/cross_cluster_replication.md</code>.</li>
 </ol>
 <hr />
 <h2 id="9-open-questions">9. Open questions<a class="headerlink" href="#9-open-questions" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Q1 — ANSWERED, in two parts.</strong> The downstream dials only the addresses in <code>replicaConfig.addresses</code> — but there <em>is</em> server-side routing and discovery: one listed address is sufficient, and the upstream <strong>returns the addresses the downstream then reaches out to</strong>. Those are the upstream's advertised cluster addresses. A listed address need not host the upstream database.</p>
 <p>Consequence: <strong>B1 is confirmed in its strongest form.</strong> <code>server.cluster.advertised_address</code> must be externally routable, and no amount of care on the listing side substitutes, because the downstream uses the addresses it is handed rather than the ones it was given. See B1 and §6. Phase 1 is unaffected.</p>
-<p><strong>Q1a — ANSWERED from documentation, pending confirmation. No such setting exists.</strong> The discovery, connectors and clustering-settings pages between them enumerate the whole advertised-address surface and contain nothing for cross-cluster, remote or replica addressing (§6.1). <code>server.cluster.advertised_address</code> is documented as the address of the <em>transaction shipping server</em> — the same subsystem CCDR catchup uses — so there is no seam between the two consumers to exploit.</p>
-<p>Remaining ask for the clustering team is narrow: <strong>confirm nothing undocumented or planned changes this.</strong> Design on the assumption it does not, which leaves the choice between (b), &copy; and (d) — a product decision about how much cluster-wide addressing change CCDR-on-Kubernetes justifies, not an implementation question. <strong>Still blocks Phase 2.</strong></p>
+<p><strong>Q1a — ANSWERED from documentation; moot for the shipped design.</strong> No distinct cross-cluster addressing setting exists (§6.1) — <code>server.cluster.advertised_address</code> is documented as the address of the <em>transaction shipping server</em>, the same subsystem CCDR catchup uses, so there is no seam between the two consumers to exploit. This is exactly why Option 3 (§6.6) does not try to find or use such a seam: it accepts that the advertised address is shared, narrows what is exposed to tx-shipping traffic only (RAFT and routing untouched), and makes the resulting tradeoff an explicit opt-in rather than a hidden default. Nothing here blocks the shipped design; it explains why the design looks the way it does.</p>
 <p><strong>Q2. Upstream version floor — still open, but the code is ready for the answer.</strong> The manual states 2025.01, and mixed-version support remains under active test upstream. Implemented as <code>MeetsCCDRUpstreamFloor()</code> + the <code>MinCCDRUpstreamVersion</code> constant, so moving the floor is a one-line change that corrects every caller at once. Callers must <strong>warn, not reject</strong>: the upstream is in another Kubernetes cluster the operator cannot inspect, so its version is always a user-supplied claim rather than an observation, and refusing to reconcile on an unverifiable claim is worse than surfacing a warning. Note the predicate is currently equivalent to <code>IsCalver</code> by construction (CalVer minors start at 01); it exists as its own function because this floor is the most likely thing in that file to move.</p>
 <p><strong>Q3 — ANSWERED: yes.</strong> Aliases can be created against a replica database. The alias is therefore pre-staged at replica-creation time and needs no action during the failover window; it silently gains write capability at promotion. See §5.7 — this also strengthens the case for pulling <code>Neo4jDatabaseAlias</code> (Q6) into Phase 1.</p>
 <p><strong>Q4. Does <code>dbms.promoteReplicaDatabase</code> error or no-op against an already-promoted database?</strong> The §5.4 ordering makes the operator correct either way, so this is informational — but it affects the quality of the error surfaced to a user who re-applies a promotion CR.</p>

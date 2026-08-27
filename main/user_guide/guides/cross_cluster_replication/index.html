@@ -1335,6 +1335,39 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#which-configuration-do-you-need" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which configuration do you need?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-two-modes-differ" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the two modes differ
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#how-it-fits-together" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1346,15 +1379,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#1-upstream-produce-the-chain" class="md-nav__link">
+  <a href="#1-upstream-set-it-up" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Upstream: produce the chain
+        1. Upstream: set it up
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="1. Upstream: produce the chain">
+    <nav class="md-nav" aria-label="1. Upstream: set it up">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -3490,6 +3523,39 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#which-configuration-do-you-need" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which configuration do you need?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-two-modes-differ" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the two modes differ
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#how-it-fits-together" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3501,15 +3567,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#1-upstream-produce-the-chain" class="md-nav__link">
+  <a href="#1-upstream-set-it-up" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Upstream: produce the chain
+        1. Upstream: set it up
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="1. Upstream: produce the chain">
+    <nav class="md-nav" aria-label="1. Upstream: set it up">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -3672,20 +3738,83 @@
 <h1 id="cross-cluster-database-replication-ccdr">Cross-cluster database replication (CCDR)<a class="headerlink" href="#cross-cluster-database-replication-ccdr" title="Anchor link to this section">&para;</a></h1>
 <p>Replicate a database from one Neo4j cluster to a read-only replica on another,
 for disaster recovery or to serve reads closer to a second region.</p>
-<div class="admonition info">
-<p class="admonition-title">What this operator supports</p>
-<p><strong>Backup-based replication only.</strong> The replica pulls a differential backup
-chain from object storage. It needs <strong>no network path between the two
-Kubernetes clusters</strong> — no load balancer, no cross-cluster TLS trust, no
-NetworkPolicy changes.</p>
-<p><strong>Network replication is not supported</strong> and is rejected by the validator.
-It requires the upstream servers' <code>server.cluster.advertised_address</code> to be
-externally routable, and the operator pins those to in-cluster DNS. Exposing
-a Service does not work around it, because the upstream hands the downstream
-the addresses to connect to. See
-<code>docs/design/cross-cluster-replication.md</code> for the full analysis.</p>
-</div>
-<p><strong>Requirements</strong></p>
+<h2 id="which-configuration-do-you-need">Which configuration do you need?<a class="headerlink" href="#which-configuration-do-you-need" title="Anchor link to this section">&para;</a></h2>
+<p>Two independent questions decide your setup: <strong>where</strong> the two clusters live,
+and <strong>how fresh</strong> the replica needs to be.</p>
+<table>
+<thead>
+<tr>
+<th>Your situation</th>
+<th>Mode</th>
+<th>Field you set</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Separate Kubernetes clusters, ~1 minute of lag is fine (most DR)</td>
+<td><code>source.mode: backup</code></td>
+<td><code>source.pullURI</code></td>
+</tr>
+<tr>
+<td>Separate Kubernetes clusters, need near-continuous replication</td>
+<td><code>source.mode: network</code></td>
+<td><code>source.addresses</code> (upstream also needs <code>spec.crossClusterReplication</code>)</td>
+</tr>
+<tr>
+<td>Same Kubernetes cluster (different namespaces), ~1 minute of lag is fine</td>
+<td><code>source.mode: backup</code></td>
+<td><code>source.upstreamBackupRef</code></td>
+</tr>
+<tr>
+<td>Same Kubernetes cluster, need near-continuous replication</td>
+<td><code>source.mode: network</code></td>
+<td><code>source.upstreamClusterRef</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Unsure?</strong> Start with backup mode. It never needs any network setup — same
+Kubernetes cluster or not — and a bounded ~1 minute RPO is enough for most
+disaster-recovery scenarios. Reach for network mode only when you specifically
+need near-continuous replication.</p>
+<p>Step 1 below is organized the same way: pick your <strong>mode</strong> tab, then your
+<strong>topology</strong> paragraph inside it.</p>
+<hr />
+<h2 id="how-the-two-modes-differ">How the two modes differ<a class="headerlink" href="#how-the-two-modes-differ" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Backup mode</th>
+<th>Network mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Data path</td>
+<td>Differential backup chain in object storage</td>
+<td>Direct stream from the upstream's cluster endpoints</td>
+</tr>
+<tr>
+<td>Recovery point objective</td>
+<td>Bounded by <code>pullInterval</code> (default <code>1m</code>)</td>
+<td>Near-continuous</td>
+</tr>
+<tr>
+<td>Network path, separate Kubernetes clusters</td>
+<td><strong>None</strong> — no load balancer, no cross-cluster TLS trust, no NetworkPolicy changes</td>
+<td>A self-hosted proxy (<code>spec.crossClusterReplication</code>) plus CA exchange — see step 1</td>
+</tr>
+<tr>
+<td>Cost/latency tradeoff</td>
+<td>None</td>
+<td>Intra-cluster secondary catch-up traffic also shares the load balancer while the proxy is in use</td>
+</tr>
+</tbody>
+</table>
+<p>See <code>docs/design/cross-cluster-replication.md</code> for the full design rationale,
+including why network mode uses a proxy rather than exposed per-pod Services
+or split-horizon DNS.</p>
+<h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -3703,13 +3832,23 @@ the addresses to connect to. See
 <td>Neo4j 2025.01+ — not enforced (the operator cannot inspect another cluster)</td>
 </tr>
 <tr>
-<td>Shared object storage</td>
-<td>S3, GCS or Azure Blob, reachable from both clusters</td>
+<td>Backup mode</td>
+<td>Shared object storage (S3, GCS, or Azure Blob) reachable from both clusters</td>
+</tr>
+<tr>
+<td>Network mode, <strong>separate</strong> Kubernetes clusters</td>
+<td>The upstream's Kubernetes cluster must support <code>type: LoadBalancer</code> Services</td>
+</tr>
+<tr>
+<td>Network mode, <strong>same</strong> Kubernetes cluster</td>
+<td>No extra requirement — ordinary in-cluster DNS already reaches across namespaces</td>
 </tr>
 </tbody>
 </table>
 <hr />
 <h2 id="how-it-fits-together">How it fits together<a class="headerlink" href="#how-it-fits-together" title="Anchor link to this section">&para;</a></h2>
+<p>Backup mode, separate clusters — the two clusters never talk to each other,
+the bucket is the only coupling:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>UPSTREAM cluster (K8s cluster A)          DOWNSTREAM cluster (K8s cluster B)
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>┌──────────────────────────────┐          ┌──────────────────────────────────┐
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│ Neo4jEnterpriseCluster       │          │ Neo4jEnterpriseCluster           │
@@ -3724,29 +3863,55 @@ the addresses to connect to. See
 </span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                                          │   name: foo → foo-replica        │
 </span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                                          └──────────────────────────────────┘
 </span></code></pre></div>
-<p>The two clusters never talk to each other. The only coupling is the bucket.</p>
+<p>Network mode, separate clusters — a real network path, mediated by a proxy
+the operator manages — no per-pod Services, no DNS setup required of you:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>UPSTREAM cluster (K8s cluster A)                    DOWNSTREAM cluster (K8s cluster B)
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>┌───────────────────────────────────────┐            ┌──────────────────────────────────┐
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>│ Neo4jEnterpriseCluster                │            │ Neo4jEnterpriseCluster           │
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>│   database: foo                       │            │                                  │
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>│   crossClusterReplication.enabled     │            │ Neo4jReplicaDatabase             │
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>│                                        │            │   name: foo-replica  (read-only) │
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>│ ┌────────────┐   LoadBalancer   :6000  │  stream    │   source.mode: network           │
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>│ │ CCDR proxy │◄──────────────── server-0│◄───────────┤   source.addresses: [...]        │
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>│ │ (HAProxy)  │   :16000+i       server-N│            │                                  │
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>│ └────────────┘                         │            │ Neo4jDatabaseAlias               │
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>│   status.crossClusterReplication      ─┼────────────┤─► paste one address into         │
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>│   .addresses                          │             │   source.addresses               │
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>└───────────────────────────────────────┘             └──────────────────────────────────┘
+</span></code></pre></div>
+<p>RAFT (7000) and routing (7688) are never exposed by the proxy — only the
+tx-shipping port (6000) that CCDR catchup rides.</p>
+<p><strong>Same Kubernetes cluster, either mode:</strong> simpler than both diagrams above —
+one Kubernetes cluster, two namespaces, no bucket-only or proxy-only
+choreography needed at all. Backup mode: point <code>upstreamBackupRef</code> at the
+<code>Neo4jBackup</code> in the other namespace. Network mode: point <code>upstreamClusterRef</code>
+at the <code>Neo4jEnterpriseCluster</code> in the other namespace. Full walkthroughs are
+in step 1's "Same Kubernetes cluster" paragraphs, below.</p>
 <hr />
-<h2 id="1-upstream-produce-the-chain">1. Upstream: produce the chain<a class="headerlink" href="#1-upstream-produce-the-chain" title="Anchor link to this section">&para;</a></h2>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jBackup</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-chain</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">replication-source</span><span class="w">        </span><span class="c1"># turns chain-breaking configs into errors</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-cluster</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span><span class="w">                   </span><span class="c1"># single-database scope is required</span>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="nt">schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span><span class="w">           </span><span class="c1"># hourly; bounds the replica's staleness</span>
-</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="nt">backupType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AUTO</span>
-</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="nt">preferDiffAsParent</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">  </span><span class="nt">storage</span><span class="p">:</span>
-</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3</span>
-</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">    </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-backups</span>
-</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
-</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="nt">cloud</span><span class="p">:</span>
-</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">      </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws</span>
-</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">      </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-creds</span>
+<h2 id="1-upstream-set-it-up">1. Upstream: set it up<a class="headerlink" href="#1-upstream-set-it-up" title="Anchor link to this section">&para;</a></h2>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Backup mode</label><label for="__tabbed_1_2">Network mode</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jBackup</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-chain</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">replication-source</span><span class="w">        </span><span class="c1"># turns chain-breaking configs into errors</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-cluster</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span><span class="w">                   </span><span class="c1"># single-database scope is required</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="nt">schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span><span class="w">           </span><span class="c1"># hourly; bounds the replica's staleness</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="nt">backupType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AUTO</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="nt">preferDiffAsParent</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="nt">storage</span><span class="p">:</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">    </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-backups</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">    </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">    </span><span class="nt">cloud</span><span class="p">:</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">      </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws</span>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">      </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-creds</span>
 </span></code></pre></div>
 <p><code>mode: replication-source</code> enforces:</p>
 <table>
@@ -3775,10 +3940,19 @@ the addresses to connect to. See
 </tr>
 </tbody>
 </table>
-<p>Read the pull URI back once the first backup has run:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jbackup<span class="w"> </span>foo-chain<span class="w"> </span>-n<span class="w"> </span>prod<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.replicationPullURI}'</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># s3://prod-backups/foo/foo-chain/</span>
+<p><strong>Separate Kubernetes clusters:</strong> read the pull URI back once the first
+backup has run, and paste it into <code>source.pullURI</code> in step 2:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jbackup<span class="w"> </span>foo-chain<span class="w"> </span>-n<span class="w"> </span>prod<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.replicationPullURI}'</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="c1"># s3://prod-backups/foo/foo-chain/</span>
 </span></code></pre></div>
+<p><strong>Same Kubernetes cluster:</strong> skip the <code>kubectl get</code> step above entirely.
+In step 2, set <code>source.upstreamBackupRef: {name: foo-chain, namespace:
+prod}</code> instead of <code>source.pullURI</code> — the controller resolves it
+automatically. Same constraint as network mode's <code>upstreamClusterRef</code>
+(see the Network mode tab): resolution is a live <code>Get</code> against this
+cluster's own API server, so it only works same-cluster. For a backup CR
+on a different Kubernetes cluster, <code>pullURI</code> (typed by hand) remains the
+only option.</p>
 <div class="admonition danger">
 <p class="admonition-title">The operator cannot protect the chain from your bucket lifecycle rules</p>
 <p>For cloud storage the operator <strong>never prunes</strong> — retention is delegated to
@@ -3790,40 +3964,176 @@ validation can catch this for you.</p>
 </div>
 <h3 id="mixed-cadence-recommended-for-large-databases">Mixed cadence (recommended for large databases)<a class="headerlink" href="#mixed-cadence-recommended-for-large-databases" title="Anchor link to this section">&para;</a></h3>
 <p>A daily FULL plus an hourly DIFF, sharing one directory:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Daily full — the chain root</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">spec</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> mode</span><span class="p">:</span><span class="w"> </span><span class="nv">replication-source</span><span class="p p-Indicator">,</span><span class="nt"> schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">2</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span><span class="p p-Indicator">,</span><span class="nt"> options</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> backupType</span><span class="p">:</span><span class="w"> </span><span class="nv">FULL</span><span class="w"> </span><span class="p p-Indicator">},</span><span class="w"> </span><span class="nv">…</span><span class="w"> </span><span class="p p-Indicator">}</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nn">---</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Hourly differential — chains off it</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nt">spec</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> chainFromBackup</span><span class="p">:</span><span class="w"> </span><span class="nv">foo-chain</span><span class="p p-Indicator">,</span><span class="nt"> schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span><span class="p p-Indicator">,</span><span class="nt"> options</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> backupType</span><span class="p">:</span><span class="w"> </span><span class="nv">DIFF</span><span class="w"> </span><span class="p p-Indicator">},</span><span class="w"> </span><span class="nv">…</span><span class="w"> </span><span class="p p-Indicator">}</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Daily full — the chain root</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">spec</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> mode</span><span class="p">:</span><span class="w"> </span><span class="nv">replication-source</span><span class="p p-Indicator">,</span><span class="nt"> schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">2</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span><span class="p p-Indicator">,</span><span class="nt"> options</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> backupType</span><span class="p">:</span><span class="w"> </span><span class="nv">FULL</span><span class="w"> </span><span class="p p-Indicator">},</span><span class="w"> </span><span class="nv">…</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nn">---</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Hourly differential — chains off it</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="nt">spec</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> chainFromBackup</span><span class="p">:</span><span class="w"> </span><span class="nv">foo-chain</span><span class="p p-Indicator">,</span><span class="nt"> schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span><span class="p p-Indicator">,</span><span class="nt"> options</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> backupType</span><span class="p">:</span><span class="w"> </span><span class="nv">DIFF</span><span class="w"> </span><span class="p p-Indicator">},</span><span class="w"> </span><span class="nv">…</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span></code></pre></div>
 <p><code>chainFromBackup</code> makes both write into the same directory, and the operator
 refuses to run them concurrently. This is <em>not</em> flagged as a competing writer.</p>
+</div>
+<div class="tabbed-block">
+<p><strong>Separate Kubernetes clusters:</strong> enable the proxy on the <strong>upstream</strong>
+<code>Neo4jEnterpriseCluster</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jEnterpriseCluster</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-cluster</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">crossClusterReplication</span><span class="p">:</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nt">tls</span><span class="p">:</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">additionalClusterTrustCAs</span><span class="p">:</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster-ca</span><span class="w">   </span><span class="c1"># the DOWNSTREAM cluster's CA — copy it here</span>
+</span></code></pre></div>
+<p><code>additionalClusterTrustCAs</code> must be set on <strong>both</strong> clusters, each trusting
+the other's CA — copy <code>prod-cluster</code>'s CA Secret into the <code>dr</code> namespace
+and vice versa. This is separate from <code>trustedCASecrets</code>: that field feeds
+a JVM-wide truststore the cluster SSL policy never reads.</p>
+<p>Wait for the proxy's load balancer to be assigned, then read the address list:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>prod-cluster<span class="w"> </span>-n<span class="w"> </span>prod<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.crossClusterReplication.addresses}'</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># ["prod-cluster-ccdr.prod.svc.cluster.local:16000","...:16001","...:16002"]</span>
+</span></code></pre></div>
+<p>(An in-cluster hostname is shown above for illustration; in practice this
+is whatever hostname or IP your cloud provider's load balancer controller
+assigns — often a public-facing name unless
+<code>spec.crossClusterReplication.loadBalancerInternal</code> keeps it private,
+which is the default.) Only one entry from this list is needed on the
+downstream side — see step 2.</p>
+<p><strong>Same Kubernetes cluster:</strong> skip <code>crossClusterReplication</code> and the proxy
+entirely — you don't need either. Kubernetes DNS resolves across
+namespaces on one cluster by default, and Neo4j's
+<code>server.cluster.advertised_address</code> (the pod's own FQDN) is already
+reachable from any namespace on that cluster. This is a legitimate way to
+run a live replica for isolation within one cluster — a reporting replica
+in its own namespace, say — not only a way to try network mode before
+standing up a second cluster.</p>
+<p>Deploy the upstream <code>Neo4jEnterpriseCluster</code> normally — nothing extra to
+set — then in step 2 use <code>source.upstreamClusterRef</code> naming it instead of
+<code>source.addresses</code>. The controller resolves the address list itself, from
+the upstream's <code>status.internalAddresses</code>, no copying or constructing
+anything by hand. <code>namespace</code> defaults to the replica's own namespace if
+the upstream is in the same one. If the upstream doesn't exist yet, or
+exists but hasn't published <code>status.internalAddresses</code> yet, the replica
+just sits in phase <code>Pending</code> and retries; nothing to do but wait.</p>
+<div class="admonition note">
+<p class="admonition-title">Prefer typing the address by hand instead?</p>
+<p><code>upstreamClusterRef</code> is resolved via a live <code>Get</code> against this
+Kubernetes cluster's own API server — which is exactly why it only
+ever works same-cluster. If you'd rather see the address explicit in
+the CR (or the operator's RBAC to read <code>Neo4jEnterpriseCluster</code>
+cross-namespace is a concern), every server pod's address follows a
+fixed, constructible pattern — use <code>source.addresses</code> instead:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>&lt;upstream-cluster&gt;-server-&lt;ordinal&gt;.&lt;upstream-cluster&gt;-headless.&lt;upstream-namespace&gt;.svc.cluster.local:6000
+</span></code></pre></div>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">network</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">addresses</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000"</span><span class="p p-Indicator">]</span>
+</span></code></pre></div>
+<p>Both forms resolve to the same address; <code>upstreamClusterRef</code> just
+saves you computing it and keeps it correct if the upstream's naming
+ever changes.</p>
+</div>
+<p>Two things differ from the separate-clusters path above, for either
+addressing form:</p>
+<ul>
+<li><strong>TLS trust.</strong> <code>spec.tls.additionalClusterTrustCAs</code> is only needed if
+  the two clusters use <em>different</em> cert-manager issuers. If they share
+  one issuer — and therefore the same root CA — each already trusts the
+  other's certificate without it.</li>
+<li><strong>NetworkPolicy.</strong> If the upstream has <code>spec.networkPolicy.enabled:
+  true</code>, this will <strong>not</strong> work as-is. The generated policy restricts
+  port 6000 to pods carrying that cluster's own <code>neo4j.com/cluster</code>
+  label — the downstream's server pods don't carry it, even though
+  they're on the same physical Kubernetes cluster. Fix it with an
+  explicit, opt-in allow-list entry rather than disabling NetworkPolicy
+  entirely:</li>
+</ul>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">networkPolicy</span><span class="p">:</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span><span class="nt">allowReplicasFrom</span><span class="p">:</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">        </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span></code></pre></div>
+<p>This admits only the named downstream cluster, on port 6000 only —
+  never RAFT or routing. Nothing is admitted unless listed here.
+  (Leaving NetworkPolicy off on the upstream, or using the full
+  <code>crossClusterReplication</code> proxy path above, both still work too.)</p>
+</div>
+</div>
+</div>
+<p>Everything from step 2 onward — the read-only replica, the failover alias
+(step 3), user/role replication (step 4), and promotion (step 5) — works
+exactly the same regardless of mode or topology.</p>
 <hr />
 <h2 id="2-downstream-create-the-replica">2. Downstream: create the replica<a class="headerlink" href="#2-downstream-create-the-replica" title="Anchor link to this section">&para;</a></h2>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaDatabase</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="nt">upstreamDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
-</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span><span class="nt">pullInterval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1m</span><span class="w">                </span><span class="c1"># bounds the recovery point objective</span>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
-</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
-</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">    </span><span class="nt">pullURI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://prod-backups/foo/foo-chain/</span><span class="w">        </span><span class="c1"># from step 1</span>
-</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">    </span><span class="nt">seedURI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://prod-backups/foo/foo-chain/foo-2026-08-01T02-00-00.backup</span>
-</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">    </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-creds</span>
+<div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">Backup mode</label><label for="__tabbed_2_2">Network mode</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaDatabase</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">  </span><span class="nt">upstreamDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">  </span><span class="nt">pullInterval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1m</span><span class="w">                </span><span class="c1"># bounds the recovery point objective</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
+</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">    </span><span class="nt">pullURI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://prod-backups/foo/foo-chain/</span><span class="w">        </span><span class="c1"># from step 1</span>
+</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">    </span><span class="nt">seedURI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://prod-backups/foo/foo-chain/foo-2026-08-01T02-00-00.backup</span>
+</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">    </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-creds</span>
 </span></code></pre></div>
+<p>Same Kubernetes cluster as the upstream <code>Neo4jBackup</code>? Use
+<code>upstreamBackupRef</code> instead of <code>pullURI</code> and skip the <code>kubectl get</code>
+step from step 1:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">    </span><span class="nt">upstreamBackupRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">foo-chain</span><span class="p p-Indicator">,</span><span class="nt"> namespace</span><span class="p">:</span><span class="w"> </span><span class="nv">prod</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-creds</span>
+</span></code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaDatabase</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">  </span><span class="nt">upstreamDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">network</span>
+</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="w">    </span><span class="nt">addresses</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"prod-cluster-ccdr.prod.svc.cluster.local:16000"</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># one entry from step 1</span>
+</span></code></pre></div>
+<p><code>pullInterval</code> is backup-mode only and has no effect here — network mode
+streams continuously, it does not poll.</p>
+<p>Same Kubernetes cluster as the upstream <code>Neo4jEnterpriseCluster</code>? Use
+<code>upstreamClusterRef</code> instead of <code>addresses</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">network</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span><span class="nt">upstreamClusterRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">prod-cluster</span><span class="p p-Indicator">,</span><span class="nt"> namespace</span><span class="p">:</span><span class="w"> </span><span class="nv">prod</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span></code></pre></div>
+</div>
+</div>
+</div>
 <p><code>spec.source</code> is <strong>immutable</strong>. Neo4j offers no way to re-point an existing
 replica, so changing it would mean dropping and re-seeding — delete and recreate
 the CR instead if you need to.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jreplicadatabase<span class="w"> </span>-n<span class="w"> </span>dr
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># NAME          CLUSTER      UPSTREAM   PHASE         LAG   AGE</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># foo-replica   dr-cluster   foo        Replicating   3     12m</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jreplicadatabase<span class="w"> </span>-n<span class="w"> </span>dr
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="c1"># NAME          CLUSTER      UPSTREAM   PHASE         LAG   AGE</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="c1"># foo-replica   dr-cluster   foo        Replicating   3     12m</span>
 </span></code></pre></div>
 <p><strong>Replicas are read-only.</strong> Both primaries and secondaries refuse writes.
 Clients must use <code>AccessMode.READ</code> / <code>executeRead</code>, or
@@ -3832,14 +4142,14 @@ Clients must use <code>AccessMode.READ</code> / <code>executeRead</code>, or
 <h2 id="3-downstream-pre-stage-the-failover-alias">3. Downstream: pre-stage the failover alias<a class="headerlink" href="#3-downstream-pre-stage-the-failover-alias" title="Anchor link to this section">&para;</a></h2>
 <p>Cypher has <strong>no <code>RENAME DATABASE</code></strong>, so <code>foo-replica</code> keeps that name forever —
 including after promotion. An alias lets applications address <code>foo</code> throughout:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jDatabaseAlias</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
-</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jDatabaseAlias</span>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo</span>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="w">  </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
 </span></code></pre></div>
 <table>
 <thead>
@@ -3880,20 +4190,20 @@ operator makes this a copy-paste rather than a manual re-creation.</p>
 replication lag outstanding at that moment becomes <strong>permanent data loss</strong>.
 Check <code>status.replicationLag</code> first if the upstream is still reachable.</p>
 </div>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaPromotion</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failover-2026-08-07</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">replicaRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span><span class="w">                       </span><span class="c1"># optional; omit to retain current topology</span>
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaPromotion</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failover-2026-08-07</span>
+</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">  </span><span class="nt">replicaRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span><span class="w">                       </span><span class="c1"># optional; omit to retain current topology</span>
+</span><span id="__span-16-9"><a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-16-10"><a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 </span></code></pre></div>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jreplicapromotion<span class="w"> </span>-n<span class="w"> </span>dr
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1"># NAME                  REPLICA       PHASE       LAGTAKEN   COMPLETED</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># failover-2026-08-07   foo-replica   Completed   3          2026-08-07T09:14:22Z</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jreplicapromotion<span class="w"> </span>-n<span class="w"> </span>dr
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="c1"># NAME                  REPLICA       PHASE       LAGTAKEN   COMPLETED</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="c1"># failover-2026-08-07   foo-replica   Completed   3          2026-08-07T09:14:22Z</span>
 </span></code></pre></div>
 <p><code>status.observedLagTxIds</code> records the RPO the promotion actually took, so it is
 auditable after the incident. The operator records it; it never blocks a
@@ -3921,13 +4231,13 @@ deliberate revert. A one-shot CR is inert to re-apply.</p>
 <h3 id="handing-back-to-declarative-management">Handing back to declarative management<a class="headerlink" href="#handing-back-to-declarative-management" title="Anchor link to this section">&para;</a></h3>
 <p>The promoted database is now an ordinary standard database. Adopt it with a
 <code>Neo4jDatabase</code> CR — <code>ifNotExists: true</code> makes <code>CREATE DATABASE</code> a no-op:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jDatabase</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">metadata</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">foo-replica</span><span class="p p-Indicator">,</span><span class="nt"> namespace</span><span class="p">:</span><span class="w"> </span><span class="nv">dr</span><span class="w"> </span><span class="p p-Indicator">}</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jDatabase</span>
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="nt">metadata</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">foo-replica</span><span class="p p-Indicator">,</span><span class="nt"> namespace</span><span class="p">:</span><span class="w"> </span><span class="nv">dr</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-18-5"><a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-18-6"><a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foo-replica</span>
+</span><span id="__span-18-7"><a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <p>The <code>Neo4jReplicaDatabase</code> CR can then be deleted (harmlessly) or kept as the
 record of where the database came from. Both CRs may coexist safely: the replica
@@ -3937,7 +4247,7 @@ CR's finalizer no longer drops, so only <code>Neo4jDatabase</code> can.</p>
 <p><strong>Restoring or recreating the upstream database detaches every replica.</strong>
 A restore changes the database's internal ID; downstream replicas detach and
 must be recreated from a fresh chain. <code>Neo4jRestore</code> has no way to know replicas
-exist — they are in a different Kubernetes cluster with no back-reference. If
+exist — they may be in a different Kubernetes cluster with no back-reference. If
 you restore an upstream, plan to rebuild its replicas.</p>
 <p><strong>A broken chain requires a rebuild, not a repair.</strong> If the differential chain
 is interrupted — a lifecycle rule, a competing writer, a deleted artifact — the
@@ -3947,6 +4257,18 @@ complete chain.</p>
 directory produces a replica that seeds successfully and then can never apply a
 differential. The validator warns about this; it cannot verify it, because the
 operator cannot see the bucket.</p>
+<p><strong>Network mode: enabling <code>crossClusterReplication</code> affects the whole cluster, not just replication.</strong> The upstream's tx-shipping port (6000) is shared by intra-cluster
+secondary catch-up and CCDR catchup. Enabling the proxy routes <strong>both</strong> through
+the load balancer while it is on — added latency and LB-dependent cost
+proportional to write volume, not just replication volume. This is why the
+field defaults to disabled and is documented as an explicit tradeoff, not a
+free toggle. (Irrelevant to the same-Kubernetes-cluster path, which never
+enables the proxy at all.)</p>
+<p><strong>Network mode, separate clusters: the proxy's load balancer hostname isn't known immediately.</strong>
+<code>status.crossClusterReplication.ready</code> stays <code>false</code> and <code>addresses</code> stays
+empty until the cloud provider assigns the LoadBalancer Service a hostname/IP.
+Until then the upstream keeps advertising its internal FQDN — cluster
+formation is never blocked waiting for the proxy.</p>
 <hr />
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <table>
@@ -3962,8 +4284,44 @@ operator cannot see the bucket.</p>
 <td>downstream cluster predates replica support</td>
 </tr>
 <tr>
-<td><code>Failed</code>, "network replication is not supported"</td>
-<td>set <code>source.mode: backup</code></td>
+<td><code>Failed</code>, "network replication requires at least one upstream cluster endpoint"</td>
+<td><code>source.addresses</code> is empty — paste an entry from the upstream's <code>status.crossClusterReplication.addresses</code>, or use <code>source.upstreamClusterRef</code> if same-cluster</td>
+</tr>
+<tr>
+<td><code>Failed</code>, "must be of the form host:port"</td>
+<td>an entry in <code>source.addresses</code> is missing its port</td>
+</tr>
+<tr>
+<td>Warning: "source.pullURI is ignored in network mode" (or <code>seedURI</code>/<code>credentialsSecretRef</code>)</td>
+<td>those fields are backup-mode only; harmless but likely a copy-paste leftover — remove them</td>
+</tr>
+<tr>
+<td>Network mode never connects, upstream <code>status.crossClusterReplication.ready</code> is <code>false</code></td>
+<td>the upstream's proxy LoadBalancer Service has no hostname/IP yet — check <code>kubectl get svc &lt;cluster&gt;-ccdr -n &lt;upstream-ns&gt;</code></td>
+</tr>
+<tr>
+<td>Network mode TLS handshake fails</td>
+<td><code>spec.tls.additionalClusterTrustCAs</code> missing on one or both clusters — it must be set on <strong>both</strong>, each trusting the other's CA</td>
+</tr>
+<tr>
+<td>Network mode connection times out, both clusters on one Kubernetes cluster</td>
+<td>the upstream has <code>spec.networkPolicy.enabled: true</code> — its port-6000 rule only admits pods carrying its own <code>neo4j.com/cluster</code> label; add the downstream to <code>spec.networkPolicy.allowReplicasFrom</code> (step 1, Network mode), or disable NetworkPolicy on the upstream, or use the proxy path instead</td>
+</tr>
+<tr>
+<td><code>Pending</code>, event <code>UpstreamClusterNotFound</code></td>
+<td><code>source.upstreamClusterRef</code> names a <code>Neo4jEnterpriseCluster</code> that doesn't exist (yet) in the given namespace — check the name/namespace, or wait if it's still being created</td>
+</tr>
+<tr>
+<td><code>Pending</code>, event <code>UpstreamClusterNotReady</code></td>
+<td>the referenced upstream exists but hasn't published <code>status.internalAddresses</code> yet — normal briefly after the upstream is first created; check <code>kubectl get neo4jenterprisecluster &lt;name&gt; -n &lt;ns&gt; -o jsonpath='{.status.internalAddresses}'</code> if it persists</td>
+</tr>
+<tr>
+<td><code>Pending</code>, event <code>UpstreamBackupNotFound</code></td>
+<td><code>source.upstreamBackupRef</code> names a <code>Neo4jBackup</code> that doesn't exist (yet) in the given namespace — check the name/namespace</td>
+</tr>
+<tr>
+<td><code>Pending</code>, event <code>UpstreamBackupNotReady</code></td>
+<td>the referenced <code>Neo4jBackup</code> exists but hasn't run its first backup yet (empty <code>status.replicationPullURI</code>) — check <code>kubectl get neo4jbackup &lt;name&gt; -n &lt;ns&gt;</code> for its own phase/schedule</td>
 </tr>
 <tr>
 <td><code>Pending</code>, cluster not Ready</td>
@@ -3979,14 +4337,17 @@ operator cannot see the bucket.</p>
 </tr>
 </tbody>
 </table>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jreplicadatabase<span class="w"> </span>foo-replica<span class="w"> </span>-n<span class="w"> </span>dr
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>-n<span class="w"> </span>dr<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>ReplicaPromotionDetected
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jbackup<span class="w"> </span>foo-chain<span class="w"> </span>-n<span class="w"> </span>prod<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.replicationPullURI}'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jreplicadatabase<span class="w"> </span>foo-replica<span class="w"> </span>-n<span class="w"> </span>dr
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>-n<span class="w"> </span>dr<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>ReplicaPromotionDetected
+</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jbackup<span class="w"> </span>foo-chain<span class="w"> </span>-n<span class="w"> </span>prod<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.replicationPullURI}'</span>
 </span></code></pre></div>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><code>docs/design/cross-cluster-replication.md</code> — design rationale, and why network
-  replication is not supported</li>
+<li><code>docs/design/cross-cluster-replication.md</code> — design rationale for both modes,
+  including why network mode is a proxy rather than exposed per-pod Services
+  or split-horizon DNS</li>
+<li><a href="../../../api_reference/neo4jenterprisecluster/#crossclusterreplicationspec"><code>Neo4jEnterpriseCluster</code> API reference</a> — <code>spec.crossClusterReplication</code> fields</li>
+<li><a href="../../../api_reference/neo4jreplicadatabase/"><code>Neo4jReplicaDatabase</code> API reference</a> — full <code>source</code> field reference for both modes</li>
 <li><code>docs/user_guide/guides/backup_restore.md</code> — the backup machinery this builds on</li>
 <li>Neo4j Operations Manual → Clustering → <em>Replicating databases across clusters</em></li>
 </ul>

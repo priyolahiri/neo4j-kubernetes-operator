@@ -3166,10 +3166,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-5-cross-cluster-replication-two-deployments-run-sequentially-needs-202608" class="md-nav__link">
+  <a href="#phase-5-cross-cluster-replication-two-deployments-sequential-for-backup-mode-concurrent-for-network-mode-needs-202608" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 5 — Cross-cluster replication (two deployments, run sequentially; needs 2026.08+)
+        Phase 5 — Cross-cluster replication (two deployments; sequential for backup mode, concurrent for network mode; needs 2026.08+)
       
     </span>
   </a>
@@ -3551,10 +3551,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-5-cross-cluster-replication-two-deployments-run-sequentially-needs-202608" class="md-nav__link">
+  <a href="#phase-5-cross-cluster-replication-two-deployments-sequential-for-backup-mode-concurrent-for-network-mode-needs-202608" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 5 — Cross-cluster replication (two deployments, run sequentially; needs 2026.08+)
+        Phase 5 — Cross-cluster replication (two deployments; sequential for backup mode, concurrent for network mode; needs 2026.08+)
       
     </span>
   </a>
@@ -3663,7 +3663,10 @@ teardown, reporting) and defers to this page for <em>what</em> to test.</p>
   rule). Running standalone + cluster + sharding JVMs concurrently on a laptop
   VM wedges Bolt (the HTTP probe reports <code>Ready</code> but ports 7687/6362 time out).
   Phases run <strong>sequentially with full teardown between them</strong>; the Kind cluster,
-  operator, and cert-manager stay up across phases.</li>
+  operator, and cert-manager stay up across phases. <strong>One deliberate exception:</strong>
+  Phase 5 Part C runs two small clusters concurrently, because network-mode
+  replication cannot be tested sequentially — kept small (2 servers each) to
+  bound the wedging risk this rule exists to avoid.</li>
 <li><strong>Restore must be walked on BOTH standalone and cluster</strong> — the mechanism
   differs (see the routing table) and one never covers the other.</li>
 </ul>
@@ -4009,18 +4012,29 @@ CRs is <strong>not</strong> sufficient proof: <code>deletionPolicy</code> defaul
 delete can leave a running instance behind. Confirm with
 <code>GET /v1/instances/&lt;id&gt;</code> → <strong>404</strong> and a project instance list of <strong>0</strong> before you
 call the phase done.</p>
-<h3 id="phase-5-cross-cluster-replication-two-deployments-run-sequentially-needs-202608">Phase 5 — Cross-cluster replication (two deployments, run sequentially; needs <code>2026.08+</code>)<a class="headerlink" href="#phase-5-cross-cluster-replication-two-deployments-run-sequentially-needs-202608" title="Anchor link to this section">&para;</a></h3>
+<h3 id="phase-5-cross-cluster-replication-two-deployments-sequential-for-backup-mode-concurrent-for-network-mode-needs-202608">Phase 5 — Cross-cluster replication (two deployments; sequential for backup mode, concurrent for network mode; needs <code>2026.08+</code>)<a class="headerlink" href="#phase-5-cross-cluster-replication-two-deployments-sequential-for-backup-mode-concurrent-for-network-mode-needs-202608" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Run this only when a <code>2026.08+</code> enterprise image is available.</strong> Hosting a
 replica requires it, and the check is enforced — on an older image the CR fails
 with <code>ReplicaVersionTooOld</code> and nothing else in this phase can proceed. That is
 itself scenario 1: confirm the gate fires rather than silently doing nothing.</p>
-<p>This phase looks like it breaks the <strong>one Enterprise deployment at a time</strong>
-ground rule. It does not, and the reason is the point of the feature: with
-backup-based replication the two clusters are coupled <strong>only through the
-object store</strong>, never over the network. So the upstream produces its chain,
-gets torn down, and <em>then</em> the downstream comes up and pulls from the bucket.
-Two deployments, never concurrent.</p>
-<p>Stand up MinIO as the shared bucket (same pattern the backup specs use).</p>
+<p>Parts A/B below (backup mode, <code>source.mode: backup</code>) look like they break the
+<strong>one Enterprise deployment at a time</strong> ground rule. They do not, and the
+reason is the point of that mode: the two clusters are coupled <strong>only through
+the object store</strong>, never over the network. So the upstream produces its
+chain, gets torn down, and <em>then</em> the downstream comes up and pulls from the
+bucket. Two deployments, never concurrent.</p>
+<p>Network mode (<code>source.mode: network</code>, Parts C/D below) needs a live network
+path, but "two clusters" doesn't mean leaving Kind or leaving this single
+deployment session: Part C runs the real replication mechanism between two
+<code>Neo4jEnterpriseCluster</code>s in different namespaces on <strong>this same Kind
+cluster</strong>, reachable over ordinary in-cluster DNS — no proxy, no
+<code>crossClusterReplication</code>, no LoadBalancer needed. Part D then smoke-tests
+the <code>crossClusterReplication</code> proxy toggle itself, which plain Kind cannot
+exercise end-to-end (see Part D for why). Between them they cover everything
+this journey can reach; see each part for exactly what it does and does not
+cover.</p>
+<p>Stand up MinIO as the shared bucket (same pattern the backup specs use) for
+Parts A/B.</p>
 <p><strong>Part A — upstream (standalone is enough):</strong></p>
 <table>
 <thead>
@@ -4067,10 +4081,6 @@ Two deployments, never concurrent.</p>
 <td><code>Neo4jDatabaseAlias</code> targeting the replica → <code>Ready</code> <strong>while the target is still a replica</strong> (this is what removes work from the failover window)</td>
 </tr>
 <tr>
-<td><code>network</code> mode rejected</td>
-<td><code>source.mode: network</code> → <code>Failed</code>, and the message names <code>advertised_address</code>. A bare "unsupported" would send someone off configuring Services</td>
-</tr>
-<tr>
 <td>Promotion</td>
 <td><code>Neo4jReplicaPromotion</code> → <code>Completed</code>; <code>status.observedLagTxIds</code> recorded; <code>SHOW DATABASES</code> now shows a standard read-write type</td>
 </tr>
@@ -4091,6 +4101,113 @@ Two deployments, never concurrent.</p>
 <p>That last row is the one worth doing carefully: it is the failure mode the
 whole observe-before-act design exists to prevent, and it is invisible to unit
 tests.</p>
+<p><strong>Part C — network mode core mechanism, same Kind cluster, no proxy (two concurrent deployments):</strong></p>
+<p><strong>Automated</strong> — <code>test/integration/ccdr_same_cluster_network_mode_test.go</code>,
+<code>Label("extended")</code>, gated by <code>isCCDRReplicaCompatible()</code> (dormant on the
+default CI anchor; runs when dispatched with <code>neo4j-version:
+2026.08-enterprise+</code>). Uses <code>source.upstreamClusterRef</code> rather than a
+hand-typed <code>source.addresses</code> FQDN — exercises the same underlying mechanism
+via the newer, higher-level API. Re-run manually only if you want the
+hand-typed-address path specifically, or a version this repo's CI cannot yet
+dispatch.</p>
+<p>This is the highest-value scenario in this phase: it is the first time
+<code>CREATE REPLICA DATABASE ... OPTIONS {replicaConfig: {remote, addresses}}</code>
+runs against a real server, rather than being inferred from documentation.</p>
+<p>Deploy two small <code>Neo4jEnterpriseCluster</code>s (2 servers each, CI-sized
+resources) in different namespaces on <strong>this same Kind cluster</strong> — e.g.
+<code>prod-cluster</code> in namespace <code>prod</code>, <code>dr-cluster</code> in namespace <code>dr</code>. Leave
+<code>spec.crossClusterReplication</code> <strong>unset</strong> on the upstream; do not create the
+proxy at all. Point the downstream <code>Neo4jReplicaDatabase</code> directly at the
+upstream's plain internal pod FQDN — reachable across namespaces on the same
+cluster by ordinary in-cluster DNS, no Service changes needed:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000
+</span></code></pre></div>
+<p><strong>This deliberately breaks the one-deployment-at-a-time rule</strong> — network
+replication cannot be tested sequentially the way backup mode can, the two
+clusters must be up together. Keep both small (2 servers, CI-appropriate
+resource requirements) to limit the Bolt-wedging risk the anti-wedge rule
+exists for; if Bolt does wedge here, that is itself a real finding about
+concurrent-deployment resource limits, not a test artifact to work around.</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Network replica seeds from a plain internal FQDN</td>
+<td><code>Neo4jReplicaDatabase</code> with <code>source.mode: network</code>, <code>source.addresses</code> set to the upstream's server-0 pod FQDN above → phase <code>Replicating</code>; <code>SHOW DATABASES</code> shows <code>type=replica</code>, <code>access=read-only</code>, <code>writer=false</code></td>
+</tr>
+<tr>
+<td>One address is sufficient</td>
+<td>list only server-0's address, not all N — replication still reaches every ordinal, confirming the design doc's Q1 finding that the upstream hands back the addresses the downstream actually uses</td>
+</tr>
+<tr>
+<td>Malformed/missing address rejected before any Cypher runs</td>
+<td><code>source.addresses: []</code> or a host with no port → validator error, no <code>CREATE REPLICA DATABASE</code> attempt</td>
+</tr>
+<tr>
+<td>Promotion works the same as backup mode</td>
+<td><code>Neo4jReplicaPromotion</code> against this replica → <code>Completed</code>, <code>SHOW DATABASES</code> now shows a standard read-write type</td>
+</tr>
+</tbody>
+</table>
+<p>This scenario does <strong>not</strong> exercise <code>spec.crossClusterReplication</code> itself —
+no proxy, no advertised-address override, no cert SAN, no NetworkPolicy rule.
+That gate depends on the proxy's Service reaching a real
+<code>status.loadBalancer.ingress</code> state, which is identical whether one Kind
+cluster or two are involved (see Part D) — this scenario is about the
+replication <em>mechanism</em>, deliberately isolated from that gate.</p>
+<p>→ <strong>Tear down both deployments</strong>, then delete the Kind cluster.</p>
+<p><strong>Part D — network mode proxy toggle, Kind-only smoke check (single deployment):</strong></p>
+<p><strong>Automated</strong> — <code>test/integration/ccdr_proxy_test.go</code>, <code>Label("core")</code>. Needs
+no version gate (nothing here hosts a replica), so it runs on every PR
+against both CI anchors, not just on dispatch — the manual walk below is
+useful only for exploring interactively, not for verifying this before a
+release.</p>
+<p>Part C covers the replication mechanism; this part covers the one piece it
+deliberately left out — <code>spec.crossClusterReplication</code> itself. That gate
+depends on the proxy's Service reaching a real <code>status.loadBalancer.ingress</code>
+state, and a <code>type: LoadBalancer</code> Service never gets one on plain Kind (no
+cloud provider) — this repo has <strong>no LoadBalancer-on-Kind tooling today</strong>, no
+MetalLB, no <code>cloud-provider-kind</code>, in the Makefile, dev scripts, or Kind
+cluster config. That's unbuilt local tooling, not a hard requirement for real
+cloud infrastructure or even for a second Kind cluster (two Kind clusters
+share a Docker network by default and can already route to each other, the
+same trick used for local multi-cluster testing elsewhere — Cilium
+ClusterMesh, Istio multi-cluster). Until the LoadBalancer piece exists, full
+end-to-end verification of the proxy path itself is not run here.</p>
+<p>What <em>is</em> verifiable on a single plain Kind cluster is that the toggle itself
+is safe — it must never break normal cluster formation, whether or not a real
+load balancer is present to service it:</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Proxy resources render</td>
+<td><code>Neo4jEnterpriseCluster</code> with <code>spec.crossClusterReplication.enabled: true</code> → a <code>&lt;name&gt;-ccdr</code> ConfigMap/Deployment/Service appear, and the cluster still reaches <code>Ready</code> (this proves the toggle doesn't wedge formation even when the LoadBalancer never gets an address on plain Kind)</td>
+</tr>
+<tr>
+<td>NetworkPolicy stays additive</td>
+<td>with <code>spec.networkPolicy.enabled: true</code> too → the existing 3 ingress rules are unchanged and a 4<sup>th</sup> rule admits only the <code>ccdr-proxy</code> pod on port 6000</td>
+</tr>
+<tr>
+<td>Advertised address stays internal until ready</td>
+<td><code>status.crossClusterReplication.ready</code> stays <code>false</code> (Kind has no LoadBalancer controller by default) → <code>server.cluster.advertised_address</code> in the rendered ConfigMap is still the pod FQDN, not the proxy's hostname</td>
+</tr>
+<tr>
+<td>Toggling off tears down cleanly</td>
+<td>flip <code>enabled</code> back to <code>false</code> → the ConfigMap/Deployment/Service are deleted and <code>status.crossClusterReplication</code> clears</td>
+</tr>
+</tbody>
+</table>
 <p>→ <strong>Tear down</strong>, then delete the Kind cluster.</p>
 <h2 id="coverage-at-a-glance">Coverage at a glance<a class="headerlink" href="#coverage-at-a-glance" title="Anchor link to this section">&para;</a></h2>
 <table>
@@ -4191,7 +4308,7 @@ tests.</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
-<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ backup mode + network mode mechanism (same-cluster); network mode proxy is toggle-only (needs LoadBalancer-on-Kind tooling this repo doesn't have yet)</td>
 </tr>
 <tr>
 <td>Database aliases</td>
