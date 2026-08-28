@@ -6149,6 +6149,18 @@ not parse policy config to wire up filesystem mounts automatically.</p>
 </tbody>
 </table>
 <h3 id="externalsecretsconfig">ExternalSecretsConfig<a class="headerlink" href="#externalsecretsconfig" title="Anchor link to this section">&para;</a></h3>
+<p>Requires <a href="https://external-secrets.io/">External Secrets Operator</a> to be installed separately —
+the operator only <em>emits</em> an <code>ExternalSecret</code>; ESO resolves it. A <code>ClusterSecretStore</code> works in
+both RBAC modes, because ESO (not this operator) performs the cluster-scoped read — see
+<a href="../../user_guide/operator-modes/">Operator modes</a>.</p>
+<div class="admonition note">
+<p class="admonition-title">Minimum External Secrets Operator version: v0.17.0</p>
+<p>The operator emits <code>apiVersion: external-secrets.io/v1</code>. ESO <strong>v0.17.0</strong> stopped serving
+the older <code>v1beta1</code>, and this operator previously emitted that older version — so on
+ESO ≥ 0.17 every emitted <code>ExternalSecret</code> was rejected. If you are on ESO &lt; 0.17.0,
+upgrade ESO (its own <a href="https://external-secrets.io/latest/guides/v1beta1/">migration guide</a>
+covers the path) rather than pinning an older operator.</p>
+</div>
 <table>
 <thead>
 <tr>
@@ -6171,7 +6183,7 @@ not parse policy config to wire up filesystem mounts automatically.</p>
 <tr>
 <td><code>refreshInterval</code></td>
 <td><code>string</code></td>
-<td>Refresh interval (e.g., <code>"1h"</code>)</td>
+<td>Refresh interval (e.g., <code>"1h"</code>). Defaults to <code>1h</code> when unset</td>
 </tr>
 <tr>
 <td><code>data</code></td>
