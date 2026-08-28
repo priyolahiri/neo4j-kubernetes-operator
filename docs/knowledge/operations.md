@@ -141,12 +141,15 @@
 - **pinned-by:** user controller integration specs (pending-dependency + watch re-reconcile).
 - **enforcement:** integration test + code review. Condition constants in `internal/controller/events.go` (`ConditionTypePendingDependencies` L170, `ConditionReasonRolesPending` L178).
 
-### id 18 — Same-namespace `clusterRef` only
-- **scope:** `internal/controller/cluster_resolver.go`; user/role validators in `internal/validation/`
-- **rule:** `clusterRef` for users/roles must be in the same namespace — cross-namespace refs are not supported in v1. Multi-tenant access goes through an opt-in `Neo4jClusterAccessGrant` CR.
-- **why:** Cross-namespace privilege grants are a security boundary; v1 keeps the blast radius inside one namespace.
-- **pinned-by:** validator unit tests (cross-namespace rejection).
-- **enforcement:** validator (inline) + unit test.
+### id 18 — Same-namespace `clusterRef` only (enforced by API shape, NOT by a validator)
+- **scope:** `internal/controller/cluster_resolver.go` (`ResolveClusterRef`); the auth CRD types in `api/v1beta1/`
+- **rule:** `clusterRef` on `Neo4jUser` / `Neo4jRole` / `Neo4jRoleBinding` / `Neo4jAuthRule` always resolves in the CR's **own** namespace. Cross-namespace targeting is not supported.
+- **why:** the operator connects using the *target's* admin Secret, so a cross-namespace ref would let a principal who can write CRs in namespace A mint database credentials on a cluster in namespace B — a confused-deputy escalation across a boundary Kubernetes RBAC is supposed to hold.
+- **how it is actually enforced — read this before changing anything:** **structurally, by API shape.** `clusterRef` is a bare `string` (`api/v1beta1/neo4juser_types.go`, `neo4jrole_types.go`, `neo4jrolebinding_types.go`, `neo4jauthrule_types.go`) and `ResolveClusterRef` is always called with the CR's own `.Namespace`. There is **no validator check and no unit test** for cross-namespace rejection, because there is no namespace field to reject. **Adding a namespace field anywhere in this API silently removes the only enforcement that exists** — such a change MUST ship a consent mechanism (see below) in the same PR.
+- **if this is ever revisited:** the researched answer is a target-namespace grant object shaped like Gateway API's `ReferenceGrant` — deny-by-default, and checked **before** resolving the target, or the CR becomes a cross-namespace existence oracle (Gateway API makes that a MUST). Note the repo has declined this scope in writing: `docs/user_guide/user_role_management.md` ("not by sharing a single CR", plus an explicit non-goal) and `docs/design/aura-orchestration.md` ("Cross-namespace fan-out is out of scope").
+- **enforcement:** API shape only. Deliberately not a validator — there is nothing for one to check.
+
+> **Correction (2026-08-28).** This rule previously claimed enforcement by "validator (inline) + unit test" and routed multi-tenant access through an opt-in CR named **Neo4jClusterAccessGrant** (deliberately not backticked — backticks assert a real symbol, and this one never existed). **Neither exists.** That name appeared exactly once in the repo — in this rule's own text — and no cross-namespace validator or test was ever written. The boundary was real but the stated mechanism was fictional, which is the more dangerous failure: an implementer consulting this rule before adding a namespace field would have been told a guard existed that did not. `scripts/check-knowledge-drift.sh` passed it green because the pin was unbackticked prose (now fixed — see rule 82).
 
 ### id 19 — Identifier quoting in Cypher
 - **scope:** `internal/neo4j/auth_rules.go` (`escapeBackticks` ~L144), `internal/neo4j/users.go`, `internal/neo4j/privileges.go`

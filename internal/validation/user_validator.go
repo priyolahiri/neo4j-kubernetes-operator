@@ -62,10 +62,38 @@ var neo4jUsernamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.@\-]*$`)
 
 const maxNeo4jUsernameLength = 65
 
-// reservedUsernames are usernames the operator refuses to manage to prevent
-// accidentally locking the operator out of the cluster.
+// reservedUsernames are usernames the operator refuses to manage outright.
+//
+// NOTE: this set does NOT protect the bootstrap admin account — see
+// riskyUsernames below for why that is a warning rather than a rejection.
 var reservedUsernames = map[string]struct{}{
 	"system": {}, // not a real user but a reserved keyword
+}
+
+// riskyUsernames are managed only with a loud warning: taking one over is
+// legal, occasionally deliberate, and a good way to lock the operator out of
+// the cluster it is managing.
+//
+// `neo4j` is the default bootstrap admin — the username the operator itself
+// authenticates as when the admin Secret carries no explicit `username`
+// (internal/neo4j/client.go, getCredentials). An `ALTER USER neo4j SET
+// PASSWORD` invalidates the credential every later reconcile depends on, and
+// there is no recovery path inside the operator: the admin Secret must be
+// repaired by hand.
+//
+// Warning rather than error, deliberately. docs/user_guide/user_role_management.md
+// documents the bootstrap admin as "technically manageable, but ... risky ...
+// Prefer leaving it alone", so rejecting it would contradict shipped guidance
+// and break anyone doing it on purpose. This matches the house precedent for
+// the same shape — a Neo4jDatabase named `neo4j` is allowed with a warning.
+//
+// Limitation, stated plainly: this matches the DEFAULT admin username only. A
+// cluster whose admin Secret sets a custom `username` carries the identical
+// risk under that name and will not be warned about here — checking it would
+// mean reading the target's admin Secret from the validator, which is more
+// machinery than a warning justifies.
+var riskyUsernames = map[string]struct{}{
+	"neo4j": {},
 }
 
 // Validate runs all checks on a Neo4jUser spec.
@@ -86,6 +114,13 @@ func (v *UserValidator) Validate(ctx context.Context, user *neo4jv1beta1.Neo4jUs
 		result.Errors = append(result.Errors, field.Forbidden(
 			field.NewPath("spec", "username"),
 			fmt.Sprintf("%q is reserved", username)))
+	}
+
+	if _, risky := riskyUsernames[strings.ToLower(username)]; risky {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"%q is the default bootstrap admin account this operator authenticates as; managing it "+
+				"here will rewrite its password and invalidate the cluster's admin Secret, locking the "+
+				"operator out with no automatic recovery. Prefer a dedicated username.", username))
 	}
 
 	// At least one auth provider (password Secret OR ExternalAuth) must be set.

@@ -358,11 +358,24 @@ issuerRef:
 
 ### ExternalSecretsConfig
 
+Requires [External Secrets Operator](https://external-secrets.io/) to be installed separately —
+the operator only *emits* an `ExternalSecret`; ESO resolves it. A `ClusterSecretStore` works in
+both RBAC modes, because ESO (not this operator) performs the cluster-scoped read — see
+[Operator modes](../user_guide/operator-modes.md).
+
+!!! note "Minimum External Secrets Operator version: v0.17.0"
+
+    The operator emits `apiVersion: external-secrets.io/v1`. ESO **v0.17.0** stopped serving
+    the older `v1beta1`, and this operator previously emitted that older version — so on
+    ESO ≥ 0.17 every emitted `ExternalSecret` was rejected. If you are on ESO < 0.17.0,
+    upgrade ESO (its own [migration guide](https://external-secrets.io/latest/guides/v1beta1/)
+    covers the path) rather than pinning an older operator.
+
 | Field | Type | Description |
 |---|---|---|
 | `enabled` | `bool` | Enable External Secrets integration |
 | `secretStoreRef` | [`*SecretStoreRef`](#secretstoreref) | SecretStore or ClusterSecretStore reference |
-| `refreshInterval` | `string` | Refresh interval (e.g., `"1h"`) |
+| `refreshInterval` | `string` | Refresh interval (e.g., `"1h"`). Defaults to `1h` when unset |
 | `data` | [`[]ExternalSecretData`](#externalsecretdata) | External secret data mappings |
 
 ### SecretStoreRef

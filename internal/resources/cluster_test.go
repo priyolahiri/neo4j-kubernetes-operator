@@ -1551,3 +1551,60 @@ func TestServiceDNSName(t *testing.T) {
 			"user-supplied annotation must take precedence over the typed dnsName field")
 	})
 }
+
+// TestBuildExternalSecret_UsesServedAPIVersion pins the apiVersion the
+// operator emits for ExternalSecret objects.
+//
+// This exists because the operator shipped `external-secrets.io/v1beta1` long
+// after External Secrets Operator v0.17.0 stopped SERVING that version, so
+// every ExternalSecret it emitted was rejected by any current ESO — the
+// integration was silently broken. Nothing caught it: the object is built as
+// an unstructured map[string]any, so there is no compile-time check, and no
+// test asserted the string.
+//
+// Both builders share one helper, so both are pinned here.
+func TestBuildExternalSecret_UsesServedAPIVersion(t *testing.T) {
+	esConfig := &neo4jv1beta1.ExternalSecretsConfig{
+		Enabled: true,
+		SecretStoreRef: &neo4jv1beta1.SecretStoreRef{
+			Name: "vault-store",
+			Kind: "ClusterSecretStore",
+		},
+		Data: []neo4jv1beta1.ExternalSecretData{
+			{
+				SecretKey: "password",
+				RemoteRef: &neo4jv1beta1.ExternalSecretRemoteRef{Key: "neo4j/admin", Property: "password"},
+			},
+		},
+	}
+
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "ns"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			AcceptLicenseAgreement: "eval",
+			Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 2},
+			TLS:                    &neo4jv1beta1.TLSSpec{Mode: "cert-manager", ExternalSecrets: esConfig},
+			Auth:                   &neo4jv1beta1.AuthSpec{ExternalSecrets: esConfig},
+		},
+	}
+
+	for name, got := range map[string]map[string]any{
+		"tls":  resources.BuildExternalSecretForTLS(cluster),
+		"auth": resources.BuildExternalSecretForAuth(cluster),
+	} {
+		require.NotNil(t, got, "%s ExternalSecret should be built when enabled", name)
+		assert.Equal(t, "external-secrets.io/v1", got["apiVersion"],
+			"%s: must emit the SERVED apiVersion — ESO >= 0.17.0 rejects v1beta1 outright", name)
+		assert.Equal(t, "ExternalSecret", got["kind"])
+
+		// The fields below are the ones verified as unchanged between v1beta1
+		// and v1; assert they are still populated so a future apiVersion bump
+		// cannot silently drop one.
+		spec, ok := got["spec"].(map[string]any)
+		require.True(t, ok, "%s: spec should be a map", name)
+		assert.Contains(t, spec, "secretStoreRef")
+		assert.Contains(t, spec, "target")
+		assert.Contains(t, spec, "refreshInterval")
+		assert.Contains(t, spec, "data")
+	}
+}

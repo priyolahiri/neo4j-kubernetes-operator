@@ -334,12 +334,14 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 
 ## Backup scope (v1.13): instanceRef, shardedDatabase, same-namespace
 
-### Rule 80 — Backup target is same-namespace for ALL kinds
-- **Scope:** `internal/validation/backup_validator.go` (`validateBackupTarget`)
-- **Rule:** A cross-namespace `target.namespace` (≠ the `Neo4jBackup` CR's namespace) is rejected for **every** kind (Cluster, Database, ShardedDatabase) — the check lives OUTSIDE the `IsDatabaseScopedBackupKind` branch. The `instanceRef` scope API has no namespace field; it always resolves within the backup CR's own namespace. To back up a cluster in another namespace, create the `Neo4jBackup` in that namespace.
-- **Why:** The check was previously scoped to database-scoped kinds only, silently allowing a `kind: Cluster` backup to target a cluster in another namespace — contradicting the operator's same-namespace blast-radius boundary (`docs/knowledge/operations.md`, the same rule enforced for user/role `clusterRef`). Never re-narrow the check back to database-scoped kinds.
-- **Pinned-by:** `internal/validation/backup_validator_test.go` ("Cluster with cross-namespace target.namespace is rejected" + "ShardedDatabase with cross-namespace target.namespace")
-- **Status:** Enforced
+### Rule 80 — Backup scope is same-namespace (enforced by API shape, NOT by a validator)
+- **Scope:** `api/v1beta1/neo4jbackup_types.go` (`InstanceRef`); `internal/validation/backup_validator.go` (`validateScopeSelection`)
+- **Rule:** a `Neo4jBackup` always backs up a deployment in its **own** namespace. `InstanceRef` names "a Neo4jEnterpriseCluster OR a Neo4jEnterpriseStandalone **in this namespace**" and carries no namespace field. To back up a cluster in another namespace, create the `Neo4jBackup` in that namespace.
+- **Why:** same blast-radius boundary as rule 18 in `docs/knowledge/operations.md` — a backup reads the target's data using the target's admin credentials, so a cross-namespace scope would be a confused-deputy escalation.
+- **How it is actually enforced:** **structurally.** There is no namespace field on the scope API, so there is nothing for a validator to reject. Adding one would silently remove the only enforcement — such a change MUST ship a consent mechanism in the same PR (see rule 18).
+- **Status:** Enforced by API shape. Deliberately not a validator.
+
+> **Correction (2026-08-28).** This rule previously described a function named **validateBackupTarget** (deliberately not backticked — backticks assert a real symbol) rejecting a cross-namespace `spec.target.namespace` "for every kind", pinned to two named tests, with Status "Enforced". **None of it exists.** That function is not defined anywhere; `spec.target` was removed when `instanceRef` replaced it in v1.13 (confirmed absent from the generated CRD schema); and neither pinned test exists in `backup_validator_test.go`. The rule was describing the pre-`instanceRef` API — and even contradicted itself mid-sentence, noting "The `instanceRef` scope API has no namespace field" while claiming a check against `target.namespace`. `scripts/check-knowledge-drift.sh` passed it green because its pin was a real file path plus quoted test-case *names*, neither of which the guard validated (now fixed — see rule 82).
 
 ### Rule 81 — `shardedDatabase` scope; all-databases CATALOGUES sharded families (restorable, not just surfaced)
 - **Scope:** `api/v1beta1/neo4jbackup_types.go` (`ShardedDatabase`, `ResolvedTarget`, `ShardedFamilyArtifacts`, `BackupRun.ShardedFamilies`), `internal/validation/backup_validator.go` (`validateScopeSelection`), `internal/controller/neo4jbackup_log_parser.go` (`parseShardedFamiliesExcludedFromLog`, `groupShardedFamiliesFromLog`), `internal/controller/neo4jbackup_controller.go` (`recordShardedExclusion`), `internal/controller/neo4jshardeddatabase_seed.go` (`resolveShardedSeed`, `findFamilyArtifacts`, `buildPerShardCloudURIs`), `internal/controller/neo4jrestore_alldatabases.go`

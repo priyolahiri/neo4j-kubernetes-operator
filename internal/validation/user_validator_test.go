@@ -191,6 +191,60 @@ func TestUserValidator_PublicWarning(t *testing.T) {
 	}
 }
 
+// TestUserValidator_BootstrapAdminWarnsNotRejected pins the lockout guard for
+// the default bootstrap admin account. Managing `neo4j` rewrites the password
+// the operator itself authenticates with, and there is no in-operator
+// recovery — but docs/user_guide/user_role_management.md documents it as
+// "technically manageable ... Prefer leaving it alone", so this must WARN and
+// still reconcile, never reject. Rejecting would contradict shipped guidance
+// and break anyone doing it deliberately.
+func TestUserValidator_BootstrapAdminWarnsNotRejected(t *testing.T) {
+	cl := newUserValidatorClient(t, sampleCluster(), samplePasswordSecret("creds"))
+	v := NewUserValidator(cl)
+	user := &neo4jv1beta1.Neo4jUser{
+		ObjectMeta: metav1.ObjectMeta{Name: "bootstrap", Namespace: "ns"},
+		Spec: neo4jv1beta1.Neo4jUserSpec{
+			ClusterRef:        "c",
+			Username:          "neo4j",
+			PasswordSecretRef: &neo4jv1beta1.SecretKeyRef{Name: "creds"},
+		},
+	}
+	res := v.Validate(context.Background(), user)
+
+	if len(res.Errors) != 0 {
+		t.Fatalf("managing the bootstrap admin must not be rejected, got errors: %v", res.Errors)
+	}
+	var found bool
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "locking the operator out") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a lockout warning naming the consequence, got %v", res.Warnings)
+	}
+}
+
+// TestUserValidator_ReservedUsernameStillRejected guards the boundary between
+// riskyUsernames (warn) and reservedUsernames (reject) — widening the warning
+// set must not accidentally downgrade a hard rejection.
+func TestUserValidator_ReservedUsernameStillRejected(t *testing.T) {
+	cl := newUserValidatorClient(t, sampleCluster(), samplePasswordSecret("creds"))
+	v := NewUserValidator(cl)
+	user := &neo4jv1beta1.Neo4jUser{
+		ObjectMeta: metav1.ObjectMeta{Name: "sys", Namespace: "ns"},
+		Spec: neo4jv1beta1.Neo4jUserSpec{
+			ClusterRef:        "c",
+			Username:          "system",
+			PasswordSecretRef: &neo4jv1beta1.SecretKeyRef{Name: "creds"},
+		},
+	}
+	res := v.Validate(context.Background(), user)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected `system` to remain a hard rejection")
+	}
+}
+
 // TestUserValidator_MissingSecretIsPendingNotFailed pins #259: a not-yet-applied
 // password Secret is a TRANSIENT dependency — it must land in result.Pending
 // (routing the user to phase Pending, like missing roles) instead of

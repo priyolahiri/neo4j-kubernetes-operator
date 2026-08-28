@@ -890,7 +890,18 @@ func buildExternalSecret(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, esConfig 
 	}
 
 	return map[string]any{
-		"apiVersion": "external-secrets.io/v1beta1",
+		// external-secrets.io/v1, NOT v1beta1: External Secrets Operator
+		// v0.17.0 stopped SERVING v1beta1, so an ExternalSecret emitted with
+		// the old apiVersion is rejected outright by any ESO >= 0.17 — the
+		// integration simply did not work there.
+		//
+		// The spec fields below (secretStoreRef, target, refreshInterval,
+		// data[].remoteRef) are unchanged between v1beta1 and v1 — verified
+		// against the published v1 API reference, not assumed. Because this
+		// object is built as unstructured map[string]any there is no
+		// compile-time check on any of it; the apiVersion is pinned by
+		// TestBuildExternalSecret_UsesServedAPIVersion.
+		"apiVersion": "external-secrets.io/v1",
 		"kind":       "ExternalSecret",
 		"metadata": map[string]any{
 			"name":      fmt.Sprintf("%s-%s-external-secret", cluster.Name, secretType),

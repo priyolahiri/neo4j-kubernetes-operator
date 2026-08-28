@@ -31,8 +31,10 @@ type Neo4jBackupSpec struct {
 	// Topology-agnostic: the operator resolves cluster vs standalone itself.
 	// Pair it with exactly one scope field — Database (single) or AllDatabases.
 	//
-	// InstanceRef + scope is the preferred API as of v1.13. When InstanceRef is
-	// set it is authoritative and the legacy Target block (below) is ignored.
+	// InstanceRef + scope became the scope API in v1.13, replacing the legacy
+	// `target` block, which has since been removed entirely — there is no
+	// namespace field anywhere on this API, which is what keeps a backup
+	// scoped to its own namespace (docs/knowledge/backup-restore.md rule 80).
 	// +optional
 	InstanceRef string `json:"instanceRef,omitempty"`
 
@@ -546,7 +548,11 @@ type ShardValidationStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.target.kind`
+// Instance replaced a dead "Target" column that pointed at `.spec.target.kind`.
+// The legacy `spec.target` block was removed when `instanceRef` became the
+// scope API in v1.13, so that column rendered permanently empty in
+// `kubectl get neo4jbackup`. `.spec.instanceRef` is its direct successor.
+// +kubebuilder:printcolumn:name="Instance",type=string,JSONPath=`.spec.instanceRef`
 // +kubebuilder:printcolumn:name="Schedule",type=string,JSONPath=`.spec.schedule`
 // +kubebuilder:printcolumn:name="LastRun",type=string,JSONPath=`.status.lastRunTime`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`

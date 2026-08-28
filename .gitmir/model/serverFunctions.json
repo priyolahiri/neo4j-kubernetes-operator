@@ -1283,7 +1283,7 @@
     "name": "Validate Neo4jUser spec",
     "serverUnitId": "su-validation",
     "operation": "business_action",
-    "description": "UserValidator.Validate enforces the Neo4j username shape/length, requires at least one auth provider (passwordSecretRef or externalAuth), rejects the reserved 'system' username and the 'native' externalAuth provider, and reports a not-yet-applied password Secret as a transient Pending gap rather than a Failed error (internal/validation/user_validator.go).",
+    "description": "UserValidator.Validate enforces the Neo4j username shape/length, requires at least one auth provider (passwordSecretRef or externalAuth), rejects the reserved 'system' username and the 'native' externalAuth provider, WARNS (without rejecting) when the username is the default bootstrap admin 'neo4j' because managing it rewrites the credential the operator itself authenticates with, and reports a not-yet-applied password Secret as a transient Pending gap rather than a Failed error (internal/validation/user_validator.go).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],

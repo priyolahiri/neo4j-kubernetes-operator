@@ -407,10 +407,70 @@ completes.
 
 ## 4. Downstream: replicate users and roles
 
-Privileges and roles are **not** replicated by CCDR. Apply the same
-`Neo4jUser` / `Neo4jRole` / `Neo4jRoleBinding` CRs to the downstream cluster
-that you apply upstream — with `clusterRef` pointed at the DR cluster. The
-operator makes this a copy-paste rather than a manual re-creation.
+Users, roles, and privileges are **not** replicated by CCDR — you apply the
+same CRs to the downstream cluster yourself, with `clusterRef` pointed at the
+DR cluster.
+
+!!! danger "`Neo4jRole` privileges do NOT copy verbatim — they name the database"
+
+    The replica database is called `foo-replica`, not `foo` (see [step 2](#2-downstream-create-the-replica):
+    Cypher has no `RENAME DATABASE`, so it keeps that name permanently). And
+    **privileges attach to the database, not the alias** — see
+    [Aliases and privileges](database_aliases.md#aliases-and-privileges).
+
+    So a privilege copied verbatim grants access to a database that does not
+    exist on the DR cluster. **Neo4j accepts this without complaint**: the
+    `Neo4jRole` reconciles to `Ready`, `enforcePrivileges: true` holds it
+    there, and your dashboards stay green while DR authorization is silently
+    broken — the exact failure DR exists to prevent.
+
+    Rewrite every database name in `spec.privileges` to the replica's name.
+
+What copies, and what does not:
+
+| CR | Copies verbatim? | Why |
+|---|---|---|
+| `Neo4jRoleBinding` | ✅ Yes | names only users and roles — no database names |
+| `Neo4jUser` | ✅ Yes | `spec.roles` are role names. `spec.homeDatabase` accepts a database **or an alias**, so the failover alias from [step 3](#3-downstream-pre-stage-the-failover-alias) resolves it correctly — provided you created it |
+| `Neo4jRole` | ❌ **No** | `spec.privileges` are complete Cypher statements with the database name embedded. The alias does **not** help here |
+
+Rewriting a role for the DR cluster:
+
+```yaml
+# UPSTREAM (namespace: prod) — privileges name the database `foo`
+spec:
+  clusterRef: prod-cluster
+  name: analytics_reader
+  privileges:
+    - "GRANT ACCESS ON DATABASE foo TO analytics_reader"
+    - "GRANT MATCH {*} ON GRAPH foo NODES * TO analytics_reader"
+---
+# DOWNSTREAM (namespace: dr) — clusterRef AND every database name change
+spec:
+  clusterRef: dr-cluster
+  name: analytics_reader
+  privileges:
+    - "GRANT ACCESS ON DATABASE `foo-replica` TO analytics_reader"
+    - "GRANT MATCH {*} ON GRAPH `foo-replica` NODES * TO analytics_reader"
+```
+
+Because the replica keeps the name `foo-replica` **after promotion too**, these
+privileges stay correct through failover — there is nothing to edit during the
+outage.
+
+!!! tip "Verify, don't assume"
+
+    A wrong database name here fails silently. After applying, confirm the
+    privileges actually landed on the replica:
+
+    ```bash
+    kubectl exec -n dr <dr-cluster-server-0> -c neo4j -- \
+      cypher-shell -u neo4j -p <password> --access-mode=read \
+      "SHOW ROLE analytics_reader PRIVILEGES AS COMMANDS"
+    ```
+
+    Every returned statement should name `foo-replica`. A statement naming
+    `foo` is the silent-failure case above.
 
 ---
 
