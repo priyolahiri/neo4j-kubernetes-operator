@@ -15,8 +15,8 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.target.kind
-      name: Target
+    - jsonPath: .spec.instanceRef
+      name: Instance
       type: string
     - jsonPath: .spec.schedule
       name: Schedule
@@ -112,8 +112,10 @@ spec:
                   Topology-agnostic: the operator resolves cluster vs standalone itself.
                   Pair it with exactly one scope field — Database (single) or AllDatabases.
 
-                  InstanceRef + scope is the preferred API as of v1.13. When InstanceRef is
-                  set it is authoritative and the legacy Target block (below) is ignored.
+                  InstanceRef + scope became the scope API in v1.13, replacing the legacy
+                  `target` block, which has since been removed entirely — there is no
+                  namespace field anywhere on this API, which is what keeps a backup
+                  scoped to its own namespace (docs/knowledge/backup-restore.md rule 80).
                 type: string
               mode:
                 default: standard
