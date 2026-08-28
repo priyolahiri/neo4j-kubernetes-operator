@@ -115,6 +115,73 @@ ${PATH_REFS}
 EOF
 fi
 
+# --- Pass 3: CRD-kind / Go identifier refs -----------------------------------
+# Extract backticked `Neo4jXxx` identifiers and assert each appears somewhere in
+# the Go source. Added after two knowledge rules were found citing things that
+# did not exist: rule 18 routed multi-tenant access through an opt-in CR name
+# that appeared exactly once in the whole repo — in that rule's own text.
+#
+# Deliberately a substring existence check against the WHOLE Go tree, not an
+# exact-symbol check against api/v1beta1/ only: `Neo4jUserReconciler` (controller)
+# and `Neo4jBackupStatus` (types) are both legitimate, and the goal is catching
+# names that exist NOWHERE, with zero false positives on real ones.
+#
+# Convention this enforces: backticks assert a real symbol. A correction note
+# discussing something that never existed must NOT backtick it.
+GO_SRC_FILES="$(git ls-files '*.go' | grep -Ev '(^|/)\.claude/worktrees/' || true)"
+
+KIND_REFS="$(grep -hoE '`Neo4j[A-Za-z0-9_]+`' ${KNOWLEDGE_FILES} 2>/dev/null \
+  | tr -d '`' \
+  | sort -u || true)"
+
+if [ -n "${KIND_REFS}" ] && [ -n "${GO_SRC_FILES}" ]; then
+  while IFS= read -r sym; do
+    [ -z "${sym}" ] && continue
+    checked=$((checked + 1))
+    # shellcheck disable=SC2086
+    if ! printf '%s\n' ${GO_SRC_FILES} | tr '\n' '\0' \
+        | xargs -0 grep -l "${sym}" >/dev/null 2>&1; then
+      echo "WARN [knowledge-drift]: identifier \`${sym}\` not found in any .go file" >&2
+      unresolved=$((unresolved + 1))
+    fi
+  done <<EOF
+${KIND_REFS}
+EOF
+fi
+
+# --- Pass 4: quoted test-case names on "Pinned-by" lines ---------------------
+# Ginkgo/table test cases are pinned by their DESCRIPTION, not a Go symbol, e.g.
+#   **Pinned-by:** `foo_test.go` ("Cluster with cross-namespace target is rejected")
+# Pass 1 only sees backticked `TestXxx` symbols, so these slipped through — which
+# is how rule 80 kept a green check while pinning two tests that did not exist.
+#
+# Scoped tightly to keep false positives at zero: only double-quoted spans on a
+# line that actually declares a pin, at least 20 characters, and containing a
+# space (a test-case description reads like prose). That filter admits real
+# descriptions while excluding the "4G" / "kubectl" / "p" noise that quoting
+# produces elsewhere on those lines. Matched with grep -F: descriptions contain
+# regex metacharacters (+, ., *) and must be compared literally.
+CASE_PINS="$(grep -hiE '^[[:space:]]*[-*]?[[:space:]]*\*\*?[Pp]inned.?by' ${KNOWLEDGE_FILES} 2>/dev/null \
+  | grep -oE '"[^"]{20,}"' \
+  | tr -d '"' \
+  | grep ' ' \
+  | sort -u || true)"
+
+if [ -n "${CASE_PINS}" ] && [ -n "${TEST_GO_FILES}" ]; then
+  while IFS= read -r desc; do
+    [ -z "${desc}" ] && continue
+    checked=$((checked + 1))
+    # shellcheck disable=SC2086
+    if ! printf '%s\n' ${TEST_GO_FILES} | tr '\n' '\0' \
+        | xargs -0 grep -lF "${desc}" >/dev/null 2>&1; then
+      echo "WARN [knowledge-drift]: test-case pin \"${desc}\" not found in any *_test.go" >&2
+      unresolved=$((unresolved + 1))
+    fi
+  done <<EOF
+${CASE_PINS}
+EOF
+fi
+
 # --- Verdict -----------------------------------------------------------------
 if [ "${unresolved}" -ne 0 ]; then
   echo "" >&2
