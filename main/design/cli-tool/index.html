@@ -1,0 +1,4124 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A Kubernetes operator for Neo4j Enterprise — declarative clusters, databases, users, roles, backups, and plugins.">
+      
+      
+        <meta name="author" content="Priyo Lahiri">
+      
+      
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/design/cli-tool/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Design: kubectl-neo4j — a customer-facing CLI - Neo4j Kubernetes Operator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/neo4j.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#design-kubectl-neo4j-a-customer-facing-cli" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Neo4j Kubernetes Operator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Design: kubectl-neo4j — a customer-facing CLI
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    priyolahiri/neo4j-kubernetes-operator
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Neo4j Kubernetes Operator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    priyolahiri/neo4j-kubernetes-operator
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/getting_started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/operator-modes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operator Modes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/demo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Try the Demo
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/version_support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Neo4j Versions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/migration_guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configure & Deploy
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configure & Deploy
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/examples_gallery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/resource_sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/clustering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clustering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/topology_placement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology Placement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/property_sharding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Property Sharding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/external_access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External Access (LB / NodePort / Ingress / Route)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugin Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/seed-uri/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seed URI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/aura_fleet_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Aura Fleet Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/aura_orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Aura Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/mcp_client_setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Client Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication & Authorization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/tls_configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TLS Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/user_role_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Users, Roles & Auth Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operate
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/backup_restore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup & Restore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/cross_cluster_replication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-Cluster Replication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/database_aliases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Aliases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/upgrades/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrades
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/storage_expansion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage Expansion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/fault_tolerance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fault Tolerance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/multi_cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiple Kubernetes Clusters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_8" id="__nav_5_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Monitoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/prometheus-grafana-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus & Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/kubernetes-events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kubernetes Events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_9" id="__nav_5_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Performance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tuning Neo4j Workloads
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tuning the Operator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshoot
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Troubleshoot
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    General Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/troubleshooting/backup_restore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup & Restore Issues
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/troubleshooting/split-brain-recovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Split-Brain Recovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../gitops/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_1" id="__nav_7_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CRD Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CRD Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jEnterpriseCluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jEnterpriseStandalone
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jdatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jShardedDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4juser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jUser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jrole/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jRole
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jrolebinding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jRoleBinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jauthrule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jAuthRule
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jplugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jPlugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jbackup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jBackup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jrestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaPromotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jdatabasealias/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jDatabaseAlias
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraproviderconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraProviderConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurainstance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraInstance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurasnapshot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraSnapshot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurarestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auracustomermanagedkey/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraCustomerManagedKey
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraipfilter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraIPFilter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabasebackup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseBackup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabaserestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraorganizationmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraOrganizationMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraprojectmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraProjectMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurainvite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraInvite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribute
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contribute
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/QUICKSTART/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/collaboration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Collaboration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/ci_and_workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD & Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/release_verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/makefile_reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Makefile Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/openshift_olm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenShift OLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI-Assisted Contribution
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    AI-Assisted Contribution
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/llm-contribution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing with an LLM Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer_guide/AGENT-GUARDRAILS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Guardrails
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../knowledge/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Invariants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The problem
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. The problem">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-the-docs-are-teaching-a-naming-scheme-by-repetition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 The docs are teaching a naming scheme by repetition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-the-structural-gap-no-webhooks-means-no-pre-apply-feedback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 The structural gap: no webhooks means no pre-apply feedback
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-what-this-operator-already-provides" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. What this operator already provides
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-costs-and-blockers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Costs and blockers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Costs and blockers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#b1-binaries-need-cross-compilation-but-not-a-new-pipeline-revised-down" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B1 — Binaries need cross-compilation, but not a new pipeline (revised down)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b2-internal-forbids-the-library-story-without-an-api-commitment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B2 — internal/ forbids the library story without an API commitment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b3-a-cli-is-a-second-source-of-truth-in-a-codebase-built-around-not-having-those" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B3 — A CLI is a second source of truth, in a codebase built around not having those
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b4-dry-runserver-already-covers-part-of-the-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B4 — --dry-run=server already covers part of the claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b5-any-mutating-command-can-bypass-a-safety-guard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B5 — Any mutating command can bypass a safety guard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b6-distribution-to-krew-is-its-own-review-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B6 — Distribution to krew is its own review pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b7-context-and-namespace-handling-is-where-clis-usually-rot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B7 — Context and namespace handling is where CLIs usually rot
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-the-commands-ranked-for-a-customer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. The commands, ranked for a customer
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. The commands, ranked for a customer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-validate-the-structural-gap-12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 validate — the structural gap (§1.2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-status-the-question-customers-ask-most" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 status — the question customers ask most
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-connect-cypher-the-credential-round-trip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 connect / cypher — the credential round-trip
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-explain-troubleshooting-as-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 explain — troubleshooting as code
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-support-bundle-the-escalation-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 support-bundle — the escalation path
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Options
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-kubectl-plugin-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        (a) kubectl plugin — recommended
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b-standalone-binary-neo4j-k8s" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        (b) Standalone binary (neo4j-k8s)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kubectl-plugin-that-shells-out-to-kubectl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        &copy; kubectl plugin that shells out to kubectl
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d-decline-improve-the-docs-instead" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        (d) Decline — improve the docs instead
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-the-shape-of-the-first-slice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. The shape of the first slice
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Testing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-delivery-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Delivery order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-open-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Open questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/design/cli-tool.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="design-kubectl-neo4j-a-customer-facing-cli">Design: <code>kubectl-neo4j</code> — a customer-facing CLI<a class="headerlink" href="#design-kubectl-neo4j-a-customer-facing-cli" title="Anchor link to this section">&para;</a></h1>
+<blockquote>
+<p><strong>Status:</strong> Analysis only. Nothing is implemented. §8 proposes a first slice
+of one command.
+<strong>Source:</strong> this repository, read at commit <code>6afaf1c</code>; command-density counts
+measured across <code>docs/user_guide/</code>.
+<strong>Scope of this document:</strong> whether an accompanying CLI earns its place, who
+it is for, which commands justify themselves, and what it would cost. The
+audience is decided: <strong>the customer operating a Neo4j deployment</strong>, not Neo4j
+support or field engineering — that choice reorders everything in §4.
+<strong>Update:</strong> §9 Q2 is answered — binaries ship with the operator's existing
+release, under the operator's existing support statement. That revised B1
+down substantially (the release workflow already attaches assets by glob) and
+largely resolved Q4.
+<strong>Headline:</strong> the strongest case is not convenience, it is a structural gap.
+Invariant 1 forbids admission webhooks, so the operator's 29 validators only
+ever speak to a user <em>after</em> they apply, through status and events. A CLI
+closes that loop client-side <strong>using the operator's own validation code</strong>,
+which makes it the rare feature that is high-value and near-zero drift-risk
+at once. Everything else in §4 is ergonomics on top of that.</p>
+</blockquote>
+<hr />
+<h2 id="1-the-problem">1. The problem<a class="headerlink" href="#1-the-problem" title="Anchor link to this section">&para;</a></h2>
+<h3 id="11-the-docs-are-teaching-a-naming-scheme-by-repetition">1.1 The docs are teaching a naming scheme by repetition<a class="headerlink" href="#11-the-docs-are-teaching-a-naming-scheme-by-repetition" title="Anchor link to this section">&para;</a></h3>
+<p>Manual command lines in the user-facing guides:</p>
+<table>
+<thead>
+<tr>
+<th>Doc</th>
+<th><code>kubectl</code> / <code>cypher-shell</code> / <code>neo4j-admin</code> lines</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>guides/troubleshooting.md</code></td>
+<td>98</td>
+</tr>
+<tr>
+<td><code>troubleshooting/split-brain-recovery.md</code></td>
+<td>43</td>
+</tr>
+<tr>
+<td><code>troubleshooting/backup_restore.md</code></td>
+<td>43</td>
+</tr>
+<tr>
+<td><code>guides/backup_restore.md</code></td>
+<td>34</td>
+</tr>
+</tbody>
+</table>
+<p>The count is not the interesting part — the <em>shape</em> is. Almost every one is
+generic <code>kubectl</code> with placeholders the reader has to resolve from knowledge of
+the operator's conventions: <code>&lt;cluster-name&gt;-server-0</code>, <code>&lt;cluster-name&gt;-client</code>,
+<code>&lt;cluster-name&gt;-metrics</code>, <code>&lt;cluster-name&gt;-headless</code>. Three specific things the
+docs currently ask a customer to get right unaided:</p>
+<ul>
+<li><strong>The operator's own namespace differs by install mode</strong> — <code>neo4j-operator</code>
+  for dev, <code>neo4j-operator-system</code> for integration and production. Every "check
+  the operator logs" instruction hardcodes one of the two.</li>
+<li><strong>Cypher access needs a Secret round-trip first.</strong> Extract the password, then
+  <code>kubectl exec &lt;pod&gt; -c neo4j -- cypher-shell -u neo4j -p &lt;password&gt;</code>. Wrong
+  container, or <code>bolt://</code> where TLS is enabled (which the operator <em>rejects</em>),
+  produces an opaque failure.</li>
+<li><strong>Five status field declarations exist solely to be pasted into another
+  resource's spec</strong> — <code>Neo4jBackup.status.replicationPullURI</code>
+  (<code>neo4jbackup_types.go:345</code>), <code>status.backupsPath</code> on both <code>Neo4jBackup</code>
+  (<code>:401</code>) and <code>Neo4jShardedDatabase</code> (<code>neo4jshardeddatabase_types.go:254</code>),
+  and <code>status.crossClusterReplication</code> / <code>status.internalAddresses</code> on
+  <code>Neo4jEnterpriseCluster</code> (<code>:954</code>, <code>:966</code>).</li>
+</ul>
+<p>That last point is the tell. <code>ConnectionExamples</code>
+(<code>api/v1beta1/neo4jenterprisecluster_types.go:1386</code>) is already a status field
+whose only purpose is to hand the user a <code>kubectl port-forward</code> command to
+type. <strong>The project has been building CLI ergonomics into status fields because
+it had nowhere else to put them.</strong></p>
+<h3 id="12-the-structural-gap-no-webhooks-means-no-pre-apply-feedback">1.2 The structural gap: no webhooks means no pre-apply feedback<a class="headerlink" href="#12-the-structural-gap-no-webhooks-means-no-pre-apply-feedback" title="Anchor link to this section">&para;</a></h3>
+<p>This is the part that is not merely ergonomic.</p>
+<p><code>internal/validation/</code> holds <strong>29 validators</strong>. <code>ClusterValidator</code> alone
+composes edition, topology, image, storage and TLS sub-validators, and exposes
+<code>ValidateCreateWithWarnings</code> returning:</p>
+<div class="language-go highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kd">type</span><span class="w"> </span><span class="nx">ClusterValidationResult</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="nx">Errors</span><span class="w">   </span><span class="nx">field</span><span class="p">.</span><span class="nx">ErrorList</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nx">Warnings</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="p">}</span>
+</span></code></pre></div>
+<p><code>field.ErrorList</code> carries a field path per error — precisely what a
+command-line renderer wants.</p>
+<p>Invariant 1 (<strong>NO WEBHOOKS</strong>) means none of this runs at admission. A customer's
+loop today is: write YAML → apply → wait for reconcile → read <code>status</code> and
+events → find the mistake → repeat. For a CRD surface of <strong>26 kinds and 234
+top-level spec fields</strong>, that is a slow first hour and a recurring tax on every
+spec change afterwards.</p>
+<p><strong>21 of the 29 validators never touch the Kubernetes client at all</strong>, so they
+run fully offline against a YAML file. The 8 that do are the cross-reference
+validators (<code>user</code>, <code>role</code>, <code>rolebinding</code>, <code>database</code>, <code>authrule</code>, <code>resource</code>,
+<code>shardeddatabase</code>, <code>cluster</code>) and they need only a kubeconfig, not a running
+operator. <code>ClusterValidator</code> touches the client in exactly one place
+(<code>cluster_validator.go:212</code>, resolving the admin Secret).</p>
+<p>A CLI therefore delivers webhook-grade feedback <strong>without a webhook and without
+re-implementing a single rule</strong> — it exploits the invariant rather than
+fighting it.</p>
+<hr />
+<h2 id="2-what-this-operator-already-provides">2. What this operator already provides<a class="headerlink" href="#2-what-this-operator-already-provides" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li><strong>Validation with a CLI-shaped API.</strong> 29 validators, an errors-plus-warnings
+  result type, field paths on every error. Nothing new to write.</li>
+<li><strong>Rich status.</strong> Phases, conditions, <code>status.diagnostics.servers[]</code> /
+  <code>databases[]</code>, <code>ConnectionExamples</code>. A <code>status</code> command is a rendering
+  problem, not a data-collection one.</li>
+<li><strong>A same-module import path.</strong> <code>cmd/kubectl-neo4j</code> can import
+  <code>internal/validation</code> and <code>internal/resources</code> directly (module
+  <code>github.com/priyolahiri/neo4j-kubernetes-operator</code>), so the CLI and the
+  operator share one definition of every name and rule. Drift becomes a compile
+  error. <strong>This is the single strongest argument for building it in this repo
+  rather than as a separate project.</strong></li>
+<li><strong>An agent-facing interface already exists.</strong> The MCP server
+  (<code>api/v1beta1/mcp_types.go</code>, <code>docs/user_guide/guides/mcp_client_setup.md</code>)
+  covers the LLM modality. A CLI is the human modality; they are complementary
+  and would share helpers.</li>
+</ul>
+<hr />
+<h2 id="3-costs-and-blockers">3. Costs and blockers<a class="headerlink" href="#3-costs-and-blockers" title="Anchor link to this section">&para;</a></h2>
+<p>Ranked.</p>
+<h3 id="b1-binaries-need-cross-compilation-but-not-a-new-pipeline-revised-down">B1 — Binaries need cross-compilation, but not a new pipeline <em>(revised down)</em><a class="headerlink" href="#b1-binaries-need-cross-compilation-but-not-a-new-pipeline-revised-down" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Corrected after Q2 was answered.</strong> This blocker was first written as "the
+largest new surface … a genuinely new release surface (goreleaser or
+equivalent), not an increment." That was wrong, and the correction matters
+because it was the main cost argument against building anything.</p>
+<p><code>.github/workflows/release.yml</code> builds container images with buildx
+(<code>linux/amd64,linux/arm64</code>) — true — but it <strong>already creates a GitHub Release
+and attaches assets by glob</strong>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Create GitHub Release</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">softprops/action-gh-release@v3</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">with</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">files</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">      </span><span class="no">release-artifacts/*</span>
+</span></code></pre></div>
+<p>So publishing binaries is: add a cross-compile matrix step that writes into
+<code>release-artifacts/</code>, and the existing glob attaches them. No new workflow, no
+new release event, no goreleaser required.</p>
+<p>What genuinely remains:</p>
+<ul>
+<li>five platform targets (darwin/arm64, darwin/amd64, linux/amd64, linux/arm64,
+  windows/amd64), which is a <code>GOOS</code>/<code>GOARCH</code> matrix over one <code>go build</code>;</li>
+<li>a stable asset naming convention, because krew (B6) and any install script
+  will depend on it — decide it once, before the first release, since renaming
+  assets later breaks every pinned installer;</li>
+<li>checksums, and a decision on signing.</li>
+</ul>
+<p>Real work, but bounded, and an increment on machinery that exists.</p>
+<h3 id="b2-internal-forbids-the-library-story-without-an-api-commitment">B2 — <code>internal/</code> forbids the library story without an API commitment<a class="headerlink" href="#b2-internal-forbids-the-library-story-without-an-api-commitment" title="Anchor link to this section">&para;</a></h3>
+<p>The "customers can validate manifests in their own CI" pitch has two forms with
+very different costs:</p>
+<ul>
+<li><strong>Invoke the binary</strong> (<code>kubectl neo4j validate -f manifests/</code>) — free, works
+  today, is what CI actually wants anyway.</li>
+<li><strong>Import the package</strong> — impossible while validation lives under <code>internal/</code>,
+  which Go forbids to out-of-module consumers. Promoting it to <code>pkg/validation</code>
+  is not a file move: it is a public API surface this project would then owe
+  compatibility on, forever, for code currently free to change shape every
+  release.</li>
+</ul>
+<p>Q2's answer lowers this cost without removing it. The project's stated posture
+is that "APIs and behaviour <strong>may change between releases without notice</strong>"
+(<code>README.md</code>), so a <code>pkg/</code> promotion would not create the open-ended
+compatibility debt it would in a project promising stability. It would still
+create an import surface that people depend on in practice regardless of what
+the README says.</p>
+<p><strong>Recommendation stands: ship the binary story only, and say so explicitly.</strong>
+It is what CI actually wants, it costs nothing, and it can be revisited if
+anyone ever asks for the library. Do not promote to <code>pkg/</code> speculatively.</p>
+<h3 id="b3-a-cli-is-a-second-source-of-truth-in-a-codebase-built-around-not-having-those">B3 — A CLI is a second source of truth, in a codebase built around not having those<a class="headerlink" href="#b3-a-cli-is-a-second-source-of-truth-in-a-codebase-built-around-not-having-those" title="Anchor link to this section">&para;</a></h3>
+<p>This project runs <code>check-drift</code>, <code>check-apiref-drift</code>, <code>check-crd-catalog</code> and
+<code>check-knowledge-drift</code> precisely because hand-maintained parallel surfaces rot.
+A CLI that re-encodes naming conventions, status semantics or validation rules
+would be the largest such surface yet.</p>
+<p>Mitigation is architectural and non-negotiable: <strong>the CLI must consume the
+operator's own packages, never restate them.</strong> Name construction comes from
+<code>internal/resources</code>; validation from <code>internal/validation</code>; types from
+<code>api/v1beta1</code>. Any place the CLI needs a rule the operator does not export, the
+fix is to export it, not to copy it.</p>
+<h3 id="b4-dry-runserver-already-covers-part-of-the-claim">B4 — <code>--dry-run=server</code> already covers part of the claim<a class="headerlink" href="#b4-dry-runserver-already-covers-part-of-the-claim" title="Anchor link to this section">&para;</a></h3>
+<p><code>kubectl apply --dry-run=server</code> already enforces the CRD's OpenAPI schema —
+enums, ranges, required fields — and the CEL rules (for example the
+<code>self == oldSelf</code> immutability transitions). A <code>validate</code> command adds only
+what lives in <code>internal/validation</code> <em>beyond</em> the schema.</p>
+<p>That remainder is substantial — cross-field topology rules, <code>serverRoles</code> index
+and duplicate checks, TLS strictness and issuer-capability checks, rejected
+config keys such as <code>dbms.default_database</code>, and the resource-floor warnings —
+but it is <strong>not</strong> "everything", and the docs must not imply otherwise. Claiming
+<code>validate</code> replaces server-side dry-run would be false and would be discovered
+at exactly the wrong moment.</p>
+<h3 id="b5-any-mutating-command-can-bypass-a-safety-guard">B5 — Any mutating command can bypass a safety guard<a class="headerlink" href="#b5-any-mutating-command-can-bypass-a-safety-guard" title="Anchor link to this section">&para;</a></h3>
+<p>The operator's write paths carry guards that exist because getting them wrong
+loses data. <code>Neo4jReplicaPromotion</code> is a one-shot CR specifically so that
+re-applying a manifest cannot un-promote a database, and its controller
+re-reads <code>SHOW DATABASE ... YIELD type</code> before acting, so an out-of-band
+promotion is detected rather than "corrected" by drop-and-recreate.</p>
+<p>A CLI <code>promote</code> that <strong>applies that CR</strong> is safe. A CLI <code>promote</code> that calls
+<code>dbms.promoteReplicaDatabase</code> itself bypasses the guard entirely.</p>
+<p><strong>Hard rule, stated once and enforced in review:</strong></p>
+<blockquote>
+<p>The CLI may <strong>create and read Custom Resources</strong> and <strong>read Kubernetes
+state</strong>. It must <strong>never</strong> execute Cypher or <code>neo4j-admin</code> for any mutating
+operation. Where a mutation is wanted, the CLI's job is to author the CR that
+already models it.</p>
+</blockquote>
+<p><code>connect</code> / <code>cypher</code> are the deliberate exception and are read-through: they
+hand the user an interactive session, they do not perform operations on the
+user's behalf.</p>
+<h3 id="b6-distribution-to-krew-is-its-own-review-pipeline">B6 — Distribution to krew is its own review pipeline<a class="headerlink" href="#b6-distribution-to-krew-is-its-own-review-pipeline" title="Anchor link to this section">&para;</a></h3>
+<p>Discoverability via <code>kubectl krew install neo4j</code> requires a PR to the krew-index
+repository and its review cycle — structurally the same kind of external
+submission as the OperatorHub community-operators flow this project already
+maintains. Budget it as a separate, recurring task, not a one-off.</p>
+<h3 id="b7-context-and-namespace-handling-is-where-clis-usually-rot">B7 — Context and namespace handling is where CLIs usually rot<a class="headerlink" href="#b7-context-and-namespace-handling-is-where-clis-usually-rot" title="Anchor link to this section">&para;</a></h3>
+<p>Kubeconfig precedence, <code>--context</code>, <code>--namespace</code>, in-cluster vs out, and
+partial RBAC (a customer who can read <code>Neo4jEnterpriseCluster</code> but not Secrets)
+are a large share of a CLI's real bug surface. Adopting <code>cli-runtime</code>'s
+standard flag set rather than hand-rolling it removes most of this class, and
+is the main reason to prefer the kubectl-plugin option in §5.</p>
+<hr />
+<h2 id="4-the-commands-ranked-for-a-customer">4. The commands, ranked for a customer<a class="headerlink" href="#4-the-commands-ranked-for-a-customer" title="Anchor link to this section">&para;</a></h2>
+<p>Audience decided: the customer operating the deployment. This reorders the list
+materially — a support-bundle command, which would top a Neo4j-support-facing
+ranking, drops to fifth.</p>
+<h3 id="41-validate-the-structural-gap-12">4.1 <code>validate</code> — the structural gap (§1.2)<a class="headerlink" href="#41-validate-the-structural-gap-12" title="Anchor link to this section">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>$ kubectl neo4j validate -f cluster.yaml
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>✗ spec.topology.serverRoles[1].serverIndex: 3 is out of range [0, 2]
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>✗ spec.config: dbms.default_database is rejected — deprecated; use dbms.setDefaultDatabase()
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>⚠ spec.resources.memory 1Gi is below the 1.5Gi Enterprise minimum — pods will OOMKill
+</span></code></pre></div>
+<p>Offline for 21 of 29 validators; <code>--context</code> enables the cross-reference 8.
+Highest value, lowest drift risk, no write semantics, no cluster required.</p>
+<h3 id="42-status-the-question-customers-ask-most">4.2 <code>status</code> — the question customers ask most<a class="headerlink" href="#42-status-the-question-customers-ask-most" title="Anchor link to this section">&para;</a></h3>
+<p>One view across the 26 kinds in a namespace: what exists, what is <code>Ready</code>, what
+is stuck and on which condition. Today this is <code>kubectl get</code> against 26 kinds
+followed by <code>describe</code> on whichever looks wrong.</p>
+<h3 id="43-connect-cypher-the-credential-round-trip">4.3 <code>connect</code> / <code>cypher</code> — the credential round-trip<a class="headerlink" href="#43-connect-cypher-the-credential-round-trip" title="Anchor link to this section">&para;</a></h3>
+<p>Resolve the admin Secret, pick the right pod and container, choose <code>bolt://</code>
+vs <code>bolt+s://</code> from <code>spec.tls</code>, and either exec or port-forward. Collapses the
+most-repeated multi-step sequence in the docs, and removes the failure mode
+where guessing the scheme produces an opaque TLS error.</p>
+<h3 id="44-explain-troubleshooting-as-code">4.4 <code>explain</code> — troubleshooting as code<a class="headerlink" href="#44-explain-troubleshooting-as-code" title="Anchor link to this section">&para;</a></h3>
+<p>Decode a phase or condition into the action to take. This is
+<code>guides/troubleshooting.md</code> made executable, and it is the command most at risk
+of B3 drift — every string it prints is a claim about operator behaviour. Build
+it only after the first three have proven the shared-package discipline holds.</p>
+<h3 id="45-support-bundle-the-escalation-path">4.5 <code>support-bundle</code> — the escalation path<a class="headerlink" href="#45-support-bundle-the-escalation-path" title="Anchor link to this section">&para;</a></h3>
+<p>CR YAML, events, operator logs, pod logs, StatefulSet and PVC state,
+<code>SHOW SERVERS</code> / <code>SHOW DATABASES</code> output, redacted, in one archive. Genuinely
+valuable — a customer who cannot grant cluster access can still send one — but
+it serves the escalation path rather than the daily loop, which is why it ranks
+here for this audience and would rank first for the other.</p>
+<hr />
+<h2 id="5-options">5. Options<a class="headerlink" href="#5-options" title="Anchor link to this section">&para;</a></h2>
+<h3 id="a-kubectl-plugin-recommended">(a) <code>kubectl</code> plugin — <strong>recommended</strong><a class="headerlink" href="#a-kubectl-plugin-recommended" title="Anchor link to this section">&para;</a></h3>
+<p>A binary named <code>kubectl-neo4j</code> on <code>PATH</code>, invoked as <code>kubectl neo4j …</code>. Inherits
+kubeconfig, <code>--context</code> and <code>--namespace</code> handling from <code>cli-runtime</code> (B7),
+matches the ecosystem convention customers already know, and is krew-installable
+(B6). Runs standalone too, since the binary is directly executable.</p>
+<h3 id="b-standalone-binary-neo4j-k8s">(b) Standalone binary (<code>neo4j-k8s</code>)<a class="headerlink" href="#b-standalone-binary-neo4j-k8s" title="Anchor link to this section">&para;</a></h3>
+<p>Everything in (a) minus the convention and the inherited flag handling. No
+advantage identified.</p>
+<h3 id="kubectl-plugin-that-shells-out-to-kubectl">&copy; <code>kubectl</code> plugin that shells out to <code>kubectl</code><a class="headerlink" href="#kubectl-plugin-that-shells-out-to-kubectl" title="Anchor link to this section">&para;</a></h3>
+<p>Avoids client-go entirely. Rejected: it inherits <code>kubectl</code>'s output formats as
+a parsing surface, breaks under partial RBAC in ways that are hard to report
+well, and forfeits the shared-package property in §2 that is the whole reason
+to build this here.</p>
+<h3 id="d-decline-improve-the-docs-instead">(d) Decline — improve the docs instead<a class="headerlink" href="#d-decline-improve-the-docs-instead" title="Anchor link to this section">&para;</a></h3>
+<p>The status quo, and the honest baseline. It is what the 98-line troubleshooting
+guide already represents, and §1.2's structural gap is not something more prose
+can close: no amount of documentation moves validation feedback from
+after-apply to before-apply.</p>
+<hr />
+<h2 id="6-the-shape-of-the-first-slice">6. The shape of the first slice<a class="headerlink" href="#6-the-shape-of-the-first-slice" title="Anchor link to this section">&para;</a></h2>
+<p><code>cmd/kubectl-neo4j/</code>, one command, <code>validate</code>. Chosen because it is the only
+candidate that is simultaneously:</p>
+<ul>
+<li>the answer to a structural gap rather than a convenience (§1.2),</li>
+<li>implementable with <strong>zero new domain logic</strong> — it calls existing validators,</li>
+<li>free of write semantics, so B5 does not apply,</li>
+<li>runnable with no cluster at all for the majority path, so it is trivially
+  testable, and</li>
+<li>immediately usable in a customer's own CI via the binary (B2).</li>
+</ul>
+<p>It also functions as a test of the B3 mitigation: if <code>validate</code> cannot be built
+without copying something out of <code>internal/</code>, that is early evidence the
+shared-package discipline will not hold, and it is far cheaper to learn now.</p>
+<hr />
+<h2 id="7-testing">7. Testing<a class="headerlink" href="#7-testing" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li><strong>Unit:</strong> golden-file tests over a corpus of good and bad manifests, asserting
+  the rendered output. Because the rules live in <code>internal/validation</code> and are
+  already table-tested there, the CLI's own tests cover <em>rendering and exit
+  codes</em>, not validation semantics — the split matters, or the same rule ends
+  up tested twice and asserted differently.</li>
+<li><strong>Exit codes are API.</strong> <code>0</code> clean, non-zero on errors, and a decision to make
+  explicitly: whether warnings alone are non-zero (they should not be by
+  default; a <code>--strict</code> flag is the conventional escape hatch for CI).</li>
+<li><strong>No cluster needed</strong> for the offline path, which keeps this out of the
+  integration lane entirely and off the one-Enterprise-deployment-at-a-time
+  budget.</li>
+<li><strong>Cross-reference path</strong> (the 8 client-touching validators) tests against
+  envtest or a fake client, not a real Kind cluster.</li>
+</ul>
+<hr />
+<h2 id="8-delivery-order">8. Delivery order<a class="headerlink" href="#8-delivery-order" title="Anchor link to this section">&para;</a></h2>
+<ol>
+<li><strong><code>validate</code>, offline only</strong> (§6). One command, no cluster, no release
+   pipeline yet — buildable and reviewable as a normal PR, with <code>go run</code> and
+   <code>make</code> targets for local use.</li>
+<li><strong>Cross-compile matrix in <code>release.yml</code></strong> (revised B1). Much smaller than
+   first assessed — a <code>GOOS</code>/<code>GOARCH</code> matrix writing into <code>release-artifacts/</code>,
+   which the existing release step already globs. Settle the asset naming
+   convention here, before anything pins to it.</li>
+<li><strong><code>validate --context</code></strong> — the 8 cross-reference validators.</li>
+<li><strong><code>status</code></strong> (§4.2), then <strong><code>connect</code> / <code>cypher</code></strong> (§4.3).</li>
+<li><strong>krew index submission</strong> (B6), once the command set is stable enough that
+   users installing it will not immediately want a newer one.</li>
+<li><strong><code>explain</code></strong> (§4.4) and <strong><code>support-bundle</code></strong> (§4.5), on evidence.</li>
+</ol>
+<p>Deliberately <em>not</em> in the order: any mutating command beyond CR authoring
+(B5), and any <code>pkg/</code> promotion (B2).</p>
+<hr />
+<h2 id="9-open-questions">9. Open questions<a class="headerlink" href="#9-open-questions" title="Anchor link to this section">&para;</a></h2>
+<p><strong>Q1 — Does <code>validate</code> earn its place against <code>--dry-run=server</code> in practice?</strong>
+B4 establishes the theoretical remainder is substantial. What is not known is
+how often customers actually hit rules in that remainder versus schema rules
+the API server already catches. The first slice is cheap enough to answer this
+empirically rather than argue about it.</p>
+<p><strong>Q2 — ANSWERED.</strong> Binaries are published <strong>as part of this operator's existing
+release process</strong>, on the same git tag, at the same cadence, and carry <strong>the
+same support guarantees as the operator project</strong> — that is, <code>README.md</code>'s
+statement verbatim: best-effort via GitHub issues, no official or commercial
+support, no SLA, and APIs and behaviour may change between releases without
+notice.</p>
+<p>Three consequences, all of which make the CLI cheaper than this document
+originally assumed:</p>
+<ol>
+<li><strong>B1 shrinks to a cross-compile matrix</strong> (see the revised B1) — the release
+   workflow already attaches <code>release-artifacts/*</code> to a GitHub Release.</li>
+<li><strong>Q4 largely dissolves.</strong> Lockstep versioning means a CLI and an operator
+   from the same tag agree by construction.</li>
+<li><strong>The CLI inherits the operator's support statement rather than needing its
+   own.</strong> The docs must repeat it at the install instructions rather than
+   leaving customers to infer that a downloadable binary is more supported than
+   the operator it ships with.</li>
+</ol>
+<p><strong>Q3 — Does the CLI overlap the MCP server enough to matter?</strong> Both exist to
+make the operator legible; one to humans, one to agents. If <code>explain</code> and the
+MCP server end up encoding the same troubleshooting knowledge in two places,
+that is B3 in a new costume. Worth checking before §8 item 6, not before item 1.</p>
+<p><strong>Q4 — Version skew: mostly resolved by Q2, with one thing left to build.</strong>
+Lockstep release means <code>kubectl-neo4j vX.Y.Z</code> encodes operator <code>vX.Y.Z</code>'s rules
+by construction, so the dangerous case narrows to one: <strong>a customer running a
+CLI from a different tag than the operator in their cluster.</strong> A rule added in
+v1.16 will not be enforced by a v1.14 CLI, and one removed in v1.16 will be
+enforced spuriously by it.</p>
+<p>Because both versions are now knowable — the CLI knows its own build version,
+and the operator's version is readable from the cluster — the fix is cheap and
+should be built with the first cluster-connected command:</p>
+<ul>
+<li>always print <code>validated against operator rules vX.Y.Z</code> (the CLI's own
+  version), so offline output is never silently authoritative;</li>
+<li>when a <code>--context</code> is supplied, compare against the running operator and warn
+  on mismatch.</li>
+</ul>
+<p>Neither is needed for the offline first slice (§6), but the banner is, and it
+costs nothing to add on day one.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://hub.docker.com/r/neo4j/neo4j-enterprise" target="_blank" rel="noopener" title="hub.docker.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M349.9 236.3h-66.1v-59.4h66.1zm0-204.3h-66.1v60.7h66.1zm78.2 144.8H362v59.4h66.1zm-156.3-72.1h-66.1v60.1h66.1zm78.1 0h-66.1v60.1h66.1zm276.8 100c-14.4-9.7-47.6-13.2-73.1-8.4-3.3-24-16.7-44.9-41.1-63.7l-14-9.3-9.3 14c-18.4 27.8-23.4 73.6-3.7 103.8-8.7 4.7-25.8 11.1-48.4 10.7H2.4c-8.7 50.8 5.8 116.8 44 162.1 37.1 43.9 92.7 66.2 165.4 66.2 157.4 0 273.9-72.5 328.4-204.2 21.4.4 67.6.1 91.3-45.2 1.5-2.5 6.6-13.2 8.5-17.1zm-511.1-27.9h-66v59.4h66.1v-59.4zm78.1 0h-66.1v59.4h66.1zm78.1 0h-66.1v59.4h66.1zm-78.1-72.1h-66.1v60.1h66.1z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
