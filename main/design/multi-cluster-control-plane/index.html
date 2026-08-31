@@ -3490,10 +3490,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#aggregation-only-hub-then-hub-authored-spoke-crs-recommended" class="md-nav__link">
+  <a href="#hub-authored-spoke-crs-hub-never-speaks-bolt-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        &copy; Aggregation-only hub, then hub-authored spoke CRs — recommended
+        &copy; Hub-authored spoke CRs, hub never speaks Bolt — recommended
       
     </span>
   </a>
@@ -3540,10 +3540,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#52-phase-1-read-only-aggregation" class="md-nav__link">
+  <a href="#52-phase-1-the-connection-cr" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5.2 Phase 1 — read-only aggregation
+        5.2 Phase 1 — the connection CR
       
     </span>
   </a>
@@ -3562,10 +3562,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#54-phase-2-hub-authored-spoke-crs-only-if-writes-are-genuinely-needed" class="md-nav__link">
+  <a href="#54a-phase-2-hub-authored-spoke-crs-1n-template-fan-out" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5.4 Phase 2 — hub-authored spoke CRs (only if writes are genuinely needed)
+        5.4a Phase 2 — hub-authored spoke CRs (1→N template fan-out)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54b-phase-2-ccdr-pairing-11-configuration-propagation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4b Phase 2 — CCDR pairing (1→1 configuration propagation)
       
     </span>
   </a>
@@ -3662,7 +3673,10 @@
 <p><strong>Status:</strong> Analysis, plus the two cheapest delivery items shipped
 (§8 items 1–2: the GitOps fan-out guide and the <code>k8s_cluster</code> metric label).
 The hub itself is unbuilt, and §5 argues that the literal reading of the
-request should not be built.
+request should not be built. <strong>§9 Q2 is now answered — the requirement is
+cross-cluster <em>actions</em>, with no GitOps tool assumable — which repositions
+§5.2 as a foundation rather than a deliverable and splits §5.4 into two
+differently-shaped controllers. §8's order is revised accordingly.</strong>
 <strong>Source:</strong> this repository, read at commit <code>33a3204</code>; the CCDR design
 (<code>cross-cluster-replication.md</code>), whose B1 recurs here in a worse form;
 controller-runtime v0.24.1 (<code>go.mod:22</code>).
@@ -3882,9 +3896,15 @@ all open a Neo4j client, most of them per-pod. The split would have to be drawn
 and the hub would end up able to create a cluster but not to upgrade, scale
 down, or observe it. Rejected.
 Rejected.</p>
-<h3 id="aggregation-only-hub-then-hub-authored-spoke-crs-recommended">&copy; Aggregation-only hub, then hub-authored spoke CRs — <strong>recommended</strong><a class="headerlink" href="#aggregation-only-hub-then-hub-authored-spoke-crs-recommended" title="Anchor link to this section">&para;</a></h3>
+<h3 id="hub-authored-spoke-crs-hub-never-speaks-bolt-recommended">&copy; Hub-authored spoke CRs, hub never speaks Bolt — <strong>recommended</strong><a class="headerlink" href="#hub-authored-spoke-crs-hub-never-speaks-bolt-recommended" title="Anchor link to this section">&para;</a></h3>
 <p>Invert the direction. Each Kubernetes cluster keeps its own operator, with its
-local Bolt path unchanged. The hub gets a read-mostly view. Detailed in §5.</p>
+local Bolt path unchanged. The hub reads spoke status and writes spoke CRs, and
+never opens a Neo4j driver. Detailed in §5.</p>
+<p><em>Originally written as "aggregation-only hub, then hub-authored spoke CRs", on
+the assumption that read-only visibility was the ask. Q2 established it is not;
+the writes are the point, and the aggregation is the foundation under them. The
+load-bearing property is unchanged and is the reason this option works at all:
+</em><em>the hub never speaks Bolt.</em>**</p>
 <h3 id="d-decline-document-gitops-instead">(d) Decline — document GitOps instead<a class="headerlink" href="#d-decline-document-gitops-instead" title="Anchor link to this section">&para;</a></h3>
 <p>A large fraction of "does it support multi-cluster?" means "can I apply the
 same manifests to five clusters?" That is Argo ApplicationSets or Flux, plus
@@ -3892,7 +3912,12 @@ the operator installed per cluster, and it works today. This option costs a
 documentation page.</p>
 <p><strong>(d) is not a joke option and should ship regardless of what else does</strong> — it
 is the correct answer for most askers, and shipping it first tells you whether
-the remaining demand is real.</p>
+the remaining demand is real. It shipped as §8 item 1.</p>
+<p><strong>Q2 update: it did not close the requirement.</strong> The environments in question
+cannot be assumed to run Argo CD or Flux at all, so a guide to fanning out with
+tools that are not installed answers nobody there. (d) remains right for the
+population that <em>does</em> run GitOps, which is why it stays shipped — but it is no
+longer a candidate substitute for §5.4a.</p>
 <hr />
 <h2 id="5-the-recommended-design-option">5. The recommended design — option &copy;<a class="headerlink" href="#5-the-recommended-design-option" title="Anchor link to this section">&para;</a></h2>
 <h3 id="51-principle">5.1 Principle<a class="headerlink" href="#51-principle" title="Anchor link to this section">&para;</a></h3>
@@ -3908,7 +3933,23 @@ upgrade, scale-down draining, split-brain, diagnostics — cuts in this option's
 favour rather than against it. Under (a) those become four more things needing
 remote Bolt; under &copy; they keep working untouched, because they never leave
 the cluster they operate on.</p>
-<h3 id="52-phase-1-read-only-aggregation">5.2 Phase 1 — read-only aggregation<a class="headerlink" href="#52-phase-1-read-only-aggregation" title="Anchor link to this section">&para;</a></h3>
+<h3 id="52-phase-1-the-connection-cr">5.2 Phase 1 — the connection CR<a class="headerlink" href="#52-phase-1-the-connection-cr" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Repositioned by Q2's answer.</strong> This started as a read-only aggregation
+feature that was the whole deliverable. It is now the <em>foundation</em> for §5.4a and
+§5.4b, which both address spokes through it — so it still lands first, but its
+value is no longer the status it collects.</p>
+<p>Two things change from the read-only version:</p>
+<ul>
+<li><strong>Write RBAC.</strong> §5.4a and §5.4b write into spokes, so the kubeconfig can no
+  longer be <code>get</code>/<code>list</code>/<code>watch</code> on the Neo4j CRDs. B5 applies in full: the hub
+  namespace becomes a credential that can create Neo4j objects across the
+  estate. Scope each kubeconfig to named namespaces and the Neo4j API group;
+  do not hand the hub cluster-admin on a spoke because it is easier.</li>
+<li><strong>The status half is still worth building</strong>, because §5.4a's
+  <code>status.targets[].observedPhase</code> and §5.4b's <code>status.downstreamPhase</code> are the
+  same projection under a different name. Building it once, here, avoids two
+  divergent implementations later.</li>
+</ul>
 <p>One new CRD, hub-side only:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRemoteCluster</span>
@@ -3986,9 +4027,10 @@ one mechanism decision are worth recording:</p>
   label for matching, so existing queries and dashboards are unaffected. The
   Helm chart omits the flag entirely when the value is empty.</li>
 </ul>
-<h3 id="54-phase-2-hub-authored-spoke-crs-only-if-writes-are-genuinely-needed">5.4 Phase 2 — hub-authored spoke CRs (only if writes are genuinely needed)<a class="headerlink" href="#54-phase-2-hub-authored-spoke-crs-only-if-writes-are-genuinely-needed" title="Anchor link to this section">&para;</a></h3>
-<p>If declarative fan-out is required — "create database <code>foo</code> on these six
-clusters" — the hub <strong>writes a <code>Neo4jDatabase</code> manifest into the spoke's
+<h3 id="54a-phase-2-hub-authored-spoke-crs-1n-template-fan-out">5.4a Phase 2 — hub-authored spoke CRs (1→N template fan-out)<a class="headerlink" href="#54a-phase-2-hub-authored-spoke-crs-1n-template-fan-out" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Scope confirmed by Q2.</strong> Declarative fan-out is required — "create database
+<code>foo</code> on these six clusters" — and no GitOps tool can be assumed to be present
+to do it. The hub <strong>writes a <code>Neo4jDatabase</code> manifest into the spoke's
 namespace</strong> and the spoke's local operator reconciles it over its local Bolt
 connection. The hub still never opens a driver.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jFleetDatabase</span><span class="w">          </span><span class="c1"># hub-side</span>
@@ -4006,7 +4048,7 @@ connection. The hub still never opens a driver.</p>
 </span></code></pre></div>
 <p>This is the Open Cluster Management shape (a manifest-delivery model), and it
 is the only version of hub-side <em>writes</em> that does not require re-solving
-B1–B3. Two things to design carefully if it is ever built:</p>
+B1–B3. Three things to design carefully:</p>
 <ul>
 <li><strong>Deletion semantics.</strong> Removing a target from the selector must not silently
   drop a database. Default to orphan-and-warn, mirroring §5.5 of the CCDR
@@ -4014,10 +4056,76 @@ B1–B3. Two things to design carefully if it is ever built:</p>
   data-loss event").</li>
 <li><strong>GitOps collision.</strong> A hub writing objects into a spoke that Argo also
   manages produces exactly the out-of-sync/prune fight the CCDR design cited
-  when it rejected an operator-authored handoff. The hub's written objects need
-  a documented ownership label and an Argo ignore convention, or the two
-  controllers will fight.</li>
+  when it rejected an operator-authored handoff. Q2 establishes that Argo cannot
+  be <em>assumed</em> present, which is not the same as it never being present — the
+  hub's written objects need a documented ownership label and an Argo ignore
+  convention, or the two controllers will fight wherever both exist.</li>
+<li><strong>Fleet-aware validation is the part Argo could never have done.</strong> Fanning one
+  <code>Neo4jBackup</code> storage path across six clusters interleaves six backup chains
+  into one directory — a footgun the multi-cluster user guide has to warn about
+  in prose today precisely because no delivery tool understands it. A fan-out
+  controller that knows Neo4j semantics can reject it at apply time. This, not
+  the delivery itself, is the durable justification for the CRD.</li>
 </ul>
+<h3 id="54b-phase-2-ccdr-pairing-11-configuration-propagation">5.4b Phase 2 — CCDR pairing (1→1 configuration propagation)<a class="headerlink" href="#54b-phase-2-ccdr-pairing-11-configuration-propagation" title="Anchor link to this section">&para;</a></h3>
+<p><strong>The highest-value hub action, and the cheapest.</strong> Unlike §5.4a this has no
+alternative at all: it is the one thing neither a local operator nor a GitOps
+tool can do, because it moves <em>configuration between two clusters</em> rather than
+delivering the same configuration to many.</p>
+<p>Today the CCDR runbook is documented copy-paste in both directions — the
+upstream publishes <code>status.crossClusterReplication.addresses</code> (network mode) or
+<code>status.replicationPullURI</code> (backup mode), the downstream needs them in
+<code>spec.source.*</code>, and the peer CA has to be hand-copied into
+<code>spec.tls.additionalClusterTrustCAs</code>. <code>upstreamClusterRef</code> automates exactly one
+case and says so honestly: it "resolves via a live <code>Get</code> against this operator's
+own Kubernetes API server, so it can only ever reach an upstream on this same
+physical cluster." A hub holding both kubeconfigs is precisely the thing that
+lifts that restriction.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jFleetReplicaPairing</span><span class="w">     </span><span class="c1"># hub-side</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">upstream</span><span class="p">:</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">remoteClusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eu-west-prod</span><span class="w">        </span><span class="c1"># a Neo4jRemoteCluster</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="nt">clusterName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">downstream</span><span class="p">:</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="nt">remoteClusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">us-east-dr</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="nt">clusterName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="nt">replicaName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-replica</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">  </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">network</span><span class="w">                            </span><span class="c1"># network | backup</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">  </span><span class="nt">phase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Paired</span><span class="w">                            </span><span class="c1"># Pending | Propagating | Paired | Failed</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="nt">propagated</span><span class="p">:</span>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">    </span><span class="nt">addresses</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"lb-eu-west.example.com:16000"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">    </span><span class="nt">caSecret</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eu-west-prod-ca</span><span class="w">              </span><span class="c1"># written into the downstream namespace</span>
+</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">    </span><span class="nt">observedUpstreamDatabaseID</span><span class="p">:</span><span class="w"> </span><span class="s">"..."</span><span class="w">      </span><span class="c1"># detects the silent detach; see below</span>
+</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">  </span><span class="nt">downstreamPhase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Replicating</span><span class="w">             </span><span class="c1"># reflected from the spoke's replica CR</span>
+</span></code></pre></div>
+<p>The controller reads the upstream's published status and CA Secret, writes the
+downstream's <code>Neo4jReplicaDatabase</code> and trust Secret, and reflects the
+downstream replica's observed phase back. It never opens a Neo4j driver.</p>
+<p>Two design notes specific to this shape:</p>
+<ul>
+<li><strong>It can finally close the CCDR design's B8</strong> (<em>not</em> this document's B8, which
+  is TLS trust — the two numbering schemes are independent).
+  <a href="../cross-cluster-replication/"><code>cross-cluster-replication.md</code></a> records that
+  "restoring or recreating an upstream database silently detaches its replicas"
+  and that the operator "cannot [detect it], since replicas live in a different
+  Kubernetes cluster with no back-reference." A pairing CR <em>is</em> that
+  back-reference. Recording the upstream database ID in
+  <code>status.propagated.observedUpstreamDatabaseID</code> turns a silent detach into a
+  detected one — a warning event and a <code>Failed</code> phase instead of a replica that
+  quietly stops advancing. This is a correctness win, not an ergonomic one, and
+  it is unavailable by any other route.</li>
+<li><strong>It must never promote.</strong> Propagating configuration is safe and idempotent;
+  failover is not. <code>Neo4jReplicaPromotion</code> stays a spoke-side one-shot CR
+  applied deliberately by a human, for exactly the reasons §5.2 of the CCDR
+  design gives. A hub that can promote is a hub that can promote by accident.</li>
+</ul>
+<p><strong>Cheaper than §5.4a</strong> — no selector, no templating, no fan-out deletion
+semantics, and the blast radius of a bug is one replica rather than a fleet.
+It should therefore land first, despite being listed second.</p>
 <h3 id="55-what-option-explicitly-does-not-give-you">5.5 What option &copy; explicitly does not give you<a class="headerlink" href="#55-what-option-explicitly-does-not-give-you" title="Anchor link to this section">&para;</a></h3>
 <p>Stated plainly, because a hub that quietly does less than expected is worse
 than one that declines:</p>
@@ -4079,17 +4187,39 @@ than one that declines:</p>
 <li><del><strong>Option (d)</strong> — a <code>docs/user_guide/guides/multi_cluster.md</code> page covering
    ApplicationSet/Flux fan-out with a per-cluster operator</del> → <strong>done.</strong>
    Cheapest, correct for most askers, and a demand probe for everything below.</li>
-<li><del><strong>§5.3</strong> — <code>--cluster-name</code> flag + metric label + a federation example</del> →
+<li>
+<p><del><strong>§5.3</strong> — <code>--cluster-name</code> flag + metric label + a federation example</del> →
    <strong>done</strong>, as <code>--kubernetes-cluster-name</code> / <code>k8s_cluster</code> (§5.3). No new API
-   surface.</li>
-<li><strong>§5.2</strong> — <code>Neo4jRemoteCluster</code>, read-only aggregation, with the full
-   hand-written-surface checklist from <code>CLAUDE.md</code> (api_reference, index, README,
-   nav, ArgoCD health check keyed off the <code>Ready</code> <strong>condition</strong>, CSV, helm-sync
-   <code>describe()</code> row, sample, <code>devControllerKeys</code>).</li>
-<li><strong>§5.4</strong> — <code>Neo4jFleetDatabase</code> manifest delivery, only on evidence from 1–3
-   that read-only aggregation is insufficient.</li>
+   surface.
+Revised after Q2. The old order deferred fan-out behind a read-only
+aggregation feature that turned out not to be the ask; the new order puts the
+foundation first, then the <em>cheaper and higher-value</em> of the two actions.</p>
+</li>
+<li>
+<p><strong>§5.2</strong> — <code>Neo4jRemoteCluster</code> with write-scoped kubeconfigs and the status
+   projection, plus the full hand-written-surface checklist from <code>CLAUDE.md</code>
+   (api_reference, index, README, nav, ArgoCD health check keyed off the <code>Ready</code>
+   <strong>condition</strong>, CSV, helm-sync <code>describe()</code> row, sample, <code>devControllerKeys</code>).
+   Foundation for both actions below; not shippable value on its own.</p>
+</li>
+<li><strong>§5.4b</strong> — <code>Neo4jFleetReplicaPairing</code>. Ahead of §5.4a deliberately: no
+   selector, no templating, no fan-out deletion semantics, a one-replica blast
+   radius, and it closes the CCDR design's B8 (the silent replica detach), which
+   nothing else can. The <code>Neo4jReplicaPromotion</code> path stays spoke-side and is
+   explicitly out of scope.</li>
+<li><strong>§5.4a</strong> — <code>Neo4jFleetDatabase</code> (and, if it earns it, the user/role
+   equivalents). Bigger: selector semantics, orphan-and-warn deletion, and the
+   fleet-aware validation that is its real justification.</li>
 <li><strong>Option (a)</strong> — not scheduled. §6 is its prerequisite list.</li>
 </ol>
+<p><strong>Testing caveat carried forward from §7.</strong> Items 4 and 5 both need two Kind
+clusters with a live Enterprise deployment in at least one of them. §5.4b needs
+a <em>live</em> deployment on both sides to be tested end to end, which the
+one-Enterprise-deployment-at-a-time rule forbids on a laptop — so its
+integration coverage is CRD/controller-level (does the hub write the right
+downstream spec from a fixture upstream status?), with the live pairing walked
+in the manual pre-release journey. Say so in the PR rather than implying the
+automated suite covers it.</p>
 <hr />
 <h2 id="9-open-questions">9. Open questions<a class="headerlink" href="#9-open-questions" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Q1 — Is a stretched single Neo4j cluster across Kubernetes clusters worth a
@@ -4103,12 +4233,26 @@ reduces to letting the discovery endpoint list include servers the local
 StatefulSet does not own. Even then, two independent control planes each
 believing they own part of one DBMS is an unsolved ownership problem. Neo4j's
 own answer to geo-distribution is CCDR.</p>
-<p><strong>Q2 — Does the aggregated status actually satisfy the requirement?</strong> Everything
-§5.2 surfaces is already in spoke <code>status</code>. If the real ask is cross-cluster
-<em>actions</em> rather than cross-cluster <em>visibility</em>, Phase 1 is a detour and the
-question becomes §5.4 vs. (d) directly. <strong>This should be answered by a user
-before item 3 in §8 is started</strong>, because it is the difference between a
-one-CRD feature and a fan-out delivery controller.</p>
+<p><strong>Q2 — ANSWERED: actions, not visibility.</strong> The requirement is cross-cluster
+<em>actions</em>, specifically (a) database / user / role lifecycle fanned out across
+clusters and (b) automating the CCDR upstream→downstream pairing. <strong>And the
+target environments cannot be assumed to run Argo CD or Flux.</strong></p>
+<p>Three consequences, none of which was the expected one:</p>
+<ol>
+<li><strong>Read-only aggregation (§5.2) is not the deliverable, but the connection CR
+   does not go away.</strong> §5.4a's selector selects <code>Neo4jRemoteCluster</code> objects, so
+   a CR holding a per-spoke kubeconfig is still the foundation — it just needs
+   <em>write</em> RBAC, which makes B5 bite properly instead of being the easy security
+   conversation the read-only version enjoyed.</li>
+<li><strong>The "Argo already does this" objection dies.</strong> It was the strongest
+   argument against a fan-out controller: <code>Neo4jFleetDatabase</code> delivers a
+   manifest to N clusters, and so does an ApplicationSet, with drift correction
+   and a UI besides. With no GitOps tool present, delivery is unsolved and the
+   operator has to provide it.</li>
+<li><strong>The two named actions are different shapes and must not be merged into one
+   CRD.</strong> Fan-out is 1→N template delivery; CCDR pairing is 1→1 configuration
+   propagation. See §5.4a and §5.4b.</li>
+</ol>
 <p><strong>Q3 — Should <code>Neo4jRemoteCluster</code> reuse the Aura fleet plumbing?</strong>
 <code>spec.auraFleetManagement</code> already registers deployments with a cross-cluster
 fleet service, and <code>fleet_target.go</code> already abstracts "cluster or standalone"
