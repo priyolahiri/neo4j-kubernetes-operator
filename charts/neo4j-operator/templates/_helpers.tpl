@@ -203,5 +203,8 @@ Get container args based on configuration
 - --metrics-bind-address=0
 {{- end }}
 - --health-probe-bind-address=:8081
+{{- if .Values.kubernetesClusterName }}
+- --kubernetes-cluster-name={{ .Values.kubernetesClusterName }}
+{{- end }}
 
 {{- end }}

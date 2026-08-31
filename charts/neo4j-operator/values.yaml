@@ -28,6 +28,17 @@ watchNamespaces: []
 developmentMode: false
 logLevel: info  # debug, info, warn, error
 
+# Name of the Kubernetes cluster this operator instance runs in. When set, every
+# neo4j_operator_server_health series carries it as the `k8s_cluster` label, so
+# metrics federated from several Kubernetes clusters into one Prometheus stay
+# distinguishable even when the Neo4j cluster name and namespace are identical
+# in each. Empty (the default) emits an empty label, which Prometheus treats as
+# absent — existing queries and dashboards are unaffected.
+#
+# NOT the same thing as the `cluster_name` label, which means the *Neo4j*
+# cluster. See docs/user_guide/guides/multi_cluster.md.
+kubernetesClusterName: ""
+
 serviceAccount:
   # Specifies whether a service account should be created
   create: true

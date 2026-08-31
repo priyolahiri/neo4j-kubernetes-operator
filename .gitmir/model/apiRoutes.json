@@ -4,7 +4,7 @@
     "method": "GET",
     "path": "/metrics",
     "name": "Operator metrics",
-    "description": "Prometheus metrics endpoint for the operator's own controller-runtime manager (neo4j_operator_server_health and friends), bound to --metrics-bind-address (default :8080).",
+    "description": "Prometheus metrics endpoint for the operator's own controller-runtime manager (neo4j_operator_server_health and friends), bound to --metrics-bind-address (default :8080). neo4j_operator_server_health additionally carries a k8s_cluster label naming the Kubernetes cluster this operator instance runs in, set via --kubernetes-cluster-name; it is empty unless that flag is supplied, so scrapes from several clusters can be federated without series colliding.",
     "serverUnitId": "su-platform-manager",
     "moduleId": "mod-platform",
     "auth": false

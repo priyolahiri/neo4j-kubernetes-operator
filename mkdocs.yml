@@ -145,6 +145,7 @@ nav:
       - Upgrades: user_guide/guides/upgrades.md
       - Storage Expansion: user_guide/guides/storage_expansion.md
       - Fault Tolerance: user_guide/guides/fault_tolerance.md
+      - Multiple Kubernetes Clusters: user_guide/guides/multi_cluster.md
       - Monitoring:
           - Overview: user_guide/guides/monitoring.md
           - Prometheus & Grafana: user_guide/guides/prometheus-grafana-setup.md

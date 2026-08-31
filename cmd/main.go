@@ -36,6 +36,7 @@ import (
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/controller"
+	operatormetrics "github.com/priyolahiri/neo4j-kubernetes-operator/internal/metrics"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -153,6 +154,12 @@ func main() {
 		enableLeaderElection = flag.Bool("leader-elect", false, "Enable leader election for controller manager.")
 		secureMetrics        = flag.Bool("metrics-secure", false, "If set the metrics endpoint is served securely")
 
+		// Identifies which Kubernetes cluster this operator instance runs in,
+		// so metrics scraped from several clusters into one Prometheus stay
+		// distinguishable. Deliberately not --cluster-name: `cluster_name` is
+		// already an established metric label meaning the *Neo4j* cluster.
+		kubernetesClusterName = flag.String("kubernetes-cluster-name", "", "Name of the Kubernetes cluster this operator runs in; emitted as the k8s_cluster metric label (default: unset, label empty)")
+
 		// Development mode specific flags
 		// Must stay in sync with the dev controller registry in
 		// setupDevelopmentControllers — a key that is registered but missing here
@@ -171,6 +178,10 @@ func main() {
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	// Must happen before the manager starts so that no controller records a
+	// metric before the label is available.
+	operatormetrics.SetKubernetesClusterName(*kubernetesClusterName)
 
 	// Validate and normalize mode
 	operatorMode := OperatorMode(strings.ToLower(*mode))
