@@ -3,7 +3,10 @@
 > **Status:** Analysis, plus the two cheapest delivery items shipped
 > (§8 items 1–2: the GitOps fan-out guide and the `k8s_cluster` metric label).
 > The hub itself is unbuilt, and §5 argues that the literal reading of the
-> request should not be built.
+> request should not be built. **§9 Q2 is now answered — the requirement is
+> cross-cluster *actions*, with no GitOps tool assumable — which repositions
+> §5.2 as a foundation rather than a deliverable and splits §5.4 into two
+> differently-shaped controllers. §8's order is revised accordingly.**
 > **Source:** this repository, read at commit `33a3204`; the CCDR design
 > (`cross-cluster-replication.md`), whose B1 recurs here in a worse form;
 > controller-runtime v0.24.1 (`go.mod:22`).
@@ -274,10 +277,17 @@ and the hub would end up able to create a cluster but not to upgrade, scale
 down, or observe it. Rejected.
 Rejected.
 
-### (c) Aggregation-only hub, then hub-authored spoke CRs — **recommended**
+### (c) Hub-authored spoke CRs, hub never speaks Bolt — **recommended**
 
 Invert the direction. Each Kubernetes cluster keeps its own operator, with its
-local Bolt path unchanged. The hub gets a read-mostly view. Detailed in §5.
+local Bolt path unchanged. The hub reads spoke status and writes spoke CRs, and
+never opens a Neo4j driver. Detailed in §5.
+
+*Originally written as "aggregation-only hub, then hub-authored spoke CRs", on
+the assumption that read-only visibility was the ask. Q2 established it is not;
+the writes are the point, and the aggregation is the foundation under them. The
+load-bearing property is unchanged and is the reason this option works at all:
+**the hub never speaks Bolt.***
 
 ### (d) Decline — document GitOps instead
 
@@ -288,7 +298,13 @@ documentation page.
 
 **(d) is not a joke option and should ship regardless of what else does** — it
 is the correct answer for most askers, and shipping it first tells you whether
-the remaining demand is real.
+the remaining demand is real. It shipped as §8 item 1.
+
+**Q2 update: it did not close the requirement.** The environments in question
+cannot be assumed to run Argo CD or Flux at all, so a guide to fanning out with
+tools that are not installed answers nobody there. (d) remains right for the
+population that *does* run GitOps, which is why it stays shipped — but it is no
+longer a candidate substitute for §5.4a.
 
 ---
 
@@ -309,7 +325,24 @@ favour rather than against it. Under (a) those become four more things needing
 remote Bolt; under (c) they keep working untouched, because they never leave
 the cluster they operate on.
 
-### 5.2 Phase 1 — read-only aggregation
+### 5.2 Phase 1 — the connection CR
+
+**Repositioned by Q2's answer.** This started as a read-only aggregation
+feature that was the whole deliverable. It is now the *foundation* for §5.4a and
+§5.4b, which both address spokes through it — so it still lands first, but its
+value is no longer the status it collects.
+
+Two things change from the read-only version:
+
+- **Write RBAC.** §5.4a and §5.4b write into spokes, so the kubeconfig can no
+  longer be `get`/`list`/`watch` on the Neo4j CRDs. B5 applies in full: the hub
+  namespace becomes a credential that can create Neo4j objects across the
+  estate. Scope each kubeconfig to named namespaces and the Neo4j API group;
+  do not hand the hub cluster-admin on a spoke because it is easier.
+- **The status half is still worth building**, because §5.4a's
+  `status.targets[].observedPhase` and §5.4b's `status.downstreamPhase` are the
+  same projection under a different name. Building it once, here, avoids two
+  divergent implementations later.
 
 One new CRD, hub-side only:
 
@@ -394,10 +427,11 @@ one mechanism decision are worth recording:
   label for matching, so existing queries and dashboards are unaffected. The
   Helm chart omits the flag entirely when the value is empty.
 
-### 5.4 Phase 2 — hub-authored spoke CRs (only if writes are genuinely needed)
+### 5.4a Phase 2 — hub-authored spoke CRs (1→N template fan-out)
 
-If declarative fan-out is required — "create database `foo` on these six
-clusters" — the hub **writes a `Neo4jDatabase` manifest into the spoke's
+**Scope confirmed by Q2.** Declarative fan-out is required — "create database
+`foo` on these six clusters" — and no GitOps tool can be assumed to be present
+to do it. The hub **writes a `Neo4jDatabase` manifest into the spoke's
 namespace** and the spoke's local operator reconciles it over its local Bolt
 connection. The hub still never opens a driver.
 
@@ -418,7 +452,7 @@ status:
 
 This is the Open Cluster Management shape (a manifest-delivery model), and it
 is the only version of hub-side *writes* that does not require re-solving
-B1–B3. Two things to design carefully if it is ever built:
+B1–B3. Three things to design carefully:
 
 - **Deletion semantics.** Removing a target from the selector must not silently
   drop a database. Default to orphan-and-warn, mirroring §5.5 of the CCDR
@@ -426,9 +460,82 @@ B1–B3. Two things to design carefully if it is ever built:
   data-loss event").
 - **GitOps collision.** A hub writing objects into a spoke that Argo also
   manages produces exactly the out-of-sync/prune fight the CCDR design cited
-  when it rejected an operator-authored handoff. The hub's written objects need
-  a documented ownership label and an Argo ignore convention, or the two
-  controllers will fight.
+  when it rejected an operator-authored handoff. Q2 establishes that Argo cannot
+  be *assumed* present, which is not the same as it never being present — the
+  hub's written objects need a documented ownership label and an Argo ignore
+  convention, or the two controllers will fight wherever both exist.
+- **Fleet-aware validation is the part Argo could never have done.** Fanning one
+  `Neo4jBackup` storage path across six clusters interleaves six backup chains
+  into one directory — a footgun the multi-cluster user guide has to warn about
+  in prose today precisely because no delivery tool understands it. A fan-out
+  controller that knows Neo4j semantics can reject it at apply time. This, not
+  the delivery itself, is the durable justification for the CRD.
+
+### 5.4b Phase 2 — CCDR pairing (1→1 configuration propagation)
+
+**The highest-value hub action, and the cheapest.** Unlike §5.4a this has no
+alternative at all: it is the one thing neither a local operator nor a GitOps
+tool can do, because it moves *configuration between two clusters* rather than
+delivering the same configuration to many.
+
+Today the CCDR runbook is documented copy-paste in both directions — the
+upstream publishes `status.crossClusterReplication.addresses` (network mode) or
+`status.replicationPullURI` (backup mode), the downstream needs them in
+`spec.source.*`, and the peer CA has to be hand-copied into
+`spec.tls.additionalClusterTrustCAs`. `upstreamClusterRef` automates exactly one
+case and says so honestly: it "resolves via a live `Get` against this operator's
+own Kubernetes API server, so it can only ever reach an upstream on this same
+physical cluster." A hub holding both kubeconfigs is precisely the thing that
+lifts that restriction.
+
+```yaml
+kind: Neo4jFleetReplicaPairing     # hub-side
+spec:
+  upstream:
+    remoteClusterRef: eu-west-prod        # a Neo4jRemoteCluster
+    namespace: neo4j
+    clusterName: prod
+    database: analytics
+  downstream:
+    remoteClusterRef: us-east-dr
+    namespace: dr
+    clusterName: dr-cluster
+    replicaName: analytics-replica
+  mode: network                            # network | backup
+status:
+  phase: Paired                            # Pending | Propagating | Paired | Failed
+  propagated:
+    addresses: ["lb-eu-west.example.com:16000"]
+    caSecret: eu-west-prod-ca              # written into the downstream namespace
+    observedUpstreamDatabaseID: "..."      # detects the silent detach; see below
+  downstreamPhase: Replicating             # reflected from the spoke's replica CR
+```
+
+The controller reads the upstream's published status and CA Secret, writes the
+downstream's `Neo4jReplicaDatabase` and trust Secret, and reflects the
+downstream replica's observed phase back. It never opens a Neo4j driver.
+
+Two design notes specific to this shape:
+
+- **It can finally close the CCDR design's B8** (*not* this document's B8, which
+  is TLS trust — the two numbering schemes are independent).
+  [`cross-cluster-replication.md`](cross-cluster-replication.md) records that
+  "restoring or recreating an upstream database silently detaches its replicas"
+  and that the operator "cannot [detect it], since replicas live in a different
+  Kubernetes cluster with no back-reference." A pairing CR *is* that
+  back-reference. Recording the upstream database ID in
+  `status.propagated.observedUpstreamDatabaseID` turns a silent detach into a
+  detected one — a warning event and a `Failed` phase instead of a replica that
+  quietly stops advancing. This is a correctness win, not an ergonomic one, and
+  it is unavailable by any other route.
+- **It must never promote.** Propagating configuration is safe and idempotent;
+  failover is not. `Neo4jReplicaPromotion` stays a spoke-side one-shot CR
+  applied deliberately by a human, for exactly the reasons §5.2 of the CCDR
+  design gives. A hub that can promote is a hub that can promote by accident.
+
+**Cheaper than §5.4a** — no selector, no templating, no fan-out deletion
+semantics, and the blast radius of a bug is one replica rather than a fleet.
+It should therefore land first, despite being listed second.
 
 ### 5.5 What option (c) explicitly does not give you
 
@@ -500,13 +607,33 @@ Items 1 and 2 are the ones with no cheap version.
 2. ~~**§5.3** — `--cluster-name` flag + metric label + a federation example~~ →
    **done**, as `--kubernetes-cluster-name` / `k8s_cluster` (§5.3). No new API
    surface.
-3. **§5.2** — `Neo4jRemoteCluster`, read-only aggregation, with the full
-   hand-written-surface checklist from `CLAUDE.md` (api_reference, index, README,
-   nav, ArgoCD health check keyed off the `Ready` **condition**, CSV, helm-sync
-   `describe()` row, sample, `devControllerKeys`).
-4. **§5.4** — `Neo4jFleetDatabase` manifest delivery, only on evidence from 1–3
-   that read-only aggregation is insufficient.
-5. **Option (a)** — not scheduled. §6 is its prerequisite list.
+Revised after Q2. The old order deferred fan-out behind a read-only
+aggregation feature that turned out not to be the ask; the new order puts the
+foundation first, then the *cheaper and higher-value* of the two actions.
+
+3. **§5.2** — `Neo4jRemoteCluster` with write-scoped kubeconfigs and the status
+   projection, plus the full hand-written-surface checklist from `CLAUDE.md`
+   (api_reference, index, README, nav, ArgoCD health check keyed off the `Ready`
+   **condition**, CSV, helm-sync `describe()` row, sample, `devControllerKeys`).
+   Foundation for both actions below; not shippable value on its own.
+4. **§5.4b** — `Neo4jFleetReplicaPairing`. Ahead of §5.4a deliberately: no
+   selector, no templating, no fan-out deletion semantics, a one-replica blast
+   radius, and it closes the CCDR design's B8 (the silent replica detach), which
+   nothing else can. The `Neo4jReplicaPromotion` path stays spoke-side and is
+   explicitly out of scope.
+5. **§5.4a** — `Neo4jFleetDatabase` (and, if it earns it, the user/role
+   equivalents). Bigger: selector semantics, orphan-and-warn deletion, and the
+   fleet-aware validation that is its real justification.
+6. **Option (a)** — not scheduled. §6 is its prerequisite list.
+
+**Testing caveat carried forward from §7.** Items 4 and 5 both need two Kind
+clusters with a live Enterprise deployment in at least one of them. §5.4b needs
+a *live* deployment on both sides to be tested end to end, which the
+one-Enterprise-deployment-at-a-time rule forbids on a laptop — so its
+integration coverage is CRD/controller-level (does the hub write the right
+downstream spec from a fixture upstream status?), with the live pairing walked
+in the manual pre-release journey. Say so in the PR rather than implying the
+automated suite covers it.
 
 ---
 
@@ -524,12 +651,26 @@ StatefulSet does not own. Even then, two independent control planes each
 believing they own part of one DBMS is an unsolved ownership problem. Neo4j's
 own answer to geo-distribution is CCDR.
 
-**Q2 — Does the aggregated status actually satisfy the requirement?** Everything
-§5.2 surfaces is already in spoke `status`. If the real ask is cross-cluster
-*actions* rather than cross-cluster *visibility*, Phase 1 is a detour and the
-question becomes §5.4 vs. (d) directly. **This should be answered by a user
-before item 3 in §8 is started**, because it is the difference between a
-one-CRD feature and a fan-out delivery controller.
+**Q2 — ANSWERED: actions, not visibility.** The requirement is cross-cluster
+*actions*, specifically (a) database / user / role lifecycle fanned out across
+clusters and (b) automating the CCDR upstream→downstream pairing. **And the
+target environments cannot be assumed to run Argo CD or Flux.**
+
+Three consequences, none of which was the expected one:
+
+1. **Read-only aggregation (§5.2) is not the deliverable, but the connection CR
+   does not go away.** §5.4a's selector selects `Neo4jRemoteCluster` objects, so
+   a CR holding a per-spoke kubeconfig is still the foundation — it just needs
+   *write* RBAC, which makes B5 bite properly instead of being the easy security
+   conversation the read-only version enjoyed.
+2. **The "Argo already does this" objection dies.** It was the strongest
+   argument against a fan-out controller: `Neo4jFleetDatabase` delivers a
+   manifest to N clusters, and so does an ApplicationSet, with drift correction
+   and a UI besides. With no GitOps tool present, delivery is unsolved and the
+   operator has to provide it.
+3. **The two named actions are different shapes and must not be merged into one
+   CRD.** Fan-out is 1→N template delivery; CCDR pairing is 1→1 configuration
+   propagation. See §5.4a and §5.4b.
 
 **Q3 — Should `Neo4jRemoteCluster` reuse the Aura fleet plumbing?**
 `spec.auraFleetManagement` already registers deployments with a cross-cluster
