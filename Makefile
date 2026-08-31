@@ -451,6 +451,10 @@ check-drift: sync-all bundle ## CI gate: regenerate everything and fail if anyth
 check-invariants: ## Verify the 5 hard architectural invariants hold (grep guard; runtime image check lives in image_validator.go).
 	@./scripts/check-invariants.sh
 
+.PHONY: check-cli-asset-names
+check-cli-asset-names: ## Verify the kubectl-neo4j release asset naming convention matches everywhere it is pinned.
+	@./scripts/check-cli-asset-names.sh
+
 .PHONY: check-knowledge-drift
 check-knowledge-drift: ## Verify every 'pinned-by:'/file reference in docs/knowledge/ still resolves to a real path.
 	@./scripts/check-knowledge-drift.sh

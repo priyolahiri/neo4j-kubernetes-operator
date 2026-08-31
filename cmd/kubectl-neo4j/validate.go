@@ -159,6 +159,11 @@ Usage:
 Runs offline. No cluster connection is made, so checks that resolve
 cross-references (clusterRef, Secrets) are reported as skipped.
 
+Note: the operator stops validating a resource after certain critical errors
+(an invalid image, for example), so fixing the reported errors and re-running
+may surface further ones. A clean run means nothing further is reachable, not
+that nothing was ever wrong.
+
 Exit codes: 0 clean, 1 validation errors (or warnings with --strict), 2 usage.
 
 Flags:

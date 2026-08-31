@@ -408,10 +408,24 @@ honest options are recorded in §9 Q5 rather than papered over.
 1. **`validate`, offline only** (§6). One command, no cluster, no release
    pipeline yet — buildable and reviewable as a normal PR, with `go run` and
    `make` targets for local use.
-2. **Cross-compile matrix in `release.yml`** (revised B1). Much smaller than
-   first assessed — a `GOOS`/`GOARCH` matrix writing into `release-artifacts/`,
-   which the existing release step already globs. Settle the asset naming
-   convention here, before anything pins to it.
+2. ~~**Cross-compile matrix in `release.yml`** (revised B1)~~ → **done.** A
+   `GOOS`/`GOARCH` matrix writing into `release-artifacts/`, which the existing
+   release step already globs — no new workflow, as the revised B1 predicted.
+   Five targets, tar.gz for unix and zip for Windows, one checksums file, with
+   an assertion that fails the release rather than shipping a partial asset set.
+
+   The asset naming convention is settled as
+   `kubectl-neo4j_<version>_<os>_<arch>.<ext>` and is now pinned in three
+   places — the release workflow, the release-notes template and the CLI guide.
+   Because that string is a public contract that krew manifests and install
+   scripts depend on, `scripts/check-cli-asset-names.sh` fails CI if the three
+   ever disagree. This repo's own lesson about the CRD catalogue applies
+   directly: two of three surfaces being right is the shape of a drift review
+   miss.
+
+   A CI cross-compile step (`ci.yml`) builds all five targets on every PR, so a
+   unix-only import reaching `cmd/` fails a pull request rather than a tagged
+   release.
 3. **`validate --context`** — the 8 cross-reference validators.
 4. **`status`** (§4.2), then **`connect` / `cypher`** (§4.3).
 5. **krew index submission** (B6), once the command set is stable enough that
