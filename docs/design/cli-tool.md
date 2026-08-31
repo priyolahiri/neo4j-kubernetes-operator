@@ -8,6 +8,10 @@
 > it is for, which commands justify themselves, and what it would cost. The
 > audience is decided: **the customer operating a Neo4j deployment**, not Neo4j
 > support or field engineering — that choice reorders everything in §4.
+> **Update:** §9 Q2 is answered — binaries ship with the operator's existing
+> release, under the operator's existing support statement. That revised B1
+> down substantially (the release workflow already attaches assets by glob) and
+> largely resolved Q4.
 > **Headline:** the strongest case is not convenience, it is a structural gap.
 > Invariant 1 forbids admission webhooks, so the operator's 29 validators only
 > ever speak to a user *after* they apply, through status and events. A CLI
@@ -117,16 +121,39 @@ fighting it.
 
 Ranked.
 
-### B1 — There is no binary release pipeline *(the largest new surface)*
+### B1 — Binaries need cross-compilation, but not a new pipeline *(revised down)*
 
-`.github/workflows/release.yml` builds **container images** with buildx for
-`linux/amd64,linux/arm64`. It produces no binaries at all. A CLI needs
-darwin/arm64, darwin/amd64, linux/amd64, linux/arm64 and windows/amd64,
-checksums, and a signing story — a genuinely new release surface (goreleaser or
-equivalent), not an increment on the existing one.
+**Corrected after Q2 was answered.** This blocker was first written as "the
+largest new surface … a genuinely new release surface (goreleaser or
+equivalent), not an increment." That was wrong, and the correction matters
+because it was the main cost argument against building anything.
 
-This is the cost most likely to be underestimated, because the *code* for a
-first command is small and the *distribution* is not.
+`.github/workflows/release.yml` builds container images with buildx
+(`linux/amd64,linux/arm64`) — true — but it **already creates a GitHub Release
+and attaches assets by glob**:
+
+```yaml
+- name: Create GitHub Release
+  uses: softprops/action-gh-release@v3
+  with:
+    files: |
+      release-artifacts/*
+```
+
+So publishing binaries is: add a cross-compile matrix step that writes into
+`release-artifacts/`, and the existing glob attaches them. No new workflow, no
+new release event, no goreleaser required.
+
+What genuinely remains:
+
+- five platform targets (darwin/arm64, darwin/amd64, linux/amd64, linux/arm64,
+  windows/amd64), which is a `GOOS`/`GOARCH` matrix over one `go build`;
+- a stable asset naming convention, because krew (B6) and any install script
+  will depend on it — decide it once, before the first release, since renaming
+  assets later breaks every pinned installer;
+- checksums, and a decision on signing.
+
+Real work, but bounded, and an increment on machinery that exists.
 
 ### B2 — `internal/` forbids the library story without an API commitment
 
@@ -141,8 +168,16 @@ very different costs:
   compatibility on, forever, for code currently free to change shape every
   release.
 
-**Recommendation: ship the binary story only, and say so explicitly.** Do not
-promote to `pkg/` speculatively.
+Q2's answer lowers this cost without removing it. The project's stated posture
+is that "APIs and behaviour **may change between releases without notice**"
+(`README.md`), so a `pkg/` promotion would not create the open-ended
+compatibility debt it would in a project promising stability. It would still
+create an import surface that people depend on in practice regardless of what
+the README says.
+
+**Recommendation stands: ship the binary story only, and say so explicitly.**
+It is what CI actually wants, it costs nothing, and it can be revisited if
+anyone ever asks for the library. Do not promote to `pkg/` speculatively.
 
 ### B3 — A CLI is a second source of truth, in a codebase built around not having those
 
@@ -329,8 +364,10 @@ shared-package discipline will not hold, and it is far cheaper to learn now.
 1. **`validate`, offline only** (§6). One command, no cluster, no release
    pipeline yet — buildable and reviewable as a normal PR, with `go run` and
    `make` targets for local use.
-2. **Binary release pipeline** (B1). Only once there is something worth
-   shipping. goreleaser for the five platform targets plus checksums.
+2. **Cross-compile matrix in `release.yml`** (revised B1). Much smaller than
+   first assessed — a `GOOS`/`GOARCH` matrix writing into `release-artifacts/`,
+   which the existing release step already globs. Settle the asset naming
+   convention here, before anything pins to it.
 3. **`validate --context`** — the 8 cross-reference validators.
 4. **`status`** (§4.2), then **`connect` / `cypher`** (§4.3).
 5. **krew index submission** (B6), once the command set is stable enough that
@@ -350,19 +387,45 @@ how often customers actually hit rules in that remainder versus schema rules
 the API server already catches. The first slice is cheap enough to answer this
 empirically rather than argue about it.
 
-**Q2 — Who publishes the binaries, and under what support expectation?** A CLI
-that customers install is a supported artifact in their eyes whether or not it
-is labelled one. This is a support-posture question, not a technical one, and
-it should be settled before B1 is built rather than after customers have it.
+**Q2 — ANSWERED.** Binaries are published **as part of this operator's existing
+release process**, on the same git tag, at the same cadence, and carry **the
+same support guarantees as the operator project** — that is, `README.md`'s
+statement verbatim: best-effort via GitHub issues, no official or commercial
+support, no SLA, and APIs and behaviour may change between releases without
+notice.
+
+Three consequences, all of which make the CLI cheaper than this document
+originally assumed:
+
+1. **B1 shrinks to a cross-compile matrix** (see the revised B1) — the release
+   workflow already attaches `release-artifacts/*` to a GitHub Release.
+2. **Q4 largely dissolves.** Lockstep versioning means a CLI and an operator
+   from the same tag agree by construction.
+3. **The CLI inherits the operator's support statement rather than needing its
+   own.** The docs must repeat it at the install instructions rather than
+   leaving customers to infer that a downloadable binary is more supported than
+   the operator it ships with.
 
 **Q3 — Does the CLI overlap the MCP server enough to matter?** Both exist to
 make the operator legible; one to humans, one to agents. If `explain` and the
 MCP server end up encoding the same troubleshooting knowledge in two places,
 that is B3 in a new costume. Worth checking before §8 item 6, not before item 1.
 
-**Q4 — Version skew.** A CLI validating manifests for an operator version other
-than the one it was built against will eventually be wrong — a rule added in
-v1.16 will not be enforced by a v1.14 CLI, and a removed one will be enforced
-spuriously. Options are a version check against the running operator, a printed
-"validated against operator vX.Y" banner, or accepting the skew silently. The
-third is the default if nobody decides, and is the worst of the three.
+**Q4 — Version skew: mostly resolved by Q2, with one thing left to build.**
+Lockstep release means `kubectl-neo4j vX.Y.Z` encodes operator `vX.Y.Z`'s rules
+by construction, so the dangerous case narrows to one: **a customer running a
+CLI from a different tag than the operator in their cluster.** A rule added in
+v1.16 will not be enforced by a v1.14 CLI, and one removed in v1.16 will be
+enforced spuriously by it.
+
+Because both versions are now knowable — the CLI knows its own build version,
+and the operator's version is readable from the cluster — the fix is cheap and
+should be built with the first cluster-connected command:
+
+- always print `validated against operator rules vX.Y.Z` (the CLI's own
+  version), so offline output is never silently authoritative;
+- when a `--context` is supplied, compare against the running operator and warn
+  on mismatch.
+
+Neither is needed for the offline first slice (§6), but the banner is, and it
+costs nothing to add on day one.
