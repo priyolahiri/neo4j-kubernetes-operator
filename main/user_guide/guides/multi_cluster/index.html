@@ -12,31 +12,31 @@
         <meta name="author" content="Priyo Lahiri">
       
       
-        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/migration_guide/">
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/multi_cluster/">
       
       
-        <link rel="prev" href="../version_support/">
+        <link rel="prev" href="../fault_tolerance/">
       
       
-        <link rel="next" href="../configuration/">
+        <link rel="next" href="../monitoring/">
       
       
         
       
       
-      <link rel="icon" href="../../assets/images/favicon.png">
+      <link rel="icon" href="../../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Upgrade Guide - Neo4j Kubernetes Operator</title>
+        <title>Multiple Kubernetes Clusters - Neo4j Kubernetes Operator</title>
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -55,9 +55,9 @@
       
     
     
-      <link rel="stylesheet" href="../../stylesheets/neo4j.css">
+      <link rel="stylesheet" href="../../../stylesheets/neo4j.css">
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#upgrade-guide" class="md-skip">
+        <a href="#running-across-multiple-kubernetes-clusters" class="md-skip">
           Skip to content
         </a>
       
@@ -102,7 +102,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+    <a href="../../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -122,7 +122,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Upgrade Guide
+              Multiple Kubernetes Clusters
             
           </span>
         </div>
@@ -245,7 +245,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+    <a href="../../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -275,7 +275,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../.." class="md-nav__link">
+      <a href="../../.." class="md-nav__link">
         
   
   
@@ -299,10 +299,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -329,11 +327,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
@@ -354,7 +352,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -372,7 +370,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../getting_started/" class="md-nav__link">
+      <a href="../../getting_started/" class="md-nav__link">
         
   
   
@@ -400,7 +398,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../installation/" class="md-nav__link">
+      <a href="../../installation/" class="md-nav__link">
         
   
   
@@ -428,7 +426,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../deployment/" class="md-nav__link">
+      <a href="../../deployment/" class="md-nav__link">
         
   
   
@@ -456,7 +454,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../operator-modes/" class="md-nav__link">
+      <a href="../../operator-modes/" class="md-nav__link">
         
   
   
@@ -484,7 +482,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/demo/" class="md-nav__link">
+      <a href="../demo/" class="md-nav__link">
         
   
   
@@ -512,7 +510,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../version_support/" class="md-nav__link">
+      <a href="../../version_support/" class="md-nav__link">
         
   
   
@@ -537,37 +535,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Upgrade Guide
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../migration_guide/" class="md-nav__link">
         
   
   
@@ -583,76 +554,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#v114-backup-restore-api-cleanup-breaking" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        v1.14 — backup &amp; restore API cleanup (breaking)
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="v1.14 — backup &amp; restore API cleanup (breaking)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#neo4jbackup" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Neo4jBackup
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#neo4jrestore" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Neo4jRestore
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#upgrading-between-future-releases" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Upgrading between future releases
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -750,7 +651,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../configuration/" class="md-nav__link">
+      <a href="../../configuration/" class="md-nav__link">
         
   
   
@@ -778,7 +679,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples_gallery/" class="md-nav__link">
+      <a href="../../examples_gallery/" class="md-nav__link">
         
   
   
@@ -806,7 +707,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/resource_sizing/" class="md-nav__link">
+      <a href="../resource_sizing/" class="md-nav__link">
         
   
   
@@ -834,7 +735,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../clustering/" class="md-nav__link">
+      <a href="../../clustering/" class="md-nav__link">
         
   
   
@@ -862,7 +763,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../topology_placement/" class="md-nav__link">
+      <a href="../../topology_placement/" class="md-nav__link">
         
   
   
@@ -890,7 +791,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../property_sharding/" class="md-nav__link">
+      <a href="../../property_sharding/" class="md-nav__link">
         
   
   
@@ -918,7 +819,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../external_access/" class="md-nav__link">
+      <a href="../../external_access/" class="md-nav__link">
         
   
   
@@ -946,7 +847,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/plugins/" class="md-nav__link">
+      <a href="../plugins/" class="md-nav__link">
         
   
   
@@ -974,7 +875,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/seed-uri/" class="md-nav__link">
+      <a href="../seed-uri/" class="md-nav__link">
         
   
   
@@ -1002,7 +903,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aura_fleet_management/" class="md-nav__link">
+      <a href="../../aura_fleet_management/" class="md-nav__link">
         
   
   
@@ -1030,7 +931,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aura_orchestration/" class="md-nav__link">
+      <a href="../../aura_orchestration/" class="md-nav__link">
         
   
   
@@ -1058,7 +959,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/mcp_client_setup/" class="md-nav__link">
+      <a href="../mcp_client_setup/" class="md-nav__link">
         
   
   
@@ -1155,7 +1056,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../security/" class="md-nav__link">
+      <a href="../../security/" class="md-nav__link">
         
   
   
@@ -1183,7 +1084,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/security/" class="md-nav__link">
+      <a href="../security/" class="md-nav__link">
         
   
   
@@ -1211,7 +1112,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tls_configuration/" class="md-nav__link">
+      <a href="../../tls_configuration/" class="md-nav__link">
         
   
   
@@ -1239,7 +1140,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user_role_management/" class="md-nav__link">
+      <a href="../../user_role_management/" class="md-nav__link">
         
   
   
@@ -1271,8 +1172,10 @@
       
   
   
+    
   
   
+  
     
     
       
@@ -1303,11 +1206,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
         
           
           <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
@@ -1328,7 +1231,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1346,7 +1249,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/backup_restore/" class="md-nav__link">
+      <a href="../backup_restore/" class="md-nav__link">
         
   
   
@@ -1374,7 +1277,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/cross_cluster_replication/" class="md-nav__link">
+      <a href="../cross_cluster_replication/" class="md-nav__link">
         
   
   
@@ -1402,7 +1305,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/database_aliases/" class="md-nav__link">
+      <a href="../database_aliases/" class="md-nav__link">
         
   
   
@@ -1430,7 +1333,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/upgrades/" class="md-nav__link">
+      <a href="../upgrades/" class="md-nav__link">
         
   
   
@@ -1458,7 +1361,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/storage_expansion/" class="md-nav__link">
+      <a href="../storage_expansion/" class="md-nav__link">
         
   
   
@@ -1486,7 +1389,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/fault_tolerance/" class="md-nav__link">
+      <a href="../fault_tolerance/" class="md-nav__link">
         
   
   
@@ -1511,10 +1414,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../guides/multi_cluster/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiple Kubernetes Clusters
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1530,6 +1460,165 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#which-problem-do-you-actually-have" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which problem do you actually have?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Which problem do you actually have?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-not-one-neo4j-cluster-spanning-kubernetes-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why not one Neo4j cluster spanning Kubernetes clusters
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-model-one-operator-per-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The model: one operator per cluster
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fan-out-with-argo-cd-applicationsets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fan-out with Argo CD ApplicationSets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Fan-out with Argo CD ApplicationSets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fanning-out-neo4j-deployments-themselves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fanning out Neo4j deployments themselves
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fan-out-with-flux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fan-out with Flux
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gitops-interactions-worth-knowing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitOps interactions worth knowing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-health-view-across-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One health view across clusters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="One health view across clusters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#federating" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Federating
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-this-does-not-give-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this does not give you
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1599,7 +1688,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/monitoring/" class="md-nav__link">
+      <a href="../monitoring/" class="md-nav__link">
         
   
   
@@ -1627,7 +1716,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/prometheus-grafana-setup/" class="md-nav__link">
+      <a href="../prometheus-grafana-setup/" class="md-nav__link">
         
   
   
@@ -1655,7 +1744,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/kubernetes-events/" class="md-nav__link">
+      <a href="../kubernetes-events/" class="md-nav__link">
         
   
   
@@ -1746,7 +1835,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../performance/" class="md-nav__link">
+      <a href="../../performance/" class="md-nav__link">
         
   
   
@@ -1774,7 +1863,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/performance/" class="md-nav__link">
+      <a href="../performance/" class="md-nav__link">
         
   
   
@@ -1877,7 +1966,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/troubleshooting/" class="md-nav__link">
+      <a href="../troubleshooting/" class="md-nav__link">
         
   
   
@@ -1905,7 +1994,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../troubleshooting/backup_restore/" class="md-nav__link">
+      <a href="../../troubleshooting/backup_restore/" class="md-nav__link">
         
   
   
@@ -1933,7 +2022,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../troubleshooting/split-brain-recovery/" class="md-nav__link">
+      <a href="../../troubleshooting/split-brain-recovery/" class="md-nav__link">
         
   
   
@@ -1993,7 +2082,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../gitops/" class="md-nav__link ">
+            <a href="../../../gitops/" class="md-nav__link ">
               
   
   
@@ -2138,7 +2227,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
         
   
   
@@ -2166,7 +2255,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
         
   
   
@@ -2194,7 +2283,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jdatabase/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jdatabase/" class="md-nav__link">
         
   
   
@@ -2222,7 +2311,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
         
   
   
@@ -2250,7 +2339,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4juser/" class="md-nav__link">
+      <a href="../../../api_reference/neo4juser/" class="md-nav__link">
         
   
   
@@ -2278,7 +2367,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jrole/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jrole/" class="md-nav__link">
         
   
   
@@ -2306,7 +2395,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jrolebinding/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jrolebinding/" class="md-nav__link">
         
   
   
@@ -2334,7 +2423,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jauthrule/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jauthrule/" class="md-nav__link">
         
   
   
@@ -2362,7 +2451,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jplugin/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jplugin/" class="md-nav__link">
         
   
   
@@ -2390,7 +2479,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jbackup/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jbackup/" class="md-nav__link">
         
   
   
@@ -2418,7 +2507,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jrestore/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jrestore/" class="md-nav__link">
         
   
   
@@ -2446,7 +2535,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
         
   
   
@@ -2474,7 +2563,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
         
   
   
@@ -2502,7 +2591,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jdatabasealias/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jdatabasealias/" class="md-nav__link">
         
   
   
@@ -2530,7 +2619,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraproviderconfig/" class="md-nav__link">
+      <a href="../../../api_reference/auraproviderconfig/" class="md-nav__link">
         
   
   
@@ -2558,7 +2647,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurainstance/" class="md-nav__link">
+      <a href="../../../api_reference/aurainstance/" class="md-nav__link">
         
   
   
@@ -2586,7 +2675,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurasnapshot/" class="md-nav__link">
+      <a href="../../../api_reference/aurasnapshot/" class="md-nav__link">
         
   
   
@@ -2614,7 +2703,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurarestore/" class="md-nav__link">
+      <a href="../../../api_reference/aurarestore/" class="md-nav__link">
         
   
   
@@ -2642,7 +2731,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auracustomermanagedkey/" class="md-nav__link">
+      <a href="../../../api_reference/auracustomermanagedkey/" class="md-nav__link">
         
   
   
@@ -2670,7 +2759,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraipfilter/" class="md-nav__link">
+      <a href="../../../api_reference/auraipfilter/" class="md-nav__link">
         
   
   
@@ -2698,7 +2787,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auradatabase/" class="md-nav__link">
+      <a href="../../../api_reference/auradatabase/" class="md-nav__link">
         
   
   
@@ -2726,7 +2815,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auradatabasebackup/" class="md-nav__link">
+      <a href="../../../api_reference/auradatabasebackup/" class="md-nav__link">
         
   
   
@@ -2754,7 +2843,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auradatabaserestore/" class="md-nav__link">
+      <a href="../../../api_reference/auradatabaserestore/" class="md-nav__link">
         
   
   
@@ -2782,7 +2871,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraorganizationmember/" class="md-nav__link">
+      <a href="../../../api_reference/auraorganizationmember/" class="md-nav__link">
         
   
   
@@ -2810,7 +2899,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraprojectmember/" class="md-nav__link">
+      <a href="../../../api_reference/auraprojectmember/" class="md-nav__link">
         
   
   
@@ -2838,7 +2927,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurainvite/" class="md-nav__link">
+      <a href="../../../api_reference/aurainvite/" class="md-nav__link">
         
   
   
@@ -2959,7 +3048,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/QUICKSTART/" class="md-nav__link">
+      <a href="../../../developer_guide/QUICKSTART/" class="md-nav__link">
         
   
   
@@ -2987,7 +3076,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/development/" class="md-nav__link">
+      <a href="../../../developer_guide/development/" class="md-nav__link">
         
   
   
@@ -3015,7 +3104,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/contributing/" class="md-nav__link">
+      <a href="../../../developer_guide/contributing/" class="md-nav__link">
         
   
   
@@ -3043,7 +3132,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/collaboration/" class="md-nav__link">
+      <a href="../../../developer_guide/collaboration/" class="md-nav__link">
         
   
   
@@ -3071,7 +3160,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/ci_and_workflows/" class="md-nav__link">
+      <a href="../../../developer_guide/ci_and_workflows/" class="md-nav__link">
         
   
   
@@ -3099,7 +3188,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/architecture/" class="md-nav__link">
+      <a href="../../../developer_guide/architecture/" class="md-nav__link">
         
   
   
@@ -3127,7 +3216,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/testing/" class="md-nav__link">
+      <a href="../../../developer_guide/testing/" class="md-nav__link">
         
   
   
@@ -3155,7 +3244,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/release_verification/" class="md-nav__link">
+      <a href="../../../developer_guide/release_verification/" class="md-nav__link">
         
   
   
@@ -3183,7 +3272,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/makefile_reference/" class="md-nav__link">
+      <a href="../../../developer_guide/makefile_reference/" class="md-nav__link">
         
   
   
@@ -3211,7 +3300,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/openshift_olm/" class="md-nav__link">
+      <a href="../../../developer_guide/openshift_olm/" class="md-nav__link">
         
   
   
@@ -3296,7 +3385,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/llm-contribution/" class="md-nav__link">
+      <a href="../../../developer_guide/llm-contribution/" class="md-nav__link">
         
   
   
@@ -3324,7 +3413,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/AGENT-GUARDRAILS/" class="md-nav__link">
+      <a href="../../../developer_guide/AGENT-GUARDRAILS/" class="md-nav__link">
         
   
   
@@ -3352,7 +3441,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../knowledge/invariants/" class="md-nav__link">
+      <a href="../../../knowledge/invariants/" class="md-nav__link">
         
   
   
@@ -3415,33 +3504,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#v114-backup-restore-api-cleanup-breaking" class="md-nav__link">
+  <a href="#which-problem-do-you-actually-have" class="md-nav__link">
     <span class="md-ellipsis">
       
-        v1.14 — backup &amp; restore API cleanup (breaking)
+        Which problem do you actually have?
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="v1.14 — backup &amp; restore API cleanup (breaking)">
+    <nav class="md-nav" aria-label="Which problem do you actually have?">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#neo4jbackup" class="md-nav__link">
+  <a href="#why-not-one-neo4j-cluster-spanning-kubernetes-clusters" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Neo4jBackup
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#neo4jrestore" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Neo4jRestore
+        Why not one Neo4j cluster spanning Kubernetes clusters
       
     </span>
   </a>
@@ -3454,10 +3532,110 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#upgrading-between-future-releases" class="md-nav__link">
+  <a href="#the-model-one-operator-per-cluster" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Upgrading between future releases
+        The model: one operator per cluster
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fan-out-with-argo-cd-applicationsets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fan-out with Argo CD ApplicationSets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Fan-out with Argo CD ApplicationSets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fanning-out-neo4j-deployments-themselves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fanning out Neo4j deployments themselves
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fan-out-with-flux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fan-out with Flux
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gitops-interactions-worth-knowing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitOps interactions worth knowing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-health-view-across-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One health view across clusters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="One health view across clusters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#federating" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Federating
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-this-does-not-give-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this does not give you
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
       
     </span>
   </a>
@@ -3481,7 +3659,7 @@
 
 
   
-    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/migration_guide.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/guides/multi_cluster.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -3489,132 +3667,195 @@
   
 
 
-<h1 id="upgrade-guide">Upgrade Guide<a class="headerlink" href="#upgrade-guide" title="Anchor link to this section">&para;</a></h1>
-<p><strong>v1.13.0 is the first public release of this independent project.</strong> There is no
-upgrade path from earlier version numbers — install v1.13.0 fresh (see the
-<a href="../installation/">Installation guide</a>).</p>
-<blockquote>
-<p>This is a personally maintained, community project with no affiliation to
-Neo4j, Inc. APIs and behaviour <strong>may change between releases</strong> — review the
-release notes before upgrading, and validate independently before relying on
-a new version.</p>
-</blockquote>
-<h2 id="v114-backup-restore-api-cleanup-breaking">v1.14 — backup &amp; restore API cleanup (breaking)<a class="headerlink" href="#v114-backup-restore-api-cleanup-breaking" title="Anchor link to this section">&para;</a></h2>
-<p>v1.14 removes the deprecated <code>Neo4jBackup</code> / <code>Neo4jRestore</code> fields that v1.13
-kept working behind deprecation warnings. <code>v1beta1</code> is still a beta API, so these
-are removed in place rather than versioned. <strong>Update your <code>Neo4jBackup</code> and
-<code>Neo4jRestore</code> manifests before upgrading</strong> — the removed fields are silently
-dropped by the API server (they're no longer in the CRD schema), which would
-otherwise leave a backup/restore mis-scoped or unconfirmed.</p>
-<p>Nothing else changes: cluster, standalone, database, user/role, and plugin CRs
-are untouched.</p>
-<h3 id="neo4jbackup"><code>Neo4jBackup</code><a class="headerlink" href="#neo4jbackup" title="Anchor link to this section">&para;</a></h3>
+<h1 id="running-across-multiple-kubernetes-clusters">Running Across Multiple Kubernetes Clusters<a class="headerlink" href="#running-across-multiple-kubernetes-clusters" title="Anchor link to this section">&para;</a></h1>
+<p>This guide covers running Neo4j under this operator in <strong>more than one Kubernetes cluster</strong> — how to install and configure at fleet scale, and how to get one view of health across all of them.</p>
+<p>The short version: <strong>install the operator in every cluster, and drive it with GitOps.</strong> There is no hub operator that reaches into other Kubernetes clusters, and the design analysis in <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/docs/design/multi-cluster-control-plane.md"><code>docs/design/multi-cluster-control-plane.md</code></a> explains why: the operator is a Neo4j client as well as a Kubernetes client, and its Bolt connections are in-cluster by construction.</p>
+<h2 id="which-problem-do-you-actually-have">Which problem do you actually have?<a class="headerlink" href="#which-problem-do-you-actually-have" title="Anchor link to this section">&para;</a></h2>
+<p>Four different things get called "multi-cluster". They have different answers:</p>
 <table>
 <thead>
 <tr>
-<th>Removed</th>
-<th>Replacement</th>
+<th>What you want</th>
+<th>Answer</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>spec.target.{kind,name,clusterRef}</code></td>
-<td><code>spec.instanceRef</code> + exactly one of <code>spec.database</code> / <code>spec.allDatabases</code> / <code>spec.shardedDatabase</code></td>
+<td>The same Neo4j config applied to many clusters</td>
+<td><strong>This guide</strong> — GitOps fan-out</td>
 </tr>
 <tr>
-<td><code>spec.cloud</code> (top-level)</td>
-<td><code>spec.storage.cloud</code></td>
+<td>One health view across clusters</td>
+<td><strong>This guide</strong> — <a href="#one-health-view-across-clusters"><code>k8s_cluster</code> metric label</a></td>
 </tr>
 <tr>
-<td><code>spec.options.verify</code></td>
-<td><em>(removed — it was never wired to <code>neo4j-admin backup validate</code>; use <code>spec.options.validate</code>)</em></td>
+<td>A copy of a database in another region, for DR</td>
+<td><a href="../cross_cluster_replication/">Cross-Cluster Replication</a></td>
 </tr>
 <tr>
-<td><code>spec.retention.deletePolicy: Archive</code></td>
-<td><code>Delete</code> (the only supported value; <code>Archive</code> never had archival logic)</td>
+<td>One Neo4j cluster whose servers span Kubernetes clusters</td>
+<td>Not supported, and not recommended — see below</td>
 </tr>
 </tbody>
 </table>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># BEFORE (v1.13)                          # AFTER (v1.14)</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">spec:                                     spec</span><span class="p">:</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">target:                                   instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">kind</span><span class="nt">: Cluster                           allDatabases</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">name</span><span class="nt">: my-cluster                        storage</span><span class="p">:</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">cloud:                                       type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">provider</span><span class="nt">: aws                              bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backups</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">storage:                                     cloud</span><span class="p">:</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">type: s3                                     provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backups</span>
+<h3 id="why-not-one-neo4j-cluster-spanning-kubernetes-clusters">Why not one Neo4j cluster spanning Kubernetes clusters<a class="headerlink" href="#why-not-one-neo4j-cluster-spanning-kubernetes-clusters" title="Anchor link to this section">&para;</a></h3>
+<p>A single Neo4j cluster is a RAFT group. Stretching it across Kubernetes clusters puts a wide-area round trip on every write (RAFT commit is on the write path), and requires every server's RAFT and routing addresses to be externally routable. If you need Neo4j in two regions, you want two clusters and <a href="../cross_cluster_replication/">Cross-Cluster Replication</a>, which is the mechanism Neo4j provides for exactly this.</p>
+<h2 id="the-model-one-operator-per-cluster">The model: one operator per cluster<a class="headerlink" href="#the-model-one-operator-per-cluster" title="Anchor link to this section">&para;</a></h2>
+<p>Each Kubernetes cluster runs its own operator, managing only the Neo4j deployments in that cluster. This is not a limitation to work around — it is what gives you:</p>
+<ul>
+<li><strong>Failure isolation.</strong> An operator outage affects one cluster. There is no shared control plane whose loss stops reconciliation everywhere.</li>
+<li><strong>Local Bolt.</strong> Every operator reaches its Neo4j pods over in-cluster DNS, so no database endpoint is ever exposed outside its cluster just to be administered.</li>
+<li><strong>Local credentials.</strong> A cluster's Neo4j admin Secret never leaves that cluster.</li>
+</ul>
+<p>What you fan out is <strong>manifests</strong>, not control.</p>
+<h2 id="fan-out-with-argo-cd-applicationsets">Fan-out with Argo CD ApplicationSets<a class="headerlink" href="#fan-out-with-argo-cd-applicationsets" title="Anchor link to this section">&para;</a></h2>
+<p>An <code>ApplicationSet</code> with a cluster generator installs the operator into every registered cluster from one definition.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">argoproj.io/v1alpha1</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ApplicationSet</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-operator</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">argocd</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">generators</span><span class="p">:</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">clusters</span><span class="p">:</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">        </span><span class="nt">selector</span><span class="p">:</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">          </span><span class="nt">matchLabels</span><span class="p">:</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">            </span><span class="nt">neo4j</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span><span class="w">          </span><span class="c1"># label your Argo cluster secrets</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="nt">template</span><span class="p">:</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">'neo4j-operator-{{name}}'</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">      </span><span class="nt">project</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">      </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">        </span><span class="nt">repoURL</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://github.com/priyolahiri/neo4j-kubernetes-operator</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">        </span><span class="nt">targetRevision</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1.14.0</span><span class="w">    </span><span class="c1"># pin a release; never track main</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">        </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">charts/neo4j-operator</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">        </span><span class="nt">helm</span><span class="p">:</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">          </span><span class="nt">values</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">            </span><span class="no">kubernetesClusterName: '{{name}}'</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">      </span><span class="nt">destination</span><span class="p">:</span>
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">        </span><span class="nt">server</span><span class="p">:</span><span class="w"> </span><span class="s">'{{server}}'</span>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">        </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-operator</span>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">      </span><span class="nt">syncPolicy</span><span class="p">:</span>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">        </span><span class="nt">automated</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">prune</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="p p-Indicator">,</span><span class="nt"> selfHeal</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="p p-Indicator">}</span>
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">        </span><span class="nt">syncOptions</span><span class="p">:</span>
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CreateNamespace=true</span>
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ServerSideApply=true</span><span class="w">   </span><span class="c1"># see "CRD size" below</span>
 </span></code></pre></div>
-<p>Scope mapping: <code>kind: Cluster</code> → <code>allDatabases: true</code>; <code>kind: Database</code> (with
-<code>name: db</code>, <code>clusterRef: c</code>) → <code>instanceRef: c</code> + <code>database: db</code>;
-<code>kind: ShardedDatabase</code> (with <code>name: sd</code>, <code>clusterRef: c</code>) → <code>instanceRef: c</code> +
-<code>shardedDatabase: sd</code>.</p>
-<h3 id="neo4jrestore"><code>Neo4jRestore</code><a class="headerlink" href="#neo4jrestore" title="Anchor link to this section">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Removed</th>
-<th>Replacement</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>spec.clusterRef</code></td>
-<td><code>spec.instanceRef</code></td>
-</tr>
-<tr>
-<td><code>spec.databaseName</code></td>
-<td><code>spec.database</code></td>
-</tr>
-<tr>
-<td><code>spec.force</code></td>
-<td><code>spec.options.replaceExisting: true</code></td>
-</tr>
-<tr>
-<td><code>spec.verifyBackup</code></td>
-<td><em>(removed — it was never implemented)</em></td>
-</tr>
-</tbody>
-</table>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># BEFORE (v1.13)                          # AFTER (v1.14)</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">spec:                                     spec</span><span class="p">:</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">clusterRef: my-cluster                    instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">databaseName: orders                      database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">force: true                               options</span><span class="p">:</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">source:                                     replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">type</span><span class="nt">: backup                            source</span><span class="p">:</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="nt">backupRef: nightly                        type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">                                              </span><span class="l l-Scalar l-Scalar-Plain">backupRef</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nightly</span>
+<p>Two things worth setting deliberately:</p>
+<ul>
+<li><strong><code>kubernetesClusterName: '{{name}}'</code></strong> wires each install's metrics label to the cluster it runs in. See <a href="#one-health-view-across-clusters">below</a>.</li>
+<li><strong><code>ServerSideApply=true</code>.</strong> This operator's CRDs are large. Client-side apply stores the whole manifest in the <code>last-applied-configuration</code> annotation and can exceed the annotation size limit; server-side apply avoids it.</li>
+</ul>
+<h3 id="fanning-out-neo4j-deployments-themselves">Fanning out Neo4j deployments themselves<a class="headerlink" href="#fanning-out-neo4j-deployments-themselves" title="Anchor link to this section">&para;</a></h3>
+<p>The same generator works for the workloads, with per-cluster overrides in Git:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">generators</span><span class="p">:</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">git</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">        </span><span class="nt">repoURL</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://github.com/your-org/neo4j-fleet</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">        </span><span class="nt">revision</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">main</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">        </span><span class="nt">directories</span><span class="p">:</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">clusters/*</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">template</span><span class="p">:</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">'neo4j-{{path.basename}}'</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">      </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">        </span><span class="nt">repoURL</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://github.com/your-org/neo4j-fleet</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">        </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="s">'{{path}}'</span><span class="w">          </span><span class="c1"># clusters/eu-west/, clusters/us-east/, …</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">      </span><span class="nt">destination</span><span class="p">:</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">        </span><span class="nt">server</span><span class="p">:</span><span class="w"> </span><span class="s">'{{server}}'</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">        </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
 </span></code></pre></div>
-<p>Also new in v1.14 (additive, no action needed): <code>Neo4jRestore.status.stats.duration</code>
-and <code>status.backupInfo</code> are now populated on a successful restore.</p>
-<h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
-<p>When a newer version ships:</p>
-<ol>
-<li><strong>Refresh the CRDs first.</strong> Helm does not upgrade CRDs automatically, so a new
-   field or validation won't take effect until the CRDs are applied. Apply the
-   bundle for the version you are upgrading to (replace the tag):</li>
-</ol>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>--server-side<span class="w"> </span>-f<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.13.0/neo4j-kubernetes-operator.yaml
+<p>Each <code>clusters/&lt;name&gt;/</code> directory holds that cluster's <code>Neo4jEnterpriseCluster</code>, <code>Neo4jDatabase</code>, <code>Neo4jUser</code>, <code>Neo4jRole</code> and so on. Sizing, storage class and topology differ per cluster; the CR shape does not.</p>
+<div class="admonition warning">
+<p class="admonition-title">Do not fan out <code>Neo4jBackup</code> storage paths</p>
+<p>A <code>Neo4jBackup</code> written by two clusters into the same bucket path will interleave two backup chains in one directory. Give every cluster its own <code>spec.storage.path</code>. If a chain feeds cross-cluster replication, this is not merely untidy — it breaks the differential chain and forces a replica rebuild.</p>
+</div>
+<h2 id="fan-out-with-flux">Fan-out with Flux<a class="headerlink" href="#fan-out-with-flux" title="Anchor link to this section">&para;</a></h2>
+<p>The equivalent shape is a <code>HelmRelease</code> per cluster, or one <code>Kustomization</code> per cluster reconciled by a Flux instance in each:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">helm.toolkit.fluxcd.io/v2</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HelmRelease</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-operator</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-operator</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30m</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">chart</span><span class="p">:</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">      </span><span class="nt">chart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">charts/neo4j-operator</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">      </span><span class="nt">sourceRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="nv">GitRepository</span><span class="p p-Indicator">,</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">neo4j-operator</span><span class="p p-Indicator">,</span><span class="nt"> namespace</span><span class="p">:</span><span class="w"> </span><span class="nv">flux-system</span><span class="p p-Indicator">}</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">values</span><span class="p">:</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="nt">kubernetesClusterName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eu-west-prod</span>
 </span></code></pre></div>
-<ol>
-<li><strong>Upgrade the operator</strong> via Helm:</li>
-</ol>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>helm<span class="w"> </span>repo<span class="w"> </span>update
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>neo4j-operator<span class="w"> </span>neo4j-operator/neo4j-operator<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--namespace<span class="w"> </span>neo4j-operator-system
+<p>Flux's usual pattern is one Flux per cluster pulling from a shared repo, which fits this operator's per-cluster model directly.</p>
+<h2 id="gitops-interactions-worth-knowing">GitOps interactions worth knowing<a class="headerlink" href="#gitops-interactions-worth-knowing" title="Anchor link to this section">&para;</a></h2>
+<p>Three operator behaviours interact with drift correction. All three are by design, and all three will confuse a reviewer who meets them for the first time during an incident.</p>
+<ul>
+<li><strong>One-shot CRs are inert to re-apply.</strong> <code>Neo4jBackup</code>, <code>Neo4jRestore</code> and <code>Neo4jReplicaPromotion</code> reach a terminal phase and stay there. Re-applying an unchanged manifest does not re-run them, which is exactly what you want from a self-healing GitOps controller.</li>
+<li><strong>Promotion is not a spec field.</strong> Failover is a separate <code>Neo4jReplicaPromotion</code> CR precisely so that a GitOps controller re-applying the pre-promotion manifest cannot un-promote a database. See <a href="../cross_cluster_replication/">Cross-Cluster Replication</a>.</li>
+<li><strong>Some status fields are meant to be copied into another cluster's spec.</strong> <code>status.replicationPullURI</code> and <code>status.crossClusterReplication.addresses</code> are published for a human or a pipeline to paste into a downstream cluster's manifest. Argo will not do this for you; treat it as a deliberate step in your fleet runbook.</li>
+</ul>
+<h2 id="one-health-view-across-clusters">One health view across clusters<a class="headerlink" href="#one-health-view-across-clusters" title="Anchor link to this section">&para;</a></h2>
+<p>The operator exposes <code>neo4j_operator_server_health</code> per Neo4j server, labelled with <code>cluster_name</code> (the <strong>Neo4j</strong> cluster) and <code>namespace</code>. Across a fleet that is not enough: <code>cluster_name="prod"</code> in namespace <code>neo4j</code> very likely exists in every one of your Kubernetes clusters, and federating them into one Prometheus collapses them into a single ambiguous series.</p>
+<p>Set <code>kubernetesClusterName</code> to disambiguate:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># values.yaml</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kubernetesClusterName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eu-west-prod</span>
 </span></code></pre></div>
-<p>(or re-apply the complete bundle if you installed with plain <code>kubectl</code> —
-   see the <a href="../installation/">Installation guide</a>).</p>
-<ol>
-<li><strong>Read the release notes</strong> for that version for any breaking changes or
-   manual steps, and roll forward one minor version at a time if you are
-   skipping several.</li>
-</ol>
-<p>The operator reconciles declaratively, so once the new version is running it
-converges existing <code>Neo4j*</code> resources to the new behaviour automatically.</p>
+<p>or directly:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>--kubernetes-cluster-name=eu-west-prod
+</span></code></pre></div>
+<p>Every <code>neo4j_operator_server_health</code> series then carries <code>k8s_cluster="eu-west-prod"</code>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>neo4j_operator_server_health{cluster_name="prod",namespace="neo4j",server_name="srv-0",server_address="10.0.0.1:7687",k8s_cluster="eu-west-prod"} 1
+</span></code></pre></div>
+<div class="admonition note">
+<p class="admonition-title"><code>k8s_cluster</code> is not <code>cluster_name</code></p>
+<p><code>cluster_name</code> is the Neo4j cluster. <code>k8s_cluster</code> is the Kubernetes cluster it runs in. The flag is <code>--kubernetes-cluster-name</code> rather than <code>--cluster-name</code> to keep that distinction visible at the point of configuration.</p>
+</div>
+<p><strong>Backwards compatible.</strong> The flag is unset by default, which emits an empty <code>k8s_cluster</code> label. Prometheus treats an empty label value as equivalent to the label being absent, so existing queries, dashboards and alert rules keep matching unchanged whether or not you adopt this.</p>
+<h3 id="federating">Federating<a class="headerlink" href="#federating" title="Anchor link to this section">&para;</a></h3>
+<p>With a Prometheus per cluster and one aggregating Prometheus, federate the operator metrics:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">scrape_configs</span><span class="p">:</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">job_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-operator-federation</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nt">honor_labels</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">metrics_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/federate</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">params</span><span class="p">:</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="s">'match[]'</span><span class="p p-Indicator">:</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">'{__name__=~"neo4j_operator_.*"}'</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="nt">static_configs</span><span class="p">:</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">targets</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">'prometheus.eu-west.example.com'</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">'prometheus.us-east.example.com'</span><span class="p p-Indicator">]</span>
+</span></code></pre></div>
+<p>Then fleet-wide queries work directly:</p>
+<div class="language-promql highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Every degraded server anywhere in the fleet</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nv">neo4j_operator_server_health</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Healthy server count per Kubernetes cluster</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="k">sum</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="o">(</span><span class="nv">k8s_cluster</span><span class="o">)</span><span class="w"> </span><span class="o">(</span><span class="nv">neo4j_operator_server_health</span><span class="o">)</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Clusters where any server is degraded</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="k">count</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="o">(</span><span class="nv">k8s_cluster</span><span class="p">,</span><span class="w"> </span><span class="nv">cluster_name</span><span class="o">)</span><span class="w"> </span><span class="o">(</span><span class="nv">neo4j_operator_server_health</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="o">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span>
+</span></code></pre></div>
+<p>An alert that names the Kubernetes cluster in its own text:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">alert</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jServerDegraded</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">expr</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j_operator_server_health == 0</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">for</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5m</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="nt">summary</span><span class="p">:</span><span class="w"> </span><span class="s">"Neo4j</span><span class="nv"> </span><span class="s">server</span><span class="nv"> </span><span class="s">{{</span><span class="nv"> </span><span class="s">$labels.server_name</span><span class="nv"> </span><span class="s">}}</span><span class="nv"> </span><span class="s">degraded</span><span class="nv"> </span><span class="s">in</span><span class="nv"> </span><span class="s">{{</span><span class="nv"> </span><span class="s">$labels.cluster_name</span><span class="nv"> </span><span class="s">}}</span><span class="nv"> </span><span class="s">({{</span><span class="nv"> </span><span class="s">$labels.k8s_cluster</span><span class="nv"> </span><span class="s">}})"</span>
+</span></code></pre></div>
+<p>If you already use Aura Fleet Management, <code>spec.auraFleetManagement</code> registers deployments with Aura's own fleet view and is an alternative to this for cross-cluster inventory.</p>
+<h2 id="what-this-does-not-give-you">What this does not give you<a class="headerlink" href="#what-this-does-not-give-you" title="Anchor link to this section">&para;</a></h2>
+<p>Stated plainly, so nothing is discovered during an incident:</p>
+<ul>
+<li><strong>No single <code>kubectl</code> context for the fleet.</strong> Inspecting a Neo4j deployment means talking to its own cluster's API server.</li>
+<li><strong>No cross-cluster Cypher.</strong> <code>Neo4jUser</code>, <code>Neo4jRole</code> and <code>Neo4jDatabase</code> are reconciled by the operator local to each cluster. Fan out the CRs; the local operator executes them.</li>
+<li><strong>No aggregated status object.</strong> The <code>k8s_cluster</code> label gives you a metrics-level fleet view. There is no CR that lists every deployment across every cluster.</li>
+</ul>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li><a href="../cross_cluster_replication/">Cross-Cluster Replication</a> — a read-only copy of a database in another cluster, and one-way promotion for DR</li>
+<li><a href="../monitoring/">Monitoring</a> — enabling metrics on a deployment</li>
+<li><a href="../prometheus-grafana-setup/">Prometheus and Grafana Setup</a> — the single-cluster monitoring stack this builds on</li>
+</ul>
 
 
 
@@ -3652,7 +3893,7 @@ converges existing <code>Neo4j*</code> resources to the new behaviour automatica
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../version_support/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Supported Neo4j Versions">
+          <a href="../fault_tolerance/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Fault Tolerance">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3662,20 +3903,20 @@ converges existing <code>Neo4j*</code> resources to the new behaviour automatica
                 Previous
               </span>
               <div class="md-ellipsis">
-                Supported Neo4j Versions
+                Fault Tolerance
               </div>
             </div>
           </a>
         
         
           
-          <a href="../configuration/" class="md-footer__link md-footer__link--next" aria-label="Next: Configuration">
+          <a href="../monitoring/" class="md-footer__link md-footer__link--next" aria-label="Next: Overview">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Configuration
+                Overview
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -3739,10 +3980,10 @@ converges existing <code>Neo4j*</code> resources to the new behaviour automatica
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

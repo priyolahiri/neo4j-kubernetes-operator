@@ -12,13 +12,9 @@
         <meta name="author" content="Priyo Lahiri">
       
       
-        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/neo4jauthrule/">
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/design/multi-cluster-control-plane/">
       
       
-        <link rel="prev" href="../neo4jrolebinding/">
-      
-      
-        <link rel="next" href="../neo4jplugin/">
       
       
         
@@ -29,7 +25,7 @@
     
     
       
-        <title>Neo4jAuthRule - Neo4j Kubernetes Operator</title>
+        <title>Design: Multi-Kubernetes-Cluster Control Plane (hub/spoke) - Neo4j Kubernetes Operator</title>
       
     
     
@@ -82,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#neo4jauthrule" class="md-skip">
+        <a href="#design-multi-kubernetes-cluster-control-plane-hubspoke" class="md-skip">
           Skip to content
         </a>
       
@@ -122,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Neo4jAuthRule
+              Design: Multi-Kubernetes-Cluster Control Plane (hub/spoke)
             
           </span>
         </div>
@@ -1866,8 +1862,6 @@
       
   
   
-    
-  
   
   
     
@@ -1888,11 +1882,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
           <div class="md-nav__link md-nav__container">
@@ -1920,7 +1914,7 @@
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1935,10 +1929,8 @@
                 
   
   
-    
   
   
-  
     
     
       
@@ -2000,11 +1992,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1" >
         
           
           <label class="md-nav__link" for="__nav_7_1" id="__nav_7_1_label" tabindex="0">
@@ -2025,7 +2017,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_1_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_1_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_7_1">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2043,7 +2035,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jenterprisecluster/" class="md-nav__link">
+      <a href="../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
         
   
   
@@ -2071,7 +2063,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jenterprisestandalone/" class="md-nav__link">
+      <a href="../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
         
   
   
@@ -2099,7 +2091,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jdatabase/" class="md-nav__link">
+      <a href="../../api_reference/neo4jdatabase/" class="md-nav__link">
         
   
   
@@ -2127,7 +2119,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jshardeddatabase/" class="md-nav__link">
+      <a href="../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
         
   
   
@@ -2155,7 +2147,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4juser/" class="md-nav__link">
+      <a href="../../api_reference/neo4juser/" class="md-nav__link">
         
   
   
@@ -2183,7 +2175,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jrole/" class="md-nav__link">
+      <a href="../../api_reference/neo4jrole/" class="md-nav__link">
         
   
   
@@ -2211,7 +2203,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jrolebinding/" class="md-nav__link">
+      <a href="../../api_reference/neo4jrolebinding/" class="md-nav__link">
         
   
   
@@ -2236,37 +2228,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Neo4jAuthRule
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jauthrule/" class="md-nav__link">
         
   
   
@@ -2282,242 +2247,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prerequisites
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#spec" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Spec
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Status
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Status">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#conditions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Conditions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#cypher-condition-syntax" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cypher condition syntax
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Examples
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Examples">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#simple-attribute-matching" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Simple attribute matching
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#multiple-conditions-and" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Multiple conditions (AND)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#list-membership" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        List membership
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#time-bounded-role-grants" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Time-bounded role grants
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#drift-reconciliation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Drift reconciliation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#lifecycle" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Lifecycle
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#limitations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Limitations
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#status-conditions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Status conditions
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#errors-in-speccondition" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Errors in spec.condition
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        See also
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -2530,7 +2259,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jplugin/" class="md-nav__link">
+      <a href="../../api_reference/neo4jplugin/" class="md-nav__link">
         
   
   
@@ -2558,7 +2287,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jbackup/" class="md-nav__link">
+      <a href="../../api_reference/neo4jbackup/" class="md-nav__link">
         
   
   
@@ -2586,7 +2315,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jrestore/" class="md-nav__link">
+      <a href="../../api_reference/neo4jrestore/" class="md-nav__link">
         
   
   
@@ -2614,7 +2343,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jreplicadatabase/" class="md-nav__link">
+      <a href="../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
         
   
   
@@ -2642,7 +2371,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jreplicapromotion/" class="md-nav__link">
+      <a href="../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
         
   
   
@@ -2670,7 +2399,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jdatabasealias/" class="md-nav__link">
+      <a href="../../api_reference/neo4jdatabasealias/" class="md-nav__link">
         
   
   
@@ -2698,7 +2427,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auraproviderconfig/" class="md-nav__link">
+      <a href="../../api_reference/auraproviderconfig/" class="md-nav__link">
         
   
   
@@ -2726,7 +2455,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aurainstance/" class="md-nav__link">
+      <a href="../../api_reference/aurainstance/" class="md-nav__link">
         
   
   
@@ -2754,7 +2483,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aurasnapshot/" class="md-nav__link">
+      <a href="../../api_reference/aurasnapshot/" class="md-nav__link">
         
   
   
@@ -2782,7 +2511,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aurarestore/" class="md-nav__link">
+      <a href="../../api_reference/aurarestore/" class="md-nav__link">
         
   
   
@@ -2810,7 +2539,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auracustomermanagedkey/" class="md-nav__link">
+      <a href="../../api_reference/auracustomermanagedkey/" class="md-nav__link">
         
   
   
@@ -2838,7 +2567,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auraipfilter/" class="md-nav__link">
+      <a href="../../api_reference/auraipfilter/" class="md-nav__link">
         
   
   
@@ -2866,7 +2595,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auradatabase/" class="md-nav__link">
+      <a href="../../api_reference/auradatabase/" class="md-nav__link">
         
   
   
@@ -2894,7 +2623,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auradatabasebackup/" class="md-nav__link">
+      <a href="../../api_reference/auradatabasebackup/" class="md-nav__link">
         
   
   
@@ -2922,7 +2651,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auradatabaserestore/" class="md-nav__link">
+      <a href="../../api_reference/auradatabaserestore/" class="md-nav__link">
         
   
   
@@ -2950,7 +2679,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auraorganizationmember/" class="md-nav__link">
+      <a href="../../api_reference/auraorganizationmember/" class="md-nav__link">
         
   
   
@@ -2978,7 +2707,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auraprojectmember/" class="md-nav__link">
+      <a href="../../api_reference/auraprojectmember/" class="md-nav__link">
         
   
   
@@ -3006,7 +2735,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aurainvite/" class="md-nav__link">
+      <a href="../../api_reference/aurainvite/" class="md-nav__link">
         
   
   
@@ -3583,55 +3312,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#1-what-multi-cluster-is-being-asked-for-here" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        1. What "multi-cluster" is being asked for here
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prerequisites
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#spec" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Spec
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Status
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Status">
+    <nav class="md-nav" aria-label="1. What &#34;multi-cluster&#34; is being asked for here">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#conditions" class="md-nav__link">
+  <a href="#11-why-3-is-not-2" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Conditions
+        1.1 Why (3) is not (2)
       
     </span>
   </a>
@@ -3644,10 +3340,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#cypher-condition-syntax" class="md-nav__link">
+  <a href="#2-what-this-operator-already-provides" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Cypher condition syntax
+        2. What this operator already provides
       
     </span>
   </a>
@@ -3655,22 +3351,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
+  <a href="#3-blockers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Examples
+        3. Blockers
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Examples">
+    <nav class="md-nav" aria-label="3. Blockers">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#simple-attribute-matching" class="md-nav__link">
+  <a href="#b1-the-bolt-connection-is-hardcoded-to-in-cluster-dns-the-real-blocker" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Simple attribute matching
+        B1 — The Bolt connection is hardcoded to in-cluster DNS (the real blocker)
       
     </span>
   </a>
@@ -3678,10 +3374,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#multiple-conditions-and" class="md-nav__link">
+  <a href="#b2-the-routing-scheme-means-exposing-a-service-is-not-sufficient" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Multiple conditions (AND)
+        B2 — The routing scheme means exposing a Service is not sufficient
       
     </span>
   </a>
@@ -3689,10 +3385,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#list-membership" class="md-nav__link">
+  <a href="#b3-split-brain-detection-and-diagnostics-need-per-pod-bolt-not-one-endpoint" class="md-nav__link">
     <span class="md-ellipsis">
       
-        List membership
+        B3 — Split-brain detection and diagnostics need per-pod Bolt, not one endpoint
       
     </span>
   </a>
@@ -3700,10 +3396,54 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#time-bounded-role-grants" class="md-nav__link">
+  <a href="#b4-every-clusterref-is-same-cluster-by-construction" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Time-bounded role grants
+        B4 — Every clusterRef is same-cluster by construction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b5-credential-aggregation-changes-the-blast-radius" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B5 — Credential aggregation changes the blast radius
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b6-failure-isolation-is-lost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B6 — Failure isolation is lost
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b7-watch-and-cache-cost-multiplies-and-watch_namespace-becomes-per-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B7 — Watch and cache cost multiplies, and WATCH_NAMESPACE becomes per-cluster
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b8-tls-trust-is-directional-and-currently-one-sided" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B8 — TLS trust is directional and currently one-sided
       
     </span>
   </a>
@@ -3716,55 +3456,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#drift-reconciliation" class="md-nav__link">
+  <a href="#4-options" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Drift reconciliation
+        4. Options
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#lifecycle" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Lifecycle
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#limitations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Limitations
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
+    <nav class="md-nav" aria-label="4. Options">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#status-conditions" class="md-nav__link">
+  <a href="#a-full-hub-all-controllers-remote-clients" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Status conditions
+        (a) Full hub — all controllers, remote clients
       
     </span>
   </a>
@@ -3772,10 +3479,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#errors-in-speccondition" class="md-nav__link">
+  <a href="#b-split-hub-kubernetes-api-controllers-remote-bolt-controllers-local" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Errors in spec.condition
+        (b) Split hub — Kubernetes-API controllers remote, Bolt controllers local
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#aggregation-only-hub-then-hub-authored-spoke-crs-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        &copy; Aggregation-only hub, then hub-authored spoke CRs — recommended
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d-decline-document-gitops-instead" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        (d) Decline — document GitOps instead
       
     </span>
   </a>
@@ -3788,10 +3517,115 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
+  <a href="#5-the-recommended-design-option" class="md-nav__link">
     <span class="md-ellipsis">
       
-        See also
+        5. The recommended design — option &copy;
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. The recommended design — option ©">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-principle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Principle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-phase-1-read-only-aggregation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Phase 1 — read-only aggregation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-phase-1b-the-fleet-metric-nearly-free-implemented" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Phase 1b — the fleet metric, nearly free — implemented
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-phase-2-hub-authored-spoke-crs-only-if-writes-are-genuinely-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Phase 2 — hub-authored spoke CRs (only if writes are genuinely needed)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-what-option-explicitly-does-not-give-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 What option &copy; explicitly does not give you
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-what-full-hubspoke-would-additionally-require" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. What full hub/spoke would additionally require
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Testing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-delivery-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Delivery order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-open-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Open questions
       
     </span>
   </a>
@@ -3815,7 +3649,7 @@
 
 
   
-    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/api_reference/neo4jauthrule.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/design/multi-cluster-control-plane.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -3823,355 +3657,471 @@
   
 
 
-<h1 id="neo4jauthrule">Neo4jAuthRule<a class="headerlink" href="#neo4jauthrule" title="Anchor link to this section">&para;</a></h1>
-<p>Declarative attribute-based access control (ABAC) for the Neo4j Kubernetes Operator. A <code>Neo4jAuthRule</code> represents a Neo4j <code>AUTH RULE</code> that conditionally grants one or more roles when the user's OIDC token claims satisfy a Cypher condition expression.</p>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
-<ul>
-<li><strong>API version</strong>: <code>neo4j.neo4j.com/v1beta1</code></li>
-<li><strong>Kind</strong>: <code>Neo4jAuthRule</code></li>
-<li><strong>Scope</strong>: Namespaced</li>
-<li><strong>Short names</strong>: <code>n4jauthrule</code>, <code>n4jauthrules</code></li>
-<li><strong>Categories</strong>: <code>neo4j</code></li>
-<li><strong>Supported Neo4j Versions</strong>: 2026.03 and later (CalVer; ABAC is unavailable on 5.26 LTS or any earlier CalVer release)</li>
-<li><strong>Reconciliation</strong>: Auth rule existence, condition, enabled flag, and granted-roles drift via <code>SHOW AUTH RULES</code></li>
-</ul>
-<p>ABAC complements role-based access control (RBAC). RBAC determines <em>what</em> a role can do; ABAC determines <em>who gets the role</em> — the binding from external identity (OIDC claims) to internal roles is expressed declaratively rather than per-user.</p>
-<p>See the upstream Neo4j docs for the full feature: <a href="https://neo4j.com/docs/operations-manual/current/authentication-authorization/attribute-based-access-control/">https://neo4j.com/docs/operations-manual/current/authentication-authorization/attribute-based-access-control/</a>.</p>
-<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h2>
-<p>Before applying a <code>Neo4jAuthRule</code>:</p>
+<h1 id="design-multi-kubernetes-cluster-control-plane-hubspoke">Design: Multi-Kubernetes-Cluster Control Plane (hub/spoke)<a class="headerlink" href="#design-multi-kubernetes-cluster-control-plane-hubspoke" title="Anchor link to this section">&para;</a></h1>
+<blockquote>
+<p><strong>Status:</strong> Analysis, plus the two cheapest delivery items shipped
+(§8 items 1–2: the GitOps fan-out guide and the <code>k8s_cluster</code> metric label).
+The hub itself is unbuilt, and §5 argues that the literal reading of the
+request should not be built.
+<strong>Source:</strong> this repository, read at commit <code>33a3204</code>; the CCDR design
+(<code>cross-cluster-replication.md</code>), whose B1 recurs here in a worse form;
+controller-runtime v0.24.1 (<code>go.mod:22</code>).
+<strong>Scope of this document:</strong> what it would take for <strong>one operator instance to
+manage Neo4j across N Kubernetes clusters</strong>. It covers the Kubernetes API
+plane, the Bolt data plane, the CRD-surface consequences, and four delivery
+options. It does <strong>not</strong> cover cross-cluster <em>replication</em> — that is CCDR, it
+already shipped, and it is a different question (§1.1).
+<strong>Headline:</strong> the Kubernetes API half is cheap and mechanically supported —
+the operator has no <code>remotecommand</code>/exec dependency, and controller-runtime
+ships per-cluster caches. The <strong>Bolt half is the blocker</strong>, and it is
+<a href="../cross-cluster-replication/#b1--advertised-addresses-are-hardcoded-to-in-cluster-dns-network-only-the-real-blocker">B1 from the CCDR design</a>
+again: the operator is a Neo4j client as well as a Kubernetes client, its
+connection URIs are hardcoded to in-cluster DNS, and the <code>neo4j://</code> routing
+scheme means exposing a Service does not fix it — the server hands back
+internal FQDNs. CCDR bought its way out with an opt-in L4 proxy scoped to one
+port. A hub would need the same machinery on the Bolt ports, for every
+managed cluster, mandatorily, and per-pod. <strong>Recommended: option &copy; — an
+aggregation-only hub (§5), which needs none of it.</strong></p>
+</blockquote>
+<hr />
+<h2 id="1-what-multi-cluster-is-being-asked-for-here">1. What "multi-cluster" is being asked for here<a class="headerlink" href="#1-what-multi-cluster-is-being-asked-for-here" title="Anchor link to this section">&para;</a></h2>
+<p>Four distinct questions hide under the phrase. This document is about the third.</p>
 <ol>
-<li>The referenced cluster must run Neo4j <strong>2026.03 or later</strong>. The reconciler refuses to operate against older clusters and surfaces <code>AuthRuleVersionTooOld=True</code> on the rule's status.</li>
-<li>The cluster's <code>spec.config</code> must set <code>dbms.security.abac.authorization_providers</code> to the name of at least one configured OIDC provider. Without it, every rule sits in <code>OIDCProviderConfigured=False</code>. The operator does <strong>not</strong> auto-set this key — it's the cluster owner's decision which provider(s) to wire up.</li>
-<li>Each role listed in <code>spec.grantedRoles</code> must exist (as a <code>Neo4jRole</code> in the same namespace, or directly in Neo4j). Rules referencing a missing role enter <code>PendingDependencies=True</code> and reconcile automatically once the role lands.</li>
+<li><strong>One Neo4j cluster stretched across Kubernetes clusters</strong> — one DBMS, one
+   RAFT group, servers in different Kubernetes clusters. Out of scope, and
+   argued against in §9 Q1.</li>
+<li><strong>Independent Neo4j clusters replicating</strong> — shipped, as CCDR. See
+   <code>cross-cluster-replication.md</code>.</li>
+<li><strong>One operator managing N Kubernetes clusters</strong> — a hub/spoke control
+   plane. <strong>This document.</strong></li>
+<li><strong>Fleet visibility across clusters</strong> — partially answered already by
+   <code>spec.auraFleetManagement</code> (<code>api/v1beta1/fleet_target.go</code>), which registers
+   deployments with Aura Fleet Manager. The gap is that it is Aura-tied; §5
+   covers the non-Aura form, because it turns out to be the <em>same</em> work as the
+   recommended option.</li>
 </ol>
-<h2 id="spec">Spec<a class="headerlink" href="#spec" title="Anchor link to this section">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>clusterRef</code></td>
-<td><code>string</code></td>
-<td><strong>Required.</strong> Name of the <code>Neo4jEnterpriseCluster</code> or <code>Neo4jEnterpriseStandalone</code> in the same namespace.</td>
-</tr>
-<tr>
-<td><code>name</code></td>
-<td><code>string</code></td>
-<td>Auth rule name as it appears in <code>SHOW AUTH RULES</code>. Defaults to <code>metadata.name</code>. Must match <code>^[a-zA-Z][a-zA-Z0-9_-]*$</code> and be ≤ 65 characters.</td>
-</tr>
-<tr>
-<td><code>condition</code></td>
-<td><code>string</code></td>
-<td><strong>Required.</strong> Cypher expression evaluated against the user's OIDC token at authentication time. Must be a pure expression — DDL keywords (<code>CREATE</code>, <code>DROP</code>, <code>ALTER</code>, <code>GRANT</code>, <code>DENY</code>, <code>REVOKE</code>, <code>SHOW</code>, <code>RENAME</code>) and statement separators (<code>;</code>) are rejected by the validator.</td>
-</tr>
-<tr>
-<td><code>enabled</code></td>
-<td><code>boolean</code></td>
-<td>Whether the rule actively grants roles. Defaults to <code>true</code>. Setting <code>false</code> preserves the rule but disables it.</td>
-</tr>
-<tr>
-<td><code>grantedRoles</code></td>
-<td><code>[]string</code></td>
-<td><strong>Required.</strong> Roles to grant when the condition evaluates true. Must contain at least one role.</td>
-</tr>
-<tr>
-<td><code>enforceRoles</code></td>
-<td><code>boolean</code></td>
-<td>Reconcile drift on the rule's role list. Defaults to <code>true</code>. When <code>false</code>, the controller adds missing roles but never revokes anything attached out-of-band.</td>
-</tr>
-<tr>
-<td><code>deletionPolicy</code></td>
-<td><code>string</code></td>
-<td><code>Drop</code> (default) executes <code>DROP AUTH RULE</code> on CR deletion; <code>Retain</code> leaves the rule in Neo4j and only releases the finalizer.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="status">Status<a class="headerlink" href="#status" title="Anchor link to this section">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>phase</code></td>
-<td><code>string</code></td>
-<td><code>Pending</code>, <code>Ready</code>, <code>Failed</code>, or <code>PendingDependencies</code>.</td>
-</tr>
-<tr>
-<td><code>message</code></td>
-<td><code>string</code></td>
-<td>Short human-readable explanation of <code>phase</code>.</td>
-</tr>
-<tr>
-<td><code>observedGeneration</code></td>
-<td><code>int64</code></td>
-<td><code>metadata.generation</code> observed at the last successful reconcile.</td>
-</tr>
-<tr>
-<td><code>appliedRoles</code></td>
-<td><code>[]string</code></td>
-<td>Roles last observed as granted via <code>SHOW AUTH RULES</code>. Sorted ascending.</td>
-</tr>
-<tr>
-<td><code>appliedEnabled</code></td>
-<td><code>boolean</code></td>
-<td>Enabled flag observed on the rule.</td>
-</tr>
-<tr>
-<td><code>conditions[]</code></td>
-<td><code>metav1.Condition</code></td>
-<td>See below.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="conditions">Conditions<a class="headerlink" href="#conditions" title="Anchor link to this section">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Type</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>Ready</code></td>
-<td>Rule exists with the desired condition, enabled flag, and granted roles.</td>
-</tr>
-<tr>
-<td><code>RolesSynced</code></td>
-<td>Granted roles match <code>spec.grantedRoles</code>.</td>
-</tr>
-<tr>
-<td><code>OIDCProviderConfigured</code></td>
-<td>Cluster has <code>dbms.security.abac.authorization_providers</code> set.</td>
-</tr>
-<tr>
-<td><code>AuthRuleVersionTooOld</code></td>
-<td>Cluster version is below 2026.03; reconcile is paused.</td>
-</tr>
-<tr>
-<td><code>ClusterNotReady</code></td>
-<td>Cluster has not reached its <code>Ready</code> phase.</td>
-</tr>
-<tr>
-<td><code>PendingDependencies</code></td>
-<td>One or more <code>grantedRoles</code> do not yet exist.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="cypher-condition-syntax">Cypher condition syntax<a class="headerlink" href="#cypher-condition-syntax" title="Anchor link to this section">&para;</a></h2>
-<p>Conditions are arbitrary Cypher expressions that resolve to a boolean. The most useful primitive is:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>abac.oidc.user_attribute('&lt;claim_key&gt;')
-</span></code></pre></div>
-<p>This returns the value of the named claim from the user's OIDC token. Conditions can combine claim lookups with operators (<code>=</code>, <code>IN</code>, <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>, <code>&lt;&gt;</code>, <code>IS NULL</code>), boolean connectives (<code>AND</code>, <code>OR</code>, <code>NOT</code>), and a curated set of Cypher functions:</p>
+<h3 id="11-why-3-is-not-2">1.1 Why (3) is not (2)<a class="headerlink" href="#11-why-3-is-not-2" title="Anchor link to this section">&para;</a></h3>
+<p>CCDR moves <strong>data</strong> between Neo4j clusters. A hub moves <strong>intent</strong> between
+Kubernetes clusters. They share exactly one thing — the discovery that Neo4j
+addresses are pinned to in-cluster DNS — and that shared blocker is the reason
+this document exists at all. Nothing in the shipped CCDR proxy helps a hub:
+<code>spec.crossClusterReplication</code> fronts port 6000 (transaction shipping) and
+deliberately leaves 7687/7688 alone.</p>
+<hr />
+<h2 id="2-what-this-operator-already-provides">2. What this operator already provides<a class="headerlink" href="#2-what-this-operator-already-provides" title="Anchor link to this section">&para;</a></h2>
+<p>The Kubernetes-API side of a hub is in better shape than expected.</p>
 <ul>
-<li><strong>Predicates</strong>: <code>all</code>, <code>any</code>, <code>none</code>, <code>single</code>, <code>isEmpty</code></li>
-<li><strong>String</strong>: <code>split</code>, <code>substring</code>, <code>trim</code>, <code>upper</code>, <code>lower</code>, <code>replace</code></li>
-<li><strong>Numeric</strong>: <code>abs</code>, <code>ceil</code>, <code>floor</code>, <code>round</code>, <code>sign</code>, <code>isNaN</code></li>
-<li><strong>Lists</strong>: <code>range</code>, <code>reduce</code>, <code>reverse</code>, <code>tail</code>, <code>toBooleanList</code>, <code>toFloatList</code>, <code>toIntegerList</code>, <code>toStringList</code></li>
-<li><strong>Temporal</strong>: <code>date</code>, <code>time</code>, <code>datetime</code> and their <code>*.transaction()</code> variants for server-side time</li>
-<li><strong>Scalar</strong>: <code>coalesce</code>, <code>size</code>, <code>toBoolean</code>, <code>toInteger</code>, <code>toFloat</code>, <code>toString</code></li>
+<li><strong>No exec, no port-forward, no SPDY.</strong> <code>rest.Config</code> and <code>clientcmd</code> appear
+  in exactly two files — <code>cmd/main.go</code> and <code>internal/controller/suite_test.go</code>.
+  There is no <code>remotecommand</code> usage in production code at all. Every controller
+  interacts with Kubernetes purely through a <code>client.Client</code>, which is the one
+  abstraction that retargets cleanly.</li>
+<li><strong>Uniform client injection.</strong> All ~26 controllers are constructed with
+  <code>Client: mgr.GetClient()</code> in one contiguous block (<code>cmd/main.go:342-497</code>),
+  and every validator likewise (<code>validation.NewClusterValidator(mgr.GetClient())</code>
+  and siblings). There is a single seam to change, not a scattering.</li>
+<li><strong>controller-runtime supports it.</strong> <code>cluster.New(*rest.Config, ...) (Cluster, error)</code>
+  exists (<code>pkg/cluster/cluster.go:148</code>), <code>Cluster</code> is a <code>Runnable</code> that can be
+  added to a manager, and <code>source.Kind</code> takes an <strong>explicit cache</strong>
+  (<code>pkg/source/source.go:76</code>) — so watching a remote cluster's objects is a
+  supported composition, not a fork.</li>
+<li><strong>Namespace scoping already parameterised.</strong> <code>WATCH_NAMESPACE</code>
+  (<code>cmd/main.go:278</code>) already models "reconcile a subset", which is the right
+  shape to extend per remote cluster.</li>
+<li><strong>An external Bolt hostname can already be a certificate SAN.</strong>
+  <code>spec.service.dnsName</code> is enumerated by <code>BuildCertificateForEnterprise</code>, so
+  the SAN half of B8 is not a new build.</li>
 </ul>
-<p>Conditions cannot contain DDL — the operator rejects them defensively before sending to Neo4j.</p>
-<h2 id="examples">Examples<a class="headerlink" href="#examples" title="Anchor link to this section">&para;</a></h2>
-<h3 id="simple-attribute-matching">Simple attribute matching<a class="headerlink" href="#simple-attribute-matching" title="Anchor link to this section">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jAuthRule</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sales-team</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sales_team</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">condition</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">abac.oidc.user_attribute('department') = 'sales'</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">grantedRoles</span><span class="p">:</span>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reader</span>
+<p>Consequence: <strong>if the operator only ever spoke to the Kubernetes API, a hub
+would be a straightforward refactor.</strong> It does not.</p>
+<hr />
+<h2 id="3-blockers">3. Blockers<a class="headerlink" href="#3-blockers" title="Anchor link to this section">&para;</a></h2>
+<p>Ranked. B1–B3 are the data-plane blockers and are the substance of this
+document. B4–B7 are structural costs that no design removes, only relocates.</p>
+<h3 id="b1-the-bolt-connection-is-hardcoded-to-in-cluster-dns-the-real-blocker">B1 — The Bolt connection is hardcoded to in-cluster DNS <em>(the real blocker)</em><a class="headerlink" href="#b1-the-bolt-connection-is-hardcoded-to-in-cluster-dns-the-real-blocker" title="Anchor link to this section">&para;</a></h3>
+<p><code>internal/neo4j/client.go:2793-2808</code>:</p>
+<div class="language-go highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kd">func</span><span class="w"> </span><span class="nx">buildConnectionURIForEnterprise</span><span class="p">(</span><span class="nx">cluster</span><span class="w"> </span><span class="o">*</span><span class="nx">neo4jv1beta1</span><span class="p">.</span><span class="nx">Neo4jEnterpriseCluster</span><span class="p">)</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="nx">scheme</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="s">"neo4j"</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">cluster</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">TLS</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">cluster</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">TLS</span><span class="p">.</span><span class="nx">Mode</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">"cert-manager"</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">        </span><span class="nx">scheme</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"neo4j+s"</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nx">host</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Sprintf</span><span class="p">(</span><span class="s">"%s-client.%s.svc.cluster.local"</span><span class="p">,</span><span class="w"> </span><span class="nx">cluster</span><span class="p">.</span><span class="nx">Name</span><span class="p">,</span><span class="w"> </span><span class="nx">cluster</span><span class="p">.</span><span class="nx">Namespace</span><span class="p">)</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="nx">port</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">7687</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="p">...</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="p">}</span>
 </span></code></pre></div>
-<h3 id="multiple-conditions-and">Multiple conditions (AND)<a class="headerlink" href="#multiple-conditions-and" title="Anchor link to this section">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jAuthRule</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">engineering-uk</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">engineering_uk</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">condition</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="no">abac.oidc.user_attribute('department') = 'engineering'</span>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="no">AND abac.oidc.user_attribute('location') = 'UK'</span>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="nt">grantedRoles</span><span class="p">:</span>
-</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">editor</span>
+<p>A hub in Kubernetes cluster A cannot resolve that name for a Neo4j deployment
+in cluster B, and there is no field to override it. This is not one call site
+in an obscure corner: <strong>21 non-test files under <code>internal/controller/</code>
+construct a Neo4j client</strong>, and they fall into two groups that matter
+differently.</p>
+<p><em>Data-plane CRDs</em> — <code>Neo4jDatabase</code>, <code>Neo4jDatabaseAlias</code>, <code>Neo4jUser</code>,
+<code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>, <code>Neo4jShardedDatabase</code>,
+<code>Neo4jReplicaDatabase</code>, <code>Neo4jReplicaPromotion</code>, <code>Neo4jRestore</code>. Bolt <em>is</em>
+their implementation; without it they have no behaviour at all.</p>
+<p><em>Cluster lifecycle operations</em> — and this is the group that is easy to miss:
+<code>rolling_upgrade.go</code>, <code>scale_down.go</code>, <code>splitbrain_detector.go</code>,
+<code>plugin_controller.go</code>, <code>neo4jbackup_sharded.go</code>, <code>diagnostics_databases.go</code>,
+<code>diagnostics_users_roles.go</code>, and both the cluster and standalone controllers
+themselves (<code>neo4jenterprisecluster_controller.go:639</code>). Draining a server
+before scale-down, sequencing a rolling upgrade, and detecting split-brain are
+all Cypher operations. <strong>The infrastructure controllers are not Bolt-free
+either</strong>, which is what forecloses option (b) below.</p>
+<p>A hub that can reach the Kubernetes API but not Bolt can create a StatefulSet
+in a remote cluster and cannot create a database in it. That is Argo with extra
+credentials (§4d).</p>
+<h3 id="b2-the-routing-scheme-means-exposing-a-service-is-not-sufficient">B2 — The routing scheme means exposing a Service is not sufficient<a class="headerlink" href="#b2-the-routing-scheme-means-exposing-a-service-is-not-sufficient" title="Anchor link to this section">&para;</a></h3>
+<p>The URI above uses <code>neo4j://</code> (or <code>neo4j+s://</code>), the <strong>routing</strong> scheme. The
+driver opens one connection, calls <code>dbms.routing.getRoutingTable</code>, and then
+connects to whatever addresses the server returns. Those come from
+<code>server.routing.advertised_address</code>, pinned in
+<code>internal/resources/cluster.go:2363</code>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>server.routing.advertised_address=${HOSTNAME_FQDN}:7688
 </span></code></pre></div>
-<h3 id="list-membership">List membership<a class="headerlink" href="#list-membership" title="Anchor link to this section">&para;</a></h3>
+<p>where <code>HOSTNAME_FQDN</code> is the internal pod FQDN. So a hub that reaches an
+externally-published client Service still receives internal FQDNs in the
+routing table and fails on the second hop.</p>
+<p><strong>This is CCDR's B1, restated on the Bolt path.</strong> The CCDR analysis established
+the general form — "the downstream connects to a listed address, receives an
+internal FQDN in reply, and fails … there is no workaround on the listing
+side." The same reasoning applies unchanged here, with one aggravating
+difference: CCDR made its fix <strong>opt-in</strong> and confined it to port 6000, so
+clusters that do not replicate pay nothing. A hub needs the equivalent on the
+Bolt ports for <strong>every</strong> cluster it manages, or it manages none of them.</p>
+<p><code>internal/validation/config_validator.go:86-89</code> additionally refuses any
+<code>*.advertised_address</code> override through <code>spec.config</code>
+(<code>operatorRuntimeManagedSettings</code>), so this cannot be worked around by
+configuration — it requires operator-side support, exactly as
+<code>spec.crossClusterReplication</code> did.</p>
+<h3 id="b3-split-brain-detection-and-diagnostics-need-per-pod-bolt-not-one-endpoint">B3 — Split-brain detection and diagnostics need <em>per-pod</em> Bolt, not one endpoint<a class="headerlink" href="#b3-split-brain-detection-and-diagnostics-need-per-pod-bolt-not-one-endpoint" title="Anchor link to this section">&para;</a></h3>
+<p><code>internal/controller/splitbrain_detector.go:232</code>:</p>
+<div class="language-go highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nx">podURL</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Sprintf</span><span class="p">(</span><span class="s">"%s://%s.%s-headless.%s.svc.cluster.local:7687"</span><span class="p">,</span><span class="w"> </span><span class="p">...)</span>
+</span></code></pre></div>
+<p>The detector deliberately bypasses routing to compare each server's individual
+view of the cluster — that is the whole mechanism. So the exposure requirement
+is not "one reachable endpoint per cluster" but <strong>N reachable endpoints per
+cluster</strong>, addressable per ordinal.</p>
+<p>That is precisely the shape the CCDR proxy solves for port 6000 — one HAProxy
+listening on <code>16000+i</code> per ordinal, because "a plain Kubernetes Service cannot
+do per-ordinal port-to-specific-pod mapping." A hub would need the identical
+construction on 7687. The work is understood and already has prior art in this
+repo (<code>internal/resources/ccdr_proxy.go</code>); it is the <em>mandatoriness</em> and the
+per-cluster cost that is the problem, not the novelty.</p>
+<p>Degraded alternative: run the hub with split-brain detection and live
+diagnostics disabled for remote clusters. That is a real option, and it should
+be stated plainly rather than discovered — it means <strong>the hub silently offers
+less safety than a local operator</strong>, on exactly the clusters an operator is
+least able to watch by hand.</p>
+<h3 id="b4-every-clusterref-is-same-cluster-by-construction">B4 — Every <code>clusterRef</code> is same-cluster by construction<a class="headerlink" href="#b4-every-clusterref-is-same-cluster-by-construction" title="Anchor link to this section">&para;</a></h3>
+<p><code>ResolvedTarget</code> and <code>NewClient(c client.Client)</code>
+(<code>internal/controller/cluster_resolver.go</code>) resolve a <code>clusterRef</code> with a live
+<code>Get</code> against the operator's own API server, then build a Neo4j client from the
+result. Adding a cluster dimension means:</p>
+<ul>
+<li>a new field on <code>clusterRef</code> for <strong>every</strong> dependent CRD — <code>Neo4jDatabase</code>,
+  <code>Neo4jDatabaseAlias</code>, <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>,
+  <code>Neo4jAuthRule</code>, <code>Neo4jBackup</code>, <code>Neo4jRestore</code>, <code>Neo4jReplicaDatabase</code>,
+  <code>Neo4jReplicaPromotion</code>, <code>Neo4jShardedDatabase</code>;</li>
+<li>the same change in each corresponding validator, all of which are constructed
+  with <code>mgr.GetClient()</code> today. <strong>A validator that silently resolves against
+  the hub's own cluster is the worst bug in this design space</strong> — it reports
+  success against the wrong cluster, which no user will suspect;</li>
+<li>for each CRD, the full hand-written surface list from <code>CLAUDE.md</code>:
+  <code>docs/api_reference/</code>, <code>docs/index.md</code>, README, mkdocs nav, ArgoCD health
+  checks, the CSV owned-resources list, the <code>helm-sync-artifacthub-crds.sh</code>
+  <code>describe()</code> row, and <code>config/samples/</code>.</li>
+</ul>
+<p>This is the cost that makes option (a) unattractive independent of B1–B3.</p>
+<h3 id="b5-credential-aggregation-changes-the-blast-radius">B5 — Credential aggregation changes the blast radius<a class="headerlink" href="#b5-credential-aggregation-changes-the-blast-radius" title="Anchor link to this section">&para;</a></h3>
+<p>The hub holds N kubeconfigs <strong>and</strong> N Neo4j admin Secrets. Today an admin
+Secret lives in the same cluster as the database it unlocks; a hub requires a
+copy centrally. For the deployments that motivated much of this operator's
+hardening work, "one namespace that can administer every Neo4j in the estate"
+is a materially different security posture, not a deployment detail.</p>
+<h3 id="b6-failure-isolation-is-lost">B6 — Failure isolation is lost<a class="headerlink" href="#b6-failure-isolation-is-lost" title="Anchor link to this section">&para;</a></h3>
+<p>Today a spoke operator failing takes out one Kubernetes cluster. With a hub,
+hub downtime means <strong>nothing reconciles anywhere</strong>, including the failover
+paths (<code>Neo4jReplicaPromotion</code>) most likely to be needed during an incident
+that also stresses the hub. A DR mechanism whose control plane is a single
+remote process is a weaker DR mechanism.</p>
+<h3 id="b7-watch-and-cache-cost-multiplies-and-watch_namespace-becomes-per-cluster">B7 — Watch and cache cost multiplies, and <code>WATCH_NAMESPACE</code> becomes per-cluster<a class="headerlink" href="#b7-watch-and-cache-cost-multiplies-and-watch_namespace-becomes-per-cluster" title="Anchor link to this section">&para;</a></h3>
+<p>Each remote <code>cluster.Cluster</code> carries its own informer cache. A hub watching
+Pods, StatefulSets, Services, Secrets and ConfigMaps across N clusters holds N
+copies. <code>WATCH_NAMESPACE</code> (<code>cmd/main.go:278</code>) is currently global and would
+have to become a per-remote-cluster scope, or the hub's memory profile becomes
+a function of the largest spoke.</p>
+<h3 id="b8-tls-trust-is-directional-and-currently-one-sided">B8 — TLS trust is directional and currently one-sided<a class="headerlink" href="#b8-tls-trust-is-directional-and-currently-one-sided" title="Anchor link to this section">&para;</a></h3>
+<p>The hub's Neo4j driver must trust each spoke's CA, and the spoke's certificate
+must carry a SAN matching whatever external name the hub dials. The SAN half is
+already expressible (<code>spec.service.dnsName</code>, §2). The trust half is the hub's
+own problem — it is a Go process with a driver, not a Neo4j server, so
+<code>spec.tls.additionalClusterTrustCAs</code> (which projects peer CAs into <code>/ssl/trusted/</code>
+for the <em>database</em>) does not apply. The hub needs its own CA bundle
+construction. New, but small, and unblocked.</p>
+<hr />
+<h2 id="4-options">4. Options<a class="headerlink" href="#4-options" title="Anchor link to this section">&para;</a></h2>
+<h3 id="a-full-hub-all-controllers-remote-clients">(a) Full hub — all controllers, remote clients<a class="headerlink" href="#a-full-hub-all-controllers-remote-clients" title="Anchor link to this section">&para;</a></h3>
+<p>The literal reading. Every controller takes a per-target client; a
+<code>Neo4jRemoteCluster</code> CR supplies the kubeconfig and the Bolt endpoints.</p>
+<p>Requires: B1 + B2 + B3 (i.e. rebuild the CCDR proxy on the Bolt ports,
+mandatory and per-cluster, with per-ordinal exposure), <strong>plus</strong> B4 across
+eleven CRDs and their validators, <strong>plus</strong> accepting B5–B7.</p>
+<p>Honest assessment: this is the KubeFed shape, and it is large for the same
+reasons KubeFed was.</p>
+<h3 id="b-split-hub-kubernetes-api-controllers-remote-bolt-controllers-local">(b) Split hub — Kubernetes-API controllers remote, Bolt controllers local<a class="headerlink" href="#b-split-hub-kubernetes-api-controllers-remote-bolt-controllers-local" title="Anchor link to this section">&para;</a></h3>
+<p>Superficially attractive: let the hub own <code>Neo4jEnterpriseCluster</code> and
+<code>Neo4jEnterpriseStandalone</code> (which mostly build StatefulSets, Services,
+ConfigMaps and Certificates), and leave the Bolt-dependent controllers running
+locally in each spoke.</p>
+<p><strong>It does not survive contact with the code.</strong> The infrastructure controllers
+are not Bolt-free — see B1's second group. Diagnostics
+(<code>neo4jenterprisecluster_controller.go:639</code>), split-brain detection, <strong>rolling
+upgrade</strong> (<code>rolling_upgrade.go</code>) and <strong>scale-down draining</strong> (<code>scale_down.go</code>)
+all open a Neo4j client, most of them per-pod. The split would have to be drawn
+<em>inside</em> a single controller's reconcile loop rather than between controllers,
+and the hub would end up able to create a cluster but not to upgrade, scale
+down, or observe it. Rejected.
+Rejected.</p>
+<h3 id="aggregation-only-hub-then-hub-authored-spoke-crs-recommended">&copy; Aggregation-only hub, then hub-authored spoke CRs — <strong>recommended</strong><a class="headerlink" href="#aggregation-only-hub-then-hub-authored-spoke-crs-recommended" title="Anchor link to this section">&para;</a></h3>
+<p>Invert the direction. Each Kubernetes cluster keeps its own operator, with its
+local Bolt path unchanged. The hub gets a read-mostly view. Detailed in §5.</p>
+<h3 id="d-decline-document-gitops-instead">(d) Decline — document GitOps instead<a class="headerlink" href="#d-decline-document-gitops-instead" title="Anchor link to this section">&para;</a></h3>
+<p>A large fraction of "does it support multi-cluster?" means "can I apply the
+same manifests to five clusters?" That is Argo ApplicationSets or Flux, plus
+the operator installed per cluster, and it works today. This option costs a
+documentation page.</p>
+<p><strong>(d) is not a joke option and should ship regardless of what else does</strong> — it
+is the correct answer for most askers, and shipping it first tells you whether
+the remaining demand is real.</p>
+<hr />
+<h2 id="5-the-recommended-design-option">5. The recommended design — option &copy;<a class="headerlink" href="#5-the-recommended-design-option" title="Anchor link to this section">&para;</a></h2>
+<h3 id="51-principle">5.1 Principle<a class="headerlink" href="#51-principle" title="Anchor link to this section">&para;</a></h3>
+<blockquote>
+<p><strong>Spokes reconcile. The hub aggregates. The hub never speaks Bolt.</strong></p>
+</blockquote>
+<p>Every blocker in §3 that is expensive — B1, B2, B3, and most of B5 — exists
+only because a hub was assumed to hold the Neo4j connection. Move reconciliation
+back to the spoke and they evaporate; the spoke's Bolt path is the in-cluster
+one that already works.</p>
+<p>The B1 finding that the <em>infrastructure</em> controllers also need Bolt — rolling
+upgrade, scale-down draining, split-brain, diagnostics — cuts in this option's
+favour rather than against it. Under (a) those become four more things needing
+remote Bolt; under &copy; they keep working untouched, because they never leave
+the cluster they operate on.</p>
+<h3 id="52-phase-1-read-only-aggregation">5.2 Phase 1 — read-only aggregation<a class="headerlink" href="#52-phase-1-read-only-aggregation" title="Anchor link to this section">&para;</a></h3>
+<p>One new CRD, hub-side only:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jAuthRule</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRemoteCluster</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">country-access</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">country_access</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="nt">condition</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="no">any(country IN abac.oidc.user_attribute('citizenshipCountries')</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">        </span><span class="no">WHERE country IN ['US', 'GB', 'DE'])</span>
-</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span><span class="nt">grantedRoles</span><span class="p">:</span>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reader</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eu-west-prod</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-operator</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">kubeconfigSecretRef</span><span class="p">:</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eu-west-prod-kubeconfig</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">config</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="nt">namespaces</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">neo4j-prod</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">neo4j-staging</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># required; unbounded scope is rejected (B7)</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span><span class="nt">pollInterval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30s</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">  </span><span class="nt">phase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Connected</span><span class="w">              </span><span class="c1"># Pending | Connected | Unreachable | Forbidden</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">  </span><span class="nt">observedAt</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-08-31T09:14:22Z"</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">  </span><span class="nt">deployments</span><span class="p">:</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jEnterpriseCluster</span>
+</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">      </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-prod</span>
+</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod</span>
+</span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="w">      </span><span class="nt">phase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ready</span>
+</span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="w">      </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2026.06.0"</span>
+</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="w">      </span><span class="nt">servers</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-3-22"><a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="w">      </span><span class="nt">conditions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[{</span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="nv">ServersHealthy</span><span class="p p-Indicator">,</span><span class="nt"> status</span><span class="p">:</span><span class="w"> </span><span class="s">"True"</span><span class="p p-Indicator">},</span><span class="w"> </span><span class="nv">...</span><span class="p p-Indicator">]</span>
+</span><span id="__span-3-23"><a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="w">  </span><span class="nt">collectionError</span><span class="p">:</span><span class="w"> </span><span class="s">""</span><span class="w">           </span><span class="c1"># non-fatal, same contract as status.diagnostics</span>
 </span></code></pre></div>
-<h3 id="time-bounded-role-grants">Time-bounded role grants<a class="headerlink" href="#time-bounded-role-grants" title="Anchor link to this section">&para;</a></h3>
-<p>Combine claim matching with <code>time.transaction('UTC')</code> to grant a role only during business hours:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jAuthRule</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">emea-business-hours</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">emea_business_hours</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="nt">condition</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="no">abac.oidc.user_attribute('region') = 'EMEA'</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">      </span><span class="no">AND time.transaction('UTC').hour &gt;= 6</span>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">      </span><span class="no">AND time.transaction('UTC').hour &lt; 18</span>
-</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span><span class="nt">grantedRoles</span><span class="p">:</span>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reader</span>
-</span></code></pre></div>
-<h2 id="drift-reconciliation">Drift reconciliation<a class="headerlink" href="#drift-reconciliation" title="Anchor link to this section">&para;</a></h2>
-<p>The reconciler reads <code>SHOW AUTH RULES</code> on every loop and converges any drift:</p>
+<p>Properties that make this cheap:</p>
 <ul>
-<li><strong>Condition or enabled flag changed in Neo4j</strong> → <code>CREATE OR REPLACE AUTH RULE …</code> re-applies the spec. (CREATE OR REPLACE clears existing role grants, so the controller re-grants the spec list immediately afterwards.)</li>
-<li><strong>Role attached out-of-band</strong> with <code>enforceRoles: true</code> → revoked.</li>
-<li><strong>Role missing from Neo4j</strong> → granted.</li>
-<li><strong>Rule disabled out-of-band</strong> with <code>spec.enabled: true</code> → re-enabled.</li>
+<li><strong>No Bolt.</strong> The spoke operator already materialises everything interesting
+  into <code>status</code> — <code>status.diagnostics.servers[]</code>, <code>status.diagnostics.databases[]</code>,
+  the <code>ServersHealthy</code> / <code>DatabasesHealthy</code> conditions. The hub reads status; it
+  does not re-derive it.</li>
+<li><strong>No <code>clusterRef</code> change (B4 avoided entirely).</strong> <code>Neo4jRemoteCluster</code> is a
+  new Kind that no existing CRD references. The eleven-CRD surface change does
+  not happen.</li>
+<li><strong>Read-only RBAC on the spoke.</strong> The kubeconfig needs <code>get</code>/<code>list</code>/<code>watch</code> on
+  the Neo4j CRDs in named namespaces and nothing else — a far easier security
+  review than B5's "can administer every database in the estate".</li>
+<li><strong>Hub downtime is a visibility outage, not a reconciliation outage</strong> (B6
+  avoided).</li>
+<li><strong>Non-fatal by construction.</strong> An unreachable spoke sets
+  <code>status.phase: Unreachable</code> and <code>collectionError</code>, never <code>return err</code> — the
+  same contract <code>CollectDiagnostics</code> already uses.</li>
 </ul>
-<p>Set <code>enforceRoles: false</code> to disable the revoke step (additions still happen) — useful when layering manual grants on top.</p>
-<h2 id="lifecycle">Lifecycle<a class="headerlink" href="#lifecycle" title="Anchor link to this section">&para;</a></h2>
+<p>Implementation notes, following house patterns: <code>cluster.New</code> per
+<code>Neo4jRemoteCluster</code> added to the manager as a Runnable, with
+<code>source.Kind(remoteCache, &amp;Neo4jEnterpriseCluster{}, ...)</code> so a spoke status
+change wakes the hub reconciler rather than being polled; inline validation in
+<code>internal/validation/remotecluster_validator.go</code> (<strong>never a webhook</strong> —
+invariant 1); finalizer that stops and drops the remote cluster's cache;
+<code>retry.RetryOnConflict</code> on status writes; structured events from
+<code>internal/controller/events.go</code>.</p>
+<h3 id="53-phase-1b-the-fleet-metric-nearly-free-implemented">5.3 Phase 1b — the fleet metric, nearly free — <em>implemented</em><a class="headerlink" href="#53-phase-1b-the-fleet-metric-nearly-free-implemented" title="Anchor link to this section">&para;</a></h3>
+<p>Independently of the CRD: an operator flag labelling
+<code>neo4j_operator_server_health</code> with the Kubernetes cluster it runs in, so
+ordinary Prometheus federation gives a cross-cluster health view with no hub,
+no kubeconfig, and no new CRD. It covers reading (4) in §1 for people who do
+not use Aura Fleet Manager, and it landed before Phase 1 precisely because it
+may satisfy the requirement outright.</p>
+<p><strong>Shipped as <code>--kubernetes-cluster-name</code>, emitting the <code>k8s_cluster</code> label</strong>
+(<code>internal/metrics/metrics.go</code>, <code>cmd/main.go</code>,
+<code>charts/neo4j-operator/values.yaml: kubernetesClusterName</code>). Two naming and
+one mechanism decision are worth recording:</p>
 <ul>
-<li><strong>Create</strong>: the controller adds the <code>neo4j.com/authrule-finalizer</code>, runs <code>CREATE OR REPLACE AUTH RULE</code>, then grants <code>spec.grantedRoles</code>.</li>
-<li><strong>Update</strong>: edits to <code>spec</code> trigger drift reconciliation as described above.</li>
-<li><strong>Delete (<code>Drop</code>, default)</strong>: <code>DROP AUTH RULE … IF EXISTS</code> on the cluster, finalizer released. If the cluster is gone or downgraded below 2026.03, the finalizer is released without remote action.</li>
-<li><strong>Delete (<code>Retain</code>)</strong>: finalizer released; rule left in Neo4j.</li>
+<li><strong>Not <code>--cluster-name</code>.</strong> <code>cluster_name</code> is an established metric label on
+  every operator metric and it means the <strong>Neo4j</strong> cluster. A flag by that name
+  would have been read as setting it. The ambiguity is not cosmetic — a
+  federated dashboard that sums across the wrong one of these two labels is
+  wrong in a way nobody notices.</li>
+<li><strong>Not a Prometheus <code>ConstLabel</code>.</strong> A constant label would be the tidier
+  mechanism, but metrics are registered in <code>init()</code> (<code>metrics.go:243</code>), which
+  runs before <code>flag.Parse()</code>. The name is therefore held in an <code>atomic.Value</code>
+  and read at record time.</li>
+<li><strong>Empty by default, and that is the compatibility story.</strong> Unset emits an
+  empty <code>k8s_cluster</code> label, which Prometheus treats as equivalent to an absent
+  label for matching, so existing queries and dashboards are unaffected. The
+  Helm chart omits the flag entirely when the value is empty.</li>
 </ul>
-<h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Anchor link to this section">&para;</a></h2>
+<h3 id="54-phase-2-hub-authored-spoke-crs-only-if-writes-are-genuinely-needed">5.4 Phase 2 — hub-authored spoke CRs (only if writes are genuinely needed)<a class="headerlink" href="#54-phase-2-hub-authored-spoke-crs-only-if-writes-are-genuinely-needed" title="Anchor link to this section">&para;</a></h3>
+<p>If declarative fan-out is required — "create database <code>foo</code> on these six
+clusters" — the hub <strong>writes a <code>Neo4jDatabase</code> manifest into the spoke's
+namespace</strong> and the spoke's local operator reconciles it over its local Bolt
+connection. The hub still never opens a driver.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jFleetDatabase</span><span class="w">          </span><span class="c1"># hub-side</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">targets</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">clusterSelector</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">matchLabels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">tier</span><span class="p">:</span><span class="w"> </span><span class="nv">prod</span><span class="p p-Indicator">}}</span><span class="w">   </span><span class="c1"># selects Neo4jRemoteClusters</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">                                        </span><span class="c1"># a Neo4jDatabase spec</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="nt">topology</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="nv">3</span><span class="p p-Indicator">,</span><span class="nt"> secondaries</span><span class="p">:</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">}</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="nt">targets</span><span class="p">:</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">cluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eu-west-prod</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">      </span><span class="nt">applied</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="nt">observedPhase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ready</span>
+</span></code></pre></div>
+<p>This is the Open Cluster Management shape (a manifest-delivery model), and it
+is the only version of hub-side <em>writes</em> that does not require re-solving
+B1–B3. Two things to design carefully if it is ever built:</p>
 <ul>
-<li><strong>OIDC only.</strong> Neo4j's <code>abac.oidc.user_attribute()</code> reads from OIDC tokens; LDAP and Kerberos providers are not supported by the upstream feature.</li>
-<li><strong>Cluster-side OIDC config is the user's responsibility.</strong> The operator detects whether <code>dbms.security.abac.authorization_providers</code> is set but does not edit the cluster's <code>spec.config</code>. Wire up the cluster's OIDC provider in <code>Neo4jEnterpriseCluster.spec.config</code> before applying any <code>Neo4jAuthRule</code>.</li>
-<li><strong>Roles with DENY privileges cannot be granted.</strong> Neo4j refuses to attach deny-bearing roles to auth rules to prevent privilege escalation if a rule unexpectedly fails. The operator surfaces the resulting cypher error on the rule's <code>Failed</code> status; verify the granted role's privileges contain only <code>GRANT</code> statements.</li>
-<li><strong>Existing sessions don't pick up rule changes.</strong> Newly-applied rules take effect at the next OIDC authentication for each user; running sessions retain the role set evaluated at their original login.</li>
-<li><strong>PUBLIC role.</strong> Neo4j auto-grants PUBLIC; the operator does not list it in <code>appliedRoles</code> and ignores it during diff.</li>
+<li><strong>Deletion semantics.</strong> Removing a target from the selector must not silently
+  drop a database. Default to orphan-and-warn, mirroring §5.5 of the CCDR
+  design ("removing a CR that no longer describes anything must not be a
+  data-loss event").</li>
+<li><strong>GitOps collision.</strong> A hub writing objects into a spoke that Argo also
+  manages produces exactly the out-of-sync/prune fight the CCDR design cited
+  when it rejected an operator-authored handoff. The hub's written objects need
+  a documented ownership label and an Argo ignore convention, or the two
+  controllers will fight.</li>
 </ul>
-<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
-<h3 id="status-conditions">Status conditions<a class="headerlink" href="#status-conditions" title="Anchor link to this section">&para;</a></h3>
-<p><strong><code>AuthRuleVersionTooOld=True</code></strong>: the cluster runs a Neo4j version older than 2026.03. Either upgrade the cluster image or remove the <code>Neo4jAuthRule</code> resource.</p>
-<p><strong><code>OIDCProviderConfigured=False</code></strong>: the cluster's <code>spec.config</code> does not set <code>dbms.security.abac.authorization_providers</code>. Edit the <code>Neo4jEnterpriseCluster</code> to add the key with the configured OIDC provider name as its value.</p>
-<p><strong><code>PendingDependencies=True</code></strong>: one or more <code>grantedRoles</code> don't exist. Either create them as <code>Neo4jRole</code> resources in the same namespace, or remove them from <code>spec.grantedRoles</code>. The rule reconciles automatically when the missing roles land.</p>
-<h3 id="errors-in-speccondition">Errors in <code>spec.condition</code><a class="headerlink" href="#errors-in-speccondition" title="Anchor link to this section">&para;</a></h3>
-<p>Cypher errors fall into three categories, surfaced differently:</p>
-<p><strong>1. Validator-rejected (status <code>Failed</code>, no Cypher run)</strong></p>
-<p>The validator rejects conditions containing DDL keywords (<code>CREATE</code>, <code>DROP</code>, <code>ALTER</code>, <code>GRANT</code>, <code>DENY</code>, <code>REVOKE</code>, <code>SHOW</code>, <code>RENAME</code>) or statement separators (<code>;</code>). Surfaces as:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jauthrule<span class="w"> </span>emea-business-hours
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># Status:</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1">#   Phase:    Failed</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1">#   Message:  validation failed: spec.condition: Invalid value: "...": condition must be a pure expression; "CREATE" is not allowed (auth rule conditions cannot contain DDL or multiple statements)</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># Events:</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1">#   Warning  ValidationFailed  ...</span>
-</span></code></pre></div>
-<p>Fix: rewrite the condition as a pure expression that resolves to a boolean. The supported Cypher function set is documented <a href="https://neo4j.com/docs/operations-manual/current/authentication-authorization/attribute-based-access-control/">upstream</a>.</p>
-<p><strong>2. Neo4j-rejected (status <code>Failed</code>, Cypher attempted)</strong></p>
-<p>Conditions that pass the validator but fail Neo4j's parser — typos, unbalanced parentheses, type mismatches, calls to functions outside the allowed set — surface when the controller runs <code>CREATE OR REPLACE AUTH RULE</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jauthrule<span class="w"> </span>emea-business-hours
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># Status:</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1">#   Phase:    Failed</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1">#   Message:  CREATE OR REPLACE AUTH RULE failed: failed to create or replace auth rule emea_business_hours: Neo.ClientError.Statement.SyntaxError: Invalid input '=': expected ...</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># Events:</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1">#   Warning  AuthRuleFailed  CREATE OR REPLACE AUTH RULE failed: ...</span>
-</span></code></pre></div>
-<p>The full Neo4j error appears in both <code>status.message</code> and the <code>AuthRuleFailed</code> event. Common causes:</p>
+<h3 id="55-what-option-explicitly-does-not-give-you">5.5 What option &copy; explicitly does not give you<a class="headerlink" href="#55-what-option-explicitly-does-not-give-you" title="Anchor link to this section">&para;</a></h3>
+<p>Stated plainly, because a hub that quietly does less than expected is worse
+than one that declines:</p>
 <ul>
-<li>Missing quotes around string literals: <code>abac.oidc.user_attribute(department)</code> instead of <code>abac.oidc.user_attribute('department')</code>.</li>
-<li>Comparing a list claim with <code>=</code> instead of using <code>IN</code> or <code>any()</code>.</li>
-<li>Calling functions outside the supported set (most useful are <code>any</code>, <code>all</code>, <code>none</code>, <code>single</code>, <code>coalesce</code>, <code>size</code>, <code>time.transaction()</code>, <code>date()</code>).</li>
+<li>No hub-side split-brain detection or live diagnostics for remote clusters —
+  the spoke does that locally, and the hub sees only its published conclusion.</li>
+<li>No hub-side Cypher. <code>Neo4jUser</code> / <code>Neo4jRole</code> / ad-hoc administration remain
+  spoke-local operations (Phase 2 can <em>deliver</em> the CRs, but the spoke executes).</li>
+<li>No single point of control during a spoke API outage; if the spoke's API
+  server is down the hub can neither read nor write it, and there is no
+  fallback path.</li>
 </ul>
-<p>The controller will retry the failing CREATE every 30 seconds until you fix the spec. If you need to silence the retries while diagnosing, set <code>spec.enabled: false</code> (which preserves the rule but disables it) — but in the failing case the rule may not exist at all yet, so editing or deleting the CR is usually the right move.</p>
-<p><strong>3. Runtime evaluation errors (rule <code>Ready</code>, but auth fails)</strong></p>
-<p>A condition can be syntactically valid yet fail at evaluation time — for example, calling <code>.hour</code> on a claim that's <code>NULL</code> for some users, or <code>IN</code> against a non-list. The rule's <code>status.phase</code> stays <code>Ready</code> because the rule is correctly <em>installed</em>; the symptom is that <em>some</em> users fail to authenticate.</p>
-<p>These errors are not visible to the operator. To diagnose:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Neo4j's security log captures auth failures with the rule that triggered them.</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>&lt;neo4j-server-pod&gt;<span class="w"> </span>-c<span class="w"> </span>neo4j<span class="w"> </span>--<span class="w"> </span>tail<span class="w"> </span>-50<span class="w"> </span>/logs/security.log
-</span></code></pre></div>
-<p>Mitigate runtime errors with defensive Cypher:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Use coalesce() to default missing claims:</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">condition</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">coalesce(abac.oidc.user_attribute('region'), '') = 'EMEA'</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Check list-ness before iterating:</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="nt">condition</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="no">abac.oidc.user_attribute('countries') IS NOT NULL</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="no">AND any(c IN abac.oidc.user_attribute('countries') WHERE c = 'US')</span>
-</span></code></pre></div>
-<p><strong>4. <code>42I06: Invalid input 'AUTH'</code> running queries by hand</strong></p>
-<p>Neo4j 2026.x parses AUTH RULE syntax only under Cypher 25, but the system
-database defaults to Cypher 5. The operator prefixes its own AUTH RULE
-statements with <code>CYPHER 25</code> automatically; ad-hoc diagnostics via
-<code>cypher-shell</code> need the same prefix:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Wrong — fails with 42I06</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>mycluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span><span class="nv">$PASS</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="s2">"SHOW AUTH RULES"</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="c1"># Right</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>mycluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>--format<span class="w"> </span>plain<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span><span class="nv">$PASS</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="s2">"CYPHER 25 SHOW AUTH RULES YIELD name, condition, enabled, roles</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="s2">   RETURN name, condition, enabled, roles"</span>
-</span></code></pre></div>
-<p>Alternatively, set the system database's default language permanently:
-<code>ALTER DATABASE system SET DEFAULT LANGUAGE CYPHER 25</code>. This makes the
-prefix unnecessary for both manual queries and the operator.</p>
-<p><strong>5. <code>entries must be a valid OIDC authorization provider</code> / <code>entries must exist in dbms.security.authorization_providers</code></strong></p>
-<p>The cluster has not finished wiring the OIDC provider into the right config
-maps. ABAC requires <em>four</em> coordinated touchpoints — see the
-<a href="../../user_guide/security/#oidc-and-abac-setup-checklist">OIDC and ABAC setup checklist</a>
-in the security guide. Each missing step surfaces as a different error:</p>
-<table>
-<thead>
-<tr>
-<th>Missing step</th>
-<th>Error</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>dbms.security.oidc.&lt;name&gt;.*</code> block</td>
-<td><code>entries must be a valid OIDC authorization provider. Invalid values: &lt;name&gt;</code></td>
-</tr>
-<tr>
-<td><code>oidc-&lt;name&gt;</code> not in <code>authorizationProviders</code></td>
-<td><code>entries must exist in dbms.security.authorization_providers. Invalid values: oidc-&lt;name&gt;</code></td>
-</tr>
-<tr>
-<td><code>dbms.security.abac.authorization_providers</code> value missing the <code>oidc-</code> prefix</td>
-<td>Boot-time validation rejects the bare provider name</td>
-</tr>
-</tbody>
-</table>
-<p>In all cases the cluster's pods CrashLoopBackOff at startup with the error in
-<code>kubectl logs &lt;pod&gt; --previous</code>; the rule itself never reaches <code>Ready</code>
-because the controller cannot connect to a cluster that won't boot.</p>
-<p><strong>6. <code>does not have required scheme 'https'</code></strong></p>
-<p>Neo4j 2026.x rejects <code>http://</code> for every <code>dbms.security.oidc.&lt;name&gt;.*</code> URI
-at config-parse time. There is no insecure-mode override. Self-hosted IDPs
-without TLS need a TLS-terminating proxy plus the proxy's CA in
-<a href="../../user_guide/security/#jvm-truststore-for-internal-cas"><code>spec.trustedCASecrets</code></a>
-so Neo4j trusts the issued certificate. The integration test in
-<a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/test/integration/neo4jauthrule_test.go"><code>test/integration/neo4jauthrule_test.go</code></a>
-shows this end-to-end with cert-manager + nginx + mock-oauth2-server.</p>
-<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
+<hr />
+<h2 id="6-what-full-hubspoke-would-additionally-require">6. What full hub/spoke would additionally require<a class="headerlink" href="#6-what-full-hubspoke-would-additionally-require" title="Anchor link to this section">&para;</a></h2>
+<p>Recorded so that a future decision to build (a) does not re-derive it.</p>
+<ol>
+<li><strong>A Bolt exposure mechanism per managed cluster</strong>, per ordinal, mandatory —
+   structurally the CCDR proxy (<code>internal/resources/ccdr_proxy.go</code>) retargeted
+   from 6000 to 7687, plus an override for <code>server.routing.advertised_address</code>
+   that the config validator currently forbids.</li>
+<li><strong><code>buildConnectionURIForEnterprise</code> becomes endpoint-driven</strong>, taking a
+   resolved endpoint rather than composing an in-cluster FQDN; same for the
+   standalone builder and <code>splitbrain_detector.go</code>.</li>
+<li><strong><code>clusterRef.cluster</code> across eleven CRDs</strong> plus their validators, plus the
+   per-CRD hand-written surface list (B4).</li>
+<li><strong>A hub CA bundle</strong> for the driver's trust of each spoke (B8).</li>
+<li><strong>Per-remote-cluster <code>WATCH_NAMESPACE</code> scoping</strong> (B7).</li>
+<li><strong>An answer to B5 and B6</strong> that a security reviewer accepts.</li>
+</ol>
+<p>Items 1 and 2 are the ones with no cheap version.</p>
+<hr />
+<h2 id="7-testing">7. Testing<a class="headerlink" href="#7-testing" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><a href="../../user_guide/user_role_management/">User &amp; Role Management Guide</a> — end-to-end walkthrough for <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, and <code>Neo4jAuthRule</code>.</li>
-<li><a href="../neo4jrole/"><code>Neo4jRole</code></a> — the role being granted.</li>
-<li><a href="https://neo4j.com/docs/operations-manual/current/authentication-authorization/attribute-based-access-control/">Upstream ABAC reference</a></li>
+<li><strong>Option &copy; fits the project's testing invariants; option (a) does not.</strong>
+  The hub in &copy; runs no Neo4j, so a hub-plus-one-spoke test needs <strong>one</strong>
+  Enterprise deployment — compatible with the standing rule that only one
+  Enterprise deployment runs at a time (concurrent JVMs wedge Bolt on a laptop).
+  A meaningful (a) test needs at least two live deployments in different
+  Kubernetes clusters, which that rule forbids on a developer machine and which
+  CI has no tooling for.</li>
+<li><strong>Two Kind clusters are viable.</strong> Kind clusters share a Docker network by
+  default and can route to each other — the technique the CCDR design already
+  identified. The known gap is unchanged: plain Kind has no cloud provider, so
+  <code>type: LoadBalancer</code> never gets an address, and this repo has no MetalLB /
+  <code>cloud-provider-kind</code> wiring yet. <strong>Option &copy; does not need a LoadBalancer</strong>
+  — the hub talks to the spoke's API server, which Kind publishes — so this gap
+  blocks (a) and not &copy;.</li>
+<li><strong>Unit:</strong> kubeconfig parsing and rejection of an unbounded namespace scope;
+  status projection from a fake spoke cluster; the <code>Unreachable</code> /
+  <code>Forbidden</code> branches; validator table tests.</li>
+<li><strong>Integration:</strong> <code>Label("core")</code> for CRD admission and the validator, no
+  second cluster required. A genuine two-Kind-cluster aggregation spec is
+  <code>Label("extended")</code> and dispatch-gated, mirroring
+  <code>isPropertyShardingCompatible()</code>.</li>
 </ul>
+<hr />
+<h2 id="8-delivery-order">8. Delivery order<a class="headerlink" href="#8-delivery-order" title="Anchor link to this section">&para;</a></h2>
+<ol>
+<li><del><strong>Option (d)</strong> — a <code>docs/user_guide/guides/multi_cluster.md</code> page covering
+   ApplicationSet/Flux fan-out with a per-cluster operator</del> → <strong>done.</strong>
+   Cheapest, correct for most askers, and a demand probe for everything below.</li>
+<li><del><strong>§5.3</strong> — <code>--cluster-name</code> flag + metric label + a federation example</del> →
+   <strong>done</strong>, as <code>--kubernetes-cluster-name</code> / <code>k8s_cluster</code> (§5.3). No new API
+   surface.</li>
+<li><strong>§5.2</strong> — <code>Neo4jRemoteCluster</code>, read-only aggregation, with the full
+   hand-written-surface checklist from <code>CLAUDE.md</code> (api_reference, index, README,
+   nav, ArgoCD health check keyed off the <code>Ready</code> <strong>condition</strong>, CSV, helm-sync
+   <code>describe()</code> row, sample, <code>devControllerKeys</code>).</li>
+<li><strong>§5.4</strong> — <code>Neo4jFleetDatabase</code> manifest delivery, only on evidence from 1–3
+   that read-only aggregation is insufficient.</li>
+<li><strong>Option (a)</strong> — not scheduled. §6 is its prerequisite list.</li>
+</ol>
+<hr />
+<h2 id="9-open-questions">9. Open questions<a class="headerlink" href="#9-open-questions" title="Anchor link to this section">&para;</a></h2>
+<p><strong>Q1 — Is a stretched single Neo4j cluster across Kubernetes clusters worth a
+separate analysis? Leaning no.</strong> It requires every port externally routable —
+including <code>server.cluster.raft.advertised_address</code> (7000), which the CCDR
+design pointedly refused to touch so that "RAFT leader election never depends
+on the load balancer" — and it puts a WAN round-trip on the write path via RAFT
+commit. The one defensible variant is Kubernetes clusters on a flat L3 network
+with mutually routable pod IPs (Cilium ClusterMesh, Submariner), where the work
+reduces to letting the discovery endpoint list include servers the local
+StatefulSet does not own. Even then, two independent control planes each
+believing they own part of one DBMS is an unsolved ownership problem. Neo4j's
+own answer to geo-distribution is CCDR.</p>
+<p><strong>Q2 — Does the aggregated status actually satisfy the requirement?</strong> Everything
+§5.2 surfaces is already in spoke <code>status</code>. If the real ask is cross-cluster
+<em>actions</em> rather than cross-cluster <em>visibility</em>, Phase 1 is a detour and the
+question becomes §5.4 vs. (d) directly. <strong>This should be answered by a user
+before item 3 in §8 is started</strong>, because it is the difference between a
+one-CRD feature and a fan-out delivery controller.</p>
+<p><strong>Q3 — Should <code>Neo4jRemoteCluster</code> reuse the Aura fleet plumbing?</strong>
+<code>spec.auraFleetManagement</code> already registers deployments with a cross-cluster
+fleet service, and <code>fleet_target.go</code> already abstracts "cluster or standalone"
+for it. Whether the hub's aggregation should be a second consumer of that
+abstraction or an independent path is an implementation question that affects
+how much of §5.2 is new code.</p>
+<p><strong>Q4 — Hub-side kubeconfig rotation.</strong> Kubeconfigs expire. The design needs a
+defined behaviour for credential expiry that is distinguishable in <code>status</code>
+from a genuinely unreachable spoke (<code>Forbidden</code> vs. <code>Unreachable</code> above is a
+first cut, not a rotation strategy).</p>
+<p><strong>Q5 — Is there a customer for (a)?</strong> §6 is a large, mostly irreversible bill.
+It should not be paid on the strength of the phrase "multi-cluster" appearing
+in a requirements document.</p>
 
 
 
@@ -4204,44 +4154,6 @@ shows this end-to-end with cert-manager + nginx + mock-oauth2-server.</p>
       
         <footer class="md-footer">
   
-    
-      
-      <nav class="md-footer__inner md-grid" aria-label="Footer" >
-        
-          
-          <a href="../neo4jrolebinding/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Neo4jRoleBinding">
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
-            </div>
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              <div class="md-ellipsis">
-                Neo4jRoleBinding
-              </div>
-            </div>
-          </a>
-        
-        
-          
-          <a href="../neo4jplugin/" class="md-footer__link md-footer__link--next" aria-label="Next: Neo4jPlugin">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                Neo4jPlugin
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
-            </div>
-          </a>
-        
-      </nav>
     
   
   <div class="md-footer-meta md-typeset">
