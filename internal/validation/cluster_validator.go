@@ -167,14 +167,23 @@ func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1
 	// Validate topology (second most critical)
 	allErrs = append(allErrs, v.topologyValidator.Validate(cluster)...)
 
-	// Validate image (fail fast if image validation fails)
-	if imageErrs := v.imageValidator.Validate(cluster); len(imageErrs) > 0 {
-		allErrs = append(allErrs, imageErrs...)
-		// If image is invalid, other validations are less meaningful
-		return allErrs
-	}
+	// Validate image.
+	//
+	// This used to `return` early when the image was invalid, on the reasoning
+	// that "other validations are less meaningful" once it is. That is true of
+	// the *deployment*, but not of the *feedback*: this operator has no
+	// admission webhook, so a user's only channel is the errors this function
+	// produces. Returning early meant a bad image hid every storage, TLS, auth
+	// and spec.config problem until it was fixed, turning one apply into a
+	// fix-one-rerun loop — and the same loop in `kubectl neo4j validate`, which
+	// calls this code directly.
+	//
+	// Every validator below is independent of the image: none reads it except
+	// validatePropertySharding, which is opt-in and returns an error rather
+	// than assuming a parseable tag. TestValidateCluster_ReportsAllErrors pins
+	// that this function keeps reporting the full set.
+	allErrs = append(allErrs, v.imageValidator.Validate(cluster)...)
 
-	// Continue with remaining validations only if critical ones pass
 	allErrs = append(allErrs, v.storageValidator.Validate(cluster)...)
 	allErrs = append(allErrs, v.tlsValidator.Validate(cluster)...)
 	allErrs = append(allErrs, v.authValidator.Validate(cluster)...)
