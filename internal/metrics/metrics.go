@@ -19,6 +19,7 @@ package metrics
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -58,6 +59,13 @@ const (
 	LabelNodeType = "node_type"
 	// LabelStatus is the label key for operation status
 	LabelStatus = "status"
+
+	// LabelK8sCluster is the label key for the Kubernetes cluster this
+	// operator instance runs in. Deliberately NOT `cluster_name`, which is
+	// already taken and means the *Neo4j* cluster — the two are different
+	// things and conflating them in one label set is how a federated
+	// dashboard silently sums the wrong series.
+	LabelK8sCluster = "k8s_cluster"
 )
 
 var (
@@ -239,6 +247,33 @@ var (
 		[]string{"resource_type", LabelNamespace},
 	)
 )
+
+// kubernetesClusterName identifies the Kubernetes cluster this operator
+// instance runs in. It is empty unless --kubernetes-cluster-name is passed.
+//
+// Metrics are registered in init(), which runs before flag.Parse(), so this
+// cannot be a Prometheus ConstLabel — it is read at record time instead.
+// An empty value is emitted as an empty label, which Prometheus treats as
+// equivalent to the label being absent for matching purposes, so existing
+// queries and dashboards are unaffected when the flag is not set.
+var kubernetesClusterName atomic.Value
+
+// SetKubernetesClusterName records the Kubernetes cluster name for metric
+// labelling. Call it once from main() after flag.Parse() and before the
+// manager starts; it is atomic so a late call cannot race a recording
+// controller, but a late call will leave already-emitted series unlabelled.
+func SetKubernetesClusterName(name string) {
+	kubernetesClusterName.Store(name)
+}
+
+// KubernetesClusterName returns the configured Kubernetes cluster name, or ""
+// when --kubernetes-cluster-name was not supplied.
+func KubernetesClusterName() string {
+	if v, ok := kubernetesClusterName.Load().(string); ok {
+		return v
+	}
+	return ""
+}
 
 func init() {
 	// Register Prometheus metrics
@@ -672,9 +707,9 @@ var (
 		prometheus.GaugeOpts{
 			Subsystem: subsystem,
 			Name:      "server_health",
-			Help:      "Health of individual Neo4j servers: 1=Enabled+Available, 0=degraded",
+			Help:      "Health of individual Neo4j servers: 1=Enabled+Available, 0=degraded. The k8s_cluster label is empty unless --kubernetes-cluster-name is set.",
 		},
-		[]string{LabelClusterName, LabelNamespace, "server_name", "server_address"},
+		[]string{LabelClusterName, LabelNamespace, "server_name", "server_address", LabelK8sCluster},
 	)
 
 	// Aura orchestration (control-plane) metrics. The operator talks to the Aura
@@ -812,6 +847,6 @@ func (m *ClusterMetrics) RecordServerHealth(servers []ServerHealth) {
 		if s.Enabled && s.Available {
 			value = 1.0
 		}
-		serverHealth.WithLabelValues(m.clusterName, m.namespace, s.Name, s.Address).Set(value)
+		serverHealth.WithLabelValues(m.clusterName, m.namespace, s.Name, s.Address, KubernetesClusterName()).Set(value)
 	}
 }

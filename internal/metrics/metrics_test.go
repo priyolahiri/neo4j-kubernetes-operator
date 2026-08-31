@@ -667,3 +667,85 @@ func TestMetricsRegistration(t *testing.T) {
 		assert.NotNil(t, metric)
 	}
 }
+
+func TestKubernetesClusterName_DefaultsToEmpty(t *testing.T) {
+	t.Cleanup(func() { SetKubernetesClusterName("") })
+
+	SetKubernetesClusterName("")
+	assert.Equal(t, "", KubernetesClusterName(),
+		"an unset --kubernetes-cluster-name must yield an empty label, not a placeholder")
+}
+
+func TestClusterMetrics_RecordServerHealth(t *testing.T) {
+	tests := []struct {
+		name       string
+		k8sCluster string
+		server     ServerHealth
+		expected   float64
+	}{
+		{
+			name:       "enabled and available, no k8s cluster name set",
+			k8sCluster: "",
+			server:     ServerHealth{Name: "srv-0", Address: "10.0.0.1:7687", Enabled: true, Available: true},
+			expected:   1.0,
+		},
+		{
+			name:       "enabled but unavailable is degraded",
+			k8sCluster: "",
+			server:     ServerHealth{Name: "srv-0", Address: "10.0.0.1:7687", Enabled: true, Available: false},
+			expected:   0.0,
+		},
+		{
+			name:       "available but disabled is degraded",
+			k8sCluster: "",
+			server:     ServerHealth{Name: "srv-0", Address: "10.0.0.1:7687", Enabled: false, Available: true},
+			expected:   0.0,
+		},
+		{
+			name:       "k8s cluster name is carried onto the series",
+			k8sCluster: "eu-west-prod",
+			server:     ServerHealth{Name: "srv-0", Address: "10.0.0.1:7687", Enabled: true, Available: true},
+			expected:   1.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Cleanup(func() { SetKubernetesClusterName("") })
+			serverHealth.Reset()
+			SetKubernetesClusterName(tt.k8sCluster)
+
+			NewClusterMetrics("test-cluster", "test-namespace").
+				RecordServerHealth([]ServerHealth{tt.server})
+
+			gauge := serverHealth.WithLabelValues(
+				"test-cluster", "test-namespace", tt.server.Name, tt.server.Address, tt.k8sCluster)
+			assert.Equal(t, tt.expected, testutil.ToFloat64(gauge))
+		})
+	}
+}
+
+// The whole point of the k8s_cluster label: the same Neo4j cluster name in the
+// same namespace, running in two different Kubernetes clusters, must not
+// collapse into one series when both are scraped into one Prometheus.
+func TestClusterMetrics_RecordServerHealth_SeparatesKubernetesClusters(t *testing.T) {
+	t.Cleanup(func() { SetKubernetesClusterName("") })
+	serverHealth.Reset()
+
+	srv := ServerHealth{Name: "srv-0", Address: "10.0.0.1:7687", Enabled: true, Available: true}
+	m := NewClusterMetrics("prod", "neo4j")
+
+	SetKubernetesClusterName("eu-west")
+	m.RecordServerHealth([]ServerHealth{srv})
+
+	SetKubernetesClusterName("us-east")
+	m.RecordServerHealth([]ServerHealth{{Name: "srv-0", Address: "10.0.0.1:7687", Enabled: true, Available: false}})
+
+	require.Equal(t, 2, testutil.CollectAndCount(serverHealth),
+		"two Kubernetes clusters must produce two distinct series, not one overwritten one")
+
+	assert.Equal(t, 1.0, testutil.ToFloat64(
+		serverHealth.WithLabelValues("prod", "neo4j", "srv-0", "10.0.0.1:7687", "eu-west")))
+	assert.Equal(t, 0.0, testutil.ToFloat64(
+		serverHealth.WithLabelValues("prod", "neo4j", "srv-0", "10.0.0.1:7687", "us-east")))
+}
