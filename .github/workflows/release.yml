@@ -316,6 +316,63 @@ jobs:
           release-artifacts/neo4j-kubernetes-operator-complete.yaml || {
           echo "ERROR: complete.yaml is not pinned to ${TAG_NAME}" >&2; exit 1; }
 
+    # kubectl-neo4j plugin binaries. Deliberately NOT a separate workflow or a
+    # goreleaser config: this job already checks out the source and sets up Go,
+    # and the "Create GitHub Release" step below attaches release-artifacts/* by
+    # glob, so cross-compiling into that directory is the whole integration.
+    #
+    # The asset NAMING is the load-bearing decision here, not the build. krew
+    # plugin manifests and any install script pin these exact filenames, so
+    # renaming them later silently breaks every existing installer. The
+    # goreleaser-style `name_version_os_arch.ext` convention is used because it
+    # is what krew tooling already expects.
+    - name: Build kubectl-neo4j binaries
+      env:
+        CLEAN_TAG: ${{ needs.determine-tag.outputs.clean_tag }}
+        TAG_NAME: ${{ needs.determine-tag.outputs.tag_name }}
+      run: |
+        set -euo pipefail
+        mkdir -p release-artifacts dist
+
+        # Same version string the binary reports via `kubectl neo4j version`,
+        # and the same one its validate output cites as the ruleset it speaks
+        # for. Offline validation that cannot name its operator release is how
+        # silent version skew starts (design doc Q4).
+        LDFLAGS="-s -w -X main.version=${TAG_NAME}"
+
+        build() {
+          local goos="$1" goarch="$2" ext="${3:-}"
+          local bin="kubectl-neo4j${ext}"
+          echo "building ${goos}/${goarch}"
+          CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
+            go build -trimpath -ldflags "${LDFLAGS}" -o "dist/${bin}" ./cmd/kubectl-neo4j
+
+          local stem="kubectl-neo4j_${CLEAN_TAG}_${goos}_${goarch}"
+          if [ "${goos}" = "windows" ]; then
+            (cd dist && zip -q "../release-artifacts/${stem}.zip" "${bin}")
+          else
+            tar -czf "release-artifacts/${stem}.tar.gz" -C dist "${bin}"
+          fi
+          rm -f "dist/${bin}"
+        }
+
+        build darwin  arm64
+        build darwin  amd64
+        build linux   amd64
+        build linux   arm64
+        build windows amd64 .exe
+
+        # One checksum file covering every archive, so a user can verify a
+        # single download without fetching the others.
+        (cd release-artifacts && \
+          shasum -a 256 kubectl-neo4j_* > "kubectl-neo4j_${CLEAN_TAG}_checksums.txt")
+
+        # Fail the release rather than ship an unusable asset set.
+        test "$(ls release-artifacts/kubectl-neo4j_*.tar.gz | wc -l)" -eq 4
+        test -f "release-artifacts/kubectl-neo4j_${CLEAN_TAG}_windows_amd64.zip"
+        echo "kubectl-neo4j assets:"
+        ls -1 release-artifacts/kubectl-neo4j_*
+
     - name: Generate release notes
       id: release-notes
       env:

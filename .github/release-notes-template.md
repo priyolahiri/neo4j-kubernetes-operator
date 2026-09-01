@@ -74,10 +74,25 @@ See [Supported Neo4j Versions](https://priyolahiri.github.io/neo4j-kubernetes-op
 |-------|-------------|
 | `neo4j-kubernetes-operator-complete.yaml` | Complete operator install (CRDs + RBAC + Deployment) |
 | `neo4j-kubernetes-operator.yaml` | CRDs only |
+| `kubectl-neo4j___VERSION___<os>_<arch>.tar.gz` | `kubectl-neo4j` CLI plugin (darwin/linux, arm64/amd64) |
+| `kubectl-neo4j___VERSION___windows_amd64.zip` | `kubectl-neo4j` CLI plugin (Windows) |
+| `kubectl-neo4j___VERSION___checksums.txt` | SHA-256 checksums for every CLI archive |
 
-`kubectl apply --server-side` is the recommended apply form for both assets (the largest CRDs exceed client-side apply's last-applied annotation limit).
+`kubectl apply --server-side` is the recommended apply form for both manifest assets (the largest CRDs exceed client-side apply's last-applied annotation limit).
 
 **Helm users**: apply the CRD asset (`neo4j-kubernetes-operator.yaml`) before `helm upgrade` — Helm never upgrades CRDs.
+
+### `kubectl-neo4j` CLI
+
+Validates your manifests against this operator's own validators **before** you apply them — the feedback an admission webhook would give you, except this operator deliberately has none. Ships on this tag and carries this release's validation rules, so keep it on the same version as the operator you deploy.
+
+```bash
+curl -sSL https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/__TAG__/kubectl-neo4j___VERSION___linux_amd64.tar.gz | tar -xz
+sudo mv kubectl-neo4j /usr/local/bin/
+kubectl neo4j validate -f manifests/
+```
+
+Same support terms as the operator: best-effort, no SLA. See the [CLI guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/user_guide/guides/cli/).
 
 ## Documentation
 

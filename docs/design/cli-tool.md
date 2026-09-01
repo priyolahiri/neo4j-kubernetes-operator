@@ -339,6 +339,50 @@ It also functions as a test of the B3 mitigation: if `validate` cannot be built
 without copying something out of `internal/`, that is early evidence the
 shared-package discipline will not hold, and it is far cheaper to learn now.
 
+### 6.1 What the prototype found
+
+Built as `cmd/kubectl-neo4j`. **The B3 discipline held** — not one rule was
+copied out of `internal/`; the command is a decoder, a dispatch table and a
+renderer. Two findings changed the picture, one better than expected and one
+worse.
+
+**Offline coverage is six kinds, not two.** The first cut supported only
+`Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone`, on the assumption
+that any validator whose constructor takes a `client.Client` needs a cluster.
+That is not what the code does. Establishing it per kind rather than by
+signature:
+
+| Kind | Why it is safe with a nil client |
+|---|---|
+| `Neo4jEnterpriseStandalone`, `Neo4jBackup`, `Neo4jPlugin` | constructor takes no client |
+| `Neo4jDatabaseAlias`, `Neo4jReplicaDatabase` | constructor accepts a client, stores it, **never dereferences it** |
+| `Neo4jEnterpriseCluster` | single client call is `ValidateAdminSecretPassword`, which returns early on nil |
+
+Those are properties of code this command does not own, so they are pinned by
+`TestOfflineValidatorsAreNilClientSafe`, which probes every kind in the
+dispatch table and fails if the map and the probe list ever diverge. A client
+call added to any of those validators becomes a failing test here rather than a
+panic in a user's terminal.
+
+The remaining kinds resolve `clusterRef`, Secrets or roles through the API
+server. They are reported as *skipped*, never as failing — reporting "not
+found" for a cluster that simply is not reachable would be a false error, which
+is worse than not checking.
+
+**Validation short-circuits, so `validate` may need more than one pass.**
+`validateCluster` returns early when image validation fails
+(`cluster_validator.go:170-174`, *"if image is invalid, other validations are
+less meaningful"*), so a manifest with a bad image reports nothing about
+storage, TLS, auth or `spec.config` until the image is fixed. Observed
+directly: a manifest with both a malformed image and two rejected config keys
+reported only the image and topology errors; correcting the image surfaced the
+config errors on the next run.
+
+This is the operator's own behaviour, faithfully reproduced, and the CLI should
+**not** diverge from it — diverging is exactly the B3 failure this design is
+built to avoid. But it is worse UX for a linter than for a reconciler, and the
+honest options are recorded in §9 Q5 rather than papered over.
+
 ---
 
 ## 7. Testing
@@ -364,10 +408,24 @@ shared-package discipline will not hold, and it is far cheaper to learn now.
 1. **`validate`, offline only** (§6). One command, no cluster, no release
    pipeline yet — buildable and reviewable as a normal PR, with `go run` and
    `make` targets for local use.
-2. **Cross-compile matrix in `release.yml`** (revised B1). Much smaller than
-   first assessed — a `GOOS`/`GOARCH` matrix writing into `release-artifacts/`,
-   which the existing release step already globs. Settle the asset naming
-   convention here, before anything pins to it.
+2. ~~**Cross-compile matrix in `release.yml`** (revised B1)~~ → **done.** A
+   `GOOS`/`GOARCH` matrix writing into `release-artifacts/`, which the existing
+   release step already globs — no new workflow, as the revised B1 predicted.
+   Five targets, tar.gz for unix and zip for Windows, one checksums file, with
+   an assertion that fails the release rather than shipping a partial asset set.
+
+   The asset naming convention is settled as
+   `kubectl-neo4j_<version>_<os>_<arch>.<ext>` and is now pinned in three
+   places — the release workflow, the release-notes template and the CLI guide.
+   Because that string is a public contract that krew manifests and install
+   scripts depend on, `scripts/check-cli-asset-names.sh` fails CI if the three
+   ever disagree. This repo's own lesson about the CRD catalogue applies
+   directly: two of three surfaces being right is the shape of a drift review
+   miss.
+
+   A CI cross-compile step (`ci.yml`) builds all five targets on every PR, so a
+   unix-only import reaching `cmd/` fails a pull request rather than a tagged
+   release.
 3. **`validate --context`** — the 8 cross-reference validators.
 4. **`status`** (§4.2), then **`connect` / `cypher`** (§4.3).
 5. **krew index submission** (B6), once the command set is stable enough that
@@ -410,6 +468,17 @@ originally assumed:
 make the operator legible; one to humans, one to agents. If `explain` and the
 MCP server end up encoding the same troubleshooting knowledge in two places,
 that is B3 in a new costume. Worth checking before §8 item 6, not before item 1.
+
+**Q5 — Should the operator batch validation errors instead of short-circuiting?**
+Raised by the prototype (§6.1). The early return in `validateCluster` predates
+any CLI and is reasonable for a reconciler, where the user re-reads status after
+each fix anyway. For a linter it means a fix-one-rerun loop.
+
+The fix belongs in the **operator**, not the CLI: remove the early return so
+every validator contributes, and let callers decide what to show. That is an
+operator behaviour change with test impact and its own review, so it is filed
+here rather than smuggled into a CLI change. Until then the CLI's help text
+should say that a clean run after fixes may reveal further errors.
 
 **Q4 — Version skew: mostly resolved by Q2, with one thing left to build.**
 Lockstep release means `kubectl-neo4j vX.Y.Z` encodes operator `vX.Y.Z`'s rules

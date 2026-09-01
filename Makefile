@@ -179,7 +179,7 @@ GO_TEST_CMD ?= go test
 test-unit: manifests generate fmt vet envtest ## Run unit tests (no cluster required)
 	@echo "🧪 Running unit tests..."
 	@mkdir -p coverage
-	@./scripts/run-tests-clean.sh env KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GO_TEST_CMD) $$(go list ./... | grep -v /e2e | grep -v /integration | grep -v "/test/webhooks" | grep -v "/test/testutil" | grep -v "/cmd") -coverprofile coverage/coverage-unit.out -race -v
+	@./scripts/run-tests-clean.sh env KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GO_TEST_CMD) $$(go list ./... | grep -v /e2e | grep -v /integration | grep -v "/test/webhooks" | grep -v "/test/testutil") -coverprofile coverage/coverage-unit.out -race -v
 
 # Webhook tests removed - webhooks migrated to client-side validation
 
@@ -342,6 +342,12 @@ test-ci-local: ## Emulate CI workflow locally with debug logging (for troublesho
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
+.PHONY: build-cli
+build-cli: ## Build the kubectl-neo4j plugin into bin/. Add bin/ to PATH to use `kubectl neo4j`.
+	go build -ldflags "-X main.version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+		-o bin/kubectl-neo4j ./cmd/kubectl-neo4j
+	@echo "built bin/kubectl-neo4j — try: ./bin/kubectl-neo4j validate -f config/samples/"
+
 # Removed: run target - operator must run in-cluster for proper DNS resolution
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
@@ -444,6 +450,10 @@ check-drift: sync-all bundle ## CI gate: regenerate everything and fail if anyth
 .PHONY: check-invariants
 check-invariants: ## Verify the 5 hard architectural invariants hold (grep guard; runtime image check lives in image_validator.go).
 	@./scripts/check-invariants.sh
+
+.PHONY: check-cli-asset-names
+check-cli-asset-names: ## Verify the kubectl-neo4j release asset naming convention matches everywhere it is pinned.
+	@./scripts/check-cli-asset-names.sh
 
 .PHONY: check-knowledge-drift
 check-knowledge-drift: ## Verify every 'pinned-by:'/file reference in docs/knowledge/ still resolves to a real path.

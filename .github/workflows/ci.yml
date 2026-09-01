@@ -66,6 +66,9 @@ jobs:
     - name: api_reference in sync with CRD spec fields
       run: make check-apiref-drift
 
+    - name: kubectl-neo4j release asset names agree everywhere
+      run: make check-cli-asset-names
+
     - name: Every CRD listed on docs landing page, README and nav
       run: make check-crd-catalog
 
@@ -123,6 +126,20 @@ jobs:
 
     - name: Run golangci-lint
       run: ./bin/golangci-lint run --timeout=6m ./...
+
+    # The operator itself only ever runs on linux, but kubectl-neo4j is a
+    # plugin users install on their own laptops, so it is released for darwin
+    # and windows too. Without this, a unix-only import reaching cmd/ compiles
+    # fine here and fails at RELEASE time — the most expensive moment to learn
+    # it, since the tag is already pushed. Compile-only, no tests, ~seconds.
+    - name: Cross-compile kubectl-neo4j for released platforms
+      run: |
+        set -euo pipefail
+        for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64; do
+          echo "=> ${target}"
+          CGO_ENABLED=0 GOOS="${target%%/*}" GOARCH="${target##*/}" \
+            go build -o /dev/null ./cmd/kubectl-neo4j
+        done
 
   unit-tests:
     name: Unit Tests
