@@ -91,6 +91,25 @@ ServiceMonitor has been created for Prometheus Operator integration.
 {{- end }}
 {{- end }}
 
+## Optional: the kubectl-neo4j CLI
+
+Helm cannot install it — it runs on YOUR machine, not in the cluster — but the
+chart knows which version you need. Validate manifests against this operator's
+own rules BEFORE you apply them:
+
+  go install github.com/priyolahiri/neo4j-kubernetes-operator/cmd/kubectl-neo4j@v{{ .Chart.AppVersion }}
+
+or, without Go:
+
+  curl -sSL https://raw.githubusercontent.com/priyolahiri/neo4j-kubernetes-operator/main/hack/install-cli.sh | VERSION={{ .Chart.AppVersion }} sh
+
+Then:
+
+  kubectl neo4j validate -f your-manifests/
+
+Keep it on the same version as the operator ({{ .Chart.AppVersion }}) — it carries
+that release's validation rules.
+
 ## Documentation
 
 For more information, visit:

@@ -469,16 +469,20 @@ make the operator legible; one to humans, one to agents. If `explain` and the
 MCP server end up encoding the same troubleshooting knowledge in two places,
 that is B3 in a new costume. Worth checking before §8 item 6, not before item 1.
 
-**Q5 — Should the operator batch validation errors instead of short-circuiting?**
-Raised by the prototype (§6.1). The early return in `validateCluster` predates
-any CLI and is reasonable for a reconciler, where the user re-reads status after
-each fix anyway. For a linter it means a fix-one-rerun loop.
+**Q5 — ANSWERED and fixed in the operator.** Raised by the prototype (§6.1):
+`validateCluster`'s early return on image failure meant a fix-one-rerun loop.
 
-The fix belongs in the **operator**, not the CLI: remove the early return so
-every validator contributes, and let callers decide what to show. That is an
-operator behaviour change with test impact and its own review, so it is filed
-here rather than smuggled into a CLI change. Until then the CLI's help text
-should say that a clean run after fixes may reveal further errors.
+Fixed where it belonged — the operator, not the CLI — by removing the early
+return so every validator contributes. Two tests pin it, one of which was
+verified to fail when the early return is reinstated rather than merely passing
+today. The same broken manifest that previously reported 6 errors now reports
+9, with the `spec.config` and `spec.storage` problems no longer hidden behind
+the image check.
+
+The CLI needed no change: it renders whatever the validators return, which is
+precisely why not diverging (§3 B3) was the right call. The caveat in its help
+text stays, because the operator still short-circuits in *other* validators and
+the general warning remains true.
 
 **Q4 — Version skew: mostly resolved by Q2, with one thing left to build.**
 Lockstep release means `kubectl-neo4j vX.Y.Z` encodes operator `vX.Y.Z`'s rules
