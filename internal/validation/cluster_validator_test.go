@@ -263,3 +263,66 @@ func TestClusterValidator_NameLength(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateCluster_ReportsAllErrors pins the removal of the early return
+// that used to abort validation as soon as the image was invalid.
+//
+// The operator has no admission webhook, so the ErrorList this function returns
+// is a user's ONLY feedback channel — both through status/events and through
+// `kubectl neo4j validate`, which calls it directly. Aborting on the first
+// critical error turned a single apply into a fix-one-rerun loop, where each
+// pass revealed problems the previous one had hidden.
+func TestValidateCluster_ReportsAllErrors(t *testing.T) {
+	// Deliberately broken in several independent dimensions at once. Before
+	// this change only the image (and the checks ahead of it) were reported.
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "broken", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			AcceptLicenseAgreement: "yes",
+			Image:                  neo4jv1beta1.ImageSpec{}, // invalid: no repo, no tag
+			Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			Config: map[string]string{
+				// Rejected by configValidator, which runs AFTER the image check.
+				"dbms.default_database": "mydb",
+			},
+		},
+	}
+
+	errs := NewClusterValidator(nil).validateCluster(context.Background(), cluster)
+	joined := errs.ToAggregate().Error()
+
+	for _, want := range []struct{ substr, why string }{
+		{"spec.image", "the image error must still be reported"},
+		{"dbms.default_database", "a spec.config error must be reported ALONGSIDE the image error, not hidden behind it"},
+		{"spec.storage", "a storage error must be reported alongside the image error too"},
+	} {
+		if !strings.Contains(joined, want.substr) {
+			t.Errorf("missing %q in validation errors: %s\ngot: %s", want.substr, want.why, joined)
+		}
+	}
+}
+
+// Property sharding is the only validator after the image check that reads the
+// image, so it is the one that could plausibly panic on a spec that never used
+// to reach it. It must produce an error, not a crash.
+func TestValidateCluster_ShardingWithInvalidImageDoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("validateCluster panicked on sharding with an unparseable image tag: %v", r)
+		}
+	}()
+
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "sharded", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			AcceptLicenseAgreement: "yes",
+			Image:                  neo4jv1beta1.ImageSpec{}, // no tag to parse a version from
+			Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			PropertySharding:       &neo4jv1beta1.PropertyShardingSpec{Enabled: true},
+		},
+	}
+
+	if errs := NewClusterValidator(nil).validateCluster(context.Background(), cluster); len(errs) == 0 {
+		t.Error("expected errors for an unparseable image tag with sharding enabled, got none")
+	}
+}
