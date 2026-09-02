@@ -12,13 +12,13 @@
         <meta name="author" content="Priyo Lahiri">
       
       
-        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/explain/">
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/preflight/">
       
       
-        <link rel="prev" href="../support-bundle/">
+        <link rel="prev" href="../validate/">
       
       
-        <link rel="next" href="../../guides/backup_restore/">
+        <link rel="next" href="../status/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>explain - Neo4j Kubernetes Operator</title>
+        <title>preflight - Neo4j Kubernetes Operator</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#explain" class="md-skip">
+        <a href="#preflight" class="md-skip">
           Skip to content
         </a>
       
@@ -122,7 +122,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              explain
+              preflight
             
           </span>
         </div>
@@ -1313,10 +1313,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../preflight/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    preflight
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1332,6 +1359,70 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-does-not-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it does not check
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exit codes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1453,37 +1544,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    explain
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../explain/" class="md-nav__link">
         
   
   
@@ -1499,48 +1563,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#it-admits-what-it-does-not-know" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        It admits what it does not know
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        See also
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -3701,10 +3723,32 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#it-admits-what-it-does-not-know" class="md-nav__link">
+  <a href="#what-it-checks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        It admits what it does not know
+        What it checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-does-not-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it does not check
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exit codes
       
     </span>
   </a>
@@ -3739,7 +3783,7 @@
 
 
   
-    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/cli/explain.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/cli/preflight.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -3747,38 +3791,118 @@
   
 
 
-<h1 id="explain"><code>explain</code><a class="headerlink" href="#explain" title="Anchor link to this section">&para;</a></h1>
-<p>Turns a status condition or phase into what it means and what to do about it — the troubleshooting guide, made executable.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>explain<span class="w"> </span>Neo4jEnterpriseCluster/prod<span class="w">    </span><span class="c1"># a live resource</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>explain<span class="w"> </span>ServersHealthy<span class="w">                 </span><span class="c1"># a single term</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>explain<span class="w"> </span>--list<span class="w">                         </span><span class="c1"># everything it knows</span>
+<h1 id="preflight"><code>preflight</code><a class="headerlink" href="#preflight" title="Anchor link to this section">&para;</a></h1>
+<p>Checks the <strong>cluster-side preconditions</strong> a manifest depends on — the things <code>validate</code> cannot see because they are not in the manifest.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>preflight<span class="w"> </span>-f<span class="w"> </span>cluster.yaml<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w">       </span><span class="c1"># before you apply</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>preflight<span class="w"> </span>Neo4jBackup/nightly<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w">   </span><span class="c1"># for what is deployed</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>preflight<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w">                       </span><span class="c1"># everything there</span>
 </span></code></pre></div>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>$ kubectl neo4j explain ServersHealthy
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ServersHealthy (condition)
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  every server reported Enabled and Available by SHOW SERVERS.
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  → When false, the message names the unhealthy servers. Check their pod logs for
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    OOMKilled (exit 137) — Enterprise needs at least 1.5Gi.
+<p><a href="../validate/"><code>validate</code></a> took the operator's spec rules and moved them from after-apply to before-apply. But a large class of first failures is not in the manifest at all — it is in the cluster the manifest is about to land in. A StorageClass that does not exist. One that cannot expand. A credentials Secret missing a key the backup Job will mount. No node large enough for the pod. Each produces a correct-looking manifest that never becomes a running database.</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>$ kubectl neo4j preflight -f cluster.yaml -n neo4j
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Neo4jEnterpriseCluster/prod (cluster.yaml)
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  ✗ storageclass fast-ssd — does not exist
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>      → The operator will refuse to create the StatefulSet and record a
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>        StorageClassNotFound event. Create the class, name an existing one, or leave
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>        spec.storage.className empty to use the cluster default.
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  ✗ node capacity — no Ready node can fit a 2Gi memory request
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>      largest Ready node has 1Gi allocatable
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>      → Every pod will stay Pending as Unschedulable. Add capacity, or lower
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>        spec.resources.requests.memory — but Neo4j Enterprise will not start below
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>        1.5Gi, so that has a floor.
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>Shape only: no bucket, registry or endpoint was contacted.
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>1 of 1 resource(s) would fail on a precondition.
 </span></code></pre></div>
-<p>Against a live resource it prints the phase, then every condition with its status, the operator's own message, and the guidance:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Neo4jEnterpriseCluster/prod in namespace neo4j
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>phase: Degraded
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>  ...
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>✗ ServersHealthy = False
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    server prod-server-1 is not available
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    every server reported Enabled and Available by SHOW SERVERS.
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    → When false, ... Check their pod logs for OOMKilled (exit 137).
-</span></code></pre></div>
-<h3 id="it-admits-what-it-does-not-know">It admits what it does not know<a class="headerlink" href="#it-admits-what-it-does-not-know" title="Anchor link to this section">&para;</a></h3>
-<p>The explanations describe the operator release this CLI was built from. A newer deployment can report conditions or phases it has never heard of, and in that case it says so — naming its own version — rather than inventing an explanation:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>  (no guidance for this phase — it may be newer than this CLI, which carries v1.15.0 rules)
-</span></code></pre></div>
-<p>Guessing would be worse than admitting the gap, because a confident wrong answer during an incident costs more than no answer.</p>
+<h2 id="what-it-checks">What it checks<a class="headerlink" href="#what-it-checks" title="Anchor link to this section">&para;</a></h2>
+<p><strong>Clusters and standalones</strong></p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spec.storage.className</code> exists</td>
+<td>The operator refuses to build the StatefulSet and records <code>StorageClassNotFound</code></td>
+</tr>
+<tr>
+<td>That class allows volume expansion</td>
+<td>Without it <code>spec.storage.size</code> is effectively immutable — discovered during the resize a full disk made urgent</td>
+</tr>
+<tr>
+<td>A Ready node can fit the memory request</td>
+<td>The top pod-startup failure, invisible to any manifest-level check</td>
+</tr>
+<tr>
+<td><code>spec.image.pullSecrets</code> exist</td>
+<td>Otherwise every pod sits in <code>ImagePullBackOff</code></td>
+</tr>
+</tbody>
+</table>
+<p>Capacity is compared against a <strong>single node's</strong> allocatable memory, never the cluster total: the scheduler places a pod on one node, so three nodes with 1Gi each cannot run one 2Gi pod however the total reads.</p>
+<p><strong>Backups</strong></p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>credentialsSecretRef</code> exists</td>
+<td>Named but absent means the Job cannot start</td>
+</tr>
+<tr>
+<td>It carries every key the Job mounts</td>
+<td>A missing key gives <code>CreateContainerConfigError</code>, which never mentions backups</td>
+</tr>
+<tr>
+<td>Or: the backup ServiceAccount has a cloud-identity annotation</td>
+<td>With no Secret and no IRSA / Workload Identity binding, the Job runs with no credentials at all</td>
+</tr>
+<tr>
+<td>A PVC-backed backup's claim or class exists</td>
+<td>Same failure as a cluster's storage</td>
+</tr>
+</tbody>
+</table>
+<p>This replaces the ritual the troubleshooting guide documents today — <code>kubectl run backup-auth-check --image=amazon/aws-cli …</code>, in three vendor variants — which you only reach for <strong>after</strong> a backup has already failed.</p>
+<h2 id="what-it-does-not-check">What it does not check<a class="headerlink" href="#what-it-does-not-check" title="Anchor link to this section">&para;</a></h2>
+<p><strong>Shape, not reachability.</strong> It reads Kubernetes objects: a StorageClass, a Secret's key names, a ServiceAccount's annotations, node allocatable capacity. It never contacts S3, GCS or Azure, never talks to a registry, and never runs a probe pod.</p>
+<p>So a bucket that exists but denies access still fails at run time, and credentials that are well-formed but wrong still fail at run time. The output says so on every run rather than letting a clean result imply more than it means.</p>
+<p>That boundary is deliberate: it keeps the command free of new images, new RBAC and anything that mutates your cluster.</p>
+<p>A kind with no cluster-side preconditions is reported as <strong>skipped</strong>, not passed — a silent pass would imply a check that was never made.</p>
+<h2 id="exit-codes">Exit codes<a class="headerlink" href="#exit-codes" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>every check passed (warnings alone do not fail)</td>
+</tr>
+<tr>
+<td><code>1</code></td>
+<td>a check failed</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>usage error, or the cluster could not be reached</td>
+</tr>
+</tbody>
+</table>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><a href="../../guides/troubleshooting/">Troubleshooting</a> — the long-form version of this knowledge</li>
-<li><a href="../status/"><code>status</code></a> — see which resources have conditions worth explaining</li>
+<li><a href="../validate/"><code>validate</code></a> — the manifest itself, against the operator's own validators</li>
+<li><a href="../diagnose/"><code>diagnose</code></a> — the same class of failure, after it has happened</li>
+<li><a href="../../guides/storage_expansion/">Storage Expansion</a> — why <code>allowVolumeExpansion</code> matters before you need it</li>
 </ul>
 
 
@@ -3817,7 +3941,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../support-bundle/" class="md-footer__link md-footer__link--prev" aria-label="Previous: support-bundle">
+          <a href="../validate/" class="md-footer__link md-footer__link--prev" aria-label="Previous: validate">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3827,20 +3951,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                support-bundle
+                validate
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../guides/backup_restore/" class="md-footer__link md-footer__link--next" aria-label="Next: Backup &amp; Restore">
+          <a href="../status/" class="md-footer__link md-footer__link--next" aria-label="Next: status">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Backup & Restore
+                status
               </div>
             </div>
             <div class="md-footer__button md-icon">
