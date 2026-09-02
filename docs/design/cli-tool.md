@@ -443,7 +443,16 @@ honest options are recorded in §9 Q5 rather than papered over.
    renders distinctly and never affects the exit code, including under
    `--strict`. Dropping it, as the first implementation did, hid the difference
    between "wrong" and "not yet".
-4. **`status`** (§4.2), then **`connect` / `cypher`** (§4.3).
+4. **`status`** (§4.2) → **done**, then **`connect` / `cypher`** (§4.3).
+
+   `status` reads every kind generically — phase, ready, message — rather than
+   through 26 typed switches, and takes its kind list from the registered
+   scheme rather than a literal, so a new CRD appears without touching the
+   command. Two reporting decisions carried over from `validate` deliberately:
+   an unrecognised phase is **not** treated as a problem (the Aura kinds mirror
+   an open vocabulary Neo4j can extend), and `Pending` messages are shown but
+   marked `…` rather than `✗`, because "waiting for a Secret you have not
+   created" is the line that says what to do next, not a failure.
 5. **krew index submission** (B6), once the command set is stable enough that
    users installing it will not immediately want a newer one.
 6. **`explain`** (§4.4) and **`support-bundle`** (§4.5), on evidence.
