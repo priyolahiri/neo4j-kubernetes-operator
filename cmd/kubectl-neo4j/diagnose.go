@@ -529,7 +529,7 @@ func warningEvents(obj *unstructured.Unstructured, env namespaceEnv) []symptom {
 		recent = append(recent, e)
 	}
 	sort.Slice(recent, func(i, j int) bool {
-		return recent[i].LastTimestamp.Time.After(recent[j].LastTimestamp.Time)
+		return recent[i].LastTimestamp.After(recent[j].LastTimestamp.Time)
 	})
 	// Only the newest few: a resource that has been failing for a day can
 	// carry hundreds of near-identical events, and printing them all buries
