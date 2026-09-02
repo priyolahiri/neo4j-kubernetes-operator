@@ -740,6 +740,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#connect-and-cypher" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        connect and cypher
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="connect and cypher">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#your-password-is-never-read-moved-or-logged" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Your password is never read, moved, or logged
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#it-hands-the-session-to-kubectl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        It hands the session to kubectl
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-it-will-not-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it will not do
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3738,6 +3788,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#connect-and-cypher" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        connect and cypher
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="connect and cypher">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#your-password-is-never-read-moved-or-logged" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Your password is never read, moved, or logged
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#it-hands-the-session-to-kubectl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        It hands the session to kubectl
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-it-will-not-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it will not do
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4040,6 +4140,36 @@ asset.</p>
 </ul>
 <p>The kind list comes from the operator's registered API scheme rather than a hardcoded list, so a CRD added to the operator appears here automatically. Kinds you lack permission to read, or whose CRD is not installed, are skipped rather than failing the whole command.</p>
 <p>Exit code is <code>0</code> on a successful query even when resources are unhealthy — mirroring <code>kubectl get</code>. Use <code>--problems</code> and check for empty output if you want a health gate.</p>
+<h2 id="connect-and-cypher"><code>connect</code> and <code>cypher</code><a class="headerlink" href="#connect-and-cypher" title="Anchor link to this section">&para;</a></h2>
+<p>The most-repeated sequence in the troubleshooting guide is: find the pod, extract the password from a Secret, remember the container name, guess the right Bolt scheme. These two commands do the resolution for you.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>cypher<span class="w">                    </span><span class="c1"># the only deployment in the namespace</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>cypher<span class="w"> </span>prod<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w">      </span><span class="c1"># a specific one</span>
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>cypher<span class="w"> </span>prod<span class="w"> </span>-c<span class="w"> </span><span class="s2">"SHOW DATABASES"</span>
+</span></code></pre></div>
+<p><code>connect</code> prints the same resolution without executing anything — useful when you want the port-forward command, or to hand someone the details:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>$ kubectl neo4j connect prod
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>Neo4jEnterpriseCluster/prod in namespace neo4j
+</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
+</span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>In-cluster Bolt:
+</span><span id="__span-19-5"><a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>  bolt+s://prod-client.neo4j.svc.cluster.local:7687
+</span><span id="__span-19-6"><a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>
+</span><span id="__span-19-7"><a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>From your machine:
+</span><span id="__span-19-8"><a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>  kubectl port-forward -n neo4j svc/prod-client 7687:7687 7474:7474
+</span><span id="__span-19-9"><a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>  then connect to bolt+s://localhost:7687
+</span><span id="__span-19-10"><a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>...
+</span><span id="__span-19-11"><a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>TLS is enabled: plain bolt:// is rejected by this deployment — use bolt+s://.
+</span></code></pre></div>
+<h3 id="your-password-is-never-read-moved-or-logged">Your password is never read, moved, or logged<a class="headerlink" href="#your-password-is-never-read-moved-or-logged" title="Anchor link to this section">&para;</a></h3>
+<p>This is worth stating precisely, because the obvious implementation gets it wrong.</p>
+<p>The admin credentials are <strong>already inside the pod</strong> — the operator injects them via <code>secretKeyRef</code> as <code>DB_USERNAME</code> and <code>DB_PASSWORD</code>. So the command references them <em>by variable name</em> and lets the shell expand them in the container:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>prod-server-0<span class="w"> </span>-c<span class="w"> </span>neo4j<span class="w"> </span>-it<span class="w"> </span>--<span class="w">   </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">'cypher-shell -a bolt+s://localhost:7687 -u "$DB_USERNAME" -p "$DB_PASSWORD"'</span>
+</span></code></pre></div>
+<p>The secret never leaves the pod. It is not in your shell history, not in <code>ps</code> output on either side, and — the one people forget — <strong>not in the Kubernetes API audit log</strong>, which records an exec request's command array verbatim. A version that read the Secret and passed <code>-p &lt;value&gt;</code> would leak it into all three.</p>
+<h3 id="it-hands-the-session-to-kubectl">It hands the session to <code>kubectl</code><a class="headerlink" href="#it-hands-the-session-to-kubectl" title="Anchor link to this section">&para;</a></h3>
+<p><code>cypher</code> resolves the target itself, then execs <code>kubectl</code> for the interactive part. That is deliberate: terminal raw mode, window resize, signal forwarding and every kubeconfig authentication plugin are already solved there, and reimplementing them would add a large amount of fragile code for no capability you want.</p>
+<p>Consequence: <strong><code>kubectl</code> must be on your <code>PATH</code>.</strong> Invoked as <code>kubectl neo4j cypher</code> it always is. If you run the binary standalone without kubectl installed, the command says so and points you at <code>connect</code> instead of failing obscurely.</p>
+<h3 id="what-it-will-not-do">What it will not do<a class="headerlink" href="#what-it-will-not-do" title="Anchor link to this section">&para;</a></h3>
+<p><code>cypher</code> passes <em>your</em> query through unchanged; the CLI never composes Cypher of its own. Operations the operator models as resources — creating a database, promoting a replica — belong in a CR, not in a shell command, so that they are declarative, auditable and reversible. <code>kubectl neo4j cypher -c "..."</code> is you running your own query, which is a different thing from the CLI deciding to mutate your database.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><a href="../troubleshooting/">Troubleshooting</a> — diagnosing a deployment that is already running</li>

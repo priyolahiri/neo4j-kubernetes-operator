@@ -3974,6 +3974,22 @@ advantage identified.</p>
 a parsing surface, breaks under partial RBAC in ways that are hard to report
 well, and forfeits the shared-package property in §2 that is the whole reason
 to build this here.</p>
+<p><strong>Scope of that rejection, clarified when <code>cypher</code> was built.</strong> What is rejected
+is shelling out to <code>kubectl</code> <em>as a data source</em> — parsing its output instead of
+using the API. Handing it an <strong>interactive session</strong> parses nothing and forfeits
+nothing, and <code>cypher</code> does exactly that: client-go resolves the pod, container
+and Bolt scheme, then <code>kubectl exec -it</code> runs the session. Terminal raw mode,
+window resize, signal forwarding and every kubeconfig auth plugin are already
+solved there; reimplementing them via SPDY would be a few hundred lines of
+fragile code for no capability we want. The cost — <code>kubectl</code> must be on PATH —
+is definitional for a kubectl plugin and is reported plainly when it is not.</p>
+<p><strong>The security argument that would have favoured SPDY does not apply</strong>, because
+neither approach needs to handle the password. <code>DB_USERNAME</code> / <code>DB_PASSWORD</code>
+are already in the container via <code>secretKeyRef</code>, so the command references them
+by name and the shell expands them inside the pod. The secret never reaches
+this process, the user's shell history, or the Kubernetes audit log — which
+records an exec request's command array verbatim, and is where a <code>-p &lt;value&gt;</code>
+implementation would leak it.</p>
 <h3 id="d-decline-improve-the-docs-instead">(d) Decline — improve the docs instead<a class="headerlink" href="#d-decline-improve-the-docs-instead" title="Anchor link to this section">&para;</a></h3>
 <p>The status quo, and the honest baseline. It is what the 98-line troubleshooting
 guide already represents, and §1.2's structural gap is not something more prose
@@ -4102,7 +4118,7 @@ honest options are recorded in §9 Q5 rather than papered over.</p>
    renders distinctly and never affects the exit code, including under
    <code>--strict</code>. Dropping it, as the first implementation did, hid the difference
    between "wrong" and "not yet".
-4. <strong><code>status</code></strong> (§4.2) → <strong>done</strong>, then <strong><code>connect</code> / <code>cypher</code></strong> (§4.3).</p>
+4. <strong><code>status</code></strong> (§4.2) → <strong>done</strong>. <strong><code>connect</code> / <code>cypher</code></strong> (§4.3) → <strong>done</strong>.</p>
 <p><code>status</code> reads every kind generically — phase, ready, message — rather than
    through 26 typed switches, and takes its kind list from the registered
    scheme rather than a literal, so a new CRD appears without touching the
