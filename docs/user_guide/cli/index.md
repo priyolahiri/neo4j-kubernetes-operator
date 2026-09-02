@@ -23,6 +23,7 @@ The second reason is volume. The troubleshooting guide documents 98 separate `ku
 |---|---|
 | [`validate`](validate.md) | Check manifests against the operator's validators, before applying |
 | [`status`](status.md) | One view of every Neo4j resource in a namespace |
+| [`diagnose`](diagnose.md) | Why a resource is unhealthy, at the Kubernetes level |
 | [`connect` and `cypher`](connect.md) | Reach a deployment, or open a `cypher-shell` session |
 | [`support-bundle`](support-bundle.md) | Collect a redacted diagnostic archive |
 | [`explain`](explain.md) | Decode a status condition or phase, and what to do about it |
