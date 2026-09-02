@@ -12,31 +12,31 @@
         <meta name="author" content="Priyo Lahiri">
       
       
-        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/auradatabasebackup/">
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/diagnose/">
       
       
-        <link rel="prev" href="../auradatabase/">
+        <link rel="prev" href="../status/">
       
       
-        <link rel="next" href="../auradatabaserestore/">
+        <link rel="next" href="../connect/">
       
       
         
       
       
-      <link rel="icon" href="../../assets/images/favicon.png">
+      <link rel="icon" href="../../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>AuraDatabaseBackup - Neo4j Kubernetes Operator</title>
+        <title>diagnose - Neo4j Kubernetes Operator</title>
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -55,9 +55,9 @@
       
     
     
-      <link rel="stylesheet" href="../../stylesheets/neo4j.css">
+      <link rel="stylesheet" href="../../../stylesheets/neo4j.css">
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#auradatabasebackup-api-reference" class="md-skip">
+        <a href="#diagnose" class="md-skip">
           Skip to content
         </a>
       
@@ -102,7 +102,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+    <a href="../../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -122,7 +122,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              AuraDatabaseBackup
+              diagnose
             
           </span>
         </div>
@@ -245,7 +245,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+    <a href="../../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -275,7 +275,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../.." class="md-nav__link">
+      <a href="../../.." class="md-nav__link">
         
   
   
@@ -370,7 +370,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/getting_started/" class="md-nav__link">
+      <a href="../../getting_started/" class="md-nav__link">
         
   
   
@@ -398,7 +398,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/installation/" class="md-nav__link">
+      <a href="../../installation/" class="md-nav__link">
         
   
   
@@ -426,7 +426,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/deployment/" class="md-nav__link">
+      <a href="../../deployment/" class="md-nav__link">
         
   
   
@@ -454,7 +454,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/operator-modes/" class="md-nav__link">
+      <a href="../../operator-modes/" class="md-nav__link">
         
   
   
@@ -482,7 +482,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/demo/" class="md-nav__link">
+      <a href="../../guides/demo/" class="md-nav__link">
         
   
   
@@ -510,7 +510,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/version_support/" class="md-nav__link">
+      <a href="../../version_support/" class="md-nav__link">
         
   
   
@@ -538,7 +538,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/migration_guide/" class="md-nav__link">
+      <a href="../../migration_guide/" class="md-nav__link">
         
   
   
@@ -651,7 +651,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/configuration/" class="md-nav__link">
+      <a href="../../configuration/" class="md-nav__link">
         
   
   
@@ -679,7 +679,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/examples_gallery/" class="md-nav__link">
+      <a href="../../examples_gallery/" class="md-nav__link">
         
   
   
@@ -707,7 +707,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/resource_sizing/" class="md-nav__link">
+      <a href="../../guides/resource_sizing/" class="md-nav__link">
         
   
   
@@ -735,7 +735,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/clustering/" class="md-nav__link">
+      <a href="../../clustering/" class="md-nav__link">
         
   
   
@@ -763,7 +763,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/topology_placement/" class="md-nav__link">
+      <a href="../../topology_placement/" class="md-nav__link">
         
   
   
@@ -791,7 +791,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/property_sharding/" class="md-nav__link">
+      <a href="../../property_sharding/" class="md-nav__link">
         
   
   
@@ -819,7 +819,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/external_access/" class="md-nav__link">
+      <a href="../../external_access/" class="md-nav__link">
         
   
   
@@ -847,7 +847,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/plugins/" class="md-nav__link">
+      <a href="../../guides/plugins/" class="md-nav__link">
         
   
   
@@ -875,7 +875,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/seed-uri/" class="md-nav__link">
+      <a href="../../guides/seed-uri/" class="md-nav__link">
         
   
   
@@ -903,7 +903,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/aura_fleet_management/" class="md-nav__link">
+      <a href="../../aura_fleet_management/" class="md-nav__link">
         
   
   
@@ -931,7 +931,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/aura_orchestration/" class="md-nav__link">
+      <a href="../../aura_orchestration/" class="md-nav__link">
         
   
   
@@ -959,7 +959,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/mcp_client_setup/" class="md-nav__link">
+      <a href="../../guides/mcp_client_setup/" class="md-nav__link">
         
   
   
@@ -1056,7 +1056,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/security/" class="md-nav__link">
+      <a href="../../security/" class="md-nav__link">
         
   
   
@@ -1084,7 +1084,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/security/" class="md-nav__link">
+      <a href="../../guides/security/" class="md-nav__link">
         
   
   
@@ -1112,7 +1112,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/tls_configuration/" class="md-nav__link">
+      <a href="../../tls_configuration/" class="md-nav__link">
         
   
   
@@ -1140,7 +1140,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/user_role_management/" class="md-nav__link">
+      <a href="../../user_role_management/" class="md-nav__link">
         
   
   
@@ -1172,6 +1172,8 @@
       
   
   
+    
+  
   
   
     
@@ -1204,15 +1206,15 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../user_guide/cli/" class="md-nav__link ">
+            <a href="../" class="md-nav__link ">
               
   
   
@@ -1236,7 +1238,7 @@
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1256,7 +1258,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/cli/install/" class="md-nav__link">
+      <a href="../install/" class="md-nav__link">
         
   
   
@@ -1284,7 +1286,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/cli/validate/" class="md-nav__link">
+      <a href="../validate/" class="md-nav__link">
         
   
   
@@ -1312,7 +1314,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/cli/status/" class="md-nav__link">
+      <a href="../status/" class="md-nav__link">
         
   
   
@@ -1337,10 +1339,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../user_guide/cli/diagnose/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    diagnose
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1356,6 +1385,70 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-looks-at" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it looks at
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exit codes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-this-does-not-go-stale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this does not go stale
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1368,7 +1461,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/cli/connect/" class="md-nav__link">
+      <a href="../connect/" class="md-nav__link">
         
   
   
@@ -1396,7 +1489,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/cli/support-bundle/" class="md-nav__link">
+      <a href="../support-bundle/" class="md-nav__link">
         
   
   
@@ -1424,7 +1517,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/cli/explain/" class="md-nav__link">
+      <a href="../explain/" class="md-nav__link">
         
   
   
@@ -1531,7 +1624,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/backup_restore/" class="md-nav__link">
+      <a href="../../guides/backup_restore/" class="md-nav__link">
         
   
   
@@ -1559,7 +1652,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/cross_cluster_replication/" class="md-nav__link">
+      <a href="../../guides/cross_cluster_replication/" class="md-nav__link">
         
   
   
@@ -1587,7 +1680,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/database_aliases/" class="md-nav__link">
+      <a href="../../guides/database_aliases/" class="md-nav__link">
         
   
   
@@ -1615,7 +1708,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/upgrades/" class="md-nav__link">
+      <a href="../../guides/upgrades/" class="md-nav__link">
         
   
   
@@ -1643,7 +1736,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/storage_expansion/" class="md-nav__link">
+      <a href="../../guides/storage_expansion/" class="md-nav__link">
         
   
   
@@ -1671,7 +1764,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/fault_tolerance/" class="md-nav__link">
+      <a href="../../guides/fault_tolerance/" class="md-nav__link">
         
   
   
@@ -1699,7 +1792,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/multi_cluster/" class="md-nav__link">
+      <a href="../../guides/multi_cluster/" class="md-nav__link">
         
   
   
@@ -1784,7 +1877,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/monitoring/" class="md-nav__link">
+      <a href="../../guides/monitoring/" class="md-nav__link">
         
   
   
@@ -1812,7 +1905,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/prometheus-grafana-setup/" class="md-nav__link">
+      <a href="../../guides/prometheus-grafana-setup/" class="md-nav__link">
         
   
   
@@ -1840,7 +1933,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/kubernetes-events/" class="md-nav__link">
+      <a href="../../guides/kubernetes-events/" class="md-nav__link">
         
   
   
@@ -1931,7 +2024,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/performance/" class="md-nav__link">
+      <a href="../../performance/" class="md-nav__link">
         
   
   
@@ -1959,7 +2052,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/performance/" class="md-nav__link">
+      <a href="../../guides/performance/" class="md-nav__link">
         
   
   
@@ -2062,7 +2155,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/guides/troubleshooting/" class="md-nav__link">
+      <a href="../../guides/troubleshooting/" class="md-nav__link">
         
   
   
@@ -2090,7 +2183,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/troubleshooting/backup_restore/" class="md-nav__link">
+      <a href="../../troubleshooting/backup_restore/" class="md-nav__link">
         
   
   
@@ -2118,7 +2211,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_guide/troubleshooting/split-brain-recovery/" class="md-nav__link">
+      <a href="../../troubleshooting/split-brain-recovery/" class="md-nav__link">
         
   
   
@@ -2150,8 +2243,6 @@
       
   
   
-    
-  
   
   
     
@@ -2172,15 +2263,15 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../gitops/" class="md-nav__link ">
+            <a href="../../../gitops/" class="md-nav__link ">
               
   
   
@@ -2204,7 +2295,7 @@
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2219,10 +2310,8 @@
                 
   
   
-    
   
   
-  
     
     
       
@@ -2284,11 +2373,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1" >
         
           
           <label class="md-nav__link" for="__nav_8_1" id="__nav_8_1_label" tabindex="0">
@@ -2309,7 +2398,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_1_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_1_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_8_1">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2327,7 +2416,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jenterprisecluster/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
         
   
   
@@ -2355,7 +2444,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jenterprisestandalone/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
         
   
   
@@ -2383,7 +2472,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jdatabase/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jdatabase/" class="md-nav__link">
         
   
   
@@ -2411,7 +2500,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jshardeddatabase/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
         
   
   
@@ -2439,7 +2528,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4juser/" class="md-nav__link">
+      <a href="../../../api_reference/neo4juser/" class="md-nav__link">
         
   
   
@@ -2467,7 +2556,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jrole/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jrole/" class="md-nav__link">
         
   
   
@@ -2495,7 +2584,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jrolebinding/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jrolebinding/" class="md-nav__link">
         
   
   
@@ -2523,7 +2612,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jauthrule/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jauthrule/" class="md-nav__link">
         
   
   
@@ -2551,7 +2640,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jplugin/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jplugin/" class="md-nav__link">
         
   
   
@@ -2579,7 +2668,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jbackup/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jbackup/" class="md-nav__link">
         
   
   
@@ -2607,7 +2696,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jrestore/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jrestore/" class="md-nav__link">
         
   
   
@@ -2635,7 +2724,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jreplicadatabase/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
         
   
   
@@ -2663,7 +2752,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jreplicapromotion/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
         
   
   
@@ -2691,7 +2780,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../neo4jdatabasealias/" class="md-nav__link">
+      <a href="../../../api_reference/neo4jdatabasealias/" class="md-nav__link">
         
   
   
@@ -2719,7 +2808,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auraproviderconfig/" class="md-nav__link">
+      <a href="../../../api_reference/auraproviderconfig/" class="md-nav__link">
         
   
   
@@ -2747,7 +2836,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aurainstance/" class="md-nav__link">
+      <a href="../../../api_reference/aurainstance/" class="md-nav__link">
         
   
   
@@ -2775,7 +2864,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aurasnapshot/" class="md-nav__link">
+      <a href="../../../api_reference/aurasnapshot/" class="md-nav__link">
         
   
   
@@ -2803,7 +2892,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aurarestore/" class="md-nav__link">
+      <a href="../../../api_reference/aurarestore/" class="md-nav__link">
         
   
   
@@ -2831,7 +2920,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auracustomermanagedkey/" class="md-nav__link">
+      <a href="../../../api_reference/auracustomermanagedkey/" class="md-nav__link">
         
   
   
@@ -2859,7 +2948,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auraipfilter/" class="md-nav__link">
+      <a href="../../../api_reference/auraipfilter/" class="md-nav__link">
         
   
   
@@ -2887,7 +2976,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auradatabase/" class="md-nav__link">
+      <a href="../../../api_reference/auradatabase/" class="md-nav__link">
         
   
   
@@ -2912,37 +3001,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    AuraDatabaseBackup
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../../api_reference/auradatabasebackup/" class="md-nav__link">
         
   
   
@@ -2958,81 +3020,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#spec" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Spec
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Status
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Example
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-resources" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Related Resources
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -3045,7 +3032,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auradatabaserestore/" class="md-nav__link">
+      <a href="../../../api_reference/auradatabaserestore/" class="md-nav__link">
         
   
   
@@ -3073,7 +3060,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auraorganizationmember/" class="md-nav__link">
+      <a href="../../../api_reference/auraorganizationmember/" class="md-nav__link">
         
   
   
@@ -3101,7 +3088,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../auraprojectmember/" class="md-nav__link">
+      <a href="../../../api_reference/auraprojectmember/" class="md-nav__link">
         
   
   
@@ -3129,7 +3116,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aurainvite/" class="md-nav__link">
+      <a href="../../../api_reference/aurainvite/" class="md-nav__link">
         
   
   
@@ -3250,7 +3237,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/QUICKSTART/" class="md-nav__link">
+      <a href="../../../developer_guide/QUICKSTART/" class="md-nav__link">
         
   
   
@@ -3278,7 +3265,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/development/" class="md-nav__link">
+      <a href="../../../developer_guide/development/" class="md-nav__link">
         
   
   
@@ -3306,7 +3293,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/contributing/" class="md-nav__link">
+      <a href="../../../developer_guide/contributing/" class="md-nav__link">
         
   
   
@@ -3334,7 +3321,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/collaboration/" class="md-nav__link">
+      <a href="../../../developer_guide/collaboration/" class="md-nav__link">
         
   
   
@@ -3362,7 +3349,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/ci_and_workflows/" class="md-nav__link">
+      <a href="../../../developer_guide/ci_and_workflows/" class="md-nav__link">
         
   
   
@@ -3390,7 +3377,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/architecture/" class="md-nav__link">
+      <a href="../../../developer_guide/architecture/" class="md-nav__link">
         
   
   
@@ -3418,7 +3405,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/testing/" class="md-nav__link">
+      <a href="../../../developer_guide/testing/" class="md-nav__link">
         
   
   
@@ -3446,7 +3433,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/release_verification/" class="md-nav__link">
+      <a href="../../../developer_guide/release_verification/" class="md-nav__link">
         
   
   
@@ -3474,7 +3461,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/makefile_reference/" class="md-nav__link">
+      <a href="../../../developer_guide/makefile_reference/" class="md-nav__link">
         
   
   
@@ -3502,7 +3489,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/openshift_olm/" class="md-nav__link">
+      <a href="../../../developer_guide/openshift_olm/" class="md-nav__link">
         
   
   
@@ -3587,7 +3574,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/llm-contribution/" class="md-nav__link">
+      <a href="../../../developer_guide/llm-contribution/" class="md-nav__link">
         
   
   
@@ -3615,7 +3602,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer_guide/AGENT-GUARDRAILS/" class="md-nav__link">
+      <a href="../../../developer_guide/AGENT-GUARDRAILS/" class="md-nav__link">
         
   
   
@@ -3643,7 +3630,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../knowledge/invariants/" class="md-nav__link">
+      <a href="../../../knowledge/invariants/" class="md-nav__link">
         
   
   
@@ -3706,10 +3693,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#what-it-looks-at" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        What it looks at
       
     </span>
   </a>
@@ -3717,10 +3704,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#spec" class="md-nav__link">
+  <a href="#exit-codes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Spec
+        Exit codes
       
     </span>
   </a>
@@ -3728,10 +3715,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
+  <a href="#why-this-does-not-go-stale" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Status
+        Why this does not go stale
       
     </span>
   </a>
@@ -3739,21 +3726,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#example" class="md-nav__link">
+  <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Example
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-resources" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Related Resources
+        See also
       
     </span>
   </a>
@@ -3777,7 +3753,7 @@
 
 
   
-    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/api_reference/auradatabasebackup.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/cli/diagnose.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -3785,106 +3761,110 @@
   
 
 
-<h1 id="auradatabasebackup-api-reference">AuraDatabaseBackup API Reference<a class="headerlink" href="#auradatabasebackup-api-reference" title="Anchor link to this section">&para;</a></h1>
-<blockquote>
-<p><strong>⚠️ BETA / best-effort.</strong> Uses the Aura API <strong>v2beta1</strong> (unstable beta). See the <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a>.
-<strong>✅ Live-verified 2026-07-31.</strong> See <a href="../../user_guide/aura_orchestration/#verification-status">Verification status</a>.</p>
-</blockquote>
-<p>The <code>AuraDatabaseBackup</code> CRD takes an <strong>on-demand</strong> per-database backup on a managed Neo4j Aura instance. Like <a href="../aurasnapshot/"><code>AuraSnapshot</code></a>, a backup is one-shot and is <strong>not</strong> deleted from Aura when the CR is removed.</p>
-<blockquote>
-<p><strong>Requires a multi-database instance</strong>, since it backs up an <a href="../auradatabase/"><code>AuraDatabase</code></a> — see that page's prerequisite. Two behaviours of the Aura API worth knowing, both verified live: a backup does <strong>not appear in Aura's backup list until it completes</strong> (the operator therefore polls it by ID, so <code>phase</code> progresses normally — but do not expect to see it in the console listing immediately), and <code>exportable</code> means "exportable <em>now</em>", flipping from <code>false</code> to <code>true</code> on completion rather than describing the finished backup up front.</p>
-</blockquote>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
-<ul>
-<li><strong>API Version</strong>: <code>neo4j.neo4j.com/v1beta1</code></li>
-<li><strong>Kind</strong>: <code>AuraDatabaseBackup</code></li>
-<li><strong>Scope</strong>: Namespaced</li>
-<li><strong>Short name</strong>: <code>auradbbackup</code></li>
-<li><strong>Guide</strong>: <a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a></li>
-</ul>
-<h2 id="spec">Spec<a class="headerlink" href="#spec" title="Anchor link to this section">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>databaseRef</code></td>
-<td><code>string</code></td>
-<td><strong>Required.</strong> The <a href="../auradatabase/"><code>AuraDatabase</code></a> (same namespace) to back up. Credentials, organization, project, and instance are resolved from it.</td>
-</tr>
-<tr>
-<td><code>managementPolicies</code></td>
-<td><code>[]string</code></td>
-<td>Items enum <code>Observe</code>/<code>Create</code>/<code>Delete</code>/<code>*</code>. Default <code>["*"]</code>.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="status">Status<a class="headerlink" href="#status" title="Anchor link to this section">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>backupId</code></td>
-<td><code>string</code></td>
-<td>Aura-assigned backup ID.</td>
-</tr>
-<tr>
-<td><code>phase</code></td>
-<td><code>string</code></td>
-<td><code>Pending</code>, <code>Completed</code>, <code>Failed</code>, <code>Error</code>. Mirrors Aura's own <code>status</code> enum (<code>Pending</code>/<code>InProgress</code>/<code>Completed</code>/<code>Failed</code>). A freshly-scheduled backup reports <code>Pending</code> — the create response carries only an ID, so no status is known until the next read.</td>
-</tr>
-<tr>
-<td><code>timestamp</code></td>
-<td><code>string</code></td>
-<td>Backup timestamp as reported by Aura.</td>
-</tr>
-<tr>
-<td><code>exportable</code></td>
-<td><code>bool</code></td>
-<td>Whether Aura can export/download this backup. Only populated once the backup has been read back.</td>
-</tr>
-<tr>
-<td><code>conditions</code></td>
-<td><code>[]metav1.Condition</code></td>
-<td>Standard readiness conditions.</td>
-</tr>
-<tr>
-<td><code>observedGeneration</code></td>
-<td><code>int64</code></td>
-<td>The <code>.metadata.generation</code> last reconciled.</td>
-</tr>
-<tr>
-<td><code>lastSyncedTime</code></td>
-<td><code>*metav1.Time</code></td>
-<td>When the backup was last observed from the Aura API.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraDatabaseBackup</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-db-backup</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">databaseRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-db</span>
+<h1 id="diagnose"><code>diagnose</code><a class="headerlink" href="#diagnose" title="Anchor link to this section">&para;</a></h1>
+<p>Answers the question <code>status</code> raises but cannot settle: <strong>why</strong> is this resource not healthy?</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>diagnose<span class="w">                                    </span><span class="c1"># everything in the namespace</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>diagnose<span class="w"> </span>Neo4jEnterpriseCluster/prod<span class="w">        </span><span class="c1"># one resource</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>diagnose<span class="w"> </span>--quiet<span class="w">                            </span><span class="c1"># only what has something to say</span>
 </span></code></pre></div>
-<h2 id="related-resources">Related Resources<a class="headerlink" href="#related-resources" title="Anchor link to this section">&para;</a></h2>
+<p><code>status</code> reads custom resources, so it can tell you a cluster is <code>Pending</code>. But most deployments fail one layer below the CR — a pod that will not schedule, a container OOMKilled at 1Gi, an image that will not pull, a PVC that never bound. <code>diagnose</code> follows the operator's own selectors from the resource down to its StatefulSet, pods, PVCs, Jobs and events, and names the Kubernetes-level cause.</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>$ kubectl neo4j diagnose -n neo4j
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Neo4jEnterpriseCluster/prod — Pending · 2/3 pods ready
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  ✗ pod prod-server-2 — cannot be scheduled
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>      0/3 nodes are available: 3 Insufficient memory.
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>      → No node can satisfy the pod. Compare spec.resources.requests with node
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>        capacity (kubectl describe nodes), or check that the PVC's StorageClass can
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        provision in the zones the nodes are in. Neo4j Enterprise will not start
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        below 1.5Gi of memory, so lowering the request has a floor.
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>1 of 3 resource(s) have problems.
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>For an archive to attach to an issue: kubectl neo4j support-bundle
+</span></code></pre></div>
+<h2 id="what-it-looks-at">What it looks at<a class="headerlink" href="#what-it-looks-at" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Where it comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pod cannot be scheduled</td>
+<td><code>PodScheduled=False</code>, reason <code>Unschedulable</code> — the scheduler's own message</td>
+</tr>
+<tr>
+<td>Container OOMKilled</td>
+<td><code>lastState.terminated</code> reason, <strong>or</strong> exit code 137</td>
+</tr>
+<tr>
+<td>Image will not pull</td>
+<td>waiting reason <code>ImagePullBackOff</code> / <code>ErrImagePull</code> / <code>InvalidImageName</code></td>
+</tr>
+<tr>
+<td>Crash-looping</td>
+<td>waiting reason <code>CrashLoopBackOff</code>, with the restart count</td>
+</tr>
+<tr>
+<td>Config not resolvable</td>
+<td>waiting reason <code>CreateContainerConfigError</code> — usually a missing Secret key</td>
+</tr>
+<tr>
+<td>PVC never bound</td>
+<td><code>pvc.status.phase != Bound</code>, naming the StorageClass</td>
+</tr>
+<tr>
+<td>No pods at all</td>
+<td>a StatefulSet that wants replicas but has none</td>
+</tr>
+<tr>
+<td>Backup Job failed</td>
+<td>the Job's <code>Failed</code> condition, plus its pods</td>
+</tr>
+<tr>
+<td>Nothing ever reconciled</td>
+<td>a CR with no status at all after two minutes</td>
+</tr>
+<tr>
+<td>Operator warnings</td>
+<td>the three most recent <code>Warning</code> events on the resource</td>
+</tr>
+</tbody>
+</table>
+<p>That last-but-one row is worth calling out. A resource with <strong>no status at all</strong> has no other signal — nothing is broken, the CR simply sits there. That is what you see when the operator is not running, has no RBAC for the kind, or is namespace-scoped and not watching this namespace.</p>
+<h2 id="exit-codes">Exit codes<a class="headerlink" href="#exit-codes" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>nothing wrong, or only things that may still resolve on their own</td>
+</tr>
+<tr>
+<td><code>1</code></td>
+<td>a problem was found</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>usage error, or the cluster could not be reached</td>
+</tr>
+</tbody>
+</table>
+<p>Things marked <code>…</code> — a readiness probe that has not passed yet — are printed but <strong>do not</strong> change the exit code. Neo4j Enterprise takes tens of seconds to open Bolt on first start, and a command that failed during a normal startup would be useless in the loop the exit code exists for.</p>
+<h2 id="why-this-does-not-go-stale">Why this does not go stale<a class="headerlink" href="#why-this-does-not-go-stale" title="Anchor link to this section">&para;</a></h2>
+<p>Every rule is anchored to a fact the Kubernetes API defines. Where client-go exports a constant it is used — <code>PodScheduled</code>, <code>PodReasonUnschedulable</code>, <code>ClaimBound</code> — so an upstream rename fails the build rather than silently matching nothing. The three kubelet-owned reasons that have no constant (<code>CrashLoopBackOff</code>, <code>ImagePullBackOff</code>, <code>OOMKilled</code>) are matched as literals, and OOM is additionally matched on exit code 137 so the most common Enterprise failure does not rest on a string alone.</p>
+<p>Workloads are found through the operator's <strong>own exported selectors</strong>, not a label scheme restated here — the same discipline that has <code>validate</code> call the operator's own validators.</p>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><a href="../auradatabase/"><code>AuraDatabase</code></a> — the database backed up</li>
-<li><a href="../auradatabaserestore/"><code>AuraDatabaseRestore</code></a> — restore from a backup</li>
-<li><a href="../../user_guide/aura_orchestration/">Aura Orchestration Guide</a></li>
+<li><a href="../status/"><code>status</code></a> — what is deployed and which resources need attention</li>
+<li><a href="../explain/"><code>explain</code></a> — decode the operator's own conditions and phases</li>
+<li><a href="../support-bundle/"><code>support-bundle</code></a> — package the same evidence for an issue</li>
+<li><a href="../../guides/troubleshooting/">Troubleshooting</a> — the long-form knowledge</li>
 </ul>
 
 
@@ -3923,7 +3903,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../auradatabase/" class="md-footer__link md-footer__link--prev" aria-label="Previous: AuraDatabase">
+          <a href="../status/" class="md-footer__link md-footer__link--prev" aria-label="Previous: status">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3933,20 +3913,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                AuraDatabase
+                status
               </div>
             </div>
           </a>
         
         
           
-          <a href="../auradatabaserestore/" class="md-footer__link md-footer__link--next" aria-label="Next: AuraDatabaseRestore">
+          <a href="../connect/" class="md-footer__link md-footer__link--next" aria-label="Next: connect &amp; cypher">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                AuraDatabaseRestore
+                connect & cypher
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -4010,10 +3990,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
