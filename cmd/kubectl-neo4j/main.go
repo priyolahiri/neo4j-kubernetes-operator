@@ -47,6 +47,7 @@ Usage:
 
 Commands:
   validate    Validate Neo4j CR manifests against the operator's own validators
+  status      Show the state of every Neo4j resource in a namespace
   version     Print the version
 
 Run "kubectl neo4j <command> -h" for command flags.
@@ -66,6 +67,8 @@ func run(args []string, stdout, stderr *os.File) int {
 	switch args[0] {
 	case "validate":
 		return runValidate(args[1:], stdout, stderr)
+	case "status":
+		return runStatus(args[1:], stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, version)
 		return exitOK
