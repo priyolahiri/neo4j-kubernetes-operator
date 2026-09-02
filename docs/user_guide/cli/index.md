@@ -28,6 +28,7 @@ The second reason is volume. The troubleshooting guide documents 98 separate `ku
 | [`connect` and `cypher`](connect.md) | Reach a deployment, or open a `cypher-shell` session |
 | [`support-bundle`](support-bundle.md) | Collect a redacted diagnostic archive |
 | [`explain`](explain.md) | Decode a status condition or phase, and what to do about it |
+| [`export`](export.md) | Author a downstream manifest from an upstream resource's status |
 
 Start with [Installing the CLI](install.md).
 

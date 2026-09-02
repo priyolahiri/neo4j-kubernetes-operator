@@ -148,6 +148,7 @@ nav:
       - connect & cypher: user_guide/cli/connect.md
       - support-bundle: user_guide/cli/support-bundle.md
       - explain: user_guide/cli/explain.md
+      - export: user_guide/cli/export.md
 
   - Operate:
       - Backup & Restore: user_guide/guides/backup_restore.md
