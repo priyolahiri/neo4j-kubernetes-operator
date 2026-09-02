@@ -150,6 +150,7 @@ has a dedicated reference page and guide on the
 | Monitoring & metrics | [Monitoring](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/monitoring/) |
 | Upgrades | [Upgrade Guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/migration_guide/) |
 | Troubleshooting | [Troubleshooting](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/troubleshooting/) |
+| `kubectl-neo4j` CLI | [CLI](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/) |
 | API reference | [API docs](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/) |
 
 ## Contributing

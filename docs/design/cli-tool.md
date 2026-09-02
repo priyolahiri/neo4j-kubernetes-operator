@@ -473,10 +473,21 @@ honest options are recorded in §9 Q5 rather than papered over.
    created" is the line that says what to do next, not a failure.
 5. **krew index submission** (B6), once the command set is stable enough that
    users installing it will not immediately want a newer one.
-6. **`support-bundle`** (§4.5) → **done.** **`explain`** (§4.4) remains, and
-   §9 Q3 (overlap with the MCP server) should be answered before it is built —
-   both would encode troubleshooting knowledge, and two copies of the same
-   claims about operator behaviour is B3 in a new costume.
+6. **`support-bundle`** (§4.5) → **done.** **`explain`** (§4.4) → **done.**
+
+   `explain` was the command flagged in §4.4 as "most at risk of B3 drift —
+   every string it prints is a claim about operator behaviour". That risk is
+   addressed structurally rather than by care: the guidance map is **keyed off
+   the operator's own exported condition constants**, so renaming or removing
+   one stops this file compiling instead of leaving it explaining something
+   that no longer exists. A test covers the reverse direction — a condition
+   added without guidance fails here. Phases are covered only where the API
+   package defines constants; phases that exist as inline literals in a
+   controller are deliberately left out rather than copied in as strings, since
+   a string copy is precisely the drift being avoided.
+
+   An unrecognised phase is reported as unrecognised, naming the CLI's own
+   version, rather than guessed at.
 
    `support-bundle`'s design centre is redaction, not collection. Secret values
    never ship; nor do `last-applied-configuration` annotations, which are a
@@ -520,10 +531,21 @@ originally assumed:
    leaving customers to infer that a downloadable binary is more supported than
    the operator it ships with.
 
-**Q3 — Does the CLI overlap the MCP server enough to matter?** Both exist to
-make the operator legible; one to humans, one to agents. If `explain` and the
-MCP server end up encoding the same troubleshooting knowledge in two places,
-that is B3 in a new costume. Worth checking before §8 item 6, not before item 1.
+**Q3 — ANSWERED: no overlap. The question rested on a wrong premise.**
+
+This document assumed the MCP server exists "to make the operator legible … to
+agents", and therefore that `explain` might duplicate it. That is not what it
+is. `spec.mcp` deploys the **upstream `mcp/neo4j` image**, whose tools are
+`read_neo4j_cypher`, `write_neo4j_cypher` and `get-schema`
+(`docs/user_guide/guides/mcp_client_setup.md`): querying and analysing **data
+inside a Neo4j database**. It knows nothing about operator phases, conditions
+or Kubernetes state, and could not — this project does not author that image.
+
+So the two do not overlap at all: `explain` decodes an operator-owned status
+vocabulary; the MCP server queries user data in the graph. Nothing here blocked
+`explain`, and the drift risk it was worried about lives entirely inside this
+repo — addressed by keying the guidance off the operator's exported constants
+(§8 item 6).
 
 **Q5 — ANSWERED and fixed in the operator.** Raised by the prototype (§6.1):
 `validateCluster`'s early return on image failure meant a fix-one-rerun loop.

@@ -92,7 +92,7 @@ sudo mv kubectl-neo4j /usr/local/bin/
 kubectl neo4j validate -f manifests/
 ```
 
-Same support terms as the operator: best-effort, no SLA. See the [CLI guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/user_guide/guides/cli/).
+Same support terms as the operator: best-effort, no SLA. See the [CLI guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/user_guide/cli/).
 
 ## Documentation
 

@@ -2,6 +2,16 @@
 
 This guide provides comprehensive troubleshooting information for the Neo4j Kubernetes Operator, covering both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone` deployments.
 
+!!! tip "Faster than working through this by hand"
+    The [`kubectl-neo4j` CLI](../cli/index.md) automates most of what follows:
+
+    - `kubectl neo4j status` — what exists and what is unhealthy, in one view
+    - `kubectl neo4j explain <Kind>/<name>` — what a condition means and what to do about it
+    - `kubectl neo4j support-bundle` — collect everything below into one redacted archive
+    - `kubectl neo4j cypher <name>` — a shell, without the Secret round-trip
+
+    Use this guide when you want to look at things yourself, or when the CLI is not installed.
+
 ## Quick Reference
 
 ### Diagnostic Commands

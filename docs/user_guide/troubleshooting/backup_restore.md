@@ -2,6 +2,11 @@
 
 Common backup and restore failures and their fixes. For the feature overview and configuration, see the [Backup & Restore guide](../guides/backup_restore.md).
 
+!!! tip
+    `kubectl neo4j validate -f <manifest>` catches a malformed `Neo4jBackup` before you apply
+    it, and `kubectl neo4j explain Neo4jBackup/<name>` decodes the phase of one that has
+    already failed. See the [CLI guide](../cli/index.md).
+
 ## Common Backup Issues
 
 ### Backup Job Failures
