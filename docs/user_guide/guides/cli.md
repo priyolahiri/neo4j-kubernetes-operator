@@ -19,6 +19,42 @@ Across 26 resource kinds and 234 top-level spec fields, that loop is slow.
 
 ## Install
 
+=== "go install"
+
+    The simplest path if you have Go, and the only one that needs no release
+    asset at all — the module is published on the Go proxy:
+
+    ```bash
+    go install github.com/priyolahiri/neo4j-kubernetes-operator/cmd/kubectl-neo4j@v1.15.0
+    ```
+
+    It installs into `$(go env GOPATH)/bin` under the name `kubectl-neo4j`,
+    which is exactly what `kubectl` needs for plugin discovery. Pin the version
+    to the operator release you deploy — `@latest` will drift.
+
+=== "Install script"
+
+    Detects your OS and architecture, downloads the matching archive, and
+    **verifies its checksum before installing** — it aborts rather than
+    installing something it could not verify:
+
+    ```bash
+    curl -sSL https://raw.githubusercontent.com/priyolahiri/neo4j-kubernetes-operator/main/hack/install-cli.sh | sh
+    ```
+
+    Pipe-to-shell means trusting the network round trip. Downloading first and
+    reading it is the better habit:
+
+    ```bash
+    curl -sSLO https://raw.githubusercontent.com/priyolahiri/neo4j-kubernetes-operator/main/hack/install-cli.sh
+    less install-cli.sh
+    sh install-cli.sh
+    ```
+
+    Two knobs: `VERSION` (default: latest release) and `INSTALL_DIR`
+    (default: `/usr/local/bin`). Windows is not covered — use the `.zip`
+    asset.
+
 === "Download a release"
 
     Binaries are attached to every [release](https://github.com/priyolahiri/neo4j-kubernetes-operator/releases). Pick your platform:

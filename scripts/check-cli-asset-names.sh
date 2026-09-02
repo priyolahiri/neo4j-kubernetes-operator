@@ -10,6 +10,7 @@
 #   .github/workflows/release.yml        — builds and names the archives
 #   .github/release-notes-template.md    — tells users what to download
 #   docs/user_guide/guides/cli.md        — the install instructions
+#   hack/install-cli.sh                  — downloads and verifies them
 #
 # This repo already learned that "two of three surfaces being right is the
 # shape of drift review misses" (CLAUDE.md, on the CRD catalogue). Same shape,
@@ -21,8 +22,9 @@ fail() { echo "ERROR: $*" >&2; exit 1; }
 RELEASE_WF=".github/workflows/release.yml"
 NOTES_TMPL=".github/release-notes-template.md"
 CLI_DOC="docs/user_guide/guides/cli.md"
+INSTALL_SH="hack/install-cli.sh"
 
-for f in "$RELEASE_WF" "$NOTES_TMPL" "$CLI_DOC"; do
+for f in "$RELEASE_WF" "$NOTES_TMPL" "$CLI_DOC" "$INSTALL_SH"; do
   [ -f "$f" ] || fail "$f not found"
 done
 
@@ -46,4 +48,12 @@ grep -q 'kubectl-neo4j_\${VERSION}_\${OS}_\${ARCH}\.tar\.gz' "$CLI_DOC" \
 grep -q 'kubectl-neo4j_\${VERSION}_checksums\.txt' "$CLI_DOC" \
   || fail "$CLI_DOC does not tell users how to fetch the checksums file"
 
-echo "check-cli-asset-names: OK — release workflow, release notes template and CLI guide agree on the asset naming convention."
+# The install script builds the same names at runtime. If it drifts, users get
+# a 404 from a URL they never typed, which is the least debuggable failure of
+# the four surfaces.
+grep -q 'ARCHIVE="kubectl-neo4j_\${VERSION}_\${os}_\${arch}\.tar\.gz"' "$INSTALL_SH" \
+  || fail "$INSTALL_SH no longer builds kubectl-neo4j_<version>_<os>_<arch>.tar.gz"
+grep -q 'CHECKSUMS="kubectl-neo4j_\${VERSION}_checksums\.txt"' "$INSTALL_SH" \
+  || fail "$INSTALL_SH no longer fetches kubectl-neo4j_<version>_checksums.txt"
+
+echo "check-cli-asset-names: OK — release workflow, release notes template, CLI guide and install script agree on the asset naming convention."
