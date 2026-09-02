@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -307,13 +308,7 @@ Flags:
 // informer cache would cost more than it saves and would need list/watch
 // permissions the user may not have.
 func newClusterClient(kubeconfigPath, contextName string) (client.Client, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if kubeconfigPath != "" {
-		rules.ExplicitPath = kubeconfigPath
-	}
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		rules, &clientcmd.ConfigOverrides{CurrentContext: contextName},
-	).ClientConfig()
+	cfg, err := newClusterConfig(kubeconfigPath, contextName)
 	if err != nil {
 		return nil, err
 	}
@@ -326,6 +321,20 @@ func newClusterClient(kubeconfigPath, contextName string) (client.Client, error)
 		return nil, err
 	}
 	return client.New(cfg, client.Options{Scheme: scheme})
+}
+
+// newClusterConfig resolves the kubeconfig the same way kubectl does. Split out
+// from newClusterClient because support-bundle needs the raw config too: pod
+// logs are served by a subresource that the controller-runtime client does not
+// expose, so it builds a client-go clientset from the same config.
+func newClusterConfig(kubeconfigPath, contextName string) (*rest.Config, error) {
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfigPath != "" {
+		rules.ExplicitPath = kubeconfigPath
+	}
+	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		rules, &clientcmd.ConfigOverrides{CurrentContext: contextName},
+	).ClientConfig()
 }
 
 // warnOnVersionSkew compares this binary's version with the operator running in
