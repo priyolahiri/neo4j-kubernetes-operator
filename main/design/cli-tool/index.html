@@ -4067,9 +4067,8 @@ honest options are recorded in §9 Q5 rather than papered over.</p>
 <hr />
 <h2 id="8-delivery-order">8. Delivery order<a class="headerlink" href="#8-delivery-order" title="Anchor link to this section">&para;</a></h2>
 <ol>
-<li><strong><code>validate</code>, offline only</strong> (§6). One command, no cluster, no release
-   pipeline yet — buildable and reviewable as a normal PR, with <code>go run</code> and
-   <code>make</code> targets for local use.</li>
+<li><del><strong><code>validate</code>, offline only</strong> (§6)</del> → <strong>done.</strong> Six kinds, no cluster
+   required, <code>make build-cli</code> for local use.</li>
 <li><del><strong>Cross-compile matrix in <code>release.yml</code></strong> (revised B1)</del> → <strong>done.</strong> A
    <code>GOOS</code>/<code>GOARCH</code> matrix writing into <code>release-artifacts/</code>, which the existing
    release step already globs — no new workflow, as the revised B1 predicted.
@@ -4087,7 +4086,22 @@ honest options are recorded in §9 Q5 rather than papered over.</p>
 <p>A CI cross-compile step (<code>ci.yml</code>) builds all five targets on every PR, so a
    unix-only import reaching <code>cmd/</code> fails a pull request rather than a tagged
    release.
-3. <strong><code>validate --context</code></strong> — the 8 cross-reference validators.
+3. <del><strong><code>validate --context</code></strong> — the 8 cross-reference validators</del> → <strong>done</strong>,
+   as <code>--connect</code> / <code>--context</code> / <code>--kubeconfig</code> / <code>--namespace</code>.</p>
+<p>Two corrections the work forced. First, it is <strong>6</strong> cross-reference
+   validators, not 8: <code>resource</code> and <code>cluster</code> are sub-validators, not per-CRD
+   entrypoints. Second, and more important, this document and the command's own
+   output implied every unsupported kind merely needed a connection. <strong>Of 26
+   CRD kinds only 12 have operator-side validators at all</strong> — the 12 Aura kinds,
+   <code>Neo4jRestore</code> and <code>Neo4jReplicaPromotion</code> have none, and no amount of
+   connecting will check them. The skip taxonomy now distinguishes "needs
+   --connect" from "no validator exists; use --dry-run=server", because telling
+   a user to connect for a check that does not exist sends them after nothing.</p>
+<p>Also surfaced <code>UserValidationResult.Pending</code> — the operator's own third
+   outcome for a dependency that is not satisfiable <em>yet</em> rather than wrong. It
+   renders distinctly and never affects the exit code, including under
+   <code>--strict</code>. Dropping it, as the first implementation did, hid the difference
+   between "wrong" and "not yet".
 4. <strong><code>status</code></strong> (§4.2), then <strong><code>connect</code> / <code>cypher</code></strong> (§4.3).
 5. <strong>krew index submission</strong> (B6), once the command set is stable enough that
    users installing it will not immediately want a newer one.
