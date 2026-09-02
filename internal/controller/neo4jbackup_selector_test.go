@@ -59,3 +59,87 @@ func TestBackupJobSelector_UsesCRNameNotDerivedName(t *testing.T) {
 	assert.Equal(t, "nightly", sel["app.kubernetes.io/instance"])
 	assert.Equal(t, "neo4j-backup", sel["app.kubernetes.io/name"])
 }
+
+// Contract test for resources.CloudCredentialKeys.
+//
+// The Job builder references Secret keys by name; a key missing from the
+// Secret does not fail politely, the pod never starts and the kubelet reports
+// CreateContainerConfigError with no mention of backups. kubectl-neo4j's
+// `preflight` checks the Secret's shape BEFORE that happens, using the list in
+// internal/resources. This test is what stops the two drifting: every key the
+// builder actually wires must appear in that list.
+func TestCloudCredentialKeys_CoverEveryKeyTheJobBuilderWires(t *testing.T) {
+	r := &Neo4jBackupReconciler{}
+
+	for _, provider := range []string{"aws", "azure"} {
+		backup := &neo4jv1beta1.Neo4jBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: "nightly", Namespace: "neo4j"},
+			Spec: neo4jv1beta1.Neo4jBackupSpec{
+				InstanceRef: "prod",
+				Storage: neo4jv1beta1.StorageLocation{
+					Type:   "s3",
+					Bucket: "backups",
+					Cloud: &neo4jv1beta1.CloudBlock{
+						Provider:             provider,
+						CredentialsSecretRef: "cloud-creds",
+					},
+				},
+			},
+		}
+
+		declared := map[string]bool{}
+		for _, k := range resources.CloudCredentialKeys(provider) {
+			declared[k] = true
+		}
+
+		wired := 0
+		for _, env := range r.buildCloudEnvVars(backup) {
+			if env.ValueFrom == nil || env.ValueFrom.SecretKeyRef == nil {
+				continue // a literal such as AWS_ENDPOINT_URL_S3, not a Secret key
+			}
+			wired++
+			assert.True(t, declared[env.ValueFrom.SecretKeyRef.Key],
+				"provider %q wires Secret key %q, which CloudCredentialKeys does not declare",
+				provider, env.ValueFrom.SecretKeyRef.Key)
+		}
+		assert.NotZero(t, wired, "provider %q should wire at least one Secret key", provider)
+	}
+}
+
+// GCP is the odd one out: its credential is projected as a volume item rather
+// than an env var, so the key has to be checked on the other builder.
+func TestCloudCredentialKeys_CoverTheGCPVolumeProjection(t *testing.T) {
+	r := &Neo4jBackupReconciler{}
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "nightly", Namespace: "neo4j"},
+		Spec: neo4jv1beta1.Neo4jBackupSpec{
+			InstanceRef: "prod",
+			Storage: neo4jv1beta1.StorageLocation{
+				Type:   "gcs",
+				Bucket: "backups",
+				Cloud: &neo4jv1beta1.CloudBlock{
+					Provider:             "gcp",
+					CredentialsSecretRef: "cloud-creds",
+				},
+			},
+		},
+	}
+
+	declared := map[string]bool{}
+	for _, k := range resources.CloudCredentialKeys("gcp") {
+		declared[k] = true
+	}
+
+	projected := 0
+	for _, v := range r.buildVolumes(backup) {
+		if v.Secret == nil {
+			continue
+		}
+		for _, item := range v.Secret.Items {
+			projected++
+			assert.True(t, declared[item.Key],
+				"the GCP credentials volume projects Secret key %q, which CloudCredentialKeys does not declare", item.Key)
+		}
+	}
+	assert.NotZero(t, projected, "the GCP path should project a Secret key")
+}

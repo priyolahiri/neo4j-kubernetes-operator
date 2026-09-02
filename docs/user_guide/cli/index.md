@@ -22,6 +22,7 @@ The second reason is volume. The troubleshooting guide documents 98 separate `ku
 | | |
 |---|---|
 | [`validate`](validate.md) | Check manifests against the operator's validators, before applying |
+| [`preflight`](preflight.md) | Check the cluster-side preconditions a manifest depends on |
 | [`status`](status.md) | One view of every Neo4j resource in a namespace |
 | [`diagnose`](diagnose.md) | Why a resource is unhealthy, at the Kubernetes level |
 | [`connect` and `cypher`](connect.md) | Reach a deployment, or open a `cypher-shell` session |
