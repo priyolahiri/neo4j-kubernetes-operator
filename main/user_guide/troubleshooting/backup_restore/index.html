@@ -3828,8 +3828,14 @@
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
 <p><code>kubectl neo4j validate -f &lt;manifest&gt;</code> catches a malformed <code>Neo4jBackup</code> before you apply
-it, and <code>kubectl neo4j explain Neo4jBackup/&lt;name&gt;</code> decodes the phase of one that has
-already failed. See the <a href="../../cli/">CLI guide</a>.</p>
+it, <code>kubectl neo4j preflight -f &lt;manifest&gt;</code> checks the cluster-side preconditions the
+manifest depends on — the credentials Secret's keys, or the ServiceAccount's cloud-identity
+annotation — and <code>kubectl neo4j explain Neo4jBackup/&lt;name&gt;</code> decodes the phase of one that
+has already failed. See the <a href="../../cli/">CLI guide</a>.</p>
+<p>The credential checks below are written as <code>kubectl run</code> probes because they were the only
+way to run them before <code>preflight</code> existed. <code>preflight</code> covers the <em>shape</em> of the same
+problems without a probe pod; reach for a probe when you need to prove the credentials
+actually work against the bucket, which preflight deliberately does not claim to do.</p>
 </div>
 <h2 id="common-backup-issues">Common Backup Issues<a class="headerlink" href="#common-backup-issues" title="Anchor link to this section">&para;</a></h2>
 <h3 id="backup-job-failures">Backup Job Failures<a class="headerlink" href="#backup-job-failures" title="Anchor link to this section">&para;</a></h3>

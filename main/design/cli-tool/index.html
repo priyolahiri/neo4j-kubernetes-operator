@@ -4465,8 +4465,93 @@ honest options are recorded in §9 Q5 rather than papered over.</p>
    diagnosed. Every redaction is enumerated in <code>REDACTIONS.txt</code>, together with
    an explicit statement that redaction cannot cover the user's own
    <code>spec.config</code> or application log output.</p>
+<ol>
+<li><strong><code>diagnose</code></strong> (new; not in the original §4 ranking) → <strong>done.</strong></li>
+</ol>
+<p>§4 ranked five commands and all five shipped, which surfaced what the
+   ranking had missed: every one of them stops at the custom-resource boundary,
+   while the failure taxonomy in <code>guides/troubleshooting.md</code> is dominated by
+   the layer below it — pods that will not schedule, containers OOMKilled at
+   1Gi, image pulls that fail, PVCs that never bind. <code>status</code> reports
+   "Pending / not ready" for all of them and hands the user back to a 98-line
+   runbook to work out which it was.</p>
+<p>The B3 answer is the same one <code>explain</code> used, transposed: anchor every rule
+   to a fact the KUBERNETES API defines rather than a string this project made
+   up. Where client-go exports a constant it is used (<code>PodScheduled</code>,
+   <code>PodReasonUnschedulable</code>, <code>ClaimBound</code>), so an upstream rename fails the
+   build. Three reasons have no constant because kubelet owns them —
+   <code>CrashLoopBackOff</code>, <code>ImagePullBackOff</code>, <code>OOMKilled</code> — and those are matched
+   as literals, with OOM <em>also</em> matched on exit code 137 so the most common
+   Enterprise failure does not rest on a string alone.</p>
+<p>Workloads are found through the operator's own exported selectors, which
+   required adding <code>resources.BackupJobSelector</code> and refactoring the
+   controller's <code>backupLabels</code> onto it, with a contract test — the same
+   producer/consumer discipline <code>cluster_selectors_test.go</code> already enforces
+   for server pods.</p>
+<p>One reporting decision worth recording: a resource the operator has <strong>never
+   written status to</strong> is reported explicitly. That silence has no other
+   signal — nothing is broken, the CR simply sits there — and it is what a user
+   sees when the operator is not running, lacks RBAC for the kind, or is
+   namespace-scoped and not watching this namespace (#282).</p>
+<ol>
+<li><strong><code>preflight</code></strong> (new) → <strong>done.</strong> §1.2's insight applied a second time.</li>
+</ol>
+<p><code>validate</code> moved the operator's SPEC rules from after-apply to before-apply.
+   What it structurally cannot move is the class of failure that is not in the
+   manifest at all: a StorageClass that does not exist, one that cannot expand,
+   a credentials Secret missing a key, no node large enough for the pod. Those
+   are cluster facts, and 21 of the 29 validators are deliberately offline.</p>
+<p>The scope line is the design: <strong>shape, not reachability.</strong> It reads
+   Kubernetes objects and never contacts S3, GCS, Azure or a registry, and
+   never runs a probe pod — which is what keeps it free of new images, new RBAC
+   and any mutation. It is stated in the help text, the docs and on every run,
+   because a clean result that implied "the backup will work" would be worse
+   than no command.</p>
+<p>It replaces a ritual the troubleshooting guide documents today —
+   <code>kubectl run backup-auth-check --image=amazon/aws-cli …</code>, in three vendor
+   variants — which is only reached for <em>after</em> a backup has already failed.</p>
+<p>Cloud credential key names and the Job ServiceAccount names moved into
+   <code>internal/resources</code> (<code>CloudCredentialKeys</code>, <code>CloudIdentityAnnotation</code>,
+   <code>Backup</code>/<code>RestoreServiceAccountName</code>) rather than being restated in the CLI,
+   pinned by a contract test asserting every key the Job builder actually wires
+   — env var or projected volume item — is declared there.</p>
+<ol>
+<li><strong><code>export replica-database</code></strong> (new) → <strong>done</strong>, and much narrower than §1.1
+   implied.</li>
+</ol>
+<p>§1.1 counted five status fields that exist solely to be pasted into another
+   resource's spec and read that as a CLI-shaped gap. Re-reading the CRDs while
+   building it showed the operator had <strong>already closed most of it itself</strong>:
+   <code>source.upstreamBackupRef</code> resolves the pull URI live, and
+   <code>source.upstreamClusterRef</code> resolves network addresses live. Generating a
+   literal where a ref exists would be redundant <em>and worse</em> — the literal goes
+   stale when the upstream changes.</p>
+<p>What no ref can do is cross a cluster boundary, since both resolve through a
+   Get against their own API server; the CRD says as much, telling the user to
+   "paste it from that CR's own status by hand" for an upstream on a different
+   Kubernetes cluster. That paste is the entire scope of the command, and the
+   docs point same-cluster users back at the refs.</p>
+<p>Two properties worth keeping if this pattern is extended: the manifest is
+   the ONLY thing on stdout (notes go to stderr, so a redirect stays clean),
+   and every manifest is run through the operator's own <code>ReplicaValidator</code>
+   before it is printed — a generator that emitted something <code>validate</code> would
+   reject would be worse than no generator.</p>
+<ol>
+<li><strong>Docs routing</strong> → <strong>done.</strong> A command nobody is shown has no value, and
+    with krew declined (naming and identity, not effort) the docs <em>are</em> the
+    discovery channel. <code>kubectl neo4j</code> appeared 7 times across
+    <code>docs/user_guide/</code>, in 3 files, against roughly 300 manual <code>kubectl</code> /
+    <code>cypher-shell</code> / <code>neo4j-admin</code> lines. The high-density runbooks now lead
+    with the CLI at each problem heading and keep every raw command underneath
+    as the by-hand path.</li>
+</ol>
 <p>Deliberately <em>not</em> in the order: any mutating command beyond CR authoring
-(B5), and any <code>pkg/</code> promotion (B2).</p>
+(B5), any <code>pkg/</code> promotion (B2), and a TUI. The TUI was considered and
+declined: the state half duplicates <code>status</code> + <code>diagnose</code>, the metrics half
+would open with empty graphs because a CLI process starts with no history
+(Prometheus has the history, and the operator already ships that path), and it
+would break the <code>run(args, stdout, stderr) int</code> shape that makes every command
+here table-testable.</p>
 <hr />
 <h2 id="9-open-questions">9. Open questions<a class="headerlink" href="#9-open-questions" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Q1 — Does <code>validate</code> earn its place against <code>--dry-run=server</code> in practice?</strong>

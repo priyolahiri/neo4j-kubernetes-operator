@@ -4158,45 +4158,48 @@
 <li>The cluster transitions through <code>Expanding</code> → <code>Ready</code>.</li>
 </ol>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h2>
-<p>Your StorageClass must have <code>allowVolumeExpansion: true</code>. Most cloud provider default StorageClasses support this. Verify with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>storageclass<span class="w"> </span>&lt;your-storage-class&gt;<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.allowVolumeExpansion}'</span>
+<p>Your StorageClass must have <code>allowVolumeExpansion: true</code>. Most cloud provider default StorageClasses support this.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>preflight<span class="w"> </span>Neo4jEnterpriseCluster/&lt;name&gt;<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+</span></code></pre></div>
+<p><code>preflight</code> reports this along with the deployment's other cluster-side preconditions, and it is worth running <strong>at install time rather than at expansion time</strong>: a class without expansion costs nothing until the day a full disk makes the resize urgent, and by then the PVCs already exist. Check it by hand with:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>storageclass<span class="w"> </span>&lt;your-storage-class&gt;<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.allowVolumeExpansion}'</span>
 </span></code></pre></div>
 <p>If it returns <code>false</code> or empty, patch it:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>storageclass<span class="w"> </span>&lt;your-storage-class&gt;<span class="w"> </span>-p<span class="w"> </span><span class="s1">'{"allowVolumeExpansion": true}'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>storageclass<span class="w"> </span>&lt;your-storage-class&gt;<span class="w"> </span>-p<span class="w"> </span><span class="s1">'{"allowVolumeExpansion": true}'</span>
 </span></code></pre></div>
 <blockquote>
 <p><strong>Note:</strong> Not all storage provisioners support online volume expansion. Check your provider's documentation. Most CSI drivers (AWS EBS, GCP PD, Azure Disk) do support it.</p>
 </blockquote>
 <h2 id="expanding-data-storage">Expanding Data Storage<a class="headerlink" href="#expanding-data-storage" title="Anchor link to this section">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Check current storage size</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.storage.size}'</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># 100Gi</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># Expand to 200Gi</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span>--type<span class="o">=</span>merge<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">'{"spec":{"storage":{"size":"200Gi"}}}'</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># Watch the expansion progress</span>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span>-w
-</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># NAME         PHASE       ...</span>
-</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># my-cluster   Ready       ...  &lt;- before</span>
-</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="c1"># my-cluster   Expanding   ...  &lt;- patching PVCs + recreating StatefulSet</span>
-</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="c1"># my-cluster   Ready       ...  &lt;- done</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Check current storage size</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.storage.size}'</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># 100Gi</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># Expand to 200Gi</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span>--type<span class="o">=</span>merge<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">'{"spec":{"storage":{"size":"200Gi"}}}'</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="c1"># Watch the expansion progress</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span>-w
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="c1"># NAME         PHASE       ...</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="c1"># my-cluster   Ready       ...  &lt;- before</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="c1"># my-cluster   Expanding   ...  &lt;- patching PVCs + recreating StatefulSet</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="c1"># my-cluster   Ready       ...  &lt;- done</span>
 </span></code></pre></div>
 <h2 id="expanding-standalone-storage">Expanding Standalone Storage<a class="headerlink" href="#expanding-standalone-storage" title="Anchor link to this section">&para;</a></h2>
 <p>The same approach works for <code>Neo4jEnterpriseStandalone</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>neo4jenterprisestandalone<span class="w"> </span>my-standalone<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--type<span class="o">=</span>merge<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">'{"spec":{"storage":{"size":"200Gi"}}}'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>neo4jenterprisestandalone<span class="w"> </span>my-standalone<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--type<span class="o">=</span>merge<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">'{"spec":{"storage":{"size":"200Gi"}}}'</span>
 </span></code></pre></div>
 <p>The operator expands the single PVC and recreates the StatefulSet with zero downtime.</p>
 <h2 id="monitoring-expansion">Monitoring Expansion<a class="headerlink" href="#monitoring-expansion" title="Anchor link to this section">&para;</a></h2>
 <h3 id="events">Events<a class="headerlink" href="#events" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Watch storage expansion events</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>StorageExpansionStarted
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>StorageExpansionCompleted
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>StorageExpansionFailed
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Watch storage expansion events</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>StorageExpansionStarted
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>StorageExpansionCompleted
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>StorageExpansionFailed
 </span></code></pre></div>
 <h3 id="cluster-status">Cluster Status<a class="headerlink" href="#cluster-status" title="Anchor link to this section">&para;</a></h3>
 <p>The cluster phase changes during expansion:</p>
@@ -4228,13 +4231,13 @@
 </table>
 <h3 id="pvc-status">PVC Status<a class="headerlink" href="#pvc-status" title="Anchor link to this section">&para;</a></h3>
 <p>You can verify the expansion at the PVC level:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Check PVC sizes (spec.resources shows the requested size)</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span>neo4j.com/cluster<span class="o">=</span>my-cluster<span class="w"> </span>-o<span class="w"> </span>custom-columns<span class="o">=</span>NAME:.metadata.name,REQUESTED:.spec.resources.requests.storage,CAPACITY:.status.capacity.storage
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Example output during expansion:</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># NAME                          REQUESTED   CAPACITY</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># data-my-cluster-server-0      200Gi       100Gi    &lt;- expanding (CSI driver working)</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># data-my-cluster-server-1      200Gi       200Gi    &lt;- done</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Check PVC sizes (spec.resources shows the requested size)</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span>neo4j.com/cluster<span class="o">=</span>my-cluster<span class="w"> </span>-o<span class="w"> </span>custom-columns<span class="o">=</span>NAME:.metadata.name,REQUESTED:.spec.resources.requests.storage,CAPACITY:.status.capacity.storage
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Example output during expansion:</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># NAME                          REQUESTED   CAPACITY</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1"># data-my-cluster-server-0      200Gi       100Gi    &lt;- expanding (CSI driver working)</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1"># data-my-cluster-server-1      200Gi       200Gi    &lt;- done</span>
 </span></code></pre></div>
 <blockquote>
 <p><strong>Note:</strong> The <code>CAPACITY</code> column reflects the actual filesystem size, which is updated asynchronously by the CSI driver. The operator does not wait for capacity to catch up — it only patches the request. Some providers (especially Azure) may take several minutes.</p>
@@ -4242,9 +4245,9 @@
 <h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Anchor link to this section">&para;</a></h2>
 <h3 id="storage-shrink-is-not-supported">Storage Shrink Is Not Supported<a class="headerlink" href="#storage-shrink-is-not-supported" title="Anchor link to this section">&para;</a></h3>
 <p>Reducing <code>spec.storage.size</code> below the current PVC size is rejected by the operator. Kubernetes does not support PVC shrink. If you attempt it, you'll see:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>PHASE: Failed
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>EVENT: StorageExpansionFailed - Storage shrink rejected: spec.storage.size (50Gi)
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>       is smaller than existing data PVCs; PVC shrink is not supported by Kubernetes
+<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>PHASE: Failed
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>EVENT: StorageExpansionFailed - Storage shrink rejected: spec.storage.size (50Gi)
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>       is smaller than existing data PVCs; PVC shrink is not supported by Kubernetes
 </span></code></pre></div>
 <p>To recover, set <code>spec.storage.size</code> back to the current size or larger.</p>
 <h3 id="storageclass-changes-are-not-supported">StorageClass Changes Are Not Supported<a class="headerlink" href="#storageclass-changes-are-not-supported" title="Anchor link to this section">&para;</a></h3>
@@ -4254,7 +4257,7 @@
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <h3 id="storageclass-does-not-allow-volume-expansion">"StorageClass does not allow volume expansion"<a class="headerlink" href="#storageclass-does-not-allow-volume-expansion" title="Anchor link to this section">&para;</a></h3>
 <p>Your StorageClass has <code>allowVolumeExpansion: false</code> or unset. Patch it:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>storageclass<span class="w"> </span>&lt;name&gt;<span class="w"> </span>-p<span class="w"> </span><span class="s1">'{"allowVolumeExpansion": true}'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>storageclass<span class="w"> </span>&lt;name&gt;<span class="w"> </span>-p<span class="w"> </span><span class="s1">'{"allowVolumeExpansion": true}'</span>
 </span></code></pre></div>
 <p>Then retry the expansion (the operator will pick it up on the next reconcile).</p>
 <h3 id="expansion-stuck-in-expanding-phase">Expansion Stuck in "Expanding" Phase<a class="headerlink" href="#expansion-stuck-in-expanding-phase" title="Anchor link to this section">&para;</a></h3>
@@ -4265,11 +4268,11 @@
 </ol>
 <h3 id="pvcs-not-found">PVCs Not Found<a class="headerlink" href="#pvcs-not-found" title="Anchor link to this section">&para;</a></h3>
 <p>If the operator can't find PVCs to expand, check that PVCs have the expected labels:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Server PVCs</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span>neo4j.com/cluster<span class="o">=</span>my-cluster<span class="w"> </span>-l<span class="w"> </span>neo4j.com/role<span class="o">=</span>server
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Standalone PVCs</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span>neo4j.com/cluster<span class="o">=</span>my-standalone<span class="w"> </span>-l<span class="w"> </span>neo4j.com/role<span class="o">=</span>data
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Server PVCs</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span>neo4j.com/cluster<span class="o">=</span>my-cluster<span class="w"> </span>-l<span class="w"> </span>neo4j.com/role<span class="o">=</span>server
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Standalone PVCs</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span>neo4j.com/cluster<span class="o">=</span>my-standalone<span class="w"> </span>-l<span class="w"> </span>neo4j.com/role<span class="o">=</span>data
 </span></code></pre></div>
 <p>For clusters created before labeling was added, the operator falls back to name-based discovery (<code>data-{cluster-name}-server-{ordinal}</code>).</p>
 <h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>

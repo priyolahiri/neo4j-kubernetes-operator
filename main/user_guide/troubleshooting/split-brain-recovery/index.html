@@ -4619,6 +4619,9 @@
 the namespace events in one redacted archive — worth doing <strong>before</strong> you start restarting
 pods, since recovery destroys the evidence of what went wrong. See the
 <a href="../../cli/support-bundle/">CLI guide</a>.</p>
+<p>Then <code>kubectl neo4j diagnose Neo4jEnterpriseCluster/&lt;name&gt;</code> shows the operator's own
+<code>SplitBrainDetected</code> warning alongside each server pod's state, so you can tell a genuine
+split-brain from servers that simply never started.</p>
 </div>
 <h2 id="quick-reference">Quick reference<a class="headerlink" href="#quick-reference" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Detect</strong> — compare each server's view of the cluster. Different lists across pods mean split-brain:</p>
