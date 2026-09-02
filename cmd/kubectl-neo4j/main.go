@@ -51,6 +51,7 @@ Commands:
   connect     Print how to reach a deployment (address, port-forward, scheme)
   cypher      Open a cypher-shell session against a deployment
   support-bundle  Collect a redacted diagnostic archive
+  explain     Explain a status condition or phase, and what to do about it
   version     Print the version
 
 Run "kubectl neo4j <command> -h" for command flags.
@@ -78,6 +79,8 @@ func run(args []string, stdout, stderr *os.File) int {
 		return runCypher(args[1:], stdout, stderr)
 	case "support-bundle":
 		return runSupportBundle(args[1:], stdout, stderr)
+	case "explain":
+		return runExplain(args[1:], stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, version)
 		return exitOK
