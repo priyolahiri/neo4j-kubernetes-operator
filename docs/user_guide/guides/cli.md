@@ -122,7 +122,11 @@ Errors are listed before warnings, each sorted by field path.
 | Flag | Meaning |
 |---|---|
 | `-f` | File, directory, or `-` for stdin. Repeatable. |
-| `--strict` | Treat warnings as errors (exit non-zero on warnings). |
+| `--connect` | Connect to the current kubeconfig context to check cross-references. |
+| `--context` | Kubeconfig context to use (implies `--connect`). |
+| `--kubeconfig` | Path to the kubeconfig file (implies `--connect`). |
+| `--namespace` | Namespace for manifests that omit one. |
+| `--strict` | Treat warnings as errors (exit non-zero on warnings). Pending is unaffected. |
 | `--quiet` | Print findings only — no per-file "ok" lines, no summary. |
 
 ### Exit codes
@@ -152,19 +156,56 @@ What it adds is everything that lives in the operator's validators *beyond* the 
 
 The two are complementary. In CI, run both.
 
-### Kinds validated offline
+### What gets checked, and what doesn't
 
-Six kinds validate with no cluster connection:
+The operator has **26 CRD kinds, but only 12 have operator-side validators**. The command reports three distinct outcomes, and the distinction matters:
 
-`Neo4jEnterpriseCluster` · `Neo4jEnterpriseStandalone` · `Neo4jBackup` · `Neo4jPlugin` · `Neo4jDatabaseAlias` · `Neo4jReplicaDatabase`
-
-Every other kind — `Neo4jDatabase`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jShardedDatabase` and the Aura resources — resolves cross-references (a `clusterRef`, a Secret, a role) through the Kubernetes API. Those are reported as **skipped**:
+| | Kinds | Behaviour |
+|---|---|---|
+| **Checked offline** | `Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`, `Neo4jBackup`, `Neo4jPlugin`, `Neo4jDatabaseAlias`, `Neo4jReplicaDatabase` | Validated with no cluster |
+| **Need `--connect`** | `Neo4jDatabase`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jShardedDatabase` | Skipped offline; validated when connected |
+| **No validator at all** | the 12 Aura kinds, `Neo4jRestore`, `Neo4jReplicaPromotion` | Only the CRD schema applies — use `kubectl apply --dry-run=server` |
 
 ```
-- Neo4jUser/analytics (users.yaml): skipped — Neo4jUser validation resolves cross-references and needs a cluster connection; not yet supported offline
+- Neo4jUser/analytics (users.yaml): skipped — Neo4jUser validation resolves cross-references; re-run with --connect to check it
+- Neo4jRestore/restore-1 (restore.yaml): skipped — no operator-side validator for Neo4jRestore; its CRD schema still applies (kubectl apply --dry-run=server)
 ```
 
-**Skipped is not a failure.** Reporting "cluster not found" for a cluster that simply is not reachable would be a false error, which is worse than not checking at all — so the command declines to guess.
+**Skipped is never a failure.** For the middle row, reporting "cluster not found" for a cluster that is merely unreachable would be a false error — worse than not checking — so the command declines to guess. For the bottom row, no amount of connecting will help, and the message says so rather than sending you after a check that does not exist.
+
+### Checking cross-references with `--connect`
+
+```bash
+kubectl neo4j validate -f manifests/ --connect              # current kubeconfig context
+kubectl neo4j validate -f manifests/ --context prod         # a specific context
+kubectl neo4j validate -f manifests/ --connect -n team-a    # namespace for manifests that omit one
+```
+
+Connecting is **opt-in**. Defaulting to the current context would make a command documented as offline fail in CI, where there is usually no kubeconfig at all.
+
+With a connection, the command resolves `clusterRef`s, password Secrets and role references, and adds a third finding type:
+
+```
+Neo4jUser/analytics (users.yaml):
+  … waiting for password Secret "analytics-password" in namespace "neo4j"
+
+1 validated, 0 skipped — 0 error(s), 0 warning(s), 1 pending
+```
+
+**Pending is neither an error nor a warning.** It is the operator's own category for a dependency that is not satisfiable *yet* — a Secret you have not applied — as opposed to something wrong. Pending never affects the exit code, **including under `--strict`**: failing a pipeline because a Secret has not been created yet would punish a correct manifest.
+
+The connection is also what makes version-skew detection possible. When connected, the CLI compares itself against the operator running in the cluster:
+
+```
+⚠ version skew: this CLI carries v1.15.0 rules, but the operator in neo4j-operator/neo4j-operator-controller-manager is v1.14.0.
+  Rules added or removed between those releases are checked incorrectly here.
+```
+
+It is advisory and silent when it cannot tell — the operator may be in a namespace you cannot list, which is not worth failing over.
+
+### Required permissions
+
+`--connect` reads only. It needs `get` on `Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`, `Neo4jRole` and `Secret` in the namespaces you are validating, plus `list` on `Deployment` for the version check (which degrades silently without it). It never writes anything.
 
 ### A clean run may not be the last word
 

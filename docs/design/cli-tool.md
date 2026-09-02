@@ -405,9 +405,8 @@ honest options are recorded in §9 Q5 rather than papered over.
 
 ## 8. Delivery order
 
-1. **`validate`, offline only** (§6). One command, no cluster, no release
-   pipeline yet — buildable and reviewable as a normal PR, with `go run` and
-   `make` targets for local use.
+1. ~~**`validate`, offline only** (§6)~~ → **done.** Six kinds, no cluster
+   required, `make build-cli` for local use.
 2. ~~**Cross-compile matrix in `release.yml`** (revised B1)~~ → **done.** A
    `GOOS`/`GOARCH` matrix writing into `release-artifacts/`, which the existing
    release step already globs — no new workflow, as the revised B1 predicted.
@@ -426,7 +425,24 @@ honest options are recorded in §9 Q5 rather than papered over.
    A CI cross-compile step (`ci.yml`) builds all five targets on every PR, so a
    unix-only import reaching `cmd/` fails a pull request rather than a tagged
    release.
-3. **`validate --context`** — the 8 cross-reference validators.
+3. ~~**`validate --context`** — the 8 cross-reference validators~~ → **done**,
+   as `--connect` / `--context` / `--kubeconfig` / `--namespace`.
+
+   Two corrections the work forced. First, it is **6** cross-reference
+   validators, not 8: `resource` and `cluster` are sub-validators, not per-CRD
+   entrypoints. Second, and more important, this document and the command's own
+   output implied every unsupported kind merely needed a connection. **Of 26
+   CRD kinds only 12 have operator-side validators at all** — the 12 Aura kinds,
+   `Neo4jRestore` and `Neo4jReplicaPromotion` have none, and no amount of
+   connecting will check them. The skip taxonomy now distinguishes "needs
+   --connect" from "no validator exists; use --dry-run=server", because telling
+   a user to connect for a check that does not exist sends them after nothing.
+
+   Also surfaced `UserValidationResult.Pending` — the operator's own third
+   outcome for a dependency that is not satisfiable *yet* rather than wrong. It
+   renders distinctly and never affects the exit code, including under
+   `--strict`. Dropping it, as the first implementation did, hid the difference
+   between "wrong" and "not yet".
 4. **`status`** (§4.2), then **`connect` / `cypher`** (§4.3).
 5. **krew index submission** (B6), once the command set is stable enough that
    users installing it will not immediately want a newer one.
