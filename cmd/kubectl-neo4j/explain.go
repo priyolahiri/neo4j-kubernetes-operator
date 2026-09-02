@@ -148,7 +148,7 @@ var phaseGuidance = map[string]guidance{
 func runExplain(args []string, stdout, stderr *os.File) int {
 	fs := flag.NewFlagSet("explain", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	namespace := fs.String("namespace", "", "Namespace of the resource")
+	namespace := namespaceFlag(fs, "Namespace of the resource")
 	kubeContext := fs.String("context", "", "Kubeconfig context to use")
 	kubeconfig := fs.String("kubeconfig", "", "Path to the kubeconfig file")
 	fs.Usage = func() {

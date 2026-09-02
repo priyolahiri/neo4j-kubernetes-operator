@@ -63,7 +63,7 @@ func (r resourceStatus) healthy() bool {
 func runStatus(args []string, stdout, stderr *os.File) int {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	namespace := fs.String("namespace", "", "Namespace to inspect (default: the kubeconfig context's namespace)")
+	namespace := namespaceFlag(fs, "Namespace to inspect (default: the kubeconfig context's namespace)")
 	allNamespaces := fs.Bool("all-namespaces", false, "Inspect every namespace")
 	kubeContext := fs.String("context", "", "Kubeconfig context to use")
 	kubeconfig := fs.String("kubeconfig", "", "Path to the kubeconfig file")

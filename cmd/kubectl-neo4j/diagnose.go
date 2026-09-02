@@ -124,7 +124,7 @@ func (d diagnosis) problems() bool {
 func runDiagnose(args []string, stdout, stderr *os.File) int {
 	fs := flag.NewFlagSet("diagnose", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	namespace := fs.String("namespace", "", "Namespace to inspect (default: the kubeconfig context's namespace)")
+	namespace := namespaceFlag(fs, "Namespace to inspect (default: the kubeconfig context's namespace)")
 	kubeContext := fs.String("context", "", "Kubeconfig context to use")
 	kubeconfig := fs.String("kubeconfig", "", "Path to the kubeconfig file")
 	quiet := fs.Bool("quiet", false, "Print only resources that have something to report")

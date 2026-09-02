@@ -74,7 +74,7 @@ func (t target) cypherShellArgs(query string) string {
 func runCypher(args []string, stdout, stderr *os.File) int {
 	fs := flag.NewFlagSet("cypher", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	namespace := fs.String("namespace", "", "Namespace of the deployment")
+	namespace := namespaceFlag(fs, "Namespace of the deployment")
 	kubeContext := fs.String("context", "", "Kubeconfig context to use")
 	kubeconfig := fs.String("kubeconfig", "", "Path to the kubeconfig file")
 	query := fs.String("c", "", "Run a single query and exit, instead of opening an interactive session")
@@ -159,7 +159,7 @@ Flags:
 func runConnect(args []string, stdout, stderr *os.File) int {
 	fs := flag.NewFlagSet("connect", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	namespace := fs.String("namespace", "", "Namespace of the deployment")
+	namespace := namespaceFlag(fs, "Namespace of the deployment")
 	kubeContext := fs.String("context", "", "Kubeconfig context to use")
 	kubeconfig := fs.String("kubeconfig", "", "Path to the kubeconfig file")
 	fs.Usage = func() {

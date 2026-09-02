@@ -56,7 +56,7 @@ type bundleFile struct {
 func runSupportBundle(args []string, stdout, stderr *os.File) int {
 	fs := flag.NewFlagSet("support-bundle", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	namespace := fs.String("namespace", "", "Namespace to collect from")
+	namespace := namespaceFlag(fs, "Namespace to collect from")
 	kubeContext := fs.String("context", "", "Kubeconfig context to use")
 	kubeconfig := fs.String("kubeconfig", "", "Path to the kubeconfig file")
 	out := fs.String("o", "", "Output file (default: neo4j-support-bundle-<timestamp>.tar.gz)")
