@@ -473,7 +473,20 @@ honest options are recorded in §9 Q5 rather than papered over.
    created" is the line that says what to do next, not a failure.
 5. **krew index submission** (B6), once the command set is stable enough that
    users installing it will not immediately want a newer one.
-6. **`explain`** (§4.4) and **`support-bundle`** (§4.5), on evidence.
+6. **`support-bundle`** (§4.5) → **done.** **`explain`** (§4.4) remains, and
+   §9 Q3 (overlap with the MCP server) should be answered before it is built —
+   both would encode troubleshooting knowledge, and two copies of the same
+   claims about operator behaviour is B3 in a new costume.
+
+   `support-bundle`'s design centre is redaction, not collection. Secret values
+   never ship; nor do `last-applied-configuration` annotations, which are a
+   verbatim copy of a previous manifest and would re-introduce anything
+   redacted elsewhere in the same object; nor do literal environment variables
+   with sensitive-looking names. `valueFrom` references are deliberately KEPT —
+   they hold no secret and are often the explanation for the failure being
+   diagnosed. Every redaction is enumerated in `REDACTIONS.txt`, together with
+   an explicit statement that redaction cannot cover the user's own
+   `spec.config` or application log output.
 
 Deliberately *not* in the order: any mutating command beyond CR authoring
 (B5), and any `pkg/` promotion (B2).
