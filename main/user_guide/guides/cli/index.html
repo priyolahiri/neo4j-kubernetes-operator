@@ -729,6 +729,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3716,6 +3727,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3994,6 +4016,30 @@ asset.</p>
 </span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">      </span><span class="nt">files</span><span class="p">:</span><span class="w"> </span><span class="s">'^manifests/.*\.ya?ml$'</span>
 </span></code></pre></div>
 <p><code>--strict</code> is the usual choice for CI: it makes advisory warnings — such as a two-server cluster that will lose quorum if one server fails — block the pipeline rather than scroll past.</p>
+<h2 id="status"><code>status</code><a class="headerlink" href="#status" title="Anchor link to this section">&para;</a></h2>
+<p>One view of every Neo4j resource in a namespace — what exists, what is healthy, and the message for anything that is not.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>status<span class="w">                      </span><span class="c1"># the current context's namespace</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>status<span class="w"> </span>-n<span class="w"> </span>neo4j
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>status<span class="w"> </span>--all-namespaces
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>status<span class="w"> </span>--problems<span class="w">           </span><span class="c1"># only what needs attention</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>KIND                     NAME        PHASE     READY   AGE
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>Neo4jEnterpriseCluster   prod        Ready     true    3h
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>Neo4jDatabase            analytics   Failed    -       5m
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>Neo4jUser                reporting   Pending   -       2m
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>
+</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>✗ Neo4jDatabase/analytics: topology requires 3 primaries, cluster has 2 servers
+</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>… Neo4jUser/reporting: waiting for password Secret "reporting-pw"
+</span></code></pre></div>
+<p>Without it, this is <code>kubectl get</code> against 26 kinds followed by <code>describe</code> on whichever looks wrong.</p>
+<p>Three things worth knowing about how it reports:</p>
+<ul>
+<li><strong>Messages appear below the table, in full.</strong> They are the part you act on, and squeezing them into a column would wrap them into noise.</li>
+<li><strong><code>…</code> is not <code>✗</code>.</strong> A <code>Pending</code> resource is not broken — it is waiting on something you have not created yet. Its message is still shown, because it is the line that tells you what to do next, but it is marked distinctly from a failure. This matches how <code>validate</code> separates "not yet" from "wrong".</li>
+<li><strong>An unrecognised phase is not treated as a problem.</strong> The Aura kinds mirror Aura's own status vocabulary, which Neo4j can extend without a version bump; flagging every phase this binary predates would produce false alarms. This is the same reasoning behind the project's ArgoCD health checks.</li>
+</ul>
+<p>The kind list comes from the operator's registered API scheme rather than a hardcoded list, so a CRD added to the operator appears here automatically. Kinds you lack permission to read, or whose CRD is not installed, are skipped rather than failing the whole command.</p>
+<p>Exit code is <code>0</code> on a successful query even when resources are unhealthy — mirroring <code>kubectl get</code>. Use <code>--problems</code> and check for empty output if you want a health gate.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><a href="../troubleshooting/">Troubleshooting</a> — diagnosing a deployment that is already running</li>

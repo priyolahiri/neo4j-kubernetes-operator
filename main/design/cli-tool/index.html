@@ -4102,7 +4102,15 @@ honest options are recorded in §9 Q5 rather than papered over.</p>
    renders distinctly and never affects the exit code, including under
    <code>--strict</code>. Dropping it, as the first implementation did, hid the difference
    between "wrong" and "not yet".
-4. <strong><code>status</code></strong> (§4.2), then <strong><code>connect</code> / <code>cypher</code></strong> (§4.3).
+4. <strong><code>status</code></strong> (§4.2) → <strong>done</strong>, then <strong><code>connect</code> / <code>cypher</code></strong> (§4.3).</p>
+<p><code>status</code> reads every kind generically — phase, ready, message — rather than
+   through 26 typed switches, and takes its kind list from the registered
+   scheme rather than a literal, so a new CRD appears without touching the
+   command. Two reporting decisions carried over from <code>validate</code> deliberately:
+   an unrecognised phase is <strong>not</strong> treated as a problem (the Aura kinds mirror
+   an open vocabulary Neo4j can extend), and <code>Pending</code> messages are shown but
+   marked <code>…</code> rather than <code>✗</code>, because "waiting for a Secret you have not
+   created" is the line that says what to do next, not a failure.
 5. <strong>krew index submission</strong> (B6), once the command set is stable enough that
    users installing it will not immediately want a newer one.
 6. <strong><code>explain</code></strong> (§4.4) and <strong><code>support-bundle</code></strong> (§4.5), on evidence.</p>
