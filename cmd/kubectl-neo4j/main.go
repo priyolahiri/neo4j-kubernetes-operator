@@ -47,6 +47,7 @@ Usage:
 
 Commands:
   validate    Validate Neo4j CR manifests against the operator's own validators
+  preflight   Check the cluster-side preconditions a manifest depends on
   status      Show the state of every Neo4j resource in a namespace
   diagnose    Explain WHY a resource is unhealthy, at the Kubernetes level
   connect     Print how to reach a deployment (address, port-forward, scheme)
@@ -72,6 +73,8 @@ func run(args []string, stdout, stderr *os.File) int {
 	switch args[0] {
 	case "validate":
 		return runValidate(args[1:], stdout, stderr)
+	case "preflight":
+		return runPreflight(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
 	case "diagnose":

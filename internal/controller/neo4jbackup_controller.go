@@ -2389,7 +2389,7 @@ func (r *Neo4jBackupReconciler) validateNeo4jVersion(cluster *neo4jv1beta1.Neo4j
 // backupServiceAccountName is the ServiceAccount used by all backup Job pods.
 // Operators can annotate it for IRSA / GKE Workload Identity / Azure Workload Identity
 // via CloudBlock.Identity.AutoCreate.Annotations.
-const backupServiceAccountName = "neo4j-backup-sa"
+const backupServiceAccountName = resources.BackupServiceAccountName
 
 // ensureBackupServiceAccount creates (or updates) the neo4j-backup-sa ServiceAccount
 // and applies any workload-identity annotations declared in the backup spec.

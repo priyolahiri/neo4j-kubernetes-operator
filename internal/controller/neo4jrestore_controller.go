@@ -81,7 +81,7 @@ var errStaleRestoreJob = stderrors.New("stale restore job still terminating")
 // via the resolved CloudBlock.Identity.AutoCreate.Annotations on the
 // restore source — for source.type=backup that comes from the referenced
 // Neo4jBackup's cloud config.
-const restoreServiceAccountName = "neo4j-restore-sa"
+const restoreServiceAccountName = resources.RestoreServiceAccountName
 
 // RestoreInProgressAnnotation is set on the target Neo4jEnterpriseCluster /
 // Neo4jEnterpriseStandalone CR while a Neo4jRestore is actively coordinating

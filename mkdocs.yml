@@ -142,6 +142,7 @@ nav:
       - Overview: user_guide/cli/index.md
       - Installing the CLI: user_guide/cli/install.md
       - validate: user_guide/cli/validate.md
+      - preflight: user_guide/cli/preflight.md
       - status: user_guide/cli/status.md
       - diagnose: user_guide/cli/diagnose.md
       - connect & cypher: user_guide/cli/connect.md
