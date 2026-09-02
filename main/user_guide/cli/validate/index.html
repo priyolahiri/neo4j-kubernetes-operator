@@ -12,13 +12,13 @@
         <meta name="author" content="Priyo Lahiri">
       
       
-        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/cli/">
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/validate/">
       
       
-        <link rel="prev" href="../demo/">
+        <link rel="prev" href="../install/">
       
       
-        <link rel="next" href="../../version_support/">
+        <link rel="next" href="../status/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>CLI (kubectl-neo4j) - Neo4j Kubernetes Operator</title>
+        <title>validate - Neo4j Kubernetes Operator</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#kubectl-neo4j-cli" class="md-skip">
+        <a href="#validate" class="md-skip">
           Skip to content
         </a>
       
@@ -122,7 +122,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              CLI (kubectl-neo4j)
+              validate
             
           </span>
         </div>
@@ -299,14 +299,10 @@
       
   
   
-    
   
   
-  
     
     
-      
-        
       
         
       
@@ -331,11 +327,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
@@ -356,7 +352,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -486,7 +482,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../demo/" class="md-nav__link">
+      <a href="../../guides/demo/" class="md-nav__link">
         
   
   
@@ -502,347 +498,6 @@
   
 
       </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    CLI (kubectl-neo4j)
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    CLI (kubectl-neo4j)
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#why-it-exists" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Why it exists
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#install" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Install
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#validate" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        validate
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="validate">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#flags" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Flags
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#exit-codes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Exit codes
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-it-checks-and-what-it-doesnt" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What it checks — and what it doesn't
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="What it checks — and what it doesn&#39;t">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#it-is-not-a-replacement-for-dry-runserver" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        It is not a replacement for --dry-run=server
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-gets-checked-and-what-doesnt" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What gets checked, and what doesn't
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#checking-cross-references-with-connect" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Checking cross-references with --connect
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#required-permissions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Required permissions
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#a-clean-run-may-not-be-the-last-word" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A clean run may not be the last word
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#version-skew" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Version skew
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#in-ci" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        In CI
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        status
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#connect-and-cypher" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        connect and cypher
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="connect and cypher">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#your-password-is-never-read-moved-or-logged" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Your password is never read, moved, or logged
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#it-hands-the-session-to-kubectl" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        It hands the session to kubectl
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-it-will-not-do" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What it will not do
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#support-bundle" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        support-bundle
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="support-bundle">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#what-it-will-not-collect" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What it will not collect
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#collection-is-best-effort-by-design" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Collection is best-effort by design
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        See also
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1052,7 +707,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../resource_sizing/" class="md-nav__link">
+      <a href="../../guides/resource_sizing/" class="md-nav__link">
         
   
   
@@ -1192,7 +847,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../plugins/" class="md-nav__link">
+      <a href="../../guides/plugins/" class="md-nav__link">
         
   
   
@@ -1220,7 +875,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../seed-uri/" class="md-nav__link">
+      <a href="../../guides/seed-uri/" class="md-nav__link">
         
   
   
@@ -1304,7 +959,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mcp_client_setup/" class="md-nav__link">
+      <a href="../../guides/mcp_client_setup/" class="md-nav__link">
         
   
   
@@ -1429,7 +1084,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../security/" class="md-nav__link">
+      <a href="../../guides/security/" class="md-nav__link">
         
   
   
@@ -1517,6 +1172,436 @@
       
   
   
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installing the CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    validate
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    validate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exit codes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-checks-and-what-it-doesnt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it checks — and what it doesn't
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What it checks — and what it doesn&#39;t">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#it-is-not-a-replacement-for-dry-runserver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        It is not a replacement for --dry-run=server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-gets-checked-and-what-doesnt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What gets checked, and what doesn't
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#checking-cross-references-with-connect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checking cross-references with --connect
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#required-permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required permissions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-clean-run-may-not-be-the-last-word" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A clean run may not be the last word
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#version-skew" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version skew
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#in-ci" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In CI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../connect/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    connect & cypher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../support-bundle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    support-bundle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../explain/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    explain
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
   
   
     
@@ -1553,10 +1638,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
             
   
   
@@ -1574,8 +1659,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1592,7 +1677,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../backup_restore/" class="md-nav__link">
+      <a href="../../guides/backup_restore/" class="md-nav__link">
         
   
   
@@ -1620,7 +1705,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cross_cluster_replication/" class="md-nav__link">
+      <a href="../../guides/cross_cluster_replication/" class="md-nav__link">
         
   
   
@@ -1648,7 +1733,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../database_aliases/" class="md-nav__link">
+      <a href="../../guides/database_aliases/" class="md-nav__link">
         
   
   
@@ -1676,7 +1761,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../upgrades/" class="md-nav__link">
+      <a href="../../guides/upgrades/" class="md-nav__link">
         
   
   
@@ -1704,7 +1789,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../storage_expansion/" class="md-nav__link">
+      <a href="../../guides/storage_expansion/" class="md-nav__link">
         
   
   
@@ -1732,7 +1817,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../fault_tolerance/" class="md-nav__link">
+      <a href="../../guides/fault_tolerance/" class="md-nav__link">
         
   
   
@@ -1760,7 +1845,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../multi_cluster/" class="md-nav__link">
+      <a href="../../guides/multi_cluster/" class="md-nav__link">
         
   
   
@@ -1806,10 +1891,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_8" >
         
           
-          <label class="md-nav__link" for="__nav_5_8" id="__nav_5_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_6_8" id="__nav_6_8_label" tabindex="0">
             
   
   
@@ -1827,8 +1912,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_8_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_8">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1845,7 +1930,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../monitoring/" class="md-nav__link">
+      <a href="../../guides/monitoring/" class="md-nav__link">
         
   
   
@@ -1873,7 +1958,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../prometheus-grafana-setup/" class="md-nav__link">
+      <a href="../../guides/prometheus-grafana-setup/" class="md-nav__link">
         
   
   
@@ -1901,7 +1986,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../kubernetes-events/" class="md-nav__link">
+      <a href="../../guides/kubernetes-events/" class="md-nav__link">
         
   
   
@@ -1953,10 +2038,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_9" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_9" >
         
           
-          <label class="md-nav__link" for="__nav_5_9" id="__nav_5_9_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_6_9" id="__nav_6_9_label" tabindex="0">
             
   
   
@@ -1974,8 +2059,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_9_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_9">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_9">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2020,7 +2105,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../performance/" class="md-nav__link">
+      <a href="../../guides/performance/" class="md-nav__link">
         
   
   
@@ -2084,10 +2169,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
             
   
   
@@ -2105,8 +2190,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2123,7 +2208,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../troubleshooting/" class="md-nav__link">
+      <a href="../../guides/troubleshooting/" class="md-nav__link">
         
   
   
@@ -2235,7 +2320,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
           <div class="md-nav__link md-nav__container">
@@ -2257,14 +2342,14 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="">
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2345,10 +2430,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1" >
         
           
-          <label class="md-nav__link" for="__nav_7_1" id="__nav_7_1_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_1" id="__nav_8_1_label" tabindex="0">
             
   
   
@@ -2366,8 +2451,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_1_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7_1">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3166,10 +3251,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
         
           
-          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
             
   
   
@@ -3187,8 +3272,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3503,10 +3588,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_11" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_11" >
         
           
-          <label class="md-nav__link" for="__nav_8_11" id="__nav_8_11_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9_11" id="__nav_9_11_label" tabindex="0">
             
   
   
@@ -3524,8 +3609,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_11_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8_11">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_11">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -3661,40 +3746,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-it-exists" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Why it exists
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#install" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Install
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#validate" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        validate
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="validate">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
   <a href="#flags" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3704,8 +3755,8 @@
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#exit-codes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3713,11 +3764,6 @@
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -3816,106 +3862,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        status
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#connect-and-cypher" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        connect and cypher
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="connect and cypher">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#your-password-is-never-read-moved-or-logged" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Your password is never read, moved, or logged
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#it-hands-the-session-to-kubectl" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        It hands the session to kubectl
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-it-will-not-do" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What it will not do
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#support-bundle" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        support-bundle
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="support-bundle">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#what-it-will-not-collect" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What it will not collect
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#collection-is-best-effort-by-design" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Collection is best-effort by design
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3943,7 +3889,7 @@
 
 
   
-    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/guides/cli.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/cli/validate.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -3951,91 +3897,22 @@
   
 
 
-<h1 id="kubectl-neo4j-cli"><code>kubectl-neo4j</code> CLI<a class="headerlink" href="#kubectl-neo4j-cli" title="Anchor link to this section">&para;</a></h1>
-<p>A small companion CLI for this operator, distributed as a <code>kubectl</code> plugin. Today it does one thing: validate your Neo4j manifests <strong>before</strong> you apply them.</p>
-<div class="admonition warning">
-<p class="admonition-title">Support</p>
-<p>The CLI ships with the operator, on the same tag, under the <strong>same support terms as the operator itself</strong>: best-effort via <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues">GitHub issues</a>, no official or commercial support, no SLA, and behaviour may change between releases without notice. A downloadable binary is not a more supported artifact than the operator it comes from.</p>
-</div>
-<h2 id="why-it-exists">Why it exists<a class="headerlink" href="#why-it-exists" title="Anchor link to this section">&para;</a></h2>
-<p>This operator has <strong>no admission webhooks</strong> — that is a deliberate architectural invariant, not an omission. The upside is a much simpler install with no certificate plumbing and no webhook outage mode. The downside is that spec mistakes are only reported <em>after</em> you apply, through <code>status</code> and events:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>edit YAML → apply → wait for reconcile → read status → find the mistake → repeat
-</span></code></pre></div>
-<p>Across 26 resource kinds and 234 top-level spec fields, that loop is slow.</p>
-<p><code>kubectl neo4j validate</code> closes it. It runs <strong>the operator's own validators</strong> against your files, locally, with no cluster connection — so you get the same errors you would have got from the reconciler, before you apply.</p>
-<h2 id="install">Install<a class="headerlink" href="#install" title="Anchor link to this section">&para;</a></h2>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:4"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><input id="__tabbed_1_4" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">go install</label><label for="__tabbed_1_2">Install script</label><label for="__tabbed_1_3">Download a release</label><label for="__tabbed_1_4">Build from source</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<p>The simplest path if you have Go, and the only one that needs no release
-asset at all — the module is published on the Go proxy:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>go<span class="w"> </span>install<span class="w"> </span>github.com/priyolahiri/neo4j-kubernetes-operator/cmd/kubectl-neo4j@v1.15.0
-</span></code></pre></div>
-<p>It installs into <code>$(go env GOPATH)/bin</code> under the name <code>kubectl-neo4j</code>,
-which is exactly what <code>kubectl</code> needs for plugin discovery. Pin the version
-to the operator release you deploy — <code>@latest</code> will drift.</p>
-</div>
-<div class="tabbed-block">
-<p>Detects your OS and architecture, downloads the matching archive, and
-<strong>verifies its checksum before installing</strong> — it aborts rather than
-installing something it could not verify:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-sSL<span class="w"> </span>https://raw.githubusercontent.com/priyolahiri/neo4j-kubernetes-operator/main/hack/install-cli.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
-</span></code></pre></div>
-<p>Pipe-to-shell means trusting the network round trip. Downloading first and
-reading it is the better habit:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>curl<span class="w"> </span>-sSLO<span class="w"> </span>https://raw.githubusercontent.com/priyolahiri/neo4j-kubernetes-operator/main/hack/install-cli.sh
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>less<span class="w"> </span>install-cli.sh
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>sh<span class="w"> </span>install-cli.sh
-</span></code></pre></div>
-<p>Two knobs: <code>VERSION</code> (default: latest release) and <code>INSTALL_DIR</code>
-(default: <code>/usr/local/bin</code>). Windows is not covered — use the <code>.zip</code>
-asset.</p>
-</div>
-<div class="tabbed-block">
-<p>Binaries are attached to every <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/releases">release</a>. Pick your platform:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nv">VERSION</span><span class="o">=</span><span class="m">1</span>.15.0<span class="w">     </span><span class="c1"># the release you want</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nv">OS</span><span class="o">=</span>darwin<span class="w">          </span><span class="c1"># darwin | linux | windows</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nv">ARCH</span><span class="o">=</span>arm64<span class="w">         </span><span class="c1"># arm64 | amd64</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>curl<span class="w"> </span>-sSLO<span class="w"> </span><span class="s2">"https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v</span><span class="si">${</span><span class="nv">VERSION</span><span class="si">}</span><span class="s2">/kubectl-neo4j_</span><span class="si">${</span><span class="nv">VERSION</span><span class="si">}</span><span class="s2">_</span><span class="si">${</span><span class="nv">OS</span><span class="si">}</span><span class="s2">_</span><span class="si">${</span><span class="nv">ARCH</span><span class="si">}</span><span class="s2">.tar.gz"</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>curl<span class="w"> </span>-sSLO<span class="w"> </span><span class="s2">"https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v</span><span class="si">${</span><span class="nv">VERSION</span><span class="si">}</span><span class="s2">/kubectl-neo4j_</span><span class="si">${</span><span class="nv">VERSION</span><span class="si">}</span><span class="s2">_checksums.txt"</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>shasum<span class="w"> </span>-a<span class="w"> </span><span class="m">256</span><span class="w"> </span>-c<span class="w"> </span>--ignore-missing<span class="w"> </span><span class="s2">"kubectl-neo4j_</span><span class="si">${</span><span class="nv">VERSION</span><span class="si">}</span><span class="s2">_checksums.txt"</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>tar<span class="w"> </span>-xzf<span class="w"> </span><span class="s2">"kubectl-neo4j_</span><span class="si">${</span><span class="nv">VERSION</span><span class="si">}</span><span class="s2">_</span><span class="si">${</span><span class="nv">OS</span><span class="si">}</span><span class="s2">_</span><span class="si">${</span><span class="nv">ARCH</span><span class="si">}</span><span class="s2">.tar.gz"</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>chmod<span class="w"> </span>+x<span class="w"> </span>kubectl-neo4j
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>sudo<span class="w"> </span>mv<span class="w"> </span>kubectl-neo4j<span class="w"> </span>/usr/local/bin/
-</span></code></pre></div>
-<p>Windows builds are published as <code>.zip</code> rather than <code>.tar.gz</code>.</p>
-</div>
-<div class="tabbed-block">
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/priyolahiri/neo4j-kubernetes-operator
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">cd</span><span class="w"> </span>neo4j-kubernetes-operator
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>make<span class="w"> </span>build-cli<span class="w">          </span><span class="c1"># writes bin/kubectl-neo4j</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">/bin:</span><span class="nv">$PATH</span><span class="s2">"</span>
-</span></code></pre></div>
-</div>
-</div>
-</div>
-<p>Anything named <code>kubectl-*</code> on your <code>PATH</code> becomes a <code>kubectl</code> subcommand, so once installed:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>version
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>kubectl<span class="w"> </span>plugin<span class="w"> </span>list<span class="w">        </span><span class="c1"># should list kubectl-neo4j</span>
-</span></code></pre></div>
-<p>It also runs standalone as <code>kubectl-neo4j</code> if you prefer.</p>
-<h2 id="validate"><code>validate</code><a class="headerlink" href="#validate" title="Anchor link to this section">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>cluster.yaml
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>manifests/<span class="w">            </span><span class="c1"># a directory</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>a.yaml<span class="w"> </span>-f<span class="w"> </span>b.yaml<span class="w">      </span><span class="c1"># repeatable</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>helm<span class="w"> </span>template<span class="w"> </span>.<span class="w"> </span><span class="p">|</span><span class="w"> </span>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>-<span class="w">   </span><span class="c1"># stdin</span>
+<h1 id="validate"><code>validate</code><a class="headerlink" href="#validate" title="Anchor link to this section">&para;</a></h1>
+<p>Validate Neo4j manifests against the operator's own validators, before you apply them.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>cluster.yaml
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>manifests/<span class="w">            </span><span class="c1"># a directory</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>a.yaml<span class="w"> </span>-f<span class="w"> </span>b.yaml<span class="w">      </span><span class="c1"># repeatable</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>helm<span class="w"> </span>template<span class="w"> </span>.<span class="w"> </span><span class="p">|</span><span class="w"> </span>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>-<span class="w">   </span><span class="c1"># stdin</span>
 </span></code></pre></div>
 <p>Example output:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Neo4jEnterpriseCluster/prod (cluster.yaml):
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  ✗ spec.config.dbms.default_database: Invalid value: "mydb": deprecated setting: use dbms.setDefaultDatabase() procedure instead
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>  ✗ spec.topology.serverRoles[0].serverIndex: Invalid value: 7: must be in range [0, 1]
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  ⚠ Even number of servers (2) may reduce fault tolerance when databases specify odd-numbered server allocations. Consider using an odd number of servers for optimal fault tolerance.
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>  ⚠ 2 servers provide limited fault tolerance. If one server fails, databases may lose quorum. Consider using 3 or more servers for production deployments.
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>1 validated, 0 skipped — 2 error(s), 2 warning(s)
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>validated against operator rules v1.15.0
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Neo4jEnterpriseCluster/prod (cluster.yaml):
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  ✗ spec.config.dbms.default_database: Invalid value: "mydb": deprecated setting: use dbms.setDefaultDatabase() procedure instead
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  ✗ spec.topology.serverRoles[0].serverIndex: Invalid value: 7: must be in range [0, 1]
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  ⚠ Even number of servers (2) may reduce fault tolerance when databases specify odd-numbered server allocations. Consider using an odd number of servers for optimal fault tolerance.
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  ⚠ 2 servers provide limited fault tolerance. If one server fails, databases may lose quorum. Consider using 3 or more servers for production deployments.
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>1 validated, 0 skipped — 2 error(s), 2 warning(s)
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>validated against operator rules v1.15.0
 </span></code></pre></div>
 <p>Errors are listed before warnings, each sorted by field path.</p>
 <h3 id="flags">Flags<a class="headerlink" href="#flags" title="Anchor link to this section">&para;</a></h3>
@@ -4142,26 +4019,26 @@ asset.</p>
 </tr>
 </tbody>
 </table>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>- Neo4jUser/analytics (users.yaml): skipped — Neo4jUser validation resolves cross-references; re-run with --connect to check it
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>- Neo4jRestore/restore-1 (restore.yaml): skipped — no operator-side validator for Neo4jRestore; its CRD schema still applies (kubectl apply --dry-run=server)
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>- Neo4jUser/analytics (users.yaml): skipped — Neo4jUser validation resolves cross-references; re-run with --connect to check it
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>- Neo4jRestore/restore-1 (restore.yaml): skipped — no operator-side validator for Neo4jRestore; its CRD schema still applies (kubectl apply --dry-run=server)
 </span></code></pre></div>
 <p><strong>Skipped is never a failure.</strong> For the middle row, reporting "cluster not found" for a cluster that is merely unreachable would be a false error — worse than not checking — so the command declines to guess. For the bottom row, no amount of connecting will help, and the message says so rather than sending you after a check that does not exist.</p>
 <h3 id="checking-cross-references-with-connect">Checking cross-references with <code>--connect</code><a class="headerlink" href="#checking-cross-references-with-connect" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>manifests/<span class="w"> </span>--connect<span class="w">              </span><span class="c1"># current kubeconfig context</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>manifests/<span class="w"> </span>--context<span class="w"> </span>prod<span class="w">         </span><span class="c1"># a specific context</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>manifests/<span class="w"> </span>--connect<span class="w"> </span>-n<span class="w"> </span>team-a<span class="w">    </span><span class="c1"># namespace for manifests that omit one</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>manifests/<span class="w"> </span>--connect<span class="w">              </span><span class="c1"># current kubeconfig context</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>manifests/<span class="w"> </span>--context<span class="w"> </span>prod<span class="w">         </span><span class="c1"># a specific context</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>manifests/<span class="w"> </span>--connect<span class="w"> </span>-n<span class="w"> </span>team-a<span class="w">    </span><span class="c1"># namespace for manifests that omit one</span>
 </span></code></pre></div>
 <p>Connecting is <strong>opt-in</strong>. Defaulting to the current context would make a command documented as offline fail in CI, where there is usually no kubeconfig at all.</p>
 <p>With a connection, the command resolves <code>clusterRef</code>s, password Secrets and role references, and adds a third finding type:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>Neo4jUser/analytics (users.yaml):
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>  … waiting for password Secret "analytics-password" in namespace "neo4j"
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>1 validated, 0 skipped — 0 error(s), 0 warning(s), 1 pending
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Neo4jUser/analytics (users.yaml):
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  … waiting for password Secret "analytics-password" in namespace "neo4j"
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>1 validated, 0 skipped — 0 error(s), 0 warning(s), 1 pending
 </span></code></pre></div>
 <p><strong>Pending is neither an error nor a warning.</strong> It is the operator's own category for a dependency that is not satisfiable <em>yet</em> — a Secret you have not applied — as opposed to something wrong. Pending never affects the exit code, <strong>including under <code>--strict</code></strong>: failing a pipeline because a Secret has not been created yet would punish a correct manifest.</p>
 <p>The connection is also what makes version-skew detection possible. When connected, the CLI compares itself against the operator running in the cluster:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>⚠ version skew: this CLI carries v1.15.0 rules, but the operator in neo4j-operator/neo4j-operator-controller-manager is v1.14.0.
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>  Rules added or removed between those releases are checked incorrectly here.
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>⚠ version skew: this CLI carries v1.15.0 rules, but the operator in neo4j-operator/neo4j-operator-controller-manager is v1.14.0.
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  Rules added or removed between those releases are checked incorrectly here.
 </span></code></pre></div>
 <p>It is advisory and silent when it cannot tell — the operator may be in a namespace you cannot list, which is not worth failing over.</p>
 <h3 id="required-permissions">Required permissions<a class="headerlink" href="#required-permissions" title="Anchor link to this section">&para;</a></h3>
@@ -4174,123 +4051,30 @@ asset.</p>
 <p>A clean run means nothing further is reachable, not that nothing was ever wrong. Re-run until two consecutive runs agree.</p>
 <h3 id="version-skew">Version skew<a class="headerlink" href="#version-skew" title="Anchor link to this section">&para;</a></h3>
 <p>The output always names the ruleset it used:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>validated against operator rules v1.15.0
+<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>validated against operator rules v1.15.0
 </span></code></pre></div>
 <p>The CLI carries the validation rules of the release it was built from. If your cluster runs a different operator version, a rule added later will not be checked and a rule since removed may still be enforced. <strong>Keep the CLI on the same version as the operator you deploy.</strong></p>
 <h2 id="in-ci">In CI<a class="headerlink" href="#in-ci" title="Anchor link to this section">&para;</a></h2>
 <p>Because it needs no cluster, it fits any pipeline that can run a binary:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Validate Neo4j manifests</span>
-</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">    </span><span class="no">curl -sSL "https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v${VERSION}/kubectl-neo4j_${VERSION}_linux_amd64.tar.gz" | tar -xz</span>
-</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">    </span><span class="no">./kubectl-neo4j validate -f manifests/ --strict</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Validate Neo4j manifests</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="no">curl -sSL "https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v${VERSION}/kubectl-neo4j_${VERSION}_linux_amd64.tar.gz" | tar -xz</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="no">./kubectl-neo4j validate -f manifests/ --strict</span>
 </span></code></pre></div>
 <p>Or as a pre-commit hook:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">repo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">local</span>
-</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">  </span><span class="nt">hooks</span><span class="p">:</span>
-</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-validate</span>
-</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Validate Neo4j manifests</span>
-</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">      </span><span class="nt">entry</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kubectl-neo4j validate -f</span>
-</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">      </span><span class="nt">language</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">system</span>
-</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">      </span><span class="nt">files</span><span class="p">:</span><span class="w"> </span><span class="s">'^manifests/.*\.ya?ml$'</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">repo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">local</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">hooks</span><span class="p">:</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-validate</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Validate Neo4j manifests</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">      </span><span class="nt">entry</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kubectl-neo4j validate -f</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">      </span><span class="nt">language</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">system</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">      </span><span class="nt">files</span><span class="p">:</span><span class="w"> </span><span class="s">'^manifests/.*\.ya?ml$'</span>
 </span></code></pre></div>
 <p><code>--strict</code> is the usual choice for CI: it makes advisory warnings — such as a two-server cluster that will lose quorum if one server fails — block the pipeline rather than scroll past.</p>
-<h2 id="status"><code>status</code><a class="headerlink" href="#status" title="Anchor link to this section">&para;</a></h2>
-<p>One view of every Neo4j resource in a namespace — what exists, what is healthy, and the message for anything that is not.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>status<span class="w">                      </span><span class="c1"># the current context's namespace</span>
-</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>status<span class="w"> </span>-n<span class="w"> </span>neo4j
-</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>status<span class="w"> </span>--all-namespaces
-</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>status<span class="w"> </span>--problems<span class="w">           </span><span class="c1"># only what needs attention</span>
-</span></code></pre></div>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>KIND                     NAME        PHASE     READY   AGE
-</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>Neo4jEnterpriseCluster   prod        Ready     true    3h
-</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>Neo4jDatabase            analytics   Failed    -       5m
-</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>Neo4jUser                reporting   Pending   -       2m
-</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>
-</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>✗ Neo4jDatabase/analytics: topology requires 3 primaries, cluster has 2 servers
-</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>… Neo4jUser/reporting: waiting for password Secret "reporting-pw"
-</span></code></pre></div>
-<p>Without it, this is <code>kubectl get</code> against 26 kinds followed by <code>describe</code> on whichever looks wrong.</p>
-<p>Three things worth knowing about how it reports:</p>
-<ul>
-<li><strong>Messages appear below the table, in full.</strong> They are the part you act on, and squeezing them into a column would wrap them into noise.</li>
-<li><strong><code>…</code> is not <code>✗</code>.</strong> A <code>Pending</code> resource is not broken — it is waiting on something you have not created yet. Its message is still shown, because it is the line that tells you what to do next, but it is marked distinctly from a failure. This matches how <code>validate</code> separates "not yet" from "wrong".</li>
-<li><strong>An unrecognised phase is not treated as a problem.</strong> The Aura kinds mirror Aura's own status vocabulary, which Neo4j can extend without a version bump; flagging every phase this binary predates would produce false alarms. This is the same reasoning behind the project's ArgoCD health checks.</li>
-</ul>
-<p>The kind list comes from the operator's registered API scheme rather than a hardcoded list, so a CRD added to the operator appears here automatically. Kinds you lack permission to read, or whose CRD is not installed, are skipped rather than failing the whole command.</p>
-<p>Exit code is <code>0</code> on a successful query even when resources are unhealthy — mirroring <code>kubectl get</code>. Use <code>--problems</code> and check for empty output if you want a health gate.</p>
-<h2 id="connect-and-cypher"><code>connect</code> and <code>cypher</code><a class="headerlink" href="#connect-and-cypher" title="Anchor link to this section">&para;</a></h2>
-<p>The most-repeated sequence in the troubleshooting guide is: find the pod, extract the password from a Secret, remember the container name, guess the right Bolt scheme. These two commands do the resolution for you.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>cypher<span class="w">                    </span><span class="c1"># the only deployment in the namespace</span>
-</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>cypher<span class="w"> </span>prod<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w">      </span><span class="c1"># a specific one</span>
-</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>cypher<span class="w"> </span>prod<span class="w"> </span>-c<span class="w"> </span><span class="s2">"SHOW DATABASES"</span>
-</span></code></pre></div>
-<p><code>connect</code> prints the same resolution without executing anything — useful when you want the port-forward command, or to hand someone the details:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>$ kubectl neo4j connect prod
-</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>Neo4jEnterpriseCluster/prod in namespace neo4j
-</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
-</span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>In-cluster Bolt:
-</span><span id="__span-19-5"><a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>  bolt+s://prod-client.neo4j.svc.cluster.local:7687
-</span><span id="__span-19-6"><a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>
-</span><span id="__span-19-7"><a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>From your machine:
-</span><span id="__span-19-8"><a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>  kubectl port-forward -n neo4j svc/prod-client 7687:7687 7474:7474
-</span><span id="__span-19-9"><a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>  then connect to bolt+s://localhost:7687
-</span><span id="__span-19-10"><a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>...
-</span><span id="__span-19-11"><a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>TLS is enabled: plain bolt:// is rejected by this deployment — use bolt+s://.
-</span></code></pre></div>
-<h3 id="your-password-is-never-read-moved-or-logged">Your password is never read, moved, or logged<a class="headerlink" href="#your-password-is-never-read-moved-or-logged" title="Anchor link to this section">&para;</a></h3>
-<p>This is worth stating precisely, because the obvious implementation gets it wrong.</p>
-<p>The admin credentials are <strong>already inside the pod</strong> — the operator injects them via <code>secretKeyRef</code> as <code>DB_USERNAME</code> and <code>DB_PASSWORD</code>. So the command references them <em>by variable name</em> and lets the shell expand them in the container:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>prod-server-0<span class="w"> </span>-c<span class="w"> </span>neo4j<span class="w"> </span>-it<span class="w"> </span>--<span class="w">   </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">'cypher-shell -a bolt+s://localhost:7687 -u "$DB_USERNAME" -p "$DB_PASSWORD"'</span>
-</span></code></pre></div>
-<p>The secret never leaves the pod. It is not in your shell history, not in <code>ps</code> output on either side, and — the one people forget — <strong>not in the Kubernetes API audit log</strong>, which records an exec request's command array verbatim. A version that read the Secret and passed <code>-p &lt;value&gt;</code> would leak it into all three.</p>
-<h3 id="it-hands-the-session-to-kubectl">It hands the session to <code>kubectl</code><a class="headerlink" href="#it-hands-the-session-to-kubectl" title="Anchor link to this section">&para;</a></h3>
-<p><code>cypher</code> resolves the target itself, then execs <code>kubectl</code> for the interactive part. That is deliberate: terminal raw mode, window resize, signal forwarding and every kubeconfig authentication plugin are already solved there, and reimplementing them would add a large amount of fragile code for no capability you want.</p>
-<p>Consequence: <strong><code>kubectl</code> must be on your <code>PATH</code>.</strong> Invoked as <code>kubectl neo4j cypher</code> it always is. If you run the binary standalone without kubectl installed, the command says so and points you at <code>connect</code> instead of failing obscurely.</p>
-<h3 id="what-it-will-not-do">What it will not do<a class="headerlink" href="#what-it-will-not-do" title="Anchor link to this section">&para;</a></h3>
-<p><code>cypher</code> passes <em>your</em> query through unchanged; the CLI never composes Cypher of its own. Operations the operator models as resources — creating a database, promoting a replica — belong in a CR, not in a shell command, so that they are declarative, auditable and reversible. <code>kubectl neo4j cypher -c "..."</code> is you running your own query, which is a different thing from the CLI deciding to mutate your database.</p>
-<h2 id="support-bundle"><code>support-bundle</code><a class="headerlink" href="#support-bundle" title="Anchor link to this section">&para;</a></h2>
-<p>Collects the diagnostic material for a Neo4j deployment into one archive — the 98 documented <code>kubectl</code> invocations in the troubleshooting guide, in a single command.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>support-bundle<span class="w"> </span>-n<span class="w"> </span>neo4j
-</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>support-bundle<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>-o<span class="w"> </span>incident-4821.tar.gz
-</span></code></pre></div>
-<p>What it gathers: every Neo4j custom resource, namespace events, per-pod status (including <strong>last termination reason and exit code</strong> — exit 137 is OOMKilled, the most common Enterprise failure on an under-provisioned cluster), container logs current and previous, and the operator's own logs.</p>
-<h3 id="what-it-will-not-collect">What it will not collect<a class="headerlink" href="#what-it-will-not-collect" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Secret values never leave your cluster.</strong> Secrets appear only as a list of names, types and <em>key names</em> — enough to diagnose "the Secret is missing the <code>password</code> key", which is a real and common cause, without shipping the value.</p>
-<p>Three redactions are applied automatically:</p>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>Why</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Secret values</td>
-<td>The obvious one</td>
-</tr>
-<tr>
-<td><code>last-applied-configuration</code> annotations</td>
-<td>A verbatim copy of a previous manifest, so it re-introduces anything redacted elsewhere in the same object</td>
-</tr>
-<tr>
-<td>Literal environment variables with sensitive-looking names</td>
-<td>A password typed directly into <code>spec.env</code> would otherwise be collected and mailed to a stranger</td>
-</tr>
-</tbody>
-</table>
-<p>Every redaction is listed in <code>REDACTIONS.txt</code> inside the archive, so the recipient can see <em>where</em> something was withheld rather than wondering whether a field was empty or censored.</p>
-<div class="admonition warning">
-<p class="admonition-title">Redaction is not a guarantee</p>
-<p>It covers Secret values, last-applied annotations, and sensitive-looking literal env vars. It <strong>cannot</strong> know whether your own <code>spec.config</code>, connection strings, or application log output contain something private. The command says so on completion, and <code>REDACTIONS.txt</code> repeats it. <strong>Review the archive before sharing it.</strong></p>
-</div>
-<p>Deliberately <em>not</em> redacted: <code>valueFrom</code> / <code>secretKeyRef</code> references. They contain no secret, and blanking them would destroy exactly the information that explains a misconfigured reference.</p>
-<h3 id="collection-is-best-effort-by-design">Collection is best-effort by design<a class="headerlink" href="#collection-is-best-effort-by-design" title="Anchor link to this section">&para;</a></h3>
-<p>A bundle is most wanted when a cluster is unhealthy, so one unreadable resource must not abort the whole collection. Individual failures are recorded rather than fatal — which also tells the recipient what could not be read, and by extension what permissions the collector had.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><a href="../troubleshooting/">Troubleshooting</a> — diagnosing a deployment that is already running</li>
-<li><a href="../resource_sizing/">Resource Sizing</a> — the floors behind several of the warnings</li>
+<li><a href="../../guides/resource_sizing/">Resource Sizing</a> — the floors behind several of the warnings</li>
+<li><a href="../explain/"><code>explain</code></a> — for a resource that applied cleanly but is not becoming Ready</li>
 </ul>
 
 
@@ -4329,7 +4113,7 @@ asset.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../demo/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Try the Demo">
+          <a href="../install/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Installing the CLI">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -4339,20 +4123,20 @@ asset.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Try the Demo
+                Installing the CLI
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../version_support/" class="md-footer__link md-footer__link--next" aria-label="Next: Supported Neo4j Versions">
+          <a href="../status/" class="md-footer__link md-footer__link--next" aria-label="Next: status">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Supported Neo4j Versions
+                status
               </div>
             </div>
             <div class="md-footer__button md-icon">

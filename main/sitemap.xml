@@ -257,11 +257,35 @@
          <lastmod>2026-09-02</lastmod>
     </url>
     <url>
-         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/backup_restore/</loc>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/</loc>
          <lastmod>2026-09-02</lastmod>
     </url>
     <url>
-         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/cli/</loc>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/connect/</loc>
+         <lastmod>2026-09-02</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/explain/</loc>
+         <lastmod>2026-09-02</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/install/</loc>
+         <lastmod>2026-09-02</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/status/</loc>
+         <lastmod>2026-09-02</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/support-bundle/</loc>
+         <lastmod>2026-09-02</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/validate/</loc>
+         <lastmod>2026-09-02</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/backup_restore/</loc>
          <lastmod>2026-09-02</lastmod>
     </url>
     <url>
