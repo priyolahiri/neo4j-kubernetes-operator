@@ -143,6 +143,7 @@ nav:
       - Installing the CLI: user_guide/cli/install.md
       - validate: user_guide/cli/validate.md
       - status: user_guide/cli/status.md
+      - diagnose: user_guide/cli/diagnose.md
       - connect & cypher: user_guide/cli/connect.md
       - support-bundle: user_guide/cli/support-bundle.md
       - explain: user_guide/cli/explain.md

@@ -801,9 +801,7 @@ func backupTargetName(backup *neo4jv1beta1.Neo4jBackup) string {
 // backupLabels returns the standard label set for a Neo4jBackup workload, ready to
 // be applied identically at the CronJob/Job level and both template levels.
 func backupLabels(backup *neo4jv1beta1.Neo4jBackup, component string) map[string]string {
-	return map[string]string{
-		"app.kubernetes.io/name":       "neo4j-backup",
-		"app.kubernetes.io/instance":   backup.Name,
+	labels := map[string]string{
 		"app.kubernetes.io/component":  component,
 		"app.kubernetes.io/managed-by": "neo4j-operator",
 		// part-of identifies the chain root — same value for every CR
@@ -813,6 +811,13 @@ func backupLabels(backup *neo4jv1beta1.Neo4jBackup, component string) map[string
 		"app.kubernetes.io/part-of": chainRoot(backup),
 		"neo4j.com/backup-target":   backupTargetName(backup),
 	}
+	// The name/instance pair is owned by resources.BackupJobSelector so that
+	// selecting these workloads from outside the reconciler cannot drift from
+	// what is stamped on them here.
+	for k, v := range resources.BackupJobSelector(backup.Name) {
+		labels[k] = v
+	}
+	return labels
 }
 
 // ensureTempStagingPVC creates a PVC for temporary staging if tempStorage is configured.

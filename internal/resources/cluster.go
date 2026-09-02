@@ -1110,6 +1110,22 @@ func StandalonePodSelector(standaloneName string) map[string]string {
 
 // PVCSelectorByInstance returns labels that match every PVC of a given
 // Enterprise or Standalone instance. Must stay in sync with GetLabelsForPVC.
+// BackupJobSelector returns labels that match the Jobs, CronJobs and Pods a
+// Neo4jBackup owns. Must stay in sync with backupLabels in
+// internal/controller/neo4jbackup_controller.go, which builds on it; the
+// contract is asserted in cluster_selectors_test.go.
+//
+// It lives here rather than in the controller package so that consumers
+// outside the reconciler — kubectl-neo4j's `diagnose`, which correlates a
+// failed backup CR with the Job that failed — can select the workload without
+// restating the label scheme, and without importing the controller package.
+func BackupJobSelector(backupName string) map[string]string {
+	return map[string]string{
+		"app.kubernetes.io/name":     "neo4j-backup",
+		"app.kubernetes.io/instance": backupName,
+	}
+}
+
 func PVCSelectorByInstance(instanceName string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":     "neo4j",
