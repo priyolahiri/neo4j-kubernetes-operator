@@ -1,0 +1,124 @@
+package main
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+)
+
+func readyPodObj(name, namespace string, labels map[string]string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels},
+		Status: corev1.PodStatus{
+			Phase:      corev1.PodRunning,
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+		},
+	}
+}
+
+// THE security property of this command: the admin password is referenced by
+// variable name so the shell expands it inside the pod. Passing -p <value>
+// would put the secret in this process's argv, in the pod's argv, and verbatim
+// in the Kubernetes audit log, which records an exec request's command array.
+func TestCypherShellArgs_NeverCarriesThePasswordValue(t *testing.T) {
+	tgt := target{tls: false}
+	cmd := tgt.cypherShellArgs("")
+
+	assert.Contains(t, cmd, `-p "$DB_PASSWORD"`,
+		"the password must be referenced by variable name, expanded inside the pod")
+	assert.Contains(t, cmd, `-u "$DB_USERNAME"`)
+	assert.NotContains(t, cmd, "secret")
+	assert.NotContains(t, cmd, "password=")
+}
+
+func TestCypherShellArgs_SchemeFollowsTLS(t *testing.T) {
+	assert.Contains(t, target{tls: false}.cypherShellArgs(""), "bolt://localhost:7687")
+	// With TLS on, the operator rejects plain bolt:// — guessing wrong fails
+	// opaquely, which is the whole reason this command resolves it.
+	assert.Contains(t, target{tls: true}.cypherShellArgs(""), "bolt+s://localhost:7687")
+}
+
+// The CLI never composes Cypher of its own; it passes the user's text through.
+// Quoting is therefore the only thing it must get right.
+func TestCypherShellArgs_QueryPassthroughEscapesQuotes(t *testing.T) {
+	cmd := target{}.cypherShellArgs(`RETURN 'it''s fine'`)
+	assert.Contains(t, cmd, `'\''`, "embedded single quotes must be escaped for the container shell")
+	assert.True(t, strings.HasPrefix(strings.TrimSpace(cmd), "cypher-shell"))
+}
+
+func TestResolveTarget_PicksTheOnlyDeployment(t *testing.T) {
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"},
+			Spec:       neo4jv1beta1.Neo4jEnterpriseClusterSpec{TLS: &neo4jv1beta1.TLSSpec{Mode: "cert-manager"}},
+		},
+		readyPodObj("prod-server-0", "neo4j", map[string]string{"neo4j.com/cluster": "prod"}),
+	)
+
+	tgt, err := resolveTarget(context.Background(), c, "neo4j", "")
+	require.NoError(t, err)
+	assert.Equal(t, "prod", tgt.name)
+	assert.Equal(t, "prod-server-0", tgt.pod)
+	assert.Equal(t, "neo4j", tgt.container)
+	assert.True(t, tgt.tls, "TLS must be read from spec, not guessed")
+	assert.Equal(t, "bolt+s", tgt.scheme())
+}
+
+// Ambiguity must be an error that names the options, not a silent guess.
+func TestResolveTarget_AmbiguousNamespaceAsksRatherThanGuessing(t *testing.T) {
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"}},
+		&neo4jv1beta1.Neo4jEnterpriseStandalone{ObjectMeta: metav1.ObjectMeta{Name: "dev", Namespace: "neo4j"}},
+	)
+
+	_, err := resolveTarget(context.Background(), c, "neo4j", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "prod")
+	assert.Contains(t, err.Error(), "dev", "the error must name the candidates so the user can pick")
+}
+
+func TestResolveTarget_StandaloneUsesItsOwnPodSelector(t *testing.T) {
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jEnterpriseStandalone{ObjectMeta: metav1.ObjectMeta{Name: "dev", Namespace: "neo4j"}},
+		readyPodObj("dev-0", "neo4j", map[string]string{"app": "dev"}),
+	)
+
+	tgt, err := resolveTarget(context.Background(), c, "neo4j", "dev")
+	require.NoError(t, err)
+	assert.Equal(t, "Neo4jEnterpriseStandalone", tgt.kind)
+	assert.Equal(t, "dev-0", tgt.pod)
+	assert.False(t, tgt.tls)
+}
+
+// "connection refused" from a pod that was never going to answer is a worse
+// error than naming the actual problem.
+func TestResolveTarget_NoReadyPodSaysSoAndPointsSomewhere(t *testing.T) {
+	notReady := readyPodObj("prod-server-0", "neo4j", map[string]string{"neo4j.com/cluster": "prod"})
+	notReady.Status.Conditions[0].Status = corev1.ConditionFalse
+
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"}},
+		notReady,
+	)
+
+	_, err := resolveTarget(context.Background(), c, "neo4j", "prod")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "none are Ready")
+	assert.Contains(t, err.Error(), "status", "point the user at the command that explains why")
+}
+
+func TestResolveTarget_UnknownNameIsAClearError(t *testing.T) {
+	c := testClient(t, &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"},
+	})
+	_, err := resolveTarget(context.Background(), c, "neo4j", "typo")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"typo"`)
+}

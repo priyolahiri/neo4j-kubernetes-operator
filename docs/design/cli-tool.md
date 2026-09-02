@@ -314,6 +314,24 @@ a parsing surface, breaks under partial RBAC in ways that are hard to report
 well, and forfeits the shared-package property in §2 that is the whole reason
 to build this here.
 
+**Scope of that rejection, clarified when `cypher` was built.** What is rejected
+is shelling out to `kubectl` *as a data source* — parsing its output instead of
+using the API. Handing it an **interactive session** parses nothing and forfeits
+nothing, and `cypher` does exactly that: client-go resolves the pod, container
+and Bolt scheme, then `kubectl exec -it` runs the session. Terminal raw mode,
+window resize, signal forwarding and every kubeconfig auth plugin are already
+solved there; reimplementing them via SPDY would be a few hundred lines of
+fragile code for no capability we want. The cost — `kubectl` must be on PATH —
+is definitional for a kubectl plugin and is reported plainly when it is not.
+
+**The security argument that would have favoured SPDY does not apply**, because
+neither approach needs to handle the password. `DB_USERNAME` / `DB_PASSWORD`
+are already in the container via `secretKeyRef`, so the command references them
+by name and the shell expands them inside the pod. The secret never reaches
+this process, the user's shell history, or the Kubernetes audit log — which
+records an exec request's command array verbatim, and is where a `-p <value>`
+implementation would leak it.
+
 ### (d) Decline — improve the docs instead
 
 The status quo, and the honest baseline. It is what the 98-line troubleshooting
@@ -443,7 +461,7 @@ honest options are recorded in §9 Q5 rather than papered over.
    renders distinctly and never affects the exit code, including under
    `--strict`. Dropping it, as the first implementation did, hid the difference
    between "wrong" and "not yet".
-4. **`status`** (§4.2) → **done**, then **`connect` / `cypher`** (§4.3).
+4. **`status`** (§4.2) → **done**. **`connect` / `cypher`** (§4.3) → **done**.
 
    `status` reads every kind generically — phase, ready, message — rather than
    through 26 typed switches, and takes its kind list from the registered

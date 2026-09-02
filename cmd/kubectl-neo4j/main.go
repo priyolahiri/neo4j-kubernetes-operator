@@ -48,6 +48,8 @@ Usage:
 Commands:
   validate    Validate Neo4j CR manifests against the operator's own validators
   status      Show the state of every Neo4j resource in a namespace
+  connect     Print how to reach a deployment (address, port-forward, scheme)
+  cypher      Open a cypher-shell session against a deployment
   version     Print the version
 
 Run "kubectl neo4j <command> -h" for command flags.
@@ -69,6 +71,10 @@ func run(args []string, stdout, stderr *os.File) int {
 		return runValidate(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
+	case "connect":
+		return runConnect(args[1:], stdout, stderr)
+	case "cypher":
+		return runCypher(args[1:], stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, version)
 		return exitOK
