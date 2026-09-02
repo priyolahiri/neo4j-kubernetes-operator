@@ -18,7 +18,13 @@ As datasets grow, you may need to increase the storage allocated to your Neo4j d
 
 ## Prerequisites
 
-Your StorageClass must have `allowVolumeExpansion: true`. Most cloud provider default StorageClasses support this. Verify with:
+Your StorageClass must have `allowVolumeExpansion: true`. Most cloud provider default StorageClasses support this.
+
+```bash
+kubectl neo4j preflight Neo4jEnterpriseCluster/<name> -n <namespace>
+```
+
+`preflight` reports this along with the deployment's other cluster-side preconditions, and it is worth running **at install time rather than at expansion time**: a class without expansion costs nothing until the day a full disk makes the resize urgent, and by then the PVCs already exist. Check it by hand with:
 
 ```bash
 kubectl get storageclass <your-storage-class> -o jsonpath='{.allowVolumeExpansion}'

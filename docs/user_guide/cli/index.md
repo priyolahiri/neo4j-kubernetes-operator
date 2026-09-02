@@ -38,6 +38,7 @@ Three boundaries, held deliberately:
 
 - **It never executes Cypher for a mutating operation on your behalf.** It may author and read custom resources, and read Kubernetes state. Creating a database or promoting a replica belongs in a CR, where it is declarative, auditable and reversible. `cypher -c "..."` passes *your* query through — a different thing from the CLI deciding to change your database.
 - **It never restates the operator's rules.** Validation comes from the operator's own packages, and `explain` is keyed off the operator's own condition constants, so a rename breaks the build rather than leaving the CLI confidently wrong. A second source of truth would rot.
+- **It checks shape, not reachability.** [`preflight`](preflight.md) reads Kubernetes objects — a StorageClass, a Secret's key names, a ServiceAccount's annotations. It never contacts S3, GCS, Azure or a registry, and never runs a probe pod, so a clean run never means "the backup will work". Saying so on every run is the point: a check that implied more than it made would be worse than no check.
 - **It admits what it does not know.** Kinds with no validator say so rather than implying a flag would help; unrecognised phases are reported as unrecognised, naming the CLI's own version. A confident wrong answer during an incident costs more than no answer.
 
 ## Version matching

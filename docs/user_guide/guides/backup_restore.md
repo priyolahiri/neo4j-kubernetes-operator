@@ -2,6 +2,12 @@
 
 Back up and restore Neo4j Enterprise clusters and standalone instances via the `Neo4jBackup` and `Neo4jRestore` CRDs. Both deployment kinds are auto-detected by the operator from `instanceRef`.
 
+!!! tip "Check the preconditions before the first run"
+    A backup Job that cannot authenticate fails at run time, and the kubelet's error does not
+    mention backups. `kubectl neo4j preflight -f <manifest>` checks the shape first — the
+    credentials Secret holds every key the Job mounts, or the ServiceAccount carries the cloud
+    identity it needs. See the [CLI guide](../cli/preflight.md).
+
 ## Quick Start
 
 ```bash
