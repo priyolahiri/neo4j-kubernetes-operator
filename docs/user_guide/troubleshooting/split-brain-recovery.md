@@ -8,6 +8,10 @@ This guide provides comprehensive troubleshooting and recovery procedures for Ne
     pods, since recovery destroys the evidence of what went wrong. See the
     [CLI guide](../cli/support-bundle.md).
 
+    Then `kubectl neo4j diagnose Neo4jEnterpriseCluster/<name>` shows the operator's own
+    `SplitBrainDetected` warning alongside each server pod's state, so you can tell a genuine
+    split-brain from servers that simply never started.
+
 ## Quick reference
 
 **Detect** — compare each server's view of the cluster. Different lists across pods mean split-brain:

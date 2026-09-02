@@ -676,5 +676,20 @@
       "internal/controller/ccdr_proxy.go",
       "internal/resources/ccdr_proxy.go"
     ]
+  },
+  {
+    "id": "su-kubectl-neo4j",
+    "name": "kubectl-neo4j CLI",
+    "kind": "cli",
+    "description": "Command-line plugin invoked as `kubectl neo4j <command>`. Closes the feedback loop the NO-WEBHOOKS invariant leaves open: it runs the operator's own validators client-side before apply, renders status across every Neo4j kind, explains conditions and phases, diagnoses failures below the custom-resource layer, checks cluster-side preconditions, authors cross-cluster manifests, and collects a redacted support bundle.",
+    "entityIds": [],
+    "dependsOn": [
+      "su-validation",
+      "su-resource-builders"
+    ],
+    "moduleId": "mod-cli",
+    "paths": [
+      "cmd/kubectl-neo4j/main.go"
+    ]
   }
 ]

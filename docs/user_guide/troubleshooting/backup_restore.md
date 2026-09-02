@@ -4,8 +4,15 @@ Common backup and restore failures and their fixes. For the feature overview and
 
 !!! tip
     `kubectl neo4j validate -f <manifest>` catches a malformed `Neo4jBackup` before you apply
-    it, and `kubectl neo4j explain Neo4jBackup/<name>` decodes the phase of one that has
-    already failed. See the [CLI guide](../cli/index.md).
+    it, `kubectl neo4j preflight -f <manifest>` checks the cluster-side preconditions the
+    manifest depends on — the credentials Secret's keys, or the ServiceAccount's cloud-identity
+    annotation — and `kubectl neo4j explain Neo4jBackup/<name>` decodes the phase of one that
+    has already failed. See the [CLI guide](../cli/index.md).
+
+    The credential checks below are written as `kubectl run` probes because they were the only
+    way to run them before `preflight` existed. `preflight` covers the *shape* of the same
+    problems without a probe pod; reach for a probe when you need to prove the credentials
+    actually work against the bucket, which preflight deliberately does not claim to do.
 
 ## Common Backup Issues
 

@@ -106,5 +106,14 @@
       "internal/validation/",
       "internal/resources/"
     ]
+  },
+  {
+    "id": "mod-cli",
+    "name": "CLI",
+    "key": "cli",
+    "description": "kubectl-neo4j, the customer-facing kubectl plugin shipped on the operator's own release tag. It reuses the operator's packages rather than restating their rules: validation from internal/validation, workload selectors and cloud-credential contracts from internal/resources. It may create and read custom resources and read Kubernetes state, and never executes Cypher or neo4j-admin for a mutating operation.",
+    "paths": [
+      "cmd/kubectl-neo4j/"
+    ]
   }
 ]

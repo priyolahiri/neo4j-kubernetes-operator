@@ -499,8 +499,100 @@ honest options are recorded in §9 Q5 rather than papered over.
    an explicit statement that redaction cannot cover the user's own
    `spec.config` or application log output.
 
+7. **`diagnose`** (new; not in the original §4 ranking) → **done.**
+
+   §4 ranked five commands and all five shipped, which surfaced what the
+   ranking had missed: every one of them stops at the custom-resource boundary,
+   while the failure taxonomy in `guides/troubleshooting.md` is dominated by
+   the layer below it — pods that will not schedule, containers OOMKilled at
+   1Gi, image pulls that fail, PVCs that never bind. `status` reports
+   "Pending / not ready" for all of them and hands the user back to a 98-line
+   runbook to work out which it was.
+
+   The B3 answer is the same one `explain` used, transposed: anchor every rule
+   to a fact the KUBERNETES API defines rather than a string this project made
+   up. Where client-go exports a constant it is used (`PodScheduled`,
+   `PodReasonUnschedulable`, `ClaimBound`), so an upstream rename fails the
+   build. Three reasons have no constant because kubelet owns them —
+   `CrashLoopBackOff`, `ImagePullBackOff`, `OOMKilled` — and those are matched
+   as literals, with OOM *also* matched on exit code 137 so the most common
+   Enterprise failure does not rest on a string alone.
+
+   Workloads are found through the operator's own exported selectors, which
+   required adding `resources.BackupJobSelector` and refactoring the
+   controller's `backupLabels` onto it, with a contract test — the same
+   producer/consumer discipline `cluster_selectors_test.go` already enforces
+   for server pods.
+
+   One reporting decision worth recording: a resource the operator has **never
+   written status to** is reported explicitly. That silence has no other
+   signal — nothing is broken, the CR simply sits there — and it is what a user
+   sees when the operator is not running, lacks RBAC for the kind, or is
+   namespace-scoped and not watching this namespace (#282).
+
+8. **`preflight`** (new) → **done.** §1.2's insight applied a second time.
+
+   `validate` moved the operator's SPEC rules from after-apply to before-apply.
+   What it structurally cannot move is the class of failure that is not in the
+   manifest at all: a StorageClass that does not exist, one that cannot expand,
+   a credentials Secret missing a key, no node large enough for the pod. Those
+   are cluster facts, and 21 of the 29 validators are deliberately offline.
+
+   The scope line is the design: **shape, not reachability.** It reads
+   Kubernetes objects and never contacts S3, GCS, Azure or a registry, and
+   never runs a probe pod — which is what keeps it free of new images, new RBAC
+   and any mutation. It is stated in the help text, the docs and on every run,
+   because a clean result that implied "the backup will work" would be worse
+   than no command.
+
+   It replaces a ritual the troubleshooting guide documents today —
+   `kubectl run backup-auth-check --image=amazon/aws-cli …`, in three vendor
+   variants — which is only reached for *after* a backup has already failed.
+
+   Cloud credential key names and the Job ServiceAccount names moved into
+   `internal/resources` (`CloudCredentialKeys`, `CloudIdentityAnnotation`,
+   `Backup`/`RestoreServiceAccountName`) rather than being restated in the CLI,
+   pinned by a contract test asserting every key the Job builder actually wires
+   — env var or projected volume item — is declared there.
+
+9. **`export replica-database`** (new) → **done**, and much narrower than §1.1
+   implied.
+
+   §1.1 counted five status fields that exist solely to be pasted into another
+   resource's spec and read that as a CLI-shaped gap. Re-reading the CRDs while
+   building it showed the operator had **already closed most of it itself**:
+   `source.upstreamBackupRef` resolves the pull URI live, and
+   `source.upstreamClusterRef` resolves network addresses live. Generating a
+   literal where a ref exists would be redundant *and worse* — the literal goes
+   stale when the upstream changes.
+
+   What no ref can do is cross a cluster boundary, since both resolve through a
+   Get against their own API server; the CRD says as much, telling the user to
+   "paste it from that CR's own status by hand" for an upstream on a different
+   Kubernetes cluster. That paste is the entire scope of the command, and the
+   docs point same-cluster users back at the refs.
+
+   Two properties worth keeping if this pattern is extended: the manifest is
+   the ONLY thing on stdout (notes go to stderr, so a redirect stays clean),
+   and every manifest is run through the operator's own `ReplicaValidator`
+   before it is printed — a generator that emitted something `validate` would
+   reject would be worse than no generator.
+
+10. **Docs routing** → **done.** A command nobody is shown has no value, and
+    with krew declined (naming and identity, not effort) the docs *are* the
+    discovery channel. `kubectl neo4j` appeared 7 times across
+    `docs/user_guide/`, in 3 files, against roughly 300 manual `kubectl` /
+    `cypher-shell` / `neo4j-admin` lines. The high-density runbooks now lead
+    with the CLI at each problem heading and keep every raw command underneath
+    as the by-hand path.
+
 Deliberately *not* in the order: any mutating command beyond CR authoring
-(B5), and any `pkg/` promotion (B2).
+(B5), any `pkg/` promotion (B2), and a TUI. The TUI was considered and
+declined: the state half duplicates `status` + `diagnose`, the metrics half
+would open with empty graphs because a CLI process starts with no history
+(Prometheus has the history, and the operator already ships that path), and it
+would break the `run(args, stdout, stderr) int` shape that makes every command
+here table-testable.
 
 ---
 

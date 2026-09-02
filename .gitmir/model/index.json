@@ -1,9 +1,9 @@
 {
   "dimensions": {
-    "modules": 10,
+    "modules": 11,
     "entities": 26,
-    "serverUnits": 40,
-    "serverFunctions": 103,
+    "serverUnits": 41,
+    "serverFunctions": 111,
     "apiRoutes": 3,
     "frontendUnits": 0,
     "events": 170,
@@ -11,6 +11,6 @@
     "statusFlows": 9,
     "reactions": 2
   },
-  "at": "2026-08-31T08:34:44Z",
+  "at": "2026-09-02T16:18:55Z",
   "project": "neo4j-kubernetes-operator"
 }

@@ -5,8 +5,11 @@ This guide provides comprehensive troubleshooting information for the Neo4j Kube
 !!! tip "Faster than working through this by hand"
     The [`kubectl-neo4j` CLI](../cli/index.md) automates most of what follows:
 
+    - `kubectl neo4j diagnose` — **start here.** Names the Kubernetes-level cause: the pod
+      that will not schedule, the container that was OOMKilled, the PVC that never bound
     - `kubectl neo4j status` — what exists and what is unhealthy, in one view
     - `kubectl neo4j explain <Kind>/<name>` — what a condition means and what to do about it
+    - `kubectl neo4j preflight` — the cluster-side preconditions, *before* you apply
     - `kubectl neo4j support-bundle` — collect everything below into one redacted archive
     - `kubectl neo4j cypher <name>` — a shell, without the Secret round-trip
 
@@ -15,6 +18,19 @@ This guide provides comprehensive troubleshooting information for the Neo4j Kube
 ## Quick Reference
 
 ### Diagnostic Commands
+
+With the CLI, the whole block below collapses to three commands:
+
+```bash
+kubectl neo4j status                 # every Neo4j resource, and which need attention
+kubectl neo4j diagnose               # why the unhealthy ones are unhealthy
+kubectl neo4j explain <Kind>/<name>  # what a condition means and what to do
+```
+
+`diagnose` reads the pod, PVC, StatefulSet, Job and event layers that the rest of this
+section reaches by hand, and it knows the operator's naming scheme and namespaces.
+
+#### By hand
 
 ```bash
 # Check deployment status
@@ -138,6 +154,11 @@ spec:
 ### 2. Pod Startup Issues
 
 #### Problem: Pods Stuck in Pending State
+
+`kubectl neo4j diagnose` reports the scheduler's own reason and what to do about it, and
+`kubectl neo4j preflight -f <manifest>` catches the two usual causes — no node large
+enough, or a StorageClass that does not exist — *before* you apply. By hand:
+
 ```bash
 # Check pod events
 kubectl describe pod <pod-name>
@@ -168,6 +189,10 @@ kubectl describe pod <pod-name>
    ```
 
 #### Problem: Pods Crashing (CrashLoopBackOff)
+
+`kubectl neo4j diagnose` distinguishes a crash loop from an OOMKill (exit 137) and names
+the pod and container to read. By hand:
+
 ```bash
 # Check pod logs
 kubectl logs <pod-name> --previous
@@ -397,6 +422,11 @@ kubectl port-forward svc/<cluster-name>-metrics 2004:2004
 ### 7. Storage Issues
 
 #### Problem: PVC Issues
+
+`kubectl neo4j diagnose` reports any PVC that is not `Bound` and names its StorageClass;
+`kubectl neo4j preflight` checks that the class exists — and that it allows expansion —
+before you apply. By hand:
+
 ```bash
 # Check PVC status
 kubectl get pvc
@@ -445,7 +475,11 @@ kubectl exec -it <pod-name> -- neo4j-admin database check neo4j
 #### Problem: Backup Job fails to start (ServiceAccount / permission errors)
 Backups run as Kubernetes Jobs that execute `neo4j-admin` directly against a database — they do NOT exec into the Neo4j pods. Each Job runs under the `neo4j-backup-sa` ServiceAccount, which the operator creates automatically in the backup's namespace (and stamps with any workload-identity annotations from `spec.cloud.identity`).
 
-**Solution**: Confirm the ServiceAccount exists and inspect the Job:
+**Solution**: `kubectl neo4j preflight Neo4jBackup/<name> -n <ns>` checks this before the
+first run — that the ServiceAccount carries a cloud-identity annotation, or that the
+credentials Secret exists and holds every key the Job mounts. `kubectl neo4j diagnose`
+reports a Job that has already failed. By hand:
+
 ```bash
 # The operator auto-creates this ServiceAccount; no Role/RoleBinding is needed
 # because the Job runs neo4j-admin directly, not via pods/exec.

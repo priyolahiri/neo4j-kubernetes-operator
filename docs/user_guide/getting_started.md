@@ -42,6 +42,20 @@ helm install neo4j-operator oci://ghcr.io/priyolahiri/charts/neo4j-operator \
 
 For all installation methods (kubectl-apply bundle, source clone, `make` targets for contributor workflows), see the full [Installation Guide](installation.md).
 
+!!! tip "Install the CLI at the same time"
+    This operator has no admission webhooks, so a spec mistake is only reported *after* you
+    apply. The [`kubectl-neo4j` CLI](cli/index.md) closes that loop from your side:
+
+    ```bash
+    kubectl neo4j validate -f my-cluster.yaml   # the manifest, against the operator's own validators
+    kubectl neo4j preflight -f my-cluster.yaml  # the cluster it is about to land in
+    kubectl apply -f my-cluster.yaml
+    kubectl neo4j status                        # what came up
+    kubectl neo4j diagnose                      # and why anything did not
+    ```
+
+    It ships on the same release tag as the operator — see [Installing the CLI](cli/install.md).
+
 ## Operator Modes
 
 The Neo4j Operator supports two operational modes:
