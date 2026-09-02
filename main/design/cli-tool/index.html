@@ -4123,15 +4123,18 @@ originally assumed:</p>
 make the operator legible; one to humans, one to agents. If <code>explain</code> and the
 MCP server end up encoding the same troubleshooting knowledge in two places,
 that is B3 in a new costume. Worth checking before §8 item 6, not before item 1.</p>
-<p><strong>Q5 — Should the operator batch validation errors instead of short-circuiting?</strong>
-Raised by the prototype (§6.1). The early return in <code>validateCluster</code> predates
-any CLI and is reasonable for a reconciler, where the user re-reads status after
-each fix anyway. For a linter it means a fix-one-rerun loop.</p>
-<p>The fix belongs in the <strong>operator</strong>, not the CLI: remove the early return so
-every validator contributes, and let callers decide what to show. That is an
-operator behaviour change with test impact and its own review, so it is filed
-here rather than smuggled into a CLI change. Until then the CLI's help text
-should say that a clean run after fixes may reveal further errors.</p>
+<p><strong>Q5 — ANSWERED and fixed in the operator.</strong> Raised by the prototype (§6.1):
+<code>validateCluster</code>'s early return on image failure meant a fix-one-rerun loop.</p>
+<p>Fixed where it belonged — the operator, not the CLI — by removing the early
+return so every validator contributes. Two tests pin it, one of which was
+verified to fail when the early return is reinstated rather than merely passing
+today. The same broken manifest that previously reported 6 errors now reports
+9, with the <code>spec.config</code> and <code>spec.storage</code> problems no longer hidden behind
+the image check.</p>
+<p>The CLI needed no change: it renders whatever the validators return, which is
+precisely why not diverging (§3 B3) was the right call. The caveat in its help
+text stays, because the operator still short-circuits in <em>other</em> validators and
+the general warning remains true.</p>
 <p><strong>Q4 — Version skew: mostly resolved by Q2, with one thing left to build.</strong>
 Lockstep release means <code>kubectl-neo4j vX.Y.Z</code> encodes operator <code>vX.Y.Z</code>'s rules
 by construction, so the dangerous case narrows to one: <strong>a customer running a
