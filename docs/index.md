@@ -136,6 +136,7 @@ For a step-by-step walkthrough, see [Getting Started](user_guide/getting_started
 | [User Guide](user_guide/installation.md) | Configuration, TLS, networking, plugin management |
 | [User & Role Management](user_guide/user_role_management.md) | Declarative RBAC end-to-end |
 | [Backup & Restore](user_guide/guides/backup_restore.md) | Backup strategies and disaster recovery |
+| [`kubectl-neo4j` CLI](user_guide/cli/index.md) | Validate manifests before applying, inspect status, open a shell, collect a support bundle |
 | [GitOps Integration](gitops/README.md) | ArgoCD and Flux integration patterns |
 | [API Reference](api_reference/neo4jenterprisecluster.md) | Complete CRD field documentation |
 | [Architecture](developer_guide/architecture.md) | Operator internals and design |

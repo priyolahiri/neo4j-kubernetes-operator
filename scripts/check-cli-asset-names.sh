@@ -9,7 +9,7 @@
 #
 #   .github/workflows/release.yml        — builds and names the archives
 #   .github/release-notes-template.md    — tells users what to download
-#   docs/user_guide/guides/cli.md        — the install instructions
+#   docs/user_guide/cli/install.md       — the install instructions
 #   hack/install-cli.sh                  — downloads and verifies them
 #
 # This repo already learned that "two of three surfaces being right is the
@@ -21,7 +21,7 @@ fail() { echo "ERROR: $*" >&2; exit 1; }
 
 RELEASE_WF=".github/workflows/release.yml"
 NOTES_TMPL=".github/release-notes-template.md"
-CLI_DOC="docs/user_guide/guides/cli.md"
+CLI_DOC="docs/user_guide/cli/install.md"
 INSTALL_SH="hack/install-cli.sh"
 
 for f in "$RELEASE_WF" "$NOTES_TMPL" "$CLI_DOC" "$INSTALL_SH"; do

@@ -2,6 +2,12 @@
 
 This guide provides comprehensive troubleshooting and recovery procedures for Neo4j cluster split-brain scenarios when using the Neo4j Kubernetes Operator with server-based architecture.
 
+!!! tip "Collect the evidence first"
+    `kubectl neo4j support-bundle -n <namespace>` captures every server's logs, status and
+    the namespace events in one redacted archive — worth doing **before** you start restarting
+    pods, since recovery destroys the evidence of what went wrong. See the
+    [CLI guide](../cli/support-bundle.md).
+
 ## Quick reference
 
 **Detect** — compare each server's view of the cluster. Different lists across pods mean split-brain:

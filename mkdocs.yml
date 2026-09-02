@@ -115,7 +115,6 @@ nav:
       - Deployment: user_guide/deployment.md
       - Operator Modes: user_guide/operator-modes.md
       - Try the Demo: user_guide/guides/demo.md
-      - CLI (kubectl-neo4j): user_guide/guides/cli.md
       - Supported Neo4j Versions: user_guide/version_support.md
       - Upgrade Guide: user_guide/migration_guide.md
 
@@ -138,6 +137,15 @@ nav:
       - Authentication & Authorization: user_guide/guides/security.md
       - TLS Configuration: user_guide/tls_configuration.md
       - Users, Roles & Auth Rules: user_guide/user_role_management.md
+
+  - CLI:
+      - Overview: user_guide/cli/index.md
+      - Installing the CLI: user_guide/cli/install.md
+      - validate: user_guide/cli/validate.md
+      - status: user_guide/cli/status.md
+      - connect & cypher: user_guide/cli/connect.md
+      - support-bundle: user_guide/cli/support-bundle.md
+      - explain: user_guide/cli/explain.md
 
   - Operate:
       - Backup & Restore: user_guide/guides/backup_restore.md

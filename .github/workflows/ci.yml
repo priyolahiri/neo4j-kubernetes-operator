@@ -69,6 +69,9 @@ jobs:
     - name: kubectl-neo4j release asset names agree everywhere
       run: make check-cli-asset-names
 
+    - name: Every kubectl-neo4j command is documented and reachable
+      run: make check-cli-docs
+
     - name: Every CRD listed on docs landing page, README and nav
       run: make check-crd-catalog
 
