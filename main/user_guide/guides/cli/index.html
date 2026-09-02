@@ -790,6 +790,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#support-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        support-bundle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="support-bundle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-will-not-collect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it will not collect
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#collection-is-best-effort-by-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Collection is best-effort by design
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3838,6 +3877,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#support-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        support-bundle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="support-bundle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-will-not-collect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it will not collect
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#collection-is-best-effort-by-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Collection is best-effort by design
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4170,6 +4248,45 @@ asset.</p>
 <p>Consequence: <strong><code>kubectl</code> must be on your <code>PATH</code>.</strong> Invoked as <code>kubectl neo4j cypher</code> it always is. If you run the binary standalone without kubectl installed, the command says so and points you at <code>connect</code> instead of failing obscurely.</p>
 <h3 id="what-it-will-not-do">What it will not do<a class="headerlink" href="#what-it-will-not-do" title="Anchor link to this section">&para;</a></h3>
 <p><code>cypher</code> passes <em>your</em> query through unchanged; the CLI never composes Cypher of its own. Operations the operator models as resources — creating a database, promoting a replica — belong in a CR, not in a shell command, so that they are declarative, auditable and reversible. <code>kubectl neo4j cypher -c "..."</code> is you running your own query, which is a different thing from the CLI deciding to mutate your database.</p>
+<h2 id="support-bundle"><code>support-bundle</code><a class="headerlink" href="#support-bundle" title="Anchor link to this section">&para;</a></h2>
+<p>Collects the diagnostic material for a Neo4j deployment into one archive — the 98 documented <code>kubectl</code> invocations in the troubleshooting guide, in a single command.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>support-bundle<span class="w"> </span>-n<span class="w"> </span>neo4j
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>support-bundle<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>-o<span class="w"> </span>incident-4821.tar.gz
+</span></code></pre></div>
+<p>What it gathers: every Neo4j custom resource, namespace events, per-pod status (including <strong>last termination reason and exit code</strong> — exit 137 is OOMKilled, the most common Enterprise failure on an under-provisioned cluster), container logs current and previous, and the operator's own logs.</p>
+<h3 id="what-it-will-not-collect">What it will not collect<a class="headerlink" href="#what-it-will-not-collect" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Secret values never leave your cluster.</strong> Secrets appear only as a list of names, types and <em>key names</em> — enough to diagnose "the Secret is missing the <code>password</code> key", which is a real and common cause, without shipping the value.</p>
+<p>Three redactions are applied automatically:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Secret values</td>
+<td>The obvious one</td>
+</tr>
+<tr>
+<td><code>last-applied-configuration</code> annotations</td>
+<td>A verbatim copy of a previous manifest, so it re-introduces anything redacted elsewhere in the same object</td>
+</tr>
+<tr>
+<td>Literal environment variables with sensitive-looking names</td>
+<td>A password typed directly into <code>spec.env</code> would otherwise be collected and mailed to a stranger</td>
+</tr>
+</tbody>
+</table>
+<p>Every redaction is listed in <code>REDACTIONS.txt</code> inside the archive, so the recipient can see <em>where</em> something was withheld rather than wondering whether a field was empty or censored.</p>
+<div class="admonition warning">
+<p class="admonition-title">Redaction is not a guarantee</p>
+<p>It covers Secret values, last-applied annotations, and sensitive-looking literal env vars. It <strong>cannot</strong> know whether your own <code>spec.config</code>, connection strings, or application log output contain something private. The command says so on completion, and <code>REDACTIONS.txt</code> repeats it. <strong>Review the archive before sharing it.</strong></p>
+</div>
+<p>Deliberately <em>not</em> redacted: <code>valueFrom</code> / <code>secretKeyRef</code> references. They contain no secret, and blanking them would destroy exactly the information that explains a misconfigured reference.</p>
+<h3 id="collection-is-best-effort-by-design">Collection is best-effort by design<a class="headerlink" href="#collection-is-best-effort-by-design" title="Anchor link to this section">&para;</a></h3>
+<p>A bundle is most wanted when a cluster is unhealthy, so one unreadable resource must not abort the whole collection. Individual failures are recorded rather than fatal — which also tells the recipient what could not be read, and by extension what permissions the collector had.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><a href="../troubleshooting/">Troubleshooting</a> — diagnosing a deployment that is already running</li>
