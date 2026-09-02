@@ -8,8 +8,12 @@ repos:
       - id: check-yaml
         args: ['--allow-multiple-documents']
         exclude: ^(config/manager/|charts/).*\.ya?ml$
-      # - id: check-added-large-files
-      #   args: ['--maxkb=1000']  # Limit to 1MB
+      # Enabled after a 37MB compiled binary was committed: `go build ./cmd/...`
+      # writes into the repo root unless -o says otherwise, and .gitignore only
+      # covered bin/*. The largest legitimately tracked file is a ~395KB
+      # generated CRD, so 1MB leaves ample headroom.
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: debug-statements

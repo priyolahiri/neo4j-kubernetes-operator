@@ -5,6 +5,13 @@
 *.so
 *.dylib
 bin/*
+
+# Compiled binaries built into the repo root. `go build ./cmd/kubectl-neo4j`
+# writes ./kubectl-neo4j unless -o says otherwise, and a 37MB binary was once
+# committed that way. Use `make build-cli`, which writes into bin/.
+/kubectl-neo4j
+/kubectl-neo4j.exe
+/manager
 main
 # Compiled kubectl plugin binary (same name as its source dir — anchor so the
 # pattern hits only the built binary, not the cmd/kubectl-neo4j/ source).
