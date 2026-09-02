@@ -90,7 +90,7 @@ func runPreflight(args []string, stdout, stderr *os.File) int {
 	fs.SetOutput(stderr)
 	var files multiFlag
 	fs.Var(&files, "f", "Manifest to check before applying (repeatable, '-' for stdin)")
-	namespace := fs.String("namespace", "", "Namespace the resources live in, or will be applied to")
+	namespace := namespaceFlag(fs, "Namespace the resources live in, or will be applied to")
 	kubeContext := fs.String("context", "", "Kubeconfig context to use")
 	kubeconfig := fs.String("kubeconfig", "", "Path to the kubeconfig file")
 	fs.Usage = func() {

@@ -102,7 +102,7 @@ func runExportReplicaDatabase(args []string, stdout, stderr *os.File) int {
 	upstreamDatabase := fs.String("upstream-database", "", "Database name on the upstream (required)")
 	downstreamNamespace := fs.String("downstream-namespace", "", "Namespace to write into the manifest (default: the source namespace)")
 	seedFromLatest := fs.Bool("seed-from-latest", false, "Also set source.seedURI from the newest successful backup run")
-	namespace := fs.String("namespace", "", "Namespace of the upstream resource")
+	namespace := namespaceFlag(fs, "Namespace of the upstream resource")
 	kubeContext := fs.String("context", "", "Kubeconfig context to use")
 	kubeconfig := fs.String("kubeconfig", "", "Path to the kubeconfig file")
 	fs.Usage = func() {

@@ -234,7 +234,7 @@ func runValidate(args []string, stdout, stderr *os.File) int {
 	connect := fs.Bool("connect", false, "Connect to the cluster in the current kubeconfig context to run cross-reference checks")
 	kubeContext := fs.String("context", "", "Kubeconfig context to use (implies --connect)")
 	kubeconfig := fs.String("kubeconfig", "", "Path to the kubeconfig file (implies --connect)")
-	namespace := fs.String("namespace", "", "Namespace for objects whose manifest omits one")
+	namespace := namespaceFlag(fs, "Namespace for objects whose manifest omits one")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, `Validate Neo4j CR manifests against the operator's own validators.
 
