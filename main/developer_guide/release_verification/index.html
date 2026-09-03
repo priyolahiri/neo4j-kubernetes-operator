@@ -3496,6 +3496,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#phase-0-cli-no-neo4j-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 — CLI (no Neo4j deployment)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#phase-1-standalone-1-pod-2gi" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3881,6 +3892,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#phase-0-cli-no-neo4j-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 — CLI (no Neo4j deployment)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#phase-1-standalone-1-pod-2gi" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4112,16 +4134,153 @@ cluster only when it <em>needs</em> clustering.</p>
 <td>Standalone</td>
 <td>Standalone never reads <code>ca.crt</code> server-side (no cluster SSL policy), so removing that key from the TLS Secret isolates the <em>operator's</em> client verification with nothing else changing. On a cluster the same edit also breaks intra-cluster mTLS and the two failures are indistinguishable</td>
 </tr>
+<tr>
+<td><strong><code>kubectl-neo4j</code> — offline half</strong> (<code>validate</code>, <code>explain &lt;term&gt;</code>, exit codes)</td>
+<td><strong>Phase 0</strong>, no deployment</td>
+<td>It reads manifests and its own guidance map. Nothing it checks needs a running database, so it costs no memory and can run before the first pod exists</td>
+</tr>
+<tr>
+<td><strong><code>kubectl-neo4j</code> — the failure paths</strong> (<code>diagnose</code>, <code>preflight</code>)</td>
+<td><strong>Phase 0</strong>, on resources built to fail</td>
+<td><code>diagnose</code> exists for the layer <em>below</em> the CR — an unschedulable pod, <code>ImagePullBackOff</code>, a PVC that never binds. Those have to be caused on purpose, and a deployment that never schedules starts no JVM, so this is the one place they can be produced without touching the one-deployment-at-a-time rule</td>
+</tr>
+<tr>
+<td><strong><code>kubectl-neo4j</code> — the healthy lens</strong> (<code>status</code>, <code>connect</code>/<code>cypher</code>, <code>support-bundle</code>, <code>validate --connect</code>)</td>
+<td><strong>Rides Phases 1–3</strong>, no deployment of its own</td>
+<td>The CLI is a lens on whatever is deployed. Giving it a phase of its own would mean standing up a fourth Enterprise JVM for it to look at — forbidden by the anti-wedge rule, and it would show nothing the deployments already in Phases 1–3 do not</td>
+</tr>
+<tr>
+<td><strong><code>kubectl-neo4j export replica-database</code></strong></td>
+<td><strong>Phase 5</strong></td>
+<td>Its only inputs are an upstream <code>Neo4jBackup.status.replicationPullURI</code> and an upstream cluster's <code>status.internalAddresses</code>, which exist nowhere else in the journey</td>
+</tr>
 </tbody>
 </table>
 <h2 id="the-phase-plan">The phase plan<a class="headerlink" href="#the-phase-plan" title="Anchor link to this section">&para;</a></h2>
-<p>Run <strong>Phases 1-3 every time</strong> (Phase 3 included — sharding regularly surfaces
-issues the lighter phases miss). Phase 4 (Aura) needs cloud credentials rather
+<p>Run <strong>Phases 0-3 every time</strong> (Phase 3 included — sharding regularly surfaces
+issues the lighter phases miss). Phase 0 is minutes and no memory, and it goes
+first for a second reason: it proves the operator, the CRDs and the CLI are
+wired before a real deployment costs twenty. Phase 4 (Aura) needs cloud credentials rather
 than a Kind cluster: run its <strong>read-only sweep</strong> whenever anything under
 <code>internal/aura/</code> or an <code>Aura*</code> CRD changed. Phase 5 (CCDR) needs a <code>2026.08+</code>
 image, which is above the pinned CI anchor — run it whenever anything under the
 replication CRDs changed <strong>and</strong> such an image is available; if it is not, say
 so in the log rather than recording the phase as passed.</p>
+<h3 id="phase-0-cli-no-neo4j-deployment">Phase 0 — CLI (no Neo4j deployment)<a class="headerlink" href="#phase-0-cli-no-neo4j-deployment" title="Anchor link to this section">&para;</a></h3>
+<p><code>kubectl-neo4j</code> ships on the operator's own tag, under the operator's own
+support statement, so it is verified on the same pass. It is not a deployment
+but a lens on one — which is why most of its scenarios ride Phases 1–3 (see the
+routing table). What lands <em>here</em> is everything that needs no healthy database:
+the offline half, and the failure paths that have to be caused deliberately.</p>
+<p>Build it from the same tree as the operator and reach it <strong>through <code>kubectl</code></strong>,
+because plugin discovery by binary name is part of what is being verified:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>make<span class="w"> </span>build-cli<span class="w">          </span><span class="c1"># stamps -X main.version=$(git describe --tags --always --dirty)</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">/bin:</span><span class="nv">$PATH</span><span class="s2">"</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>kubectl<span class="w"> </span>plugin<span class="w"> </span>list<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>kubectl-neo4j
+</span></code></pre></div>
+<p><strong>Part A — offline (no cluster contact):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Plugin discovery</td>
+<td><code>kubectl neo4j</code> prints usage when invoked <em>through</em> <code>kubectl</code>, not only as <code>./bin/kubectl-neo4j</code>. The binary name is the contract</td>
+</tr>
+<tr>
+<td>The good case</td>
+<td><code>kubectl neo4j validate -f config/samples/</code> → exit <code>0</code></td>
+</tr>
+<tr>
+<td>The bad case</td>
+<td>a manifest with a known-bad spec (<code>spec.config.dbms.default_database</code>, an out-of-range <code>serverRoles[].serverIndex</code>) → one line per finding, errors before warnings, each sorted by field path, exit <code>1</code></td>
+</tr>
+<tr>
+<td>Every error, not the first</td>
+<td>one manifest broken in several places at once — a bad <code>spec.image</code>, a deprecated <code>spec.config</code> key, an out-of-range <code>serverRoles</code> index, a missing <code>acceptLicenseAgreement</code> — must report <strong>all</strong> of them from a single run. The fix-one-rerun loop that #354 removed must not be back</td>
+</tr>
+<tr>
+<td>Ruleset banner</td>
+<td>every non-<code>--quiet</code> run ends <code>validated against operator rules &lt;version&gt;</code>. On a journey build that is a <code>git describe</code> string such as <code>v1.14.0-41-g3aa9f21</code>, <strong>not</strong> a release version — only a tagged build prints a clean one. If it reads <code>dev</code> the ldflags did not apply, and the skew check in Part B is silently disabled</td>
+</tr>
+<tr>
+<td>Skip taxonomy — the distinction that matters</td>
+<td>a kind whose validator resolves cross-references (<code>Neo4jDatabase</code>) skips with <em>"resolves cross-references; re-run with <code>--connect</code>"</em>. A kind with <strong>no operator-side validator at all</strong> (<code>Neo4jRestore</code>, <code>Neo4jReplicaPromotion</code>, any <code>Aura*</code>) skips with <em>"no operator-side validator … <code>kubectl apply --dry-run=server</code>"</em>. Sending a user to <code>--connect</code> for a check that does not exist is the exact bug this wording was written to prevent</td>
+</tr>
+<tr>
+<td>Pending is not failure</td>
+<td>a manifest whose dependency cannot be satisfied <em>yet</em> renders <code>…</code> and does <strong>not</strong> change the exit code, including under <code>--strict</code></td>
+</tr>
+<tr>
+<td>Exit-code contract</td>
+<td><code>0</code> clean · <code>1</code> a validation error, or a warning under <code>--strict</code> · <code>2</code> a usage problem (bad flag, unreadable file, undecodable YAML). Documented as stable, so CI users pin them</td>
+</tr>
+<tr>
+<td>stdin</td>
+<td>rendering the Helm chart with <code>helm template</code> and passing it to <code>validate -f -</code> reports normally</td>
+</tr>
+<tr>
+<td><code>explain</code> a term</td>
+<td><code>kubectl neo4j explain ServersHealthy</code> → meaning plus guidance; <code>explain --list</code> enumerates everything it knows</td>
+</tr>
+<tr>
+<td><code>explain</code> admits a gap</td>
+<td>an invented term (<code>explain NotARealCondition</code>) prints <em>no explanation for …</em>, points at <code>--list</code>, and exits <code>2</code> — it never guesses. The other half of this, an unrecognised phase on a live resource naming the CLI's own version, is only reachable against an operator newer than the CLI; note it as unreachable rather than recording it as passed</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Part B — the failure paths (operator up, no Neo4j running):</strong></p>
+<p>Every resource below is built <em>not to start</em>, so none of them runs a JVM and
+none of them counts against the one-deployment-at-a-time rule. Apply, read,
+delete.</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nothing ever reconciled</td>
+<td><code>kubectl scale -n &lt;operator-ns&gt; deployment/&lt;operator-deploy&gt; --replicas=0</code>, apply a standalone, wait past the 2-minute grace → <code>status</code> shows it with no phase, and <code>diagnose</code> reports <em>"has no status after …"</em> and names all three causes (operator not running, no RBAC for the kind, namespace-scoped and not watching). Scale back up afterwards. This is the only signal #282 has</td>
+</tr>
+<tr>
+<td>Unschedulable</td>
+<td>a standalone requesting more memory than any Ready node has → <code>diagnose</code> reports the pod as unschedulable <strong>with the scheduler's own message</strong>, plus the node-capacity guidance and the 1.5Gi Enterprise floor; exit <code>1</code></td>
+</tr>
+<tr>
+<td>Image will not pull</td>
+<td>the same manifest with a typo'd tag → <code>ImagePullBackOff</code> named as the cause, rather than the CR's <code>Pending</code> restated</td>
+</tr>
+<tr>
+<td>PVC never bound</td>
+<td><code>spec.storage.className</code> naming a class that does not exist → <code>diagnose</code> names the unbound PVC <em>and</em> its StorageClass. Then run <code>preflight -f</code> on the same file: it must have caught this <strong>before</strong> apply. Confirm the two agree — that pairing is the whole argument for <code>preflight</code> existing</td>
+</tr>
+<tr>
+<td><code>preflight</code> never overclaims</td>
+<td>every run, clean or not, ends with the shape-only line (<em>no bucket, registry or endpoint was contacted</em>)</td>
+</tr>
+<tr>
+<td>Backup credential shape</td>
+<td>a <code>Neo4jBackup</code> whose <code>credentialsSecretRef</code> is absent, then one that exists but is missing a key the Job mounts → reported distinctly. This replaces the <code>kubectl run backup-auth-check --image=amazon/aws-cli …</code> ritual, which today is only reached <em>after</em> a backup has failed</td>
+</tr>
+<tr>
+<td>OOMKilled is recognised</td>
+<td>if the node can host a JVM that starts and dies (memory limit at 1Gi), <code>diagnose</code> must name <code>OOMKilled</code> / exit 137 — not the Bolt-level <code>ConnectivityDegraded</code> the v1.14.0 pass complained about, which is what this command was built to answer. Record it as skipped rather than faking it if the node cannot</td>
+</tr>
+<tr>
+<td>Version skew warning</td>
+<td>the kustomize dev deploy sets <code>OPERATOR_VERSION=latest</code>, which suppresses the check <strong>by design</strong>, so force it: <code>kubectl -n &lt;operator-ns&gt; set env deployment/&lt;operator-deploy&gt; OPERATOR_VERSION=v0.0.1</code> → <code>validate --connect</code> prints <code>⚠ version skew</code> naming both versions. Set it back to <code>latest</code> after. CI never has two versions, so this is reachable only by hand</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Delete every broken resource</strong> before Phase 1, and confirm the operator is
+back to 1 replica.</p>
 <h3 id="phase-1-standalone-1-pod-2gi">Phase 1 — Standalone (1 pod, ~2Gi)<a class="headerlink" href="#phase-1-standalone-1-pod-2gi" title="Anchor link to this section">&para;</a></h3>
 <p><code>Neo4jEnterpriseStandalone</code> → <code>Ready</code>, then on it:</p>
 <table>
@@ -4184,6 +4343,30 @@ so in the log rather than recording the phase as passed.</p>
 <td>TLS: pin rejects a mismatch</td>
 <td>with <code>ca.crt</code> still absent, replace the Secret's <code>tls.crt</code> with a <em>different</em> certificate carrying the same SANs and do <strong>not</strong> restart the Neo4j pod (it keeps serving the keystore it loaded at startup). Next reconcile must fail with <code>x509: certificate signed by unknown authority</code> in <code>status.diagnostics.collectionError</code>. Restore <code>tls.crt</code> → the next reconcile recovers. This is the only place the pin is proven to <em>reject</em>; CI cannot reach it because every CI Secret has <code>ca.crt</code></td>
 </tr>
+<tr>
+<td>CLI: <code>status</code> on a healthy namespace</td>
+<td>one <code>kubectl neo4j status -n &lt;ns&gt;</code> lists the standalone <strong>and</strong> its Database/User/Role/Plugin CRs with their phases; <code>--problems</code> prints nothing while everything is Ready. This replaces <code>kubectl get</code> against 26 kinds</td>
+</tr>
+<tr>
+<td>CLI: <code>connect</code> tells the truth about TLS</td>
+<td>run it around the TLS scenarios above: with TLS enabled, <code>connect &lt;name&gt;</code> prints <code>bolt+s://</code> and states that plain <code>bolt://</code> is rejected; before it, <code>bolt://</code>. The scheme is derived from the deployment, so a wrong one here is a real bug in the command customers reach for first</td>
+</tr>
+<tr>
+<td>CLI: <code>cypher</code> never moves the password</td>
+<td><code>kubectl neo4j cypher &lt;name&gt; -c "SHOW DATABASES"</code> returns the same rows as the by-hand <code>kubectl exec</code>, and the exec line <code>connect</code> prints references <code>$DB_USERNAME</code> / <code>$DB_PASSWORD</code> <strong>by name</strong>. The password must appear in neither the printed command nor your shell history</td>
+</tr>
+<tr>
+<td>CLI: <code>explain</code> against a live resource</td>
+<td><code>kubectl neo4j explain Neo4jEnterpriseStandalone/&lt;name&gt;</code> prints the phase, then each condition with the operator's <em>own</em> message and the guidance for it</td>
+</tr>
+<tr>
+<td>CLI: <code>support-bundle</code> withholds the secret</td>
+<td><code>support-bundle -n &lt;ns&gt; -o bundle.tar.gz</code>, extract, and <strong>grep the whole archive for the admin password</strong> — zero hits. <code>REDACTIONS.txt</code> is present and enumerates what was withheld; Secrets appear as names, types and key names only; <code>valueFrom</code> references are still there, deliberately. Grepping for the real password is the check that matters — a redactor is only as good as its worst path</td>
+</tr>
+<tr>
+<td>CLI: <code>validate --connect</code> and <code>preflight</code> on what is deployed</td>
+<td>a <code>Neo4jDatabase</code> naming a cluster that does not exist → error; the same manifest naming this standalone → validated, and the kinds skipped offline in Phase 0 are no longer skipped. <code>preflight -n &lt;ns&gt;</code> with no arguments checks the deployed resources and still ends with the shape-only line</td>
+</tr>
 </tbody>
 </table>
 <p>→ <strong>Tear down the standalone fully</strong> before Phase 2 — but <strong>KEEP the backup PVC</strong>
@@ -4224,6 +4407,14 @@ standalone backup" as one of Phase 1's outputs.</p>
 <td>Cross-topology restore</td>
 <td>restore the <strong>retained standalone backup</strong> from Phase 1 into the <strong>cluster</strong> via <code>instanceRef</code>; confirm the data round-trips. The cluster path stands up a short-lived <code>backup-seed-proxy-&lt;restore&gt;</code> Deployment that serves the backup PVC over HTTP, so the seed URI in <code>status</code> is an <code>http://…</code> URL, not a <code>file://</code> path</td>
 </tr>
+<tr>
+<td>CLI: a healthy cluster reads as healthy</td>
+<td><code>kubectl neo4j status</code> shows the cluster <code>Ready</code> next to the topology-bearing <code>Neo4jDatabase</code>; <code>diagnose</code> reports <code>3/3 pods ready</code> and exits <code>0</code> rather than inventing a problem. A diagnostic that cries wolf on a healthy cluster is worse than none</td>
+</tr>
+<tr>
+<td>CLI: <code>diagnose</code> during a restart is not a failure</td>
+<td>delete one server pod (<code>kubectl delete pod &lt;cluster&gt;-server-1</code>) and run <code>diagnose</code> inside the restart window: the not-ready pod is marked <code>…</code>, the exit code stays <code>0</code>, and the pod returns. Enterprise takes tens of seconds to open Bolt, so an exit code that failed during a normal restart would be useless in the loop it exists for</td>
+</tr>
 </tbody>
 </table>
 <p>3 servers (not 2) keeps split-brain / 3-primary quorum behaviour in the routine
@@ -4232,10 +4423,10 @@ walk. → <strong>Tear down the cluster fully</strong> before Phase 3.</p>
 <p>Sharding's documented floor is <strong>4Gi + 1 core per server</strong>. To fit a laptop we
 deliberately relax it — <strong>this phase is operator-mechanics verification, not
 doc-following</strong>. The relax is operator-side and DEV/TEST only:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Downgrades the 4Gi/1-core hard rejects to warnings.</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>&lt;operator-ns&gt;<span class="w"> </span><span class="nb">set</span><span class="w"> </span>env<span class="w"> </span>deployment/&lt;operator-deploy&gt;<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nv">NEO4J_SHARDING_RELAX_MEMORY_MIN</span><span class="o">=</span><span class="nb">true</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>&lt;operator-ns&gt;<span class="w"> </span>rollout<span class="w"> </span>status<span class="w"> </span>deployment/&lt;operator-deploy&gt;
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Downgrades the 4Gi/1-core hard rejects to warnings.</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>&lt;operator-ns&gt;<span class="w"> </span><span class="nb">set</span><span class="w"> </span>env<span class="w"> </span>deployment/&lt;operator-deploy&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nv">NEO4J_SHARDING_RELAX_MEMORY_MIN</span><span class="o">=</span><span class="nb">true</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>&lt;operator-ns&gt;<span class="w"> </span>rollout<span class="w"> </span>status<span class="w"> </span>deployment/&lt;operator-deploy&gt;
 </span></code></pre></div>
 <p>Use <strong><code>2026.06-enterprise</code></strong> (the pinned CI anchor) so local sharding matches
 what the <a href="../ci_and_workflows/">extended suite</a> validates. On a <code>servers: 3</code>
@@ -4259,6 +4450,10 @@ cluster (~2Gi each):</p>
 <tr>
 <td>Sharded backup <strong>by CR name</strong></td>
 <td><code>Neo4jBackup</code> <code>kind=ShardedDatabase</code> with <code>target.name</code> = the <strong>CR metadata name</strong> → <code>Succeeded</code>; <code>status.history[].shardArtifacts</code> lists every shard. (Using the <em>logical</em> name fails preflight — the operator resolves the logical name from the CR's <code>spec.name</code>.)</td>
+</tr>
+<tr>
+<td>CLI: the sharded CR is legible</td>
+<td><code>status -n &lt;ns&gt;</code> lists the <code>Neo4jShardedDatabase</code> by its <strong>CR <code>metadata.name</code></strong> — the same name vs. <code>spec.name</code> distinction the row above exists to catch — with its phase, alongside the cluster. <code>explain Neo4jShardedDatabase/&lt;cr&gt;</code> either decodes its conditions or says plainly that it carries none this CLI knows, which is the correct answer rather than a guess</td>
 </tr>
 </tbody>
 </table>
@@ -4430,6 +4625,10 @@ Parts A/B.</p>
 <td>A FULL then a DIFF</td>
 <td>let (or force) two runs so the bucket holds a full <strong>and</strong> a differential — a seed-only chain does not exercise the pull path</td>
 </tr>
+<tr>
+<td>CLI replaces the copy step</td>
+<td><code>kubectl neo4j export replica-database &lt;name&gt; --from-backup &lt;backup&gt; --cluster-ref &lt;downstream&gt; --upstream-database &lt;db&gt;</code> emits a <code>Neo4jReplicaDatabase</code> on <strong>stdout only</strong> — redirect it and confirm the file is a clean manifest with the notes on stderr — carrying the same <code>pullURI</code> you copied by hand above. Then run <code>validate -f</code> on the generated file: the command already validates before printing, so a manifest <code>validate</code> rejects must never appear</td>
+</tr>
 </tbody>
 </table>
 <p>→ <strong>Tear the upstream down completely.</strong> Leave the MinIO bucket intact.</p>
@@ -4494,7 +4693,7 @@ resources) in different namespaces on <strong>this same Kind cluster</strong> �
 proxy at all. Point the downstream <code>Neo4jReplicaDatabase</code> directly at the
 upstream's plain internal pod FQDN — reachable across namespaces on the same
 cluster by ordinary in-cluster DNS, no Service changes needed:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000
 </span></code></pre></div>
 <p><strong>This deliberately breaks the one-deployment-at-a-time rule</strong> — network
 replication cannot be tested sequentially the way backup mode can, the two
@@ -4525,6 +4724,10 @@ concurrent-deployment resource limits, not a test artifact to work around.</p>
 <tr>
 <td>Promotion works the same as backup mode</td>
 <td><code>Neo4jReplicaPromotion</code> against this replica → <code>Completed</code>, <code>SHOW DATABASES</code> now shows a standard read-write type</td>
+</tr>
+<tr>
+<td>CLI replaces the hand-typed FQDN</td>
+<td><code>kubectl neo4j export replica-database &lt;name&gt; --from-cluster prod-cluster --cluster-ref dr-cluster --upstream-database &lt;db&gt;</code> emits the same manifest with <code>source.addresses</code> read from the upstream's <code>status.internalAddresses</code> — the FQDN typed by hand above. Confirm they match. Note in the log that on <strong>one</strong> Kubernetes cluster <code>source.upstreamClusterRef</code> is the better answer and the docs say so; the exported literal is for a downstream on a different cluster, which is the only case no ref can reach</td>
 </tr>
 </tbody>
 </table>
@@ -4588,6 +4791,7 @@ load balancer is present to service it:</p>
 <thead>
 <tr>
 <th></th>
+<th style="text-align: center;">CLI (Phase 0)</th>
 <th style="text-align: center;">Standalone</th>
 <th style="text-align: center;">Cluster (3)</th>
 <th style="text-align: center;">Sharding (2026.06)</th>
@@ -4598,6 +4802,7 @@ load balancer is present to service it:</p>
 <tbody>
 <tr>
 <td>Reconcile → Ready</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -4606,6 +4811,7 @@ load balancer is present to service it:</p>
 </tr>
 <tr>
 <td>Database lifecycle</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
@@ -4615,6 +4821,7 @@ load balancer is present to service it:</p>
 <tr>
 <td>Database topology</td>
 <td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">n/a (Aura-managed)</td>
@@ -4622,6 +4829,7 @@ load balancer is present to service it:</p>
 </tr>
 <tr>
 <td>Users / Roles / Bindings</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
@@ -4630,6 +4838,7 @@ load balancer is present to service it:</p>
 </tr>
 <tr>
 <td>Plugins (APOC)</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅ (ConfigMap)</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
@@ -4638,6 +4847,7 @@ load balancer is present to service it:</p>
 </tr>
 <tr>
 <td>Backup → restore</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅ (neo4j-admin)</td>
 <td style="text-align: center;">✅ (Cypher)</td>
 <td style="text-align: center;">✅ (sharded)</td>
@@ -4648,12 +4858,14 @@ load balancer is present to service it:</p>
 <td>Property sharding</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 </tr>
 <tr>
 <td>Aura Fleet Management</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅ (plugin + token)</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
@@ -4665,11 +4877,13 @@ load balancer is present to service it:</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;"></td>
 </tr>
 <tr>
 <td>Aura read-contract sweep</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
@@ -4682,10 +4896,12 @@ load balancer is present to service it:</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅ backup mode + network mode mechanism (same-cluster); network mode proxy is toggle-only (needs LoadBalancer-on-Kind tooling this repo doesn't have yet)</td>
 </tr>
 <tr>
 <td>Database aliases</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
@@ -4694,10 +4910,56 @@ load balancer is present to service it:</p>
 </tr>
 <tr>
 <td>Operator→Neo4j TLS (CA + pinned)</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">n/a (HTTPS to Aura)</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>CLI: offline (<code>validate</code>, <code>explain</code>, exit codes)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>CLI: failure paths (<code>diagnose</code>, <code>preflight</code>)</td>
+<td style="text-align: center;">✅ (caused on purpose)</td>
+<td style="text-align: center;">✅ (<code>preflight</code> on what is deployed)</td>
+<td style="text-align: center;">✅ (<code>…</code> during a restart)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>CLI: healthy lens (<code>status</code>, <code>connect</code>/<code>cypher</code>, <code>support-bundle</code>)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ (<code>status</code>)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>CLI: manifest authoring (<code>export replica-database</code>)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (both modes)</td>
+</tr>
+<tr>
+<td>CLI ↔ operator version skew</td>
+<td style="text-align: center;">✅ (forced by hand)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 </tr>
 </tbody>
@@ -4709,6 +4971,10 @@ load balancer is present to service it:</p>
 <li>Add the scenario + its in-DB check to the relevant <strong>phase</strong>.</li>
 <li>Tick the <strong>coverage</strong> matrix.</li>
 <li>If it changes the operator install or sizing, update the phase headers.</li>
+<li>If it adds or changes a <strong>CLI</strong> command, put it in the phase whose
+   deployment it reads — Phase 0 if it needs none, or a broken resource if what
+   it reports is a failure. A command verified only against a healthy cluster
+   is verified in the state nobody runs it in.</li>
 </ol>
 <p>When a release fixes a specific bug, add a one-line scenario that would have
 caught it (the v1.12.2 pass added the standalone-label, <code>system</code>-reject,
@@ -4755,6 +5021,8 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.</p>
 <li><a href="../testing/">Testing</a> — the automated unit/integration suites and the
   core/extended label split.</li>
 <li><a href="../ci_and_workflows/">CI/CD &amp; Workflows</a> — what runs per-PR vs. the manual extended suite.</li>
+<li><a href="../../user_guide/cli/"><code>kubectl-neo4j</code> CLI</a> — the command docs Phase 0
+  and the per-phase CLI rows follow, including the exit-code contracts.</li>
 <li><a href="../../user_guide/guides/backup_restore/">Backup &amp; Restore</a>,
   <a href="../../user_guide/property_sharding/">Property Sharding</a> — the user docs this
   journey follows.</li>

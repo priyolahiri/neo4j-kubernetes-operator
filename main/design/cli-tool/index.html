@@ -4020,8 +4020,11 @@
 
 <h1 id="design-kubectl-neo4j-a-customer-facing-cli">Design: <code>kubectl-neo4j</code> — a customer-facing CLI<a class="headerlink" href="#design-kubectl-neo4j-a-customer-facing-cli" title="Anchor link to this section">&para;</a></h1>
 <blockquote>
-<p><strong>Status:</strong> Analysis only. Nothing is implemented. §8 proposes a first slice
-of one command.
+<p><strong>Status:</strong> Shipped. Every command §8 ranked landed, plus three the ranking
+missed, across #353–#371. This page is kept as the <strong>design record</strong> — the
+reasoning, the costs in §3, the answered questions in §9 — not as a plan; §8
+now reads as what each item turned out to be, including where building it
+corrected the analysis above it.
 <strong>Source:</strong> this repository, read at commit <code>6afaf1c</code>; command-density counts
 measured across <code>docs/user_guide/</code>.
 <strong>Scope of this document:</strong> whether an accompanying CLI earns its place, who
@@ -4234,6 +4237,8 @@ user's behalf.</p>
 repository and its review cycle — structurally the same kind of external
 submission as the OperatorHub community-operators flow this project already
 maintains. Budget it as a separate, recurring task, not a one-off.</p>
+<p><strong>Moot: krew was declined</strong> (§8 item 5) — on what the name would claim, not on
+this cost.</p>
 <h3 id="b7-context-and-namespace-handling-is-where-clis-usually-rot">B7 — Context and namespace handling is where CLIs usually rot<a class="headerlink" href="#b7-context-and-namespace-handling-is-where-clis-usually-rot" title="Anchor link to this section">&para;</a></h3>
 <p>Kubeconfig precedence, <code>--context</code>, <code>--namespace</code>, in-cluster vs out, and
 partial RBAC (a customer who can read <code>Neo4jEnterpriseCluster</code> but not Secrets)
@@ -4441,8 +4446,13 @@ honest options are recorded in §9 Q5 rather than papered over.</p>
    an open vocabulary Neo4j can extend), and <code>Pending</code> messages are shown but
    marked <code>…</code> rather than <code>✗</code>, because "waiting for a Secret you have not
    created" is the line that says what to do next, not a failure.
-5. <strong>krew index submission</strong> (B6), once the command set is stable enough that
-   users installing it will not immediately want a newer one.
+5. <del><strong>krew index submission</strong> (B6)</del> → <strong>declined</strong>, on naming and identity
+   rather than effort. A krew-index entry claims the ecosystem-wide
+   <code>kubectl neo4j</code> name and presents the plugin as an official Neo4j product,
+   while this one ships under the operator's own support statement — best-effort
+   via GitHub issues, no official or commercial support. That is the wrong
+   promise to make in a public index, and no amount of review-cycle budget
+   (B6's cost) changes it. Discovery is the docs instead; see item 10.
 6. <strong><code>support-bundle</code></strong> (§4.5) → <strong>done.</strong> <strong><code>explain</code></strong> (§4.4) → <strong>done.</strong></p>
 <p><code>explain</code> was the command flagged in §4.4 as "most at risk of B3 drift —
    every string it prints is a claim about operator behaviour". That risk is
