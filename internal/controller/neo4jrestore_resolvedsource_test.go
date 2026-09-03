@@ -263,7 +263,7 @@ func TestLatestSucceededArtifactFilename_NewestRunWithoutFilenameIsRefused(t *te
 	}
 	r := newResolvedSourceReconciler(t, backup)
 
-	_, err := r.latestSucceededArtifactFilename(context.Background(), "nightly", "default")
+	_, err := r.latestSucceededArtifactFilename(context.Background(), "nightly", "default", "neo4j")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nightly-backup-new", "error must name the run whose filename capture missed")
 	assert.Contains(t, err.Error(), "type=storage", "error must point at the explicit-path escape hatch")
@@ -282,7 +282,7 @@ func TestLatestSucceededArtifactFilename_NewestSucceededWins(t *testing.T) {
 	}
 	r := newResolvedSourceReconciler(t, backup)
 
-	fn, err := r.latestSucceededArtifactFilename(context.Background(), "nightly", "default")
+	fn, err := r.latestSucceededArtifactFilename(context.Background(), "nightly", "default", "neo4j")
 	require.NoError(t, err)
 	assert.Equal(t, "neo4j-2026-06-11T10-00-00.backup", fn)
 }
@@ -435,12 +435,43 @@ func TestLatestSucceededArtifactFilename_ClusterKindGivesStructuralError(t *test
 	}
 	r := newResolvedSourceReconciler(t, backup)
 
-	_, err := r.latestSucceededArtifactFilename(context.Background(), "clusterwide", "default")
+	_, err := r.latestSucceededArtifactFilename(context.Background(), "clusterwide", "default", "neo4j")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "kind:Cluster", "error must name the structural cause")
 	assert.Contains(t, err.Error(), "kind:Database", "error must point at the kind:Database remedy")
 	assert.Contains(t, err.Error(), "type=storage", "error must offer the explicit-path escape hatch")
 	assert.NotContains(t, err.Error(), "re-run the backup", "must not suggest re-running (structural, not flaky)")
+}
+
+// Pins the v1.15.0 release-verify finding: an all-databases backup records one
+// artifact PER database, and that map names the exact file for the database
+// being restored. Restoring a single database from such a backup used to fail
+// telling the user to "re-run the backup with a recent operator version" —
+// advice that cannot help, because the map IS what that backup records. This
+// is the documented Phase 2 cross-topology scenario.
+func TestLatestSucceededArtifactFilename_ResolvesFromDatabaseArtifacts(t *testing.T) {
+	backup := backupCRForRestore("clusterwide", "default", false)
+	backup.Spec.AllDatabases = true
+	backup.Status.History = []neo4jv1beta1.BackupRun{{
+		RunID:            "clusterwide-backup",
+		Status:           "Succeeded",
+		ArtifactFilename: "", // an all-databases run never captures a single one
+		DatabaseArtifacts: []neo4jv1beta1.DatabaseArtifact{
+			{Database: "analytics", Filename: "analytics-2026-09-03T10-20-18.backup"},
+			{Database: "system", Filename: "system-2026-09-03T10-20-20.backup"},
+			{Database: "neo4j", Filename: "neo4j-2026-09-03T10-20-20.backup"},
+		},
+	}}
+	r := newResolvedSourceReconciler(t, backup)
+
+	fn, err := r.latestSucceededArtifactFilename(context.Background(), "clusterwide", "default", "neo4j")
+	require.NoError(t, err, "the per-database map names the file; there is nothing to fail on")
+	assert.Equal(t, "neo4j-2026-09-03T10-20-20.backup", fn)
+
+	// A database the backup does not hold is still a clear failure rather than
+	// silently restoring the wrong file.
+	_, err = r.latestSucceededArtifactFilename(context.Background(), "clusterwide", "default", "absent")
+	require.Error(t, err)
 }
 
 // TestPopulateRestoreProvenance covers #227 item 4: on a completed restore the

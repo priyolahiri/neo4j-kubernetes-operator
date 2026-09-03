@@ -94,6 +94,14 @@ func (v *StandaloneValidator) ValidateCreate(standalone *neo4jv1beta1.Neo4jEnter
 		allErrs = append(allErrs, errs...)
 	}
 
+	// The rules that belong to Neo4j rather than to a Kind. Both were reachable
+	// only through the CLUSTER validator, so a standalone accepted spec.config
+	// keys and memory settings a cluster rejected — and, for memory, then
+	// crash-looped on Neo4j's own "Invalid memory configuration".
+	allErrs = append(allErrs, NewConfigValidator().ValidateConfigMap(standalone.Spec.Config)...)
+	allErrs = append(allErrs, NewMemoryValidator().ValidateResourcesAndConfig(
+		standalone.Spec.Resources, standalone.Spec.Config)...)
+
 	// Validate MCP configuration
 	allErrs = append(allErrs, validateMCPConfig(standalone.Spec.MCP, field.NewPath("spec", "mcp"))...)
 
@@ -266,28 +274,15 @@ func (v *StandaloneValidator) validateConfig(standalone *neo4jv1beta1.Neo4jEnter
 		}
 	}
 
-	// Validate that dbms.mode is not set (deprecated in Neo4j 5.x+)
-	if mode, exists := standalone.Spec.Config["dbms.mode"]; exists {
-		allErrs = append(allErrs, field.Invalid(
-			configPath.Key("dbms.mode"),
-			mode,
-			"dbms.mode is deprecated in Neo4j 5.x+ and should not be used. Remove this setting for Neo4j 5.26+ deployments",
-		))
-	}
+	// dbms.mode is rejected by the shared ConfigValidator, which both Kinds now
+	// run — it used to be checked here and nowhere else, which is how a
+	// cluster came to accept it.
 
-	// db.format is not configurable. The operator standardizes on the 'block'
-	// store format (Neo4j's default for 5.26+) and nothing else — unlike the
-	// cluster path, standalone relies on that default rather than emitting
-	// db.format, so a user value here would actually take effect and quietly
-	// switch the store format. Reject it. (When Neo4j ships additional store
-	// formats, e.g. MVCC, a format-switching surface will be designed then.)
-	// Per-database format selection goes through Neo4jDatabase.
-	if _, exists := standalone.Spec.Config["db.format"]; exists {
-		allErrs = append(allErrs, field.Forbidden(
-			configPath.Key("db.format"),
-			"db.format is managed by the operator (always 'block') and must not be set in spec.config. To choose a non-default store format, set it per database via Neo4jDatabase CREATE DATABASE options.",
-		))
-	}
+	// db.format is likewise rejected by the shared ConfigValidator, for the
+	// same reason and in one place: the operator standardizes on the 'block'
+	// store format and runs with strict config validation, so a user value
+	// fails Neo4j startup. Per-database format selection goes through
+	// Neo4jDatabase.
 
 	// SSL policies are managed end-to-end by the operator via spec.tls.
 	// Reject user-set dbms.ssl.policy.* / server.bolt.tls_level /

@@ -1534,6 +1534,25 @@ func (r *Neo4jRestoreReconciler) resolveRestoreSource(ctx context.Context, resto
 // restore has one (issue #188), else nil. A snapshot is only "usable" once it
 // carries a concrete Storage; the nil guard keeps every caller a single
 // if-check away from the live-resolution fallback.
+// artifactForDatabase finds the `.backup` file that holds one database inside
+// an all-databases backup.
+//
+// An all-databases run never sets a single ArtifactFilename — it produces one
+// artifact per database and records the map — so restoring ONE database from
+// one used to fail, telling the user to "re-run the backup with a recent
+// operator version". Re-running cannot help: the map is what such a backup
+// records, and it already names the exact file. Found by the v1.15.0
+// release-verify journey, where the documented cross-topology scenario (Phase
+// 2 of docs/developer_guide/release_verification.md) failed on it.
+func artifactForDatabase(artifacts []neo4jv1beta1.DatabaseArtifact, database string) string {
+	for i := range artifacts {
+		if artifacts[i].Database == database && artifacts[i].Filename != "" {
+			return artifacts[i].Filename
+		}
+	}
+	return ""
+}
+
 func resolvedBackupSnapshot(restore *neo4jv1beta1.Neo4jRestore) *neo4jv1beta1.ResolvedRestoreSource {
 	if rs := restore.Status.ResolvedSource; rs != nil && rs.Storage != nil {
 		return rs
@@ -3389,6 +3408,11 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 		// re-fetch when there's no snapshot.
 		if snap := resolvedBackupSnapshot(restore); snap != nil {
 			filename = snap.ArtifactFilename
+			// An all-databases backup pins the per-database map instead of a
+			// single filename; the file for THIS database is right there.
+			if filename == "" {
+				filename = artifactForDatabase(snap.DatabaseArtifacts, restore.Spec.Database)
+			}
 		} else {
 			backup := &neo4jv1beta1.Neo4jBackup{}
 			if err := r.Get(ctx, types.NamespacedName{Name: restore.Spec.Source.BackupRef, Namespace: restore.Namespace}, backup); err != nil {
@@ -3397,13 +3421,16 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 			for i := range backup.Status.History {
 				if backup.Status.History[i].Status == "Succeeded" {
 					filename = backup.Status.History[i].ArtifactFilename
+					if filename == "" {
+						filename = artifactForDatabase(backup.Status.History[i].DatabaseArtifacts, restore.Spec.Database)
+					}
 					break
 				}
 			}
 		}
 		if filename == "" {
-			msg := fmt.Sprintf("Neo4jBackup %q's most-recent Succeeded run has no captured ArtifactFilename — re-run the backup with a recent operator version (Pod-log capture required for PVC-backed cluster restores). Alternatively, copy the .backup file to S3/GCS/Azure and restore via type=storage.",
-				restore.Spec.Source.BackupRef)
+			msg := fmt.Sprintf("Neo4jBackup %q has no artifact for database %q: its most-recent Succeeded run captured neither a single ArtifactFilename nor a per-database entry for it. If that run was an all-databases backup, check the database name against status.history[].databaseArtifacts. Otherwise restore via type=storage with source.backupPath pointing at the exact .backup file, or re-run the backup.",
+				restore.Spec.Source.BackupRef, restore.Spec.Database)
 			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
 			return "", ctrl.Result{}, fmt.Errorf("%s", msg)
 		}
@@ -3567,7 +3594,7 @@ func (r *Neo4jRestoreReconciler) clearSeedProxyWaitStarted(ctx context.Context, 
 // filename of a Neo4jBackup's most-recent Succeeded run (history is ordered
 // most-recent-first). Both the cloud and PVC cluster-restore paths need this:
 // Neo4j seeds a single database from the exact file, not a directory.
-func (r *Neo4jRestoreReconciler) latestSucceededArtifactFilename(ctx context.Context, backupRef, namespace string) (string, error) {
+func (r *Neo4jRestoreReconciler) latestSucceededArtifactFilename(ctx context.Context, backupRef, namespace, database string) (string, error) {
 	backup := &neo4jv1beta1.Neo4jBackup{}
 	if err := r.Get(ctx, types.NamespacedName{Name: backupRef, Namespace: namespace}, backup); err != nil {
 		return "", fmt.Errorf("re-fetch backup %q: %w", backupRef, err)
@@ -3575,6 +3602,13 @@ func (r *Neo4jRestoreReconciler) latestSucceededArtifactFilename(ctx context.Con
 	for i := range backup.Status.History {
 		if backup.Status.History[i].Status == "Succeeded" {
 			if fn := backup.Status.History[i].ArtifactFilename; fn != "" {
+				return fn, nil
+			}
+			// An all-databases run records one artifact PER database rather
+			// than a single filename. When the restore names a database, that
+			// map answers it exactly — no need to send the user to
+			// type=storage to type out a filename the operator already knows.
+			if fn := artifactForDatabase(backup.Status.History[i].DatabaseArtifacts, database); fn != "" {
 				return fn, nil
 			}
 			// kind:Cluster backups NEVER capture a single ArtifactFilename:
@@ -3606,7 +3640,7 @@ func (r *Neo4jRestoreReconciler) resolvedOrLiveArtifactFilename(ctx context.Cont
 	if snap := resolvedBackupSnapshot(restore); snap != nil && snap.ArtifactFilename != "" {
 		return snap.ArtifactFilename, nil
 	}
-	return r.latestSucceededArtifactFilename(ctx, restore.Spec.Source.BackupRef, restore.Namespace)
+	return r.latestSucceededArtifactFilename(ctx, restore.Spec.Source.BackupRef, restore.Namespace, restore.Spec.Database)
 }
 
 // warnIfChainParent emits a Warning event when source.backupRef points at the

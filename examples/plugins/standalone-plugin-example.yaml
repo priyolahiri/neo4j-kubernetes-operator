@@ -35,7 +35,7 @@ spec:
     allowedProcedures:
       - "gds.*"
       - "apoc.load.*"
-    securityPolicy: "restricted"
+    securityPolicy: "strict"
     sandbox: true
 
   # Resource requirements for the plugin

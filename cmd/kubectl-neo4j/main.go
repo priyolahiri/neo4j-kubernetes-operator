@@ -90,7 +90,9 @@ func run(args []string, stdout, stderr *os.File) int {
 		return runExplain(args[1:], stdout, stderr)
 	case "export":
 		return runExport(args[1:], stdout, stderr)
-	case "version":
+	// --version is muscle memory, and this CLI's whole version-skew story rests
+	// on users being able to read their own version, so accept both spellings.
+	case "version", "--version", "-v":
 		fmt.Fprintln(stdout, version)
 		return exitOK
 	case "-h", "--help", "help":

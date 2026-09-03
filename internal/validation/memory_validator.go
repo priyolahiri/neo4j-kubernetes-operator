@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -42,38 +43,104 @@ func NewMemoryValidator() *MemoryValidator {
 
 // Validate validates memory configuration consistency
 func (v *MemoryValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
+	allErrs := v.ValidateResourcesAndConfig(cluster.Spec.Resources, cluster.Spec.Config)
+
+	// Topology-aware recommendations are cluster-only: they reason about the
+	// number of servers, which a standalone does not have.
+	if len(allErrs) == 0 && cluster.Spec.Resources != nil {
+		if limit := cluster.Spec.Resources.Limits.Memory(); limit != nil && limit.Value() > 0 {
+			allErrs = append(allErrs, v.validateMemoryAllocation(cluster, limit.Value())...)
+		}
+	}
+	return allErrs
+}
+
+// ValidateResourcesAndConfig is the deployment-agnostic half of memory
+// validation: Neo4j's own memory settings weighed against the container limit,
+// and the Enterprise floor.
+//
+// It exists because these rules were reachable only through the CLUSTER
+// validator, so the identical manifest — heap 2G and pagecache 1G against a
+// 1Gi limit — was rejected as a Neo4jEnterpriseCluster and accepted as a
+// Neo4jEnterpriseStandalone. The v1.15.0 release-verify journey then watched
+// that standalone crash-loop on Neo4j's own "Invalid memory configuration -
+// exceeds physical memory", which is exactly what this rule exists to catch
+// before apply.
+func (v *MemoryValidator) ValidateResourcesAndConfig(resources *corev1.ResourceRequirements, config map[string]string) field.ErrorList {
 	var allErrs field.ErrorList
 
-	if cluster.Spec.Resources == nil {
+	if resources == nil {
 		return allErrs
 	}
 
-	memoryLimit := cluster.Spec.Resources.Limits.Memory()
-	if memoryLimit == nil {
+	memoryLimit := resources.Limits.Memory()
+	containerMemoryBytes := int64(0)
+	if memoryLimit != nil {
+		containerMemoryBytes = memoryLimit.Value()
+	}
+
+	// An absent limit is not a limit of zero. Reporting `Invalid value: "0b"`
+	// on spec.resources.limits.memory named a field the user never set and a
+	// value they never wrote; say what is actually required instead.
+	if containerMemoryBytes == 0 {
+		if hasAnyMemorySetting(resources, config) {
+			allErrs = append(allErrs, field.Required(
+				field.NewPath("spec", "resources", "limits", "memory"),
+				fmt.Sprintf("set a memory limit: Neo4j Enterprise needs at least %s, and the operator sizes the JVM from this value",
+					v.formatMemorySize(minEnterpriseMemoryBytes)),
+			))
+		}
 		return allErrs
 	}
 
-	containerMemoryBytes := memoryLimit.Value()
-
-	// Check Neo4j memory settings against container limits
-	neo4jHeap := cluster.Spec.Config["server.memory.heap.max_size"]
-	neo4jPageCache := cluster.Spec.Config["server.memory.pagecache.size"]
-	transactionMemory := cluster.Spec.Config["dbms.memory.transaction.total.max"]
+	neo4jHeap := config["server.memory.heap.max_size"]
+	neo4jPageCache := config["server.memory.pagecache.size"]
+	transactionMemory := config["dbms.memory.transaction.total.max"]
 
 	if neo4jHeap != "" || neo4jPageCache != "" || transactionMemory != "" {
-		allErrs = append(allErrs, v.validateNeo4jMemorySettings(cluster, containerMemoryBytes, neo4jHeap, neo4jPageCache, transactionMemory)...)
+		allErrs = append(allErrs, v.validateNeo4jMemorySettings(config, containerMemoryBytes, neo4jHeap, neo4jPageCache, transactionMemory)...)
 	}
 
-	// Only validate memory allocation and provide recommendations if there are no critical errors
-	if len(allErrs) == 0 {
-		allErrs = append(allErrs, v.validateMemoryAllocation(cluster, containerMemoryBytes)...)
+	// One message per problem: the container floor was previously reported
+	// twice, by two rules with the same threshold and different wording.
+	if len(allErrs) == 0 && containerMemoryBytes < minEnterpriseMemoryBytes {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "resources", "limits", "memory"),
+			v.formatMemorySize(containerMemoryBytes),
+			fmt.Sprintf("Neo4j Enterprise requires at least %s of memory", v.formatMemorySize(minEnterpriseMemoryBytes)),
+		))
 	}
 
 	return allErrs
 }
 
+// minEnterpriseMemoryBytes is the floor below which Neo4j Enterprise will not
+// run at all.
+const minEnterpriseMemoryBytes = int64(1024 * 1024 * 1024)
+
+// hasAnyMemorySetting reports whether the user expressed a memory intent at
+// all. Someone who set no resources and no memory config is not asking for a
+// sizing check; someone who set requests, or heap, is.
+func hasAnyMemorySetting(resources *corev1.ResourceRequirements, config map[string]string) bool {
+	if resources != nil {
+		if req := resources.Requests.Memory(); req != nil && req.Value() > 0 {
+			return true
+		}
+	}
+	for _, k := range []string{
+		"server.memory.heap.max_size",
+		"server.memory.pagecache.size",
+		"dbms.memory.transaction.total.max",
+	} {
+		if config[k] != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // validateNeo4jMemorySettings validates explicit Neo4j memory configuration
-func (v *MemoryValidator) validateNeo4jMemorySettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, containerMemoryBytes int64, neo4jHeap, neo4jPageCache, transactionMem string) field.ErrorList {
+func (v *MemoryValidator) validateNeo4jMemorySettings(config map[string]string, containerMemoryBytes int64, neo4jHeap, neo4jPageCache, transactionMem string) field.ErrorList {
 	var allErrs field.ErrorList
 
 	var totalNeo4jMemory int64
@@ -141,7 +208,7 @@ func (v *MemoryValidator) validateNeo4jMemorySettings(cluster *neo4jv1beta1.Neo4
 	if totalNeo4jMemory > containerMemoryBytes {
 		allErrs = append(allErrs, field.Invalid(
 			field.NewPath("spec", "config"),
-			cluster.Spec.Config,
+			config,
 			fmt.Sprintf("Neo4j memory configuration (heap: %s, pagecache: %s) plus system overhead exceeds container memory limit (%s). Consider reducing memory settings or increasing container limits.",
 				v.formatMemorySize(heapBytes),
 				v.formatMemorySize(pageCacheBytes),
@@ -177,27 +244,9 @@ func (v *MemoryValidator) validateNeo4jMemorySettings(cluster *neo4jv1beta1.Neo4
 func (v *MemoryValidator) validateMemoryAllocation(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, containerMemoryBytes int64) field.ErrorList {
 	var allErrs field.ErrorList
 
-	// Validate minimum container memory for Neo4j Enterprise
-	minContainerMemory := int64(1024 * 1024 * 1024) // 1GB
-	if containerMemoryBytes < minContainerMemory {
-		allErrs = append(allErrs, field.Invalid(
-			field.NewPath("spec", "resources", "limits", "memory"),
-			v.formatMemorySize(containerMemoryBytes),
-			fmt.Sprintf("Neo4j Enterprise requires at least %s of memory", v.formatMemorySize(minContainerMemory)),
-		))
-	}
-
-	// Check if current memory is critically below minimum operational requirements
-	// Only enforce if memory is below absolute minimum (1Gi) rather than recommendation-based
-	minOperationalMemory := int64(1024 * 1024 * 1024) // 1GB minimum for basic operation
-	if containerMemoryBytes < minOperationalMemory {
-		allErrs = append(allErrs, field.Invalid(
-			field.NewPath("spec", "resources", "limits", "memory"),
-			v.formatMemorySize(containerMemoryBytes),
-			fmt.Sprintf("Memory allocation is below minimum operational requirement. Current: %s, Required minimum: %s",
-				v.formatMemorySize(containerMemoryBytes), v.formatMemorySize(minOperationalMemory)),
-		))
-	}
+	// The Enterprise floor is checked once, in ValidateResourcesAndConfig —
+	// it used to be reported here a second time, in different words, so a
+	// single undersized deployment produced two errors saying one thing.
 
 	// Check if memory is sufficient for cluster size
 	totalServers := cluster.Spec.Topology.Servers

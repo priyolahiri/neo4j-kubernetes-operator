@@ -41,6 +41,16 @@ Three boundaries, held deliberately:
 - **It checks shape, not reachability.** [`preflight`](preflight.md) reads Kubernetes objects — a StorageClass, a Secret's key names, a ServiceAccount's annotations. It never contacts S3, GCS, Azure or a registry, and never runs a probe pod, so a clean run never means "the backup will work". Saying so on every run is the point: a check that implied more than it made would be worse than no check.
 - **It admits what it does not know.** Kinds with no validator say so rather than implying a flag would help; unrecognised phases are reported as unrecognised, naming the CLI's own version. A confident wrong answer during an incident costs more than no answer.
 
+## Flags go anywhere
+
+Flags parse wherever you put them, before or after a positional argument, the
+way `kubectl` itself behaves:
+
+```bash
+kubectl neo4j diagnose Neo4jEnterpriseCluster/prod -n neo4j   # same
+kubectl neo4j diagnose -n neo4j Neo4jEnterpriseCluster/prod   # thing
+```
+
 ## Version matching
 
 The CLI carries the validation rules and status vocabulary of the release it was built from. **Keep it on the same version as the operator you deploy.** Its output always names the ruleset it used, and when connected to a cluster it warns if the two disagree.

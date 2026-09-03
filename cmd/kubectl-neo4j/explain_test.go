@@ -149,3 +149,17 @@ func captureExplainErr(t *testing.T, fn func(*os.File) error) string {
 	require.NoError(t, err)
 	return string(b)
 }
+
+// The shared phase vocabulary must be explainable in full. Before this, the
+// map held only the replica phases, so `explain` met `Ready` — the phase every
+// healthy resource reports — with "no guidance for this phase — it may be
+// newer than this CLI", pointing the reader at a version mismatch that did not
+// exist. Adding a phase without guidance now fails here instead.
+func TestEveryPhaseConstantHasGuidance(t *testing.T) {
+	for _, phase := range neo4jv1beta1.AllPhases {
+		g, ok := phaseGuidance[phase]
+		require.True(t, ok, "phase %q has no guidance in explain", phase)
+		assert.NotEmpty(t, g.meaning, "phase %q has an empty meaning", phase)
+		assert.NotEmpty(t, g.action, "phase %q has an empty action", phase)
+	}
+}

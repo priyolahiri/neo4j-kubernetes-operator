@@ -150,7 +150,7 @@ Flags:
 `)
 		fs.PrintDefaults()
 	}
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return exitUsage
 	}
 
@@ -236,10 +236,49 @@ type namespaceEnv struct {
 	statefulSets []appsv1.StatefulSet
 	jobs         []batchv1.Job
 	events       []corev1.Event
+	operator     operatorLocation
+}
+
+// operatorLocation is where the operator Deployment actually runs.
+//
+// The guidance used to hard-code `-n neo4j-operator`, so on any install whose
+// namespace differs — `make dev-up` uses neo4j-operator-dev, and a
+// namespace-scoped install can use anything — the command handed the user a
+// copy-paste line that fails. That is a bad thing to get wrong precisely here,
+// since these symptoms fire when the operator is suspected of not running.
+type operatorLocation struct {
+	namespace string
+	name      string
+}
+
+// findOperator locates the operator Deployment by the label it ships with. It
+// is best-effort: a user who cannot list Deployments cluster-wide still gets
+// the guidance, just with the conventional default filled in.
+func findOperator(ctx context.Context, c client.Client) operatorLocation {
+	fallback := operatorLocation{namespace: "neo4j-operator", name: "neo4j-operator-controller-manager"}
+	var deployments appsv1.DeploymentList
+	if err := c.List(ctx, &deployments,
+		client.MatchingLabels{"app.kubernetes.io/name": "neo4j-operator"}); err != nil {
+		return fallback
+	}
+	for i := range deployments.Items {
+		d := &deployments.Items[i]
+		return operatorLocation{namespace: d.Namespace, name: d.Name}
+	}
+	return fallback
+}
+
+// operatorLogsCommand renders the command that actually works on this cluster.
+func operatorLogsCommand(op operatorLocation) string {
+	if op.namespace == "" || op.name == "" {
+		op = operatorLocation{namespace: "neo4j-operator", name: "neo4j-operator-controller-manager"}
+	}
+	return fmt.Sprintf("kubectl logs -n %s deployment/%s", op.namespace, op.name)
 }
 
 func loadNamespaceEnv(ctx context.Context, c client.Client, ns string) namespaceEnv {
 	var env namespaceEnv
+	env.operator = findOperator(ctx, c)
 	// Each list is independently optional: a user with partial RBAC (able to
 	// read CRs but not Pods, say) should still get everything else rather than
 	// an error, so failures are dropped rather than propagated.
@@ -288,7 +327,7 @@ func diagnoseResource(obj *unstructured.Unstructured, env namespaceEnv) diagnosi
 	}
 
 	d.symptoms = append(d.symptoms, warningEvents(obj, env)...)
-	d.symptoms = append(d.symptoms, missingStatusSymptom(obj, row)...)
+	d.symptoms = append(d.symptoms, missingStatusSymptom(obj, row, env.operator)...)
 	return d
 }
 
@@ -298,10 +337,15 @@ func diagnoseInstance(name string, selector map[string]string, env namespaceEnv)
 	pvcs := selectPVCs(env.pvcs, resources.PVCSelectorByInstance(name))
 
 	var symptoms []symptom
+	unschedulable := false
 	for i := range pods {
-		symptoms = append(symptoms, diagnosePod(&pods[i])...)
+		podSymptoms := diagnosePod(&pods[i])
+		if podIsUnschedulable(&pods[i]) {
+			unschedulable = true
+		}
+		symptoms = append(symptoms, podSymptoms...)
 	}
-	symptoms = append(symptoms, diagnosePVCs(pvcs)...)
+	symptoms = append(symptoms, diagnosePVCs(pvcs, unschedulable)...)
 
 	summary := ""
 	if sts := findStatefulSetFor(env.statefulSets, selector); sts != nil {
@@ -331,8 +375,7 @@ func diagnoseInstance(name string, selector map[string]string, env namespaceEnv)
 			subject: name,
 			what:    "no StatefulSet and no pods",
 			action: "The operator has not built the workload yet. Check that it is running " +
-				"and watching this namespace: kubectl logs -n neo4j-operator " +
-				"deployment/neo4j-operator-controller-manager",
+				"and watching this namespace: " + operatorLogsCommand(env.operator),
 		})
 	}
 	return summary, symptoms
@@ -441,11 +484,44 @@ func diagnosePod(p *corev1.Pod) []symptom {
 	return symptoms
 }
 
-func diagnosePVCs(pvcs []corev1.PersistentVolumeClaim) []symptom {
+// podIsUnschedulable reports the scheduler's own verdict, which decides whether
+// an unbound PVC is a cause or merely a consequence.
+func podIsUnschedulable(p *corev1.Pod) bool {
+	for _, cond := range p.Status.Conditions {
+		if cond.Type == corev1.PodScheduled &&
+			cond.Status == corev1.ConditionFalse &&
+			cond.Reason == corev1.PodReasonUnschedulable {
+			return true
+		}
+	}
+	return false
+}
+
+// diagnosePVCs reports claims that never bound.
+//
+// unschedulable changes what an unbound claim MEANS. The common
+// WaitForFirstConsumer binding mode holds a claim Pending on purpose until a
+// pod is scheduled, so when the pod cannot be scheduled the claim is a
+// downstream effect, not a second fault. Reporting it as its own problem sent
+// users to check storage when the actual cause was memory — so it is still
+// shown (it is real, and hiding it would be worse) but marked as pending and
+// pointed back at the scheduling failure.
+func diagnosePVCs(pvcs []corev1.PersistentVolumeClaim, unschedulable bool) []symptom {
 	var symptoms []symptom
 	for i := range pvcs {
 		pvc := &pvcs[i]
 		if pvc.Status.Phase == corev1.ClaimBound {
+			continue
+		}
+		if unschedulable {
+			symptoms = append(symptoms, symptom{
+				mark:    markWaiting,
+				subject: "pvc " + pvc.Name,
+				what:    fmt.Sprintf("is %s, not Bound", pvc.Status.Phase),
+				action: "Expected while the pod cannot be scheduled: a WaitForFirstConsumer " +
+					"StorageClass binds only once a pod is placed. Fix the scheduling problem " +
+					"above and this should bind on its own.",
+			})
 			continue
 		}
 		sc := "(cluster default)"
@@ -553,7 +629,7 @@ func warningEvents(obj *unstructured.Unstructured, env namespaceEnv) []symptom {
 // to. There is no other signal for this: nothing is broken, the CR simply sits
 // there — which is what a user sees when the operator is not running, cannot
 // read the kind, or is not watching this namespace.
-func missingStatusSymptom(obj *unstructured.Unstructured, row resourceStatus) []symptom {
+func missingStatusSymptom(obj *unstructured.Unstructured, row resourceStatus, op operatorLocation) []symptom {
 	if row.phase != "-" || row.ready != "-" {
 		return nil
 	}
@@ -568,7 +644,7 @@ func missingStatusSymptom(obj *unstructured.Unstructured, row resourceStatus) []
 		action: "Nothing has reconciled it. Check the operator is running, has RBAC for " +
 			"this kind, and is watching this namespace (a namespace-scoped install " +
 			"ignores resources outside WATCH_NAMESPACE without reporting anything): " +
-			"kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager",
+			operatorLogsCommand(op),
 	}}
 }
 

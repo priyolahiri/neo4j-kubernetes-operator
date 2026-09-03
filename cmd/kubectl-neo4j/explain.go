@@ -114,10 +114,84 @@ var conditionGuidance = map[string]guidance{
 // those: phases defined as inline literals in a controller are deliberately
 // omitted rather than duplicated here as strings, since a string copy is
 // exactly the drift this design avoids elsewhere.
+//
+// The shared lifecycle vocabulary (v1beta1.AllPhases) is covered in full, and
+// TestEveryPhaseConstantHasGuidance fails if an entry is added without it.
+// Before that existed this map held only the replica phases, so `explain`
+// answered "no guidance for this phase — it may be newer than this CLI" for
+// Ready, which every healthy resource reports.
 var phaseGuidance = map[string]guidance{
-	neo4jv1beta1.ReplicaPhasePending: {
-		meaning: "the replica has been accepted but not created in Neo4j yet.",
-		action:  "Check the downstream deployment is Ready and at least 2026.08, which CCDR replicas require.",
+	neo4jv1beta1.PhaseReady: {
+		meaning: "the resource reached its desired state and the operator is holding it there.",
+		action:  "Nothing to do. Drift is corrected on the next reconcile, so a hand-edit made outside the CR will be reverted.",
+	},
+	neo4jv1beta1.PhaseInstalled: {
+		meaning: "the plugin is installed on every server and its configuration is applied.",
+		action:  "Nothing to do. Verify from the database itself if you want proof, e.g. RETURN apoc.version().",
+	},
+	neo4jv1beta1.PhaseCompleted: {
+		meaning: "a one-shot operation — a backup, a restore, or a promotion — finished successfully.",
+		action:  "Nothing to do. status.history records what was written and where; for a promotion, status.observedLagTxIds records the RPO actually taken, which is worth keeping if you are writing up the incident.",
+	},
+	neo4jv1beta1.PhaseFailed: {
+		meaning: "the operation will not be retried without a change: the operator judged the cause permanent.",
+		action:  "status.message names the cause. Fix the spec or the cluster-side precondition it names, then re-apply — `kubectl neo4j preflight` checks the cluster-side ones before you do. On a Neo4jReplicaDatabase the usual cause is a broken differential chain (a bucket lifecycle rule expiring an old backup will do it), which requires recreating the replica.",
+	},
+	neo4jv1beta1.PhaseError: {
+		meaning: "reconciliation hit an error it may recover from on a later pass.",
+		action:  "Check status.message and the operator log. If it persists across several reconciles, treat it as Failed.",
+	},
+	neo4jv1beta1.PhaseInvalid: {
+		meaning: "the spec was rejected by the operator's own validation, so nothing was created.",
+		action:  "status.message names the field. `kubectl neo4j validate -f <file>` reports the same thing before you apply, and reports every error at once.",
+	},
+	neo4jv1beta1.PhaseDegraded: {
+		meaning: "the resource is serving but not at full health — typically some servers or databases are unavailable.",
+		action:  "Run `kubectl neo4j diagnose <Kind>/<name>`: the cause is usually one pod (OOMKilled at exit 137, unschedulable, or crash-looping) rather than the cluster as a whole.",
+	},
+	neo4jv1beta1.PhaseSuspended: {
+		meaning: "reconciliation is deliberately paused for this resource.",
+		action:  "Nothing will change until it is resumed. Expected during a maintenance window; unexpected otherwise.",
+	},
+	neo4jv1beta1.PhasePending: {
+		meaning: "the resource is waiting on something that does not exist yet — a Secret, a referenced cluster, a database.",
+		action:  "This is 'not yet', not 'wrong'. status.message names what it is waiting for; create that and it proceeds on its own. On a Neo4jReplicaDatabase it also means the replica has not been created in Neo4j yet: check the downstream is Ready and at least 2026.08, which CCDR replicas require.",
+	},
+	neo4jv1beta1.PhaseValidating: {
+		meaning: "the operator is checking the spec before acting on it.",
+		action:  "Wait. It moves to Invalid or onward within a reconcile.",
+	},
+	neo4jv1beta1.PhaseCreating: {
+		meaning: "the underlying object is being created in Neo4j or in Kubernetes.",
+		action:  "Wait. If it does not advance, `kubectl neo4j diagnose` reports the Kubernetes-level cause.",
+	},
+	neo4jv1beta1.PhaseForming: {
+		meaning: "the servers are up and discovering each other, but the cluster has not formed a quorum yet.",
+		action:  "Normal for the first two to three minutes. If it persists, check discovery: every server must resolve the others on port 6000, and SHOW SERVERS should list them all.",
+	},
+	neo4jv1beta1.PhaseInstalling: {
+		meaning: "the plugin is being placed on the servers, which usually restarts pods.",
+		action:  "Wait for the rollout. The plugin is not usable until every server has restarted.",
+	},
+	neo4jv1beta1.PhaseRunning: {
+		meaning: "the operation is in progress.",
+		action:  "Wait. For a backup or restore, the Job carries the detail: kubectl logs job/<name>.",
+	},
+	neo4jv1beta1.PhaseWaiting: {
+		meaning: "the operator is waiting for the deployment it targets to become usable.",
+		action:  "Explain the TARGET rather than this resource — it is the one that is not ready.",
+	},
+	neo4jv1beta1.PhaseUpgrading: {
+		meaning: "servers are being rolled to a new image, one at a time.",
+		action:  "Wait, and do not scale or change topology mid-upgrade. Progress shows as pods restarting in ordinal order.",
+	},
+	neo4jv1beta1.PhaseExpanding: {
+		meaning: "the volumes are being grown.",
+		action:  "Wait. This needs a StorageClass with allowVolumeExpansion: true — `kubectl neo4j preflight` checks that before you ask for it.",
+	},
+	neo4jv1beta1.PhaseUnknown: {
+		meaning: "the operator could not determine the state.",
+		action:  "Usually a connectivity problem between the operator and Neo4j rather than a broken deployment. Check status.diagnostics.collectionError and the operator log.",
 	},
 	neo4jv1beta1.ReplicaPhaseSeeding: {
 		meaning: "the replica is loading its initial copy of the upstream database.",
@@ -131,17 +205,9 @@ var phaseGuidance = map[string]guidance{
 		meaning: "the replica was promoted to a standard read-write database. This is terminal and irreversible.",
 		action:  "The replica CR is now inert and will never be reconciled again. Adopt the database with a Neo4jDatabase CR to manage it declaratively; deleting the replica CR will NOT drop it.",
 	},
-	neo4jv1beta1.ReplicaPhaseFailed: {
-		meaning: "the replica could not be created or has stopped following the upstream.",
-		action:  "For backup mode, the most common cause is a broken differential chain — a bucket lifecycle rule expiring an old backup will do it, and requires recreating the replica.",
-	},
 	neo4jv1beta1.PromotionPhasePromoting: {
 		meaning: "the promotion procedure is running.",
 		action:  "Wait. Promotion is one-way and cannot be re-attached to the upstream afterwards.",
-	},
-	neo4jv1beta1.PromotionPhaseCompleted: {
-		meaning: "promotion finished. status.observedLagTxIds records the RPO actually taken.",
-		action:  "Nothing to do. Record observedLagTxIds if you are writing up the incident.",
 	},
 }
 
@@ -168,7 +234,7 @@ Flags:
 		fs.PrintDefaults()
 	}
 	list := fs.Bool("list", false, "List every condition and phase this command can explain")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return exitUsage
 	}
 

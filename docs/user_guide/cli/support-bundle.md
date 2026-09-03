@@ -8,7 +8,7 @@ kubectl neo4j support-bundle -n neo4j
 kubectl neo4j support-bundle -n neo4j -o incident-4821.tar.gz
 ```
 
-What it gathers: every Neo4j custom resource, namespace events, per-pod status (including **last termination reason and exit code** — exit 137 is OOMKilled, the most common Enterprise failure on an under-provisioned cluster), container logs current and previous, and the operator's own logs.
+What it gathers: every Neo4j custom resource, namespace events, per-pod status (including **last termination reason and exit code** — exit 137 is OOMKilled, the most common Enterprise failure on an under-provisioned cluster), container logs current and previous, and the operator's own logs — found by label wherever the operator runs, which is usually a different namespace from the one being diagnosed, and filed under `operator/<namespace>/<pod>/`. If no operator pod is visible, the archive says so rather than omitting it silently: that absence is itself worth reporting.
 
 ### What it will not collect
 

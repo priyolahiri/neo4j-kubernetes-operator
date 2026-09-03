@@ -3,6 +3,8 @@ package controller
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 // Standard condition types following Kubernetes API conventions.
@@ -107,19 +109,21 @@ func SetNamedCondition(conditions *[]metav1.Condition, condType string, generati
 // PhaseToConditionStatus maps a phase string to a ConditionStatus and Ready condition reason.
 func PhaseToConditionStatus(phase string) (metav1.ConditionStatus, string) {
 	switch phase {
-	case "Ready", "Installed":
+	case neo4jv1beta1.PhaseReady, neo4jv1beta1.PhaseInstalled:
 		return metav1.ConditionTrue, ConditionReasonReady
-	case "Completed":
+	case neo4jv1beta1.PhaseCompleted:
 		return metav1.ConditionTrue, ConditionReasonBackupSucceeded
-	case "Failed", "Degraded", "Suspended", "Invalid":
+	case neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseDegraded,
+		neo4jv1beta1.PhaseSuspended, neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseError:
 		return metav1.ConditionFalse, ConditionReasonFailed
-	case "Upgrading":
+	case neo4jv1beta1.PhaseUpgrading:
 		return metav1.ConditionUnknown, ConditionReasonUpgrading
-	case "Expanding":
+	case neo4jv1beta1.PhaseExpanding:
 		return metav1.ConditionUnknown, ConditionReasonStorageExpanding
-	case "Forming", "Creating":
+	case neo4jv1beta1.PhaseForming, neo4jv1beta1.PhaseCreating:
 		return metav1.ConditionUnknown, ConditionReasonForming
-	case "Installing", "Running", "Validating", "Pending":
+	case neo4jv1beta1.PhaseInstalling, neo4jv1beta1.PhaseRunning,
+		neo4jv1beta1.PhaseValidating, neo4jv1beta1.PhasePending, neo4jv1beta1.PhaseWaiting:
 		return metav1.ConditionUnknown, ConditionReasonPending
 	default:
 		return metav1.ConditionUnknown, ConditionReasonPending

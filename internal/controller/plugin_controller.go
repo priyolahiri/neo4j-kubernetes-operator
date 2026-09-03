@@ -315,8 +315,18 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
-	// Update status to "Installing"
-	r.updatePluginStatus(ctx, plugin, "Installing", "Installing plugin")
+	// Announce Installing only when this is actually an install.
+	//
+	// This used to run on EVERY reconcile, including the many that happen once
+	// a plugin is settled, so the phase oscillated Ready → Installing → Ready
+	// indefinitely: sampling it every 2s returned a different answer each time
+	// while APOC was installed and working. Anything keying off status.phase
+	// flapped with it — this project's own ArgoCD health checks included.
+	settled := plugin.Status.Phase == neo4jv1beta1.PhaseReady &&
+		plugin.Status.ObservedGeneration == plugin.Generation
+	if !settled {
+		r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, "Installing plugin")
+	}
 
 	// Install plugin using NEO4J_PLUGINS environment variable (recommended by Neo4j docs)
 	if err := r.installPluginViaEnvironment(ctx, plugin, deployment); err != nil {
@@ -330,7 +340,7 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Check if deployment is ready after restart (non-blocking)
 	if !r.arePodsReady(ctx, deployment) {
 		logger.Info("Waiting for pods to be ready after plugin installation")
-		r.updatePluginStatus(ctx, plugin, "Installing", "Waiting for pods to be ready after plugin installation")
+		r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, "Waiting for pods to be ready after plugin installation")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
@@ -344,7 +354,7 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Update status to "Ready"
-	r.updatePluginStatus(ctx, plugin, "Ready", "Plugin installed and configured successfully")
+	r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseReady, "Plugin installed and configured successfully")
 	r.Recorder.Eventf(plugin, corev1.EventTypeNormal, EventReasonPluginInstalled,
 		"Plugin %s version %s installed successfully", plugin.Spec.Name, plugin.Spec.Version)
 
@@ -708,6 +718,15 @@ func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *
 		latest := &neo4jv1beta1.Neo4jPlugin{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(plugin), latest); err != nil {
 			return err
+		}
+		// A write that changes nothing still produces a watch event, which
+		// reconciles again, which writes again: the CR was observed being
+		// rewritten roughly once a second in steady state. Nothing to say is
+		// a valid outcome.
+		if latest.Status.Phase == phase &&
+			latest.Status.Message == message &&
+			latest.Status.ObservedGeneration == latest.Generation {
+			return nil
 		}
 		latest.Status.Phase = phase
 		latest.Status.Message = message

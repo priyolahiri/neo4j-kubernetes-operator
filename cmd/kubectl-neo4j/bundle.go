@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/kubernetes"
@@ -80,7 +81,7 @@ Flags:
 `)
 		fs.PrintDefaults()
 	}
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return exitUsage
 	}
 
@@ -217,7 +218,92 @@ func collectBundle(ctx context.Context, c client.Client, cs kubernetes.Interface
 		files = append(files, bundleFile{name: "secrets-keys-only.txt", body: []byte(b.String())})
 	}
 
+	// The operator's own log, which lives in ANOTHER namespace.
+	//
+	// This is the single most useful artifact for an escalation about
+	// reconcile behaviour — and the command promised it in its help text and
+	// in the docs while collecting nothing, because everything above is scoped
+	// to the target namespace and the operator does not run there.
+	opFiles, opNotes := collectOperatorLogs(ctx, c, cs, logLines)
+	files = append(files, opFiles...)
+	notes = append(notes, opNotes...)
+
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
+	return files, notes
+}
+
+// collectOperatorLogs finds the operator by the label it ships with, wherever
+// it runs, and takes the log of each of its pods. Best-effort like everything
+// else here: a user without cluster-wide read access gets a note saying so
+// rather than a failed bundle.
+func collectOperatorLogs(ctx context.Context, c client.Client, cs kubernetes.Interface, logLines int64) ([]bundleFile, []string) {
+	// The identifying label (app.kubernetes.io/name=neo4j-operator) is on the
+	// DEPLOYMENT, not on its pods — the pod template carries only
+	// control-plane=controller-manager. So find the Deployment by label and
+	// follow its own selector to the pods, which works for both the kustomize
+	// and Helm installs rather than depending on either one's pod labels.
+	var deployments appsv1.DeploymentList
+	if err := c.List(ctx, &deployments,
+		client.MatchingLabels{"app.kubernetes.io/name": "neo4j-operator"}); err != nil {
+		return nil, []string{"operator logs could not be collected (cannot list deployments cluster-wide): " + err.Error()}
+	}
+	if len(deployments.Items) == 0 {
+		return nil, []string{
+			"operator logs could not be collected: no Deployment labelled " +
+				"app.kubernetes.io/name=neo4j-operator was found in any namespace this user can " +
+				"read. If the operator IS running, that absence is itself worth reporting — it is " +
+				"what a resource with no status looks like.",
+		}
+	}
+
+	var pods corev1.PodList
+	for i := range deployments.Items {
+		d := &deployments.Items[i]
+		if d.Spec.Selector == nil || len(d.Spec.Selector.MatchLabels) == 0 {
+			continue
+		}
+		var found corev1.PodList
+		if err := c.List(ctx, &found,
+			client.InNamespace(d.Namespace),
+			client.MatchingLabels(d.Spec.Selector.MatchLabels)); err != nil {
+			continue
+		}
+		pods.Items = append(pods.Items, found.Items...)
+	}
+	if len(pods.Items) == 0 {
+		return nil, []string{
+			"operator logs could not be collected: the operator Deployment was found but none of " +
+				"its pods could be listed. A Deployment with no running pod is itself the answer " +
+				"to why nothing is reconciling.",
+		}
+	}
+
+	var files []bundleFile
+	var notes []string
+	for i := range pods.Items {
+		p := &pods.Items[i]
+		files = append(files, bundleFile{
+			name: path.Join("operator", p.Namespace, p.Name, "status.txt"),
+			body: []byte(renderPodStatus(p)),
+		})
+		for _, ctr := range p.Spec.Containers {
+			for _, prev := range []bool{false, true} {
+				body, err := podLogs(ctx, cs, p.Namespace, p.Name, ctr.Name, prev, logLines)
+				if err != nil {
+					continue
+				}
+				suffix := ctr.Name + ".log"
+				if prev {
+					suffix = ctr.Name + ".previous.log"
+				}
+				files = append(files, bundleFile{
+					name: path.Join("operator", p.Namespace, p.Name, suffix),
+					body: body,
+				})
+			}
+		}
+		notes = append(notes, fmt.Sprintf("operator log collected from %s/%s", p.Namespace, p.Name))
+	}
 	return files, notes
 }
 

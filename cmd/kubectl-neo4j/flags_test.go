@@ -84,3 +84,64 @@ func captureStderr(t *testing.T, fn func(*os.File)) string {
 	require.NoError(t, err)
 	return strings.ToLower(string(b))
 }
+
+// kubectl accepts flags in any position and so must this CLI: the standard
+// library's flag package stops at the first non-flag argument, which meant
+// `diagnose Kind/name -n prod` silently searched the DEFAULT namespace and
+// then reported "not found" — indistinguishable from the resource being
+// absent. Every documented example in docs/user_guide/cli/ puts -n last.
+func TestFlagsParseAfterPositionalArguments(t *testing.T) {
+	newFS := func() (*flag.FlagSet, *string, *bool, *string) {
+		fs := flag.NewFlagSet("t", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		ns := namespaceFlag(fs, "namespace")
+		quiet := fs.Bool("quiet", false, "quiet")
+		from := fs.String("from-backup", "", "from")
+		return fs, ns, quiet, from
+	}
+
+	t.Run("short flag after a positional", func(t *testing.T) {
+		fs, ns, _, _ := newFS()
+		require.NoError(t, parseFlags(fs, []string{"Neo4jEnterpriseCluster/prod", "-n", "prod-ns"}))
+		assert.Equal(t, "prod-ns", *ns)
+		assert.Equal(t, []string{"Neo4jEnterpriseCluster/prod"}, fs.Args())
+	})
+
+	t.Run("long flag and bool interleaved with positionals", func(t *testing.T) {
+		fs, ns, quiet, _ := newFS()
+		require.NoError(t, parseFlags(fs, []string{"a", "--namespace", "x", "b", "--quiet"}))
+		assert.Equal(t, "x", *ns)
+		assert.True(t, *quiet)
+		assert.Equal(t, []string{"a", "b"}, fs.Args())
+	})
+
+	t.Run("export's documented form", func(t *testing.T) {
+		// docs/user_guide/cli/export.md shows every invocation this way; before
+		// the fix it failed with "one of --from-backup or --from-cluster is
+		// required" because the flags were never parsed at all.
+		fs, ns, _, from := newFS()
+		require.NoError(t, parseFlags(fs, []string{"replica-database", "dr-copy", "--from-backup", "nightly", "-n", "neo4j"}))
+		assert.Equal(t, "nightly", *from)
+		assert.Equal(t, "neo4j", *ns)
+		assert.Equal(t, []string{"replica-database", "dr-copy"}, fs.Args())
+	})
+
+	t.Run("flag=value form needs no lookahead", func(t *testing.T) {
+		fs, ns, _, _ := newFS()
+		require.NoError(t, parseFlags(fs, []string{"pos", "--namespace=inline"}))
+		assert.Equal(t, "inline", *ns)
+		assert.Equal(t, []string{"pos"}, fs.Args())
+	})
+
+	t.Run("everything after -- stays positional", func(t *testing.T) {
+		fs, ns, _, _ := newFS()
+		require.NoError(t, parseFlags(fs, []string{"-n", "ns", "--", "-n", "not-a-flag"}))
+		assert.Equal(t, "ns", *ns)
+		assert.Equal(t, []string{"-n", "not-a-flag"}, fs.Args())
+	})
+
+	t.Run("an unknown flag is still an error, not a silent drop", func(t *testing.T) {
+		fs, _, _, _ := newFS()
+		assert.Error(t, parseFlags(fs, []string{"pos", "--nope", "x"}))
+	})
+}

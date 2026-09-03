@@ -74,8 +74,8 @@ spec:
   # the operator would derive from the 20Gi limit anyway; they are spelled out
   # here because production sizing should be explicit rather than implied.
   config:
-    server.memory.heap.max_size: "12G"
-    server.memory.pagecache.size: "6G"
+    server.memory.heap.max_size: "10G"
+    server.memory.pagecache.size: "4G"
 
   # TLS configuration for production
   tls:

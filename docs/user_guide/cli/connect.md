@@ -37,6 +37,15 @@ kubectl exec -n neo4j prod-server-0 -c neo4j -it --   sh -c 'cypher-shell -a bol
 
 The secret never leaves the pod. It is not in your shell history, not in `ps` output on either side, and — the one people forget — **not in the Kubernetes API audit log**, which records an exec request's command array verbatim. A version that read the Secret and passed `-p <value>` would leak it into all three.
 
+### On a cluster the session is routed
+
+A cluster session dials the client Service with the `neo4j://` routing scheme,
+not `bolt://` on one server. That matters more than it looks: Neo4j's default
+`neo4j` database has a single primary, so a session pinned to an arbitrary
+server answers `Database neo4j not found` two times out of three on a perfectly
+healthy three-server cluster. A standalone hosts everything on one server, so
+it keeps the direct connection.
+
 ### It hands the session to `kubectl`
 
 `cypher` resolves the target itself, then execs `kubectl` for the interactive part. That is deliberate: terminal raw mode, window resize, signal forwarding and every kubeconfig authentication plugin are already solved there, and reimplementing them would add a large amount of fragile code for no capability you want.

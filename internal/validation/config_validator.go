@@ -42,18 +42,35 @@ func NewConfigValidator() *ConfigValidator {
 	return &ConfigValidator{}
 }
 
-// Validate validates the configuration settings
+// Validate validates a cluster's configuration settings.
 func (v *ConfigValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
+	return v.ValidateConfigMap(cluster.Spec.Config)
+}
+
+// ValidateConfigMap validates spec.config for ANY deployment kind.
+//
+// The rules here are properties of Neo4j, not of a Kind, so both the cluster
+// and the standalone validator route through it: before this, each validator
+// carried its own list and the same key could be rejected on one and accepted
+// on the other.
+func (v *ConfigValidator) ValidateConfigMap(config map[string]string) field.ErrorList {
 	var allErrs field.ErrorList
 	configPath := field.NewPath("spec", "config")
 
-	if cluster.Spec.Config == nil {
+	if config == nil {
 		return allErrs
 	}
 
 	// Check for deprecated configuration settings
 	deprecatedSettings := map[string]string{
-		"dbms.default_database":                     "use dbms.setDefaultDatabase() procedure instead",
+		// The 4.x settings the project records under "Never use". dbms.mode
+		// was previously rejected on a Neo4jEnterpriseStandalone and accepted
+		// on a Neo4jEnterpriseCluster; each validator only knew its own rules,
+		// so the same key meant different things depending on the Kind.
+		"dbms.mode":             "removed in Neo4j 5.x — the operator sets the deployment mode from the CR's Kind; remove this setting",
+		"dbms.cluster.role":     "removed in Neo4j 5.x — roles are assigned by the cluster itself; use SHOW SERVERS to read them",
+		"server.groups":         "removed in Neo4j 5.x — use spec.topology.serverRoles for placement instead",
+		"dbms.default_database": "use dbms.setDefaultDatabase() procedure instead",
 		"dbms.integrations.cloud_storage.s3.region": "replaced by new cloud storage integration settings",
 		"dbms.logs.query.enabled":                   "renamed to db.logs.query.enabled in Neo4j 5.x+",
 	}
@@ -91,7 +108,7 @@ func (v *ConfigValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 		"dbms.cluster.minimum_initial_system_primaries_count": "managed by the operator (derived from spec.topology) — do not override",
 	}
 
-	for configKey, configValue := range cluster.Spec.Config {
+	for configKey, configValue := range config {
 		// Reject control characters: config is rendered into neo4j.conf as
 		// `key=value\n`, so a newline in a value would forge an additional
 		// config line (e.g. dbms.security.auth_enabled=false).
@@ -126,6 +143,18 @@ func (v *ConfigValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 				configValue,
 				"deprecated setting: "+deprecationMsg,
 			))
+		}
+
+		// Whole 4.x families, which have no 5.x equivalent to name key by key.
+		for prefix, msg := range deprecatedSettingPrefixes {
+			if strings.HasPrefix(configKey, prefix) {
+				allErrs = append(allErrs, field.Invalid(
+					configPath.Child(configKey),
+					configValue,
+					"deprecated setting: "+msg,
+				))
+				break
+			}
 		}
 
 		// Check for unsupported manual discovery settings
@@ -218,4 +247,14 @@ func (v *ConfigValidator) validateCloudStorageConfig(key, value string) error {
 
 	// Other cloud storage providers can be added here
 	return nil
+}
+
+// deprecatedSettingPrefixes covers the 4.x families removed wholesale in Neo4j
+// 5.x. They are matched by prefix because there is no 5.x key to map each one
+// onto — the whole namespace is gone, and Neo4j runs with
+// server.config.strict_validation, so leaving one in place fails startup with
+// an error that names the setting but not the reason.
+var deprecatedSettingPrefixes = map[string]string{
+	"causal_clustering.": "the causal_clustering.* family was removed in Neo4j 5.x — clustering is configured by the operator from spec.topology",
+	"metrics.bolt.":      "the metrics.bolt.* family was removed in Neo4j 5.x — use the server.metrics.* settings instead",
 }

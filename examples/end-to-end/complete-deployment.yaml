@@ -178,6 +178,7 @@ spec:
     bucket: my-neo4j-backups
     path: "production/daily"
     cloud:
+      provider: aws
       credentialsSecretRef: s3-backup-credentials
 
   # Backup options
@@ -210,6 +211,7 @@ spec:
     bucket: my-neo4j-backups
     path: "production/weekly"
     cloud:
+      provider: aws
       credentialsSecretRef: s3-backup-credentials
 
   options:

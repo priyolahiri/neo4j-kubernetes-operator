@@ -51,6 +51,36 @@ func (t target) scheme() string {
 	return "bolt"
 }
 
+// isCluster reports whether the session has to be routed rather than pinned to
+// one server.
+func (t target) isCluster() bool { return t.kind == "Neo4jEnterpriseCluster" }
+
+// routingScheme is scheme() for a cluster: neo4j:// follows the routing table
+// to a server that actually hosts the database, where bolt:// does not.
+func (t target) routingScheme() string {
+	if t.tls {
+		return "neo4j+s"
+	}
+	return "neo4j"
+}
+
+// sessionAddress is the address cypher-shell dials from inside the pod.
+//
+// On a STANDALONE the one server hosts everything, so localhost is right and
+// needs no Service. On a CLUSTER it is wrong: Neo4j's default `neo4j` database
+// has ONE primary, so two servers out of three answer "Database neo4j not
+// found" — on a perfectly healthy cluster, depending on which pod was picked.
+// A cluster session therefore dials the client Service with the routing
+// scheme, which is the same in-cluster address `connect` prints. The password
+// still never leaves the pod: the shell runs in the container and expands
+// $DB_USERNAME / $DB_PASSWORD there.
+func (t target) sessionAddress() string {
+	if t.isCluster() {
+		return fmt.Sprintf("%s://%s-client.%s.svc.cluster.local:7687", t.routingScheme(), t.name, t.namespace)
+	}
+	return fmt.Sprintf("%s://localhost:7687", t.scheme())
+}
+
 // cypherShellArgs builds the in-container command.
 //
 // The password is referenced BY NAME, never by value. DB_USERNAME and
@@ -61,8 +91,15 @@ func (t target) scheme() string {
 // forget — verbatim in the Kubernetes API audit log, which records an exec
 // request's command array.
 func (t target) cypherShellArgs(query string) string {
-	cmd := fmt.Sprintf(`cypher-shell -a %s://localhost:7687 -u "$DB_USERNAME" -p "$DB_PASSWORD"`, t.scheme())
+	cmd := fmt.Sprintf(`cypher-shell -a %s -u "$DB_USERNAME" -p "$DB_PASSWORD"`, t.sessionAddress())
 	if query != "" {
+		// --non-interactive is REQUIRED for a one-shot query. Without it
+		// cypher-shell runs the argument and then reads STDIN for further
+		// statements; when the caller's stdin never reaches EOF (a script, CI,
+		// a pipeline) it waits forever, the user's terminal hangs, and the
+		// orphaned shell keeps running INSIDE the database pod holding its
+		// session open. Enough of those and the deployment stops answering.
+		cmd += " --non-interactive"
 		// Single-quote the user's query for the container shell, escaping any
 		// embedded single quotes. The CLI never composes Cypher of its own —
 		// it passes the user's text through unchanged.
@@ -95,7 +132,7 @@ Flags:
 `)
 		fs.PrintDefaults()
 	}
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return exitUsage
 	}
 
@@ -125,10 +162,12 @@ Flags:
 
 	kargs := []string{"exec", "-n", tgt.namespace, tgt.pod, "-c", tgt.container}
 	if *query == "" {
+		// An interactive session needs both a TTY and stdin forwarded.
 		kargs = append(kargs, "-it")
-	} else {
-		kargs = append(kargs, "-i")
 	}
+	// A one-shot query deliberately attaches NEITHER. -i would forward a stdin
+	// that may never close, which is half of the hang --non-interactive fixes;
+	// there is also nothing for the query to read.
 	kargs = append(kargs, "--", "sh", "-c", tgt.cypherShellArgs(*query))
 
 	if *kubeContext != "" {
@@ -176,7 +215,7 @@ Flags:
 `)
 		fs.PrintDefaults()
 	}
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return exitUsage
 	}
 
@@ -201,7 +240,7 @@ Flags:
 	fmt.Fprintf(stdout, "In-cluster Bolt:\n  %s://%s.%s.svc.cluster.local:7687\n\n", tgt.scheme(), svc, tgt.namespace)
 	fmt.Fprintf(stdout, "From your machine:\n  kubectl port-forward -n %s svc/%s 7687:7687 7474:7474\n", tgt.namespace, svc)
 	fmt.Fprintf(stdout, "  then connect to %s://localhost:7687\n\n", tgt.scheme())
-	fmt.Fprintf(stdout, "Interactive session (no local port-forward needed):\n  kubectl neo4j cypher %s -n %s\n\n", tgt.name, tgt.namespace)
+	fmt.Fprintf(stdout, "Interactive session (no local port-forward needed):\n  kubectl neo4j cypher -n %s %s\n\n", tgt.namespace, tgt.name)
 	fmt.Fprintf(stdout, "Credentials live in the admin Secret for this deployment; they are already\n")
 	fmt.Fprintf(stdout, "present inside the pod, so `kubectl neo4j cypher` never needs to read them.\n")
 	if tgt.tls {

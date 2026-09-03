@@ -37,8 +37,9 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 - **No webhooks** — these run inline from reconcilers, e.g. `r.Validator.ValidateCreateWithWarnings`
   in `internal/controller/neo4jenterprisecluster_controller.go`; the standalone/backup/plugin
   controllers hold a `*validation.X` field. Don't add `_webhook.go` or webhook configs.
-- `cluster_validator.go` **fails fast on image errors**: if `imageValidator.Validate` returns errors
-  it returns early, so later validators don't run.
+- `cluster_validator.go` **reports every validator, not just the first**: the early return on
+  image errors was removed in #354, because it produced a fix-one-rerun loop (a broken image hid
+  the `spec.config` and `spec.storage` problems behind it). Keep it that way — two tests pin it.
 - `image_validator.go` rejects only the unambiguous `-community` signal; a bare/retagged Enterprise
   tag passes (runtime `CALL dbms.components()` is the backstop). Version must be 5.26.x or 2025.01.0+.
 - `edition_validator.go` is a deliberate no-op — keep it; the edition field was removed.
@@ -47,6 +48,16 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 - Add new sub-validators to the right aggregator's `New...Validator` constructor and `validateCluster`
   (or `validateStandalone`) chain — a validator not wired in is dormant (cf. the previously-unwired
   `configValidator` / `PluginValidator`).
+- **Rules that belong to Neo4j, not to a Kind, go in a shared entry point that BOTH aggregators
+  call** — `ConfigValidator.ValidateConfigMap` and `MemoryValidator.ValidateResourcesAndConfig`.
+  When each aggregator carried its own copy the two drifted in both directions: `dbms.mode` was
+  rejected on a standalone and accepted on a cluster, while heap-vs-limit was rejected on a
+  cluster and accepted on a standalone (the v1.15.0 journey then watched that standalone
+  crash-loop). `TestStandaloneAndClusterAgreeOnNeo4jRules` pins the parity.
+- **Every published manifest is validated in CI** by `TestPublishedManifestsPassOurOwnValidators`,
+  which walks `examples/` and `config/samples/`. Three shipped examples were unappliable before
+  it existed, and `kubectl apply --dry-run=server` accepted all of them — the CRD schema cannot
+  see these rules, which is the whole reason this package exists.
 
 ## Tests
 

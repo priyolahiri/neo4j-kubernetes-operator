@@ -122,3 +122,38 @@ func TestResolveTarget_UnknownNameIsAClearError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `"typo"`)
 }
+
+// A one-shot query MUST be non-interactive. Without it cypher-shell executes
+// the argument and then reads stdin for more statements: the user's terminal
+// hangs and an orphaned shell keeps its session open inside the database pod.
+// Found on a real cluster, where twelve of them accumulated and the deployment
+// stopped answering over both Bolt and HTTP while the pod still read Ready.
+func TestCypherShellArgs_OneShotQueryIsNonInteractive(t *testing.T) {
+	withQuery := target{}.cypherShellArgs("RETURN 1")
+	assert.Contains(t, withQuery, "--non-interactive",
+		"a -c query must not fall through to reading stdin")
+
+	// An interactive session is the opposite case and must NOT carry it.
+	assert.NotContains(t, target{}.cypherShellArgs(""), "--non-interactive")
+}
+
+// On a cluster the default `neo4j` database has ONE primary, so a session
+// pinned to localhost lands on a server that does not host it in 2 cases out
+// of 3 and answers "Database neo4j not found" on a healthy cluster.
+func TestCypherShellArgs_ClusterSessionIsRouted(t *testing.T) {
+	cluster := target{kind: "Neo4jEnterpriseCluster", name: "prod", namespace: "neo4j"}
+	cmd := cluster.cypherShellArgs("SHOW DATABASES")
+
+	assert.Contains(t, cmd, "neo4j://prod-client.neo4j.svc.cluster.local:7687",
+		"a cluster session must be routed through the client Service")
+	assert.NotContains(t, cmd, "localhost:7687")
+
+	// TLS picks the secure routing scheme, not the secure direct one.
+	secure := target{kind: "Neo4jEnterpriseCluster", name: "prod", namespace: "neo4j", tls: true}
+	assert.Contains(t, secure.cypherShellArgs(""), "neo4j+s://prod-client.neo4j.svc.cluster.local:7687")
+
+	// A standalone hosts everything on one server: localhost stays correct and
+	// keeps the session independent of the Service.
+	solo := target{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j"}
+	assert.Contains(t, solo.cypherShellArgs(""), "bolt://localhost:7687")
+}
