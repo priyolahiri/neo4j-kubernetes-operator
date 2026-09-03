@@ -3695,6 +3695,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#flags-go-anywhere" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags go anywhere
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#version-matching" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3794,6 +3805,12 @@
 <li><strong>It checks shape, not reachability.</strong> <a href="preflight/"><code>preflight</code></a> reads Kubernetes objects — a StorageClass, a Secret's key names, a ServiceAccount's annotations. It never contacts S3, GCS, Azure or a registry, and never runs a probe pod, so a clean run never means "the backup will work". Saying so on every run is the point: a check that implied more than it made would be worse than no check.</li>
 <li><strong>It admits what it does not know.</strong> Kinds with no validator say so rather than implying a flag would help; unrecognised phases are reported as unrecognised, naming the CLI's own version. A confident wrong answer during an incident costs more than no answer.</li>
 </ul>
+<h2 id="flags-go-anywhere">Flags go anywhere<a class="headerlink" href="#flags-go-anywhere" title="Anchor link to this section">&para;</a></h2>
+<p>Flags parse wherever you put them, before or after a positional argument, the
+way <code>kubectl</code> itself behaves:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>diagnose<span class="w"> </span>Neo4jEnterpriseCluster/prod<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w">   </span><span class="c1"># same</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>diagnose<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>Neo4jEnterpriseCluster/prod<span class="w">   </span><span class="c1"># thing</span>
+</span></code></pre></div>
 <h2 id="version-matching">Version matching<a class="headerlink" href="#version-matching" title="Anchor link to this section">&para;</a></h2>
 <p>The CLI carries the validation rules and status vocabulary of the release it was built from. <strong>Keep it on the same version as the operator you deploy.</strong> Its output always names the ruleset it used, and when connected to a cluster it warns if the two disagree.</p>
 

@@ -1473,6 +1473,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-session-is-dialled-at-the-client-service-not-at-localhost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The session is dialled at the client Service, not at localhost
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#it-hands-the-session-to-kubectl" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3764,6 +3775,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-session-is-dialled-at-the-client-service-not-at-localhost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The session is dialled at the client Service, not at localhost
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#it-hands-the-session-to-kubectl" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3846,6 +3868,18 @@
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>prod-server-0<span class="w"> </span>-c<span class="w"> </span>neo4j<span class="w"> </span>-it<span class="w"> </span>--<span class="w">   </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">'cypher-shell -a bolt+s://localhost:7687 -u "$DB_USERNAME" -p "$DB_PASSWORD"'</span>
 </span></code></pre></div>
 <p>The secret never leaves the pod. It is not in your shell history, not in <code>ps</code> output on either side, and — the one people forget — <strong>not in the Kubernetes API audit log</strong>, which records an exec request's command array verbatim. A version that read the Secret and passed <code>-p &lt;value&gt;</code> would leak it into all three.</p>
+<h3 id="the-session-is-dialled-at-the-client-service-not-at-localhost">The session is dialled at the client Service, not at localhost<a class="headerlink" href="#the-session-is-dialled-at-the-client-service-not-at-localhost" title="Anchor link to this section">&para;</a></h3>
+<p>Two reasons, and they are independent.</p>
+<p><strong>Routing, on a cluster.</strong> Neo4j's default <code>neo4j</code> database has a single
+primary, so a session pinned to an arbitrary server answers <code>Database neo4j not
+found</code> two times out of three on a perfectly healthy three-server cluster. Only
+<code>neo4j://</code> follows the routing table to a server that hosts it. A standalone
+needs no routing and keeps <code>bolt://</code>.</p>
+<p><strong>Hostname verification, on either kind.</strong> The operator's certificates carry
+SANs for the client, internals and headless Services and for the pod FQDNs —
+never <code>localhost</code>. Both <code>bolt+s://</code> and <code>neo4j+s://</code> verify the hostname, so a
+session dialled at <code>localhost</code> cannot connect to a TLS deployment at all. The
+client Service FQDN is a SAN on both Kinds.</p>
 <h3 id="it-hands-the-session-to-kubectl">It hands the session to <code>kubectl</code><a class="headerlink" href="#it-hands-the-session-to-kubectl" title="Anchor link to this section">&para;</a></h3>
 <p><code>cypher</code> resolves the target itself, then execs <code>kubectl</code> for the interactive part. That is deliberate: terminal raw mode, window resize, signal forwarding and every kubeconfig authentication plugin are already solved there, and reimplementing them would add a large amount of fragile code for no capability you want.</p>
 <p>Consequence: <strong><code>kubectl</code> must be on your <code>PATH</code>.</strong> Invoked as <code>kubectl neo4j cypher</code> it always is. If you run the binary standalone without kubectl installed, the command says so and points you at <code>connect</code> instead of failing obscurely.</p>
