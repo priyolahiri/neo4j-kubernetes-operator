@@ -114,7 +114,44 @@ func (t target) cypherShellArgs(query string) string {
 		// it passes the user's text through unchanged.
 		cmd += fmt.Sprintf(" '%s'", strings.ReplaceAll(query, "'", `'\''`))
 	}
+	if t.tls {
+		cmd = withTrustedCA(cmd)
+	}
 	return cmd
+}
+
+// withTrustedCA wraps the cypher-shell invocation so it can VERIFY the server
+// on a TLS deployment.
+//
+// cypher-shell takes trust from the JVM truststore and offers no CA flag — only
+// --encryption {true,false,default} — so against a cert-manager issued
+// certificate it fails with "Failed to establish secured connection with the
+// server", which says nothing about why. The CA is already in the pod at
+// /ssl/ca.crt, so the fix is to build a throwaway truststore from it with the
+// keytool that ships in the Neo4j image's JRE.
+//
+// The alternative was the bolt+ssc / neo4j+ssc scheme, which encrypts but
+// verifies NOTHING. That would contradict the posture the rest of this operator
+// takes about TLS — strict peer validation, certificate pinning — and would do
+// it silently, which is worse than the error it replaces.
+//
+// When ca.crt is ABSENT the operator is in its pinning mode (it verifies the
+// server against tls.crt itself), so this trusts tls.crt for the same reason
+// and by the same logic: the server's own certificate is the trust anchor.
+//
+// The store password protects a file of public certificates and is not a
+// secret. The store lives in a temp dir and is removed before the exit status
+// is handed back, so an interrupted session leaves nothing behind.
+func withTrustedCA(cypherShellCmd string) string {
+	return `TS="$(mktemp -d)/neo4j-ca.p12"; ` +
+		`CA=/ssl/ca.crt; [ -s "$CA" ] || CA=/ssl/tls.crt; ` +
+		`keytool -importcert -noprompt -alias neo4j-ca -file "$CA" ` +
+		`-keystore "$TS" -storetype PKCS12 -storepass changeit >/dev/null 2>&1; ` +
+		`JAVA_OPTS="-Djavax.net.ssl.trustStore=$TS ` +
+		`-Djavax.net.ssl.trustStorePassword=changeit ` +
+		`-Djavax.net.ssl.trustStoreType=PKCS12" ` +
+		cypherShellCmd +
+		`; rc=$?; rm -rf "$(dirname "$TS")"; exit $rc`
 }
 
 func runCypher(args []string, stdout, stderr *os.File) int {

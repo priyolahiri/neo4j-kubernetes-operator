@@ -180,3 +180,27 @@ func TestCypherShellArgs_NeverDialsLocalhost(t *testing.T) {
 			"%s/%s (tls=%v) must be reached by a name the certificate covers", tgt.kind, tgt.name, tgt.tls)
 	}
 }
+
+// cypher-shell takes trust from the JVM truststore and has no CA flag, so
+// against a cert-manager certificate it failed with "Failed to establish
+// secured connection with the server" — which does not say why. The CA is in
+// the pod; a throwaway truststore built from it makes the session verify
+// properly, rather than falling back to the +ssc scheme, which encrypts and
+// verifies nothing.
+func TestCypherShellArgs_TLSSessionVerifiesTheServer(t *testing.T) {
+	secure := target{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j", tls: true}
+	cmd := secure.cypherShellArgs("RETURN 1")
+
+	assert.Contains(t, cmd, "keytool -importcert", "the CA in the pod must be imported")
+	assert.Contains(t, cmd, "/ssl/ca.crt")
+	assert.Contains(t, cmd, "javax.net.ssl.trustStore=")
+	assert.NotContains(t, cmd, "+ssc", "never downgrade to an unverified connection")
+	assert.Contains(t, cmd, `CA=/ssl/ca.crt; [ -s "$CA" ] || CA=/ssl/tls.crt`,
+		"with ca.crt absent the operator is pinning tls.crt; trust the same anchor")
+	assert.Contains(t, cmd, "rm -rf", "the temp truststore must not outlive the session")
+	assert.Contains(t, cmd, "exit $rc", "cypher-shell's own exit status is the useful one")
+
+	// A plaintext deployment needs none of this.
+	plain := target{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j"}
+	assert.NotContains(t, plain.cypherShellArgs(""), "keytool")
+}
