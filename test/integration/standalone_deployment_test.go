@@ -216,9 +216,16 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", Label("core"), f
 					Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: getNeo4jImageTag(), PullPolicy: "IfNotPresent"},
 					Storage:                neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "500Mi"},
 					Resources:              getCIAppropriateResourceRequirements(),
+					// Sized to FIT the container. getCIAppropriateResourceRequirements
+					// caps memory at 1.5Gi in CI (2Gi locally), and Neo4j needs
+					// roughly a quarter of that for non-heap overhead, so a 2G heap
+					// never fit — this fixture asked for a deployment that cannot
+					// start. It passed only because the standalone path had no memory
+					// validation until the two Kinds were reconciled, and because
+					// this test never waits for a pod.
 					Config: map[string]string{
-						"server.memory.heap.initial_size": "1G",
-						"server.memory.heap.max_size":     "2G",
+						"server.memory.heap.initial_size": "512m",
+						"server.memory.heap.max_size":     "512m",
 						"db.logs.query.enabled":           "INFO",
 					},
 					Env: []corev1.EnvVar{{Name: "NEO4J_ACCEPT_LICENSE_AGREEMENT", Value: "eval"}},
@@ -240,8 +247,8 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", Label("core"), f
 					return fmt.Errorf("neo4j.conf not found")
 				}
 				for _, s := range []string{
-					"server.memory.heap.initial_size=1G",
-					"server.memory.heap.max_size=2G",
+					"server.memory.heap.initial_size=512m",
+					"server.memory.heap.max_size=512m",
 					"db.logs.query.enabled=INFO",
 				} {
 					if !strings.Contains(neo4jConf, s) {

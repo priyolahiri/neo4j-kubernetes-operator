@@ -83,10 +83,32 @@ cluster() {
     # So: wait for what the tests actually depend on, with a timeout that suits a
     # loaded CI runner, and FAIL LOUDLY rather than handing back a cluster whose
     # TLS is broken.
+    # The apply is RETRIED because cert-manager's validating webhook rejects
+    # with `Error from server (InternalError)` for a few seconds after its pod
+    # reports Ready: the readiness probe passes before the webhook endpoint is
+    # actually serving, and a Deployment being Available says nothing about the
+    # Service behind it having endpoints. Observed on main @d1a3a5a
+    # (integration run 33762424276), where the pod met its condition at
+    # 13:44:12 and the apply failed at 13:44:43 — the whole 5.26 job lost to a
+    # race that clears on its own within seconds.
+    #
+    # Bounded, and still FAILS LOUDLY at the end: a genuinely broken issuer must
+    # not be handed to the suite as red TLS specs twenty minutes later.
     log "Creating self-signed ClusterIssuer for testing..."
-    if ! kubectl apply -f "${PROJECT_ROOT}/config/dev/self-signed-issuer.yaml"; then
-        log "ERROR: could not apply ${PROJECT_ROOT}/config/dev/self-signed-issuer.yaml"
+    issuer_applied=false
+    for attempt in $(seq 1 12); do
+        if kubectl apply -f "${PROJECT_ROOT}/config/dev/self-signed-issuer.yaml"; then
+            issuer_applied=true
+            break
+        fi
+        log "  attempt ${attempt}/12 failed (cert-manager webhook may not be serving yet); retrying in 10s"
+        sleep 10
+    done
+    if [ "${issuer_applied}" != "true" ]; then
+        log "ERROR: could not apply ${PROJECT_ROOT}/config/dev/self-signed-issuer.yaml after 12 attempts"
         log "       Every TLS spec depends on it; refusing to hand back a half-configured cluster."
+        kubectl get pods -n cert-manager 2>&1 | tail -10 || true
+        kubectl get endpoints -n cert-manager cert-manager-webhook 2>&1 | tail -5 || true
         exit 1
     fi
 
