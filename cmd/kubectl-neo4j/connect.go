@@ -66,19 +66,28 @@ func (t target) routingScheme() string {
 
 // sessionAddress is the address cypher-shell dials from inside the pod.
 //
-// On a STANDALONE the one server hosts everything, so localhost is right and
-// needs no Service. On a CLUSTER it is wrong: Neo4j's default `neo4j` database
-// has ONE primary, so two servers out of three answer "Database neo4j not
-// found" — on a perfectly healthy cluster, depending on which pod was picked.
-// A cluster session therefore dials the client Service with the routing
-// scheme, which is the same in-cluster address `connect` prints. The password
-// still never leaves the pod: the shell runs in the container and expands
-// $DB_USERNAME / $DB_PASSWORD there.
+// Always the client Service FQDN, for two independent reasons.
+//
+// ROUTING, on a cluster: Neo4j's default `neo4j` database has ONE primary, so
+// a session pinned to an arbitrary server answers "Database neo4j not found"
+// two times out of three on a healthy three-server cluster. Only the neo4j://
+// routing scheme follows the routing table to a server that hosts it.
+//
+// HOSTNAME VERIFICATION, on either kind: the operator's certificates carry
+// SANs for the client / internals / headless Services and the pod FQDNs —
+// never `localhost` (internal/resources/cluster.go for the cluster,
+// createTLSCertificate for the standalone). bolt+s and neo4j+s both verify the
+// hostname, so a session dialled at localhost could not pass verification
+// against a TLS deployment at all. The client FQDN is a SAN on both.
+//
+// The password still never leaves the pod: the shell runs in the container and
+// expands $DB_USERNAME / $DB_PASSWORD there.
 func (t target) sessionAddress() string {
+	scheme := t.scheme()
 	if t.isCluster() {
-		return fmt.Sprintf("%s://%s-client.%s.svc.cluster.local:7687", t.routingScheme(), t.name, t.namespace)
+		scheme = t.routingScheme()
 	}
-	return fmt.Sprintf("%s://localhost:7687", t.scheme())
+	return fmt.Sprintf("%s://%s-client.%s.svc.cluster.local:7687", scheme, t.name, t.namespace)
 }
 
 // cypherShellArgs builds the in-container command.

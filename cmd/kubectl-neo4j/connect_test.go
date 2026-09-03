@@ -39,10 +39,13 @@ func TestCypherShellArgs_NeverCarriesThePasswordValue(t *testing.T) {
 }
 
 func TestCypherShellArgs_SchemeFollowsTLS(t *testing.T) {
-	assert.Contains(t, target{tls: false}.cypherShellArgs(""), "bolt://localhost:7687")
+	solo := target{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j"}
+	assert.Contains(t, solo.cypherShellArgs(""), "bolt://dev-client.neo4j.svc.cluster.local:7687")
+
 	// With TLS on, the operator rejects plain bolt:// — guessing wrong fails
 	// opaquely, which is the whole reason this command resolves it.
-	assert.Contains(t, target{tls: true}.cypherShellArgs(""), "bolt+s://localhost:7687")
+	solo.tls = true
+	assert.Contains(t, solo.cypherShellArgs(""), "bolt+s://dev-client.neo4j.svc.cluster.local:7687")
 }
 
 // The CLI never composes Cypher of its own; it passes the user's text through.
@@ -152,8 +155,28 @@ func TestCypherShellArgs_ClusterSessionIsRouted(t *testing.T) {
 	secure := target{kind: "Neo4jEnterpriseCluster", name: "prod", namespace: "neo4j", tls: true}
 	assert.Contains(t, secure.cypherShellArgs(""), "neo4j+s://prod-client.neo4j.svc.cluster.local:7687")
 
-	// A standalone hosts everything on one server: localhost stays correct and
-	// keeps the session independent of the Service.
+	// A standalone needs no routing — one server hosts everything — but it does
+	// need the Service NAME, because the certificate's SANs cover the client
+	// Service and the pod, never `localhost`. A session dialled at localhost
+	// cannot pass hostname verification against a TLS deployment.
 	solo := target{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j"}
-	assert.Contains(t, solo.cypherShellArgs(""), "bolt://localhost:7687")
+	assert.Contains(t, solo.cypherShellArgs(""), "bolt://dev-client.neo4j.svc.cluster.local:7687")
+
+	soloTLS := target{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j", tls: true}
+	assert.Contains(t, soloTLS.cypherShellArgs(""), "bolt+s://dev-client.neo4j.svc.cluster.local:7687")
+}
+
+// The operator's certificates never carry a `localhost` SAN — for either Kind
+// — so no session may be dialled there. bolt+s and neo4j+s verify the
+// hostname, so doing that failed against every TLS deployment.
+func TestCypherShellArgs_NeverDialsLocalhost(t *testing.T) {
+	for _, tgt := range []target{
+		{kind: "Neo4jEnterpriseCluster", name: "prod", namespace: "neo4j"},
+		{kind: "Neo4jEnterpriseCluster", name: "prod", namespace: "neo4j", tls: true},
+		{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j"},
+		{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j", tls: true},
+	} {
+		assert.NotContains(t, tgt.cypherShellArgs(""), "localhost",
+			"%s/%s (tls=%v) must be reached by a name the certificate covers", tgt.kind, tgt.name, tgt.tls)
+	}
 }

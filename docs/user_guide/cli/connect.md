@@ -37,14 +37,21 @@ kubectl exec -n neo4j prod-server-0 -c neo4j -it --   sh -c 'cypher-shell -a bol
 
 The secret never leaves the pod. It is not in your shell history, not in `ps` output on either side, and — the one people forget — **not in the Kubernetes API audit log**, which records an exec request's command array verbatim. A version that read the Secret and passed `-p <value>` would leak it into all three.
 
-### On a cluster the session is routed
+### The session is dialled at the client Service, not at localhost
 
-A cluster session dials the client Service with the `neo4j://` routing scheme,
-not `bolt://` on one server. That matters more than it looks: Neo4j's default
-`neo4j` database has a single primary, so a session pinned to an arbitrary
-server answers `Database neo4j not found` two times out of three on a perfectly
-healthy three-server cluster. A standalone hosts everything on one server, so
-it keeps the direct connection.
+Two reasons, and they are independent.
+
+**Routing, on a cluster.** Neo4j's default `neo4j` database has a single
+primary, so a session pinned to an arbitrary server answers `Database neo4j not
+found` two times out of three on a perfectly healthy three-server cluster. Only
+`neo4j://` follows the routing table to a server that hosts it. A standalone
+needs no routing and keeps `bolt://`.
+
+**Hostname verification, on either kind.** The operator's certificates carry
+SANs for the client, internals and headless Services and for the pod FQDNs —
+never `localhost`. Both `bolt+s://` and `neo4j+s://` verify the hostname, so a
+session dialled at `localhost` cannot connect to a TLS deployment at all. The
+client Service FQDN is a SAN on both Kinds.
 
 ### It hands the session to `kubectl`
 
