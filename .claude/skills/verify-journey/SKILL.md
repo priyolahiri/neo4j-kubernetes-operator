@@ -61,6 +61,29 @@ Non-negotiables from that doc (repeated here because they bite hardest):
 3. Confirm the operator Deployment is `Ready` and the `ca-cluster-issuer` is
    `True` before starting Phase 1.
 
+4. **Build the CLI from the same tree** — it ships on the operator's tag, so
+   Phase 0 verifies it on this pass, and Phases 1-3 use it as a lens:
+
+   ```bash
+   make build-cli
+   export PATH="$PWD/bin:$PATH"
+   kubectl plugin list | grep kubectl-neo4j   # discovery by binary name is part of the test
+   ```
+
+   Reach it as `kubectl neo4j <cmd>`, not `./bin/kubectl-neo4j` — the plugin
+   path is what customers use. If `validate` reports its ruleset as `dev` the
+   ldflags did not apply; the matrix's version-skew scenario needs a real
+   version string.
+
+## Phase 0 note (CLI)
+
+Phase 0 deliberately applies resources **built not to start** — an
+unschedulable standalone, a typo'd image tag, a missing StorageClass — so
+`diagnose` and `preflight` can be verified against the failures they exist for.
+None of them runs a JVM, so none of them touches the one-deployment-at-a-time
+rule. Delete each one before moving on, and scale the operator back to 1
+replica after the "nothing ever reconciled" scenario.
+
 ## Phase 3 prerequisite (sharding)
 
 Before Phase 3, patch the operator to relax the sharding memory floor (DEV/TEST

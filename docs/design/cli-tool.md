@@ -1,7 +1,10 @@
 # Design: `kubectl-neo4j` — a customer-facing CLI
 
-> **Status:** Analysis only. Nothing is implemented. §8 proposes a first slice
-> of one command.
+> **Status:** Shipped. Every command §8 ranked landed, plus three the ranking
+> missed, across #353–#371. This page is kept as the **design record** — the
+> reasoning, the costs in §3, the answered questions in §9 — not as a plan; §8
+> now reads as what each item turned out to be, including where building it
+> corrected the analysis above it.
 > **Source:** this repository, read at commit `6afaf1c`; command-density counts
 > measured across `docs/user_guide/`.
 > **Scope of this document:** whether an accompanying CLI earns its place, who
@@ -234,6 +237,9 @@ Discoverability via `kubectl krew install neo4j` requires a PR to the krew-index
 repository and its review cycle — structurally the same kind of external
 submission as the OperatorHub community-operators flow this project already
 maintains. Budget it as a separate, recurring task, not a one-off.
+
+**Moot: krew was declined** (§8 item 5) — on what the name would claim, not on
+this cost.
 
 ### B7 — Context and namespace handling is where CLIs usually rot
 
@@ -471,8 +477,13 @@ honest options are recorded in §9 Q5 rather than papered over.
    an open vocabulary Neo4j can extend), and `Pending` messages are shown but
    marked `…` rather than `✗`, because "waiting for a Secret you have not
    created" is the line that says what to do next, not a failure.
-5. **krew index submission** (B6), once the command set is stable enough that
-   users installing it will not immediately want a newer one.
+5. ~~**krew index submission** (B6)~~ → **declined**, on naming and identity
+   rather than effort. A krew-index entry claims the ecosystem-wide
+   `kubectl neo4j` name and presents the plugin as an official Neo4j product,
+   while this one ships under the operator's own support statement — best-effort
+   via GitHub issues, no official or commercial support. That is the wrong
+   promise to make in a public index, and no amount of review-cycle budget
+   (B6's cost) changes it. Discovery is the docs instead; see item 10.
 6. **`support-bundle`** (§4.5) → **done.** **`explain`** (§4.4) → **done.**
 
    `explain` was the command flagged in §4.4 as "most at risk of B3 drift —

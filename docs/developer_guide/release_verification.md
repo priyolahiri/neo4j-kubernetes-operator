@@ -54,16 +54,75 @@ cluster only when it *needs* clustering.
 | **Cross-cluster replication** (`Neo4jReplicaDatabase`, `Neo4jReplicaPromotion`) | **Phase 5 — two deployments, run SEQUENTIALLY**; needs a `2026.08+` image | Needs an upstream *and* a downstream, which looks like it breaks the one-deployment-at-a-time rule — but backup-based replication couples the two only through a bucket, so the upstream can be torn down before the downstream comes up. See the phase |
 | **Database aliases** (`Neo4jDatabaseAlias`) | Standalone | Alias DDL is deployment-independent; the CCDR failover behaviour is covered in Phase 5 |
 | **Operator→Neo4j TLS verification** (CA path + `tls.crt` pinning) | Standalone | Standalone never reads `ca.crt` server-side (no cluster SSL policy), so removing that key from the TLS Secret isolates the *operator's* client verification with nothing else changing. On a cluster the same edit also breaks intra-cluster mTLS and the two failures are indistinguishable |
+| **`kubectl-neo4j` — offline half** (`validate`, `explain <term>`, exit codes) | **Phase 0**, no deployment | It reads manifests and its own guidance map. Nothing it checks needs a running database, so it costs no memory and can run before the first pod exists |
+| **`kubectl-neo4j` — the failure paths** (`diagnose`, `preflight`) | **Phase 0**, on resources built to fail | `diagnose` exists for the layer *below* the CR — an unschedulable pod, `ImagePullBackOff`, a PVC that never binds. Those have to be caused on purpose, and a deployment that never schedules starts no JVM, so this is the one place they can be produced without touching the one-deployment-at-a-time rule |
+| **`kubectl-neo4j` — the healthy lens** (`status`, `connect`/`cypher`, `support-bundle`, `validate --connect`) | **Rides Phases 1–3**, no deployment of its own | The CLI is a lens on whatever is deployed. Giving it a phase of its own would mean standing up a fourth Enterprise JVM for it to look at — forbidden by the anti-wedge rule, and it would show nothing the deployments already in Phases 1–3 do not |
+| **`kubectl-neo4j export replica-database`** | **Phase 5** | Its only inputs are an upstream `Neo4jBackup.status.replicationPullURI` and an upstream cluster's `status.internalAddresses`, which exist nowhere else in the journey |
 
 ## The phase plan
 
-Run **Phases 1-3 every time** (Phase 3 included — sharding regularly surfaces
-issues the lighter phases miss). Phase 4 (Aura) needs cloud credentials rather
+Run **Phases 0-3 every time** (Phase 3 included — sharding regularly surfaces
+issues the lighter phases miss). Phase 0 is minutes and no memory, and it goes
+first for a second reason: it proves the operator, the CRDs and the CLI are
+wired before a real deployment costs twenty. Phase 4 (Aura) needs cloud credentials rather
 than a Kind cluster: run its **read-only sweep** whenever anything under
 `internal/aura/` or an `Aura*` CRD changed. Phase 5 (CCDR) needs a `2026.08+`
 image, which is above the pinned CI anchor — run it whenever anything under the
 replication CRDs changed **and** such an image is available; if it is not, say
 so in the log rather than recording the phase as passed.
+
+### Phase 0 — CLI (no Neo4j deployment)
+
+`kubectl-neo4j` ships on the operator's own tag, under the operator's own
+support statement, so it is verified on the same pass. It is not a deployment
+but a lens on one — which is why most of its scenarios ride Phases 1–3 (see the
+routing table). What lands *here* is everything that needs no healthy database:
+the offline half, and the failure paths that have to be caused deliberately.
+
+Build it from the same tree as the operator and reach it **through `kubectl`**,
+because plugin discovery by binary name is part of what is being verified:
+
+```bash
+make build-cli          # stamps -X main.version=$(git describe --tags --always --dirty)
+export PATH="$PWD/bin:$PATH"
+kubectl plugin list | grep kubectl-neo4j
+```
+
+**Part A — offline (no cluster contact):**
+
+| Scenario | Verify |
+|---|---|
+| Plugin discovery | `kubectl neo4j` prints usage when invoked *through* `kubectl`, not only as `./bin/kubectl-neo4j`. The binary name is the contract |
+| The good case | `kubectl neo4j validate -f config/samples/` → exit `0` |
+| The bad case | a manifest with a known-bad spec (`spec.config.dbms.default_database`, an out-of-range `serverRoles[].serverIndex`) → one line per finding, errors before warnings, each sorted by field path, exit `1` |
+| Every error, not the first | one manifest broken in several places at once — a bad `spec.image`, a deprecated `spec.config` key, an out-of-range `serverRoles` index, a missing `acceptLicenseAgreement` — must report **all** of them from a single run. The fix-one-rerun loop that #354 removed must not be back |
+| Ruleset banner | every non-`--quiet` run ends `validated against operator rules <version>`. On a journey build that is a `git describe` string such as `v1.14.0-41-g3aa9f21`, **not** a release version — only a tagged build prints a clean one. If it reads `dev` the ldflags did not apply, and the skew check in Part B is silently disabled |
+| Skip taxonomy — the distinction that matters | a kind whose validator resolves cross-references (`Neo4jDatabase`) skips with *"resolves cross-references; re-run with `--connect`"*. A kind with **no operator-side validator at all** (`Neo4jRestore`, `Neo4jReplicaPromotion`, any `Aura*`) skips with *"no operator-side validator … `kubectl apply --dry-run=server`"*. Sending a user to `--connect` for a check that does not exist is the exact bug this wording was written to prevent |
+| Pending is not failure | a manifest whose dependency cannot be satisfied *yet* renders `…` and does **not** change the exit code, including under `--strict` |
+| Exit-code contract | `0` clean · `1` a validation error, or a warning under `--strict` · `2` a usage problem (bad flag, unreadable file, undecodable YAML). Documented as stable, so CI users pin them |
+| stdin | rendering the Helm chart with `helm template` and passing it to `validate -f -` reports normally |
+| `explain` a term | `kubectl neo4j explain ServersHealthy` → meaning plus guidance; `explain --list` enumerates everything it knows |
+| `explain` admits a gap | an invented term (`explain NotARealCondition`) prints *no explanation for …*, points at `--list`, and exits `2` — it never guesses. The other half of this, an unrecognised phase on a live resource naming the CLI's own version, is only reachable against an operator newer than the CLI; note it as unreachable rather than recording it as passed |
+
+**Part B — the failure paths (operator up, no Neo4j running):**
+
+Every resource below is built *not to start*, so none of them runs a JVM and
+none of them counts against the one-deployment-at-a-time rule. Apply, read,
+delete.
+
+| Scenario | Verify |
+|---|---|
+| Nothing ever reconciled | `kubectl scale -n <operator-ns> deployment/<operator-deploy> --replicas=0`, apply a standalone, wait past the 2-minute grace → `status` shows it with no phase, and `diagnose` reports *"has no status after …"* and names all three causes (operator not running, no RBAC for the kind, namespace-scoped and not watching). Scale back up afterwards. This is the only signal #282 has |
+| Unschedulable | a standalone requesting more memory than any Ready node has → `diagnose` reports the pod as unschedulable **with the scheduler's own message**, plus the node-capacity guidance and the 1.5Gi Enterprise floor; exit `1` |
+| Image will not pull | the same manifest with a typo'd tag → `ImagePullBackOff` named as the cause, rather than the CR's `Pending` restated |
+| PVC never bound | `spec.storage.className` naming a class that does not exist → `diagnose` names the unbound PVC *and* its StorageClass. Then run `preflight -f` on the same file: it must have caught this **before** apply. Confirm the two agree — that pairing is the whole argument for `preflight` existing |
+| `preflight` never overclaims | every run, clean or not, ends with the shape-only line (*no bucket, registry or endpoint was contacted*) |
+| Backup credential shape | a `Neo4jBackup` whose `credentialsSecretRef` is absent, then one that exists but is missing a key the Job mounts → reported distinctly. This replaces the `kubectl run backup-auth-check --image=amazon/aws-cli …` ritual, which today is only reached *after* a backup has failed |
+| OOMKilled is recognised | if the node can host a JVM that starts and dies (memory limit at 1Gi), `diagnose` must name `OOMKilled` / exit 137 — not the Bolt-level `ConnectivityDegraded` the v1.14.0 pass complained about, which is what this command was built to answer. Record it as skipped rather than faking it if the node cannot |
+| Version skew warning | the kustomize dev deploy sets `OPERATOR_VERSION=latest`, which suppresses the check **by design**, so force it: `kubectl -n <operator-ns> set env deployment/<operator-deploy> OPERATOR_VERSION=v0.0.1` → `validate --connect` prints `⚠ version skew` naming both versions. Set it back to `latest` after. CI never has two versions, so this is reachable only by hand |
+
+→ **Delete every broken resource** before Phase 1, and confirm the operator is
+back to 1 replica.
 
 ### Phase 1 — Standalone (1 pod, ~2Gi)
 
@@ -84,6 +143,12 @@ so in the log rather than recording the phase as passed.
 | TLS: CA path | `spec.tls.mode: cert-manager` + `ca-cluster-issuer` → Ready, diagnostics collected, and **no** `PINNING` line in the operator log |
 | TLS: certificate pinning | scale `cert-manager` to 0 (so it cannot restore the key), `kubectl patch secret <name>-tls-secret --type=json -p '[{"op":"remove","path":"/data/ca.crt"}]'`, then nudge a reconcile. Expect the operator to log `verifying the server by PINNING its certificate from 'tls.crt'` with a `pinnedFingerprintSHA256` equal to `openssl x509 -in tls.crt -noout -fingerprint -sha256`, **and** `status.diagnostics.lastCollected` to keep advancing — the pinned connection is a real authenticated session, not a fallback that merely logs |
 | TLS: pin rejects a mismatch | with `ca.crt` still absent, replace the Secret's `tls.crt` with a *different* certificate carrying the same SANs and do **not** restart the Neo4j pod (it keeps serving the keystore it loaded at startup). Next reconcile must fail with `x509: certificate signed by unknown authority` in `status.diagnostics.collectionError`. Restore `tls.crt` → the next reconcile recovers. This is the only place the pin is proven to *reject*; CI cannot reach it because every CI Secret has `ca.crt` |
+| CLI: `status` on a healthy namespace | one `kubectl neo4j status -n <ns>` lists the standalone **and** its Database/User/Role/Plugin CRs with their phases; `--problems` prints nothing while everything is Ready. This replaces `kubectl get` against 26 kinds |
+| CLI: `connect` tells the truth about TLS | run it around the TLS scenarios above: with TLS enabled, `connect <name>` prints `bolt+s://` and states that plain `bolt://` is rejected; before it, `bolt://`. The scheme is derived from the deployment, so a wrong one here is a real bug in the command customers reach for first |
+| CLI: `cypher` never moves the password | `kubectl neo4j cypher <name> -c "SHOW DATABASES"` returns the same rows as the by-hand `kubectl exec`, and the exec line `connect` prints references `$DB_USERNAME` / `$DB_PASSWORD` **by name**. The password must appear in neither the printed command nor your shell history |
+| CLI: `explain` against a live resource | `kubectl neo4j explain Neo4jEnterpriseStandalone/<name>` prints the phase, then each condition with the operator's *own* message and the guidance for it |
+| CLI: `support-bundle` withholds the secret | `support-bundle -n <ns> -o bundle.tar.gz`, extract, and **grep the whole archive for the admin password** — zero hits. `REDACTIONS.txt` is present and enumerates what was withheld; Secrets appear as names, types and key names only; `valueFrom` references are still there, deliberately. Grepping for the real password is the check that matters — a redactor is only as good as its worst path |
+| CLI: `validate --connect` and `preflight` on what is deployed | a `Neo4jDatabase` naming a cluster that does not exist → error; the same manifest naming this standalone → validated, and the kinds skipped offline in Phase 0 are no longer skipped. `preflight -n <ns>` with no arguments checks the deployed resources and still ends with the shape-only line |
 
 → **Tear down the standalone fully** before Phase 2 — but **KEEP the backup PVC**
 (and the `Neo4jBackup` CR that owns it, so retention does not prune the artifact).
@@ -105,6 +170,8 @@ standalone backup" as one of Phase 1's outputs.
 | Backup → restore (cluster) | in-place **Cypher** path: back up one DB (`instanceRef` + `database`), restore into a **new** database, confirm the data round-trips |
 | All-databases restore (cluster) | `Neo4jBackup` `allDatabases: true` → `Neo4jRestore` `allDatabases: true` (cloud-backed); confirm every user DB round-trips and `status.databaseResults` are all `Completed` (#222) |
 | Cross-topology restore | restore the **retained standalone backup** from Phase 1 into the **cluster** via `instanceRef`; confirm the data round-trips. The cluster path stands up a short-lived `backup-seed-proxy-<restore>` Deployment that serves the backup PVC over HTTP, so the seed URI in `status` is an `http://…` URL, not a `file://` path |
+| CLI: a healthy cluster reads as healthy | `kubectl neo4j status` shows the cluster `Ready` next to the topology-bearing `Neo4jDatabase`; `diagnose` reports `3/3 pods ready` and exits `0` rather than inventing a problem. A diagnostic that cries wolf on a healthy cluster is worse than none |
+| CLI: `diagnose` during a restart is not a failure | delete one server pod (`kubectl delete pod <cluster>-server-1`) and run `diagnose` inside the restart window: the not-ready pod is marked `…`, the exit code stays `0`, and the pod returns. Enterprise takes tens of seconds to open Bolt, so an exit code that failed during a normal restart would be useless in the loop it exists for |
 
 3 servers (not 2) keeps split-brain / 3-primary quorum behaviour in the routine
 walk. → **Tear down the cluster fully** before Phase 3.
@@ -131,6 +198,7 @@ cluster (~2Gi each):
 | Sharding cluster | `CALL dbms.components()` → `2026.06.x` enterprise; `status.propertyShardingReady=true` |
 | Sharded database | `Neo4jShardedDatabase` whose **`metadata.name` differs from `spec.name`** (e.g. CR `products-sharded` / `spec.name: products`) → Ready; `SHOW DATABASES WHERE name STARTS WITH '<logical>'` lists the graph + property shards `online` |
 | Sharded backup **by CR name** | `Neo4jBackup` `kind=ShardedDatabase` with `target.name` = the **CR metadata name** → `Succeeded`; `status.history[].shardArtifacts` lists every shard. (Using the *logical* name fails preflight — the operator resolves the logical name from the CR's `spec.name`.) |
+| CLI: the sharded CR is legible | `status -n <ns>` lists the `Neo4jShardedDatabase` by its **CR `metadata.name`** — the same name vs. `spec.name` distinction the row above exists to catch — with its phase, alongside the cluster. `explain Neo4jShardedDatabase/<cr>` either decodes its conditions or says plainly that it carries none this CLI knows, which is the correct answer rather than a guess |
 
 → **Tear down**, then delete the Kind cluster.
 
@@ -228,6 +296,7 @@ Parts A/B.
 | Replication-source backup | `Neo4jBackup` `mode: replication-source` + `database` + `schedule` → `status.replicationPullURI` is populated and points at the chain directory. **Copy this value** |
 | Chain-breaking configs rejected | the same CR with `retention` set, or `allDatabases: true`, or no `schedule` → phase `Invalid`, message names the rule |
 | A FULL then a DIFF | let (or force) two runs so the bucket holds a full **and** a differential — a seed-only chain does not exercise the pull path |
+| CLI replaces the copy step | `kubectl neo4j export replica-database <name> --from-backup <backup> --cluster-ref <downstream> --upstream-database <db>` emits a `Neo4jReplicaDatabase` on **stdout only** — redirect it and confirm the file is a clean manifest with the notes on stderr — carrying the same `pullURI` you copied by hand above. Then run `validate -f` on the generated file: the command already validates before printing, so a manifest `validate` rejects must never appear |
 
 → **Tear the upstream down completely.** Leave the MinIO bucket intact.
 
@@ -287,6 +356,7 @@ concurrent-deployment resource limits, not a test artifact to work around.
 | One address is sufficient | list only server-0's address, not all N — replication still reaches every ordinal, confirming the design doc's Q1 finding that the upstream hands back the addresses the downstream actually uses |
 | Malformed/missing address rejected before any Cypher runs | `source.addresses: []` or a host with no port → validator error, no `CREATE REPLICA DATABASE` attempt |
 | Promotion works the same as backup mode | `Neo4jReplicaPromotion` against this replica → `Completed`, `SHOW DATABASES` now shows a standard read-write type |
+| CLI replaces the hand-typed FQDN | `kubectl neo4j export replica-database <name> --from-cluster prod-cluster --cluster-ref dr-cluster --upstream-database <db>` emits the same manifest with `source.addresses` read from the upstream's `status.internalAddresses` — the FQDN typed by hand above. Confirm they match. Note in the log that on **one** Kubernetes cluster `source.upstreamClusterRef` is the better answer and the docs say so; the exported literal is for a downstream on a different cluster, which is the only case no ref can reach |
 
 This scenario does **not** exercise `spec.crossClusterReplication` itself —
 no proxy, no advertised-address override, no cert SAN, no NetworkPolicy rule.
@@ -333,21 +403,26 @@ load balancer is present to service it:
 
 ## Coverage at a glance
 
-| | Standalone | Cluster (3) | Sharding (2026.06) | Aura (Phase 4) | CCDR (Phase 5, 2026.08+) |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Reconcile → Ready | ✅ | ✅ | ✅ | ✅ (instance) | ✅ |
-| Database lifecycle | ✅ | | | ✅ (`AuraDatabase`) | |
-| Database topology | | ✅ | | n/a (Aura-managed) | ✅ (replica) |
-| Users / Roles / Bindings | ✅ | | | n/a (console-RBAC only) | |
-| Plugins (APOC) | ✅ (ConfigMap) | | | n/a | |
-| Backup → restore | ✅ (neo4j-admin) | ✅ (Cypher) | ✅ (sharded) | ✅ (per-DB, API) | ✅ (chain as source) |
-| Property sharding | | | ✅ | | |
-| Aura Fleet Management | ✅ (plugin + token) | | | ✅ (`provision`) | |
-| Aura console RBAC | | | | ✅ | |
-| Aura read-contract sweep | | | | ✅ (GET-only) | |
-| Cross-cluster replication | | | | | ✅ backup mode + network mode mechanism (same-cluster); network mode proxy is toggle-only (needs LoadBalancer-on-Kind tooling this repo doesn't have yet) |
-| Database aliases | ✅ | | | | ✅ (survives promotion) |
-| Operator→Neo4j TLS (CA + pinned) | ✅ | | | n/a (HTTPS to Aura) | |
+| | CLI (Phase 0) | Standalone | Cluster (3) | Sharding (2026.06) | Aura (Phase 4) | CCDR (Phase 5, 2026.08+) |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Reconcile → Ready | | ✅ | ✅ | ✅ | ✅ (instance) | ✅ |
+| Database lifecycle | | ✅ | | | ✅ (`AuraDatabase`) | |
+| Database topology | | | ✅ | | n/a (Aura-managed) | ✅ (replica) |
+| Users / Roles / Bindings | | ✅ | | | n/a (console-RBAC only) | |
+| Plugins (APOC) | | ✅ (ConfigMap) | | | n/a | |
+| Backup → restore | | ✅ (neo4j-admin) | ✅ (Cypher) | ✅ (sharded) | ✅ (per-DB, API) | ✅ (chain as source) |
+| Property sharding | | | | ✅ | | |
+| Aura Fleet Management | | ✅ (plugin + token) | | | ✅ (`provision`) | |
+| Aura console RBAC | | | | | ✅ | |
+| Aura read-contract sweep | | | | | ✅ (GET-only) | |
+| Cross-cluster replication | | | | | | ✅ backup mode + network mode mechanism (same-cluster); network mode proxy is toggle-only (needs LoadBalancer-on-Kind tooling this repo doesn't have yet) |
+| Database aliases | | ✅ | | | | ✅ (survives promotion) |
+| Operator→Neo4j TLS (CA + pinned) | | ✅ | | | n/a (HTTPS to Aura) | |
+| CLI: offline (`validate`, `explain`, exit codes) | ✅ | | | | | |
+| CLI: failure paths (`diagnose`, `preflight`) | ✅ (caused on purpose) | ✅ (`preflight` on what is deployed) | ✅ (`…` during a restart) | | | |
+| CLI: healthy lens (`status`, `connect`/`cypher`, `support-bundle`) | | ✅ | ✅ | ✅ (`status`) | | |
+| CLI: manifest authoring (`export replica-database`) | | | | | | ✅ (both modes) |
+| CLI ↔ operator version skew | ✅ (forced by hand) | | | | | |
 
 ## Keeping this current
 
@@ -357,6 +432,10 @@ When you **add or change a capability**, update this page in the same PR:
 2. Add the scenario + its in-DB check to the relevant **phase**.
 3. Tick the **coverage** matrix.
 4. If it changes the operator install or sizing, update the phase headers.
+5. If it adds or changes a **CLI** command, put it in the phase whose
+   deployment it reads — Phase 0 if it needs none, or a broken resource if what
+   it reports is a failure. A command verified only against a healthy cluster
+   is verified in the state nobody runs it in.
 
 When a release fixes a specific bug, add a one-line scenario that would have
 caught it (the v1.12.2 pass added the standalone-label, `system`-reject,
@@ -376,6 +455,8 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.
 - [Testing](testing.md) — the automated unit/integration suites and the
   core/extended label split.
 - [CI/CD & Workflows](ci_and_workflows.md) — what runs per-PR vs. the manual extended suite.
+- [`kubectl-neo4j` CLI](../user_guide/cli/index.md) — the command docs Phase 0
+  and the per-phase CLI rows follow, including the exit-code contracts.
 - [Backup & Restore](../user_guide/guides/backup_restore.md),
   [Property Sharding](../user_guide/property_sharding.md) — the user docs this
   journey follows.
