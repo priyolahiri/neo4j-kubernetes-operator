@@ -23,6 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -101,10 +102,32 @@ var _ = Describe("Cross-Cluster Replication — API and validation", Label("exte
 			Name: replica.Name, Namespace: testNamespace,
 		}, fetched)).To(Succeed())
 
-		fetched.Spec.Source.PullURI = "s3://bucket/a-different-chain/"
-		err := k8sClient.Update(ctx, fetched)
-		Expect(err).To(HaveOccurred(), "spec.source must be immutable")
-		Expect(err.Error()).To(ContainSubstring("immutable"))
+		// Re-fetch and retry on CONFLICT before asserting. The operator writes
+		// status to this object while the test holds it, so a plain Update can
+		// lose the race and fail with "the object has been modified" — which is
+		// a stale resourceVersion, not the CEL rule, and the assertion below
+		// then reads as the immutability rule having vanished. Observed on
+		// main @4d8d273 (extended run 34663889371). Retrying is the same
+		// discipline the reconcilers use (retry.RetryOnConflict, CLAUDE.md).
+		var err error
+		Eventually(func() string {
+			latest := &neo4jv1beta1.Neo4jReplicaDatabase{}
+			if getErr := k8sClient.Get(ctx, types.NamespacedName{
+				Name: replica.Name, Namespace: testNamespace,
+			}, latest); getErr != nil {
+				return "get failed: " + getErr.Error()
+			}
+			latest.Spec.Source.PullURI = "s3://bucket/a-different-chain/"
+			err = k8sClient.Update(ctx, latest)
+			if err == nil {
+				return "update unexpectedly succeeded"
+			}
+			if apierrors.IsConflict(err) {
+				return "conflict — retrying"
+			}
+			return err.Error()
+		}, 30*time.Second, time.Second).Should(ContainSubstring("immutable"),
+			"spec.source must be immutable")
 	})
 
 	It("accepts network mode and goes Pending on a nonexistent cluster ref", func() {
