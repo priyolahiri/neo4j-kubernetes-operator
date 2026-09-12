@@ -206,7 +206,17 @@ func (c *Client) PromoteReplicaDatabase(ctx context.Context, databaseName string
 		"name":    databaseName,
 		"options": options,
 	}
-	if _, err := session.Run(ctx, "CALL dbms.promoteReplicaDatabase($name, $options)", params); err != nil {
+	// Prefixed for the same reason as the CREATE statements above, and it is
+	// worth spelling out because the failure looks nothing like a version
+	// problem: without the directive the server reports
+	//
+	//	Neo.ClientError.Procedure.ProcedureNotFound — There is no procedure
+	//	with the name `dbms.promoteReplicaDatabase` registered
+	//
+	// as though the procedure were missing from the build. It is not; it is
+	// simply not visible under Cypher 5, which the server says only when asked
+	// directly: "The procedure or function is available in `CYPHER 25`."
+	if _, err := session.Run(ctx, cypher25Prefix+"CALL dbms.promoteReplicaDatabase($name, $options)", params); err != nil {
 		return fmt.Errorf("failed to promote replica database %s: %w", databaseName, err)
 	}
 	return nil
