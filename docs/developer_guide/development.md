@@ -100,7 +100,7 @@ git remote add upstream https://github.com/priyolahiri/neo4j-kubernetes-operator
 make install-hooks
 ```
 
-The drift hook runs `make check-drift` whenever you stage files under `api/`, `internal/controller/`, `scripts/`, `config/`, `charts/`, or `bundle/` — the same gate CI's "Generated Artifacts In Sync" job runs. It fires before the commit lands, so you can't ship a CRD or RBAC change that forgot to regenerate the helm chart or OperatorHub bundle. Requires `pre-commit` (`pip install pre-commit` or `brew install pre-commit`).
+The drift hook runs `make check-drift` whenever you stage files under `api/`, `internal/controller/`, `scripts/`, `config/`, `charts/`, or `bundle/` — the same gate CI's "Generated Artifacts In Sync" job runs. It fires before the commit lands, so you can't ship a CRD or RBAC change that forgot to regenerate the helm chart or OperatorHub bundle. Requires `pre-commit` (`uv tool install pre-commit`, `pip install pre-commit`, or `brew install pre-commit`).
 
 ### 2. Generate Code and Manifests
 

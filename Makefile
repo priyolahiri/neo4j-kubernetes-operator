@@ -482,9 +482,21 @@ helm-lint: ## Lint the Helm chart
 .PHONY: install-hooks
 install-hooks: ## Install git pre-commit hooks (drift gate, fmt, lint, gitleaks).
 	@command -v pre-commit >/dev/null 2>&1 || { \
-	    echo "ERROR: pre-commit is not installed. Install with: pip install pre-commit  (or  brew install pre-commit)" >&2; \
+	    echo "ERROR: pre-commit is not installed." >&2; \
+	    echo "       Install with: uv tool install pre-commit  (or pip install pre-commit, brew install pre-commit)" >&2; \
 	    exit 1; \
 	}
+	@# pre-commit refuses to install while core.hooksPath is set — even when it
+	@# points at .git/hooks, which is where git looks anyway. Some GUI clients
+	@# (GitKraken) set it, and the refusal message does not say the value is
+	@# harmless, so say so here rather than leaving the reader to guess.
+	@if git config --get core.hooksPath >/dev/null 2>&1; then \
+	    echo "ERROR: core.hooksPath is set to '$$(git config --get core.hooksPath)'." >&2; \
+	    echo "       pre-commit refuses to install while it is set. If that path is just" >&2; \
+	    echo "       .git/hooks (git's own default), clearing it changes nothing:" >&2; \
+	    echo "         git config --unset-all core.hooksPath" >&2; \
+	    exit 1; \
+	fi
 	pre-commit install
 	pre-commit install --hook-type commit-msg
 	@echo ""

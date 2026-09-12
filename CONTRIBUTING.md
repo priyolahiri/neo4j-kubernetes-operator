@@ -24,7 +24,7 @@ Welcome to the Neo4j Enterprise Operator project! This guide covers everything y
 | [Tilt](https://tilt.dev/) | Live-reload dev loop (~5s rebuilds) | `brew install tilt` |
 | [watchexec](https://github.com/watchexec/watchexec) | File-watcher for `make dev-watch` | `brew install watchexec` |
 | [mise](https://mise.jdx.dev/) | Pin exact tool versions from `.tool-versions` | `curl https://mise.jdx.dev/install.sh \| sh` |
-| [pre-commit](https://pre-commit.com/) | Git hook framework | `brew install pre-commit` |
+| [pre-commit](https://pre-commit.com/) | Git hook framework | `uv tool install pre-commit` (or `brew install pre-commit`) |
 
 ### Automated Prerequisite Check
 
@@ -390,13 +390,29 @@ Pre-commit hooks (if installed) validate commit message format automatically.
 ### Pre-commit Hooks (Optional)
 
 ```bash
-# Install pre-commit framework
-brew install pre-commit
+# Install the pre-commit framework
+uv tool install pre-commit        # or: brew install pre-commit / pip install pre-commit
 
-# Install hooks for this repo
-pre-commit install
-pre-commit install --hook-type commit-msg
+# Install hooks for this repo (both types — commit-msg runs commitizen)
+make install-hooks                # or the two commands by hand:
+# pre-commit install
+# pre-commit install --hook-type commit-msg
 ```
+
+If `pre-commit install` answers *"Cowardly refusing to install hooks with
+`core.hooksPath` set"*, clear it and re-run:
+
+```bash
+git config --unset-all core.hooksPath
+```
+
+That setting is often left behind pointing at `.git/hooks` — git's own default —
+so clearing it changes nothing except letting `pre-commit` write the hooks.
+
+Hooks are pinned to the interpreter that installed them, so if you later remove
+that Python (switching from pyenv to uv, say) the hook fails with
+*"`pre-commit` not found. Did you forget to activate your virtualenv?"*.
+Re-running `make install-hooks` repoints them.
 
 Hooks run on each commit: go fmt, goimports, go mod tidy, golangci-lint (lenient, soft-fail), staticcheck, gitleaks (secret detection), and commitizen (message format).
 

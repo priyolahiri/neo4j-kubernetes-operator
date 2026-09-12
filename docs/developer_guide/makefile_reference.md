@@ -157,7 +157,9 @@ Chains: `manifests` → `generate` → `sync-kustomize` → `sync-editor-viewer-
 ### `make install-hooks`
 **Description**: Install git pre-commit hooks (drift gate, fmt, lint, gitleaks, commitizen). Wraps `pre-commit install` and `pre-commit install --hook-type commit-msg`.
 **Usage**: `make install-hooks` (one-time per clone)
-**Prerequisite**: `pre-commit` on your `PATH` (`pip install pre-commit` or `brew install pre-commit`).
+**Prerequisite**: `pre-commit` on your `PATH` (`uv tool install pre-commit`, `pip install pre-commit`, or `brew install pre-commit`).
+
+**If it refuses to install**: `pre-commit` will not write hooks while `core.hooksPath` is set, even when that value is `.git/hooks` — git's own default, so clearing it changes nothing. Some GUI clients set it. `git config --unset-all core.hooksPath`, then re-run.
 **What the drift hook does**: when staged files match `api/v1beta1/*.go`, `internal/controller/*_controller.go`, `scripts/{helm-sync-*,check-csv-coverage,update-alm-examples}*`, `config/manifests/bases/*.csv.yaml`, `config/{crd,rbac,samples,manifests}/`, `charts/neo4j-operator/`, or `bundle/`, the hook runs `make check-drift`. On stale artifacts the regenerated files are left in your working tree; `git add -u` and recommit.
 
 ### `make helm-sync-crds`
