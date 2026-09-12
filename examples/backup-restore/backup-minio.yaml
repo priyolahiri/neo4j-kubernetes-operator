@@ -17,7 +17,7 @@
 #
 # Once MinIO is running, create a bucket and access credentials:
 #   kubectl run minio-client --rm -it --restart=Never \
-#     --image=minio/mc --command -- /bin/sh -c "
+#     --image=quay.io/minio/mc --command -- /bin/sh -c "
 #       mc alias set local http://minio.minio.svc:9000 minioadmin minioadmin;
 #       mc mb local/neo4j-backups"
 #
@@ -178,7 +178,7 @@ spec:
 #
 # 2. Verify the backup reached MinIO:
 #      kubectl run minio-client --rm -it --restart=Never \
-#        --image=minio/mc --command -- /bin/sh -c "
+#        --image=quay.io/minio/mc --command -- /bin/sh -c "
 #          mc alias set local http://minio.minio.svc:9000 minioadmin minioadmin;
 #          mc ls local/neo4j-backups/cluster/"
 #

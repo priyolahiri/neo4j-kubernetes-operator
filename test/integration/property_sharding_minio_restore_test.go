@@ -613,8 +613,14 @@ func deployMinIO(namespace, accessKey, secretKey string) {
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
-						Name:  "minio",
-						Image: "minio/minio:latest",
+						Name: "minio",
+						// quay.io, not Docker Hub: `minio/minio:latest` there is no
+						// longer anonymously pullable — both the host and a Kind node
+						// get "pull access denied ... insufficient_scope" (observed
+						// 2026-09-12, while setting up Phase 5). The published example
+						// in examples/backup-restore/backup-minio.yaml already points
+						// at quay.io; this was the last Docker Hub reference left.
+						Image: "quay.io/minio/minio:latest",
 						Args:  []string{"server", "/data", "--console-address", ":9001"},
 						Env: []corev1.EnvVar{
 							{Name: "MINIO_ROOT_USER", Value: accessKey},
@@ -684,7 +690,7 @@ func createMinIOBucket(namespace, bucket, accessKey, secretKey string, timeout t
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{{
 						Name:    "mc",
-						Image:   "minio/mc:latest",
+						Image:   "quay.io/minio/mc:latest",
 						Command: []string{"/bin/sh", "-c", script},
 					}},
 				},
