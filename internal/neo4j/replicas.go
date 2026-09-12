@@ -74,7 +74,15 @@ func (c *Client) CreateReplicaDatabaseFromBackup(ctx context.Context, databaseNa
 	})
 	defer c.closeSession(ctx, session)
 
+	// CREATE REPLICA DATABASE is a Cypher 25 feature and `system` still
+	// defaults to Cypher 5 on 2026.08, so without the prefix the server does
+	// not warn — it fails to parse, with "Invalid input 'DATABASE': expected a
+	// graph pattern", which reads as though the statement did not exist.
+	// Found by the v1.15.0 journey, the first run against a real 2026.08
+	// server; see cypher25Prefix in auth_rules.go, where the same rule bit
+	// AUTH RULE first.
 	var sb strings.Builder
+	sb.WriteString(cypher25Prefix)
 	fmt.Fprintf(&sb, "CREATE REPLICA DATABASE `%s`", escapeBackticks(databaseName))
 	if clause := topologyClause(src.Primaries, src.Secondaries); clause != "" {
 		sb.WriteString(" " + clause)
@@ -158,6 +166,7 @@ func (c *Client) CreateReplicaDatabaseFromNetwork(ctx context.Context, databaseN
 // testable without a live driver (mirrors buildOptionsClause's split).
 func buildCreateReplicaFromNetworkCypher(databaseName string, src ReplicaNetworkSource) (string, map[string]any) {
 	var sb strings.Builder
+	sb.WriteString(cypher25Prefix)
 	fmt.Fprintf(&sb, "CREATE REPLICA DATABASE `%s`", escapeBackticks(databaseName))
 	if clause := topologyClause(src.Primaries, src.Secondaries); clause != "" {
 		sb.WriteString(" " + clause)

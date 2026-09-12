@@ -25,10 +25,17 @@ import (
 	neo4j "github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-// AUTH RULE syntax is only parsed under Cypher 25. Neo4j 2026.x defaults the
-// system database to Cypher 5 unless explicitly opted in, so every AUTH RULE
-// statement we issue must be prefixed. Prepending the language directive is
-// safe even when the database default is already 25.
+// cypher25Prefix must be prepended to EVERY statement whose syntax is a Cypher
+// 25 language feature. Neo4j 2026.x defaults the system database to Cypher 5
+// unless explicitly opted in, and the failure is not a warning — the server
+// cannot parse the statement and reports it as invalid input, which reads as
+// though the feature did not exist.
+//
+// Current users: AUTH RULE (here) and CREATE REPLICA DATABASE (replicas.go).
+// The second was missed until the v1.15.0 journey ran it against a real
+// 2026.08 server; if you add a third, prefix it.
+//
+// Prepending the directive is safe even when the database default is already 25.
 const cypher25Prefix = "CYPHER 25 "
 
 // AuthRuleInfo is the projection of one row of `SHOW AUTH RULES`. Used by the

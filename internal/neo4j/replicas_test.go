@@ -124,3 +124,30 @@ func TestCreateReplicaDatabaseFromNetwork_RequiresAddresses(t *testing.T) {
 		t.Fatal("expected an error when no addresses are supplied")
 	}
 }
+
+// CREATE REPLICA DATABASE is a Cypher 25 language feature, and `system`
+// defaults to Cypher 5 on 2026.08 — the version that introduced the feature.
+// Without the prefix the server cannot parse the statement at all:
+//
+//	Invalid input 'DATABASE': expected a graph pattern
+//
+// which reads as though the syntax did not exist. The v1.15.0 release journey
+// hit exactly that on the first run against a real 2026.08 server; the
+// identical statement is accepted once prefixed.
+func TestCreateReplicaCypherIsPrefixedForCypher25(t *testing.T) {
+	network, _ := buildCreateReplicaFromNetworkCypher("foo-replica", ReplicaNetworkSource{
+		UpstreamDatabase: "foo",
+		Addresses:        []string{"upstream-server-0.example:6000"},
+		Primaries:        1,
+	})
+	if !strings.HasPrefix(network, "CYPHER 25 CREATE REPLICA DATABASE") {
+		t.Fatalf("network-mode statement must open with the Cypher 25 directive, got: %s", network)
+	}
+
+	// The backup-mode statement is built inline in
+	// CreateReplicaDatabaseFromBackup, so assert on the shared constant it uses
+	// rather than re-deriving the string here.
+	if cypher25Prefix != "CYPHER 25 " {
+		t.Fatalf("unexpected prefix constant %q", cypher25Prefix)
+	}
+}
