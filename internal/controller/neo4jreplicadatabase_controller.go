@@ -206,8 +206,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 				networkSrc.Primaries = t.Primaries
 				networkSrc.Secondaries = t.Secondaries
 			}
-			r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseSeeding, metav1.ConditionFalse,
-				"Seeding", fmt.Sprintf("creating replica %q streaming from %v", dbName, addresses), nil)
+			r.announceSeeding(ctx, replica, fmt.Sprintf("creating replica %q streaming from %v", dbName, addresses))
 			if err := nc.CreateReplicaDatabaseFromNetwork(ctx, dbName, networkSrc); err != nil {
 				return r.fail(ctx, replica, "create replica database failed", err, requeue)
 			}
@@ -248,13 +247,13 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 						"AWS_ENDPOINT_URL_S3 for S3-compatible stores) to the cluster, then the "+
 						"replica proceeds on its own",
 					pullURI, strings.Join(missing, ", "), replica.Spec.ClusterRef)
-				r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
-					EventReasonReplicaFailed, msg, nil)
-				r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonReplicaFailed, msg)
+				if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
+					EventReasonReplicaFailed, msg, nil) {
+					r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonReplicaFailed, msg)
+				}
 				return ctrl.Result{RequeueAfter: permanentRejectionRequeue}, nil
 			}
-			r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseSeeding, metav1.ConditionFalse,
-				"Seeding", fmt.Sprintf("creating replica %q from %s", dbName, pullURI), nil)
+			r.announceSeeding(ctx, replica, fmt.Sprintf("creating replica %q from %s", dbName, pullURI))
 			if err := nc.CreateReplicaDatabaseFromBackup(ctx, dbName, backupSrc); err != nil {
 				return r.fail(ctx, replica, "create replica database failed", err, requeue)
 			}
@@ -485,6 +484,27 @@ func (r *Neo4jReplicaDatabaseReconciler) resolveUpstreamBackupPullURI(
 	return backup.Status.ReplicationPullURI, true, nil
 }
 
+// announceSeeding writes the optimistic "creating…" status, but only when the
+// last attempt did not already fail.
+//
+// Announcing it unconditionally is what kept a doomed replica spinning: the
+// status went Seeding before each attempt and Failed after it, and because
+// those alternate, every pass was a real status change — a write, a watch
+// event, another reconcile. Measured at ~25 reconciles a second against a
+// bucket that did not exist, with the failure re-logged every time.
+//
+// Leaving the failure in place until something actually succeeds is also what
+// the user wants to see: the last thing that happened, not an optimistic
+// message that outlives it.
+func (r *Neo4jReplicaDatabaseReconciler) announceSeeding(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, message string) {
+	if replica.Status.Phase == neo4jv1beta1.ReplicaPhaseFailed &&
+		replica.Status.ObservedGeneration == replica.Generation {
+		return
+	}
+	r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseSeeding, metav1.ConditionFalse,
+		"Seeding", message, nil)
+}
+
 // serverEnvNames returns the environment variable names the target's Neo4j
 // servers will actually have. Both Kinds expose the same passthrough.
 func serverEnvNames(target ResolvedTarget) map[string]bool {
@@ -537,9 +557,10 @@ func (r *Neo4jReplicaDatabaseReconciler) fail(ctx context.Context, replica *neo4
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
 	}
-	r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
-		EventReasonReplicaFailed, msg, nil)
-	r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonReplicaFailed, msg)
+	if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
+		EventReasonReplicaFailed, msg, nil) {
+		r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonReplicaFailed, msg)
+	}
 
 	// A rejection the server will repeat is not worth hammering. Returning the
 	// error asks controller-runtime to requeue immediately with backoff, which
@@ -581,7 +602,8 @@ func (r *Neo4jReplicaDatabaseReconciler) setStatus(
 	readyStatus metav1.ConditionStatus,
 	readyReason, message string,
 	info *neo4jclient.DatabaseInfo,
-) {
+) bool {
+	changed := false
 	update := func() error {
 		latest := &neo4jv1beta1.Neo4jReplicaDatabase{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(replica), latest); err != nil {
@@ -602,6 +624,7 @@ func (r *Neo4jReplicaDatabaseReconciler) setStatus(
 			info == nil {
 			return nil
 		}
+		changed = true
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message)
 		latest.Status.Phase = phase
 		latest.Status.Message = message
@@ -615,7 +638,9 @@ func (r *Neo4jReplicaDatabaseReconciler) setStatus(
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jReplicaDatabase status")
+		return false
 	}
+	return changed
 }
 
 func (r *Neo4jReplicaDatabaseReconciler) setNamedCondition(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, condType string, status metav1.ConditionStatus, reason, message string) {
