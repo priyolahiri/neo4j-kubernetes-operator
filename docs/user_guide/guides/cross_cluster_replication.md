@@ -324,9 +324,10 @@ exactly the same regardless of mode or topology.
     ```
 
     Setting `source.credentialsSecretRef` on the replica **does not** do this —
-    the field is not consumed yet. Without the environment, the replica sits in
-    `Seeding` while the server refuses with the AWS SDK's own *"Unable to load
-    region from any of the providers"*, which never reaches `status.message`.
+    it records which Secret the credentials come from, it does not project them.
+    The operator checks: a backup-mode replica whose cluster has no `AWS_REGION`
+    fails immediately, naming the missing variable and where to put it, instead
+    of stalling in `Seeding` while the server refuses deep inside the AWS SDK.
 
     Adding these to a live cluster restarts its servers, so set them when the
     downstream is created rather than in the middle of a failover drill.

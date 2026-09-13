@@ -351,3 +351,62 @@ func mustQuantity(s string) apiresource.Quantity {
 	}
 	return q
 }
+
+// The precondition that costs most to discover the hard way: a backup-mode
+// replica reads its chain FROM THE SERVER, so the downstream cluster's own
+// environment must carry the object-store settings. Without them the failure
+// surfaces inside the AWS SDK as "Unable to load region from any of the
+// providers", mentioning neither replicas nor buckets.
+func TestPreflightReplica(t *testing.T) {
+	replica := func(mode, pullURI, credsRef string) *neo4jv1beta1.Neo4jReplicaDatabase {
+		return &neo4jv1beta1.Neo4jReplicaDatabase{
+			ObjectMeta: metav1.ObjectMeta{Name: "foo-replica", Namespace: "dr"},
+			Spec: neo4jv1beta1.Neo4jReplicaDatabaseSpec{
+				ClusterRef: "dr-cluster",
+				Source: neo4jv1beta1.ReplicaSourceSpec{
+					Mode: mode, PullURI: pullURI, CredentialsSecretRef: credsRef,
+				},
+			},
+		}
+	}
+	clusterWith := func(env ...string) *neo4jv1beta1.Neo4jEnterpriseCluster {
+		var vars []corev1.EnvVar
+		for _, n := range env {
+			vars = append(vars, corev1.EnvVar{Name: n, Value: "x"})
+		}
+		return &neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "dr-cluster", Namespace: "dr"},
+			Spec:       neo4jv1beta1.Neo4jEnterpriseClusterSpec{Env: vars},
+		}
+	}
+
+	t.Run("s3 source, cluster without AWS_REGION", func(t *testing.T) {
+		c := testClient(t, clusterWith())
+		got := preflightReplica(context.Background(), c, "dr", replica("backup", "s3://b/chain/", ""))
+		require.NotEmpty(t, got)
+		assert.Contains(t, got[0].what, "AWS_REGION")
+		assert.Contains(t, got[0].action, "ON THE SERVER")
+	})
+
+	t.Run("s3 source, cluster with AWS_REGION is clean", func(t *testing.T) {
+		c := testClient(t, clusterWith("AWS_REGION"))
+		assert.Empty(t, preflightReplica(context.Background(), c, "dr", replica("backup", "s3://b/chain/", "")))
+	})
+
+	// Network mode reads over the wire; there is no bucket to authenticate to,
+	// and saying so is more useful than saying nothing.
+	t.Run("network mode needs no credentials", func(t *testing.T) {
+		c := testClient(t, clusterWith())
+		got := preflightReplica(context.Background(), c, "dr", replica("network", "", ""))
+		require.Len(t, got, 1)
+		assert.Equal(t, markWaiting, got[0].mark)
+	})
+
+	t.Run("a named Secret that does not exist is reported", func(t *testing.T) {
+		c := testClient(t, clusterWith("AWS_REGION"))
+		got := preflightReplica(context.Background(), c, "dr", replica("backup", "s3://b/chain/", "absent-creds"))
+		require.NotEmpty(t, got)
+		assert.Contains(t, got[0].subject, "absent-creds")
+		assert.Contains(t, got[0].action, "does not project them")
+	})
+}

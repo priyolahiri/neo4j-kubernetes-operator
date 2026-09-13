@@ -5,8 +5,9 @@
 # ── BEFORE this works, the DOWNSTREAM CLUSTER needs the bucket credentials ────
 # The seed and every pull are done by the Neo4j SERVER, not by a Job, so the
 # credentials must be in the server's own environment. Setting
-# source.credentialsSecretRef below does NOT do this — that field is not
-# consumed yet. On the downstream Neo4jEnterpriseCluster:
+# source.credentialsSecretRef below does NOT do this — it records WHICH Secret
+# they come from; the operator checks the cluster actually carries them and
+# fails fast if not. On the downstream Neo4jEnterpriseCluster:
 #
 #   spec:
 #     env:
@@ -19,9 +20,10 @@
 #       - name: AWS_ENDPOINT_URL_S3      # S3-compatible stores (MinIO) only
 #         value: http://minio.minio.svc:9000
 #
-# Without it the replica sits in Seeding while the server refuses with
-# "Unable to load region from any of the providers". Network mode needs none
-# of this. See docs/user_guide/guides/cross_cluster_replication.md step 2.
+# Without it the replica fails immediately with a message naming AWS_REGION,
+# rather than stalling while the server refuses inside the AWS SDK. Network
+# mode needs none of this. See
+# docs/user_guide/guides/cross_cluster_replication.md step 2.
 
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jReplicaDatabase

@@ -49,6 +49,14 @@ Capacity is compared against a **single node's** allocatable memory, never the c
 | Or: the backup ServiceAccount has a cloud-identity annotation | With no Secret and no IRSA / Workload Identity binding, the Job runs with no credentials at all |
 | A PVC-backed backup's claim or class exists | Same failure as a cluster's storage |
 
+**Cross-cluster replicas (backup mode)**
+
+| Check | Why it matters |
+|---|---|
+| The downstream cluster has `AWS_REGION` in `spec.env` | The seed and every pull run **on the Neo4j server**, through the AWS SDK's default credential chain — so the object-store settings must be in the server's environment, not on the replica CR. Without it the replica fails inside the SDK with *"Unable to load region from any of the providers"*, which mentions neither replicas nor buckets |
+| `source.credentialsSecretRef` names a Secret that exists | It records **which** Secret the credentials come from; it does not project them. A name with nothing behind it is worth knowing about |
+| Network mode | Says so and checks nothing — reading over the wire needs no bucket credentials |
+
 This replaces the ritual the troubleshooting guide documents today — `kubectl run backup-auth-check --image=amazon/aws-cli …`, in three vendor variants — which you only reach for **after** a backup has already failed.
 
 ## What it does not check

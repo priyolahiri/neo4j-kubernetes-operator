@@ -235,6 +235,24 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 				backupSrc.Primaries = t.Primaries
 				backupSrc.Secondaries = t.Secondaries
 			}
+			// Check the servers can actually reach the bucket before asking
+			// Neo4j to try. Without this the CREATE fails inside the AWS SDK
+			// and the user is left with a replica that never leaves Seeding.
+			if missing := missingObjectStoreEnv(target, pullURI, src.SeedURI); len(missing) > 0 {
+				msg := fmt.Sprintf(
+					"the downstream servers cannot read %s: %s is not set in the %s spec.env. "+
+						"The seed and every pull run on the SERVER, so the object-store "+
+						"credentials must be in its environment — setting source.credentialsSecretRef "+
+						"alone does not do it. Add AWS_REGION (and, unless you use IRSA or an "+
+						"instance profile, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY; plus "+
+						"AWS_ENDPOINT_URL_S3 for S3-compatible stores) to the cluster, then the "+
+						"replica proceeds on its own",
+					pullURI, strings.Join(missing, ", "), replica.Spec.ClusterRef)
+				r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
+					EventReasonReplicaFailed, msg, nil)
+				r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonReplicaFailed, msg)
+				return ctrl.Result{RequeueAfter: permanentRejectionRequeue}, nil
+			}
 			r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseSeeding, metav1.ConditionFalse,
 				"Seeding", fmt.Sprintf("creating replica %q from %s", dbName, pullURI), nil)
 			if err := nc.CreateReplicaDatabaseFromBackup(ctx, dbName, backupSrc); err != nil {
@@ -467,6 +485,53 @@ func (r *Neo4jReplicaDatabaseReconciler) resolveUpstreamBackupPullURI(
 	return backup.Status.ReplicationPullURI, true, nil
 }
 
+// serverEnvNames returns the environment variable names the target's Neo4j
+// servers will actually have. Both Kinds expose the same passthrough.
+func serverEnvNames(target ResolvedTarget) map[string]bool {
+	names := map[string]bool{}
+	var env []corev1.EnvVar
+	switch {
+	case target.Cluster != nil:
+		env = target.Cluster.Spec.Env
+	case target.Standalone != nil:
+		env = target.Standalone.Spec.Env
+	}
+	for _, e := range env {
+		names[e.Name] = true
+	}
+	return names
+}
+
+// missingObjectStoreEnv reports what a backup-mode replica needs in the
+// DOWNSTREAM SERVERS' environment and cannot find there.
+//
+// The seed and every subsequent pull are performed by the server, through the
+// AWS SDK's default credential chain — not by a Job with projected env. So a
+// replica whose servers lack this fails deep inside Neo4j with the SDK's own
+// "Unable to load region from any of the providers", which says nothing about
+// replicas, buckets, or what to do. Checking first turns that into a sentence
+// naming the missing variable.
+//
+// Only AWS_REGION is treated as required. The SDK cannot infer a region from
+// anywhere, which is exactly the failure observed; the access key and secret
+// are deliberately NOT required, because IRSA and instance profiles supply
+// credentials without them and demanding them would break those setups.
+func missingObjectStoreEnv(target ResolvedTarget, uris ...string) []string {
+	needsAWS := false
+	for _, u := range uris {
+		if strings.HasPrefix(strings.ToLower(u), "s3://") {
+			needsAWS = true
+		}
+	}
+	if !needsAWS {
+		return nil
+	}
+	if serverEnvNames(target)["AWS_REGION"] {
+		return nil
+	}
+	return []string{"AWS_REGION"}
+}
+
 func (r *Neo4jReplicaDatabaseReconciler) fail(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, label string, err error, requeue time.Duration) (ctrl.Result, error) {
 	msg := label
 	if err != nil {
@@ -475,7 +540,38 @@ func (r *Neo4jReplicaDatabaseReconciler) fail(ctx context.Context, replica *neo4
 	r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
 		EventReasonReplicaFailed, msg, nil)
 	r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonReplicaFailed, msg)
+
+	// A rejection the server will repeat is not worth hammering. Returning the
+	// error asks controller-runtime to requeue immediately with backoff, which
+	// is right for "the cluster was briefly unreachable" and wrong for "the
+	// servers have no bucket credentials" — the second cannot resolve without
+	// someone changing something, and retrying it once a second buries the one
+	// log line that explains it.
+	if isPermanentServerRejection(err) {
+		return ctrl.Result{RequeueAfter: permanentRejectionRequeue}, nil
+	}
 	return ctrl.Result{RequeueAfter: requeue}, err
+}
+
+// permanentRejectionRequeue is how long to wait before re-attempting an
+// operation the server rejected on its own terms. Long enough that the failure
+// is legible in the log and in `kubectl get`, short enough that fixing the
+// cause is picked up without deleting anything.
+const permanentRejectionRequeue = 2 * time.Minute
+
+// isPermanentServerRejection reports whether Neo4j refused on grounds that will
+// not change by themselves.
+//
+// Neo4j's client-error codes cover exactly that class: a malformed statement, a
+// missing procedure, an argument the server will not accept — including the
+// object-storage credentials a replica seed needs, which surface as
+// Neo.ClientError.Statement.ArgumentError. Transient codes, and anything that
+// looks like a connectivity blip, stay on the fast path.
+func isPermanentServerRejection(err error) bool {
+	if err == nil || isTransientError(err) {
+		return false
+	}
+	return strings.Contains(err.Error(), "Neo.ClientError.")
 }
 
 func (r *Neo4jReplicaDatabaseReconciler) setStatus(
@@ -493,6 +589,17 @@ func (r *Neo4jReplicaDatabaseReconciler) setStatus(
 		}
 		// Never regress out of the terminal phase.
 		if latest.Status.Phase == neo4jv1beta1.ReplicaPhasePromoted {
+			return nil
+		}
+		// A write that changes nothing still produces a watch event, which
+		// reconciles, which writes again — and that loop defeats
+		// controller-runtime's own backoff. Observed while a replica could not
+		// reach its bucket: the create failed about once a second, forever.
+		// Nothing to say is a valid outcome.
+		if latest.Status.Phase == phase &&
+			latest.Status.Message == message &&
+			latest.Status.ObservedGeneration == latest.Generation &&
+			info == nil {
 			return nil
 		}
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message)

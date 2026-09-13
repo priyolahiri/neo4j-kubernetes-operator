@@ -179,6 +179,7 @@ type preflightSubject struct {
 	cluster    *neo4jv1beta1.Neo4jEnterpriseCluster
 	standalone *neo4jv1beta1.Neo4jEnterpriseStandalone
 	backup     *neo4jv1beta1.Neo4jBackup
+	replica    *neo4jv1beta1.Neo4jReplicaDatabase
 }
 
 func preflightObject(ctx context.Context, c client.Client, ns, source string, raw []byte) preflightResult {
@@ -201,10 +202,97 @@ func preflightObject(ctx context.Context, c client.Client, ns, source string, ra
 			subject.standalone.Spec.Resources, 1)
 	case subject.backup != nil:
 		res.checks = preflightBackup(ctx, c, ns, subject.backup)
+	case subject.replica != nil:
+		res.checks = preflightReplica(ctx, c, ns, subject.replica)
 	default:
 		res.skipped = "no cluster-side preconditions are defined for this kind"
 	}
 	return res
+}
+
+// preflightReplica covers the precondition that costs the most to discover the
+// hard way: a backup-mode replica reads its chain FROM THE NEO4J SERVER, using
+// the AWS SDK's default credential chain, so the downstream cluster's own
+// environment must carry the object-store settings. A replica whose cluster
+// lacks them fails inside the SDK with "Unable to load region from any of the
+// providers" — a message that mentions neither replicas nor buckets.
+//
+// Shape, not reachability, like every other check here: it reads the target
+// cluster's spec.env, and never contacts S3.
+func preflightReplica(ctx context.Context, c client.Client, ns string, replica *neo4jv1beta1.Neo4jReplicaDatabase) []symptom {
+	src := replica.Spec.Source
+	if !strings.EqualFold(src.Mode, "backup") {
+		return []symptom{{
+			mark: markWaiting, subject: "source.mode " + src.Mode,
+			what: "reads from the upstream over the network; no object-store credentials are needed",
+		}}
+	}
+
+	uris := src.PullURI + " " + src.SeedURI
+	if !strings.Contains(strings.ToLower(uris), "s3://") {
+		return nil
+	}
+
+	var symptoms []symptom
+	if src.CredentialsSecretRef != "" {
+		var secret corev1.Secret
+		err := c.Get(ctx, client.ObjectKey{Name: src.CredentialsSecretRef, Namespace: ns}, &secret)
+		switch {
+		case apierrors.IsNotFound(err):
+			symptoms = append(symptoms, symptom{
+				mark: markProblem, subject: "secret " + src.CredentialsSecretRef,
+				what: "does not exist in " + ns,
+				action: "source.credentialsSecretRef names it. Note it records WHICH Secret the " +
+					"credentials come from — it does not project them into the servers.",
+			})
+		case err != nil:
+			return symptoms
+		}
+	}
+
+	target, env := resolveReplicaTargetEnv(ctx, c, ns, replica.Spec.ClusterRef)
+	if target == "" {
+		symptoms = append(symptoms, symptom{
+			mark: markWaiting, subject: "clusterRef " + replica.Spec.ClusterRef,
+			what:   "not found in " + ns + ", so its environment cannot be checked",
+			action: "Create the downstream deployment first, or check the name.",
+		})
+		return symptoms
+	}
+	if !env["AWS_REGION"] {
+		symptoms = append(symptoms, symptom{
+			mark: markProblem, subject: target,
+			what: "has no AWS_REGION in spec.env, so its servers cannot read " + src.PullURI,
+			action: "The seed and every pull run ON THE SERVER, so the object-store settings must " +
+				"be in its environment. Add AWS_REGION (plus AWS_ACCESS_KEY_ID and " +
+				"AWS_SECRET_ACCESS_KEY unless you use IRSA or an instance profile, and " +
+				"AWS_ENDPOINT_URL_S3 for S3-compatible stores) to the cluster's spec.env. " +
+				"Adding them restarts its servers, so do it before the failover, not during one.",
+		})
+	}
+	return symptoms
+}
+
+// resolveReplicaTargetEnv returns a display name for the replica's target and
+// the set of environment variable names its servers will carry. Either Kind can
+// host a replica, and both expose the same passthrough.
+func resolveReplicaTargetEnv(ctx context.Context, c client.Client, ns, name string) (string, map[string]bool) {
+	names := map[string]bool{}
+	var cluster neo4jv1beta1.Neo4jEnterpriseCluster
+	if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, &cluster); err == nil {
+		for _, e := range cluster.Spec.Env {
+			names[e.Name] = true
+		}
+		return "cluster " + name, names
+	}
+	var standalone neo4jv1beta1.Neo4jEnterpriseStandalone
+	if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, &standalone); err == nil {
+		for _, e := range standalone.Spec.Env {
+			names[e.Name] = true
+		}
+		return "standalone " + name, names
+	}
+	return "", names
 }
 
 // preflightInstance covers the two kinds that run Neo4j pods. Both carry the
@@ -534,6 +622,12 @@ func decodeSubject(raw []byte) (preflightSubject, error) {
 			return s, err
 		}
 		s.backup = &o
+	case "Neo4jReplicaDatabase":
+		var o neo4jv1beta1.Neo4jReplicaDatabase
+		if err := yaml.Unmarshal(raw, &o); err != nil {
+			return s, err
+		}
+		s.replica = &o
 	}
 	return s, nil
 }
@@ -591,7 +685,7 @@ func readLiveTargets(ctx context.Context, c client.Client, ns, target string) ([
 		// would be decoded, found to have nothing to check, and reported as
 		// skipped, which is noise when no target was named.
 		switch gvk.Kind {
-		case "Neo4jEnterpriseCluster", "Neo4jEnterpriseStandalone", "Neo4jBackup":
+		case "Neo4jEnterpriseCluster", "Neo4jEnterpriseStandalone", "Neo4jBackup", "Neo4jReplicaDatabase":
 		default:
 			continue
 		}
