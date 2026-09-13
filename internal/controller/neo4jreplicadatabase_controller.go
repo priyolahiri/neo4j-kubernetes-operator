@@ -254,16 +254,26 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 					return ctrl.Result{RequeueAfter: requeue}, nil
 				}
 			}
-			if missing := missingObjectStoreEnv(target, pullURI, src.SeedURI); len(missing) > 0 {
+			liveEnv, err := r.serverContainerEnv(ctx, target, replica.Namespace)
+			if err != nil {
+				// Not fatal: the check below is only more conservative
+				// without it, and a transient read failure must not fail a
+				// replica that is otherwise fine.
+				logger.V(1).Info("could not read the server StatefulSet's env; "+
+					"falling back to spec.env for the object-store precondition", "error", err)
+			}
+			if missing := missingObjectStoreEnv(target, liveEnv, pullURI, src.SeedURI); len(missing) > 0 {
 				msg := fmt.Sprintf(
-					"the downstream servers cannot read %s: %s is not set in the %s spec.env. "+
+					"the downstream servers cannot read %s: %s is not set on %s. "+
 						"The seed and every pull run on the SERVER, so the object-store "+
 						"credentials must be in its environment. Either set "+
 						"source.credentialsSecretRef and the operator will project the Secret's "+
-						"keys onto the cluster for you (which restarts its servers), or add "+
-						"AWS_REGION yourself — plus AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY "+
-						"unless you use IRSA or an instance profile, and AWS_ENDPOINT_URL_S3 for "+
-						"S3-compatible stores",
+						"keys onto the cluster for you (which restarts its servers), add "+
+						"AWS_REGION (or AWS_DEFAULT_REGION) to spec.env yourself — plus "+
+						"AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY unless the credentials "+
+						"come from elsewhere, and AWS_ENDPOINT_URL_S3 for S3-compatible "+
+						"stores — or bind the servers to a cloud role with "+
+						"spec.podServiceAccountAnnotations, which skips this check entirely",
 					pullURI, strings.Join(missing, ", "), replica.Spec.ClusterRef)
 				if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
 					EventReasonReplicaFailed, msg, nil) {
@@ -636,6 +646,26 @@ func (r *Neo4jReplicaDatabaseReconciler) projectCredentials(
 	return rolled, nil
 }
 
+// serverContainerEnv reads the rendered env of the target's Neo4j container
+// from the live StatefulSet — everything that actually reaches the workload,
+// not just what spec.env declares.
+func (r *Neo4jReplicaDatabaseReconciler) serverContainerEnv(
+	ctx context.Context, target ResolvedTarget, namespace string,
+) ([]corev1.EnvVar, error) {
+	name := targetStatefulSetName(target)
+	if name == "" {
+		return nil, fmt.Errorf("could not determine the StatefulSet for the downstream deployment")
+	}
+	var sts appsv1.StatefulSet
+	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, &sts); err != nil {
+		return nil, err
+	}
+	if len(sts.Spec.Template.Spec.Containers) == 0 {
+		return nil, fmt.Errorf("StatefulSet %q has no containers", name)
+	}
+	return sts.Spec.Template.Spec.Containers[0].Env, nil
+}
+
 // targetStatefulSetName is the server StatefulSet for either Kind.
 func targetStatefulSetName(target ResolvedTarget) string {
 	switch {
@@ -691,7 +721,14 @@ func (r *Neo4jReplicaDatabaseReconciler) announceSeeding(ctx context.Context, re
 
 // serverEnvNames returns the environment variable names the target's Neo4j
 // servers will actually have. Both Kinds expose the same passthrough.
-func serverEnvNames(target ResolvedTarget) map[string]bool {
+//
+// `live` is the server StatefulSet's rendered container env when the caller
+// could read it. Reading only spec.env misses everything that reaches the
+// workload by another route — this operator's own credential projection and
+// plugin/fleet merges among them — and the caller uses the result to decide
+// whether to fail a replica outright, so a blind spot there rejects setups
+// that would have worked.
+func serverEnvNames(target ResolvedTarget, live []corev1.EnvVar) map[string]bool {
 	names := map[string]bool{}
 	var env []corev1.EnvVar
 	switch {
@@ -703,7 +740,42 @@ func serverEnvNames(target ResolvedTarget) map[string]bool {
 	for _, e := range env {
 		names[e.Name] = true
 	}
+	for _, e := range live {
+		names[e.Name] = true
+	}
 	return names
+}
+
+// workloadIdentityAnnotations are the ServiceAccount annotations the three
+// major clouds read to bind a pod to a cloud role. Their presence means the
+// platform supplies credentials — and, on some of them, region — by injecting
+// into the POD at admission, where nothing the operator reads can see it.
+//
+// spec.podServiceAccountAnnotations exists for exactly this, and is already
+// documented for the JVM's other object-store fetches (cluster seedURI,
+// Neo4jDatabase seedBackupRef). A replica's seed and pull are the same fetch
+// by the same JVM, so the same identity serves them.
+var workloadIdentityAnnotations = []string{
+	"eks.amazonaws.com/role-arn",        // AWS IRSA
+	"iam.gke.io/gcp-service-account",    // GKE Workload Identity
+	"azure.workload.identity/client-id", // Azure Workload Identity
+}
+
+// usesWorkloadIdentity reports whether the target's server pods run under a
+// ServiceAccount bound to a cloud role.
+func usesWorkloadIdentity(target ResolvedTarget) bool {
+	if target.Cluster == nil {
+		// Standalone has no podServiceAccountAnnotations field, so there is
+		// nothing to detect. It reads as "no", which only ever makes the
+		// caller more conservative.
+		return false
+	}
+	for _, key := range workloadIdentityAnnotations {
+		if _, ok := target.Cluster.Spec.PodServiceAccountAnnotations[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // missingObjectStoreEnv reports what a backup-mode replica needs in the
@@ -720,7 +792,17 @@ func serverEnvNames(target ResolvedTarget) map[string]bool {
 // anywhere, which is exactly the failure observed; the access key and secret
 // are deliberately NOT required, because IRSA and instance profiles supply
 // credentials without them and demanding them would break those setups.
-func missingObjectStoreEnv(target ResolvedTarget, uris ...string) []string {
+func missingObjectStoreEnv(target ResolvedTarget, live []corev1.EnvVar, uris ...string) []string {
+	// Under cloud workload identity the platform injects credentials — and
+	// often the region — into the POD at admission. That happens after
+	// everything the operator can read, so a check that fails here would
+	// reject a correctly configured cluster and never let it try. Defer to
+	// the server: if the identity really is misconfigured, Neo4j's own error
+	// reaches status.message, and a permanent rejection is retried every two
+	// minutes rather than every second.
+	if usesWorkloadIdentity(target) {
+		return nil
+	}
 	needsAWS := false
 	for _, u := range uris {
 		if strings.HasPrefix(strings.ToLower(u), "s3://") {
@@ -730,7 +812,10 @@ func missingObjectStoreEnv(target ResolvedTarget, uris ...string) []string {
 	if !needsAWS {
 		return nil
 	}
-	if serverEnvNames(target)["AWS_REGION"] {
+	names := serverEnvNames(target, live)
+	// AWS_DEFAULT_REGION is the SDK's own equally-valid spelling. Requiring
+	// only AWS_REGION failed clusters that had already set the region.
+	if names["AWS_REGION"] || names["AWS_DEFAULT_REGION"] {
 		return nil
 	}
 	return []string{"AWS_REGION"}

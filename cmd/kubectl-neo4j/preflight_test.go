@@ -407,6 +407,35 @@ func TestPreflightReplica(t *testing.T) {
 		got := preflightReplica(context.Background(), c, "dr", replica("backup", "s3://b/chain/", "absent-creds"))
 		require.NotEmpty(t, got)
 		assert.Contains(t, got[0].subject, "absent-creds")
-		assert.Contains(t, got[0].action, "does not project them")
+		// The Secret is now projected onto the servers, so its absence blocks
+		// the seed rather than being a bookkeeping detail. The action said the
+		// opposite until 2026-09-14.
+		assert.Contains(t, got[0].action, "projects its")
+	})
+
+	// AWS_DEFAULT_REGION is the AWS SDK's own equally-valid spelling.
+	// Accepting only AWS_REGION reported a problem on a cluster that had
+	// already set the region.
+	t.Run("AWS_DEFAULT_REGION satisfies the region check", func(t *testing.T) {
+		c := testClient(t, clusterWith("AWS_DEFAULT_REGION"))
+		got := preflightReplica(context.Background(), c, "dr", replica("backup", "s3://b/chain/", ""))
+		assert.Empty(t, got)
+	})
+
+	// Cloud workload identity injects credentials into the POD at admission,
+	// where neither the CLI nor the operator can see them. The operator skips
+	// its own check in that case, so preflight must not report a problem the
+	// operator ignores — but silence would read as "checked and fine" for
+	// something nobody checked, so it says which it is.
+	t.Run("a cloud role is reported as unverifiable, not as missing credentials", func(t *testing.T) {
+		cluster := clusterWith()
+		cluster.Spec.PodServiceAccountAnnotations = map[string]string{
+			"eks.amazonaws.com/role-arn": "arn:aws:iam::1234:role/dr",
+		}
+		c := testClient(t, cluster)
+		got := preflightReplica(context.Background(), c, "dr", replica("backup", "s3://b/chain/", ""))
+		require.Len(t, got, 1)
+		assert.Equal(t, markWarning, got[0].mark)
+		assert.Contains(t, got[0].what, "cloud role")
 	})
 }

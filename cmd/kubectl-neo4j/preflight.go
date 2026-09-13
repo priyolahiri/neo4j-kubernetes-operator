@@ -53,6 +53,7 @@ import (
 	"sort"
 	"strings"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -242,15 +243,31 @@ func preflightReplica(ctx context.Context, c client.Client, ns string, replica *
 			symptoms = append(symptoms, symptom{
 				mark: markProblem, subject: "secret " + src.CredentialsSecretRef,
 				what: "does not exist in " + ns,
-				action: "source.credentialsSecretRef names it. Note it records WHICH Secret the " +
-					"credentials come from — it does not project them into the servers.",
+				action: "source.credentialsSecretRef names it, and the operator projects its " +
+					"keys onto the downstream servers — so the Secret has to exist before " +
+					"the replica can seed.",
 			})
 		case err != nil:
 			return symptoms
 		}
 	}
 
-	target, env := resolveReplicaTargetEnv(ctx, c, ns, replica.Spec.ClusterRef)
+	target, env, boundToCloudRole := resolveReplicaTargetEnv(ctx, c, ns, replica.Spec.ClusterRef)
+	if boundToCloudRole {
+		// The operator skips its own credentials check here for the same
+		// reason: the platform injects into the pod at admission, after
+		// anything either of us can read. Say so rather than going silent —
+		// silence would read as "checked and fine" for a workload identity
+		// that neither of us can actually verify.
+		return append(symptoms, symptom{
+			mark: markWarning, subject: target,
+			what: "runs under a cloud role (spec.podServiceAccountAnnotations), so its " +
+				"object-store credentials come from the platform and cannot be checked here",
+			action: "Confirm the role can read " + src.PullURI + ". The operator does not " +
+				"block on this either — a misconfigured role surfaces as the server's own " +
+				"error in the replica's status.message.",
+		})
+	}
 	if target == "" {
 		symptoms = append(symptoms, symptom{
 			mark: markWaiting, subject: "clusterRef " + replica.Spec.ClusterRef,
@@ -259,40 +276,78 @@ func preflightReplica(ctx context.Context, c client.Client, ns string, replica *
 		})
 		return symptoms
 	}
-	if !env["AWS_REGION"] {
+	if !env["AWS_REGION"] && !env["AWS_DEFAULT_REGION"] {
 		symptoms = append(symptoms, symptom{
 			mark: markProblem, subject: target,
-			what: "has no AWS_REGION in spec.env, so its servers cannot read " + src.PullURI,
+			what: "has no AWS_REGION, so its servers cannot read " + src.PullURI,
 			action: "The seed and every pull run ON THE SERVER, so the object-store settings must " +
-				"be in its environment. Add AWS_REGION (plus AWS_ACCESS_KEY_ID and " +
-				"AWS_SECRET_ACCESS_KEY unless you use IRSA or an instance profile, and " +
-				"AWS_ENDPOINT_URL_S3 for S3-compatible stores) to the cluster's spec.env. " +
-				"Adding them restarts its servers, so do it before the failover, not during one.",
+				"be in its environment. Set source.credentialsSecretRef and the operator " +
+				"projects them, or add AWS_REGION (plus AWS_ACCESS_KEY_ID and " +
+				"AWS_SECRET_ACCESS_KEY unless the credentials come from elsewhere, and " +
+				"AWS_ENDPOINT_URL_S3 for S3-compatible stores) to the deployment's spec.env, " +
+				"or bind its pods to a cloud role with spec.podServiceAccountAnnotations. " +
+				"Either of the first two restarts its servers, so do it before the failover, " +
+				"not during one.",
 		})
 	}
 	return symptoms
 }
 
-// resolveReplicaTargetEnv returns a display name for the replica's target and
-// the set of environment variable names its servers will carry. Either Kind can
-// host a replica, and both expose the same passthrough.
-func resolveReplicaTargetEnv(ctx context.Context, c client.Client, ns, name string) (string, map[string]bool) {
+// workloadIdentitySAAnnotations mirrors the operator's own list: the
+// ServiceAccount annotations each cloud reads to bind a pod to a role. Kept in
+// step with internal/controller — if the operator skips the credentials check
+// on one of these, preflight must not report a problem the operator ignores.
+var workloadIdentitySAAnnotations = []string{
+	"eks.amazonaws.com/role-arn",
+	"iam.gke.io/gcp-service-account",
+	"azure.workload.identity/client-id",
+}
+
+// resolveReplicaTargetEnv returns a display name for the replica's target, the
+// set of environment variable names its servers will actually carry, and
+// whether those servers are bound to a cloud role.
+//
+// The env set is spec.env PLUS the live StatefulSet's rendered container env.
+// Reading spec.env alone misses the operator's own credential projection —
+// which writes to the StatefulSet — so preflight would report a missing region
+// on a cluster where the operator had already put one.
+func resolveReplicaTargetEnv(ctx context.Context, c client.Client, ns, name string) (string, map[string]bool, bool) {
 	names := map[string]bool{}
+	addLive := func(stsName string) {
+		var sts appsv1.StatefulSet
+		if err := c.Get(ctx, client.ObjectKey{Name: stsName, Namespace: ns}, &sts); err != nil {
+			return
+		}
+		if len(sts.Spec.Template.Spec.Containers) == 0 {
+			return
+		}
+		for _, e := range sts.Spec.Template.Spec.Containers[0].Env {
+			names[e.Name] = true
+		}
+	}
+
 	var cluster neo4jv1beta1.Neo4jEnterpriseCluster
 	if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, &cluster); err == nil {
 		for _, e := range cluster.Spec.Env {
 			names[e.Name] = true
 		}
-		return "cluster " + name, names
+		addLive(name + "-server")
+		for _, key := range workloadIdentitySAAnnotations {
+			if _, ok := cluster.Spec.PodServiceAccountAnnotations[key]; ok {
+				return "cluster " + name, names, true
+			}
+		}
+		return "cluster " + name, names, false
 	}
 	var standalone neo4jv1beta1.Neo4jEnterpriseStandalone
 	if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, &standalone); err == nil {
 		for _, e := range standalone.Spec.Env {
 			names[e.Name] = true
 		}
-		return "standalone " + name, names
+		addLive(name)
+		return "standalone " + name, names, false
 	}
-	return "", names
+	return "", names, false
 }
 
 // preflightInstance covers the two kinds that run Neo4j pods. Both carry the
