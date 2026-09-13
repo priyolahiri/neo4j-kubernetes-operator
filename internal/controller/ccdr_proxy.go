@@ -25,6 +25,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
@@ -72,6 +73,12 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileCrossClusterReplicationProxy
 					return err
 				}
 				latest.Status.CrossClusterReplication = nil
+				// The security condition describes the proxy, so it goes with
+				// it. Leaving a False CrossClusterProxySecure behind on a
+				// cluster that no longer exposes anything would be a permanent
+				// false alarm.
+				meta.RemoveStatusCondition(&latest.Status.Conditions,
+					ConditionTypeCrossClusterProxySecure)
 				return r.Status().Update(ctx, latest)
 			}); err != nil {
 				return nil, fmt.Errorf("clear CCDR proxy status: %w", err)
@@ -126,6 +133,31 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileCrossClusterReplicationProxy
 		logger.Info("CCDR proxy Service load balancer not yet assigned; server.cluster.advertised_address stays internal until it is")
 	}
 
+	// The proxy is HAProxy in `mode tcp`: it terminates nothing and
+	// authenticates nothing, so the cluster SSL policy's client_auth=REQUIRE
+	// is the ONLY access control in front of the tx-shipping port it
+	// publishes. Without spec.tls there is none at all, and anyone who can
+	// reach the load balancer can stream the database.
+	//
+	// Warned, not refused. A user may terminate TLS at the load balancer or
+	// run deliberately inside a private network, and refusing would break
+	// clusters already configured this way on upgrade. But it must be visible:
+	// the condition persists (an event would age out in an hour, and would be
+	// lost entirely across an operator restart, which is exactly when someone
+	// reviewing a cluster would look).
+	secure := isStrictPeerValidationEnabled(cluster)
+	unauthenticatedNow := status.Ready && !secure
+	alreadyExposed := cluster.Status.CrossClusterReplication != nil &&
+		cluster.Status.CrossClusterReplication.Ready
+	if unauthenticatedNow && !alreadyExposed && r.Recorder != nil {
+		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonCCDRProxyUnauthenticated,
+			"Cross-cluster replication proxy published %s with no cluster SSL policy: "+
+				"the tx-shipping port is reachable without authentication or encryption. "+
+				"Set spec.tls.mode=cert-manager (strictPeerValidation defaults to true) "+
+				"and keep crossClusterReplication.loadBalancerInternal=true.",
+			status.LoadBalancerHostname)
+	}
+
 	// Persist explicitly against a freshly-Get'd object: the caller's
 	// in-memory `cluster` may already be stale by the time a later
 	// updateClusterStatusWithVersion call re-Gets and overwrites status from
@@ -138,6 +170,15 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileCrossClusterReplicationProxy
 			return err
 		}
 		latest.Status.CrossClusterReplication = status
+		condStatus, reason, message := metav1.ConditionTrue, "MutualTLSRequired",
+			"the cluster SSL policy requires a peer certificate on the proxied port"
+		if unauthenticatedNow {
+			condStatus, reason = metav1.ConditionFalse, "NoClusterTLS"
+			message = "the proxy authenticates nothing; without spec.tls the tx-shipping " +
+				"port is exposed with no authentication or encryption"
+		}
+		SetNamedCondition(&latest.Status.Conditions, ConditionTypeCrossClusterProxySecure,
+			latest.Generation, condStatus, reason, message)
 		return r.Status().Update(ctx, latest)
 	}); err != nil {
 		return nil, fmt.Errorf("persist CCDR proxy status: %w", err)

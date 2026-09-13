@@ -28,6 +28,13 @@ const (
 	// databases may be under-replicated on those servers; the operator does not
 	// yet auto-drain them (#173).
 	ConditionTypeServersPendingDrain = "ServersPendingDrain"
+
+	// ConditionTypeCrossClusterProxySecure reports whether anything
+	// authenticates the tx-shipping port that spec.crossClusterReplication
+	// publishes through a load balancer. The proxy is a TCP passthrough, so
+	// the cluster SSL policy is the only access control there is; False means
+	// the port is reachable without one. Set only while the proxy is enabled.
+	ConditionTypeCrossClusterProxySecure = "CrossClusterProxySecure"
 )
 
 // Reason constants for the Ready condition across all CRDs.

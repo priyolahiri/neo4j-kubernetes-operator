@@ -433,6 +433,7 @@ each, CI-sized.
 | The certificate covers that address | the proxy address is an **IP**, so it belongs in the certificate's `IPAddresses`, never `DNSNames` — an IP in `DNSNames` yields a certificate the cluster cannot form on. `kubectl get certificate <name> -o yaml` |
 | Replica streams between the two clusters | `Neo4jReplicaDatabase`, `source.mode: network`, `source.addresses: ["<proxy ip>:16000"]` → `Replicating`, "0 transactions behind" |
 | The stream is live, not just the seed | rows written upstream *after* the replica exists appear downstream; a write against the replica is refused |
+| The cluster says what guards the exposed port | `status.conditions[CrossClusterProxySecure]` is `True`/`MutualTLSRequired` with TLS on. It reads `False`/`NoClusterTLS` when the proxy is enabled without `spec.tls` — nothing authenticates the tx-shipping port then, and the proxy authenticates nothing itself |
 
 → **Tear down both**: `kind delete cluster --name neo4j-operator-dev --name neo4j-dr`.
 
