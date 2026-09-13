@@ -1027,6 +1027,12 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 				if len(desiredSpec.Template.Spec.Containers) > 0 {
 					writeOwnedEnvVarNames(sts, desiredSpec.Template.Spec.Containers[0].Env)
 				}
+				// Stamp on create as well as on update. The stamp is what lets a
+				// cluster that never finishes forming still accept a corrected
+				// template (see isTemplateChangeSignificant); a StatefulSet that
+				// only ever got stamped once it went stable could not be repaired
+				// before it got there, which is precisely when it needs to be.
+				setClusterTemplateHash(sts, desiredSpec.Template)
 			}
 		}
 		return nil
@@ -1047,8 +1053,28 @@ func (r *Neo4jEnterpriseClusterReconciler) isTemplateChangeSignificant(ctx conte
 			"readyReplicas", sts.Status.ReadyReplicas,
 			"desiredReplicas", *sts.Spec.Replicas)
 
-		// Only allow critical changes during cluster formation
-		return r.hasCriticalTemplateChanges(currentTemplate, desiredTemplate)
+		// Critical changes always apply. So does a change in what the operator
+		// WANTS: if the desired template's hash differs from the one we last
+		// stamped, the rendering changed since we applied it — the user edited
+		// the CR, or an operator upgrade renders it differently — and that is
+		// intent, not the reconcile churn this branch exists to damp.
+		//
+		// Without this a cluster that cannot finish forming BECAUSE of its
+		// template was unrepairable: the pods never go ready, so every reconcile
+		// takes this branch, and every non-critical fix (volumes, env, init
+		// containers — hasCriticalTemplateChanges covers none of them) was
+		// dropped forever. Found on a cross-cluster TLS walk, where a peer-CA
+		// mount made server-1 crash-loop and the corrected spec never reached
+		// the StatefulSet; the only way out was to delete it by hand.
+		if r.hasCriticalTemplateChanges(currentTemplate, desiredTemplate) {
+			return true
+		}
+		// Only the stamp can tell intent from churn, so a StatefulSet that has
+		// never been stamped keeps the old critical-only behaviour rather than
+		// reading "no stamp" as "changed" and rolling a cluster that is merely
+		// still coming up.
+		stamped, ok := sts.Annotations[clusterTemplateHashAnnotation]
+		return ok && podTemplateSpecHash(desiredTemplate) != stamped
 	}
 
 	// For a stable cluster a change is significant if EITHER:

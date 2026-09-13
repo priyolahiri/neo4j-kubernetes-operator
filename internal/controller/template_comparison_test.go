@@ -767,3 +767,75 @@ func TestClusterTemplateHash_StableAndForeignTolerant(t *testing.T) {
 		t.Fatal("desired-template hash changed unexpectedly")
 	}
 }
+
+// A cluster that cannot finish forming BECAUSE of its own template must still
+// accept a corrected one.
+//
+// Formation deliberately damps template churn: while ReadyReplicas < replicas,
+// only hasCriticalTemplateChanges applied, and that covers image, resources,
+// securityContext and serviceAccount — not volumes, env or init containers. So
+// a template defect in any of those produced a cluster that never went ready,
+// which meant every reconcile took the conservative branch, which meant the
+// fix never reached the StatefulSet. The only escape was deleting it by hand.
+//
+// Found walking cross-cluster TLS: a peer-CA mounted inside the certs volume's
+// own directory made server-1 crash-loop with `not a directory`, and correcting
+// the spec changed nothing. The stamp distinguishes the two cases — a desired
+// template that differs from the one we last applied is intent, not churn.
+func TestFormingCluster_AcceptsCorrectedTemplate(t *testing.T) {
+	reconciler := &Neo4jEnterpriseClusterReconciler{}
+	ctx := context.Background()
+
+	template := func() corev1.PodTemplateSpec {
+		return corev1.PodTemplateSpec{
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{Name: "neo4j", Image: "neo4j:5.26.0-enterprise"}},
+				Volumes: []corev1.Volume{{
+					Name:         "certs",
+					VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "tls"}},
+				}},
+			},
+		}
+	}
+
+	forming := func(stamp string) *appsv1.StatefulSet {
+		sts := &appsv1.StatefulSet{
+			Spec:   appsv1.StatefulSetSpec{Replicas: int32Ptr(2)},
+			Status: appsv1.StatefulSetStatus{ReadyReplicas: 1},
+		}
+		if stamp != "" {
+			sts.Annotations = map[string]string{clusterTemplateHashAnnotation: stamp}
+		}
+		return sts
+	}
+
+	current := template()
+
+	t.Run("a non-critical correction reaches a stamped forming StatefulSet", func(t *testing.T) {
+		// The repair the old code dropped: swapping the certs volume source so
+		// the peer CA is projected in rather than mounted over.
+		corrected := template()
+		corrected.Spec.Volumes[0].VolumeSource = corev1.VolumeSource{
+			Projected: &corev1.ProjectedVolumeSource{},
+		}
+
+		sts := forming(podTemplateSpecHash(current))
+		assert.True(t, reconciler.isTemplateChangeSignificant(ctx, current, corrected, sts),
+			"a forming cluster must accept a template that differs from the stamped one")
+	})
+
+	t.Run("an unchanged template does not roll a forming StatefulSet", func(t *testing.T) {
+		sts := forming(podTemplateSpecHash(current))
+		assert.False(t, reconciler.isTemplateChangeSignificant(ctx, current, template(), sts),
+			"re-rendering the same template must not be mistaken for intent")
+	})
+
+	t.Run("an unstamped forming StatefulSet keeps the critical-only rule", func(t *testing.T) {
+		changed := template()
+		changed.Spec.Volumes[0].VolumeSource = corev1.VolumeSource{
+			Projected: &corev1.ProjectedVolumeSource{},
+		}
+		assert.False(t, reconciler.isTemplateChangeSignificant(ctx, current, changed, forming("")),
+			"no stamp means no way to tell intent from churn; stay conservative")
+	})
+}
