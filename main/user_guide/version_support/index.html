@@ -3990,13 +3990,20 @@ the database it manages</strong>, so you can plan upgrades on your own schedule.
 <td>the <strong>operator-validated CalVer anchor</strong> (named in each operator release, e.g. <code>2026.06</code>)</td>
 <td>Newest capabilities, validated by the operator's CI.</td>
 </tr>
-<tr>
-<td><strong>Evaluating / dev / test</strong></td>
-<td>either</td>
-<td>CalVer for newest features, LTS for stability.</td>
-</tr>
 </tbody>
 </table>
+<div class="admonition note">
+<p class="admonition-title">One feature needs more than the anchor</p>
+<p><strong>Cross-cluster replication requires Neo4j 2026.08+ on the DOWNSTREAM
+cluster</strong> — the version that introduced <code>CREATE REPLICA DATABASE</code>. It is the
+only capability with a floor above the validated anchor, so a deployment
+sitting on the anchor cannot host a replica: the <code>Neo4jReplicaDatabase</code> CR
+fails with <code>ReplicaVersionTooOld</code>, naming both the requirement and the
+version it found. The upstream has no such floor (2025.01+ is enough) and
+must not be newer than the downstream. See
+<a href="../guides/cross_cluster_replication/">Cross-Cluster Replication</a>.</p>
+</div>
+<p>| <strong>Evaluating / dev / test</strong> | either | CalVer for newest features, LTS for stability. |</p>
 <p>Enterprise Edition images only — Community is not supported. Versions older than
 5.26 (4.x, 5.0–5.25) are not supported.</p>
 <h2 id="support-lifecycle-what-you-can-plan-around">Support lifecycle — what you can plan around<a class="headerlink" href="#support-lifecycle-what-you-can-plan-around" title="Anchor link to this section">&para;</a></h2>

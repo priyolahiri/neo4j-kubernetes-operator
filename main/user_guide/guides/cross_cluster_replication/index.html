@@ -4207,7 +4207,7 @@ or split-horizon DNS.</p>
 </tr>
 <tr>
 <td>Backup mode</td>
-<td>Shared object storage (S3, GCS, or Azure Blob) reachable from both clusters</td>
+<td>Shared object storage (S3, GCS, or Azure Blob) reachable from both clusters — <strong>and the downstream cluster's <code>spec.env</code> must carry the credentials</strong>, because the seed and every pull run on the Neo4j server itself. <code>kubectl neo4j preflight</code> checks this before you apply; see <a href="#2-downstream-create-the-replica">step 2</a></td>
 </tr>
 <tr>
 <td>Network mode, <strong>separate</strong> Kubernetes clusters</td>
