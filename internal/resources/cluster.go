@@ -1312,20 +1312,9 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 		volumeMounts = append(volumeMounts, TrustStoreVolumeMount)
 	}
 
-	// Add one mount per spec.tls.additionalClusterTrustCAs entry, landing
-	// each peer cluster's CA directly in the cluster SSL policy's trust
-	// directory (/ssl/trusted/) — additive to the single-Secret CertsVolume
-	// mount above, never touching it.
-	if cluster.Spec.TLS != nil {
-		for i, ca := range cluster.Spec.TLS.AdditionalClusterTrustCAs {
-			volumeMounts = append(volumeMounts, corev1.VolumeMount{
-				Name:      clusterTrustCAVolumeName(ca.Name),
-				MountPath: clusterTrustCAMountPath(i),
-				SubPath:   "ca.crt",
-				ReadOnly:  true,
-			})
-		}
-	}
+	// Peer CAs are projected INTO the certs volume (see the volume builder),
+	// not mounted separately — /ssl/trusted/ is that volume's own content, so a
+	// second mount there cannot work and stops the container starting.
 
 	// User-supplied extra volume mounts (must reference volumes in spec.extraVolumes
 	// or one of the built-in volumes). Validated for path collisions upstream.
@@ -1494,37 +1483,67 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 				{Key: "ca.crt", Path: "trusted/ca.crt"},
 			}
 		}
-		volumes = append(volumes, corev1.Volume{
-			Name:         CertsVolume,
-			VolumeSource: corev1.VolumeSource{Secret: source},
-		})
+		// Peer CAs are ITEMS IN THIS VOLUME, not a second mount on top of it.
+		// /ssl/trusted/ is not a directory in the image — it exists only
+		// because of the `trusted/ca.crt` item above, i.e. it is this volume's
+		// own content. Mounting another volume at /ssl/trusted/peer-ca-0.crt
+		// therefore asks the kubelet to mount inside an existing mount, and the
+		// container does not start at all:
+		//
+		//	error mounting … to rootfs at "/ssl/trusted/peer-ca-0.crt":
+		//	… flags=MS_RDONLY|MS_BIND|MS_REC: not a directory
+		//
+		// A projected volume is the mechanism for combining several Secrets
+		// into one tree, so when peers are configured this becomes projected
+		// and every CA lands as a sibling file under trusted/.
+		if peers := clusterPeerTrustCAs(cluster); len(peers) > 0 {
+			items := source.Items
+			if items == nil {
+				items = []corev1.KeyToPath{
+					{Key: "tls.crt", Path: "tls.crt"},
+					{Key: "tls.key", Path: "tls.key"},
+					{Key: "ca.crt", Path: "ca.crt"},
+					{Key: "ca.crt", Path: "trusted/ca.crt"},
+				}
+			}
+			sources := []corev1.VolumeProjection{{
+				Secret: &corev1.SecretProjection{
+					LocalObjectReference: corev1.LocalObjectReference{Name: source.SecretName},
+					Items:                items,
+				},
+			}}
+			for i, peer := range peers {
+				sources = append(sources, corev1.VolumeProjection{
+					Secret: &corev1.SecretProjection{
+						LocalObjectReference: corev1.LocalObjectReference{Name: peer.Name},
+						Items: []corev1.KeyToPath{{
+							Key:  peer.Key,
+							Path: clusterPeerTrustCAPath(i),
+						}},
+					},
+				})
+			}
+			volumes = append(volumes, corev1.Volume{
+				Name: CertsVolume,
+				VolumeSource: corev1.VolumeSource{
+					Projected: &corev1.ProjectedVolumeSource{
+						Sources:     sources,
+						DefaultMode: source.DefaultMode,
+					},
+				},
+			})
+		} else {
+			volumes = append(volumes, corev1.Volume{
+				Name:         CertsVolume,
+				VolumeSource: corev1.VolumeSource{Secret: source},
+			})
+		}
 	}
 
 	// trustedCAs was computed up-front (above the volumeMounts block) — wire
 	// up Secret-backed volumes + the writable EmptyDir for the truststore.
 	if len(trustedCAs) > 0 {
 		volumes = append(volumes, BuildTrustStoreVolumes(trustedCAs)...)
-	}
-
-	// One Secret-backed volume per spec.tls.additionalClusterTrustCAs entry,
-	// projecting only the CA key (defaulting to "ca.crt") so it can be
-	// mounted as a single file via the matching VolumeMount's SubPath above.
-	if cluster.Spec.TLS != nil {
-		for _, ca := range cluster.Spec.TLS.AdditionalClusterTrustCAs {
-			key := ca.Key
-			if key == "" {
-				key = "ca.crt"
-			}
-			volumes = append(volumes, corev1.Volume{
-				Name: clusterTrustCAVolumeName(ca.Name),
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: ca.Name,
-						Items:      []corev1.KeyToPath{{Key: key, Path: "ca.crt"}},
-					},
-				},
-			})
-		}
 	}
 
 	// User-supplied extra volumes (escape hatch for arbitrary mounts —
@@ -3220,21 +3239,31 @@ func BuildAuthEnvVars(auth *neo4jv1beta1.AuthSpec) []corev1.EnvVar {
 	}
 }
 
-// clusterTrustCAVolumeName returns the volume name for a single entry in
-// spec.tls.additionalClusterTrustCAs. Namespaced separately from
-// trustedCASecretVolumeName (the JVM truststore) since the same Secret could
-// legitimately appear in both lists.
-func clusterTrustCAVolumeName(secretName string) string {
-	return "cluster-trust-ca-" + secretName
+// clusterPeerTrustCAs returns the configured peer CAs with their key defaulted,
+// so the volume builder and any caller see the same normalised list.
+func clusterPeerTrustCAs(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []neo4jv1beta1.TrustedCASecret {
+	if cluster.Spec.TLS == nil {
+		return nil
+	}
+	out := make([]neo4jv1beta1.TrustedCASecret, 0, len(cluster.Spec.TLS.AdditionalClusterTrustCAs))
+	for _, ca := range cluster.Spec.TLS.AdditionalClusterTrustCAs {
+		if ca.Key == "" {
+			ca.Key = "ca.crt"
+		}
+		out = append(out, ca)
+	}
+	return out
 }
 
-// clusterTrustCAMountPath returns the mount path for the i-th entry in
-// spec.tls.additionalClusterTrustCAs. Neo4j's cluster SSL policy trust
-// directory (/ssl/trusted/) is scanned for every file present, not a single
-// fixed filename, so each peer CA lands as its own distinct file alongside
-// this cluster's own ca.crt.
-func clusterTrustCAMountPath(index int) string {
-	return fmt.Sprintf("/ssl/trusted/peer-ca-%d.crt", index)
+// clusterPeerTrustCAPath returns the path, RELATIVE TO THE CERTS VOLUME ROOT,
+// that the i-th entry in spec.tls.additionalClusterTrustCAs is projected to.
+// Neo4j's cluster SSL policy trust directory (/ssl/trusted/) is scanned for
+// every file present, not a single fixed filename, so each peer CA lands as
+// its own distinct file alongside this cluster's own ca.crt. It is a
+// projection path rather than a mount path on purpose — see the comment at the
+// projection site for why a second volume cannot be mounted in there.
+func clusterPeerTrustCAPath(index int) string {
+	return fmt.Sprintf("trusted/peer-ca-%d.crt", index)
 }
 
 // trustedCASecretVolumeName returns the volume name for a single trusted-CA Secret.

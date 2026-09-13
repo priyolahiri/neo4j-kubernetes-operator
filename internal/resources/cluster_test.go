@@ -591,11 +591,19 @@ func TestBuildCertificateForEnterprise_CCDRProxySAN(t *testing.T) {
 	})
 }
 
-// TestBuildPodSpecForEnterprise_AdditionalClusterTrustCAs pins the additive
-// trust-directory wiring for spec.tls.additionalClusterTrustCAs: one
-// Secret-backed volume + one SubPath-mounted VolumeMount per entry, landing
-// in /ssl/trusted/ alongside (never replacing) the existing single-Secret
-// CertsVolume mount.
+// TestBuildPodSpecForEnterprise_AdditionalClusterTrustCAs pins the wiring for
+// spec.tls.additionalClusterTrustCAs: every peer CA is an ITEM IN THE CERTS
+// VOLUME, landing under trusted/ alongside the cluster's own CA.
+//
+// It used to be one Secret volume plus one SubPath mount per peer, at
+// /ssl/trusted/peer-ca-N.crt. That cannot work and this test pinned it anyway:
+// /ssl/trusted/ is not a directory in the image, it exists only because the
+// certs volume projects `trusted/ca.crt`. Mounting there asks the kubelet to
+// mount inside an existing mount, and the CONTAINER NEVER STARTS —
+//
+//	error mounting … to rootfs at "/ssl/trusted/peer-ca-0.crt": not a directory
+//
+// — which is what walking cross-cluster TLS for the first time produced.
 func TestBuildPodSpecForEnterprise_AdditionalClusterTrustCAs(t *testing.T) {
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "ns"},
@@ -624,38 +632,53 @@ func TestBuildPodSpecForEnterprise_AdditionalClusterTrustCAs(t *testing.T) {
 	}
 	require.NotEmpty(t, mounts)
 
-	assert.Contains(t, mounts, corev1.VolumeMount{
-		Name:      "cluster-trust-ca-dr-cluster-ca",
-		MountPath: "/ssl/trusted/peer-ca-0.crt",
-		SubPath:   "ca.crt",
-		ReadOnly:  true,
-	})
-	assert.Contains(t, mounts, corev1.VolumeMount{
-		Name:      "cluster-trust-ca-dr-cluster-ca-2",
-		MountPath: "/ssl/trusted/peer-ca-1.crt",
-		SubPath:   "ca.crt",
-		ReadOnly:  true,
-	})
-
-	// The existing single-Secret CertsVolume mount at /ssl must be untouched.
+	// Exactly one mount for /ssl, and nothing mounted beneath it.
+	for _, m := range mounts {
+		assert.NotContains(t, m.MountPath, "/ssl/trusted/",
+			"nothing may be mounted inside the certs volume: the container would not start")
+	}
 	assert.Contains(t, mounts, corev1.VolumeMount{
 		Name:      resources.CertsVolume,
 		MountPath: "/ssl",
 		ReadOnly:  true,
 	})
 
-	var volNames []string
-	for _, v := range podSpec.Volumes {
-		volNames = append(volNames, v.Name)
-		if v.Name == "cluster-trust-ca-dr-cluster-ca-2" {
-			require.NotNil(t, v.Secret)
-			require.Len(t, v.Secret.Items, 1)
-			assert.Equal(t, "tls.crt", v.Secret.Items[0].Key)
-			assert.Equal(t, "ca.crt", v.Secret.Items[0].Path)
+	// The certs volume is projected, carrying the cluster's own material plus
+	// one sibling file per peer under trusted/.
+	var certs *corev1.Volume
+	for i := range podSpec.Volumes {
+		if podSpec.Volumes[i].Name == resources.CertsVolume {
+			certs = &podSpec.Volumes[i]
 		}
 	}
-	assert.Contains(t, volNames, "cluster-trust-ca-dr-cluster-ca")
-	assert.Contains(t, volNames, "cluster-trust-ca-dr-cluster-ca-2")
+	require.NotNil(t, certs)
+	require.NotNil(t, certs.Projected, "peers require a projected volume, not a single Secret")
+
+	paths := map[string]string{} // path -> secret it came from
+	for _, src := range certs.Projected.Sources {
+		require.NotNil(t, src.Secret)
+		for _, item := range src.Secret.Items {
+			paths[item.Path] = src.Secret.Name
+		}
+	}
+	assert.Equal(t, "prod-tls-secret", paths["trusted/ca.crt"], "the cluster's own CA stays")
+	assert.Equal(t, "dr-cluster-ca", paths["trusted/peer-ca-0.crt"])
+	assert.Equal(t, "dr-cluster-ca-2", paths["trusted/peer-ca-1.crt"])
+
+	// A peer's key defaults to ca.crt but is honoured when given.
+	for _, src := range certs.Projected.Sources {
+		if src.Secret.Name == "dr-cluster-ca-2" {
+			assert.Equal(t, "tls.crt", src.Secret.Items[0].Key)
+		}
+		if src.Secret.Name == "dr-cluster-ca" {
+			assert.Equal(t, "ca.crt", src.Secret.Items[0].Key)
+		}
+	}
+
+	// No peer gets a volume of its own any more.
+	for _, v := range podSpec.Volumes {
+		assert.NotContains(t, v.Name, "cluster-trust-ca-")
+	}
 }
 
 func TestBuildClientServiceForEnterprise_WithEnhancedFeatures(t *testing.T) {
