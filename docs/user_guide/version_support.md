@@ -11,6 +11,17 @@ the database it manages**, so you can plan upgrades on your own schedule.
 |---|---|---|
 | **Mission-critical, strict change control, SLAs** | **5.26 LTS** (`neo4j:5.26-enterprise`) | Feature-stable, fixes-only, longest support lifecycle. Nothing new churns under you. |
 | **Want the latest features; agile / non-mission-critical** | the **operator-validated CalVer anchor** (named in each operator release, e.g. `2026.06`) | Newest capabilities, validated by the operator's CI. |
+
+!!! note "One feature needs more than the anchor"
+
+    **Cross-cluster replication requires Neo4j 2026.08+ on the DOWNSTREAM
+    cluster** — the version that introduced `CREATE REPLICA DATABASE`. It is the
+    only capability with a floor above the validated anchor, so a deployment
+    sitting on the anchor cannot host a replica: the `Neo4jReplicaDatabase` CR
+    fails with `ReplicaVersionTooOld`, naming both the requirement and the
+    version it found. The upstream has no such floor (2025.01+ is enough) and
+    must not be newer than the downstream. See
+    [Cross-Cluster Replication](guides/cross_cluster_replication.md).
 | **Evaluating / dev / test** | either | CalVer for newest features, LTS for stability. |
 
 Enterprise Edition images only — Community is not supported. Versions older than

@@ -44,7 +44,7 @@ or split-horizon DNS.
 |---|---|
 | Downstream (replica) cluster | Neo4j **2026.08+** — enforced |
 | Upstream cluster | Neo4j 2025.01+ — not enforced (the operator cannot inspect another cluster) |
-| Backup mode | Shared object storage (S3, GCS, or Azure Blob) reachable from both clusters |
+| Backup mode | Shared object storage (S3, GCS, or Azure Blob) reachable from both clusters — **and the downstream cluster's `spec.env` must carry the credentials**, because the seed and every pull run on the Neo4j server itself. `kubectl neo4j preflight` checks this before you apply; see [step 2](#2-downstream-create-the-replica) |
 | Network mode, **separate** Kubernetes clusters | The upstream's Kubernetes cluster must support `type: LoadBalancer` Services |
 | Network mode, **same** Kubernetes cluster | No extra requirement — ordinary in-cluster DNS already reaches across namespaces |
 
