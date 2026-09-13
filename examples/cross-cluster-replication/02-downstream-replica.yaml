@@ -2,6 +2,27 @@
 #
 # The two Kubernetes clusters never talk to each other. The only coupling is
 # the object-storage bucket. Requires Neo4j 2026.08+ on this cluster.
+# ── BEFORE this works, the DOWNSTREAM CLUSTER needs the bucket credentials ────
+# The seed and every pull are done by the Neo4j SERVER, not by a Job, so the
+# credentials must be in the server's own environment. Setting
+# source.credentialsSecretRef below does NOT do this — that field is not
+# consumed yet. On the downstream Neo4jEnterpriseCluster:
+#
+#   spec:
+#     env:
+#       - name: AWS_REGION
+#         valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_REGION}}
+#       - name: AWS_ACCESS_KEY_ID
+#         valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_ACCESS_KEY_ID}}
+#       - name: AWS_SECRET_ACCESS_KEY
+#         valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_SECRET_ACCESS_KEY}}
+#       - name: AWS_ENDPOINT_URL_S3      # S3-compatible stores (MinIO) only
+#         value: http://minio.minio.svc:9000
+#
+# Without it the replica sits in Seeding while the server refuses with
+# "Unable to load region from any of the providers". Network mode needs none
+# of this. See docs/user_guide/guides/cross_cluster_replication.md step 2.
+
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jReplicaDatabase
 metadata:

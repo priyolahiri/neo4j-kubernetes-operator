@@ -189,9 +189,32 @@ type ReplicaSourceSpec struct {
 	UpstreamClusterRef *UpstreamClusterRef `json:"upstreamClusterRef,omitempty"`
 
 	// CredentialsSecretRef names a Secret holding object-storage credentials
-	// for PullURI/SeedURI, when the downstream cluster cannot reach the bucket
-	// via workload identity. Same key layout as Neo4jBackup's cloud
-	// credentials.
+	// for PullURI/SeedURI. Same key layout as Neo4jBackup's cloud credentials.
+	//
+	// NOT YET CONSUMED — setting it alone does not give the downstream cluster
+	// access to the bucket, and a backup-mode replica will fail with the AWS
+	// SDK's own "Unable to load region from any of the providers".
+	//
+	// The seed and the pull are performed by the Neo4j SERVER, not by a Job,
+	// so the credentials have to be in the server's own environment. Put them
+	// on the downstream cluster, where they are picked up by the AWS SDK
+	// default chain and survive restarts:
+	//
+	//	spec:
+	//	  env:
+	//	    - name: AWS_REGION
+	//	      valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_REGION}}
+	//	    - name: AWS_ACCESS_KEY_ID
+	//	      valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_ACCESS_KEY_ID}}
+	//	    - name: AWS_SECRET_ACCESS_KEY
+	//	      valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_SECRET_ACCESS_KEY}}
+	//	    - name: AWS_ENDPOINT_URL_S3        # S3-compatible stores only
+	//	      value: http://minio.minio.svc:9000
+	//
+	// Verified end to end on 2026.08.1 (2026-09-13). This field is kept
+	// because the credentials do belong to the replica conceptually; wiring it
+	// means projecting env vars onto the StatefulSet, which restarts every
+	// server — a decision with availability consequences, not a small change.
 	// +optional
 	CredentialsSecretRef string `json:"credentialsSecretRef,omitempty"`
 }

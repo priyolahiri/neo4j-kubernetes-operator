@@ -129,11 +129,27 @@ spec:
                       type: string
                     type: array
                   credentialsSecretRef:
-                    description: |-
-                      CredentialsSecretRef names a Secret holding object-storage credentials
-                      for PullURI/SeedURI, when the downstream cluster cannot reach the bucket
-                      via workload identity. Same key layout as Neo4jBackup's cloud
-                      credentials.
+                    description: "CredentialsSecretRef names a Secret holding object-storage
+                      credentials\nfor PullURI/SeedURI. Same key layout as Neo4jBackup's
+                      cloud credentials.\n\nNOT YET CONSUMED — setting it alone does
+                      not give the downstream cluster\naccess to the bucket, and a
+                      backup-mode replica will fail with the AWS\nSDK's own \"Unable
+                      to load region from any of the providers\".\n\nThe seed and
+                      the pull are performed by the Neo4j SERVER, not by a Job,\nso
+                      the credentials have to be in the server's own environment.
+                      Put them\non the downstream cluster, where they are picked up
+                      by the AWS SDK\ndefault chain and survive restarts:\n\n\tspec:\n\t
+                      \ env:\n\t    - name: AWS_REGION\n\t      valueFrom: {secretKeyRef:
+                      {name: s3-creds, key: AWS_REGION}}\n\t    - name: AWS_ACCESS_KEY_ID\n\t
+                      \     valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_ACCESS_KEY_ID}}\n\t
+                      \   - name: AWS_SECRET_ACCESS_KEY\n\t      valueFrom: {secretKeyRef:
+                      {name: s3-creds, key: AWS_SECRET_ACCESS_KEY}}\n\t    - name:
+                      AWS_ENDPOINT_URL_S3        # S3-compatible stores only\n\t      value:
+                      http://minio.minio.svc:9000\n\nVerified end to end on 2026.08.1
+                      (2026-09-13). This field is kept\nbecause the credentials do
+                      belong to the replica conceptually; wiring it\nmeans projecting
+                      env vars onto the StatefulSet, which restarts every\nserver
+                      — a decision with availability consequences, not a small change."
                     type: string
                   mode:
                     default: backup

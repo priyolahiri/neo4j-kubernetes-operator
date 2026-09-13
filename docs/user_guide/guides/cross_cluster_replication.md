@@ -297,6 +297,43 @@ exactly the same regardless of mode or topology.
 
 ## 2. Downstream: create the replica
 
+!!! warning "Backup mode: the DOWNSTREAM CLUSTER needs the bucket credentials, not the replica CR"
+
+    The seed and every subsequent pull are performed by the Neo4j **server**,
+    not by a Job — so the credentials have to be in the server's own
+    environment, where the AWS SDK's default chain finds them. Put them on the
+    downstream `Neo4jEnterpriseCluster` **before** you create the replica:
+
+    ```yaml
+    apiVersion: neo4j.neo4j.com/v1beta1
+    kind: Neo4jEnterpriseCluster
+    metadata:
+      name: dr-cluster
+      namespace: dr
+    spec:
+      env:
+        - name: AWS_REGION
+          valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_REGION}}
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_ACCESS_KEY_ID}}
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_SECRET_ACCESS_KEY}}
+        # S3-compatible stores (MinIO, Ceph, LocalStack) only:
+        - name: AWS_ENDPOINT_URL_S3
+          value: http://minio.minio.svc:9000
+    ```
+
+    Setting `source.credentialsSecretRef` on the replica **does not** do this —
+    the field is not consumed yet. Without the environment, the replica sits in
+    `Seeding` while the server refuses with the AWS SDK's own *"Unable to load
+    region from any of the providers"*, which never reaches `status.message`.
+
+    Adding these to a live cluster restarts its servers, so set them when the
+    downstream is created rather than in the middle of a failover drill.
+
+    **Network mode needs none of this** — it reads from the upstream over the
+    wire, not from a bucket.
+
 === "Backup mode"
 
     ```yaml
@@ -588,6 +625,7 @@ formation is never blocked waiting for the proxy.
 | Symptom | Cause |
 |---|---|
 | `Failed`, "requires Neo4j 2026.08 or later" | downstream cluster predates replica support |
+| **Backup mode stuck in `Seeding`, `status.message` never changes** | the downstream SERVERS have no bucket credentials. The operator's message stays optimistic; the real error is in the operator log — the AWS SDK's *"Unable to load region from any of the providers"*. Set `AWS_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (and `AWS_ENDPOINT_URL_S3` for S3-compatible stores) in the downstream cluster's `spec.env` — see the warning in step 2. `source.credentialsSecretRef` alone does **not** do it |
 | `Failed`, "network replication requires at least one upstream cluster endpoint" | `source.addresses` is empty — paste an entry from the upstream's `status.crossClusterReplication.addresses`, or use `source.upstreamClusterRef` if same-cluster |
 | `Failed`, "must be of the form host:port" | an entry in `source.addresses` is missing its port |
 | Warning: "source.pullURI is ignored in network mode" (or `seedURI`/`credentialsSecretRef`) | those fields are backup-mode only; harmless but likely a copy-paste leftover — remove them |
