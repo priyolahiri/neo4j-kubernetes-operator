@@ -4601,11 +4601,14 @@ path, but "two clusters" doesn't mean leaving Kind or leaving this single
 deployment session: Part C runs the real replication mechanism between two
 <code>Neo4jEnterpriseCluster</code>s in different namespaces on <strong>this same Kind
 cluster</strong>, reachable over ordinary in-cluster DNS — no proxy, no
-<code>crossClusterReplication</code>, no LoadBalancer needed. Part D then smoke-tests
-the <code>crossClusterReplication</code> proxy toggle itself, which plain Kind cannot
-exercise end-to-end (see Part D for why). Between them they cover everything
-this journey can reach; see each part for exactly what it does and does not
-cover.</p>
+<code>crossClusterReplication</code>, no LoadBalancer needed. Part D smoke-tests the
+<code>crossClusterReplication</code> toggle on a single plain Kind cluster, where the
+proxy's Service never gets an address. <strong>Part E is the one that matters most</strong>:
+two Kind clusters, TLS on with mutual CA trust, the proxy holding a real
+MetalLB address — the configuration CCDR is actually sold with, and the only
+one that exercises the proxy, the certificate SANs, the advertised-address
+override and cross-cluster trust together. See each part for what it does and
+does not cover.</p>
 <p>Stand up MinIO as the shared bucket (same pattern the backup specs use) for
 Parts A/B.</p>
 <p><strong>Part A — upstream (standalone is enough):</strong></p>
@@ -4755,15 +4758,14 @@ release.</p>
 <p>Part C covers the replication mechanism; this part covers the one piece it
 deliberately left out — <code>spec.crossClusterReplication</code> itself. That gate
 depends on the proxy's Service reaching a real <code>status.loadBalancer.ingress</code>
-state, and a <code>type: LoadBalancer</code> Service never gets one on plain Kind (no
-cloud provider) — this repo has <strong>no LoadBalancer-on-Kind tooling today</strong>, no
-MetalLB, no <code>cloud-provider-kind</code>, in the Makefile, dev scripts, or Kind
-cluster config. That's unbuilt local tooling, not a hard requirement for real
-cloud infrastructure or even for a second Kind cluster (two Kind clusters
-share a Docker network by default and can already route to each other, the
-same trick used for local multi-cluster testing elsewhere — Cilium
-ClusterMesh, Istio multi-cluster). Until the LoadBalancer piece exists, full
-end-to-end verification of the proxy path itself is not run here.</p>
+state, which a <code>type: LoadBalancer</code> Service never gets on <em>plain</em> Kind.
+<strong><code>make ccdr-lb</code> now supplies it</strong> (<code>hack/metallb-setup.sh</code> — MetalLB L2 with a
+pool carved from the top of the shared <code>kind</code> Docker network), so the proxy
+path is verifiable locally, and Part E below walks it end to end across two
+Kind clusters. This part stays useful as the single-cluster smoke check: the
+toggle must never break normal cluster formation, whether or not a real load
+balancer is present to service it. Run it <strong>without</strong> <code>make ccdr-lb</code> — the
+rows below describe the no-address state on purpose.</p>
 <p>What <em>is</em> verifiable on a single plain Kind cluster is that the toggle itself
 is safe — it must never break normal cluster formation, whether or not a real
 load balancer is present to service it:</p>
@@ -4794,6 +4796,56 @@ load balancer is present to service it:</p>
 </tbody>
 </table>
 <p>→ <strong>Tear down</strong>, then delete the Kind cluster.</p>
+<p><strong>Part E — the whole proxy path, two Kind clusters, TLS ON (two concurrent deployments):</strong></p>
+<p>This is the configuration CCDR is actually sold with, and the only part that
+exercises the proxy, the certificate SANs, the advertised-address override and
+cross-cluster CA trust <em>together</em>. All of that was verified for the first time
+on 2026-09-14, and three defects fell out of it that nothing else had reached
+— run it before every release that touches CCDR or TLS.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kind<span class="w"> </span>create<span class="w"> </span>cluster<span class="w"> </span>--name<span class="w"> </span>neo4j-operator-dev<span class="w">     </span><span class="c1"># upstream</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>kind<span class="w"> </span>create<span class="w"> </span>cluster<span class="w"> </span>--name<span class="w"> </span>neo4j-dr<span class="w">               </span><span class="c1"># downstream</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>make<span class="w"> </span>ccdr-lb<span class="w">                                      </span><span class="c1"># MetalLB, on the UPSTREAM only</span>
+</span></code></pre></div>
+<p>Deploy the operator to <strong>both</strong>, and put <code>--context</code> on every <code>kubectl</code>:
+<code>kind create cluster</code> switches the current context, and a batch of commands
+aimed at the wrong cluster is the easiest mistake to make here. Both clusters
+get <code>spec.tls.mode: cert-manager</code> with <code>strictPeerValidation: true</code>; 2 servers
+each, CI-sized.</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CA exchange really crossed</td>
+<td>copy each cluster's <code>ca.crt</code> out of its <code>&lt;name&gt;-tls-secret</code> into a Secret on the <em>other</em> cluster and reference it from <code>spec.tls.additionalClusterTrustCAs</code>. Then check it landed: <code>md5sum /ssl/trusted/*.crt</code> in each <code>server-0</code> — the upstream's <code>peer-ca-0.crt</code> must equal the downstream's own <code>ca.crt</code>, and vice versa. Both clusters must still reach <code>Ready</code>; a peer CA that stops a pod starting is a blocker, not a warning</td>
+</tr>
+<tr>
+<td>A wedged cluster can still be repaired</td>
+<td>while you are here: if a template change does NOT reach a cluster that is stuck mid-formation, that is the bug fixed in 40713d7 regressing. Editing the CR must change the StatefulSet even when no pod is ready</td>
+</tr>
+<tr>
+<td>The proxy gets a real address</td>
+<td><code>status.crossClusterReplication.ready: true</code> with one address per server ordinal (<code>&lt;ip&gt;:16000</code>, <code>:16001</code>), and <code>server.cluster.advertised_address=&lt;ip&gt;:16000</code> in <code>/tmp/neo4j-config/neo4j.conf</code>. The override applies only once the Service has an ingress address, so this is the first place it is observable at all</td>
+</tr>
+<tr>
+<td>The certificate covers that address</td>
+<td>the proxy address is an <strong>IP</strong>, so it belongs in the certificate's <code>IPAddresses</code>, never <code>DNSNames</code> — an IP in <code>DNSNames</code> yields a certificate the cluster cannot form on. <code>kubectl get certificate &lt;name&gt; -o yaml</code></td>
+</tr>
+<tr>
+<td>Replica streams between the two clusters</td>
+<td><code>Neo4jReplicaDatabase</code>, <code>source.mode: network</code>, <code>source.addresses: ["&lt;proxy ip&gt;:16000"]</code> → <code>Replicating</code>, "0 transactions behind"</td>
+</tr>
+<tr>
+<td>The stream is live, not just the seed</td>
+<td>rows written upstream <em>after</em> the replica exists appear downstream; a write against the replica is refused</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Tear down both</strong>: <code>kind delete cluster --name neo4j-operator-dev --name neo4j-dr</code>.</p>
 <h2 id="coverage-at-a-glance">Coverage at a glance<a class="headerlink" href="#coverage-at-a-glance" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
@@ -4905,7 +4957,7 @@ load balancer is present to service it:</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
-<td style="text-align: center;">✅ backup mode + network mode mechanism (same-cluster); network mode proxy is toggle-only (needs LoadBalancer-on-Kind tooling this repo doesn't have yet)</td>
+<td style="text-align: center;">✅ backup mode + network mode mechanism (same-cluster) + the full proxy path across two Kind clusters with TLS on (<code>make ccdr-lb</code>, Part E)</td>
 </tr>
 <tr>
 <td>Database aliases</td>
@@ -5033,6 +5085,12 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.</p>
 <td>2026-09-13</td>
 <td>✅ the proxy path verified end to end with MetalLB; <strong>one security defect found and fixed</strong></td>
 <td>The gap this doc recorded as "no LoadBalancer-on-Kind tooling today" was hiding a live defect, not just an unverified path. <code>spec.crossClusterReplication.loadBalancerInternal</code> defaults to <code>true</code> and calls itself the main mitigation against public exposure; it was computed and thrown away — <code>CCDRProxyLoadBalancerInternalEffective</code> had no caller outside its own unit test, and no internal-LB annotation existed anywhere in the codebase. On AWS, Azure or GCP that meant a PUBLIC load balancer in front of the transaction-shipping port. Fixed in 9c46aaa, verified live on the Service. <strong>The harness:</strong> <code>hack/metallb-setup.sh</code> + <code>make ccdr-lb</code>, an L2 pool carved from the top of the <code>kind</code> Docker network (<code>172.18.255.200-250</code>), which Kind clusters share — so it is reachable from a second Kind cluster with no host routing. <strong>Verified with it:</strong> the proxy Service gets <code>172.18.255.200</code>, <code>status.crossClusterReplication</code> goes <code>ready: true</code> publishing one address per server ordinal (<code>:16000</code>, <code>:16001</code>), and the servers advertise the proxy endpoint — <code>server.cluster.advertised_address=172.18.255.200:16000</code>. None of that had ever been observed. <strong>Also corrected:</strong> the Part D advertised-address row named the wrong file for the second day running; the server runs with <code>--config-dir=/tmp/neo4j-config</code>, and <code>/var/lib/neo4j/conf/neo4j.conf</code> is the image default the operator never writes.</td>
+</tr>
+<tr>
+<td><em>(v1.15.0 — network mode with TLS ON, two Kind clusters)</em></td>
+<td>2026-09-14</td>
+<td>✅ the configuration CCDR is actually sold with now works; <strong>two operator bugs found, both release blockers</strong></td>
+<td>Every earlier network-mode run had TLS off. Turning it on — <code>mode: cert-manager</code>, <code>strictPeerValidation: true</code>, each cluster carrying the other's CA in <code>spec.tls.additionalClusterTrustCAs</code> — broke it twice, in ways no unit test could see. <strong>(1) The peer-CA feature could not work at all.</strong> Each CA was mounted as its own volume with a subPath at <code>/ssl/trusted/peer-ca-&lt;i&gt;.crt</code>, but <code>/ssl/trusted/</code> is content of the certs volume itself (its own <code>trusted/ca.crt</code> item), and a volume cannot be mounted inside another volume's content: the kubelet refused the pod with <em>"not a directory"</em> and the server crash-looped with exit 128. The certs volume is now a projected volume carrying the cluster's own material plus one <code>trusted/peer-ca-&lt;i&gt;.crt</code> item per peer (d36c775) — which is what the API reference already claimed it did. <strong>(2) The fix changed nothing, which was the second bug.</strong> A forming StatefulSet accepted only <code>hasCriticalTemplateChanges</code> (image, resources, securityContext, serviceAccount) — not volumes, env or init containers. So a template defect that stops the pods going ready makes every reconcile take the conservative branch, which drops the repair, which keeps the pods from going ready: <strong>a cluster wedged by its own template could not be fixed by editing the CR</strong>, only by deleting the StatefulSet by hand. A forming StatefulSet now also accepts a template whose hash differs from the one the controller last stamped, since that is intent rather than churn (40713d7). <strong>Verified after both fixes:</strong> the corrected volume reached a StatefulSet at 1-of-2 ready, both servers rolled, both clusters went Ready; each side holds the other's CA in <code>/ssl/trusted/</code> (md5 of dev's <code>peer-ca-0.crt</code> equals DR's own <code>ca.crt</code> and vice versa); a <code>Neo4jReplicaDatabase</code> in network mode against the proxy at <code>172.18.255.200:16000</code> reached <code>Replicating</code> "0 transactions behind"; the 3 seeded rows read downstream, a 4<sup>th</sup> written upstream appeared downstream, and a write to the replica was refused. <strong>Both bugs needed a real two-cluster TLS walk</strong> — the first is a kubelet behaviour, the second only appears when a cluster is <em>already</em> failing. <strong>Observation, not fixed:</strong> the replica's <code>ClusterNotReady</code> condition is negative-polarity (<code>status: False</code> + <code>reason: ClusterReady</code> means the cluster IS ready). It is consistent across the role, rolebinding and replica controllers, so it is a naming convention rather than a defect; renaming it is a status-API break and not release-day work.</td>
 </tr>
 <tr>
 <td><strong>v1.15.0 release verification</strong></td>

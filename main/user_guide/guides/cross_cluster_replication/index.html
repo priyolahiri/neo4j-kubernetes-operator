@@ -4468,11 +4468,17 @@ downstream <code>Neo4jEnterpriseCluster</code> <strong>before</strong> you creat
 </span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AWS_ENDPOINT_URL_S3</span>
 </span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">      </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://minio.minio.svc:9000</span>
 </span></code></pre></div>
-<p>Setting <code>source.credentialsSecretRef</code> on the replica <strong>does not</strong> do this —
-it records which Secret the credentials come from, it does not project them.
-The operator checks: a backup-mode replica whose cluster has no <code>AWS_REGION</code>
-fails immediately, naming the missing variable and where to put it, instead
-of stalling in <code>Seeding</code> while the server refuses deep inside the AWS SDK.</p>
+<p><strong>Or let the operator do it</strong>: set <code>source.credentialsSecretRef</code> on the
+replica and it projects that Secret's keys onto the cluster for you, as
+<code>secretKeyRef</code> references rather than literals. That restarts the
+downstream servers — the replica waits for the rollout before creating
+anything — so it is still something to do when the downstream is built
+rather than mid-failover.</p>
+<p>Either way the operator checks before asking Neo4j: a backup-mode replica
+whose cluster has no <code>AWS_REGION</code> fails immediately, naming what is
+missing, instead of stalling in <code>Seeding</code> while the server refuses deep
+inside the AWS SDK. Two replicas naming different Secrets for one cluster
+are refused rather than fought over.</p>
 <p>Adding these to a live cluster restarts its servers, so set them when the
 downstream is created rather than in the middle of a failover drill.</p>
 <p><strong>Network mode needs none of this</strong> — it reads from the upstream over the
