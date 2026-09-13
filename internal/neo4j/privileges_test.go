@@ -18,6 +18,8 @@ package neo4j
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCanonicalisePrivilegeStatement(t *testing.T) {
@@ -388,4 +390,51 @@ func TestCanonicalise_StableUnderReReconcile(t *testing.T) {
 	if revoke != want {
 		t.Fatalf("derived REVOKE = %q, want %q", revoke, want)
 	}
+}
+
+// A privilege naming a database that does not exist is accepted by Neo4j in
+// silence. On a DR cluster that is the whole of the failure: the replica of
+// `foo` is named `foo-replica` and privileges attach to the database, not to
+// an alias, so a role copied verbatim from the upstream grants access to
+// nothing while reconciling to Ready. Finding the names is the first half of
+// catching it.
+func TestPrivilegeDatabaseTargets(t *testing.T) {
+	cases := []struct {
+		name string
+		stmt string
+		want []string
+	}{
+		{"database scope", "GRANT ACCESS ON DATABASE foo TO analytics_reader", []string{"foo"}},
+		{"the DR case: a quoted name with a hyphen",
+			"GRANT ACCESS ON DATABASE `foo-replica` TO r", []string{"foo-replica"}},
+		{"graph scope with an element qualifier",
+			"GRANT MATCH {*} ON GRAPH foo NODES * TO r", []string{"foo"}},
+		{"a comma-separated list", "GRANT ACCESS ON DATABASES foo, bar TO r", []string{"foo", "bar"}},
+		{"a graph list with a trailing qualifier",
+			"GRANT MATCH {prop} ON GRAPH a, b RELATIONSHIPS * TO r", []string{"a", "b"}},
+		{"REVOKE reads the same", "REVOKE ACCESS ON DATABASE foo FROM r", []string{"foo"}},
+		{"case is preserved — database names are case-sensitive",
+			"grant access on database Foo to r", []string{"Foo"}},
+		{"a name that needs its quotes keeps working",
+			"DENY WRITE ON GRAPH `my db` TO r", []string{"my db"}},
+
+		// Nothing here can be missing, so nothing is reported.
+		{"the wildcard names no database", "GRANT ACCESS ON DATABASE * TO r", nil},
+		{"HOME resolves at query time", "GRANT ACCESS ON HOME DATABASE TO r", nil},
+		{"so does DEFAULT", "GRANT ACCESS ON DEFAULT DATABASE TO r", nil},
+		{"DBMS scope has no database", "GRANT ROLE MANAGEMENT ON DBMS TO r", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := PrivilegeDatabaseTargets(tc.stmt)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// A database whose name is a reserved word has to be backticked, and the
+// tokenizer must not then read it as the keyword — otherwise the name list
+// would terminate early and the real target go unchecked.
+func TestPrivilegeDatabaseTargets_BacktickedKeywordName(t *testing.T) {
+	require.Equal(t, []string{"TO"}, PrivilegeDatabaseTargets("GRANT ACCESS ON DATABASE `TO` TO r"))
 }

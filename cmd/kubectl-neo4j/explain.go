@@ -96,6 +96,15 @@ var conditionGuidance = map[string]guidance{
 		meaning: "the role's privileges in Neo4j match spec.privileges.",
 		action:  "When false, read the message for the failing statement. With enforcePrivileges true the spec is authoritative and drift is reverted each loop.",
 	},
+	controller.ConditionTypePrivilegesResolve: {
+		meaning: "every database named by a privilege exists on this cluster.",
+		action: "When false, the privileges are in sync with spec AND grant access to nothing — " +
+			"Neo4j accepts a grant on a database that does not exist without complaint. On a DR " +
+			"cluster the cause is usually the replica's name: a replica of \"foo\" is called " +
+			"\"foo-replica\", and privileges attach to the database, not to an alias. Rewrite the " +
+			"database name in spec.privileges. If the database is simply not created yet, this " +
+			"clears by itself.",
+	},
 	controller.ConditionTypeUserNotFound: {
 		meaning: "a referenced Neo4j user does not exist.",
 		action:  "Create the Neo4jUser, or correct the reference.",
@@ -103,6 +112,15 @@ var conditionGuidance = map[string]guidance{
 	controller.ConditionTypeOIDCProviderConfigured: {
 		meaning: "the deployment's OIDC provider settings were accepted.",
 		action:  "When false, the message names the setting at fault.",
+	},
+	controller.ConditionTypeCrossClusterProxySecure: {
+		meaning: "something authenticates the transaction-shipping port that the " +
+			"cross-cluster replication proxy publishes through a load balancer.",
+		action: "When false, nothing does: the proxy is a TCP passthrough, so the cluster SSL " +
+			"policy is the only access control there is, and anyone who can reach the load " +
+			"balancer can stream the database. Set spec.tls.mode=cert-manager " +
+			"(strictPeerValidation defaults to true) and keep " +
+			"crossClusterReplication.loadBalancerInternal=true.",
 	},
 	controller.ConditionTypeAuthRuleVersionTooOld: {
 		meaning: "the Neo4j version running is older than this auth rule requires.",

@@ -210,6 +210,12 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
+	// A privilege can be perfectly in sync with spec and still grant access to
+	// nothing, because Neo4j accepts a grant against a database that does not
+	// exist without a word. Reported, never enforced — see
+	// reportUnresolvedPrivilegeDatabases.
+	r.reportUnresolvedPrivilegeDatabases(ctx, nc, role, roleName)
+
 	// Re-read for the AppliedPrivileges status field.
 	final, _, _, err := r.fetchCurrentPrivileges(ctx, nc, roleName)
 	if err != nil {
@@ -302,6 +308,147 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 	r.Recorder.Eventf(role, corev1.EventTypeNormal, EventReasonRoleDeleted, "Role %q dropped", roleName)
 	controllerutil.RemoveFinalizer(role, Neo4jRoleFinalizer)
 	return ctrl.Result{}, r.Update(ctx, role)
+}
+
+// reportUnresolvedPrivilegeDatabases warns when spec.privileges name a
+// database this cluster does not have.
+//
+// Neo4j accepts `GRANT ACCESS ON DATABASE does_not_exist TO r` in silence — no
+// error, no warning — so the role reaches Ready, `enforcePrivileges: true`
+// holds it there, and every dashboard stays green while the role grants access
+// to nothing.
+//
+// The case that makes this matter is disaster recovery. A replica of `foo` is
+// named `foo-replica` (Cypher has no RENAME DATABASE), and privileges attach
+// to the database, not to an alias — so a Neo4jRole copied verbatim from the
+// upstream, which is the obvious thing to do, is inert on the DR cluster and
+// stays inert until someone fails over and finds out. The guide tells users to
+// rewrite the names; nothing checked that they had.
+//
+// A warning and a condition, never a rejection. The operator cannot know the
+// database is not about to be created — a Neo4jDatabase CR landing seconds
+// later is an ordinary GitOps ordering — and refusing a privilege because a
+// database has not appeared yet would break apply-everything-at-once. The
+// condition clears on its own when the database shows up.
+func (r *Neo4jRoleReconciler) reportUnresolvedPrivilegeDatabases(
+	ctx context.Context, nc *neo4jclient.Client,
+	role *neo4jv1beta1.Neo4jRole, roleName string,
+) {
+	logger := log.FromContext(ctx)
+
+	named := privilegeDatabaseNames(role.Spec.Privileges)
+	if len(named) == 0 {
+		r.setNamedCondition(ctx, role, ConditionTypePrivilegesResolve, metav1.ConditionTrue,
+			"NoDatabaseScopedPrivileges", "no privilege names a specific database")
+		return
+	}
+
+	known, err := r.resolvableDatabaseNames(ctx, nc)
+	if err != nil {
+		// Unknown is not the same as missing. Say nothing rather than warn
+		// about databases we simply could not list.
+		logger.V(1).Info("could not list databases to check privilege targets", "error", err)
+		return
+	}
+
+	unresolved := unresolvedDatabaseNames(named, known)
+	if len(unresolved) == 0 {
+		r.setNamedCondition(ctx, role, ConditionTypePrivilegesResolve, metav1.ConditionTrue,
+			"AllDatabasesResolve",
+			fmt.Sprintf("every database named by a privilege exists (%s)", strings.Join(named, ", ")))
+		return
+	}
+
+	msg := fmt.Sprintf(
+		"role %q grants privileges on %s, which %s not exist on this cluster and %s not an alias "+
+			"for a database that does. Neo4j accepts such a grant silently, so the role is Ready "+
+			"and those privileges do nothing. On a DR cluster this is usually the replica's name: "+
+			"a replica of \"foo\" is called \"foo-replica\", and privileges attach to the database, "+
+			"not to an alias — rewrite the database name in spec.privileges. If the database is "+
+			"simply not created yet, this clears by itself once it is.",
+		roleName, quoteAndJoin(unresolved),
+		pluralDo(len(unresolved)), pluralIs(len(unresolved)))
+
+	if r.setNamedCondition(ctx, role, ConditionTypePrivilegesResolve, metav1.ConditionFalse,
+		"DatabaseNotFound", msg) {
+		r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonPrivilegeUnknownDatabase, msg)
+	}
+}
+
+// privilegeDatabaseNames is the deduplicated, order-preserving set of database
+// names a role's privileges target.
+func privilegeDatabaseNames(privileges []string) []string {
+	var named []string
+	seen := map[string]bool{}
+	for _, stmt := range privileges {
+		for _, name := range neo4jclient.PrivilegeDatabaseTargets(stmt) {
+			if !seen[name] {
+				seen[name] = true
+				named = append(named, name)
+			}
+		}
+	}
+	return named
+}
+
+// unresolvedDatabaseNames returns the named databases that are neither a
+// database nor an alias on this cluster.
+func unresolvedDatabaseNames(named []string, known map[string]bool) []string {
+	var unresolved []string
+	for _, name := range named {
+		if !known[name] {
+			unresolved = append(unresolved, name)
+		}
+	}
+	return unresolved
+}
+
+// resolvableDatabaseNames is every name a privilege could legitimately target:
+// the databases themselves plus the aliases that point at one. An alias is
+// included because naming one is not by itself a mistake — the privilege
+// simply resolves to the alias's target.
+func (r *Neo4jRoleReconciler) resolvableDatabaseNames(
+	ctx context.Context, nc *neo4jclient.Client,
+) (map[string]bool, error) {
+	databases, err := nc.GetDatabases(ctx)
+	if err != nil {
+		return nil, err
+	}
+	known := map[string]bool{}
+	for _, db := range databases {
+		known[db.Name] = true
+	}
+	// Aliases are best-effort: a server that cannot list them still gives a
+	// useful answer for databases, and treating that failure as fatal would
+	// suppress the warning entirely.
+	if aliases, err := nc.ShowAliases(ctx); err == nil {
+		for _, a := range aliases {
+			known[a.Name] = true
+		}
+	}
+	return known, nil
+}
+
+func quoteAndJoin(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, n := range names {
+		quoted = append(quoted, fmt.Sprintf("%q", n))
+	}
+	return strings.Join(quoted, ", ")
+}
+
+func pluralDo(n int) string {
+	if n == 1 {
+		return "does"
+	}
+	return "do"
+}
+
+func pluralIs(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
 }
 
 // canonicaliseDesired turns the spec privileges into a deduplicated, sorted
@@ -424,19 +571,25 @@ func (r *Neo4jRoleReconciler) setStatus(
 	}
 }
 
-func (r *Neo4jRoleReconciler) setNamedCondition(ctx context.Context, role *neo4jv1beta1.Neo4jRole, condType string, status metav1.ConditionStatus, reason, message string) {
+// setNamedCondition writes one named condition, reporting whether it actually
+// changed. Callers use that to emit an event on the transition only — a
+// warning re-announced on every reconcile is a warning nobody reads.
+func (r *Neo4jRoleReconciler) setNamedCondition(ctx context.Context, role *neo4jv1beta1.Neo4jRole, condType string, status metav1.ConditionStatus, reason, message string) bool {
+	var changed bool
 	update := func() error {
 		latest := &neo4jv1beta1.Neo4jRole{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(role), latest); err != nil {
 			return err
 		}
-		SetNamedCondition(&latest.Status.Conditions, condType, latest.Generation, status, reason, message)
+		changed = SetNamedCondition(&latest.Status.Conditions, condType, latest.Generation, status, reason, message)
 		latest.Status.ObservedGeneration = latest.Generation
 		return r.Status().Update(ctx, latest)
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to set condition on Neo4jRole", "condition", condType)
+		return false
 	}
+	return changed
 }
 
 // effectiveRoleName returns spec.name if non-empty, otherwise metadata.name.

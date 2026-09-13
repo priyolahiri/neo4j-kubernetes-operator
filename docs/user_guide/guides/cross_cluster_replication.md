@@ -353,11 +353,32 @@ exactly the same regardless of mode or topology.
     anything — so it is still something to do when the downstream is built
     rather than mid-failover.
 
-    Either way the operator checks before asking Neo4j: a backup-mode replica
-    whose cluster has no `AWS_REGION` fails immediately, naming what is
-    missing, instead of stalling in `Seeding` while the server refuses deep
-    inside the AWS SDK. Two replicas naming different Secrets for one cluster
-    are refused rather than fought over.
+    **Or use no long-lived credentials at all.** The seed and the pull are the
+    same JVM object-store fetch the operator already supports workload identity
+    for, so binding the servers to a cloud role covers replicas too:
+
+    ```yaml
+    spec:
+      podServiceAccountAnnotations:
+        eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/neo4j-dr
+        # or iam.gke.io/gcp-service-account, or azure.workload.identity/client-id
+    ```
+
+    This is the option to prefer where you have it. The credentials never exist
+    as a Secret, never enter the database container's environment, and rotate
+    on their own. Scope the role to **read-only on the chain prefix** — the
+    downstream never writes to the chain. Note that the platform injects the
+    identity at pod admission, which is after anything the operator or
+    `kubectl neo4j preflight` can read, so neither can verify the role: both
+    stand aside and let a misconfigured role surface as the server's own error
+    in `status.message`.
+
+    Either of the first two ways, the operator checks before asking Neo4j: a
+    backup-mode replica whose servers have no `AWS_REGION` (or
+    `AWS_DEFAULT_REGION`) fails immediately, naming what is missing, instead of
+    stalling in `Seeding` while the server refuses deep inside the AWS SDK. Two
+    replicas naming different Secrets for one cluster are refused rather than
+    fought over.
 
     Adding these to a live cluster restarts its servers, so set them when the
     downstream is created rather than in the middle of a failover drill.
@@ -526,10 +547,22 @@ Because the replica keeps the name `foo-replica` **after promotion too**, these
 privileges stay correct through failover — there is nothing to edit during the
 outage.
 
-!!! tip "Verify, don't assume"
+!!! tip "The operator now tells you — but verify anyway"
 
-    A wrong database name here fails silently. After applying, confirm the
-    privileges actually landed on the replica:
+    A wrong database name here fails silently in Neo4j. The operator checks for
+    it: when a privilege names a database this cluster does not have, the
+    `Neo4jRole` reports `PrivilegesResolve=False` with reason `DatabaseNotFound`
+    and emits a `PrivilegeNamesUnknownDatabase` warning event naming the
+    database.
+
+    ```bash
+    kubectl get neo4jrole analytics_reader -n dr \
+      -o jsonpath='{.status.conditions[?(@.type=="PrivilegesResolve")].message}'
+    ```
+
+    It is a warning, not a rejection — the database may simply not be created
+    yet, and the condition clears by itself once it is. So confirm the
+    privileges actually landed on the replica too:
 
     ```bash
     kubectl exec -n dr <dr-cluster-server-0> -c neo4j -- \
@@ -699,7 +732,8 @@ Scope them accordingly:
 - **Prefer workload identity where you have it.** Annotate the server pods'
   ServiceAccount with `podServiceAccountAnnotations` (IRSA, GKE Workload
   Identity, Azure Workload Identity) and the SDK's default chain finds a
-  short-lived token with no long-lived secret anywhere in the cluster.
+  short-lived token with no long-lived secret anywhere in the cluster. The
+  recipe is in [step 2](#2-downstream-create-the-replica).
 - **Remember which side holds them.** These credentials sit in the *downstream*
   cluster, which is often the less-hardened one — a DR site is not usually
   where the strictest controls live.

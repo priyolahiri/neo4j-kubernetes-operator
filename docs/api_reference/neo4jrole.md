@@ -53,6 +53,7 @@ The `Neo4jRole` Custom Resource Definition (CRD) provides declarative management
 |---|---|---|
 | `Ready` | `RoleReady`, `RoleSyncFailed`, `ClusterNotReady`, `ConnectionFailed`, `ValidationFailed` | True when role exists and privileges are reconciled. |
 | `PrivilegesSynced` | `PrivilegesMatch`, `PrivilegesDrifted` | True when live privileges match `spec.privileges`. |
+| `PrivilegesResolve` | `AllDatabasesResolve`, `NoDatabaseScopedPrivileges`, `DatabaseNotFound` | True when every database named by a privilege exists on this cluster (or is an alias for one). **False means the privileges are in sync with spec and grant access to nothing** — Neo4j accepts a grant on a database that does not exist in silence. The usual cause on a DR cluster is the replica's name: a replica of `foo` is called `foo-replica`, and privileges attach to the database, not to an alias. Reported, never enforced: the database may simply not be created yet, and the condition clears on its own when it is. |
 | `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced cluster. |
 
 ## Validation rules
