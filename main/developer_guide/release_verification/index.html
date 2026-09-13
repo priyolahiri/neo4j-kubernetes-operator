@@ -4843,6 +4843,10 @@ each, CI-sized.</p>
 <td>The stream is live, not just the seed</td>
 <td>rows written upstream <em>after</em> the replica exists appear downstream; a write against the replica is refused</td>
 </tr>
+<tr>
+<td>The cluster says what guards the exposed port</td>
+<td><code>status.conditions[CrossClusterProxySecure]</code> is <code>True</code>/<code>MutualTLSRequired</code> with TLS on. It reads <code>False</code>/<code>NoClusterTLS</code> when the proxy is enabled without <code>spec.tls</code> — nothing authenticates the tx-shipping port then, and the proxy authenticates nothing itself</td>
+</tr>
 </tbody>
 </table>
 <p>→ <strong>Tear down both</strong>: <code>kind delete cluster --name neo4j-operator-dev --name neo4j-dr</code>.</p>

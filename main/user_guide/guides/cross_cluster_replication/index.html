@@ -1847,6 +1847,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#what-ccdr-exposes-and-what-protects-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What CCDR exposes, and what protects it
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What CCDR exposes, and what protects it">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#network-mode-a-load-balancer-in-front-of-the-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network mode: a load balancer in front of the database
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backup-mode-credentials-in-the-databases-own-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backup mode: credentials, in the database's own environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#both-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Both modes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4063,6 +4113,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#what-ccdr-exposes-and-what-protects-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What CCDR exposes, and what protects it
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What CCDR exposes, and what protects it">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#network-mode-a-load-balancer-in-front-of-the-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network mode: a load balancer in front of the database
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backup-mode-credentials-in-the-databases-own-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backup mode: credentials, in the database's own environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#both-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Both modes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4359,9 +4459,31 @@ refuses to run them concurrently. This is <em>not</em> flagged as a competing wr
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">crossClusterReplication</span><span class="p">:</span>
 </span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nt">tls</span><span class="p">:</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">additionalClusterTrustCAs</span><span class="p">:</span>
-</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster-ca</span><span class="w">   </span><span class="c1"># the DOWNSTREAM cluster's CA — copy it here</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cert-manager</span><span class="w">        </span><span class="c1"># REQUIRED — see the warning below</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="nt">issuerRef</span><span class="p">:</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ca-cluster-issuer</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ClusterIssuer</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">    </span><span class="nt">additionalClusterTrustCAs</span><span class="p">:</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-cluster-ca</span><span class="w">   </span><span class="c1"># the DOWNSTREAM cluster's CA — copy it here</span>
 </span></code></pre></div>
+<div class="admonition danger">
+<p class="admonition-title">Do not enable the proxy without TLS</p>
+<p>The proxy is a TCP passthrough: it terminates nothing and
+authenticates nothing. <strong>Every access control on the exposed port is
+Neo4j's cluster SSL policy</strong> — <code>client_auth=REQUIRE</code> with
+<code>trust_all=false</code>, which is what <code>tls.mode: cert-manager</code> plus the
+default <code>strictPeerValidation: true</code> turns on. With <code>spec.tls</code> unset,
+the same load balancer fronts an unauthenticated, unencrypted
+transaction-shipping port, and anyone who can reach it can stream the
+database. The operator does not refuse this — you may be terminating
+elsewhere, or deliberately inside a private network — but it says so:
+the cluster reports <code>CrossClusterProxySecure=False</code> with reason
+<code>NoClusterTLS</code>, and emits a <code>CrossClusterProxyUnauthenticated</code> warning
+event when the load balancer address is first published.</p>
+<p><code>additionalClusterTrustCAs</code> is read only when <code>tls.mode</code> is
+<code>cert-manager</code>. Set it without <code>mode</code> and the peer CAs are silently
+ignored — the field looks configured and does nothing.</p>
+</div>
 <p><code>additionalClusterTrustCAs</code> must be set on <strong>both</strong> clusters, each trusting
 the other's CA — copy <code>prod-cluster</code>'s CA Secret into the <code>dr</code> namespace
 and vice versa. This is separate from <code>trustedCASecrets</code>: that field feeds
@@ -4753,6 +4875,87 @@ empty until the cloud provider assigns the LoadBalancer Service a hostname/IP.
 Until then the upstream keeps advertising its internal FQDN — cluster
 formation is never blocked waiting for the proxy.</p>
 <hr />
+<h2 id="what-ccdr-exposes-and-what-protects-it">What CCDR exposes, and what protects it<a class="headerlink" href="#what-ccdr-exposes-and-what-protects-it" title="Anchor link to this section">&para;</a></h2>
+<p>Both modes move a whole database out of one trust boundary and into another.
+That is the point of them, but it is worth being explicit about what each one
+puts within reach of an attacker, because the two modes fail differently.</p>
+<h3 id="network-mode-a-load-balancer-in-front-of-the-database">Network mode: a load balancer in front of the database<a class="headerlink" href="#network-mode-a-load-balancer-in-front-of-the-database" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>What is exposed</td>
+<td>Port 6000 on every upstream server, published as <code>&lt;lb&gt;:16000</code>, <code>:16001</code>, … one per ordinal. RAFT (7000) and routing (7688) are never proxied</td>
+</tr>
+<tr>
+<td>What it gives an attacker</td>
+<td>The transaction-shipping protocol. Anyone who can complete a connection can stream the database's contents</td>
+</tr>
+<tr>
+<td>How to check</td>
+<td><code>kubectl get neo4jenterprisecluster &lt;name&gt; -o jsonpath='{.status.conditions[?(@.type=="CrossClusterProxySecure")]}'</code> — <code>False</code>/<code>NoClusterTLS</code> means nothing does</td>
+</tr>
+<tr>
+<td>What protects it</td>
+<td><strong>Only the cluster SSL policy.</strong> The proxy is HAProxy in <code>mode tcp</code> — it terminates nothing, inspects nothing and authenticates nothing. With <code>tls.mode: cert-manager</code> and the default <code>strictPeerValidation: true</code>, Neo4j requires a client certificate signed by a CA in <code>/ssl/trusted/</code>, which is exactly the set you control through <code>additionalClusterTrustCAs</code>. <strong>With <code>spec.tls</code> unset there is no authentication on that port at all</strong></td>
+</tr>
+<tr>
+<td>Second line of defence</td>
+<td><code>crossClusterReplication.loadBalancerInternal</code> (default <code>true</code>) annotates the Service for an internal load balancer on AWS, Azure and GCP, so the address is reachable only from the VPC/VNet. It is a default worth keeping; set it to <code>false</code> only when the downstream is genuinely outside the network, and then only with TLS</td>
+</tr>
+<tr>
+<td>Third</td>
+<td><code>networkPolicy.enabled</code> (default <strong>false</strong>). Turning it on scopes port 6000 to this cluster's own pods plus the proxy, and <code>networkPolicy.allowReplicasFrom</code> admits named downstream clusters explicitly</td>
+</tr>
+</tbody>
+</table>
+<p>Three things to hold onto: the trust anchor list <em>is</em> the access control list,
+so removing a decommissioned peer's CA is a revocation step and not a tidy-up;
+<code>additionalClusterTrustCAs</code> is silently ignored unless <code>tls.mode</code> is set; and
+the proxy shares the port with ordinary intra-cluster secondary catch-up, so
+turning it on changes the exposure of normal cluster traffic too.</p>
+<h3 id="backup-mode-credentials-in-the-databases-own-environment">Backup mode: credentials, in the database's own environment<a class="headerlink" href="#backup-mode-credentials-in-the-databases-own-environment" title="Anchor link to this section">&para;</a></h3>
+<p>Backup mode opens no network path at all — the two clusters are coupled only
+through the object store, which is why it needs neither TLS trust nor a load
+balancer. The exposure moves to the bucket instead.</p>
+<p>The seed and every pull are performed by the <strong>Neo4j server process</strong>, not by a
+Job, so the server needs the bucket credentials in its own environment. Whether
+you set them through <code>source.credentialsSecretRef</code> or <code>spec.env</code>, the effect is
+the same: object-store credentials live in the database container's
+environment, and anyone who can <code>kubectl exec</code> into that container — or run an
+unrestricted procedure that reads <code>/proc/self/environ</code> — can read them. The
+operator passes them as <code>secretKeyRef</code> references, never literals, so they stay
+out of the StatefulSet spec and out of a support bundle; but the process
+environment is the process environment.</p>
+<p>Scope them accordingly:</p>
+<ul>
+<li><strong>Read-only, prefix-scoped.</strong> The downstream never writes to the chain. A
+  policy granting <code>s3:GetObject</code>/<code>s3:ListBucket</code> on the chain prefix only is
+  enough, and it is the difference between a leaked credential exposing one
+  database's backups and exposing the bucket.</li>
+<li><strong>Prefer workload identity where you have it.</strong> Annotate the server pods'
+  ServiceAccount with <code>podServiceAccountAnnotations</code> (IRSA, GKE Workload
+  Identity, Azure Workload Identity) and the SDK's default chain finds a
+  short-lived token with no long-lived secret anywhere in the cluster.</li>
+<li><strong>Remember which side holds them.</strong> These credentials sit in the <em>downstream</em>
+  cluster, which is often the less-hardened one — a DR site is not usually
+  where the strictest controls live.</li>
+</ul>
+<h3 id="both-modes">Both modes<a class="headerlink" href="#both-modes" title="Anchor link to this section">&para;</a></h3>
+<p>The replica is read-only in Neo4j's own sense, not in a security sense: it
+carries the full contents of the upstream database, including anything an
+access-control model upstream was keeping from particular users. <strong>Roles and
+privileges do not replicate</strong> — that is what step 4 exists for. A replica
+without step 4 done is a complete copy of the data with none of its
+authorization, so treat the downstream cluster as holding data at the
+upstream's classification from the moment the replica seeds, not from the
+moment you fail over.</p>
+<hr />
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
@@ -4768,7 +4971,7 @@ formation is never blocked waiting for the proxy.</p>
 </tr>
 <tr>
 <td><strong>Backup mode stuck in <code>Seeding</code>, <code>status.message</code> never changes</strong></td>
-<td>the downstream SERVERS have no bucket credentials. The operator's message stays optimistic; the real error is in the operator log — the AWS SDK's <em>"Unable to load region from any of the providers"</em>. Set <code>AWS_REGION</code> / <code>AWS_ACCESS_KEY_ID</code> / <code>AWS_SECRET_ACCESS_KEY</code> (and <code>AWS_ENDPOINT_URL_S3</code> for S3-compatible stores) in the downstream cluster's <code>spec.env</code> — see the warning in step 2. <code>source.credentialsSecretRef</code> alone does <strong>not</strong> do it</td>
+<td>the downstream SERVERS have no bucket credentials. The operator's message stays optimistic; the real error is in the operator log — the AWS SDK's <em>"Unable to load region from any of the providers"</em>. Set <code>source.credentialsSecretRef</code> on the replica, or <code>AWS_REGION</code> / <code>AWS_ACCESS_KEY_ID</code> / <code>AWS_SECRET_ACCESS_KEY</code> (and <code>AWS_ENDPOINT_URL_S3</code> for S3-compatible stores) in the downstream cluster's <code>spec.env</code> — see the warning in step 2. Either restarts the downstream servers</td>
 </tr>
 <tr>
 <td><code>Failed</code>, "network replication requires at least one upstream cluster endpoint"</td>
