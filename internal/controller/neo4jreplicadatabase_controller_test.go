@@ -45,26 +45,49 @@ func TestMissingObjectStoreEnv(t *testing.T) {
 		}
 	}
 
+	live := func(names ...string) []corev1.EnvVar {
+		var env []corev1.EnvVar
+		for _, n := range names {
+			env = append(env, corev1.EnvVar{Name: n, Value: "x"})
+		}
+		return env
+	}
+
 	t.Run("s3 without AWS_REGION is reported", func(t *testing.T) {
-		missing := missingObjectStoreEnv(withEnv(), "s3://bucket/chain/", "s3://bucket/chain/seed.backup")
+		missing := missingObjectStoreEnv(withEnv(), nil, "s3://bucket/chain/", "s3://bucket/chain/seed.backup")
 		require.Equal(t, []string{"AWS_REGION"}, missing)
 	})
 
 	t.Run("s3 with AWS_REGION is satisfied", func(t *testing.T) {
-		require.Empty(t, missingObjectStoreEnv(withEnv("AWS_REGION"), "s3://bucket/chain/"))
+		require.Empty(t, missingObjectStoreEnv(withEnv("AWS_REGION"), nil, "s3://bucket/chain/"))
+	})
+
+	// AWS_DEFAULT_REGION is the SDK's own equally-valid spelling of the same
+	// setting. Accepting only AWS_REGION failed clusters that had already set
+	// the region, with a message telling them to set the region.
+	t.Run("AWS_DEFAULT_REGION satisfies it too", func(t *testing.T) {
+		require.Empty(t, missingObjectStoreEnv(withEnv("AWS_DEFAULT_REGION"), nil, "s3://bucket/chain/"))
+	})
+
+	// The operator's own credential projection writes to the StatefulSet, not
+	// to spec.env — so does every plugin/fleet merge. A check that reads only
+	// spec.env cannot see any of it and rejects a cluster that is correctly
+	// configured.
+	t.Run("the region is found on the live StatefulSet, not only spec.env", func(t *testing.T) {
+		require.Empty(t, missingObjectStoreEnv(withEnv(), live("AWS_REGION"), "s3://bucket/chain/"))
 	})
 
 	// IRSA and instance profiles supply credentials without a key pair, so
 	// demanding the key and secret would break working deployments. Only the
 	// region is genuinely un-inferrable, which is why only it is required.
 	t.Run("a key pair is NOT required", func(t *testing.T) {
-		require.Empty(t, missingObjectStoreEnv(withEnv("AWS_REGION"), "s3://bucket/chain/"))
+		require.Empty(t, missingObjectStoreEnv(withEnv("AWS_REGION"), nil, "s3://bucket/chain/"))
 	})
 
 	// Network mode reads over the wire; there is no bucket to authenticate to.
 	t.Run("non-s3 sources need nothing", func(t *testing.T) {
-		require.Empty(t, missingObjectStoreEnv(withEnv(), ""))
-		require.Empty(t, missingObjectStoreEnv(withEnv(), "file:///backups/chain/"))
+		require.Empty(t, missingObjectStoreEnv(withEnv(), nil, ""))
+		require.Empty(t, missingObjectStoreEnv(withEnv(), nil, "file:///backups/chain/"))
 	})
 
 	t.Run("a standalone target is read the same way", func(t *testing.T) {
@@ -76,7 +99,48 @@ func TestMissingObjectStoreEnv(t *testing.T) {
 				},
 			},
 		}
-		require.Empty(t, missingObjectStoreEnv(tgt, "s3://bucket/chain/"))
+		require.Empty(t, missingObjectStoreEnv(tgt, nil, "s3://bucket/chain/"))
+	})
+}
+
+// Cloud workload identity injects credentials — and on some platforms the
+// region — into the POD at admission, after everything the operator can read.
+// A precondition that fails on what it cannot see would reject a correctly
+// configured cluster and never let the server try.
+//
+// spec.podServiceAccountAnnotations is the field that binds the pods to a
+// cloud role, and it already exists for the JVM's other object-store fetches
+// (a cluster seedURI, a Neo4jDatabase seedBackupRef). A replica's seed and
+// pull are the same fetch by the same JVM.
+func TestMissingObjectStoreEnv_WorkloadIdentityDefersToTheServer(t *testing.T) {
+	withSA := func(annotations map[string]string) ResolvedTarget {
+		return ResolvedTarget{
+			Found: true,
+			Cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					PodServiceAccountAnnotations: annotations,
+				},
+			},
+		}
+	}
+
+	for _, key := range workloadIdentityAnnotations {
+		t.Run(key, func(t *testing.T) {
+			tgt := withSA(map[string]string{key: "some-identity"})
+			require.Empty(t, missingObjectStoreEnv(tgt, nil, "s3://bucket/chain/"),
+				"a cluster bound to a cloud role must be allowed to try")
+		})
+	}
+
+	t.Run("an unrelated annotation does not count", func(t *testing.T) {
+		tgt := withSA(map[string]string{"example.com/team": "dr"})
+		require.Equal(t, []string{"AWS_REGION"},
+			missingObjectStoreEnv(tgt, nil, "s3://bucket/chain/"))
+	})
+
+	t.Run("no annotations at all keeps the check", func(t *testing.T) {
+		require.Equal(t, []string{"AWS_REGION"},
+			missingObjectStoreEnv(withSA(nil), nil, "s3://bucket/chain/"))
 	})
 }
 
