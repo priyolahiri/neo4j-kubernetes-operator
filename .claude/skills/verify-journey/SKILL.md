@@ -99,6 +99,24 @@ make ccdr-lb CLUSTER=<other> POOL_OFFSET=100   # a second one, distinct pool
 Without it the proxy Service sits `<pending>` forever and the advertised address
 stays internal — which is a valid thing to verify, but it is not the proxy path.
 
+## Phase 5 Part E (two clusters, CCDR with TLS)
+
+Part E needs two Kind clusters, an operator on each, MetalLB on one, and a CA
+exchange in both directions. That bring-up is scripted — do not do it by hand:
+
+```bash
+make ccdr-e2e-up      # both clusters + cert-manager + issuer + MetalLB + operator
+# apply a Neo4jEnterpriseCluster to each, from the published docs
+make ccdr-e2e-trust   # exchange CAs once both are Ready
+make ccdr-e2e-down    # tear both down
+```
+
+Put `--context` on every `kubectl` you run yourself: `kind create cluster`
+switches the current context, and commands aimed at the wrong cluster produced
+a false blocker on the first walk. This part is a **standing gate** for any
+release touching the replication CRDs, the CCDR proxy, or `spec.tls` — it has
+found a release blocker on every pass.
+
 ## Phase 3 prerequisite (sharding)
 
 Before Phase 3, patch the operator to relax the sharding memory floor (DEV/TEST
