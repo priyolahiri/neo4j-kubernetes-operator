@@ -516,10 +516,10 @@ func TestSupportsCCDRReplica(t *testing.T) {
 		{"2025.01.0-enterprise", false},
 		{"2025.12.0-enterprise", false},
 		{"2026.01.0-enterprise", false},
-		{"2026.06.0-enterprise", false}, // current CI anchor
+		{"2026.06.0-enterprise", false},
 		{"2026.07.0-enterprise", false}, // the boundary case, one minor below
 		// 2026.08+ — replica support
-		{"2026.08.0-enterprise", true},
+		{"2026.08.0-enterprise", true}, // the CI anchor as of v1.15.0
 		{"2026.09.1-enterprise", true},
 		{"2026.12.0-enterprise", true},
 		{"2027.01.0-enterprise", true},

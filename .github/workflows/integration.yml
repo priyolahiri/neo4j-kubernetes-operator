@@ -61,11 +61,14 @@ jobs:
         # (deliberate, not floating) — GitHub does not allow the `env` context in
         # a matrix, so the tags are inline here rather than in a shared var.
         # 5.26 is the LTS floor (exercises the SemVer-only operator paths); the
-        # CalVer tag is the strict ceiling new users run. Cells run in parallel,
+        # CalVer tag is the strict ceiling new users run. It is 2026.08.1 as of
+        # v1.15.0 because cross-cluster replication needs 2026.08+ to host a
+        # replica: anchoring below the floor of the release's own flagship
+        # feature left every CCDR spec dormant in both lanes. Cells run in parallel,
         # so wall-clock ≈ the slower (CalVer) cell, not the sum.
         # When bumping CalVer, update BOTH this list AND the `neo4j-version`
         # default in integration-tests.yml (the Extended lane) in the same PR.
-        neo4j-version: ['5.26-enterprise', '2026.06-enterprise']
+        neo4j-version: ['5.26-enterprise', '2026.08.1-enterprise']
     permissions:
       contents: read
       packages: read
