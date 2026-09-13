@@ -134,9 +134,12 @@ is a hard gate. The upstream lives in another Kubernetes cluster the operator
 cannot inspect, so any upstream version is a user-supplied claim — callers must
 **warn, not reject**, on `MeetsCCDRUpstreamFloor` (§9 Q2).
 
-Note the CI anchor CalVer is currently 2026.06, so CCDR specs will be
-dispatch-gated and largely local-only until the anchor moves — the same
-treatment property sharding gets via `isPropertyShardingCompatible()`.
+The CI anchor CalVer moved to **2026.08.1** for v1.15.0, so
+`isCCDRReplicaCompatible()` is now satisfied and the specs that host a replica
+actually run when the extended lane is dispatched. Anchoring below the floor
+of this design's own feature is what kept them dormant; the specs that host
+nothing — CRD admission and validator behaviour — are version-independent and
+run per-PR in the core lane.
 
 ### B8 — Restoring or recreating an upstream database silently detaches its replicas
 

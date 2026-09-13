@@ -32,16 +32,19 @@ import (
 
 // Cross-cluster replication specs.
 //
-// Labelled "extended" rather than "core" because hosting a replica requires
-// Neo4j 2026.08+, which is above the current CI anchor CalVer — the same
-// treatment property sharding gets. These run on manual dispatch.
+// These start no Neo4j deployment at all — they cover CRD admission and
+// validator behaviour, which are the same on every version. So they are
+// "core": they run on every PR, on both anchors, in seconds.
 //
-// What is covered here is the part that does NOT need two clusters: CRD
-// admission, validator behaviour, and the version gate. The full end-to-end
-// walk (upstream chain → replica → alias → promotion) needs two Neo4j
-// deployments and lives in the manual pre-release journey, because the project
-// runs one Enterprise deployment at a time.
-var _ = Describe("Cross-Cluster Replication — API and validation", Label("extended"), Serial, func() {
+// They were "extended" until 2026-09-14, on the reasoning that hosting a
+// replica needs 2026.08+ and the CI anchor was below it. True of the specs
+// that DO host one, not of these — and the effect was that the cheapest CCDR
+// coverage in the repo never ran anywhere. Nothing here waits for a database.
+//
+// The full end-to-end walk (upstream chain → replica → alias → promotion)
+// needs two Neo4j deployments and stays in the manual pre-release journey,
+// because the project runs one Enterprise deployment at a time.
+var _ = Describe("Cross-Cluster Replication — API and validation", Label("core"), Serial, func() {
 	var (
 		ctx           context.Context
 		testNamespace string
