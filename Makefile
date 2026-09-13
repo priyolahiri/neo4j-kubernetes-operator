@@ -1007,6 +1007,19 @@ operator-setup: ## Deploy operator to available Kind cluster
 ccdr-lb: ## Give the dev cluster a working LoadBalancer (MetalLB) so the CCDR proxy can be tested. CLUSTER=<name> to target another.
 	@./hack/metallb-setup.sh $(or $(CLUSTER),neo4j-operator-dev) $(or $(POOL_OFFSET),200)
 
+.PHONY: ccdr-e2e-up ccdr-e2e-trust ccdr-e2e-status ccdr-e2e-down
+ccdr-e2e-up: ## Stand up the two-Kind-cluster CCDR rig (TLS, MetalLB, operator on both) — release_verification.md Phase 5 Part E.
+	@./hack/ccdr-two-cluster.sh up
+
+ccdr-e2e-trust: ## Exchange the two clusters' CAs once both Neo4jEnterpriseClusters are Ready.
+	@./hack/ccdr-two-cluster.sh trust
+
+ccdr-e2e-status: ## Show both clusters' CCDR state.
+	@./hack/ccdr-two-cluster.sh status
+
+ccdr-e2e-down: ## Delete both Kind clusters of the CCDR rig.
+	@./hack/ccdr-two-cluster.sh down
+
 .PHONY: dev-cluster
 dev-cluster: ## Create a Kind cluster for development
 	@echo "Creating development cluster (image: $(KIND_NODE_IMAGE))..."

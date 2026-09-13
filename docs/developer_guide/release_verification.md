@@ -52,6 +52,7 @@ cluster only when it *needs* clustering.
 | **Aura orchestration** (`Aura*` CRDs) | **Phase 4 — no Kind deployment**; needs Aura API credentials | Talks to a *cloud* API, not a local DBMS, so no phase above exercises it. Read-only checks need only a client ID/secret; write checks mutate real cloud resources — see the phase for what is and is not safe |
 | **Aura Fleet Management** | Standalone (+ Aura creds for `provision`) | The plugin/registration path is deployment-independent, so the cheap phase covers it; operator-driven `provision` additionally needs Aura API credentials |
 | **Cross-cluster replication** (`Neo4jReplicaDatabase`, `Neo4jReplicaPromotion`) | **Phase 5 — two deployments, run SEQUENTIALLY**; needs a `2026.08+` image | Needs an upstream *and* a downstream, which looks like it breaks the one-deployment-at-a-time rule — but backup-based replication couples the two only through a bucket, so the upstream can be torn down before the downstream comes up. See the phase |
+| **The CCDR proxy + cross-cluster TLS trust, together** | **Phase 5 Part E — two Kind clusters**, `make ccdr-e2e-up` | The proxy, the certificate SANs, the advertised-address override and peer-CA trust only interact when TLS is on across two real clusters. Nothing smaller reaches it: the IP-SAN bug, the peer-CA mount bug and the unrepairable-forming-cluster bug were all invisible until this ran |
 | **Database aliases** (`Neo4jDatabaseAlias`) | Standalone | Alias DDL is deployment-independent; the CCDR failover behaviour is covered in Phase 5 |
 | **Operator→Neo4j TLS verification** (CA path + `tls.crt` pinning) | Standalone | Standalone never reads `ca.crt` server-side (no cluster SSL policy), so removing that key from the TLS Secret isolates the *operator's* client verification with nothing else changing. On a cluster the same edit also breaks intra-cluster mTLS and the two failures are indistinguishable |
 | **`kubectl-neo4j` — offline half** (`validate`, `explain <term>`, exit codes) | **Phase 0**, no deployment | It reads manifests and its own guidance map. Nothing it checks needs a running database, so it costs no memory and can run before the first pod exists |
@@ -66,10 +67,15 @@ issues the lighter phases miss). Phase 0 is minutes and no memory, and it goes
 first for a second reason: it proves the operator, the CRDs and the CLI are
 wired before a real deployment costs twenty. Phase 4 (Aura) needs cloud credentials rather
 than a Kind cluster: run its **read-only sweep** whenever anything under
-`internal/aura/` or an `Aura*` CRD changed. Phase 5 (CCDR) needs a `2026.08+`
-image, which is above the pinned CI anchor — run it whenever anything under the
-replication CRDs changed **and** such an image is available; if it is not, say
-so in the log rather than recording the phase as passed.
+`internal/aura/` or an `Aura*` CRD changed. **Phase 5 (CCDR) is now a standing gate, not an
+occasional one.** Run it whenever a release touches anything under the
+replication CRDs, `internal/resources/ccdr_proxy.go`, the CCDR proxy
+controller, or `spec.tls` — that last one because the proxy, the certificate
+SANs and cross-cluster CA trust are one system, and Part E is the only place
+they are exercised together. It has found a release blocker on every pass so
+far. The image floor is `2026.08+`, which is the pinned CI anchor as of
+v1.15.0, so "no such image" is no longer a reason to skip it; if a pass really
+is skipped, say so in the log rather than recording the phase as passed.
 
 ### Phase 0 — CLI (no Neo4j deployment)
 
@@ -414,16 +420,26 @@ on 2026-09-14, and three defects fell out of it that nothing else had reached
 — run it before every release that touches CCDR or TLS.
 
 ```bash
-kind create cluster --name neo4j-operator-dev     # upstream
-kind create cluster --name neo4j-dr               # downstream
-make ccdr-lb                                      # MetalLB, on the UPSTREAM only
+make ccdr-e2e-up      # both Kind clusters, cert-manager + issuer, MetalLB on
+                      # the upstream, the operator built from this tree on both
 ```
 
-Deploy the operator to **both**, and put `--context` on every `kubectl`:
-`kind create cluster` switches the current context, and a batch of commands
-aimed at the wrong cluster is the easiest mistake to make here. Both clusters
-get `spec.tls.mode: cert-manager` with `strictPeerValidation: true`; 2 servers
-each, CI-sized.
+Then apply a `Neo4jEnterpriseCluster` to **each** — by hand, from the published
+docs, because that is what is under test. Both get `spec.tls.mode:
+cert-manager` with `strictPeerValidation: true` (the default) and 2 CI-sized
+servers; the upstream also gets `spec.crossClusterReplication.enabled: true`.
+Once both are `Ready`:
+
+```bash
+make ccdr-e2e-trust   # exchange the CAs, patch additionalClusterTrustCAs on both
+make ccdr-e2e-status  # where everything is
+make ccdr-e2e-down    # delete both clusters
+```
+
+Put `--context` on every `kubectl` you run yourself. `kind create cluster`
+switches the current context, and a batch of commands aimed at the wrong
+cluster is the easiest mistake to make here — it produced a false blocker on
+the first walk. The scripted steps already do.
 
 | Scenario | Verify |
 |---|---|
