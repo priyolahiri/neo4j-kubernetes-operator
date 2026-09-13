@@ -19,6 +19,7 @@ package resources
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"sort"
 	"strconv"
@@ -721,8 +722,23 @@ func BuildCertificateForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 	// covers every server ordinal — only the port differs, and hostname
 	// verification ignores port. Until the hostname is known, no SAN is
 	// added; cert-manager reissues once it appears.
+	//
+	// An IP goes in IPAddresses, NOT DNSNames. X.509 keeps the two apart and so
+	// does every TLS client: connecting to an address, Java checks IP-type SANs
+	// only, so a DNS SAN whose text happens to be an IP never matches and the
+	// handshake fails with "No subject alternative names matching IP address".
+	// This is not a corner case — AWS hands out hostnames, but GCP, Azure,
+	// MetalLB and most on-prem load balancers hand out IPs, and on those the
+	// cluster could not form at all once the proxy was enabled with TLS on:
+	// members reach each other through the advertised address, which by then is
+	// the proxy.
+	var ipAddresses []string
 	if status := cluster.Status.CrossClusterReplication; status != nil && status.LoadBalancerHostname != "" {
-		dnsNames = append(dnsNames, status.LoadBalancerHostname)
+		if net.ParseIP(status.LoadBalancerHostname) != nil {
+			ipAddresses = append(ipAddresses, status.LoadBalancerHostname)
+		} else {
+			dnsNames = append(dnsNames, status.LoadBalancerHostname)
+		}
 	}
 
 	// Build certificate spec.
@@ -745,8 +761,9 @@ func BuildCertificateForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 			Name: cluster.Spec.TLS.IssuerRef.Name,
 			Kind: cluster.Spec.TLS.IssuerRef.Kind,
 		},
-		CommonName: cluster.Name,
-		DNSNames:   dnsNames,
+		CommonName:  cluster.Name,
+		DNSNames:    dnsNames,
+		IPAddresses: ipAddresses,
 		// SecretTemplate propagates ownership labels onto the TLS Secret
 		// cert-manager issues. Without it the Secret has no operator-
 		// owned metadata and audit tooling can't tell which CR produced

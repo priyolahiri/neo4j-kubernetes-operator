@@ -1608,3 +1608,55 @@ func TestBuildExternalSecret_UsesServedAPIVersion(t *testing.T) {
 		assert.Contains(t, spec, "data")
 	}
 }
+
+// A load balancer that hands out an IP — GCP, Azure, MetalLB, most on-prem —
+// must produce an IP SAN, not a DNS SAN whose text happens to look like one.
+// X.509 keeps the two apart and so does every TLS client: connecting to an
+// address, Java checks IP-type SANs only. Getting this wrong did not merely
+// break replication, it stopped the CLUSTER forming once the proxy was on with
+// TLS, because members reach each other through the advertised address and that
+// address is the proxy. Observed live: "No subject alternative names matching
+// IP address 172.18.255.200 found".
+func TestBuildCertificateForEnterprise_LoadBalancerIPGoesToIPAddresses(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			AcceptLicenseAgreement: "eval",
+			Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 2},
+			TLS: &neo4jv1beta1.TLSSpec{
+				Mode:      "cert-manager",
+				IssuerRef: &neo4jv1beta1.IssuerRef{Name: "ca-cluster-issuer", Kind: "ClusterIssuer"},
+			},
+		},
+	}
+
+	t.Run("an IP", func(t *testing.T) {
+		cluster.Status.CrossClusterReplication = &neo4jv1beta1.CrossClusterReplicationStatus{
+			Ready: true, LoadBalancerHostname: "172.18.255.200",
+		}
+		cert := resources.BuildCertificateForEnterprise(cluster)
+		require.NotNil(t, cert)
+		assert.Contains(t, cert.Spec.IPAddresses, "172.18.255.200")
+		assert.NotContains(t, cert.Spec.DNSNames, "172.18.255.200",
+			"an IP in dnsNames produces a SAN no client can ever match")
+	})
+
+	t.Run("a hostname still goes to dnsNames", func(t *testing.T) {
+		cluster.Status.CrossClusterReplication = &neo4jv1beta1.CrossClusterReplicationStatus{
+			Ready: true, LoadBalancerHostname: "prod-ccdr.example.com",
+		}
+		cert := resources.BuildCertificateForEnterprise(cluster)
+		require.NotNil(t, cert)
+		assert.Contains(t, cert.Spec.DNSNames, "prod-ccdr.example.com")
+		assert.Empty(t, cert.Spec.IPAddresses)
+	})
+
+	t.Run("IPv6 is an IP too", func(t *testing.T) {
+		cluster.Status.CrossClusterReplication = &neo4jv1beta1.CrossClusterReplicationStatus{
+			Ready: true, LoadBalancerHostname: "fc00::1",
+		}
+		cert := resources.BuildCertificateForEnterprise(cluster)
+		require.NotNil(t, cert)
+		assert.Contains(t, cert.Spec.IPAddresses, "fc00::1")
+	})
+}
