@@ -422,3 +422,100 @@ func PrivilegeStatementVerb(stmt string) string {
 		return ""
 	}
 }
+
+// PrivilegeDatabaseTargets returns the database or graph names a privilege
+// statement is scoped to.
+//
+// It exists because a privilege that names a database which does not exist is
+// accepted by Neo4j without complaint. On a DR cluster that is the difference
+// between working authorization and none: the replica of `foo` is called
+// `foo-replica` (Cypher has no RENAME DATABASE), privileges attach to the
+// database rather than to an alias, and a role copied verbatim from the
+// upstream therefore grants access to nothing. The Neo4jRole reconciles to
+// Ready, `enforcePrivileges: true` holds it there, and the failure is visible
+// only at failover — which is the one moment it must not be.
+//
+// Returns nil for statements with no database scope: ON DBMS, ON HOME/DEFAULT
+// DATABASE, and the ON DATABASE * / ON GRAPH * wildcards, none of which names
+// anything that could be missing.
+//
+// This is deliberately the same kind of conservative textual pass as
+// CanonicalisePrivilegeStatement — it does not parse Cypher. Its output feeds
+// a WARNING, never a rejection, so the cost of a name it fails to recognise is
+// a warning not raised, not a valid configuration refused.
+func PrivilegeDatabaseTargets(stmt string) []string {
+	tokens := privilegeTokens(CanonicalisePrivilegeStatement(stmt))
+
+	var out []string
+	for i := 0; i < len(tokens); i++ {
+		if tokens[i] != "ON" {
+			continue
+		}
+		j := i + 1
+		// ON DEFAULT DATABASE / ON HOME GRAPH name nothing.
+		if j < len(tokens) && (tokens[j] == "DEFAULT" || tokens[j] == "HOME") {
+			continue
+		}
+		if j >= len(tokens) {
+			continue
+		}
+		switch tokens[j] {
+		case "DATABASE", "DATABASES", "GRAPH", "GRAPHS":
+		default:
+			continue // ON DBMS, or something we do not recognise
+		}
+		// Everything up to the next keyword is the comma-separated name list.
+		for k := j + 1; k < len(tokens); k++ {
+			t := tokens[k]
+			if t == "," {
+				continue
+			}
+			if _, reserved := privilegeKeywords[t]; reserved {
+				break
+			}
+			if t == "*" {
+				continue
+			}
+			if name := strings.Trim(t, "`"); name != "" {
+				out = append(out, name)
+			}
+		}
+	}
+	return out
+}
+
+// privilegeTokens splits a canonicalised privilege statement into words,
+// commas, and backtick-quoted identifiers (which are kept whole, backticks
+// included, so a database named `TO` is not mistaken for the keyword).
+func privilegeTokens(s string) []string {
+	var tokens []string
+	var cur strings.Builder
+	flush := func() {
+		if cur.Len() > 0 {
+			tokens = append(tokens, cur.String())
+			cur.Reset()
+		}
+	}
+	inBacktick := false
+	for _, r := range s {
+		switch {
+		case r == '`':
+			inBacktick = !inBacktick
+			cur.WriteRune(r)
+			if !inBacktick {
+				flush()
+			}
+		case inBacktick:
+			cur.WriteRune(r)
+		case r == ',':
+			flush()
+			tokens = append(tokens, ",")
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			flush()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	flush()
+	return tokens
+}

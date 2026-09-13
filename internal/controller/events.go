@@ -169,6 +169,14 @@ const (
 	EventReasonRoleSyncFailed      = "RoleSyncFailed"
 	EventReasonPrivilegesApplied   = "PrivilegesApplied"
 	EventReasonPrivilegesDriftKept = "PrivilegesDriftKept"
+	// EventReasonPrivilegeUnknownDatabase — a privilege names a database that
+	// does not exist on this cluster and is not an alias for one. Neo4j
+	// accepts such a grant in silence, so without this the role reconciles to
+	// Ready while granting access to nothing. The motivating case is a DR
+	// cluster: the replica of `foo` is named `foo-replica`, privileges attach
+	// to the database rather than to an alias, and a role copied verbatim
+	// from the upstream is therefore inert exactly when it is needed.
+	EventReasonPrivilegeUnknownDatabase = "PrivilegeNamesUnknownDatabase"
 )
 
 // User and role-binding management events
@@ -198,6 +206,11 @@ const (
 	ConditionTypeClusterNotReady     = "ClusterNotReady"
 	ConditionTypePrivilegesSynced    = "PrivilegesSynced"
 	ConditionTypeUserNotFound        = "UserNotFound"
+	// ConditionTypePrivilegesResolve reports whether every database a
+	// privilege names actually exists on this cluster. Separate from
+	// PrivilegesSynced, which answers a different question: the privileges
+	// can be perfectly in sync with spec AND grant access to nothing.
+	ConditionTypePrivilegesResolve = "PrivilegesResolve"
 )
 
 const (

@@ -962,6 +962,7 @@ The operator maintains the following condition types on `status.conditions` (sta
 |---|---|---|---|
 | `ServersHealthy` | All servers are `state=Enabled` **and** `health=Available` | Any server is Cordoned, Deallocating, or Unavailable | Diagnostics cannot be collected (cluster not Ready or Bolt unreachable) |
 | `DatabasesHealthy` | All user databases have `status=online` | Any database has `requestedStatus=online` but `status≠online` | Diagnostics cannot be collected (cluster not Ready or Bolt unreachable) |
+| `CrossClusterProxySecure` | The cluster SSL policy requires a peer certificate on the port the CCDR proxy publishes | `crossClusterReplication` is publishing that port with no `spec.tls` — **nothing authenticates or encrypts it** | n/a — the condition is removed entirely when the proxy is disabled |
 
 > **Note:** The `system` database is excluded from the `DatabasesHealthy` check because it has special internal lifecycle behavior.
 
