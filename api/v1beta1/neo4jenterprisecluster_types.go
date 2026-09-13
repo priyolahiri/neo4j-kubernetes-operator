@@ -1761,6 +1761,17 @@ type CrossClusterReplicationSpec struct {
 	// this design has no DNS split to keep intra-cluster traffic off the
 	// load balancer, so defaulting to an internal LB is the main available
 	// mitigation against public exposure.
+	//
+	// It works by annotating the proxy Service for AWS (both the in-tree
+	// provider and the AWS Load Balancer Controller), Azure and GCP at once;
+	// a provider ignores annotations it does not recognise. Anything set in
+	// spec.crossClusterReplication.annotations is applied afterwards and so
+	// overrides these on a shared key.
+	//
+	// This was inert until 2026-09-13 — the value was computed and discarded,
+	// so the field promised a private load balancer and produced a public one
+	// on every cloud. If you enabled cross-cluster replication before that,
+	// check the proxy Service actually has an internal address.
 	// +kubebuilder:default=true
 	// +optional
 	LoadBalancerInternal *bool `json:"loadBalancerInternal,omitempty"`

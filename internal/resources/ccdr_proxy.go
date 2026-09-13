@@ -217,6 +217,29 @@ func BuildCCDRProxyDeployment(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *app
 	}
 }
 
+// CCDRInternalLoadBalancerAnnotations is the set of provider annotations that
+// ask for a private load balancer.
+//
+// All of them are emitted together because the operator cannot reliably know
+// which cloud it is running on, and a provider ignores annotations it does not
+// recognise — so the union is inert everywhere except the one cloud that reads
+// it. AWS appears twice on purpose: the in-tree provider reads
+// `aws-load-balancer-internal`, the AWS Load Balancer Controller reads
+// `aws-load-balancer-scheme`, and a cluster may run either.
+//
+// A user who needs something different sets
+// spec.crossClusterReplication.annotations, which is applied afterwards and
+// therefore wins on any shared key.
+func CCDRInternalLoadBalancerAnnotations() map[string]string {
+	return map[string]string{
+		"service.beta.kubernetes.io/aws-load-balancer-internal":   "true",
+		"service.beta.kubernetes.io/aws-load-balancer-scheme":     "internal",
+		"service.beta.kubernetes.io/azure-load-balancer-internal": "true",
+		"networking.gke.io/load-balancer-type":                    "Internal",
+		"cloud.google.com/load-balancer-type":                     "Internal",
+	}
+}
+
 // BuildCCDRProxyService renders the LoadBalancer Service fronting the
 // network-mode CCDR exposure proxy, one port per server ordinal.
 //
@@ -238,7 +261,19 @@ func BuildCCDRProxyService(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1
 		})
 	}
 
+	// Internal-LB annotations FIRST, so a user-supplied annotation of the same
+	// key wins. Before this, loadBalancerInternal was computed and then thrown
+	// away — CCDRProxyLoadBalancerInternalEffective had no caller outside its
+	// own unit test — so the field defaulted to true, documented itself as the
+	// main mitigation against public exposure, and did nothing. On AWS, Azure
+	// or GCP that meant a PUBLIC load balancer in front of the cluster's
+	// transaction-shipping port while the spec said otherwise.
 	annotations := map[string]string{}
+	if CCDRProxyLoadBalancerInternalEffective(cluster) {
+		for k, v := range CCDRInternalLoadBalancerAnnotations() {
+			annotations[k] = v
+		}
+	}
 	for k, v := range ccdr.Annotations {
 		annotations[k] = v
 	}

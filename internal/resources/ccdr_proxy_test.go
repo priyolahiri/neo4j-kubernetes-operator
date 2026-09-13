@@ -173,3 +173,45 @@ func TestBuildNetworkPolicyForEnterprise_NoCCDRRuleWhenDisabled(t *testing.T) {
 	require.NotNil(t, np)
 	assert.Len(t, np.Spec.Ingress, 3)
 }
+
+// spec.crossClusterReplication.loadBalancerInternal defaults to true and calls
+// itself "the main available mitigation against public exposure" — but nothing
+// consumed it: CCDRProxyLoadBalancerInternalEffective had no caller outside
+// this test file. On AWS, Azure or GCP that put a PUBLIC load balancer in front
+// of the cluster's transaction-shipping port while the spec said otherwise.
+func TestCCDRProxyService_InternalAnnotationsAreActuallyEmitted(t *testing.T) {
+	cluster := ccdrCluster(2, true)
+
+	svc := resources.BuildCCDRProxyService(cluster)
+	require.NotNil(t, svc)
+	for k, v := range resources.CCDRInternalLoadBalancerAnnotations() {
+		assert.Equal(t, v, svc.Annotations[k], "default (internal) must emit %s", k)
+	}
+
+	t.Run("opting out removes them", func(t *testing.T) {
+		public := false
+		cluster.Spec.CrossClusterReplication.LoadBalancerInternal = &public
+		svc := resources.BuildCCDRProxyService(cluster)
+		require.NotNil(t, svc)
+		for k := range resources.CCDRInternalLoadBalancerAnnotations() {
+			assert.NotContains(t, svc.Annotations, k,
+				"loadBalancerInternal:false must not ask for a private LB")
+		}
+	})
+
+	t.Run("a user annotation wins on a shared key", func(t *testing.T) {
+		internal := true
+		cluster.Spec.CrossClusterReplication.LoadBalancerInternal = &internal
+		cluster.Spec.CrossClusterReplication.Annotations = map[string]string{
+			"service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing",
+		}
+		svc := resources.BuildCCDRProxyService(cluster)
+		require.NotNil(t, svc)
+		assert.Equal(t, "internet-facing",
+			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-scheme"],
+			"an explicit user annotation must override the default")
+		assert.Equal(t, "true",
+			svc.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"],
+			"...without disturbing the keys the user did not set")
+	})
+}
