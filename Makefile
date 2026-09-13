@@ -1003,6 +1003,10 @@ operator-setup: ## Deploy operator to available Kind cluster
 	@echo "🔧 Setting up Neo4j operator..."
 	@SKIP_OPERATOR_CONFIRMATION=true ./scripts/setup-operator.sh setup
 
+.PHONY: ccdr-lb
+ccdr-lb: ## Give the dev cluster a working LoadBalancer (MetalLB) so the CCDR proxy can be tested. CLUSTER=<name> to target another.
+	@./hack/metallb-setup.sh $(or $(CLUSTER),neo4j-operator-dev) $(or $(POOL_OFFSET),200)
+
 .PHONY: dev-cluster
 dev-cluster: ## Create a Kind cluster for development
 	@echo "Creating development cluster (image: $(KIND_NODE_IMAGE))..."

@@ -84,6 +84,21 @@ None of them runs a JVM, so none of them touches the one-deployment-at-a-time
 rule. Delete each one before moving on, and scale the operator back to 1
 replica after the "nothing ever reconciled" scenario.
 
+## Phase 5 prerequisite (CCDR proxy)
+
+Part D's proxy path needs a real LoadBalancer, which plain Kind has not got.
+`make ccdr-lb` installs MetalLB with an L2 pool taken from the top of the `kind`
+Docker network, and Kind clusters share that network — so the address is
+reachable from a second Kind cluster without any host routing:
+
+```bash
+make ccdr-lb                                   # the dev cluster
+make ccdr-lb CLUSTER=<other> POOL_OFFSET=100   # a second one, distinct pool
+```
+
+Without it the proxy Service sits `<pending>` forever and the advertised address
+stays internal — which is a valid thing to verify, but it is not the proxy path.
+
 ## Phase 3 prerequisite (sharding)
 
 Before Phase 3, patch the operator to relax the sharding memory floor (DEV/TEST
