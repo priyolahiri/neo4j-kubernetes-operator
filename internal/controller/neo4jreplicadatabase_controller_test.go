@@ -19,8 +19,10 @@ package controller
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -75,5 +77,64 @@ func TestMissingObjectStoreEnv(t *testing.T) {
 			},
 		}
 		require.Empty(t, missingObjectStoreEnv(tgt, "s3://bucket/chain/"))
+	})
+}
+
+// source.credentialsSecretRef now projects. Two properties matter more than the
+// happy path: the value must never land in the StatefulSet spec, and two
+// replicas naming different Secrets must be refused rather than fought over.
+func TestReplicaCredentialProjection(t *testing.T) {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "s3-creds", Namespace: "dr"},
+		Data: map[string][]byte{
+			"AWS_REGION":            []byte("eu-west-1"),
+			"AWS_ACCESS_KEY_ID":     []byte("AKIAEXAMPLE"),
+			"AWS_SECRET_ACCESS_KEY": []byte("verysecret"),
+			"UNRELATED":             []byte("ignored"),
+		},
+	}
+
+	t.Run("only known keys, and always by reference", func(t *testing.T) {
+		env := desiredCredentialEnv("s3-creds", secret)
+		require.Len(t, env, 3, "UNRELATED must not be projected")
+		for _, e := range env {
+			require.NotNil(t, e.ValueFrom, "%s must be a reference", e.Name)
+			require.NotNil(t, e.ValueFrom.SecretKeyRef)
+			assert.Equal(t, "s3-creds", e.ValueFrom.SecretKeyRef.Name)
+			assert.Empty(t, e.Value,
+				"a literal would put the credential in the StatefulSet spec, and in any bundle of it")
+		}
+	})
+
+	t.Run("a second Secret for the same cluster is refused, not fought over", func(t *testing.T) {
+		current := desiredCredentialEnv("other-creds", secret)
+		name, other := conflictingCredentialSource(current, "s3-creds")
+		assert.NotEmpty(t, name)
+		assert.Equal(t, "other-creds", other)
+	})
+
+	t.Run("the same Secret is not a conflict", func(t *testing.T) {
+		current := desiredCredentialEnv("s3-creds", secret)
+		name, _ := conflictingCredentialSource(current, "s3-creds")
+		assert.Empty(t, name)
+	})
+
+	// Foreign vars belong to the plugin/fleet/Aura controllers; clobbering them
+	// is the oscillation mergeEnvVars exists to prevent.
+	t.Run("projection preserves foreign env vars", func(t *testing.T) {
+		current := []corev1.EnvVar{{Name: "NEO4J_PLUGINS", Value: `["apoc"]`}}
+		merged := mergeEnvVars(current, desiredCredentialEnv("s3-creds", secret), map[string]struct{}{})
+		var names []string
+		for _, e := range merged {
+			names = append(names, e.Name)
+		}
+		assert.Contains(t, names, "NEO4J_PLUGINS")
+		assert.Contains(t, names, "AWS_REGION")
+	})
+
+	t.Run("envContainsAll detects a changed source", func(t *testing.T) {
+		desired := desiredCredentialEnv("s3-creds", secret)
+		assert.True(t, envContainsAll(desired, desired))
+		assert.False(t, envContainsAll(desiredCredentialEnv("other", secret), desired))
 	})
 }

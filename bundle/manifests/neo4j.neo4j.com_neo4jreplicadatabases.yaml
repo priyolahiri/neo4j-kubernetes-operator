@@ -129,31 +129,35 @@ spec:
                       type: string
                     type: array
                   credentialsSecretRef:
-                    description: "CredentialsSecretRef names a Secret holding object-storage
-                      credentials\nfor PullURI/SeedURI. Same key layout as Neo4jBackup's
-                      cloud credentials.\n\nSetting this alone does NOT give the downstream
-                      cluster access to the\nbucket, and the operator says so rather
-                      than letting you find out from\nthe AWS SDK: a backup-mode replica
-                      whose servers lack AWS_REGION fails\nimmediately, naming the
-                      missing variable and where to put it.\n\nThe seed and the pull
-                      are performed by the Neo4j SERVER, not by a Job,\nso the credentials
-                      have to be in the server's own environment. Put them\non the
-                      downstream cluster, where they are picked up by the AWS SDK\ndefault
-                      chain and survive restarts:\n\n\tspec:\n\t  env:\n\t    - name:
-                      AWS_REGION\n\t      valueFrom: {secretKeyRef: {name: s3-creds,
-                      key: AWS_REGION}}\n\t    - name: AWS_ACCESS_KEY_ID\n\t      valueFrom:
-                      {secretKeyRef: {name: s3-creds, key: AWS_ACCESS_KEY_ID}}\n\t
-                      \   - name: AWS_SECRET_ACCESS_KEY\n\t      valueFrom: {secretKeyRef:
-                      {name: s3-creds, key: AWS_SECRET_ACCESS_KEY}}\n\t    - name:
-                      AWS_ENDPOINT_URL_S3        # S3-compatible stores only\n\t      value:
-                      http://minio.minio.svc:9000\n\nVerified end to end on 2026.08.1
-                      (2026-09-13).\n\nWhy this field declares rather than projects:
-                      writing these onto the\nStatefulSet would restart every server
-                      the moment a replica CR is\ncreated, and two replicas naming
-                      different Secrets would fight over the\nsame variables. So the
-                      credentials are configured once on the cluster,\nwhere a restart
-                      is expected, and this field records which Secret they\ncome
-                      from — which the operator checks."
+                    description: |-
+                      CredentialsSecretRef names a Secret holding object-storage credentials
+                      for PullURI/SeedURI. Same key layout as Neo4jBackup's cloud credentials.
+
+                      The operator projects the Secret's keys onto the DOWNSTREAM cluster's
+                      servers, because that is where they are needed: the seed and every
+                      subsequent pull are performed by Neo4j itself, through the AWS SDK's
+                      default credential chain — not by a Job. Only the keys the Secret
+                      actually carries are projected (AWS_REGION, AWS_ACCESS_KEY_ID,
+                      AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_ENDPOINT_URL_S3,
+                      AWS_ENDPOINT_URL), always as secretKeyRef — never as a literal, so the
+                      value stays out of the StatefulSet spec and out of any bundle of it.
+
+                      THIS RESTARTS THE DOWNSTREAM SERVERS. Env changes roll a StatefulSet, so
+                      the replica waits for that rollout before creating anything — issuing
+                      Cypher against pods that do not yet have the credentials would only fail.
+                      Set it when the downstream is built, not in the middle of a failover.
+
+                      Two replicas of one cluster naming DIFFERENT Secrets is refused rather
+                      than fought over: the alternative is two controllers each undoing the
+                      other and a cluster that rolls forever.
+
+                      Leave it unset if the cluster already has the credentials (IRSA, an
+                      instance profile, or its own spec.env). The operator checks either way
+                      and fails immediately, naming what is missing, rather than letting Neo4j
+                      fail with the SDK's "Unable to load region from any of the providers".
+
+                      The projection is add-only: clearing this field does not un-project what
+                      was already set, which has to be undone on the cluster itself.
                     type: string
                   mode:
                     default: backup

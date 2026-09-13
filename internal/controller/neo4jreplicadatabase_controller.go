@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -234,18 +235,35 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 				backupSrc.Primaries = t.Primaries
 				backupSrc.Secondaries = t.Secondaries
 			}
-			// Check the servers can actually reach the bucket before asking
-			// Neo4j to try. Without this the CREATE fails inside the AWS SDK
-			// and the user is left with a replica that never leaves Seeding.
+			// The servers have to be able to reach the bucket before Neo4j is
+			// asked to try; otherwise the CREATE fails inside the AWS SDK and
+			// the user is left with a replica that never leaves Seeding.
+			//
+			// When a Secret is named, put it on the servers and wait for the
+			// rollout — issuing the Cypher against pods that do not have the
+			// credentials yet would only fail.
+			if src.CredentialsSecretRef != "" {
+				ready, err := r.projectCredentials(ctx, target, replica.Namespace, src.CredentialsSecretRef)
+				if err != nil {
+					return r.fail(ctx, replica, "projecting object-store credentials failed", err, requeue)
+				}
+				if !ready {
+					r.announceSeeding(ctx, replica, fmt.Sprintf(
+						"waiting for %s to restart with the credentials from Secret %q",
+						replica.Spec.ClusterRef, src.CredentialsSecretRef))
+					return ctrl.Result{RequeueAfter: requeue}, nil
+				}
+			}
 			if missing := missingObjectStoreEnv(target, pullURI, src.SeedURI); len(missing) > 0 {
 				msg := fmt.Sprintf(
 					"the downstream servers cannot read %s: %s is not set in the %s spec.env. "+
 						"The seed and every pull run on the SERVER, so the object-store "+
-						"credentials must be in its environment — setting source.credentialsSecretRef "+
-						"alone does not do it. Add AWS_REGION (and, unless you use IRSA or an "+
-						"instance profile, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY; plus "+
-						"AWS_ENDPOINT_URL_S3 for S3-compatible stores) to the cluster, then the "+
-						"replica proceeds on its own",
+						"credentials must be in its environment. Either set "+
+						"source.credentialsSecretRef and the operator will project the Secret's "+
+						"keys onto the cluster for you (which restarts its servers), or add "+
+						"AWS_REGION yourself — plus AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY "+
+						"unless you use IRSA or an instance profile, and AWS_ENDPOINT_URL_S3 for "+
+						"S3-compatible stores",
 					pullURI, strings.Join(missing, ", "), replica.Spec.ClusterRef)
 				if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
 					EventReasonReplicaFailed, msg, nil) {
@@ -482,6 +500,172 @@ func (r *Neo4jReplicaDatabaseReconciler) resolveUpstreamBackupPullURI(
 		return "", false, nil
 	}
 	return backup.Status.ReplicationPullURI, true, nil
+}
+
+// replicaCredentialEnvKeys are the Secret keys worth projecting onto the
+// servers for a backup-mode replica.
+//
+// The set is the AWS SDK's own vocabulary, because the seed and the pull run
+// inside Neo4j and authenticate through the SDK's default credential chain.
+// Only the keys the Secret actually carries are projected, so the same field
+// serves a static key pair, a session token, and an endpoint override for an
+// S3-compatible store — without the operator guessing which the user meant.
+var replicaCredentialEnvKeys = []string{
+	"AWS_REGION",
+	"AWS_ACCESS_KEY_ID",
+	"AWS_SECRET_ACCESS_KEY",
+	"AWS_SESSION_TOKEN",
+	"AWS_ENDPOINT_URL_S3",
+	"AWS_ENDPOINT_URL",
+}
+
+// desiredCredentialEnv turns the named Secret into env vars, by reference.
+//
+// secretKeyRef, never a literal: the value then exists only in the kubelet's
+// view of the pod, not in the StatefulSet spec, not in `kubectl get sts -o
+// yaml`, and not in a support bundle.
+func desiredCredentialEnv(secretName string, secret *corev1.Secret) []corev1.EnvVar {
+	var env []corev1.EnvVar
+	for _, key := range replicaCredentialEnvKeys {
+		if _, ok := secret.Data[key]; !ok {
+			continue
+		}
+		env = append(env, corev1.EnvVar{
+			Name: key,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+					Key:                  key,
+				},
+			},
+		})
+	}
+	return env
+}
+
+// conflictingCredentialSource reports an env var of ours already sourced from a
+// DIFFERENT Secret — two replicas of the same cluster naming different
+// credentials. Projecting anyway would make the two controllers alternate, each
+// undoing the other, and the cluster would roll on every pass. Refusing is both
+// safer and legible.
+func conflictingCredentialSource(current []corev1.EnvVar, secretName string) (string, string) {
+	wanted := map[string]bool{}
+	for _, k := range replicaCredentialEnvKeys {
+		wanted[k] = true
+	}
+	for _, e := range current {
+		if !wanted[e.Name] || e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
+			continue
+		}
+		if got := e.ValueFrom.SecretKeyRef.Name; got != secretName {
+			return e.Name, got
+		}
+	}
+	return "", ""
+}
+
+// projectCredentials puts the Secret's keys on the target's servers and reports
+// whether they are live yet.
+//
+// It is add-only and merges rather than replaces, which is what lets it share a
+// StatefulSet with the plugin, fleet and Aura controllers (see mergeEnvVars).
+// The cost is stated plainly in the CRD and the guide: adding env rolls every
+// server, so the replica waits for that rollout before asking Neo4j to create
+// anything — issuing the Cypher first would just fail against pods that do not
+// have the credentials yet.
+func (r *Neo4jReplicaDatabaseReconciler) projectCredentials(
+	ctx context.Context, target ResolvedTarget, namespace, secretName string,
+) (ready bool, err error) {
+	var secret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{Name: secretName, Namespace: namespace}, &secret); err != nil {
+		return false, fmt.Errorf("source.credentialsSecretRef %q: %w", secretName, err)
+	}
+	desired := desiredCredentialEnv(secretName, &secret)
+	if len(desired) == 0 {
+		return false, fmt.Errorf("secret %q carries none of the keys a replica can use (%s)",
+			secretName, strings.Join(replicaCredentialEnvKeys, ", "))
+	}
+
+	stsName := targetStatefulSetName(target)
+	if stsName == "" {
+		return false, fmt.Errorf("could not determine the StatefulSet for the downstream deployment")
+	}
+
+	var live bool
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var sts appsv1.StatefulSet
+		if err := r.Get(ctx, client.ObjectKey{Name: stsName, Namespace: namespace}, &sts); err != nil {
+			return err
+		}
+		if len(sts.Spec.Template.Spec.Containers) == 0 {
+			return fmt.Errorf("StatefulSet %q has no containers", stsName)
+		}
+		current := sts.Spec.Template.Spec.Containers[0].Env
+		if name, other := conflictingCredentialSource(current, secretName); name != "" {
+			return fmt.Errorf("%s on %s already comes from Secret %q; another Neo4jReplicaDatabase "+
+				"is using different credentials for the same cluster. Point both at one Secret, or "+
+				"set the credentials on the cluster's spec.env and drop source.credentialsSecretRef",
+				name, stsName, other)
+		}
+		if envContainsAll(current, desired) {
+			live = true
+			return nil
+		}
+		sts.Spec.Template.Spec.Containers[0].Env = mergeEnvVars(current, desired, map[string]struct{}{})
+		return r.Update(ctx, &sts)
+	})
+	if err != nil {
+		return false, err
+	}
+	if !live {
+		return false, nil // just patched; the rollout has to finish first
+	}
+
+	// Present in the template is not present in the running pods.
+	var sts appsv1.StatefulSet
+	if err := r.Get(ctx, client.ObjectKey{Name: stsName, Namespace: namespace}, &sts); err != nil {
+		return false, err
+	}
+	desiredReplicas := int32(1)
+	if sts.Spec.Replicas != nil {
+		desiredReplicas = *sts.Spec.Replicas
+	}
+	rolled := sts.Status.UpdatedReplicas == desiredReplicas &&
+		sts.Status.ReadyReplicas == desiredReplicas &&
+		sts.Status.ObservedGeneration >= sts.Generation
+	return rolled, nil
+}
+
+// targetStatefulSetName is the server StatefulSet for either Kind.
+func targetStatefulSetName(target ResolvedTarget) string {
+	switch {
+	case target.Cluster != nil:
+		return target.Cluster.Name + "-server"
+	case target.Standalone != nil:
+		return target.Standalone.Name
+	}
+	return ""
+}
+
+// envContainsAll reports whether every desired var is already present with the
+// same source.
+func envContainsAll(current, desired []corev1.EnvVar) bool {
+	index := map[string]corev1.EnvVar{}
+	for _, e := range current {
+		index[e.Name] = e
+	}
+	for _, d := range desired {
+		got, ok := index[d.Name]
+		if !ok || got.ValueFrom == nil || got.ValueFrom.SecretKeyRef == nil ||
+			d.ValueFrom == nil || d.ValueFrom.SecretKeyRef == nil {
+			return false
+		}
+		if got.ValueFrom.SecretKeyRef.Name != d.ValueFrom.SecretKeyRef.Name ||
+			got.ValueFrom.SecretKeyRef.Key != d.ValueFrom.SecretKeyRef.Key {
+			return false
+		}
+	}
+	return true
 }
 
 // announceSeeding writes the optimistic "creating…" status, but only when the

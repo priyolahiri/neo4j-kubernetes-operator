@@ -323,11 +323,18 @@ exactly the same regardless of mode or topology.
           value: http://minio.minio.svc:9000
     ```
 
-    Setting `source.credentialsSecretRef` on the replica **does not** do this —
-    it records which Secret the credentials come from, it does not project them.
-    The operator checks: a backup-mode replica whose cluster has no `AWS_REGION`
-    fails immediately, naming the missing variable and where to put it, instead
-    of stalling in `Seeding` while the server refuses deep inside the AWS SDK.
+    **Or let the operator do it**: set `source.credentialsSecretRef` on the
+    replica and it projects that Secret's keys onto the cluster for you, as
+    `secretKeyRef` references rather than literals. That restarts the
+    downstream servers — the replica waits for the rollout before creating
+    anything — so it is still something to do when the downstream is built
+    rather than mid-failover.
+
+    Either way the operator checks before asking Neo4j: a backup-mode replica
+    whose cluster has no `AWS_REGION` fails immediately, naming what is
+    missing, instead of stalling in `Seeding` while the server refuses deep
+    inside the AWS SDK. Two replicas naming different Secrets for one cluster
+    are refused rather than fought over.
 
     Adding these to a live cluster restarts its servers, so set them when the
     downstream is created rather than in the middle of a failover drill.

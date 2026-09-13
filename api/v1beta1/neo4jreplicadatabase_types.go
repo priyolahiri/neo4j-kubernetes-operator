@@ -191,35 +191,31 @@ type ReplicaSourceSpec struct {
 	// CredentialsSecretRef names a Secret holding object-storage credentials
 	// for PullURI/SeedURI. Same key layout as Neo4jBackup's cloud credentials.
 	//
-	// Setting this alone does NOT give the downstream cluster access to the
-	// bucket, and the operator says so rather than letting you find out from
-	// the AWS SDK: a backup-mode replica whose servers lack AWS_REGION fails
-	// immediately, naming the missing variable and where to put it.
+	// The operator projects the Secret's keys onto the DOWNSTREAM cluster's
+	// servers, because that is where they are needed: the seed and every
+	// subsequent pull are performed by Neo4j itself, through the AWS SDK's
+	// default credential chain — not by a Job. Only the keys the Secret
+	// actually carries are projected (AWS_REGION, AWS_ACCESS_KEY_ID,
+	// AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_ENDPOINT_URL_S3,
+	// AWS_ENDPOINT_URL), always as secretKeyRef — never as a literal, so the
+	// value stays out of the StatefulSet spec and out of any bundle of it.
 	//
-	// The seed and the pull are performed by the Neo4j SERVER, not by a Job,
-	// so the credentials have to be in the server's own environment. Put them
-	// on the downstream cluster, where they are picked up by the AWS SDK
-	// default chain and survive restarts:
+	// THIS RESTARTS THE DOWNSTREAM SERVERS. Env changes roll a StatefulSet, so
+	// the replica waits for that rollout before creating anything — issuing
+	// Cypher against pods that do not yet have the credentials would only fail.
+	// Set it when the downstream is built, not in the middle of a failover.
 	//
-	//	spec:
-	//	  env:
-	//	    - name: AWS_REGION
-	//	      valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_REGION}}
-	//	    - name: AWS_ACCESS_KEY_ID
-	//	      valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_ACCESS_KEY_ID}}
-	//	    - name: AWS_SECRET_ACCESS_KEY
-	//	      valueFrom: {secretKeyRef: {name: s3-creds, key: AWS_SECRET_ACCESS_KEY}}
-	//	    - name: AWS_ENDPOINT_URL_S3        # S3-compatible stores only
-	//	      value: http://minio.minio.svc:9000
+	// Two replicas of one cluster naming DIFFERENT Secrets is refused rather
+	// than fought over: the alternative is two controllers each undoing the
+	// other and a cluster that rolls forever.
 	//
-	// Verified end to end on 2026.08.1 (2026-09-13).
+	// Leave it unset if the cluster already has the credentials (IRSA, an
+	// instance profile, or its own spec.env). The operator checks either way
+	// and fails immediately, naming what is missing, rather than letting Neo4j
+	// fail with the SDK's "Unable to load region from any of the providers".
 	//
-	// Why this field declares rather than projects: writing these onto the
-	// StatefulSet would restart every server the moment a replica CR is
-	// created, and two replicas naming different Secrets would fight over the
-	// same variables. So the credentials are configured once on the cluster,
-	// where a restart is expected, and this field records which Secret they
-	// come from — which the operator checks.
+	// The projection is add-only: clearing this field does not un-project what
+	// was already set, which has to be undone on the cluster itself.
 	// +optional
 	CredentialsSecretRef string `json:"credentialsSecretRef,omitempty"`
 }
