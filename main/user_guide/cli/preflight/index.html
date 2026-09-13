@@ -3899,6 +3899,29 @@
 </tr>
 </tbody>
 </table>
+<p><strong>Cross-cluster replicas (backup mode)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The downstream cluster has <code>AWS_REGION</code> in <code>spec.env</code></td>
+<td>The seed and every pull run <strong>on the Neo4j server</strong>, through the AWS SDK's default credential chain — so the object-store settings must be in the server's environment, not on the replica CR. Without it the replica fails inside the SDK with <em>"Unable to load region from any of the providers"</em>, which mentions neither replicas nor buckets</td>
+</tr>
+<tr>
+<td><code>source.credentialsSecretRef</code> names a Secret that exists</td>
+<td>It records <strong>which</strong> Secret the credentials come from; it does not project them. A name with nothing behind it is worth knowing about</td>
+</tr>
+<tr>
+<td>Network mode</td>
+<td>Says so and checks nothing — reading over the wire needs no bucket credentials</td>
+</tr>
+</tbody>
+</table>
 <p>This replaces the ritual the troubleshooting guide documents today — <code>kubectl run backup-auth-check --image=amazon/aws-cli …</code>, in three vendor variants — which you only reach for <strong>after</strong> a backup has already failed.</p>
 <h2 id="what-it-does-not-check">What it does not check<a class="headerlink" href="#what-it-does-not-check" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Shape, not reachability.</strong> It reads Kubernetes objects: a StorageClass, a Secret's key names, a ServiceAccount's annotations, node allocatable capacity. It never contacts S3, GCS or Azure, never talks to a registry, and never runs a probe pod.</p>
