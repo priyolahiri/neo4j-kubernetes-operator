@@ -26,8 +26,10 @@ const (
 	// storage. Requires no network path between the two Kubernetes clusters.
 	ReplicaSourceModeBackup = "backup"
 
-	// ReplicaSourceModeNetwork streams from the upstream cluster's endpoints.
-	// Not supported by this operator — see the design note.
+	// ReplicaSourceModeNetwork streams continuously from the upstream
+	// cluster's endpoints. Across separate Kubernetes clusters it needs a
+	// network path — spec.crossClusterReplication on the upstream — and
+	// mutual TLS trust; on one Kubernetes cluster it needs neither.
 	ReplicaSourceModeNetwork = "network"
 )
 
@@ -43,9 +45,11 @@ const (
 // Neo4jReplicaDatabaseSpec defines a read-only cross-cluster replica of a
 // database hosted on another Neo4j cluster.
 //
-// This CR is applied to the DOWNSTREAM cluster. The upstream lives in another
-// Kubernetes cluster the operator cannot see; the only coupling is the object
-// storage location the upstream's Neo4jBackup chain writes to.
+// This CR is applied to the DOWNSTREAM cluster. In backup mode the upstream
+// may live in a Kubernetes cluster the operator cannot see, and the only
+// coupling is the object storage location the upstream's Neo4jBackup chain
+// writes to. In network mode the two are coupled over the wire instead, either
+// directly (same Kubernetes cluster) or through the upstream's CCDR proxy.
 //
 // Requires Neo4j 2026.08+ on the downstream cluster.
 type Neo4jReplicaDatabaseSpec struct {
