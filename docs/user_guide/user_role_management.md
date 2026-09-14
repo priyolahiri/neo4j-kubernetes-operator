@@ -49,6 +49,22 @@ spec:
     - "GRANT ACCESS ON DATABASE analytics TO analytics_reader"
     - "GRANT MATCH {*} ON GRAPH analytics NODES * TO analytics_reader"
     - "DENY WRITE ON GRAPH analytics TO analytics_reader"
+```
+
+!!! warning "Graph privileges never go on a composite database"
+
+    `GRANT MATCH {*} ON GRAPH <composite>` is **accepted by Neo4j, persisted,
+    and shown back by `SHOW ROLE PRIVILEGES` — and does nothing.** Graph
+    privileges attach to a [composite database's](guides/composite_databases.md)
+    constituent target databases, not to the composite.
+
+    `GRANT ACCESS ON DATABASE <composite>` is different: that one is required,
+    and is how a user is permitted to query through the composite at all.
+
+    The operator reports this as `PrivilegesResolve=False` with reason
+    `GraphPrivilegeOnComposite` rather than letting it pass silently.
+
+```yaml
 ---
 # 3. The user, bound to the role.
 apiVersion: neo4j.neo4j.com/v1beta1
