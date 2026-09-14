@@ -32,13 +32,63 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 )
 
-// version is stamped at build time with -ldflags "-X main.version=vX.Y.Z".
+// version is what this binary reports, and the single value every command
+// reads — `--version`, the support bundle's metadata, explain's "carries %s
+// rules" footer, and the version-skew check in validate.
+//
 // It is deliberately reported in validate's output: offline validation is only
 // ever authoritative for the operator release it was built from, and output
 // that does not say which release it speaks for invites silent version skew.
+//
+// `make build-cli` and the release build stamp it with
+// -ldflags "-X main.version=vX.Y.Z". `go install <module>@vX.Y.Z` cannot —
+// there is no way for a module to request ldflags — so for that path it is
+// resolved from the build info Go embeds instead. See resolveVersion.
 var version = "dev"
+
+func init() {
+	version = resolveVersion(version, debug.ReadBuildInfo)
+}
+
+// resolveVersion decides what this binary reports as its version.
+//
+// The ldflags value wins whenever it is present. Otherwise the module version
+// Go embeds is used, which is what makes `go install <module>@vX.Y.Z` report a
+// real version — the documented install path, which until now produced a
+// binary reporting "dev".
+//
+// That was not cosmetic: warnOnVersionSkew returns early on "dev", so every
+// user who installed the documented way had skew detection silently disabled —
+// precisely the case it exists for.
+//
+// What a LOCAL build reports is worth knowing, because it is not "dev". With
+// VCS info available Go derives Main.Version from the repository, so a build
+// from this tree reports e.g. "v1.15.0+dirty" (tag plus the vcs.modified
+// flag), and one from a commit past a tag reports a pseudo-version. Those
+// flow through to the skew check, and they should: a modified or mid-branch
+// tree genuinely does not carry a release's rules, so warning is the correct
+// answer. The previous blanket "dev" suppressed that warning for every local
+// build, including ones that had really diverged.
+//
+// "(devel)" — what Go reports when VCS info is unavailable, e.g. under
+// -buildvcs=false or when building outside a repository — still maps to "dev".
+// There is nothing to compare in that case.
+func resolveVersion(stamped string, readBuildInfo func() (*debug.BuildInfo, bool)) string {
+	if stamped != "dev" {
+		return stamped
+	}
+	info, ok := readBuildInfo()
+	if !ok || info == nil {
+		return "dev"
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	return "dev"
+}
 
 const usage = `kubectl-neo4j — CLI for the Neo4j Kubernetes Operator
 
