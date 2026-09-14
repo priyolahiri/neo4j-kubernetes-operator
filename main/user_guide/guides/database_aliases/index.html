@@ -599,6 +599,8 @@
       
         
       
+        
+      
     
     
     
@@ -799,6 +801,34 @@
     
   
     Property Sharding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../composite_databases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Composite Databases
   
 
     
@@ -2510,6 +2540,8 @@
       
         
       
+        
+      
     
     
     
@@ -2903,6 +2935,34 @@
     
   
     Neo4jReplicaPromotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api_reference/neo4jcompositedatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jCompositeDatabase
   
 
     
@@ -4101,7 +4161,11 @@ rather than only what was requested.</p>
 </tr>
 <tr>
 <td>Local aliases only</td>
-<td>Remote aliases (<code>… AT '&lt;url&gt;' USER … PASSWORD …</code>) and composite-database constituents are not modelled by this CRD</td>
+<td>Remote aliases (<code>… AT '&lt;url&gt;' USER … PASSWORD …</code>) are not modelled by this CRD</td>
+</tr>
+<tr>
+<td>Composite constituents live elsewhere</td>
+<td>A constituent of a composite database is an alias in the composite's namespace, and is declared on the <a href="../composite_databases/"><code>Neo4jCompositeDatabase</code></a> that owns it — creating one through this CRD would break the ordering a composite depends on</td>
 </tr>
 </tbody>
 </table>

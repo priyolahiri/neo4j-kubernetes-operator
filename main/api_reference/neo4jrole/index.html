@@ -599,6 +599,8 @@
       
         
       
+        
+      
     
     
     
@@ -799,6 +801,34 @@
     
   
     Property Sharding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/composite_databases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Composite Databases
   
 
     
@@ -2338,6 +2368,8 @@
       
         
       
+        
+      
     
     
     
@@ -2977,6 +3009,34 @@
     
   
     Neo4jReplicaPromotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../neo4jcompositedatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jCompositeDatabase
   
 
     
@@ -4268,8 +4328,8 @@
 </tr>
 <tr>
 <td><code>PrivilegesResolve</code></td>
-<td><code>AllDatabasesResolve</code>, <code>NoDatabaseScopedPrivileges</code>, <code>DatabaseNotFound</code></td>
-<td>True when every database named by a privilege exists on this cluster (or is an alias for one). <strong>False means the privileges are in sync with spec and grant access to nothing</strong> — Neo4j accepts a grant on a database that does not exist in silence. The usual cause on a DR cluster is the replica's name: a replica of <code>foo</code> is called <code>foo-replica</code>, and privileges attach to the database, not to an alias. Reported, never enforced: the database may simply not be created yet, and the condition clears on its own when it is.</td>
+<td><code>AllDatabasesResolve</code>, <code>NoDatabaseScopedPrivileges</code>, <code>DatabaseNotFound</code>, <code>GraphPrivilegeOnComposite</code></td>
+<td>True when every database named by a privilege exists on this cluster (or is an alias for one). <strong>False means the privileges are in sync with spec and grant access to nothing</strong> — Neo4j accepts a grant on a database that does not exist in silence. The usual cause on a DR cluster is the replica's name: a replica of <code>foo</code> is called <code>foo-replica</code>, and privileges attach to the database, not to an alias. Reported, never enforced: the database may simply not be created yet, and the condition clears on its own when it is. <code>GraphPrivilegeOnComposite</code> is the same class of silent failure on a <a href="../neo4jcompositedatabase/">composite database</a>: a GRAPH privilege on a composite is accepted and shown back by <code>SHOW ROLE PRIVILEGES</code>, but graph privileges attach to the constituents' target databases, so it does nothing. (<code>ACCESS ON DATABASE &lt;composite&gt;</code> is correct and is not flagged.)</td>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>

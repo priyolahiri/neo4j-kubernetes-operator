@@ -61,6 +61,10 @@
          <lastmod>2026-09-14</lastmod>
     </url>
     <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/neo4jcompositedatabase/</loc>
+         <lastmod>2026-09-14</lastmod>
+    </url>
+    <url>
          <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/neo4jdatabase/</loc>
          <lastmod>2026-09-14</lastmod>
     </url>
@@ -298,6 +302,10 @@
     </url>
     <url>
          <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/backup_restore/</loc>
+         <lastmod>2026-09-14</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/composite_databases/</loc>
          <lastmod>2026-09-14</lastmod>
     </url>
     <url>

@@ -12,13 +12,13 @@
         <meta name="author" content="Priyo Lahiri">
       
       
-        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/getting_started/">
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/neo4jcompositedatabase/">
       
       
-        <link rel="prev" href="../..">
+        <link rel="prev" href="../neo4jreplicapromotion/">
       
       
-        <link rel="next" href="../installation/">
+        <link rel="next" href="../neo4jdatabasealias/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Quickstart - Neo4j Kubernetes Operator</title>
+        <title>Neo4jCompositeDatabase - Neo4j Kubernetes Operator</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#getting-started" class="md-skip">
+        <a href="#neo4jcompositedatabase" class="md-skip">
           Skip to content
         </a>
       
@@ -122,7 +122,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Quickstart
+              Neo4jCompositeDatabase
             
           </span>
         </div>
@@ -299,10 +299,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -329,11 +327,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
@@ -354,7 +352,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -369,37 +367,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Quickstart
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../user_guide/getting_started/" class="md-nav__link">
         
   
   
@@ -415,259 +386,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prerequisites
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Installation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#operator-modes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Operator Modes
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Operator Modes">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#quick-mode-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quick Mode Selection
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#choosing-your-deployment-type" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Choosing Your Deployment Type
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#deploying-a-standalone-instance-development" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Deploying a Standalone Instance (Development)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#deploying-a-cluster-production" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Deploying a Cluster (Production)
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Deploying a Cluster (Production)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#option-1-minimal-cluster-recommended-for-testing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Option 1: Minimal Cluster (Recommended for Testing)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#option-2-multi-server-cluster-recommended-for-production" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Option 2: Multi-Server Cluster (Recommended for Production)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#option-3-custom-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Option 3: Custom Configuration
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-happens-next" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What Happens Next?
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#accessing-your-deployment" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Accessing Your Deployment
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Accessing Your Deployment">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#for-standalone-deployments" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        For Standalone Deployments
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#for-cluster-deployments" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        For Cluster Deployments
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#creating-databases" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Creating Databases
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Creating Databases">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#basic-database-creation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Basic Database Creation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#database-from-existing-backup-seed-uri" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database from Existing Backup (Seed URI)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#next-steps" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Next Steps
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#browse-the-examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Browse the examples
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -680,7 +398,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../installation/" class="md-nav__link">
+      <a href="../../user_guide/installation/" class="md-nav__link">
         
   
   
@@ -708,7 +426,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../deployment/" class="md-nav__link">
+      <a href="../../user_guide/deployment/" class="md-nav__link">
         
   
   
@@ -736,7 +454,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../operator-modes/" class="md-nav__link">
+      <a href="../../user_guide/operator-modes/" class="md-nav__link">
         
   
   
@@ -764,7 +482,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/demo/" class="md-nav__link">
+      <a href="../../user_guide/guides/demo/" class="md-nav__link">
         
   
   
@@ -792,7 +510,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../version_support/" class="md-nav__link">
+      <a href="../../user_guide/version_support/" class="md-nav__link">
         
   
   
@@ -820,7 +538,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../migration_guide/" class="md-nav__link">
+      <a href="../../user_guide/migration_guide/" class="md-nav__link">
         
   
   
@@ -935,7 +653,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../configuration/" class="md-nav__link">
+      <a href="../../user_guide/configuration/" class="md-nav__link">
         
   
   
@@ -963,7 +681,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples_gallery/" class="md-nav__link">
+      <a href="../../user_guide/examples_gallery/" class="md-nav__link">
         
   
   
@@ -991,7 +709,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/resource_sizing/" class="md-nav__link">
+      <a href="../../user_guide/guides/resource_sizing/" class="md-nav__link">
         
   
   
@@ -1019,7 +737,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../clustering/" class="md-nav__link">
+      <a href="../../user_guide/clustering/" class="md-nav__link">
         
   
   
@@ -1047,7 +765,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../topology_placement/" class="md-nav__link">
+      <a href="../../user_guide/topology_placement/" class="md-nav__link">
         
   
   
@@ -1075,7 +793,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../property_sharding/" class="md-nav__link">
+      <a href="../../user_guide/property_sharding/" class="md-nav__link">
         
   
   
@@ -1103,7 +821,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/composite_databases/" class="md-nav__link">
+      <a href="../../user_guide/guides/composite_databases/" class="md-nav__link">
         
   
   
@@ -1131,7 +849,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../external_access/" class="md-nav__link">
+      <a href="../../user_guide/external_access/" class="md-nav__link">
         
   
   
@@ -1159,7 +877,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/plugins/" class="md-nav__link">
+      <a href="../../user_guide/guides/plugins/" class="md-nav__link">
         
   
   
@@ -1187,7 +905,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/seed-uri/" class="md-nav__link">
+      <a href="../../user_guide/guides/seed-uri/" class="md-nav__link">
         
   
   
@@ -1215,7 +933,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aura_fleet_management/" class="md-nav__link">
+      <a href="../../user_guide/aura_fleet_management/" class="md-nav__link">
         
   
   
@@ -1243,7 +961,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../aura_orchestration/" class="md-nav__link">
+      <a href="../../user_guide/aura_orchestration/" class="md-nav__link">
         
   
   
@@ -1271,7 +989,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/mcp_client_setup/" class="md-nav__link">
+      <a href="../../user_guide/guides/mcp_client_setup/" class="md-nav__link">
         
   
   
@@ -1368,7 +1086,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../security/" class="md-nav__link">
+      <a href="../../user_guide/security/" class="md-nav__link">
         
   
   
@@ -1396,7 +1114,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/security/" class="md-nav__link">
+      <a href="../../user_guide/guides/security/" class="md-nav__link">
         
   
   
@@ -1424,7 +1142,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../tls_configuration/" class="md-nav__link">
+      <a href="../../user_guide/tls_configuration/" class="md-nav__link">
         
   
   
@@ -1452,7 +1170,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../user_role_management/" class="md-nav__link">
+      <a href="../../user_guide/user_role_management/" class="md-nav__link">
         
   
   
@@ -1528,7 +1246,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../cli/" class="md-nav__link ">
+            <a href="../../user_guide/cli/" class="md-nav__link ">
               
   
   
@@ -1572,7 +1290,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cli/install/" class="md-nav__link">
+      <a href="../../user_guide/cli/install/" class="md-nav__link">
         
   
   
@@ -1600,7 +1318,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cli/validate/" class="md-nav__link">
+      <a href="../../user_guide/cli/validate/" class="md-nav__link">
         
   
   
@@ -1628,7 +1346,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cli/preflight/" class="md-nav__link">
+      <a href="../../user_guide/cli/preflight/" class="md-nav__link">
         
   
   
@@ -1656,7 +1374,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cli/status/" class="md-nav__link">
+      <a href="../../user_guide/cli/status/" class="md-nav__link">
         
   
   
@@ -1684,7 +1402,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cli/diagnose/" class="md-nav__link">
+      <a href="../../user_guide/cli/diagnose/" class="md-nav__link">
         
   
   
@@ -1712,7 +1430,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cli/connect/" class="md-nav__link">
+      <a href="../../user_guide/cli/connect/" class="md-nav__link">
         
   
   
@@ -1740,7 +1458,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cli/support-bundle/" class="md-nav__link">
+      <a href="../../user_guide/cli/support-bundle/" class="md-nav__link">
         
   
   
@@ -1768,7 +1486,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cli/explain/" class="md-nav__link">
+      <a href="../../user_guide/cli/explain/" class="md-nav__link">
         
   
   
@@ -1796,7 +1514,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cli/export/" class="md-nav__link">
+      <a href="../../user_guide/cli/export/" class="md-nav__link">
         
   
   
@@ -1903,7 +1621,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/backup_restore/" class="md-nav__link">
+      <a href="../../user_guide/guides/backup_restore/" class="md-nav__link">
         
   
   
@@ -1931,7 +1649,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/cross_cluster_replication/" class="md-nav__link">
+      <a href="../../user_guide/guides/cross_cluster_replication/" class="md-nav__link">
         
   
   
@@ -1959,7 +1677,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/database_aliases/" class="md-nav__link">
+      <a href="../../user_guide/guides/database_aliases/" class="md-nav__link">
         
   
   
@@ -1987,7 +1705,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/upgrades/" class="md-nav__link">
+      <a href="../../user_guide/guides/upgrades/" class="md-nav__link">
         
   
   
@@ -2015,7 +1733,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/storage_expansion/" class="md-nav__link">
+      <a href="../../user_guide/guides/storage_expansion/" class="md-nav__link">
         
   
   
@@ -2043,7 +1761,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/fault_tolerance/" class="md-nav__link">
+      <a href="../../user_guide/guides/fault_tolerance/" class="md-nav__link">
         
   
   
@@ -2071,7 +1789,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/multi_cluster/" class="md-nav__link">
+      <a href="../../user_guide/guides/multi_cluster/" class="md-nav__link">
         
   
   
@@ -2156,7 +1874,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/monitoring/" class="md-nav__link">
+      <a href="../../user_guide/guides/monitoring/" class="md-nav__link">
         
   
   
@@ -2184,7 +1902,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/prometheus-grafana-setup/" class="md-nav__link">
+      <a href="../../user_guide/guides/prometheus-grafana-setup/" class="md-nav__link">
         
   
   
@@ -2212,7 +1930,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/kubernetes-events/" class="md-nav__link">
+      <a href="../../user_guide/guides/kubernetes-events/" class="md-nav__link">
         
   
   
@@ -2303,7 +2021,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../performance/" class="md-nav__link">
+      <a href="../../user_guide/performance/" class="md-nav__link">
         
   
   
@@ -2331,7 +2049,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/performance/" class="md-nav__link">
+      <a href="../../user_guide/guides/performance/" class="md-nav__link">
         
   
   
@@ -2434,7 +2152,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guides/troubleshooting/" class="md-nav__link">
+      <a href="../../user_guide/guides/troubleshooting/" class="md-nav__link">
         
   
   
@@ -2462,7 +2180,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../troubleshooting/backup_restore/" class="md-nav__link">
+      <a href="../../user_guide/troubleshooting/backup_restore/" class="md-nav__link">
         
   
   
@@ -2490,7 +2208,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../troubleshooting/split-brain-recovery/" class="md-nav__link">
+      <a href="../../user_guide/troubleshooting/split-brain-recovery/" class="md-nav__link">
         
   
   
@@ -2522,6 +2240,8 @@
       
   
   
+    
+  
   
   
     
@@ -2542,11 +2262,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
         
           
           <div class="md-nav__link md-nav__container">
@@ -2574,7 +2294,7 @@
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2589,8 +2309,10 @@
                 
   
   
+    
   
   
+  
     
     
       
@@ -2654,11 +2376,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1" checked>
         
           
           <label class="md-nav__link" for="__nav_8_1" id="__nav_8_1_label" tabindex="0">
@@ -2679,7 +2401,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_1_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_1_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_8_1">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2697,7 +2419,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
+      <a href="../neo4jenterprisecluster/" class="md-nav__link">
         
   
   
@@ -2725,7 +2447,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
+      <a href="../neo4jenterprisestandalone/" class="md-nav__link">
         
   
   
@@ -2753,7 +2475,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jdatabase/" class="md-nav__link">
+      <a href="../neo4jdatabase/" class="md-nav__link">
         
   
   
@@ -2781,7 +2503,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
+      <a href="../neo4jshardeddatabase/" class="md-nav__link">
         
   
   
@@ -2809,7 +2531,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4juser/" class="md-nav__link">
+      <a href="../neo4juser/" class="md-nav__link">
         
   
   
@@ -2837,7 +2559,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jrole/" class="md-nav__link">
+      <a href="../neo4jrole/" class="md-nav__link">
         
   
   
@@ -2865,7 +2587,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jrolebinding/" class="md-nav__link">
+      <a href="../neo4jrolebinding/" class="md-nav__link">
         
   
   
@@ -2893,7 +2615,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jauthrule/" class="md-nav__link">
+      <a href="../neo4jauthrule/" class="md-nav__link">
         
   
   
@@ -2921,7 +2643,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jplugin/" class="md-nav__link">
+      <a href="../neo4jplugin/" class="md-nav__link">
         
   
   
@@ -2949,7 +2671,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jbackup/" class="md-nav__link">
+      <a href="../neo4jbackup/" class="md-nav__link">
         
   
   
@@ -2977,7 +2699,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jrestore/" class="md-nav__link">
+      <a href="../neo4jrestore/" class="md-nav__link">
         
   
   
@@ -3005,7 +2727,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
+      <a href="../neo4jreplicadatabase/" class="md-nav__link">
         
   
   
@@ -3033,7 +2755,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
+      <a href="../neo4jreplicapromotion/" class="md-nav__link">
         
   
   
@@ -3058,10 +2780,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../api_reference/neo4jcompositedatabase/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jCompositeDatabase
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -3077,6 +2826,137 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#why-this-is-a-separate-kind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this is a separate Kind
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#spec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spec
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Spec">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#compositeconstituent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CompositeConstituent
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ordering-the-composite-always-comes-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ordering: the composite always comes first
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deletion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deletion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#privileges-do-not-go-on-the-composite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Privileges do not go on the composite
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Status">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -3089,7 +2969,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/neo4jdatabasealias/" class="md-nav__link">
+      <a href="../neo4jdatabasealias/" class="md-nav__link">
         
   
   
@@ -3117,7 +2997,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraproviderconfig/" class="md-nav__link">
+      <a href="../auraproviderconfig/" class="md-nav__link">
         
   
   
@@ -3145,7 +3025,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurainstance/" class="md-nav__link">
+      <a href="../aurainstance/" class="md-nav__link">
         
   
   
@@ -3173,7 +3053,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurasnapshot/" class="md-nav__link">
+      <a href="../aurasnapshot/" class="md-nav__link">
         
   
   
@@ -3201,7 +3081,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurarestore/" class="md-nav__link">
+      <a href="../aurarestore/" class="md-nav__link">
         
   
   
@@ -3229,7 +3109,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auracustomermanagedkey/" class="md-nav__link">
+      <a href="../auracustomermanagedkey/" class="md-nav__link">
         
   
   
@@ -3257,7 +3137,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraipfilter/" class="md-nav__link">
+      <a href="../auraipfilter/" class="md-nav__link">
         
   
   
@@ -3285,7 +3165,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auradatabase/" class="md-nav__link">
+      <a href="../auradatabase/" class="md-nav__link">
         
   
   
@@ -3313,7 +3193,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auradatabasebackup/" class="md-nav__link">
+      <a href="../auradatabasebackup/" class="md-nav__link">
         
   
   
@@ -3341,7 +3221,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auradatabaserestore/" class="md-nav__link">
+      <a href="../auradatabaserestore/" class="md-nav__link">
         
   
   
@@ -3369,7 +3249,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraorganizationmember/" class="md-nav__link">
+      <a href="../auraorganizationmember/" class="md-nav__link">
         
   
   
@@ -3397,7 +3277,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/auraprojectmember/" class="md-nav__link">
+      <a href="../auraprojectmember/" class="md-nav__link">
         
   
   
@@ -3425,7 +3305,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/aurainvite/" class="md-nav__link">
+      <a href="../aurainvite/" class="md-nav__link">
         
   
   
@@ -4002,10 +3882,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#prerequisites" class="md-nav__link">
+  <a href="#why-this-is-a-separate-kind" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Prerequisites
+        Why this is a separate Kind
       
     </span>
   </a>
@@ -4013,33 +3893,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#installation" class="md-nav__link">
+  <a href="#spec" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Installation
+        Spec
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#operator-modes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Operator Modes
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Operator Modes">
+    <nav class="md-nav" aria-label="Spec">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#quick-mode-selection" class="md-nav__link">
+  <a href="#compositeconstituent" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Quick Mode Selection
+        CompositeConstituent
       
     </span>
   </a>
@@ -4052,10 +3921,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#choosing-your-deployment-type" class="md-nav__link">
+  <a href="#ordering-the-composite-always-comes-first" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Choosing Your Deployment Type
+        Ordering: the composite always comes first
       
     </span>
   </a>
@@ -4063,10 +3932,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#deploying-a-standalone-instance-development" class="md-nav__link">
+  <a href="#deletion" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Deploying a Standalone Instance (Development)
+        Deletion
       
     </span>
   </a>
@@ -4074,55 +3943,33 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#deploying-a-cluster-production" class="md-nav__link">
+  <a href="#privileges-do-not-go-on-the-composite" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Deploying a Cluster (Production)
+        Privileges do not go on the composite
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Deploying a Cluster (Production)">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Status">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#option-1-minimal-cluster-recommended-for-testing" class="md-nav__link">
+  <a href="#conditions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 1: Minimal Cluster (Recommended for Testing)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#option-2-multi-server-cluster-recommended-for-production" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Option 2: Multi-Server Cluster (Recommended for Production)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#option-3-custom-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Option 3: Custom Configuration
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-happens-next" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What Happens Next?
+        Conditions
       
     </span>
   </a>
@@ -4135,99 +3982,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#accessing-your-deployment" class="md-nav__link">
+  <a href="#limitations" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Accessing Your Deployment
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Accessing Your Deployment">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#for-standalone-deployments" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        For Standalone Deployments
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#for-cluster-deployments" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        For Cluster Deployments
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#creating-databases" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Creating Databases
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Creating Databases">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#basic-database-creation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Basic Database Creation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#database-from-existing-backup-seed-uri" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database from Existing Backup (Seed URI)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#next-steps" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Next Steps
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#browse-the-examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Browse the examples
+        Limitations
       
     </span>
   </a>
@@ -4251,7 +4009,7 @@
 
 
   
-    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/getting_started.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/api_reference/neo4jcompositedatabase.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -4259,292 +4017,197 @@
   
 
 
-<h1 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Anchor link to this section">&para;</a></h1>
-<p>This guide will walk you through the process of deploying your first Neo4j Enterprise instance on Kubernetes using the Neo4j Enterprise Operator. You can choose between clustered and standalone deployments based on your needs.</p>
-<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h2>
-<ul>
-<li>A Kubernetes cluster (v1.32+)</li>
-<li><code>kubectl</code> installed and configured</li>
-<li>Neo4j Enterprise Edition — <strong>5.26 LTS or any CalVer release</strong> (2025.x, 2026.x, …); evaluation license acceptable for testing. See <a href="../version_support/">Supported Neo4j Versions</a> for the full support policy.</li>
-<li>cert-manager 1.20+ (optional, for TLS-enabled deployments)</li>
-</ul>
-<p>Building from source additionally needs Go 1.27+ — see the <a href="../installation/">Installation Guide</a> for that path.</p>
-<blockquote>
-<p><strong>Neo4j version:</strong> the examples below pin <code>5.26.0-enterprise</code>, but every one
-works on a CalVer release too — just change the image <code>tag</code> (e.g.
-<code>2026.04-enterprise</code>). The operator auto-detects CalVer (discovery mode,
-Cypher 25, etc.); nothing else in the manifest changes. For the CalVer-only
-default Cypher 25 language on a database, see
-<a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/databases/database-2025x.yaml"><code>examples/databases/database-2025x.yaml</code></a>.</p>
-</blockquote>
-<h2 id="installation">Installation<a class="headerlink" href="#installation" title="Anchor link to this section">&para;</a></h2>
-<p>The recommended path is the Helm chart repository:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>helm<span class="w"> </span>repo<span class="w"> </span>add<span class="w"> </span>neo4j-operator<span class="w"> </span>https://priyolahiri.github.io/neo4j-kubernetes-operator/charts
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>helm<span class="w"> </span>repo<span class="w"> </span>update
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>helm<span class="w"> </span>install<span class="w"> </span>neo4j-operator<span class="w"> </span>neo4j-operator/neo4j-operator<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>--namespace<span class="w"> </span>neo4j-operator-system<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span>--create-namespace
+<h1 id="neo4jcompositedatabase">Neo4jCompositeDatabase<a class="headerlink" href="#neo4jcompositedatabase" title="Anchor link to this section">&para;</a></h1>
+<p>A composite database is a single query endpoint over several constituent
+databases. It <strong>stores no data of its own</strong> — no topology, no store, no indexes
+or constraints, no seeding. Its content is entirely the constituent aliases
+declared in its spec.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jCompositeDatabase</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cineasts</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-cluster</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">constituents</span><span class="p">:</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">latest</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">      </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">movies-latest</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">upcoming</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">movies-upcoming</span>
 </span></code></pre></div>
-<p>The chart is also published to the OCI registry:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>helm<span class="w"> </span>install<span class="w"> </span>neo4j-operator<span class="w"> </span>oci://ghcr.io/priyolahiri/charts/neo4j-operator<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--version<span class="w"> </span>&lt;release-version&gt;<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--namespace<span class="w"> </span>neo4j-operator-system<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>--create-namespace
+<p>Queried as:</p>
+<div class="language-cypher highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">USE</span><span class="w"> </span><span class="n">cineasts</span><span class="p">.</span><span class="n">latest</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">MATCH</span><span class="w"> </span><span class="p">(</span><span class="n">m</span><span class="p">:</span><span class="n">Movie</span><span class="p">)</span><span class="w"> </span><span class="k">RETURN</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">title</span>
 </span></code></pre></div>
-<p>For all installation methods (kubectl-apply bundle, source clone, <code>make</code> targets for contributor workflows), see the full <a href="../installation/">Installation Guide</a>.</p>
-<div class="admonition tip">
-<p class="admonition-title">Install the CLI at the same time</p>
-<p>This operator has no admission webhooks, so a spec mistake is only reported <em>after</em> you
-apply. The <a href="../cli/"><code>kubectl-neo4j</code> CLI</a> closes that loop from your side:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>my-cluster.yaml<span class="w">   </span><span class="c1"># the manifest, against the operator's own validators</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>preflight<span class="w"> </span>-f<span class="w"> </span>my-cluster.yaml<span class="w">  </span><span class="c1"># the cluster it is about to land in</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>my-cluster.yaml
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>status<span class="w">                        </span><span class="c1"># what came up</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>diagnose<span class="w">                      </span><span class="c1"># and why anything did not</span>
-</span></code></pre></div>
-<p>It ships on the same release tag as the operator — see <a href="../cli/install/">Installing the CLI</a>.</p>
-</div>
-<h2 id="operator-modes">Operator Modes<a class="headerlink" href="#operator-modes" title="Anchor link to this section">&para;</a></h2>
-<p>The Neo4j Operator supports two operational modes:</p>
-<ul>
-<li><strong>Production Mode</strong> (default): Optimized for stability, security, and monitoring in production environments</li>
-<li><strong>Development Mode</strong>: Optimized for rapid development, debugging, and local testing</li>
-</ul>
-<p>For detailed information about modes, configuration options, and caching strategies, see the <a href="../operator-modes/">Operator Modes Guide</a>.</p>
-<h3 id="quick-mode-selection">Quick Mode Selection<a class="headerlink" href="#quick-mode-selection" title="Anchor link to this section">&para;</a></h3>
-<p>The Helm install above runs in production mode by default; set
-<code>developmentMode: true</code> in your values for development mode. Contributors
-working from a clone of this repository can instead use the <code>make</code>
-deployment targets (<code>make deploy-prod</code>, <code>make deploy-dev</code>) — see the
-<a href="../../developer_guide/makefile_reference/">Makefile reference</a>.</p>
-<p><strong>⚠️ Important:</strong> The operator must always run in-cluster, even for development. This ensures proper DNS resolution and cluster connectivity required for Neo4j cluster formation.</p>
-<h2 id="choosing-your-deployment-type">Choosing Your Deployment Type<a class="headerlink" href="#choosing-your-deployment-type" title="Anchor link to this section">&para;</a></h2>
-<p>The Neo4j Enterprise Operator supports two deployment types:</p>
-<ul>
-<li><strong>Neo4jEnterpriseStandalone</strong>: Single-node deployments for development, testing, and simple production workloads</li>
-<li><strong>Neo4jEnterpriseCluster</strong>: Clustered deployments (minimum 2 servers) for production with high availability and automatic failover</li>
-</ul>
-<h2 id="deploying-a-standalone-instance-development">Deploying a Standalone Instance (Development)<a class="headerlink" href="#deploying-a-standalone-instance-development" title="Anchor link to this section">&para;</a></h2>
-<p>For development, testing, or simple workloads that don't require high availability:</p>
-<ol>
-<li>
-<p><strong>Create admin credentials:</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>neo4j-admin-secret<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">username</span><span class="o">=</span>neo4j<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">password</span><span class="o">=</span>your-secure-password
-</span></code></pre></div>
-</li>
-<li>
-<p><strong>Deploy the standalone instance:</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>https://raw.githubusercontent.com/priyolahiri/neo4j-kubernetes-operator/main/examples/standalone/single-node-standalone.yaml
-</span></code></pre></div>
-</li>
-<li>
-<p><strong>Check deployment status:</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisestandalone
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods
-</span></code></pre></div>
-</li>
-<li>
-<p><strong>Access Neo4j Browser:</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>port-forward<span class="w"> </span>svc/standalone-neo4j-client<span class="w"> </span><span class="m">7474</span>:7474<span class="w"> </span><span class="m">7687</span>:7687
-</span></code></pre></div>
-<p>Open http://localhost:7474 in your browser.</p>
-</li>
-</ol>
-<h2 id="deploying-a-cluster-production">Deploying a Cluster (Production)<a class="headerlink" href="#deploying-a-cluster-production" title="Anchor link to this section">&para;</a></h2>
-<p>For production workloads requiring high availability and clustering:</p>
-<h3 id="option-1-minimal-cluster-recommended-for-testing">Option 1: Minimal Cluster (Recommended for Testing)<a class="headerlink" href="#option-1-minimal-cluster-recommended-for-testing" title="Anchor link to this section">&para;</a></h3>
-<ol>
-<li>
-<p><strong>Create admin credentials:</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>neo4j-admin-secret<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">username</span><span class="o">=</span>neo4j<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">password</span><span class="o">=</span>your-secure-password
-</span></code></pre></div>
-</li>
-<li>
-<p><strong>Deploy the minimal cluster:</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>https://raw.githubusercontent.com/priyolahiri/neo4j-kubernetes-operator/main/examples/clusters/minimal-cluster.yaml
-</span></code></pre></div>
-</li>
-<li>
-<p><strong>Monitor deployment (2-3 minutes expected):</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j<span class="w"> </span>-w
-</span></code></pre></div>
-</li>
-</ol>
-<h3 id="option-2-multi-server-cluster-recommended-for-production">Option 2: Multi-Server Cluster (Recommended for Production)<a class="headerlink" href="#option-2-multi-server-cluster-recommended-for-production" title="Anchor link to this section">&para;</a></h3>
-<ol>
-<li>
-<p><strong>Create admin credentials:</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>neo4j-admin-secret<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">username</span><span class="o">=</span>neo4j<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">password</span><span class="o">=</span>your-secure-password
-</span></code></pre></div>
-</li>
-<li>
-<p><strong>Deploy the cluster:</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Five-server production cluster (TLS via cert-manager)</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>https://raw.githubusercontent.com/priyolahiri/neo4j-kubernetes-operator/main/examples/clusters/multi-server-cluster.yaml
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># Three-server cluster, no TLS (simplest for local testing)</span>
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>https://raw.githubusercontent.com/priyolahiri/neo4j-kubernetes-operator/main/examples/clusters/three-node-simple.yaml
-</span></code></pre></div>
-</li>
-<li>
-<p><strong>Monitor deployment (3-5 minutes expected):</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j<span class="w"> </span>-w
-</span></code></pre></div>
-</li>
-</ol>
-<h3 id="option-3-custom-configuration">Option 3: Custom Configuration<a class="headerlink" href="#option-3-custom-configuration" title="Anchor link to this section">&para;</a></h3>
-<p>If you need a custom configuration, create your own manifest based on our examples:</p>
-<ol>
-<li><strong>Browse the examples directory:</strong></li>
-<li><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/clusters/minimal-cluster.yaml">Minimal cluster</a> - 2 servers (minimum cluster topology)</li>
-<li><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/clusters/multi-server-cluster.yaml">Multi-server cluster</a> - Production HA with TLS</li>
-<li><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/clusters/three-node-cluster.yaml">Three-node cluster</a> - Three servers with TLS</li>
-<li>
-<p><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/clusters/production-optimized-cluster.yaml">Production optimized cluster</a> - Production with advanced features</p>
-</li>
-<li>
-<p><strong>Copy and customize an example:</strong>
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>cp<span class="w"> </span>examples/clusters/minimal-cluster.yaml<span class="w"> </span>my-cluster.yaml
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="c1"># Edit my-cluster.yaml to customize settings</span>
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>my-cluster.yaml
-</span></code></pre></div></p>
-</li>
-</ol>
-<p>See the <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples">Examples README</a> for detailed customization guidance.</p>
-<h3 id="what-happens-next">What Happens Next?<a class="headerlink" href="#what-happens-next" title="Anchor link to this section">&para;</a></h3>
-<p>The operator creates a StatefulSet, per-pod PersistentVolumeClaims, headless + client Services, and a ConfigMap with the rendered Neo4j configuration. All Pods start in parallel; cluster formation typically takes 2-3 minutes for a 2-server cluster, 3-5 minutes for larger topologies.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-w
-</span></code></pre></div>
-<h2 id="accessing-your-deployment">Accessing Your Deployment<a class="headerlink" href="#accessing-your-deployment" title="Anchor link to this section">&para;</a></h2>
-<p>Once the pods are in the <code>Running</code> state, you can access your deployment using <code>kubectl port-forward</code>:</p>
-<h3 id="for-standalone-deployments">For Standalone Deployments<a class="headerlink" href="#for-standalone-deployments" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># For standalone deployment</span>
-</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>kubectl<span class="w"> </span>port-forward<span class="w"> </span>service/standalone-neo4j-client<span class="w"> </span><span class="m">7474</span>:7474<span class="w"> </span><span class="m">7687</span>:7687
-</span></code></pre></div>
-<h3 id="for-cluster-deployments">For Cluster Deployments<a class="headerlink" href="#for-cluster-deployments" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># For minimal cluster</span>
-</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>kubectl<span class="w"> </span>port-forward<span class="w"> </span>service/minimal-cluster-client<span class="w"> </span><span class="m">7474</span>:7474<span class="w"> </span><span class="m">7687</span>:7687
-</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
-</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1"># For multi-server cluster (multi-server-cluster.yaml deploys a CR named "multi-primary-cluster")</span>
-</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>kubectl<span class="w"> </span>port-forward<span class="w"> </span>service/multi-primary-cluster-client<span class="w"> </span><span class="m">7474</span>:7474<span class="w"> </span><span class="m">7687</span>:7687
-</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>
-</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="c1"># For your custom cluster (replace with your cluster name)</span>
-</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>kubectl<span class="w"> </span>port-forward<span class="w"> </span>service/YOUR-CLUSTER-NAME-client<span class="w"> </span><span class="m">7474</span>:7474<span class="w"> </span><span class="m">7687</span>:7687
-</span></code></pre></div>
-<p>You can then access the Neo4j Browser at <code>http://localhost:7474</code>.</p>
-<h2 id="creating-databases">Creating Databases<a class="headerlink" href="#creating-databases" title="Anchor link to this section">&para;</a></h2>
-<p>Once your cluster is running, you can create and manage databases using the Neo4jDatabase CRD:</p>
-<h3 id="basic-database-creation">Basic Database Creation<a class="headerlink" href="#basic-database-creation" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># Create a simple database</span>
-</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
-</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="s">apiVersion: neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="s">kind: Neo4jDatabase</span>
-</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="s">metadata:</span>
-</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="s">  name: my-database</span>
-</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="s">spec:</span>
-</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="s">  clusterRef: minimal-cluster  # or your cluster name</span>
-</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="s">  name: mydb</span>
-</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="s">  wait: true</span>
-</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="s">  ifNotExists: true</span>
-</span><span id="__span-17-12"><a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="s">EOF</span>
-</span></code></pre></div>
-<h3 id="database-from-existing-backup-seed-uri">Database from Existing Backup (Seed URI)<a class="headerlink" href="#database-from-existing-backup-seed-uri" title="Anchor link to this section">&para;</a></h3>
-<p>If you have existing Neo4j backups in cloud storage, you can create databases directly from them:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># Create database from S3 backup</span>
-</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
-</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="s">apiVersion: neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="s">kind: Neo4jDatabase</span>
-</span><span id="__span-18-5"><a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="s">metadata:</span>
-</span><span id="__span-18-6"><a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="s">  name: restored-database</span>
-</span><span id="__span-18-7"><a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="s">spec:</span>
-</span><span id="__span-18-8"><a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="s">  clusterRef: minimal-cluster</span>
-</span><span id="__span-18-9"><a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="s">  name: restored-db</span>
-</span><span id="__span-18-10"><a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="s">  seedURI: "s3://my-backups/database.backup"</span>
-</span><span id="__span-18-11"><a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="s">  topology:</span>
-</span><span id="__span-18-12"><a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a><span class="s">    primaries: 1</span>
-</span><span id="__span-18-13"><a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="s">    secondaries: 1</span>
-</span><span id="__span-18-14"><a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a><span class="s">  wait: true</span>
-</span><span id="__span-18-15"><a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a><span class="s">  ifNotExists: true</span>
-</span><span id="__span-18-16"><a id="__codelineno-18-16" name="__codelineno-18-16" href="#__codelineno-18-16"></a><span class="s">EOF</span>
-</span></code></pre></div>
-<p>For large datasets that need horizontal scaling, see the <a href="../property_sharding/">Property Sharding guide</a> (Neo4j 2025.12+, via <code>Neo4jShardedDatabase</code>).</p>
-<p>See also:</p>
-<ul>
-<li><a href="../../api_reference/neo4jdatabase/">Neo4jDatabase API Reference</a></li>
-<li><a href="../guides/seed-uri/">Database Seed URI Guide</a></li>
-<li><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/databases">Database Examples</a></li>
-</ul>
-<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Anchor link to this section">&para;</a></h2>
-<p>Now that you have Neo4j running on Kubernetes:</p>
-<ol>
-<li><strong>Explore the Neo4j Browser</strong> - Create some sample data and run queries</li>
-<li><strong>Create databases</strong> - Use the Neo4jDatabase CRD to create and manage databases</li>
-<li><strong>Connect your applications</strong> - Use the Bolt endpoint (port 7687) for programmatic access</li>
-<li><strong>Configure monitoring</strong> - Set up monitoring and alerting for your deployment</li>
-<li><strong>Plan backups</strong> - Implement backup strategies for data protection</li>
-<li><strong>Scale your deployment</strong> - For clusters, you can scale up/down based on your needs</li>
-</ol>
-<h2 id="browse-the-examples">Browse the examples<a class="headerlink" href="#browse-the-examples" title="Anchor link to this section">&para;</a></h2>
-<p>Ready-to-apply YAML manifests for every CRD live under <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples"><code>examples/</code></a>:</p>
+<h2 id="why-this-is-a-separate-kind">Why this is a separate Kind<a class="headerlink" href="#why-this-is-a-separate-kind" title="Anchor link to this section">&para;</a></h2>
+<p><code>Neo4jDatabase</code> is almost entirely topology, options, storage and seeding —
+every one of which is meaningless on a composite, and rejected by the server.
+A <code>composite: true</code> flag would leave most of that spec silently inert.</p>
+<h2 id="spec">Spec<a class="headerlink" href="#spec" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Directory</th>
-<th>What's in it</th>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/standalone"><code>standalone/</code></a></td>
-<td>Single-node <code>Neo4jEnterpriseStandalone</code> examples</td>
+<td><code>clusterRef</code></td>
+<td><code>string</code></td>
+<td><strong>Required.</strong> The <code>Neo4jEnterpriseCluster</code> or <code>Neo4jEnterpriseStandalone</code> in the same namespace that hosts this composite and its constituents.</td>
 </tr>
 <tr>
-<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/clusters"><code>clusters/</code></a></td>
-<td><code>Neo4jEnterpriseCluster</code> topologies (minimal, prod, TLS, fleet-managed)</td>
+<td><code>name</code></td>
+<td><code>string</code></td>
+<td>The composite database name in Neo4j. Defaults to <code>metadata.name</code>. Neo4j database names accept only ASCII letters, digits, dots and dashes — <strong>underscores are rejected by the server</strong>. A dot is rejected here: <code>&lt;composite&gt;.&lt;constituent&gt;</code> is how constituents are addressed, so a dotted composite name could never have any.</td>
 </tr>
 <tr>
-<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/databases"><code>databases/</code></a></td>
-<td><code>Neo4jDatabase</code> examples (basic, seed URI, custom topology)</td>
+<td><code>constituents</code></td>
+<td><a href="#compositeconstituent"><code>[]CompositeConstituent</code></a></td>
+<td><strong>Required, at least one.</strong> The databases this composite exposes. Each becomes an alias <code>&lt;composite&gt;.&lt;name&gt;</code>.</td>
 </tr>
 <tr>
-<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/users-roles"><code>users-roles/</code></a></td>
-<td><code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code></td>
+<td><code>enforceConstituents</code></td>
+<td><code>bool</code></td>
+<td>Default <code>true</code>. Makes <code>constituents</code> authoritative: an alias in the composite's namespace that is absent from spec is dropped. Set <code>false</code> to leave out-of-band constituents alone, in which case this CR only ever adds. Same posture as <code>Neo4jRole.enforcePrivileges</code>.</td>
 </tr>
 <tr>
-<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/plugins"><code>plugins/</code></a></td>
-<td><code>Neo4jPlugin</code> examples (APOC, GDS, Bloom, GenAI, …)</td>
+<td><code>defaultCypherLanguage</code></td>
+<td><code>string</code></td>
+<td><code>"5"</code> or <code>"25"</code>. <strong>CalVer only</strong> — the <code>DEFAULT LANGUAGE CYPHER</code> clause does not parse on the 5.26 LTS, and the validator rejects it there rather than letting the server emit a raw syntax error. This is the <strong>only</strong> property of a composite that can be altered after creation.</td>
 </tr>
 <tr>
-<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/backup-restore"><code>backup-restore/</code></a></td>
-<td><code>Neo4jBackup</code>, <code>Neo4jRestore</code> (PVC, S3, GCS, Azure, PITR)</td>
+<td><code>wait</code></td>
+<td><code>bool</code></td>
+<td>Default <code>true</code>. Blocks creation until the composite is available, via the Cypher <code>WAIT</code> clause.</td>
 </tr>
 <tr>
-<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/property_sharding"><code>property_sharding/</code></a></td>
-<td><code>Neo4jShardedDatabase</code> setups</td>
-</tr>
-<tr>
-<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/cross-cluster-replication"><code>cross-cluster-replication/</code></a></td>
-<td><code>Neo4jReplicaDatabase</code>, <code>Neo4jReplicaPromotion</code>, <code>Neo4jDatabaseAlias</code> — DR replication across two Kubernetes clusters</td>
-</tr>
-<tr>
-<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/security"><code>security/</code></a></td>
-<td>NetworkPolicy + Kyverno conformance policies</td>
+<td><code>deletionPolicy</code></td>
+<td><code>string</code></td>
+<td><code>Delete</code> (default) or <code>Retain</code>. See <a href="#deletion">Deletion</a>.</td>
 </tr>
 </tbody>
 </table>
-<p>For more advanced topics, see:</p>
+<h3 id="compositeconstituent">CompositeConstituent<a class="headerlink" href="#compositeconstituent" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td><code>string</code></td>
+<td><strong>Required.</strong> The constituent's name within the composite. The resulting alias is <code>&lt;composite&gt;.&lt;name&gt;</code>, which is also how queries address it. May not contain a dot — it is already namespaced.</td>
+</tr>
+<tr>
+<td><code>targetDatabase</code></td>
+<td><code>string</code></td>
+<td><strong>Required.</strong> A database in this same DBMS. It does not have to exist yet: the controller skips that constituent and retries, so a composite and its targets can be applied together.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="ordering-the-composite-always-comes-first">Ordering: the composite always comes first<a class="headerlink" href="#ordering-the-composite-always-comes-first" title="Anchor link to this section">&para;</a></h2>
+<p>Neo4j accepts <code>CREATE ALIAS cineasts.latest</code> <strong>even when no composite
+<code>cineasts</code> exists</strong>. The result is an ordinary alias whose name merely contains
+a dot — listed by <code>SHOW ALIASES</code>, and even queryable. But the composite can
+then never be created:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>42N87: The database or alias name `cineasts` conflicts with the name
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>       `cineasts.latest` of an existing database or alias.
+</span></code></pre></div>
+<p>This CR owns the composite and its constituents together, which is what makes
+the ordering guaranteed rather than hoped for. If a stray dotted alias already
+occupies the namespace, the CR reports <code>Failed</code> with reason
+<code>CompositeDatabaseNameBlocked</code> and names the alias to drop — the server's own
+error never mentions ordering.</p>
+<h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Anchor link to this section">&para;</a></h2>
+<p><code>deletionPolicy: Delete</code> issues <code>DROP COMPOSITE DATABASE &lt;name&gt; CASCADE
+ALIASES</code>. <code>CASCADE ALIASES</code> is <strong>not optional</strong>: a plain drop is refused while
+constituents exist. It removes the constituent <strong>aliases</strong> only — the databases
+they target are untouched.</p>
+<p><code>deletionPolicy: Retain</code> leaves everything in Neo4j and releases the finalizer.</p>
+<p>If the referenced deployment is gone or not Ready at deletion time, the
+finalizer is released anyway rather than wedging the CR in <code>Terminating</code> for a
+database that may no longer exist.</p>
+<h2 id="privileges-do-not-go-on-the-composite">Privileges do not go on the composite<a class="headerlink" href="#privileges-do-not-go-on-the-composite" title="Anchor link to this section">&para;</a></h2>
+<p>This is the most common mistake, and Neo4j does not warn about it:</p>
+<div class="language-cypher highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="err">--</span><span class="w"> </span><span class="n">accepted</span><span class="p">,</span><span class="w"> </span><span class="n">persisted</span><span class="p">,</span><span class="w"> </span><span class="n">and</span><span class="w"> </span><span class="n">does</span><span class="w"> </span><span class="n">NOTHING</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">GRANT</span><span class="w"> </span><span class="k">MATCH</span><span class="w"> </span><span class="p">{*}</span><span class="w"> </span><span class="n">ON</span><span class="w"> </span><span class="n">GRAPH</span><span class="w"> </span><span class="n">cineasts</span><span class="w"> </span><span class="n">NODES</span><span class="w"> </span><span class="p">*</span><span class="w"> </span><span class="n">TO</span><span class="w"> </span><span class="n">analyst</span>
+</span></code></pre></div>
+<p>Graph privileges belong on the <strong>constituent target databases</strong>. A user reading
+through a composite needs <code>ACCESS</code> on the composite <em>and</em> <code>ACCESS</code> plus the
+graph privileges on each constituent's target. A <code>Neo4jRole</code> whose privileges
+name a composite reports <code>PrivilegesResolve=False</code>.</p>
+<h2 id="status">Status<a class="headerlink" href="#status" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>phase</code></td>
+<td><code>string</code></td>
+<td><code>Pending</code>, <code>Creating</code>, <code>Ready</code>, <code>Failed</code>.</td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td><code>string</code></td>
+<td>Human-readable detail for the current phase.</td>
+</tr>
+<tr>
+<td><code>observedConstituents</code></td>
+<td><code>[]string</code></td>
+<td>The constituent list <strong>read back from the server</strong>, fully qualified (<code>cineasts.latest</code>). This is what the DBMS actually exposes, which legitimately differs from spec when <code>enforceConstituents</code> is <code>false</code>.</td>
+</tr>
+<tr>
+<td><code>observedGeneration</code></td>
+<td><code>int64</code></td>
+<td>The <code>metadata.generation</code> this status reflects.</td>
+</tr>
+<tr>
+<td><code>conditions</code></td>
+<td><code>[]Condition</code></td>
+<td>See below.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="conditions">Conditions<a class="headerlink" href="#conditions" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Reasons</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Ready</code></td>
+<td><code>CompositeDatabaseReady</code>, <code>CompositeDatabaseFailed</code>, <code>CompositeDatabaseNameBlocked</code>, <code>ClusterNotReady</code>, <code>ConnectionFailed</code>, <code>ValidationFailed</code></td>
+<td>True when the composite exists and its constituents match spec.</td>
+</tr>
+<tr>
+<td><code>ClusterNotReady</code></td>
+<td><code>ClusterNotReady</code>, <code>ClusterReady</code></td>
+<td>Mirrors the readiness of the referenced deployment.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><a href="../configuration/">Configuration Guide</a> - Advanced configuration options</li>
-<li><a href="../security/">Security Guide</a> - Authentication, TLS, and security best practices</li>
-<li><a href="../performance/">Performance Guide</a> - Optimization and scaling strategies</li>
-<li><a href="../migration_guide/">Upgrade Guide</a> - Upgrading between releases</li>
+<li><strong>Local constituents only.</strong> Remote constituents (<code>... AT '&lt;url&gt;' USER ... PASSWORD ...</code>) are not modelled, because they require <code>dbms.security.keystore.path</code> and <code>dbms.security.keystore.password</code> to be configured on every server first — creating one without a keystore fails outright.</li>
+<li><strong>No <code>OPTIONS</code>.</strong> Composites have none; the operator never emits the clause.</li>
+<li><strong>No topology.</strong> A composite has no store to place.</li>
+<li>Composites cannot be nested, and cannot hold data themselves.</li>
 </ul>
 
 
@@ -4583,7 +4246,7 @@ deployment targets (<code>make deploy-prod</code>, <code>make deploy-dev</code>)
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../.." class="md-footer__link md-footer__link--prev" aria-label="Previous: Home">
+          <a href="../neo4jreplicapromotion/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Neo4jReplicaPromotion">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -4593,20 +4256,20 @@ deployment targets (<code>make deploy-prod</code>, <code>make deploy-dev</code>)
                 Previous
               </span>
               <div class="md-ellipsis">
-                Home
+                Neo4jReplicaPromotion
               </div>
             </div>
           </a>
         
         
           
-          <a href="../installation/" class="md-footer__link md-footer__link--next" aria-label="Next: Installation">
+          <a href="../neo4jdatabasealias/" class="md-footer__link md-footer__link--next" aria-label="Next: Neo4jDatabaseAlias">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Installation
+                Neo4jDatabaseAlias
               </div>
             </div>
             <div class="md-footer__button md-icon">

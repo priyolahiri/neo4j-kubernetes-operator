@@ -601,6 +601,8 @@
       
         
       
+        
+      
     
     
     
@@ -980,6 +982,34 @@
     
   
     Property Sharding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/composite_databases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Composite Databases
   
 
     
@@ -2515,6 +2545,8 @@
       
         
       
+        
+      
     
     
     
@@ -2908,6 +2940,34 @@
     
   
     Neo4jReplicaPromotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jcompositedatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jCompositeDatabase
   
 
     
@@ -4310,6 +4370,7 @@ do point-in-time recovery by creating a <code>Neo4jDatabase</code> with
 </div>
 <h2 id="cross-cluster-replication-aliases">Cross-Cluster Replication &amp; Aliases<a class="headerlink" href="#cross-cluster-replication-aliases" title="Anchor link to this section">&para;</a></h2>
 <p>Read-only replicas of a database on <strong>another</strong> Neo4j cluster, fed by a differential backup chain in object storage — plus the aliases that keep connection strings stable across a failover. See the <a href="../guides/cross_cluster_replication/">Cross-Cluster Replication guide</a> and the <a href="../guides/database_aliases/">Database aliases guide</a>.</p>
+<p>Composite databases give one query endpoint over several constituent databases (<code>USE cineasts.latest</code>). See the <a href="../guides/composite_databases/">Composite databases guide</a>.</p>
 <p>Apply these across <strong>two</strong> Kubernetes clusters, in order: 01 upstream, 02–04 downstream.</p>
 <table>
 <thead>
