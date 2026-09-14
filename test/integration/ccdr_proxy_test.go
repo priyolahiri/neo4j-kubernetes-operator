@@ -18,6 +18,7 @@ package integration_test
 
 import (
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -203,5 +204,53 @@ var _ = Describe("CCDR Proxy (same-cluster ergonomics)", Label("core"), func() {
 			}
 			return cluster.Status.Phase
 		}, clusterTimeout, interval).Should(Equal("Failed"))
+	})
+
+	// The proxy publishes Neo4j's transaction-shipping port through a load
+	// balancer and authenticates nothing itself — HAProxy in `mode tcp`
+	// terminates nothing and inspects nothing — so the cluster SSL policy is
+	// the only access control that port has. Without TLS it has none: anyone
+	// who reaches the load balancer can stream the database in cleartext.
+	//
+	// The unit test pins the rule; this pins that it reaches a user. A
+	// validator that is never wired into the reconcile path is a validator
+	// that does not exist, and the CR going Failed with a message naming the
+	// field is the only part of it anyone sees.
+	It("refuses the proxy on a cluster with no TLS, and creates nothing", func() {
+		clusterName := fmt.Sprintf("ccdr-cluster-notls-%d", GinkgoRandomSeed())
+		cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: clusterName, Namespace: testNamespace},
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				AcceptLicenseAgreement: "eval",
+				Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: getNeo4jImageTag()},
+				Auth:                   &neo4jv1beta1.AuthSpec{AdminSecret: "neo4j-admin-secret"},
+				Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 2},
+				Storage:                neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "1Gi"},
+				Resources:              getCIAppropriateResourceRequirements(),
+				TLS:                    &neo4jv1beta1.TLSSpec{Mode: "disabled"},
+				CrossClusterReplication: &neo4jv1beta1.CrossClusterReplicationSpec{
+					Enabled: true,
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+
+		By("reporting Failed with a message that names the field and the fix")
+		Eventually(func() string {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: testNamespace}, cluster); err != nil {
+				return ""
+			}
+			return cluster.Status.Phase
+		}, clusterTimeout, interval).Should(Equal("Failed"))
+		Expect(cluster.Status.Message).To(ContainSubstring("crossClusterReplication"))
+		Expect(cluster.Status.Message).To(ContainSubstring("spec.tls.mode=cert-manager"))
+
+		By("creating no proxy Deployment — a refusal that still exposes the port is not a refusal")
+		Consistently(func() bool {
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: clusterName + "-ccdr", Namespace: testNamespace,
+			}, &appsv1.Deployment{})
+			return apierrors.IsNotFound(err)
+		}, 15*time.Second, interval).Should(BeTrue())
 	})
 })
