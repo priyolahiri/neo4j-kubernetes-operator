@@ -236,6 +236,29 @@ data:
     end
     return hs
 
+  resource.customizations.health.neo4j.neo4j.com_Neo4jCompositeDatabase: |
+    hs = {}
+    if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then
+      hs.status = "Progressing"
+      hs.message = "Waiting for composite database status"
+      return hs
+    end
+    phase = obj.status.phase
+    if phase == "Ready" then
+      hs.status = "Healthy"
+      hs.message = obj.status.message or "Composite database is in sync"
+    elseif phase == "Failed" then
+      hs.status = "Degraded"
+      hs.message = obj.status.message or "Composite database reconciliation failed"
+    else
+      -- "Pending" covers the deployment not being Ready yet, and "Creating"
+      -- the window before the composite exists. Both are normal when a
+      -- composite and its cluster are applied together.
+      hs.status = "Progressing"
+      hs.message = obj.status.message or ("Composite database is " .. phase)
+    end
+    return hs
+
   resource.customizations.health.neo4j.neo4j.com_Neo4jDatabaseAlias: |
     hs = {}
     if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then

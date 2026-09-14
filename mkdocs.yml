@@ -186,6 +186,7 @@ nav:
           - Neo4jRestore: api_reference/neo4jrestore.md
           - Neo4jReplicaDatabase: api_reference/neo4jreplicadatabase.md
           - Neo4jReplicaPromotion: api_reference/neo4jreplicapromotion.md
+          - Neo4jCompositeDatabase: api_reference/neo4jcompositedatabase.md
           - Neo4jDatabaseAlias: api_reference/neo4jdatabasealias.md
           - AuraProviderConfig: api_reference/auraproviderconfig.md
           - AuraInstance: api_reference/aurainstance.md

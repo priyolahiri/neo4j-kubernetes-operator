@@ -72,7 +72,7 @@ type kindValidator struct {
 
 // validators is the full set of kinds this operator has a Go validator for.
 //
-// It is NOT every CRD. Of the operator's 26 kinds only these 12 have
+// It is NOT every CRD. Of the operator's 27 kinds only these 13 have
 // operator-side validation at all; the rest (the Aura suite, Neo4jRestore,
 // Neo4jReplicaPromotion) are governed by their CRD schema alone, which
 // `kubectl apply --dry-run=server` already enforces. Saying so precisely
@@ -83,6 +83,8 @@ type kindValidator struct {
 // established per kind and pinned by TestOfflineValidatorsAreNilClientSafe:
 //   - Standalone, Backup, Plugin — constructor takes no client.
 //   - DatabaseAlias, ReplicaDatabase — accept a client and never dereference it.
+//   - CompositeDatabase — its one client call (the CalVer gate on
+//     defaultCypherLanguage) returns early on nil.
 //   - EnterpriseCluster — its one client call returns early on nil.
 var validators = map[string]kindValidator{
 	"Neo4jEnterpriseCluster": {fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
@@ -121,6 +123,14 @@ var validators = map[string]kindValidator{
 			return nil, nil, nil, err
 		}
 		out := validation.NewAliasValidator(c).Validate(context.Background(), &obj)
+		return out.Errors, out.Warnings, nil, nil
+	}},
+	"Neo4jCompositeDatabase": {fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
+		var obj neo4jv1beta1.Neo4jCompositeDatabase
+		if err := yaml.Unmarshal(doc, &obj); err != nil {
+			return nil, nil, nil, err
+		}
+		out := validation.NewCompositeDatabaseValidator(c).Validate(context.Background(), &obj)
 		return out.Errors, out.Warnings, nil, nil
 	}},
 	"Neo4jReplicaDatabase": {fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {

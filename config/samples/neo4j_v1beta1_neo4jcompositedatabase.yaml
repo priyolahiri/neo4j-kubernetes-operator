@@ -1,0 +1,17 @@
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jCompositeDatabase
+metadata:
+  name: cineasts
+  labels:
+    app.kubernetes.io/name: neo4j-kubernetes-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  clusterRef: neo4j-cluster
+  # Each constituent becomes the alias `cineasts.<name>`, queried as
+  # `USE cineasts.latest`. The composite stores no data of its own — these
+  # target databases hold it.
+  constituents:
+    - name: latest
+      targetDatabase: movies-latest
+    - name: upcoming
+      targetDatabase: movies-upcoming

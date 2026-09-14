@@ -313,6 +313,21 @@ const (
 	// and refusing would break clusters that already run this way.
 	EventReasonCCDRProxyUnauthenticated = "CrossClusterProxyUnauthenticated"
 
+	// Composite database event reasons.
+	EventReasonCompositeCreated            = "CompositeDatabaseCreated"
+	EventReasonCompositeReady              = "CompositeDatabaseReady"
+	EventReasonCompositeFailed             = "CompositeDatabaseFailed"
+	EventReasonCompositeDropped            = "CompositeDatabaseDropped"
+	EventReasonCompositeConstituentAdded   = "CompositeConstituentAdded"
+	EventReasonCompositeConstituentMoved   = "CompositeConstituentRetargeted"
+	EventReasonCompositeConstituentRemoved = "CompositeConstituentRemoved"
+	// EventReasonCompositeNameBlocked — a dotted alias already occupies the
+	// composite's namespace, so the composite cannot be created at all. Neo4j
+	// accepts `CREATE ALIAS x.y` with no composite `x`, producing an ordinary
+	// alias whose name contains a dot; `CREATE COMPOSITE DATABASE x` then
+	// fails forever with 42N87 and an error that never mentions ordering.
+	EventReasonCompositeNameBlocked = "CompositeDatabaseNameBlocked"
+
 	// Database alias event reasons.
 	EventReasonAliasCreated    = "AliasCreated"
 	EventReasonAliasRetargeted = "AliasRetargeted"

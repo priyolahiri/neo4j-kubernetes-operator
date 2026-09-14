@@ -66,6 +66,9 @@ annotations:
     - kind: Neo4jBackup
       version: v1beta1
       description: Manages Neo4j backup operations
+    - kind: Neo4jCompositeDatabase
+      version: v1beta1
+      description: A single query endpoint over several constituent databases — the composite stores no data of its own
     - kind: Neo4jDatabaseAlias
       version: v1beta1
       description: A second name for a database — used to keep a stable connection string across a cross-cluster replica promotion
