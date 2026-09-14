@@ -4035,9 +4035,14 @@ declared in its spec.</p>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">upcoming</span>
 </span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">movies-upcoming</span>
 </span></code></pre></div>
-<p>Queried as:</p>
-<div class="language-cypher highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">USE</span><span class="w"> </span><span class="n">cineasts</span><span class="p">.</span><span class="n">latest</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">MATCH</span><span class="w"> </span><span class="p">(</span><span class="n">m</span><span class="p">:</span><span class="n">Movie</span><span class="p">)</span><span class="w"> </span><span class="k">RETURN</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">title</span>
+<p>Queried from a session <strong>on the composite</strong> — a constituent is not reachable
+from any other database's session (<code>42N04</code>), and connecting to the constituent
+by its qualified name does not work either (<code>22N51</code>), despite what the first
+error suggests:</p>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gp">$ </span>cypher-shell<span class="w"> </span>-d<span class="w"> </span>cineasts
+</span></code></pre></div>
+<div class="language-cypher highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">USE</span><span class="w"> </span><span class="n">cineasts</span><span class="p">.</span><span class="n">latest</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">MATCH</span><span class="w"> </span><span class="p">(</span><span class="n">m</span><span class="p">:</span><span class="n">Movie</span><span class="p">)</span><span class="w"> </span><span class="k">RETURN</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">title</span>
 </span></code></pre></div>
 <h2 id="why-this-is-a-separate-kind">Why this is a separate Kind<a class="headerlink" href="#why-this-is-a-separate-kind" title="Anchor link to this section">&para;</a></h2>
 <p><code>Neo4jDatabase</code> is almost entirely topology, options, storage and seeding —
@@ -4117,8 +4122,8 @@ A <code>composite: true</code> flag would leave most of that spec silently inert
 <code>cineasts</code> exists</strong>. The result is an ordinary alias whose name merely contains
 a dot — listed by <code>SHOW ALIASES</code>, and even queryable. But the composite can
 then never be created:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>42N87: The database or alias name `cineasts` conflicts with the name
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>       `cineasts.latest` of an existing database or alias.
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>42N87: The database or alias name `cineasts` conflicts with the name
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>       `cineasts.latest` of an existing database or alias.
 </span></code></pre></div>
 <p>This CR owns the composite and its constituents together, which is what makes
 the ordering guaranteed rather than hoped for. If a stray dotted alias already
@@ -4136,8 +4141,8 @@ finalizer is released anyway rather than wedging the CR in <code>Terminating</co
 database that may no longer exist.</p>
 <h2 id="privileges-do-not-go-on-the-composite">Privileges do not go on the composite<a class="headerlink" href="#privileges-do-not-go-on-the-composite" title="Anchor link to this section">&para;</a></h2>
 <p>This is the most common mistake, and Neo4j does not warn about it:</p>
-<div class="language-cypher highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="err">--</span><span class="w"> </span><span class="n">accepted</span><span class="p">,</span><span class="w"> </span><span class="n">persisted</span><span class="p">,</span><span class="w"> </span><span class="n">and</span><span class="w"> </span><span class="n">does</span><span class="w"> </span><span class="n">NOTHING</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">GRANT</span><span class="w"> </span><span class="k">MATCH</span><span class="w"> </span><span class="p">{*}</span><span class="w"> </span><span class="n">ON</span><span class="w"> </span><span class="n">GRAPH</span><span class="w"> </span><span class="n">cineasts</span><span class="w"> </span><span class="n">NODES</span><span class="w"> </span><span class="p">*</span><span class="w"> </span><span class="n">TO</span><span class="w"> </span><span class="n">analyst</span>
+<div class="language-cypher highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="err">--</span><span class="w"> </span><span class="n">accepted</span><span class="p">,</span><span class="w"> </span><span class="n">persisted</span><span class="p">,</span><span class="w"> </span><span class="n">and</span><span class="w"> </span><span class="n">does</span><span class="w"> </span><span class="n">NOTHING</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">GRANT</span><span class="w"> </span><span class="k">MATCH</span><span class="w"> </span><span class="p">{*}</span><span class="w"> </span><span class="n">ON</span><span class="w"> </span><span class="n">GRAPH</span><span class="w"> </span><span class="n">cineasts</span><span class="w"> </span><span class="n">NODES</span><span class="w"> </span><span class="p">*</span><span class="w"> </span><span class="n">TO</span><span class="w"> </span><span class="n">analyst</span>
 </span></code></pre></div>
 <p>Graph privileges belong on the <strong>constituent target databases</strong>. A user reading
 through a composite needs <code>ACCESS</code> on the composite <em>and</em> <code>ACCESS</code> plus the
