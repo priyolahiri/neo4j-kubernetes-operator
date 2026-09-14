@@ -4230,9 +4230,12 @@ the downstream cluster and can <em>observe</em> its version, so <code>SupportsCC
 is a hard gate. The upstream lives in another Kubernetes cluster the operator
 cannot inspect, so any upstream version is a user-supplied claim — callers must
 <strong>warn, not reject</strong>, on <code>MeetsCCDRUpstreamFloor</code> (§9 Q2).</p>
-<p>Note the CI anchor CalVer is currently 2026.06, so CCDR specs will be
-dispatch-gated and largely local-only until the anchor moves — the same
-treatment property sharding gets via <code>isPropertyShardingCompatible()</code>.</p>
+<p>The CI anchor CalVer moved to <strong>2026.08.1</strong> for v1.15.0, so
+<code>isCCDRReplicaCompatible()</code> is now satisfied and the specs that host a replica
+actually run when the extended lane is dispatched. Anchoring below the floor
+of this design's own feature is what kept them dormant; the specs that host
+nothing — CRD admission and validator behaviour — are version-independent and
+run per-PR in the core lane.</p>
 <h3 id="b8-restoring-or-recreating-an-upstream-database-silently-detaches-its-replicas">B8 — Restoring or recreating an upstream database silently detaches its replicas<a class="headerlink" href="#b8-restoring-or-recreating-an-upstream-database-silently-detaches-its-replicas" title="Anchor link to this section">&para;</a></h3>
 <p>A restore changes the database's internal ID; downstream replicas detach and must be recreated from a fresh chain. <code>Neo4jRestore</code> and the <code>dbms.recreateDatabase</code> path (<code>internal/neo4j/version.go:RecreateDatabaseProcedure</code>) have no notion that replicas exist — and cannot, since replicas live in a different Kubernetes cluster with no back-reference. Mitigation is documentation plus, optionally, an advisory annotation on the upstream <code>Neo4jDatabase</code> that the restore controller surfaces as a warning event before proceeding.</p>
 <hr />

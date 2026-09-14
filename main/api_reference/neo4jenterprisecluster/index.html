@@ -5800,7 +5800,7 @@ cluster reaches <code>Ready</code> — see <a href="../neo4jrestore/"><code>Neo4
 <tr>
 <td><code>crossClusterReplication</code></td>
 <td><a href="#crossclusterreplicationspec"><code>CrossClusterReplicationSpec</code></a></td>
-<td>Network-mode cross-cluster database replication (CCDR): deploys a self-hosted TCP proxy exposing this cluster's tx-shipping port (6000) externally via one LoadBalancer Service, for use by a <code>Neo4jReplicaDatabase</code> with <code>source.mode: network</code> in another Kubernetes cluster. Disabled by default.</td>
+<td>Network-mode cross-cluster database replication (CCDR): deploys a self-hosted TCP proxy exposing this cluster's tx-shipping port (6000) externally via one LoadBalancer Service, for use by a <code>Neo4jReplicaDatabase</code> with <code>source.mode: network</code> in another Kubernetes cluster. Disabled by default. <strong>Requires <code>tls.mode: cert-manager</code></strong> — the proxy is a TCP passthrough that authenticates nothing, so the cluster SSL policy is the only access control on the exposed port; enabling it without TLS is rejected.</td>
 </tr>
 <tr>
 <td><code>auraFleetManagement</code></td>
@@ -6431,7 +6431,7 @@ not parse policy config to wire up filesystem mounts automatically.</p>
 <tr>
 <td><code>additionalClusterTrustCAs</code></td>
 <td><code>[]</code><a href="#trustedcasecret"><code>TrustedCASecret</code></a></td>
-<td>Peer clusters' CA certificates, each projected as its own file directly into <code>/ssl/trusted/</code> (the cluster SSL policy's trust directory — Neo4j scans every file present there, not one fixed filename) alongside this cluster's own CA. Required for mutual TLS when replicating across clusters with different CAs — the normal case for <a href="#crossclusterreplicationspec"><code>crossClusterReplication</code></a> — since <code>trustedCASecrets</code> above is a JVM-wide truststore that <code>dbms.ssl.policy.cluster.*</code> never reads. Must be set on <strong>both</strong> clusters, each trusting the other's CA. Only relevant when <code>strictPeerValidation</code> is <code>true</code>.</td>
+<td>Peer clusters' CA certificates, each projected as its own file directly into <code>/ssl/trusted/</code> (the cluster SSL policy's trust directory — Neo4j scans every file present there, not one fixed filename) alongside this cluster's own CA. Required for mutual TLS when replicating across clusters with different CAs — the normal case for <a href="#crossclusterreplicationspec"><code>crossClusterReplication</code></a> — since <code>trustedCASecrets</code> above is a JVM-wide truststore that <code>dbms.ssl.policy.cluster.*</code> never reads. Must be set on <strong>both</strong> clusters, each trusting the other's CA. <strong>This list is the access-control list for the exposed port</strong>, so removing a decommissioned peer's CA is a revocation step, not housekeeping. Read only when <code>mode</code> is <code>cert-manager</code> — setting it without the mode is rejected rather than silently ignored. Only relevant when <code>strictPeerValidation</code> is <code>true</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -8110,6 +8110,12 @@ visible via <code>kubectl get svc</code>.</p>
 <td>All user databases have <code>status=online</code></td>
 <td>Any database has <code>requestedStatus=online</code> but <code>status≠online</code></td>
 <td>Diagnostics cannot be collected (cluster not Ready or Bolt unreachable)</td>
+</tr>
+<tr>
+<td><code>CrossClusterProxySecure</code></td>
+<td>The cluster SSL policy requires a peer certificate on the port the CCDR proxy publishes</td>
+<td><code>strictPeerValidation</code> is <code>false</code>, so <code>trust_all=true</code> accepts <strong>any</strong> peer certificate — the exposed port is encrypted but not authenticated. (A cluster with no TLS at all cannot reach this state: the proxy is rejected at validation.)</td>
+<td>n/a — the condition is removed entirely when the proxy is disabled</td>
 </tr>
 </tbody>
 </table>

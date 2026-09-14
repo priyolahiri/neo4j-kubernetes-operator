@@ -1540,6 +1540,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cross-cluster-replication-the-transaction-shipping-port" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-cluster replication: the transaction-shipping port
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#kubelet-probes-and-the-policy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4852,6 +4863,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cross-cluster-replication-the-transaction-shipping-port" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-cluster replication: the transaction-shipping port
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#kubelet-probes-and-the-policy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -6119,6 +6141,54 @@ LoadBalancer or Ingress <strong>does</strong> reach the Pod on 7474/7473/7687:</
 <p>So enabling the operator's policy does NOT break LoadBalancer or Ingress
 exposure — it only adds the protections on 6362 (backup) and the peer
 ports.</p>
+<h3 id="cross-cluster-replication-the-transaction-shipping-port">Cross-cluster replication: the transaction-shipping port<a class="headerlink" href="#cross-cluster-replication-the-transaction-shipping-port" title="Anchor link to this section">&para;</a></h3>
+<p><code>spec.crossClusterReplication</code> publishes Neo4j's transaction-shipping port
+(6000) through a <code>type: LoadBalancer</code> Service, one port per server ordinal, so
+a replica in another Kubernetes cluster can stream from it. RAFT (7000) and
+routing (7688) are never proxied.</p>
+<p>This is the operator's largest deliberate network exposure, and it has one
+property worth stating plainly: <strong>the proxy authenticates nothing.</strong> It is
+HAProxy in <code>mode tcp</code> — a passthrough that terminates nothing and inspects
+nothing — so Neo4j's own cluster SSL policy is the entire access control in
+front of that port.</p>
+<p>The operator therefore <strong>requires</strong> <code>spec.tls.mode: cert-manager</code> to enable it;
+a cluster without TLS is rejected with the CR in <code>Failed</code>. Beyond that
+requirement:</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tls.strictPeerValidation</code></td>
+<td><code>true</code></td>
+<td><code>client_auth=REQUIRE</code>, <code>trust_all=false</code> — a peer certificate signed by a trusted CA is required to connect. Leave it on; <code>false</code> accepts any certificate</td>
+</tr>
+<tr>
+<td><code>tls.additionalClusterTrustCAs</code></td>
+<td>empty</td>
+<td><strong>The access-control list for the exposed port.</strong> Only clusters whose CA is listed can connect; removing one is the revocation mechanism</td>
+</tr>
+<tr>
+<td><code>crossClusterReplication.loadBalancerInternal</code></td>
+<td><code>true</code></td>
+<td>Keeps the Service on an internal load balancer (AWS/Azure/GCP), so the address is reachable only from the VPC/VNet</td>
+</tr>
+<tr>
+<td><code>networkPolicy.enabled</code> + <code>allowReplicasFrom</code></td>
+<td><code>false</code></td>
+<td>A Kubernetes-level second check, independent of the certificate story</td>
+</tr>
+</tbody>
+</table>
+<p>The cluster reports a <code>CrossClusterProxySecure</code> condition whenever the proxy is
+running, and drops it when the proxy is disabled — so it is safe to alert on a
+<code>False</code>. Full guidance, including backup-mode credential handling, is in
+<a href="../guides/cross_cluster_replication/#security">Cross-cluster replication § Security</a>.</p>
 <h3 id="kubelet-probes-and-the-policy">Kubelet probes and the policy<a class="headerlink" href="#kubelet-probes-and-the-policy" title="Anchor link to this section">&para;</a></h3>
 <p>The Neo4j Pod's readiness/liveness probes are HTTP on port 7474.
 Kubelet — the source of probe traffic — is <strong>not</strong> a Pod and is
@@ -6579,6 +6649,7 @@ bundled example CRs that intentionally trip Audit warnings.</p>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>spec.audit.enabled: true</code></li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>spec.monitoring.enabled: true</code> + Prometheus scrape (see <a href="../guides/prometheus-grafana-setup/">Prometheus &amp; Grafana</a>)</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <code>spec.networkPolicy.enabled: true</code> if your CNI enforces (Calico/Cilium/Antrea/Weave)</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> If <code>spec.crossClusterReplication</code> is enabled: <code>loadBalancerInternal: true</code>, <code>strictPeerValidation: true</code>, <code>additionalClusterTrustCAs</code> limited to clusters that currently replicate, and an alert on <code>CrossClusterProxySecure=False</code></li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Admin credentials sourced from External Secrets Operator or Vault, not literal Secret YAML</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Backup CRs with retention configured + restore tested at least once</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Audit Kyverno policies under <code>examples/security/policies/</code> deployed in <code>Audit</code> mode</li>

@@ -1168,6 +1168,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#cross-cluster-replication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-cluster replication
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#network-policies" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3786,6 +3797,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#cross-cluster-replication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-cluster replication
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#network-policies" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3870,6 +3892,18 @@
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="c1"># strictPeerValidation defaults to true (mutual TLS on cluster links).</span>
 </span></code></pre></div>
 <p>The operator integrates with <code>cert-manager</code> to automatically provision and manage TLS certificates. This is the recommended approach for production environments. Intra-cluster mutual TLS is enabled by default via <code>spec.tls.strictPeerValidation: true</code>. See the dedicated <a href="../../tls_configuration/">TLS Configuration</a> guide for the full configuration surface, including third-party issuers (AWS PCA, Vault) and the <code>strictPeerValidation: false</code> opt-out.</p>
+<h2 id="cross-cluster-replication">Cross-cluster replication<a class="headerlink" href="#cross-cluster-replication" title="Anchor link to this section">&para;</a></h2>
+<p><code>spec.crossClusterReplication</code> publishes Neo4j's transaction-shipping port
+through a LoadBalancer Service so a replica in another Kubernetes cluster can
+stream from it. The proxy in front of that port is a TCP passthrough that
+authenticates nothing, so the cluster SSL policy is the only access control it
+has — which is why the operator requires <code>spec.tls.mode: cert-manager</code> and
+rejects the feature without it.</p>
+<p>Keep <code>strictPeerValidation</code> and <code>loadBalancerInternal</code> at their defaults
+(<code>true</code>), treat <code>spec.tls.additionalClusterTrustCAs</code> as the access-control list
+it is, and alert on the cluster's <code>CrossClusterProxySecure</code> condition. Full
+guidance, including backup-mode credential handling, is in
+<a href="../cross_cluster_replication/#security">Cross-cluster replication § Security</a>.</p>
 <h2 id="network-policies">Network Policies<a class="headerlink" href="#network-policies" title="Anchor link to this section">&para;</a></h2>
 <p>The operator can automatically create Kubernetes <code>NetworkPolicy</code> resources to restrict traffic to your Neo4j cluster. This helps to enforce a zero-trust security model by ensuring that only authorized applications can connect to the database.</p>
 <h2 id="rbac">RBAC<a class="headerlink" href="#rbac" title="Anchor link to this section">&para;</a></h2>

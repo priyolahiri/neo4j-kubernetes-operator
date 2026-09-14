@@ -4125,6 +4125,11 @@ cluster only when it <em>needs</em> clustering.</p>
 <td>Needs an upstream <em>and</em> a downstream, which looks like it breaks the one-deployment-at-a-time rule — but backup-based replication couples the two only through a bucket, so the upstream can be torn down before the downstream comes up. See the phase</td>
 </tr>
 <tr>
+<td><strong>The CCDR proxy + cross-cluster TLS trust, together</strong></td>
+<td><strong>Phase 5 Part E — two Kind clusters</strong>, <code>make ccdr-e2e-up</code></td>
+<td>The proxy, the certificate SANs, the advertised-address override and peer-CA trust only interact when TLS is on across two real clusters. Nothing smaller reaches it: the IP-SAN bug, the peer-CA mount bug and the unrepairable-forming-cluster bug were all invisible until this ran</td>
+</tr>
+<tr>
 <td><strong>Database aliases</strong> (<code>Neo4jDatabaseAlias</code>)</td>
 <td>Standalone</td>
 <td>Alias DDL is deployment-independent; the CCDR failover behaviour is covered in Phase 5</td>
@@ -4162,10 +4167,15 @@ issues the lighter phases miss). Phase 0 is minutes and no memory, and it goes
 first for a second reason: it proves the operator, the CRDs and the CLI are
 wired before a real deployment costs twenty. Phase 4 (Aura) needs cloud credentials rather
 than a Kind cluster: run its <strong>read-only sweep</strong> whenever anything under
-<code>internal/aura/</code> or an <code>Aura*</code> CRD changed. Phase 5 (CCDR) needs a <code>2026.08+</code>
-image, which is above the pinned CI anchor — run it whenever anything under the
-replication CRDs changed <strong>and</strong> such an image is available; if it is not, say
-so in the log rather than recording the phase as passed.</p>
+<code>internal/aura/</code> or an <code>Aura*</code> CRD changed. <strong>Phase 5 (CCDR) is now a standing gate, not an
+occasional one.</strong> Run it whenever a release touches anything under the
+replication CRDs, <code>internal/resources/ccdr_proxy.go</code>, the CCDR proxy
+controller, or <code>spec.tls</code> — that last one because the proxy, the certificate
+SANs and cross-cluster CA trust are one system, and Part E is the only place
+they are exercised together. It has found a release blocker on every pass so
+far. The image floor is <code>2026.08+</code>, which is the pinned CI anchor as of
+v1.15.0, so "no such image" is no longer a reason to skip it; if a pass really
+is skipped, say so in the log rather than recording the phase as passed.</p>
 <h3 id="phase-0-cli-no-neo4j-deployment">Phase 0 — CLI (no Neo4j deployment)<a class="headerlink" href="#phase-0-cli-no-neo4j-deployment" title="Anchor link to this section">&para;</a></h3>
 <p><code>kubectl-neo4j</code> ships on the operator's own tag, under the operator's own
 support statement, so it is verified on the same pass. It is not a deployment
@@ -4802,15 +4812,22 @@ exercises the proxy, the certificate SANs, the advertised-address override and
 cross-cluster CA trust <em>together</em>. All of that was verified for the first time
 on 2026-09-14, and three defects fell out of it that nothing else had reached
 — run it before every release that touches CCDR or TLS.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kind<span class="w"> </span>create<span class="w"> </span>cluster<span class="w"> </span>--name<span class="w"> </span>neo4j-operator-dev<span class="w">     </span><span class="c1"># upstream</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>kind<span class="w"> </span>create<span class="w"> </span>cluster<span class="w"> </span>--name<span class="w"> </span>neo4j-dr<span class="w">               </span><span class="c1"># downstream</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>make<span class="w"> </span>ccdr-lb<span class="w">                                      </span><span class="c1"># MetalLB, on the UPSTREAM only</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>make<span class="w"> </span>ccdr-e2e-up<span class="w">      </span><span class="c1"># both Kind clusters, cert-manager + issuer, MetalLB on</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">                      </span><span class="c1"># the upstream, the operator built from this tree on both</span>
 </span></code></pre></div>
-<p>Deploy the operator to <strong>both</strong>, and put <code>--context</code> on every <code>kubectl</code>:
-<code>kind create cluster</code> switches the current context, and a batch of commands
-aimed at the wrong cluster is the easiest mistake to make here. Both clusters
-get <code>spec.tls.mode: cert-manager</code> with <code>strictPeerValidation: true</code>; 2 servers
-each, CI-sized.</p>
+<p>Then apply a <code>Neo4jEnterpriseCluster</code> to <strong>each</strong> — by hand, from the published
+docs, because that is what is under test. Both get <code>spec.tls.mode:
+cert-manager</code> with <code>strictPeerValidation: true</code> (the default) and 2 CI-sized
+servers; the upstream also gets <code>spec.crossClusterReplication.enabled: true</code>.
+Once both are <code>Ready</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>make<span class="w"> </span>ccdr-e2e-trust<span class="w">   </span><span class="c1"># exchange the CAs, patch additionalClusterTrustCAs on both</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>make<span class="w"> </span>ccdr-e2e-status<span class="w">  </span><span class="c1"># where everything is</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>make<span class="w"> </span>ccdr-e2e-down<span class="w">    </span><span class="c1"># delete both clusters</span>
+</span></code></pre></div>
+<p>Put <code>--context</code> on every <code>kubectl</code> you run yourself. <code>kind create cluster</code>
+switches the current context, and a batch of commands aimed at the wrong
+cluster is the easiest mistake to make here — it produced a false blocker on
+the first walk. The scripted steps already do.</p>
 <table>
 <thead>
 <tr>
