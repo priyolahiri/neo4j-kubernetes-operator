@@ -741,6 +741,35 @@ So enabling the operator's policy does NOT break LoadBalancer or Ingress
 exposure — it only adds the protections on 6362 (backup) and the peer
 ports.
 
+### Cross-cluster replication: the transaction-shipping port
+
+`spec.crossClusterReplication` publishes Neo4j's transaction-shipping port
+(6000) through a `type: LoadBalancer` Service, one port per server ordinal, so
+a replica in another Kubernetes cluster can stream from it. RAFT (7000) and
+routing (7688) are never proxied.
+
+This is the operator's largest deliberate network exposure, and it has one
+property worth stating plainly: **the proxy authenticates nothing.** It is
+HAProxy in `mode tcp` — a passthrough that terminates nothing and inspects
+nothing — so Neo4j's own cluster SSL policy is the entire access control in
+front of that port.
+
+The operator therefore **requires** `spec.tls.mode: cert-manager` to enable it;
+a cluster without TLS is rejected with the CR in `Failed`. Beyond that
+requirement:
+
+| Control | Default | What it does |
+|---|---|---|
+| `tls.strictPeerValidation` | `true` | `client_auth=REQUIRE`, `trust_all=false` — a peer certificate signed by a trusted CA is required to connect. Leave it on; `false` accepts any certificate |
+| `tls.additionalClusterTrustCAs` | empty | **The access-control list for the exposed port.** Only clusters whose CA is listed can connect; removing one is the revocation mechanism |
+| `crossClusterReplication.loadBalancerInternal` | `true` | Keeps the Service on an internal load balancer (AWS/Azure/GCP), so the address is reachable only from the VPC/VNet |
+| `networkPolicy.enabled` + `allowReplicasFrom` | `false` | A Kubernetes-level second check, independent of the certificate story |
+
+The cluster reports a `CrossClusterProxySecure` condition whenever the proxy is
+running, and drops it when the proxy is disabled — so it is safe to alert on a
+`False`. Full guidance, including backup-mode credential handling, is in
+[Cross-cluster replication § Security](guides/cross_cluster_replication.md#security).
+
 ### Kubelet probes and the policy
 
 The Neo4j Pod's readiness/liveness probes are HTTP on port 7474.
@@ -1171,6 +1200,7 @@ Operator-specific posture for production deployments:
 - [ ] `spec.audit.enabled: true`
 - [ ] `spec.monitoring.enabled: true` + Prometheus scrape (see [Prometheus & Grafana](guides/prometheus-grafana-setup.md))
 - [ ] `spec.networkPolicy.enabled: true` if your CNI enforces (Calico/Cilium/Antrea/Weave)
+- [ ] If `spec.crossClusterReplication` is enabled: `loadBalancerInternal: true`, `strictPeerValidation: true`, `additionalClusterTrustCAs` limited to clusters that currently replicate, and an alert on `CrossClusterProxySecure=False`
 - [ ] Admin credentials sourced from External Secrets Operator or Vault, not literal Secret YAML
 - [ ] Backup CRs with retention configured + restore tested at least once
 - [ ] Audit Kyverno policies under `examples/security/policies/` deployed in `Audit` mode
