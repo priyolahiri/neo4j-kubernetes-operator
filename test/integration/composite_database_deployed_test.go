@@ -65,6 +65,23 @@ var _ = Describe("Composite Database (deployed)", Label("extended"), Serial, fun
 		return string(out), err
 	}
 
+	// cypherOn runs against a named session database. A composite's
+	// constituent is reachable ONLY from a session on the composite itself:
+	//
+	//	42N04: Failed to access database identified by `cineasts.latest` while
+	//	       connected to session database `neo4j`.
+	//	       Connect to `cineasts.latest` directly.
+	//
+	// That last sentence is the server's advice and it does not work —
+	// connecting to the constituent gives 22N51, graph reference not found.
+	// Connect to the COMPOSITE and USE the constituent from there.
+	cypherOn := func(database, query string) (string, error) {
+		out, err := execOut(ctx, podName, testNamespace,
+			"cypher-shell", "-a", "bolt://localhost:7687", "-u", "neo4j", "-p", password,
+			"--non-interactive", "-d", database, query)
+		return string(out), err
+	}
+
 	BeforeEach(func() {
 		ctx = context.Background()
 		testNamespace = createTestNamespace("composite-deployed")
@@ -160,10 +177,21 @@ var _ = Describe("Composite Database (deployed)", Label("extended"), Serial, fun
 			compositeName+".latest", compositeName+".upcoming"))
 
 		By("Querying through the composite")
-		queried, err := cypher(fmt.Sprintf("USE `%s`.latest MATCH (n) RETURN count(n) AS n", compositeName))
-		Expect(err).ToNot(HaveOccurred(), "a constituent must be queryable through the composite")
-		Expect(queried).To(ContainSubstring("count(n)"),
-			"the query should return the constituent's own result, not the composite's")
+		queried, err := cypherOn(compositeName,
+			fmt.Sprintf("USE `%s`.latest MATCH (n) RETURN count(n) AS n", compositeName))
+		Expect(err).ToNot(HaveOccurred(),
+			"a constituent must be queryable from a session on its composite")
+		Expect(queried).To(ContainSubstring("n"))
+
+		By("Checking graph.names() reports the constituents from the composite session")
+		names, err := cypherOn(compositeName, "RETURN graph.names() AS names")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(names).To(ContainSubstring(compositeName + ".latest"))
+
+		By("Confirming a constituent is NOT reachable from another database's session")
+		_, err = cypher(fmt.Sprintf("USE `%s`.latest MATCH (n) RETURN count(n) AS n", compositeName))
+		Expect(err).To(HaveOccurred(),
+			"cross-composite access from the default database must be refused (42N04)")
 
 		By("Removing a constituent from spec — enforceConstituents defaults true, so it goes")
 		Eventually(func() error {
@@ -179,24 +207,25 @@ var _ = Describe("Composite Database (deployed)", Label("extended"), Serial, fun
 			return k8sClient.Update(ctx, latest)
 		}, clusterTimeout, interval).Should(Succeed())
 
-		Eventually(func() string {
-			out, err := cypher(fmt.Sprintf(
+		// Returning (string, error): Gomega fails the assertion outright on a
+		// non-nil error rather than matching against the value. Swallowing the
+		// error and returning its text instead would make this assertion PASS
+		// whenever cypher-shell failed — "error: …" does not contain
+		// ".upcoming" either — which is a green test for a broken server.
+		Eventually(func() (string, error) {
+			return cypher(fmt.Sprintf(
 				"SHOW DATABASE `%s` YIELD constituents", compositeName))
-			if err != nil {
-				return "error: " + err.Error()
-			}
-			return out
 		}, clusterTimeout, interval).ShouldNot(ContainSubstring(compositeName+".upcoming"),
 			"a constituent absent from spec must be dropped when enforceConstituents is true")
 
 		By("Deleting the CR — CASCADE removes the aliases, never the target databases")
 		Expect(k8sClient.Delete(ctx, composite)).To(Succeed())
-		Eventually(func() bool {
+		Eventually(func() (bool, error) {
 			out, err := cypher("SHOW DATABASES YIELD name, type RETURN name, type")
 			if err != nil {
-				return false
+				return false, err
 			}
-			return !strings.Contains(out, `"`+compositeName+`"`)
+			return !strings.Contains(out, `"`+compositeName+`"`), nil
 		}, clusterTimeout, interval).Should(BeTrue(), "the composite should be dropped")
 
 		out, err = cypher("SHOW DATABASES YIELD name, type RETURN name, type")

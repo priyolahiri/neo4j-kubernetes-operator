@@ -1,12 +1,35 @@
 # Composite databases
 
 A composite database is a single query endpoint over several constituent
-databases. Applications connect to one name and address the parts through it:
+databases. Applications **connect to the composite** and address the parts
+through it:
+
+```console
+$ cypher-shell -d cineasts
+```
 
 ```cypher
 USE cineasts.latest
 MATCH (m:Movie) RETURN m.title
 ```
+
+!!! warning "Constituents are reachable only from a session on the composite"
+
+    Running `USE cineasts.latest` while connected to some other database is
+    refused:
+
+    ```
+    42N04: Failed to access database identified by `cineasts.latest` while
+           connected to session database `neo4j`.
+           Connect to `cineasts.latest` directly.
+    ```
+
+    **Ignore that last sentence** — connecting to the constituent by its
+    qualified name does not work either (`22N51: graph reference not found`).
+    Connect to the **composite** (`-d cineasts`, or your driver's database
+    parameter), then `USE` the constituent from there.
+
+    From a composite session, `RETURN graph.names()` lists what is reachable.
 
 It **stores no data of its own**. No topology, no store, no indexes or
 constraints, no seeding — the constituent databases hold everything, and the

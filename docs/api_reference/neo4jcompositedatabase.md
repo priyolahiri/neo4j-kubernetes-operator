@@ -20,7 +20,14 @@ spec:
       targetDatabase: movies-upcoming
 ```
 
-Queried as:
+Queried from a session **on the composite** — a constituent is not reachable
+from any other database's session (`42N04`), and connecting to the constituent
+by its qualified name does not work either (`22N51`), despite what the first
+error suggests:
+
+```console
+$ cypher-shell -d cineasts
+```
 
 ```cypher
 USE cineasts.latest
