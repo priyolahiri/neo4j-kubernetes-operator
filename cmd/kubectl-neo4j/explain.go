@@ -103,7 +103,10 @@ var conditionGuidance = map[string]guidance{
 			"cluster the cause is usually the replica's name: a replica of \"foo\" is called " +
 			"\"foo-replica\", and privileges attach to the database, not to an alias. Rewrite the " +
 			"database name in spec.privileges. If the database is simply not created yet, this " +
-			"clears by itself.",
+			"clears by itself. Reason GraphPrivilegeOnComposite is the same failure on a " +
+			"composite database: a GRAPH privilege there is accepted and inert, because graph " +
+			"privileges attach to the constituents' target databases. Grant ACCESS on the " +
+			"composite and the graph privileges on each constituent's target.",
 	},
 	controller.ConditionTypeUserNotFound: {
 		meaning: "a referenced Neo4j user does not exist.",

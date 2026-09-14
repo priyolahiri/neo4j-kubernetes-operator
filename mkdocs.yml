@@ -125,6 +125,7 @@ nav:
       - Clustering: user_guide/clustering.md
       - Topology Placement: user_guide/topology_placement.md
       - Property Sharding: user_guide/property_sharding.md
+      - Composite Databases: user_guide/guides/composite_databases.md
       - External Access (LB / NodePort / Ingress / Route): user_guide/external_access.md
       - Plugin Management: user_guide/guides/plugins.md
       - Seed URI: user_guide/guides/seed-uri.md

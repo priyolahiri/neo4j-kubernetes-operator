@@ -444,6 +444,26 @@ func PrivilegeStatementVerb(stmt string) string {
 // a WARNING, never a rejection, so the cost of a name it fails to recognise is
 // a warning not raised, not a valid configuration refused.
 func PrivilegeDatabaseTargets(stmt string) []string {
+	return privilegeTargets(stmt, map[string]bool{
+		"DATABASE": true, "DATABASES": true, "GRAPH": true, "GRAPHS": true,
+	})
+}
+
+// PrivilegeGraphTargets returns only the names under a GRAPH scope.
+//
+// The distinction matters for composite databases, and only for them. On a
+// composite, `GRANT ACCESS ON DATABASE <composite>` is correct and required —
+// it is how a user is allowed to query through the composite at all. But
+// `GRANT MATCH {*} ON GRAPH <composite>` is inert: graph privileges attach to
+// the constituents' target databases, never to the composite. Neo4j accepts
+// the statement, persists it, and shows it back in SHOW ROLE PRIVILEGES, so
+// nothing about the system says it does nothing.
+func PrivilegeGraphTargets(stmt string) []string {
+	return privilegeTargets(stmt, map[string]bool{"GRAPH": true, "GRAPHS": true})
+}
+
+// privilegeTargets extracts the names under the given ON-scopes.
+func privilegeTargets(stmt string, scopes map[string]bool) []string {
 	tokens := privilegeTokens(CanonicalisePrivilegeStatement(stmt))
 
 	var out []string
@@ -459,10 +479,10 @@ func PrivilegeDatabaseTargets(stmt string) []string {
 		if j >= len(tokens) {
 			continue
 		}
-		switch tokens[j] {
-		case "DATABASE", "DATABASES", "GRAPH", "GRAPHS":
-		default:
-			continue // ON DBMS, or something we do not recognise
+		if !scopes[tokens[j]] {
+			// A scope we were not asked about, ON DBMS, or something we do
+			// not recognise.
+			continue
 		}
 		// Everything up to the next keyword is the comma-separated name list.
 		for k := j + 1; k < len(tokens); k++ {
