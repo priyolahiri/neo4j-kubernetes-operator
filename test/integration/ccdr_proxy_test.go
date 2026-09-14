@@ -92,7 +92,16 @@ var _ = Describe("CCDR Proxy (same-cluster ergonomics)", Label("core"), func() {
 				Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 2},
 				Storage:                neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "1Gi"},
 				Resources:              getCIAppropriateResourceRequirements(),
-				TLS:                    &neo4jv1beta1.TLSSpec{Mode: "disabled"},
+				// cert-manager, not "disabled": the proxy publishes the
+				// tx-shipping port through a load balancer and authenticates
+				// nothing itself, so the operator refuses it without a cluster
+				// SSL policy. Both Kind clusters ship cert-manager with
+				// ca-cluster-issuer, so this is the configuration a user would
+				// actually run — and the one the validator now requires.
+				TLS: &neo4jv1beta1.TLSSpec{
+					Mode:      "cert-manager",
+					IssuerRef: &neo4jv1beta1.IssuerRef{Name: "ca-cluster-issuer", Kind: "ClusterIssuer"},
+				},
 				CrossClusterReplication: &neo4jv1beta1.CrossClusterReplicationSpec{
 					Enabled: true,
 				},

@@ -37,15 +37,15 @@ import (
 // The CCDR proxy is HAProxy in `mode tcp`. It terminates nothing and
 // authenticates nothing, so Neo4j's cluster SSL policy is the ONLY access
 // control in front of the tx-shipping port the proxy publishes through a load
-// balancer. Enable the proxy with no `spec.tls` and that port is reachable
-// from the load balancer's address with neither authentication nor
-// encryption — anyone who gets there can stream the database.
+// balancer.
 //
-// The operator does not refuse the configuration (a user may terminate TLS
-// elsewhere, or run deliberately on a private network, and refusing would
-// break clusters already running this way). It must say so, durably: an event
-// ages out in an hour and is lost across an operator restart, which is exactly
-// when someone auditing a cluster would come looking.
+// A cluster with no spec.tls is refused outright by
+// validateCrossClusterReplication and never reaches this code. What remains is
+// the narrower opt-out — strictPeerValidation false, which is trust_all=true:
+// encrypted, but every peer certificate accepted. That is a deliberate choice
+// Neo4j documents as debugging-only, so it is permitted and reported durably.
+// An event ages out in an hour and is lost across an operator restart, which
+// is exactly when someone auditing a cluster would come looking.
 func TestCCDRProxy_ReportsWhetherAnythingAuthenticatesTheExposedPort(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -85,20 +85,13 @@ func TestCCDRProxy_ReportsWhetherAnythingAuthenticatesTheExposedPort(t *testing.
 		wantEvent  bool
 	}{
 		{
-			name:       "no spec.tls — nothing authenticates the exposed port",
-			tls:        nil,
-			wantStatus: metav1.ConditionFalse,
-			wantReason: "NoClusterTLS",
-			wantEvent:  true,
-		},
-		{
-			name: "strictPeerValidation off — trust_all, so still nothing",
+			name: "strictPeerValidation off — trust_all accepts any peer certificate",
 			tls: &neo4jv1beta1.TLSSpec{
 				Mode:                 resources.CertManagerMode,
 				StrictPeerValidation: func() *bool { b := false; return &b }(),
 			},
 			wantStatus: metav1.ConditionFalse,
-			wantReason: "NoClusterTLS",
+			wantReason: "TrustAllPeers",
 			wantEvent:  true,
 		},
 		{

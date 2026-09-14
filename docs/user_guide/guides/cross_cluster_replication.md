@@ -195,7 +195,7 @@ in step 1's "Same Kubernetes cluster" paragraphs, below.
       crossClusterReplication:
         enabled: true
       tls:
-        mode: cert-manager        # REQUIRED — see the warning below
+        mode: cert-manager        # required — the proxy is refused without it
         issuerRef:
           name: ca-cluster-issuer
           kind: ClusterIssuer
@@ -203,24 +203,25 @@ in step 1's "Same Kubernetes cluster" paragraphs, below.
           - name: dr-cluster-ca   # the DOWNSTREAM cluster's CA — copy it here
     ```
 
-    !!! danger "Do not enable the proxy without TLS"
+    !!! warning "TLS is required, and the operator enforces it"
 
         The proxy is a TCP passthrough: it terminates nothing and
-        authenticates nothing. **Every access control on the exposed port is
-        Neo4j's cluster SSL policy** — `client_auth=REQUIRE` with
-        `trust_all=false`, which is what `tls.mode: cert-manager` plus the
-        default `strictPeerValidation: true` turns on. With `spec.tls` unset,
-        the same load balancer fronts an unauthenticated, unencrypted
-        transaction-shipping port, and anyone who can reach it can stream the
-        database. The operator does not refuse this — you may be terminating
-        elsewhere, or deliberately inside a private network — but it says so:
-        the cluster reports `CrossClusterProxySecure=False` with reason
-        `NoClusterTLS`, and emits a `CrossClusterProxyUnauthenticated` warning
-        event when the load balancer address is first published.
+        authenticates nothing. **The only access control on the exposed port
+        is Neo4j's cluster SSL policy** — `client_auth=REQUIRE` with
+        `trust_all=false`, which `tls.mode: cert-manager` plus the default
+        `strictPeerValidation: true` turns on. Without it the same load
+        balancer would front an unauthenticated, unencrypted
+        transaction-shipping port that anyone who reaches it can stream the
+        database from.
 
-        `additionalClusterTrustCAs` is read only when `tls.mode` is
-        `cert-manager`. Set it without `mode` and the peer CAs are silently
-        ignored — the field looks configured and does nothing.
+        So `crossClusterReplication.enabled: true` without
+        `tls.mode: cert-manager` is **rejected**: the cluster goes `Failed`
+        with a message naming the field, and no proxy is created. The same
+        applies to `additionalClusterTrustCAs`, which is read only under
+        cert-manager — setting it without the mode is rejected rather than
+        silently doing nothing.
+
+        See [Security](#security) for the full picture.
 
     `additionalClusterTrustCAs` must be set on **both** clusters, each trusting
     the other's CA — copy `prod-cluster`'s CA Secret into the `dr` namespace
@@ -547,7 +548,7 @@ Because the replica keeps the name `foo-replica` **after promotion too**, these
 privileges stay correct through failover — there is nothing to edit during the
 outage.
 
-!!! tip "The operator now tells you — but verify anyway"
+!!! tip "The operator flags this — but verify anyway"
 
     A wrong database name here fails silently in Neo4j. The operator checks for
     it: when a privilege names a database this cluster does not have, the
@@ -684,70 +685,133 @@ formation is never blocked waiting for the proxy.
 
 ---
 
-## What CCDR exposes, and what protects it
+## Security
 
 Both modes move a whole database out of one trust boundary and into another.
-That is the point of them, but it is worth being explicit about what each one
-puts within reach of an attacker, because the two modes fail differently.
+That is what they are for — but the two modes put different things within
+reach, and they are secured differently.
 
 ### Network mode: a load balancer in front of the database
 
 | | |
 |---|---|
 | What is exposed | Port 6000 on every upstream server, published as `<lb>:16000`, `:16001`, … one per ordinal. RAFT (7000) and routing (7688) are never proxied |
-| What it gives an attacker | The transaction-shipping protocol. Anyone who can complete a connection can stream the database's contents |
-| How to check | `kubectl get neo4jenterprisecluster <name> -o jsonpath='{.status.conditions[?(@.type=="CrossClusterProxySecure")]}'` — `False`/`NoClusterTLS` means nothing does |
-| What protects it | **Only the cluster SSL policy.** The proxy is HAProxy in `mode tcp` — it terminates nothing, inspects nothing and authenticates nothing. With `tls.mode: cert-manager` and the default `strictPeerValidation: true`, Neo4j requires a client certificate signed by a CA in `/ssl/trusted/`, which is exactly the set you control through `additionalClusterTrustCAs`. **With `spec.tls` unset there is no authentication on that port at all** |
-| Second line of defence | `crossClusterReplication.loadBalancerInternal` (default `true`) annotates the Service for an internal load balancer on AWS, Azure and GCP, so the address is reachable only from the VPC/VNet. It is a default worth keeping; set it to `false` only when the downstream is genuinely outside the network, and then only with TLS |
-| Third | `networkPolicy.enabled` (default **false**). Turning it on scopes port 6000 to this cluster's own pods plus the proxy, and `networkPolicy.allowReplicasFrom` admits named downstream clusters explicitly |
+| What an attacker who reaches it gets | The transaction-shipping protocol — enough to stream the database's contents |
+| What protects it | **The cluster SSL policy, and nothing else.** The proxy is HAProxy in `mode tcp`: it terminates nothing, inspects nothing, authenticates nothing. `client_auth=REQUIRE` with `trust_all=false` — which is `tls.mode: cert-manager` plus the default `strictPeerValidation: true` — is the whole of the access control |
+| Network boundary | `loadBalancerInternal` (default `true`) annotates the Service for an internal load balancer on AWS, Azure and GCP, so the address is reachable only from the VPC/VNet |
+| Second boundary | `networkPolicy.enabled` (default **false**) scopes port 6000 to this cluster's own pods plus the proxy; `networkPolicy.allowReplicasFrom` admits named downstream clusters explicitly |
 
-Three things to hold onto: the trust anchor list *is* the access control list,
-so removing a decommissioned peer's CA is a revocation step and not a tidy-up;
-`additionalClusterTrustCAs` is silently ignored unless `tls.mode` is set; and
-the proxy shares the port with ordinary intra-cluster secondary catch-up, so
-turning it on changes the exposure of normal cluster traffic too.
+**The operator requires TLS here.** `crossClusterReplication.enabled: true` on
+a cluster without `tls.mode: cert-manager` is rejected — the CR goes `Failed`
+and no proxy is created. There is no configuration in which publishing an
+unauthenticated replication port is the intended outcome, and terminating TLS
+at the load balancer instead is not an option: the catchup protocol's
+authentication *is* the certificate exchange the SSL policy performs.
 
-### Backup mode: credentials, in the database's own environment
+#### Practices worth following
+
+**Treat `additionalClusterTrustCAs` as an access-control list.** It is one —
+the peer CAs in it are exactly the set of clients the exposed port will accept.
+Removing a decommissioned cluster's CA is a revocation step, not housekeeping,
+and it is the only revocation mechanism there is. Keep the list to the clusters
+that currently replicate.
+
+**Give each side its own issuer.** Two clusters sharing one CA trust each other
+automatically, which is convenient and means you cannot revoke one without
+revoking both. Separate issuers plus an explicit CA exchange makes the trust
+relationship something you can see in the spec and take away.
+
+**Leave `strictPeerValidation` at its default.** Setting it `false` is
+`trust_all=true`: the port stays encrypted but accepts *any* peer certificate,
+which on an exposed port means any client at all. Neo4j documents it as a
+debugging setting. The operator permits it and reports
+`CrossClusterProxySecure=False` with reason `TrustAllPeers`; treat that
+condition as an open finding rather than a known state.
+
+**Keep the load balancer internal.** `loadBalancerInternal: true` is the
+default and is the main network boundary in this design — there is no DNS split
+keeping other traffic off it. Set it `false` only when the downstream really is
+outside the VPC/VNet, and pair that with a security group or firewall rule
+scoped to the downstream's egress addresses.
+
+**Turn NetworkPolicy on.** It is off by default. With
+`networkPolicy.enabled: true` the tx-shipping port is scoped to this cluster's
+own pods, and `allowReplicasFrom` lists the downstream clusters admitted on
+top. That is a second, Kubernetes-level check that does not depend on the
+certificate story being right.
+
+**Remember what else is on that port.** Port 6000 carries ordinary
+intra-cluster secondary catch-up as well as cross-cluster replication, so
+enabling the proxy changes the exposure of normal cluster traffic too. It is
+a reason to turn the proxy off when you stop replicating, not only a
+performance note.
+
+**Watch the condition.** `CrossClusterProxySecure` is on the cluster whenever
+the proxy is running and is removed when it stops, so it is safe to alert on:
+
+```bash
+kubectl get neo4jenterprisecluster -A -o json | jq -r '
+  .items[] | select(.status.conditions[]? |
+    select(.type=="CrossClusterProxySecure" and .status=="False"))
+  | "\(.metadata.namespace)/\(.metadata.name)"'
+```
+
+### Backup mode: credentials in the database's own environment
 
 Backup mode opens no network path at all — the two clusters are coupled only
 through the object store, which is why it needs neither TLS trust nor a load
-balancer. The exposure moves to the bucket instead.
+balancer. The exposure is the bucket instead.
 
 The seed and every pull are performed by the **Neo4j server process**, not by a
-Job, so the server needs the bucket credentials in its own environment. Whether
-you set them through `source.credentialsSecretRef` or `spec.env`, the effect is
-the same: object-store credentials live in the database container's
-environment, and anyone who can `kubectl exec` into that container — or run an
-unrestricted procedure that reads `/proc/self/environ` — can read them. The
-operator passes them as `secretKeyRef` references, never literals, so they stay
-out of the StatefulSet spec and out of a support bundle; but the process
-environment is the process environment.
+Job, so the server needs the object-store credentials in its own environment.
+Whether you set them through `source.credentialsSecretRef` or `spec.env`, the
+result is the same: they live in the database container's environment, and
+anyone who can `kubectl exec` into that container — or run an unrestricted
+procedure that reads `/proc/self/environ` — can read them. The operator passes
+them as `secretKeyRef` references rather than literals, so they stay out of the
+StatefulSet spec and out of a support bundle; the process environment is still
+the process environment.
 
-Scope them accordingly:
+#### Practices worth following
 
-- **Read-only, prefix-scoped.** The downstream never writes to the chain. A
-  policy granting `s3:GetObject`/`s3:ListBucket` on the chain prefix only is
-  enough, and it is the difference between a leaked credential exposing one
-  database's backups and exposing the bucket.
-- **Prefer workload identity where you have it.** Annotate the server pods'
-  ServiceAccount with `podServiceAccountAnnotations` (IRSA, GKE Workload
-  Identity, Azure Workload Identity) and the SDK's default chain finds a
-  short-lived token with no long-lived secret anywhere in the cluster. The
-  recipe is in [step 2](#2-downstream-create-the-replica).
-- **Remember which side holds them.** These credentials sit in the *downstream*
-  cluster, which is often the less-hardened one — a DR site is not usually
-  where the strictest controls live.
+**Prefer workload identity.** Bind the server pods to a cloud role with
+`spec.podServiceAccountAnnotations` (IRSA, GKE Workload Identity, Azure
+Workload Identity) and there is no long-lived secret anywhere: the SDK's
+default chain finds a short-lived token, and it rotates on its own. The recipe
+is in [step 2](#2-downstream-create-the-replica).
+
+**Scope the role or key read-only, on the chain prefix.** The downstream never
+writes to the chain — `s3:GetObject` and `s3:ListBucket` on the chain prefix is
+enough. It is the difference between a leaked credential exposing one
+database's backups and exposing the bucket.
+
+**Remember which side holds them.** These credentials sit in the *downstream*
+cluster, which is usually the less-hardened one. A DR site is not normally
+where the strictest controls live, and it is now holding a key to production's
+backups.
+
+**Encrypt the bucket, and keep the chain's own retention out of lifecycle
+rules you cannot see.** The operator delegates cloud retention to bucket
+lifecycle rules it can neither read nor validate, so a rule that expires a
+chain artifact silently forces a replica rebuild.
 
 ### Both modes
 
-The replica is read-only in Neo4j's own sense, not in a security sense: it
+**The replica is read-only in Neo4j's sense, not in a security sense.** It
 carries the full contents of the upstream database, including anything an
-access-control model upstream was keeping from particular users. **Roles and
-privileges do not replicate** — that is what step 4 exists for. A replica
-without step 4 done is a complete copy of the data with none of its
-authorization, so treat the downstream cluster as holding data at the
-upstream's classification from the moment the replica seeds, not from the
-moment you fail over.
+upstream access-control model was keeping from particular users.
+
+**Roles and privileges do not replicate** — that is what
+[step 4](#4-downstream-replicate-users-and-roles) is for. A replica without
+step 4 done is a complete copy of the data with none of its authorization, so
+treat the downstream cluster as holding data at the upstream's classification
+from the moment the replica seeds, not from the moment you fail over.
+
+**Check that step 4 actually landed.** Privileges name the database, and the
+replica has a different name from its upstream, so a role copied verbatim
+grants nothing. The operator reports `PrivilegesResolve=False` on a
+`Neo4jRole` whose privileges name a database this cluster does not have —
+alert on it the same way as the proxy condition above.
 
 ---
 
@@ -761,7 +825,8 @@ moment you fail over.
 | `Failed`, "must be of the form host:port" | an entry in `source.addresses` is missing its port |
 | Warning: "source.pullURI is ignored in network mode" (or `seedURI`/`credentialsSecretRef`) | those fields are backup-mode only; harmless but likely a copy-paste leftover — remove them |
 | Network mode never connects, upstream `status.crossClusterReplication.ready` is `false` | the upstream's proxy LoadBalancer Service has no hostname/IP yet — check `kubectl get svc <cluster>-ccdr -n <upstream-ns>` |
-| Network mode TLS handshake fails | `spec.tls.additionalClusterTrustCAs` missing on one or both clusters — it must be set on **both**, each trusting the other's CA |
+| Network mode TLS handshake fails | `spec.tls.additionalClusterTrustCAs` missing on one or both clusters — it must be set on **both**, each trusting the other's CA. Confirm the CA actually reached the pods: `kubectl exec <cluster>-server-0 -c neo4j -- ls /ssl/trusted/` should show `peer-ca-0.crt` alongside `ca.crt` |
+| Cluster goes `Failed` with *"requires spec.tls.mode=cert-manager"* | `crossClusterReplication.enabled: true` on a cluster with no TLS. The proxy authenticates nothing itself, so it is refused without a cluster SSL policy — see [Security](#security) |
 | Network mode connection times out, both clusters on one Kubernetes cluster | the upstream has `spec.networkPolicy.enabled: true` — its port-6000 rule only admits pods carrying its own `neo4j.com/cluster` label; add the downstream to `spec.networkPolicy.allowReplicasFrom` (step 1, Network mode), or disable NetworkPolicy on the upstream, or use the proxy path instead |
 | `Pending`, event `UpstreamClusterNotFound` | `source.upstreamClusterRef` names a `Neo4jEnterpriseCluster` that doesn't exist (yet) in the given namespace — check the name/namespace, or wait if it's still being created |
 | `Pending`, event `UpstreamClusterNotReady` | the referenced upstream exists but hasn't published `status.internalAddresses` yet — normal briefly after the upstream is first created; check `kubectl get neo4jenterprisecluster <name> -n <ns> -o jsonpath='{.status.internalAddresses}'` if it persists |
