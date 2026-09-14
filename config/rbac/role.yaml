@@ -149,6 +149,7 @@ rules:
   - aurasnapshots
   - neo4jauthrules
   - neo4jbackups
+  - neo4jcompositedatabases
   - neo4jdatabasealiases
   - neo4jdatabases
   - neo4jenterpriseclusters
@@ -181,6 +182,7 @@ rules:
   - auraprojectmembers/finalizers
   - neo4jauthrules/finalizers
   - neo4jbackups/finalizers
+  - neo4jcompositedatabases/finalizers
   - neo4jdatabasealiases/finalizers
   - neo4jdatabases/finalizers
   - neo4jenterpriseclusters/finalizers
@@ -212,6 +214,7 @@ rules:
   - aurasnapshots/status
   - neo4jauthrules/status
   - neo4jbackups/status
+  - neo4jcompositedatabases/status
   - neo4jdatabasealiases/status
   - neo4jdatabases/status
   - neo4jenterpriseclusters/status

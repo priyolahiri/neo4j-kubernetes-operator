@@ -1,0 +1,275 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  creationTimestamp: null
+  name: neo4jcompositedatabases.neo4j.neo4j.com
+spec:
+  group: neo4j.neo4j.com
+  names:
+    categories:
+    - neo4j
+    kind: Neo4jCompositeDatabase
+    listKind: Neo4jCompositeDatabaseList
+    plural: neo4jcompositedatabases
+    shortNames:
+    - n4jcomposite
+    - n4jcomposites
+    singular: neo4jcompositedatabase
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.clusterRef
+      name: Cluster
+      type: string
+    - jsonPath: .status.observedConstituents[*]
+      name: Constituents
+      priority: 1
+      type: integer
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: Neo4jCompositeDatabase is the Schema for the neo4jcompositedatabases
+          API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: "Neo4jCompositeDatabaseSpec defines a composite database
+              — a single query\nendpoint over several constituent databases.\n\nA
+              composite stores no data of its own. It has no topology, no store, no\nindexes
+              or constraints, and no seeding: it is an access layer, and its\ncontent
+              is entirely the constituent aliases declared below. That is why this\nis
+              a separate Kind rather than a flag on Neo4jDatabase, whose spec is almost\nwholly
+              topology, options, storage and seeding — every one of which is\nmeaningless
+              here.\n\nScope: LOCAL constituents only, i.e. aliases targeting databases
+              in the same\nDBMS. Remote constituents (`... AT '<url>' USER ... PASSWORD
+              ...`) are NOT\nmodelled, and the reason is a server prerequisite rather
+              than a modelling\nchoice: creating one fails with\n\n\tFailed to create
+              alias for remote database: the required setting(s)\n\t[dbms.security.keystore.path,
+              dbms.security.keystore.password] are missing\n\nso remote constituents
+              need a provisioned keystore on every server before a\nsingle one can
+              exist. That is its own piece of work."
+            properties:
+              clusterRef:
+                description: |-
+                  ClusterRef is the Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone in
+                  the same namespace that hosts this composite and its constituents.
+                type: string
+              constituents:
+                description: "Constituents are the databases this composite exposes.
+                  Each becomes an\nalias `<composite>.<name>` pointing at TargetDatabase.\n\nDeclared
+                  inline rather than as separate CRs because a composite IS its\nconstituents
+                  — it has no other content — and because ordering is not\noptional:
+                  an alias in the `<composite>.` namespace created BEFORE the\ncomposite
+                  exists silently becomes an ordinary dotted alias, and then\npermanently
+                  blocks the composite from being created at all:\n\n\t42N87: The
+                  database or alias name `x` conflicts with the name `x.y`\n\t       of
+                  an existing database or alias.\n\nOwning both in one reconcile is
+                  what makes that ordering guaranteed."
+                items:
+                  description: CompositeConstituent is one database exposed through
+                    the composite.
+                  properties:
+                    name:
+                      description: |-
+                        Name is the constituent's name within the composite. The resulting alias
+                        is `<composite>.<name>`, which is also how queries address it
+                        (`USE <composite>.<name>`).
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-zA-Z][a-zA-Z0-9\-]*$
+                      type: string
+                    targetDatabase:
+                      description: |-
+                        TargetDatabase is the database in this same DBMS that the constituent
+                        resolves to.
+
+                        It does not have to exist yet — the controller reports Pending and
+                        retries, so a composite and its targets can be applied together.
+                      maxLength: 63
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  - targetDatabase
+                  type: object
+                minItems: 1
+                type: array
+              defaultCypherLanguage:
+                description: |-
+                  DefaultCypherLanguage sets the composite's default Cypher version.
+
+                  CalVer only. On the 5.26 LTS the clause does not parse — `CREATE
+                  COMPOSITE DATABASE` there accepts only IF NOT EXISTS / WAIT / NOWAIT /
+                  OPTIONS, and `ALTER DATABASE ... SET` accepts only OPTION, ACCESS READ
+                  and TOPOLOGY. The validator rejects this field on a 5.26 deployment
+                  rather than letting the server produce a syntax error.
+
+                  It is the ONLY property of a composite that can be altered after
+                  creation.
+                enum:
+                - "5"
+                - "25"
+                type: string
+              deletionPolicy:
+                default: Delete
+                description: "DeletionPolicy controls what happens in Neo4j when this
+                  CR is deleted.\n\n\tDelete (default): DROP COMPOSITE DATABASE ...
+                  CASCADE ALIASES.\n\t                  CASCADE is required — a plain
+                  drop is REFUSED while\n\t                  constituents exist. It
+                  removes the constituent\n\t                  ALIASES only; their
+                  target databases are untouched.\n\tRetain:           leave the composite
+                  in place, release the finalizer."
+                enum:
+                - Delete
+                - Retain
+                type: string
+              enforceConstituents:
+                default: true
+                description: |-
+                  EnforceConstituents makes spec.constituents authoritative: a constituent
+                  alias present in Neo4j but absent here is dropped on the next reconcile.
+
+                  Default true, same posture as Neo4jRole.enforcePrivileges. Set false to
+                  leave out-of-band constituents alone, in which case this CR only ever
+                  adds.
+                type: boolean
+              name:
+                description: |-
+                  Name is the composite database name in Neo4j. Defaults to metadata.name
+                  when empty.
+
+                  Neo4j database names accept only ASCII letters, digits, dots and dashes —
+                  underscores are rejected by the server, so they are rejected here.
+                  A dot is legal in a name but reserved in practice: `a.b` is how a
+                  constituent of composite `a` is addressed, so a composite whose own name
+                  contains a dot cannot have constituents.
+                maxLength: 63
+                minLength: 3
+                pattern: ^[a-zA-Z][a-zA-Z0-9.\-]*$
+                type: string
+              wait:
+                default: true
+                description: |-
+                  Wait makes creation block until the composite is available, via the
+                  Cypher WAIT clause.
+                type: boolean
+            required:
+            - clusterRef
+            - constituents
+            type: object
+          status:
+            description: Neo4jCompositeDatabaseStatus is the observed state.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              message:
+                type: string
+              observedConstituents:
+                description: |-
+                  ObservedConstituents is the constituent list read back from the server
+                  (`SHOW DATABASE <name> YIELD constituents`), fully qualified as
+                  `<composite>.<name>`. It is what the DBMS actually exposes, which is not
+                  always what spec asked for — an out-of-band alias shows up here when
+                  enforceConstituents is false.
+                items:
+                  type: string
+                type: array
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                description: Phase is one of Pending, Creating, Ready, Failed.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions: null

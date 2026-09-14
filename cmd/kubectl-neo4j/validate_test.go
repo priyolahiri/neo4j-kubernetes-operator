@@ -60,6 +60,11 @@ func TestOfflineValidatorsAreNilClientSafe(t *testing.T) {
 		"Neo4jPlugin":               "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jPlugin\nmetadata: {name: p}\nspec: {}\n",
 		"Neo4jDatabaseAlias":        "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jDatabaseAlias\nmetadata: {name: a}\nspec: {}\n",
 		"Neo4jReplicaDatabase":      "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jReplicaDatabase\nmetadata: {name: r}\nspec: {}\n",
+		// Set defaultCypherLanguage deliberately: it is the one field whose
+		// validation reaches for the client, so an empty spec would not
+		// actually exercise the nil-client path this test exists for.
+		"Neo4jCompositeDatabase": "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jCompositeDatabase\n" +
+			"metadata: {name: cd}\nspec: {clusterRef: prod, defaultCypherLanguage: \"25\"}\n",
 	}
 
 	offline := map[string]kindValidator{}
@@ -92,6 +97,7 @@ func TestValidatorsCoverEveryKindWithAValidator(t *testing.T) {
 		// offline
 		"Neo4jEnterpriseCluster", "Neo4jEnterpriseStandalone", "Neo4jBackup",
 		"Neo4jPlugin", "Neo4jDatabaseAlias", "Neo4jReplicaDatabase",
+		"Neo4jCompositeDatabase",
 		// need a cluster
 		"Neo4jDatabase", "Neo4jUser", "Neo4jRole", "Neo4jRoleBinding",
 		"Neo4jAuthRule", "Neo4jShardedDatabase",

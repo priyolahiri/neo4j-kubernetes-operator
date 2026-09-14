@@ -15,6 +15,7 @@ resources:
   - neo4j_v1beta1_aurasnapshot.yaml
   - neo4j_v1beta1_neo4jauthrule.yaml
   - neo4j_v1beta1_neo4jbackup.yaml
+  - neo4j_v1beta1_neo4jcompositedatabase.yaml
   - neo4j_v1beta1_neo4jdatabase.yaml
   - neo4j_v1beta1_neo4jdatabasealias.yaml
   - neo4j_v1beta1_neo4jenterprisecluster.yaml

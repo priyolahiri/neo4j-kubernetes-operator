@@ -35,6 +35,8 @@ resources:
   - neo4jauthrule_viewer_role.yaml
   - neo4jbackup_editor_role.yaml
   - neo4jbackup_viewer_role.yaml
+  - neo4jcompositedatabase_editor_role.yaml
+  - neo4jcompositedatabase_viewer_role.yaml
   - neo4jdatabase_editor_role.yaml
   - neo4jdatabase_viewer_role.yaml
   - neo4jdatabasealias_editor_role.yaml

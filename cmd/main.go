@@ -130,7 +130,7 @@ var (
 var devControllerKeys = []string{
 	"cluster", "standalone", "database", "backup", "restore", "plugin",
 	"shardeddatabase", "user", "role", "rolebinding", "authrule",
-	"databasealias", "replicadatabase", "replicapromotion",
+	"databasealias", "compositedatabase", "replicadatabase", "replicapromotion",
 	"auraproviderconfig", "aurainstance", "aurasnapshot", "aurarestore",
 	"auracustomermanagedkey", "auraipfilter", "auradatabase",
 	"auradatabasebackup", "auradatabaserestore", "auraorganizationmember",
@@ -454,6 +454,16 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 			},
 		},
 		{
+			name: "Neo4jCompositeDatabase",
+			controller: &controller.Neo4jCompositeDatabaseReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-compositedatabase-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+				Validator:    validation.NewCompositeDatabaseValidator(mgr.GetClient()),
+			},
+		},
+		{
 			name: "Neo4jReplicaDatabase",
 			controller: &controller.Neo4jReplicaDatabaseReconciler{
 				Client:       mgr.GetClient(),
@@ -721,6 +731,15 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				RequeueAfter: controller.GetTestRequeueAfter(),
 				Validator:    validation.NewAliasValidator(mgr.GetClient()),
 			}, "Neo4jDatabaseAlias"
+		},
+		"compositedatabase": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
+			return &controller.Neo4jCompositeDatabaseReconciler{
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("neo4j-compositedatabase-controller"),
+				RequeueAfter: controller.GetTestRequeueAfter(),
+				Validator:    validation.NewCompositeDatabaseValidator(mgr.GetClient()),
+			}, "Neo4jCompositeDatabase"
 		},
 		"replicadatabase": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
 			return &controller.Neo4jReplicaDatabaseReconciler{
