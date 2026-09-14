@@ -1577,30 +1577,30 @@ spec:
                       (7000) and server.routing.advertised_address (7688) are left
                       untouched — RAFT leader election never depends on this load balancer.
 
-                      Opt-in tradeoff, stated plainly: enabling this means intra-cluster
-                      secondary catch-up traffic (which shares port 6000 with cross-cluster
-                      replica traffic) also routes through the load balancer, adding
-                      latency and LB-dependent cost proportional to write volume.
+                      Two things to weigh before turning it on. Security: the exposed port is
+                      protected only by the cluster SSL policy, so spec.tls.mode=cert-manager
+                      is required, strictPeerValidation must stay true (the default), and the
+                      peer CAs in spec.tls.additionalClusterTrustCAs are the access-control
+                      list for that port. Cost: intra-cluster secondary catch-up traffic
+                      shares port 6000 with cross-cluster replica traffic, so it routes
+                      through the load balancer too, adding latency and LB cost proportional
+                      to write volume rather than to replication volume.
                     type: boolean
                   loadBalancerInternal:
                     default: true
                     description: |-
                       LoadBalancerInternal keeps the proxy's Service on a private/internal
-                      load balancer where the cloud provider supports it. Default true —
-                      this design has no DNS split to keep intra-cluster traffic off the
-                      load balancer, so defaulting to an internal LB is the main available
-                      mitigation against public exposure.
+                      load balancer where the cloud provider supports it. Default true, and
+                      worth leaving true: this design has no DNS split to keep intra-cluster
+                      traffic off the load balancer, so an internal LB is the main network
+                      boundary available. Set it false only when the downstream cluster is
+                      genuinely outside the VPC/VNet.
 
                       It works by annotating the proxy Service for AWS (both the in-tree
                       provider and the AWS Load Balancer Controller), Azure and GCP at once;
                       a provider ignores annotations it does not recognise. Anything set in
                       spec.crossClusterReplication.annotations is applied afterwards and so
                       overrides these on a shared key.
-
-                      This was inert until 2026-09-13 — the value was computed and discarded,
-                      so the field promised a private load balancer and produced a public one
-                      on every cloud. If you enabled cross-cluster replication before that,
-                      check the proxy Service actually has an internal address.
                     type: boolean
                 type: object
               env:

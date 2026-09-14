@@ -209,6 +209,13 @@ func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1
 	// NetworkPolicy validation (allowReplicasFrom entry shape)
 	allErrs = append(allErrs, validateNetworkPolicy(cluster.Spec.NetworkPolicy, field.NewPath("spec", "networkPolicy"))...)
 
+	// Cross-cluster replication: the exposure proxy is refused without TLS,
+	// and peer trust CAs are refused without TLS to read them.
+	allErrs = append(allErrs, validateCrossClusterReplication(cluster,
+		field.NewPath("spec", "crossClusterReplication"))...)
+	allErrs = append(allErrs, validateClusterTrustCAsNeedTLS(cluster,
+		field.NewPath("spec", "tls"))...)
+
 	// Trusted CA Secrets + extra volume mounts (operator-managed path collision check)
 	allErrs = append(allErrs, ValidateTrustedCASecrets(cluster.Spec.TrustedCASecrets, field.NewPath("spec", "trustedCASecrets"))...)
 	allErrs = append(allErrs, ValidateExtraVolumes(cluster.Spec.ExtraVolumes, field.NewPath("spec", "extraVolumes"))...)

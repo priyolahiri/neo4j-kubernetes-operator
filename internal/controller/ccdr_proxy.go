@@ -136,25 +136,30 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileCrossClusterReplicationProxy
 	// The proxy is HAProxy in `mode tcp`: it terminates nothing and
 	// authenticates nothing, so the cluster SSL policy's client_auth=REQUIRE
 	// is the ONLY access control in front of the tx-shipping port it
-	// publishes. Without spec.tls there is none at all, and anyone who can
-	// reach the load balancer can stream the database.
+	// publishes.
 	//
-	// Warned, not refused. A user may terminate TLS at the load balancer or
-	// run deliberately inside a private network, and refusing would break
-	// clusters already configured this way on upgrade. But it must be visible:
-	// the condition persists (an event would age out in an hour, and would be
-	// lost entirely across an operator restart, which is exactly when someone
-	// reviewing a cluster would look).
+	// No TLS at all cannot reach here — validateCrossClusterReplication
+	// refuses the proxy on a cluster without spec.tls, and the reconcile
+	// returns Failed before any proxy resource is built. What remains is the
+	// narrower case: TLS configured with strictPeerValidation false, which is
+	// trust_all=true — encryption without peer authentication. Neo4j documents
+	// that as debugging-only, and it is a deliberate opt-out, so it is
+	// permitted and reported rather than refused.
+	//
+	// Reported on the condition rather than only as an event: an event ages
+	// out in an hour and is lost across an operator restart, which is exactly
+	// when someone auditing a cluster comes looking.
 	secure := isStrictPeerValidationEnabled(cluster)
 	unauthenticatedNow := status.Ready && !secure
 	alreadyExposed := cluster.Status.CrossClusterReplication != nil &&
 		cluster.Status.CrossClusterReplication.Ready
 	if unauthenticatedNow && !alreadyExposed && r.Recorder != nil {
 		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonCCDRProxyUnauthenticated,
-			"Cross-cluster replication proxy published %s with no cluster SSL policy: "+
-				"the tx-shipping port is reachable without authentication or encryption. "+
-				"Set spec.tls.mode=cert-manager (strictPeerValidation defaults to true) "+
-				"and keep crossClusterReplication.loadBalancerInternal=true.",
+			"Cross-cluster replication proxy published %s with strictPeerValidation "+
+				"disabled: the cluster SSL policy trusts any peer certificate, so the "+
+				"tx-shipping port is encrypted but not authenticated. Remove "+
+				"spec.tls.strictPeerValidation (it defaults to true) and give each cluster "+
+				"the other's CA in spec.tls.additionalClusterTrustCAs.",
 			status.LoadBalancerHostname)
 	}
 
@@ -173,9 +178,10 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileCrossClusterReplicationProxy
 		condStatus, reason, message := metav1.ConditionTrue, "MutualTLSRequired",
 			"the cluster SSL policy requires a peer certificate on the proxied port"
 		if unauthenticatedNow {
-			condStatus, reason = metav1.ConditionFalse, "NoClusterTLS"
-			message = "the proxy authenticates nothing; without spec.tls the tx-shipping " +
-				"port is exposed with no authentication or encryption"
+			condStatus, reason = metav1.ConditionFalse, "TrustAllPeers"
+			message = "strictPeerValidation is disabled, so the cluster SSL policy trusts " +
+				"any peer certificate: the proxied tx-shipping port is encrypted but not " +
+				"authenticated"
 		}
 		SetNamedCondition(&latest.Status.Conditions, ConditionTypeCrossClusterProxySecure,
 			latest.Generation, condStatus, reason, message)
