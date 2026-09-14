@@ -33,13 +33,13 @@ import (
 // Cross-cluster replication specs.
 //
 // These start no Neo4j deployment at all — they cover CRD admission and
-// validator behaviour, which are the same on every version. So they are
-// "core": they run on every PR, on both anchors, in seconds.
+// validator behaviour, which are the same on every version, and every CR here
+// names a clusterRef that does not exist, so nothing ever reaches the
+// 2026.08+ version gate. Hence "core": every PR, both anchors, seconds.
 //
-// They were "extended" until 2026-09-14, on the reasoning that hosting a
-// replica needs 2026.08+ and the CI anchor was below it. True of the specs
-// that DO host one, not of these — and the effect was that the cheapest CCDR
-// coverage in the repo never ran anywhere. Nothing here waits for a database.
+// Label them "extended" by association with that version gate and the cheapest
+// CCDR coverage in the repo runs nowhere at all. The gate belongs to the specs
+// that actually HOST a replica.
 //
 // The full end-to-end walk (upstream chain → replica → alias → promotion)
 // needs two Neo4j deployments and stays in the manual pre-release journey,
@@ -134,11 +134,10 @@ var _ = Describe("Cross-Cluster Replication — API and validation", Label("core
 	})
 
 	It("accepts network mode and goes Pending on a nonexistent cluster ref", func() {
-		// Network mode is a fully supported path (this session's work) — a
-		// syntactically valid address must be ACCEPTED, not rejected. The
-		// only reason this particular CR can't proceed is that its
-		// clusterRef doesn't exist yet, which is an ordinary Pending/retry
-		// condition, never Failed.
+		// Network mode is a fully supported path, so a syntactically valid
+		// address must be ACCEPTED, not rejected. The only reason this
+		// particular CR cannot proceed is that its clusterRef does not exist
+		// yet, which is an ordinary Pending/retry condition, never Failed.
 		replica = &neo4jv1beta1.Neo4jReplicaDatabase{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "net-replica",
