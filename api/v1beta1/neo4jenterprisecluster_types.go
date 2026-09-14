@@ -191,6 +191,18 @@ type Neo4jEnterpriseClusterSpec struct {
 	// +optional
 	TrustedCASecrets []TrustedCASecret `json:"trustedCASecrets,omitempty"`
 
+	// RemoteAliasKeystore configures the keystore Neo4j uses to encrypt the
+	// credentials of remote database aliases that store native credentials —
+	// including the remote constituents of a Neo4jCompositeDatabase.
+	//
+	// Required for that mode and only that mode: without it the server refuses
+	// alias creation with "the required setting(s)
+	// [dbms.security.keystore.path, dbms.security.keystore.password] are
+	// missing". Aliases using OIDC credential forwarding store no credential
+	// and need no keystore.
+	// +optional
+	RemoteAliasKeystore *RemoteAliasKeystoreSpec `json:"remoteAliasKeystore,omitempty"`
+
 	// ExtraVolumes are additional pod volumes to attach to the Neo4j pod.
 	// Mount points must be wired separately via `extraVolumeMounts`.
 	// Use this for plugin JARs, custom config, per-policy SSL truststores
@@ -1725,6 +1737,47 @@ type NetworkPolicySpec struct {
 	// restrict.
 	// +optional
 	AllowReplicasFrom []NetworkPolicyPeerCluster `json:"allowReplicasFrom,omitempty"`
+}
+
+// RemoteAliasKeystoreSpec points at a PKCS12 keystore holding the secret key
+// Neo4j uses to encrypt remote-alias credentials.
+//
+// The operator does not generate the keystore. Create it with the JDK's
+// keytool — ideally on the same Java version Neo4j runs, as Neo4j's own
+// documentation advises — and put it in a Secret:
+//
+//	keytool -genseckey -keyalg aes -keysize 256 -storetype pkcs12 \
+//	        -keystore keystore.p12 -alias <keyName> -storepass <password>
+//	kubectl create secret generic remote-alias-keystore \
+//	        --from-file=keystore.p12 --from-literal=password=<password>
+//
+// Every server mounts the SAME Secret, which is what satisfies Neo4j's
+// requirement that the keystore file be identical across a cluster. Generating
+// one per pod would give each server a different key and leave every alias
+// readable by exactly one of them.
+type RemoteAliasKeystoreSpec struct {
+	// SecretRef names a Secret in this namespace with two keys:
+	//   keystore.p12 — the PKCS12 keystore
+	//   password     — the keystore password
+	//
+	// The password is delivered to Neo4j as an environment variable sourced
+	// from this Secret, so it never appears in the operator-managed ConfigMap.
+	// `SHOW SETTINGS` redacts it server-side.
+	//
+	// IMMUTABLE. Neo4j encrypts each alias's credentials with this key, so
+	// changing the keystore or the key name makes every existing remote
+	// alias's stored credentials permanently unreadable — the aliases must be
+	// recreated. Rotating is therefore a delete-and-recreate operation on the
+	// deployment, not an edit.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	SecretRef string `json:"secretRef"`
+
+	// KeyName is the keytool alias of the secret key inside the keystore —
+	// the `-alias` given to keytool -genseckey. Maps to dbms.security.key.name.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	KeyName string `json:"keyName"`
 }
 
 // NetworkPolicyPeerCluster names a downstream Neo4jEnterpriseCluster to

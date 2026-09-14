@@ -99,6 +99,7 @@ cluster reaches `Ready` — see [`Neo4jRestore`](neo4jrestore.md).
 | `crossClusterReplication` | [`CrossClusterReplicationSpec`](#crossclusterreplicationspec) | Network-mode cross-cluster database replication (CCDR): deploys a self-hosted TCP proxy exposing this cluster's tx-shipping port (6000) externally via one LoadBalancer Service, for use by a `Neo4jReplicaDatabase` with `source.mode: network` in another Kubernetes cluster. Disabled by default. **Requires `tls.mode: cert-manager`** — the proxy is a TCP passthrough that authenticates nothing, so the cluster SSL policy is the only access control on the exposed port; enabling it without TLS is rejected. |
 | `auraFleetManagement` | [`AuraFleetManagementSpec`](#aurafleetmanagementspec) | Aura Fleet Management integration (optional) |
 | `trustedCASecrets` | `[]`[`TrustedCASecret`](#trustedcasecret) | CA bundles to add to Neo4j's JVM truststore (OIDC, LDAPS, plugin downloads, peer-cluster replication) |
+| `remoteAliasKeystore` | [`RemoteAliasKeystoreSpec`](#remotealiaskeystorespec) | Keystore used to encrypt the credentials of remote database aliases that store native credentials — including the remote constituents of a [`Neo4jCompositeDatabase`](neo4jcompositedatabase.md). Required for that mode only; aliases using OIDC credential forwarding store no credential and need no keystore. |
 | `extraVolumes` | `[]corev1.Volume` | Arbitrary pod volumes mounted into the Neo4j pod; reference them via `extraVolumeMounts` |
 | `extraVolumeMounts` | `[]corev1.VolumeMount` | Mount points for `extraVolumes` (or, rarely, operator-managed volumes); operator-managed paths are rejected by the validator |
 | `extraEnvFrom` | `[]corev1.EnvFromSource` | Standard Kubernetes pass-through. Projects entire Secrets or ConfigMaps as environment variables onto the Neo4j container. Intended for credential bundles (e.g. cloud seed credentials for `seedURI`-based restores). |
@@ -247,6 +248,44 @@ backward compatibility is preserved.
 |---|---|---|
 | `name` | `string` | **Required.** Name of Secret containing CA certificate (PEM format) |
 | `key` | `string` | Key in the Secret containing the CA cert (default: `"ca.crt"`) |
+
+### RemoteAliasKeystoreSpec
+
+Neo4j encrypts the credentials of remote database aliases before storing them
+in the system database, and refuses to create such an alias without a keystore:
+
+```
+Failed to create alias for remote database: the required setting(s)
+[dbms.security.keystore.path, dbms.security.keystore.password] are missing
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `secretRef` | `string` | **Required.** A Secret in this namespace with two keys: `keystore.p12` (the PKCS12 keystore) and `password`. The password reaches Neo4j as an environment variable sourced from this Secret, so it never appears in the operator-managed ConfigMap, and `SHOW SETTINGS` redacts it server-side. |
+| `keyName` | `string` | **Required.** The keytool alias of the secret key inside the keystore — the `-alias` given to `keytool -genseckey`. Maps to `dbms.security.key.name`. |
+
+The operator does not generate the keystore. Create it with the JDK's keytool —
+ideally on the same Java version Neo4j runs, as Neo4j's documentation advises:
+
+```bash
+keytool -genseckey -keyalg aes -keysize 256 -storetype pkcs12 \
+        -keystore keystore.p12 -alias my-key -storepass "$PASSWORD"
+
+kubectl create secret generic remote-alias-keystore \
+        --from-file=keystore.p12 --from-literal=password="$PASSWORD"
+```
+
+Every server mounts the **same** Secret, which satisfies Neo4j's requirement
+that the keystore file be identical across a cluster. Generating one per pod
+would give each server a different key and leave every alias readable by
+exactly one of them.
+
+!!! danger "Rotating the keystore invalidates every existing remote alias"
+
+    Neo4j encrypts each alias's credentials with this key. Changing the
+    keystore or the key name makes all existing remote-alias credentials
+    permanently unreadable and the aliases must be recreated, so rotation is a
+    delete-and-recreate operation rather than an edit.
 
 ### TrustedCASecret
 

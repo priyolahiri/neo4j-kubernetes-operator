@@ -19,6 +19,7 @@ package neo4j
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
@@ -217,6 +218,127 @@ func (c *Client) runSystemWrite(ctx context.Context, query, label string) error 
 	defer c.closeSession(ctx, session)
 
 	if _, err := session.Run(ctx, query, nil); err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	return nil
+}
+
+// RemoteConstituentAuth is how a remote constituent authenticates to the other
+// DBMS. Exactly one form is used per alias.
+type RemoteConstituentAuth struct {
+	// OIDCForwarding forwards the querying user's own token. No credential is
+	// stored, so no keystore is required.
+	OIDCForwarding bool
+	// Username and Password are stored native credentials. Neo4j encrypts them
+	// in the system database, which is what makes a keystore mandatory.
+	Username string
+	Password string
+	// DriverSettings become the alias's DRIVER clause.
+	DriverSettings map[string]string
+}
+
+// CreateRemoteConstituent creates a constituent alias pointing at a database in
+// ANOTHER Neo4j DBMS.
+//
+// Two things here are not obvious and were established against a live server:
+//
+//   - `OIDC CREDENTIAL FORWARDING` is CYPHER 25 syntax. On a system database
+//     defaulting to Cypher 5 it fails as an unsupported language feature, not
+//     as a missing feature — the same trap that made CREATE REPLICA DATABASE
+//     look absent. Hence cypher25Prefix, exactly as the replica builders use.
+//   - The PASSWORD accepts a Cypher PARAMETER. That matters: the operator never
+//     has to interpolate a credential into statement text, so the password
+//     cannot reach the query log. Identifiers still cannot be parameterised,
+//     which is why the names around it are backtick-escaped instead.
+func (c *Client) CreateRemoteConstituent(
+	ctx context.Context, composite, constituent, targetDatabase, url string, auth RemoteConstituentAuth,
+) error {
+	query, params := buildRemoteAliasStatement("CREATE ALIAS `%s`.`%s` IF NOT EXISTS FOR DATABASE `%s`",
+		composite, constituent, targetDatabase, url, auth)
+	return c.runSystemWriteWithParams(ctx, query, params, "create remote constituent")
+}
+
+// AlterRemoteConstituent updates an existing remote constituent in place — its
+// target, URL, credentials or driver settings.
+func (c *Client) AlterRemoteConstituent(
+	ctx context.Context, composite, constituent, targetDatabase, url string, auth RemoteConstituentAuth,
+) error {
+	query, params := buildRemoteAliasStatement("ALTER ALIAS `%s`.`%s` SET DATABASE TARGET `%s`",
+		composite, constituent, targetDatabase, url, auth)
+	return c.runSystemWriteWithParams(ctx, query, params, "alter remote constituent")
+}
+
+// buildRemoteAliasStatement assembles the shared tail of CREATE/ALTER ALIAS for
+// a remote target, returning the statement and its parameters.
+func buildRemoteAliasStatement(
+	head, composite, constituent, targetDatabase, url string, auth RemoteConstituentAuth,
+) (string, map[string]any) {
+	params := map[string]any{}
+
+	var b strings.Builder
+	// CYPHER 25 on every remote-alias statement, not only the OIDC one: the
+	// clause set is Cypher 25's, and pinning the language makes the statement
+	// independent of whatever the system database's default happens to be.
+	b.WriteString(cypher25Prefix)
+	fmt.Fprintf(&b, head,
+		escapeBackticks(composite), escapeBackticks(constituent), escapeBackticks(targetDatabase))
+
+	// AT takes a string literal, so it parameterises cleanly.
+	b.WriteString(" AT $remoteURL")
+	params["remoteURL"] = url
+
+	switch {
+	case auth.OIDCForwarding:
+		b.WriteString(" OIDC CREDENTIAL FORWARDING")
+	default:
+		// USER is an identifier position but accepts a parameter here, and the
+		// password certainly does — keeping both out of the statement text.
+		b.WriteString(" USER $remoteUser PASSWORD $remotePassword")
+		params["remoteUser"] = auth.Username
+		params["remotePassword"] = auth.Password
+	}
+
+	if len(auth.DriverSettings) > 0 {
+		b.WriteString(" DRIVER {")
+		for i, k := range sortedKeys(auth.DriverSettings) {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			// Driver setting KEYS are map keys in Cypher, not parameterisable;
+			// the validator constrains them to a safe character set.
+			fmt.Fprintf(&b, "%s: %s", k, auth.DriverSettings[k])
+		}
+		b.WriteString("}")
+	}
+
+	return b.String(), params
+}
+
+// sortedKeys keeps the rendered DRIVER map stable, so an unchanged spec does
+// not produce a different statement on every reconcile.
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// runSystemWriteWithParams is runSystemWrite with Cypher parameters — the form
+// every statement carrying a credential must use.
+func (c *Client) runSystemWriteWithParams(
+	ctx context.Context, query string, params map[string]any, label string,
+) error {
+	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+		AccessMode:   neo4j.AccessModeWrite,
+		DatabaseName: "system",
+	})
+	defer c.closeSession(ctx, session)
+
+	if _, err := session.Run(ctx, query, params); err != nil {
+		// The query text is safe to surface: credentials are parameters, so
+		// they are not in it.
 		return fmt.Errorf("%s: %w", label, err)
 	}
 	return nil

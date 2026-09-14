@@ -2179,6 +2179,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildEnvVars(standalone *neo4jv1be
 		envVars = append(envVars, authEnvVars...)
 	}
 
+	// Remote-alias keystore settings, same reasoning: the keystore password is
+	// a credential and the ConfigMap is not a Secret.
+	if ksEnv := resources.BuildRemoteAliasKeystoreEnvVars(standalone.Spec.RemoteAliasKeystore); len(ksEnv) > 0 {
+		envVars = append(envVars, ksEnv...)
+	}
+
 	// Add user-provided environment variables. Skip operator-managed keys so a
 	// stray spec.env entry can't shadow them with a duplicate (mirrors the
 	// cluster path): license acceptance comes from spec.acceptLicenseAgreement,
@@ -2234,6 +2240,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildVolumeMounts(standalone *neo4
 	if len(standalone.Spec.ExtraVolumeMounts) > 0 {
 		volumeMounts = append(volumeMounts, standalone.Spec.ExtraVolumeMounts...)
 	}
+	if m := resources.BuildRemoteAliasKeystoreVolumeMount(standalone.Spec.RemoteAliasKeystore); m != nil {
+		volumeMounts = append(volumeMounts, *m)
+	}
 
 	return volumeMounts
 }
@@ -2288,6 +2297,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildVolumes(standalone *neo4jv1be
 	// User-supplied extra volumes.
 	if len(standalone.Spec.ExtraVolumes) > 0 {
 		volumes = append(volumes, standalone.Spec.ExtraVolumes...)
+	}
+	if v := resources.BuildRemoteAliasKeystoreVolume(standalone.Spec.RemoteAliasKeystore); v != nil {
+		volumes = append(volumes, *v)
 	}
 
 	return volumes

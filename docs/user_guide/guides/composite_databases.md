@@ -142,11 +142,88 @@ refused while constituents exist — and it removes only the constituent
 Use `deletionPolicy: Retain` to keep the composite in Neo4j when the CR goes
 away.
 
+## Remote constituents
+
+A constituent can point at a database in **another** Neo4j DBMS. There are two
+ways to authenticate, and they cost very different things to run.
+
+### OIDC credential forwarding — prefer this
+
+The querying user's own token is forwarded to the remote DBMS. Nothing is
+stored, so there is no credential to leak, rotate or encrypt — and no keystore
+is needed.
+
+```yaml
+constituents:
+  - name: partner
+    targetDatabase: movies
+    remote:
+      url: neo4j+s://partner.example.com:7687
+      oidcCredentialForwarding: true
+```
+
+Both DBMSs must trust the same identity provider, and it needs **Cypher 25**,
+so a CalVer image. On the 5.26 LTS the clause does not parse and the CR is
+rejected with a message saying so.
+
+### Stored native credentials
+
+A username and password are stored on the alias. Neo4j encrypts them in the
+system database, which is why this mode needs a keystore on the deployment.
+
+```yaml
+# on the deployment
+spec:
+  remoteAliasKeystore:
+    secretRef: remote-alias-keystore   # keys: keystore.p12, password
+    keyName: my-key
+---
+# on the composite
+constituents:
+  - name: partner
+    targetDatabase: movies
+    remote:
+      url: neo4j+s://partner.example.com:7687
+      credentialsSecretRef: partner-creds   # keys: username, password
+```
+
+Create the keystore with the JDK's keytool — ideally on the same Java version
+Neo4j runs, as Neo4j advises:
+
+```bash
+keytool -genseckey -keyalg aes -keysize 256 -storetype pkcs12 \
+        -keystore keystore.p12 -alias my-key -storepass "$PASSWORD"
+
+kubectl create secret generic remote-alias-keystore \
+        --from-file=keystore.p12 --from-literal=password="$PASSWORD"
+```
+
+Every server mounts the same Secret, which is what satisfies Neo4j's
+requirement that the keystore be identical across a cluster.
+
+!!! danger "Rotating the keystore invalidates every existing remote alias"
+
+    Neo4j encrypts each alias's credentials with this key. Changing the
+    keystore or the key name makes all existing remote-alias credentials
+    permanently unreadable, and the aliases must be recreated. Treat rotation
+    as delete-and-recreate, not an edit.
+
+!!! info "Where the password does and does not go"
+
+    The operator passes it to Neo4j as a **Cypher parameter**, never
+    interpolated into the statement, so it does not reach the query log. Neo4j
+    stores it encrypted, and `SHOW ALIASES` never returns a password on any
+    alias — so alias output is safe to include in a support bundle.
+
+    Forget the keystore and the CR is rejected at apply time naming the field
+    to set, instead of failing inside the server with an internal error that
+    mentions neither the CR nor the constituent.
+
 ## Limits
 
 | | |
 |---|---|
-| Local constituents only | Remote constituents (targeting another DBMS) are not modelled. They require `dbms.security.keystore.path` and `dbms.security.keystore.password` on every server before one can be created at all. |
+| Remote constituents need setup | OIDC forwarding needs Cypher 25 (CalVer). Stored credentials need `spec.remoteAliasKeystore` on the deployment. See [Remote constituents](#remote-constituents). |
 | No options | Composites have none. The operator never emits an `OPTIONS` clause. |
 | No topology | There is no store to place. |
 | `defaultCypherLanguage` is CalVer-only | The `DEFAULT LANGUAGE CYPHER` clause does not parse on the 5.26 LTS. It is also the only property of a composite that can be changed after creation. |
