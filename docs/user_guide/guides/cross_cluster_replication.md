@@ -11,7 +11,7 @@ and **how fresh** the replica needs to be.
 | Your situation | Mode | Field you set |
 |---|---|---|
 | Separate Kubernetes clusters, ~1 minute of lag is fine (most DR) | `source.mode: backup` | `source.pullURI` |
-| Separate Kubernetes clusters, need near-continuous replication | `source.mode: network` | `source.addresses` (upstream also needs `spec.crossClusterReplication`) |
+| Separate Kubernetes clusters, need near-continuous replication | `source.mode: network` | `source.addresses` (upstream also needs `spec.crossClusterReplication`, and both clusters need TLS) |
 | Same Kubernetes cluster (different namespaces), ~1 minute of lag is fine | `source.mode: backup` | `source.upstreamBackupRef` |
 | Same Kubernetes cluster, need near-continuous replication | `source.mode: network` | `source.upstreamClusterRef` |
 
@@ -31,7 +31,7 @@ Step 1 below is organized the same way: pick your **mode** tab, then your
 |---|---|---|
 | Data path | Differential backup chain in object storage | Direct stream from the upstream's cluster endpoints |
 | Recovery point objective | Bounded by `pullInterval` (default `1m`) | Near-continuous |
-| Network path, separate Kubernetes clusters | **None** — no load balancer, no cross-cluster TLS trust, no NetworkPolicy changes | A self-hosted proxy (`spec.crossClusterReplication`) plus CA exchange — see step 1 |
+| Network path, separate Kubernetes clusters | **None** — no load balancer, no cross-cluster TLS trust, no NetworkPolicy changes | A self-hosted proxy (`spec.crossClusterReplication`) plus TLS on both clusters and a CA exchange — see step 1 |
 | Cost/latency tradeoff | None | Intra-cluster secondary catch-up traffic also shares the load balancer while the proxy is in use |
 
 See `docs/design/cross-cluster-replication.md` for the full design rationale,
@@ -44,8 +44,8 @@ or split-horizon DNS.
 |---|---|
 | Downstream (replica) cluster | Neo4j **2026.08+** — enforced |
 | Upstream cluster | Neo4j 2025.01+ — not enforced (the operator cannot inspect another cluster) |
-| Backup mode | Shared object storage (S3, GCS, or Azure Blob) reachable from both clusters — **and the downstream cluster's `spec.env` must carry the credentials**, because the seed and every pull run on the Neo4j server itself. `kubectl neo4j preflight` checks this before you apply; see [step 2](#2-downstream-create-the-replica) |
-| Network mode, **separate** Kubernetes clusters | The upstream's Kubernetes cluster must support `type: LoadBalancer` Services |
+| Backup mode | Shared object storage (S3, GCS, or Azure Blob) reachable from both clusters — **and the downstream cluster's servers must carry the credentials**, because the seed and every pull run on the Neo4j server itself. `kubectl neo4j preflight` checks this before you apply; see [step 2](#2-downstream-create-the-replica) |
+| Network mode, **separate** Kubernetes clusters | The upstream's Kubernetes cluster must support `type: LoadBalancer` Services, and **both clusters need `spec.tls.mode: cert-manager`** — the proxy authenticates nothing itself, so the operator refuses it without a cluster SSL policy. See [Security](#security) |
 | Network mode, **same** Kubernetes cluster | No extra requirement — ordinary in-cluster DNS already reaches across namespaces |
 
 ---
@@ -321,12 +321,48 @@ exactly the same regardless of mode or topology.
 
 ## 2. Downstream: create the replica
 
-!!! warning "Backup mode: the DOWNSTREAM CLUSTER needs the bucket credentials, not the replica CR"
+!!! warning "Backup mode: the bucket credentials go on the DOWNSTREAM CLUSTER, not on the replica CR"
 
     The seed and every subsequent pull are performed by the Neo4j **server**,
     not by a Job — so the credentials have to be in the server's own
-    environment, where the AWS SDK's default chain finds them. Put them on the
-    downstream `Neo4jEnterpriseCluster` **before** you create the replica:
+    environment, where the AWS SDK's default credential chain finds them. Set
+    them up **before** you create the replica: all three routes below restart
+    the downstream servers, which is something to do when the downstream is
+    built, not in the middle of a failover.
+
+    **1. Workload identity — prefer this where you have it.** Bind the server
+    pods to a cloud role and no long-lived secret exists anywhere; the SDK
+    finds a short-lived token that rotates on its own.
+
+    ```yaml
+    # on the downstream Neo4jEnterpriseCluster
+    spec:
+      podServiceAccountAnnotations:
+        eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/neo4j-dr
+        # or iam.gke.io/gcp-service-account, or azure.workload.identity/client-id
+    ```
+
+    Scope the role **read-only on the chain prefix** — the downstream never
+    writes to the chain. The platform injects the identity at pod admission,
+    which is later than anything the operator or `kubectl neo4j preflight` can
+    read, so neither verifies the role: both stand aside and let a
+    misconfigured role surface as the server's own error in
+    `status.message`.
+
+    **2. `source.credentialsSecretRef` on the replica.** The operator projects
+    the Secret's keys onto the downstream cluster for you, as `secretKeyRef`
+    references rather than literals, and waits for the rollout before creating
+    anything.
+
+    ```yaml
+    # on the Neo4jReplicaDatabase
+    spec:
+      source:
+        credentialsSecretRef: s3-creds
+    ```
+
+    **3. `spec.env` on the downstream cluster**, if you would rather manage it
+    there:
 
     ```yaml
     apiVersion: neo4j.neo4j.com/v1beta1
@@ -347,42 +383,13 @@ exactly the same regardless of mode or topology.
           value: http://minio.minio.svc:9000
     ```
 
-    **Or let the operator do it**: set `source.credentialsSecretRef` on the
-    replica and it projects that Secret's keys onto the cluster for you, as
-    `secretKeyRef` references rather than literals. That restarts the
-    downstream servers — the replica waits for the rollout before creating
-    anything — so it is still something to do when the downstream is built
-    rather than mid-failover.
+    With routes 2 and 3 the operator checks before asking Neo4j: a backup-mode
+    replica whose servers have no `AWS_REGION` (or `AWS_DEFAULT_REGION`) fails
+    immediately naming what is missing, rather than stalling in `Seeding` while
+    the server refuses deep inside the AWS SDK. Two replicas naming different
+    Secrets for one cluster are refused rather than fought over.
 
-    **Or use no long-lived credentials at all.** The seed and the pull are the
-    same JVM object-store fetch the operator already supports workload identity
-    for, so binding the servers to a cloud role covers replicas too:
-
-    ```yaml
-    spec:
-      podServiceAccountAnnotations:
-        eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/neo4j-dr
-        # or iam.gke.io/gcp-service-account, or azure.workload.identity/client-id
-    ```
-
-    This is the option to prefer where you have it. The credentials never exist
-    as a Secret, never enter the database container's environment, and rotate
-    on their own. Scope the role to **read-only on the chain prefix** — the
-    downstream never writes to the chain. Note that the platform injects the
-    identity at pod admission, which is after anything the operator or
-    `kubectl neo4j preflight` can read, so neither can verify the role: both
-    stand aside and let a misconfigured role surface as the server's own error
-    in `status.message`.
-
-    Either of the first two ways, the operator checks before asking Neo4j: a
-    backup-mode replica whose servers have no `AWS_REGION` (or
-    `AWS_DEFAULT_REGION`) fails immediately, naming what is missing, instead of
-    stalling in `Seeding` while the server refuses deep inside the AWS SDK. Two
-    replicas naming different Secrets for one cluster are refused rather than
-    fought over.
-
-    Adding these to a live cluster restarts its servers, so set them when the
-    downstream is created rather than in the middle of a failover drill.
+    See [Security](#security) for how to scope whichever route you pick.
 
     **Network mode needs none of this** — it reads from the upstream over the
     wire, not from a bucket.

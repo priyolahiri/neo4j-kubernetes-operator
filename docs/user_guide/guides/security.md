@@ -40,6 +40,21 @@ spec:
 
 The operator integrates with `cert-manager` to automatically provision and manage TLS certificates. This is the recommended approach for production environments. Intra-cluster mutual TLS is enabled by default via `spec.tls.strictPeerValidation: true`. See the dedicated [TLS Configuration](../tls_configuration.md) guide for the full configuration surface, including third-party issuers (AWS PCA, Vault) and the `strictPeerValidation: false` opt-out.
 
+## Cross-cluster replication
+
+`spec.crossClusterReplication` publishes Neo4j's transaction-shipping port
+through a LoadBalancer Service so a replica in another Kubernetes cluster can
+stream from it. The proxy in front of that port is a TCP passthrough that
+authenticates nothing, so the cluster SSL policy is the only access control it
+has — which is why the operator requires `spec.tls.mode: cert-manager` and
+rejects the feature without it.
+
+Keep `strictPeerValidation` and `loadBalancerInternal` at their defaults
+(`true`), treat `spec.tls.additionalClusterTrustCAs` as the access-control list
+it is, and alert on the cluster's `CrossClusterProxySecure` condition. Full
+guidance, including backup-mode credential handling, is in
+[Cross-cluster replication § Security](cross_cluster_replication.md#security).
+
 ## Network Policies
 
 The operator can automatically create Kubernetes `NetworkPolicy` resources to restrict traffic to your Neo4j cluster. This helps to enforce a zero-trust security model by ensuring that only authorized applications can connect to the database.
