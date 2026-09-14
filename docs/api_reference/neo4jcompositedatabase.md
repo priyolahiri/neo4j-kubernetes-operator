@@ -57,7 +57,35 @@ A `composite: true` flag would leave most of that spec silently inert.
 | Field | Type | Description |
 |---|---|---|
 | `name` | `string` | **Required.** The constituent's name within the composite. The resulting alias is `<composite>.<name>`, which is also how queries address it. May not contain a dot — it is already namespaced. |
-| `targetDatabase` | `string` | **Required.** A database in this same DBMS. It does not have to exist yet: the controller skips that constituent and retries, so a composite and its targets can be applied together. |
+| `targetDatabase` | `string` | **Required.** The database the constituent resolves to — in this DBMS when `remote` is unset, or on the remote DBMS when it is set. A local target need not exist yet: the controller skips that constituent and retries. A remote target is never checked, because the operator cannot see the other DBMS. |
+| `remote` | [`RemoteConstituent`](#remoteconstituent) | Points the constituent at a database in **another** Neo4j DBMS. Omit for a local constituent. |
+
+### RemoteConstituent
+
+| Field | Type | Description |
+|---|---|---|
+| `url` | `string` | **Required.** The remote DBMS's Bolt endpoint, e.g. `neo4j+s://other.example.com:7687`. Prefer a `+s` scheme — this connection carries query traffic between two DBMSs, and with stored credentials it carries the authentication too. |
+| `oidcCredentialForwarding` | `bool` | Forwards the querying user's own OIDC token instead of storing any credential. **Requires Cypher 25**, so CalVer only. Mutually exclusive with `credentialsSecretRef`. |
+| `credentialsSecretRef` | `string` | A Secret in this namespace with `username` and `password` keys. **Requires `spec.remoteAliasKeystore` on the deployment.** Mutually exclusive with `oidcCredentialForwarding`. |
+| `driverSettings` | `map[string]string` | Passed through to the alias's `DRIVER` clause (e.g. `connection_timeout`). Emitted verbatim as Cypher map values. |
+
+#### Choosing a mode
+
+**Prefer `oidcCredentialForwarding` where both DBMSs trust the same identity
+provider.** No credential is stored, so there is nothing to leak, rotate or
+encrypt — and it needs no keystore at all.
+
+`credentialsSecretRef` stores a username and password on the alias. Neo4j
+encrypts them in the system database, which is why it requires
+`spec.remoteAliasKeystore`; without one the server refuses alias creation
+outright. The operator passes the password as a **Cypher parameter**, never
+interpolated into the statement text, so it does not reach the query log.
+`SHOW ALIASES` never returns a password on any alias.
+
+A composite with a `credentialsSecretRef` constituent on a deployment that has
+no keystore is rejected at apply time, naming the field to set — rather than
+failing later inside the server with an internal `50N09`/`50N00` error that
+mentions neither the CR nor the constituent.
 
 ## Ordering: the composite always comes first
 
@@ -123,7 +151,7 @@ name a composite reports `PrivilegesResolve=False`.
 
 ## Limitations
 
-- **Local constituents only.** Remote constituents (`... AT '<url>' USER ... PASSWORD ...`) are not modelled, because they require `dbms.security.keystore.path` and `dbms.security.keystore.password` to be configured on every server first — creating one without a keystore fails outright.
+- **Remote constituents need setup.** OIDC credential forwarding requires Cypher 25 (CalVer only). Stored native credentials require `spec.remoteAliasKeystore` on the deployment — without it Neo4j refuses to create the alias.
 - **No `OPTIONS`.** Composites have none; the operator never emits the clause.
 - **No topology.** A composite has no store to place.
 - Composites cannot be nested, and cannot hold data themselves.

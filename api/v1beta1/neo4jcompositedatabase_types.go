@@ -30,16 +30,19 @@ import (
 // wholly topology, options, storage and seeding — every one of which is
 // meaningless here.
 //
-// Scope: LOCAL constituents only, i.e. aliases targeting databases in the same
-// DBMS. Remote constituents (`... AT '<url>' USER ... PASSWORD ...`) are NOT
-// modelled, and the reason is a server prerequisite rather than a modelling
-// choice: creating one fails with
+// Constituents may be LOCAL (a database in this same DBMS) or REMOTE (a
+// database in another Neo4j DBMS). A remote constituent authenticates one of
+// two ways, and they cost very different things to run:
 //
-//	Failed to create alias for remote database: the required setting(s)
-//	[dbms.security.keystore.path, dbms.security.keystore.password] are missing
-//
-// so remote constituents need a provisioned keystore on every server before a
-// single one can exist. That is its own piece of work.
+//   - OIDC credential forwarding — the querying user's own token is forwarded.
+//     No credential is stored, so nothing has to be encrypted and no keystore
+//     is needed. Requires Cypher 25, so CalVer only.
+//   - Stored native credentials — a username and password held in the system
+//     database. Neo4j encrypts them, which is why this form REQUIRES a
+//     keystore configured on every server (spec.remoteAliasKeystore on the
+//     deployment). Without one the server refuses with "the required
+//     setting(s) [dbms.security.keystore.path, dbms.security.keystore.password]
+//     are missing".
 type Neo4jCompositeDatabaseSpec struct {
 	// ClusterRef is the Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone in
 	// the same namespace that hosts this composite and its constituents.
@@ -131,15 +134,73 @@ type CompositeConstituent struct {
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z][a-zA-Z0-9\-]*$`
 	Name string `json:"name"`
 
-	// TargetDatabase is the database in this same DBMS that the constituent
-	// resolves to.
+	// TargetDatabase is the database the constituent resolves to — in this
+	// same DBMS when Remote is unset, or on the remote DBMS when it is set.
 	//
-	// It does not have to exist yet — the controller reports Pending and
-	// retries, so a composite and its targets can be applied together.
+	// For a local constituent it does not have to exist yet: the controller
+	// skips that constituent and retries, so a composite and its targets can
+	// be applied together. A remote target is never checked, because the
+	// operator cannot see the other DBMS.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	TargetDatabase string `json:"targetDatabase"`
+
+	// Remote makes this constituent point at a database in ANOTHER Neo4j
+	// DBMS. Leave it unset for a local constituent.
+	// +optional
+	Remote *RemoteConstituent `json:"remote,omitempty"`
+}
+
+// RemoteConstituent points a constituent at a database in another Neo4j DBMS.
+//
+// Exactly one authentication mode must be chosen: oidcCredentialForwarding, or
+// credentialsSecretRef. They are not combinable — Neo4j stores one or the
+// other on the alias.
+type RemoteConstituent struct {
+	// URL is the remote DBMS's Bolt endpoint, e.g.
+	// "neo4j+s://other.example.com:7687".
+	//
+	// Prefer a +s (or +ssc) scheme: this connection carries query traffic
+	// between two DBMSs, and with stored native credentials it also carries
+	// the authentication.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Pattern=`^(neo4j|bolt)(\+s|\+ssc)?://.+$`
+	URL string `json:"url"`
+
+	// OIDCCredentialForwarding forwards the querying user's own OIDC token to
+	// the remote DBMS instead of storing any credential.
+	//
+	// This is the mode to prefer where both DBMSs trust the same identity
+	// provider: no credential exists to leak, rotate, or encrypt, and it needs
+	// no keystore. Requires Cypher 25 — the clause does not parse on the 5.26
+	// LTS, and the validator rejects it there.
+	//
+	// Mutually exclusive with CredentialsSecretRef.
+	// +optional
+	OIDCCredentialForwarding bool `json:"oidcCredentialForwarding,omitempty"`
+
+	// CredentialsSecretRef names a Secret in this namespace holding the remote
+	// DBMS credentials, in keys `username` and `password`.
+	//
+	// The password is passed to Neo4j as a Cypher PARAMETER, never interpolated
+	// into the statement text, so it does not reach the query log. Neo4j then
+	// stores it encrypted in the system database — which is what makes
+	// spec.remoteAliasKeystore on the deployment a hard requirement for this
+	// mode.
+	//
+	// Mutually exclusive with OIDCCredentialForwarding.
+	// +optional
+	CredentialsSecretRef string `json:"credentialsSecretRef,omitempty"`
+
+	// DriverSettings are passed through to the alias's DRIVER clause, for
+	// tuning the connection to the remote DBMS (e.g. connection_timeout,
+	// logging_level). Values are emitted verbatim as Cypher map values, so a
+	// string value must be quoted by the server's own rules; durations are
+	// written as duration literals.
+	// +optional
+	DriverSettings map[string]string `json:"driverSettings,omitempty"`
 }
 
 // Neo4jCompositeDatabaseStatus is the observed state.

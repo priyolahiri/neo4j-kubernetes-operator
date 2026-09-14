@@ -31,6 +31,16 @@ type AliasInfo struct {
 	Database string
 	// Location is "local" or "remote".
 	Location string
+	// URL is the remote DBMS's Bolt endpoint, empty for a local alias.
+	URL string
+	// User is the remote user for an alias with stored native credentials.
+	// Empty for a local alias AND for one using OIDC credential forwarding,
+	// which stores no user — so User alone does not distinguish "local" from
+	// "remote with forwarding"; read Location for that.
+	//
+	// The PASSWORD is never returned by SHOW ALIASES, on any alias. That is
+	// what makes it safe to put this output in a support bundle.
+	User string
 }
 
 // ShowAlias returns the alias with the given name, or nil when no such alias
@@ -57,7 +67,8 @@ func (c *Client) ShowAliases(ctx context.Context) ([]AliasInfo, error) {
 	defer c.closeSession(ctx, session)
 
 	result, err := session.Run(ctx,
-		"SHOW ALIASES FOR DATABASE YIELD name, database, location RETURN name, database, location", nil)
+		"SHOW ALIASES FOR DATABASE YIELD name, database, location, url, user "+
+			"RETURN name, database, location, url, user", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show aliases: %w", err)
 	}
@@ -68,10 +79,14 @@ func (c *Client) ShowAliases(ctx context.Context) ([]AliasInfo, error) {
 		name, _ := rec.Get("name")
 		database, _ := rec.Get("database")
 		location, _ := rec.Get("location")
+		url, _ := rec.Get("url")
+		user, _ := rec.Get("user")
 		out = append(out, AliasInfo{
 			Name:     columnString(name),
 			Database: columnString(database),
 			Location: columnString(location),
+			URL:      columnString(url),
+			User:     columnString(user),
 		})
 	}
 	if err := result.Err(); err != nil {

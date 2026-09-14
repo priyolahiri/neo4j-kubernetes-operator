@@ -1268,6 +1268,12 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 		env = append(env, authEnvVars...)
 	}
 
+	// Remote-alias keystore settings, same reasoning: the keystore password is
+	// a credential and the ConfigMap is not a Secret.
+	if ksEnv := BuildRemoteAliasKeystoreEnvVars(cluster.Spec.RemoteAliasKeystore); len(ksEnv) > 0 {
+		env = append(env, ksEnv...)
+	}
+
 	// Add custom environment variables (can override JVM settings if needed)
 	// Filter out NEO4J_AUTH and NEO4J_ACCEPT_LICENSE_AGREEMENT as they are managed by the operator
 	if cluster.Spec.Env != nil {
@@ -1342,6 +1348,9 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 	// or one of the built-in volumes). Validated for path collisions upstream.
 	if len(cluster.Spec.ExtraVolumeMounts) > 0 {
 		volumeMounts = append(volumeMounts, cluster.Spec.ExtraVolumeMounts...)
+	}
+	if m := BuildRemoteAliasKeystoreVolumeMount(cluster.Spec.RemoteAliasKeystore); m != nil {
+		volumeMounts = append(volumeMounts, *m)
 	}
 
 	// Build container
@@ -1584,6 +1593,13 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 	// by the validator against operator-managed paths.
 	if len(cluster.Spec.ExtraVolumes) > 0 {
 		volumes = append(volumes, cluster.Spec.ExtraVolumes...)
+	}
+
+	// The remote-alias keystore. One Secret, mounted identically on every
+	// server — Neo4j requires the same keystore file across a cluster, since
+	// any server may need to decrypt credentials another one wrote.
+	if v := BuildRemoteAliasKeystoreVolume(cluster.Spec.RemoteAliasKeystore); v != nil {
+		volumes = append(volumes, *v)
 	}
 
 	// Build init containers

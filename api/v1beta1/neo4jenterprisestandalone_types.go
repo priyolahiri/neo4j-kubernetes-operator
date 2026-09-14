@@ -125,6 +125,18 @@ type Neo4jEnterpriseStandaloneSpec struct {
 	// +optional
 	TrustedCASecrets []TrustedCASecret `json:"trustedCASecrets,omitempty"`
 
+	// RemoteAliasKeystore configures the keystore Neo4j uses to encrypt the
+	// credentials of remote database aliases that store native credentials —
+	// including the remote constituents of a Neo4jCompositeDatabase.
+	//
+	// Required for that mode and only that mode: without it the server refuses
+	// alias creation with "the required setting(s)
+	// [dbms.security.keystore.path, dbms.security.keystore.password] are
+	// missing". Aliases using OIDC credential forwarding store no credential
+	// and need no keystore.
+	// +optional
+	RemoteAliasKeystore *RemoteAliasKeystoreSpec `json:"remoteAliasKeystore,omitempty"`
+
 	// ExtraVolumes are additional pod volumes to attach to the Neo4j pod.
 	// Mount points must be wired separately via `extraVolumeMounts`.
 	// +optional

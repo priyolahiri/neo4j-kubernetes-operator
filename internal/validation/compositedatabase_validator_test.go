@@ -188,3 +188,143 @@ func TestCompositeDatabaseValidator_CypherLanguageIsCalVerOnly(t *testing.T) {
 		assert.True(t, strings.Contains(res.Errors.ToAggregate().Error(), "5.26"))
 	})
 }
+
+func remoteConstituent(name, url string, mutate func(*neo4jv1beta1.RemoteConstituent)) neo4jv1beta1.CompositeConstituent {
+	r := &neo4jv1beta1.RemoteConstituent{URL: url}
+	if mutate != nil {
+		mutate(r)
+	}
+	return neo4jv1beta1.CompositeConstituent{Name: name, TargetDatabase: "movies", Remote: r}
+}
+
+func deploymentWithKeystore(tag string, keystore bool) *neo4jv1beta1.Neo4jEnterpriseCluster {
+	c := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Image: neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: tag},
+		},
+	}
+	if keystore {
+		c.Spec.RemoteAliasKeystore = &neo4jv1beta1.RemoteAliasKeystoreSpec{
+			SecretRef: "remote-alias-keystore", KeyName: "k1",
+		}
+	}
+	return c
+}
+
+// Stored native credentials are encrypted by Neo4j before they reach the system
+// database, so the server refuses the alias outright without a keystore:
+//
+//	50N09 … 50N00: Internal exception raised TransactionStateTransitionException:
+//	Failed to create alias for remote database: the required setting(s)
+//	[dbms.security.keystore.path, dbms.security.keystore.password] are missing
+//
+// That error names neither the CR, the constituent, nor the field to set.
+// Catching it at apply time is the point of this rule. Verified live: without
+// the rule the CR sat Failed carrying that internal error; with it, the message
+// names spec.remoteAliasKeystore and the OIDC alternative.
+func TestCompositeValidator_StoredCredentialsRequireAKeystore(t *testing.T) {
+	cd := composite("cineasts", remoteConstituent("partner", "neo4j+s://other:7687",
+		func(r *neo4jv1beta1.RemoteConstituent) { r.CredentialsSecretRef = "creds" }))
+
+	t.Run("refused when the deployment has no keystore", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).
+			WithObjects(deploymentWithKeystore("2026.08.1-enterprise", false)).Build()
+		res := NewCompositeDatabaseValidator(c).Validate(t.Context(), cd)
+		require.NotEmpty(t, res.Errors)
+		msg := res.Errors.ToAggregate().Error()
+		assert.Contains(t, msg, "spec.remoteAliasKeystore")
+		assert.Contains(t, msg, "oidcCredentialForwarding",
+			"the message must name the alternative that needs no keystore")
+	})
+
+	t.Run("accepted when it does", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).
+			WithObjects(deploymentWithKeystore("2026.08.1-enterprise", true)).Build()
+		assert.Empty(t, NewCompositeDatabaseValidator(c).Validate(t.Context(), cd).Errors)
+	})
+
+	// Applying a composite alongside its deployment is ordinary GitOps; a
+	// deployment that is not there yet must not be an error.
+	t.Run("a deployment that does not exist yet is not an error", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).Build()
+		assert.Empty(t, NewCompositeDatabaseValidator(c).Validate(t.Context(), cd).Errors)
+	})
+}
+
+// OIDC credential forwarding stores no credential, so it needs no keystore —
+// but the clause is Cypher 25 and does not parse on the LTS.
+func TestCompositeValidator_OIDCForwarding(t *testing.T) {
+	cd := composite("cineasts", remoteConstituent("partner", "neo4j+s://other:7687",
+		func(r *neo4jv1beta1.RemoteConstituent) { r.OIDCCredentialForwarding = true }))
+
+	t.Run("needs no keystore", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).
+			WithObjects(deploymentWithKeystore("2026.08.1-enterprise", false)).Build()
+		assert.Empty(t, NewCompositeDatabaseValidator(c).Validate(t.Context(), cd).Errors)
+	})
+
+	t.Run("refused on the 5.26 LTS", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).
+			WithObjects(deploymentWithKeystore("5.26-enterprise", false)).Build()
+		res := NewCompositeDatabaseValidator(c).Validate(t.Context(), cd)
+		require.NotEmpty(t, res.Errors)
+		assert.Contains(t, res.Errors.ToAggregate().Error(), "Cypher 25")
+	})
+}
+
+// An alias carries one form of credential. Asking for both, or neither, is a
+// spec the server cannot express.
+func TestCompositeValidator_RemoteAuthModeIsExactlyOne(t *testing.T) {
+	c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).
+		WithObjects(deploymentWithKeystore("2026.08.1-enterprise", true)).Build()
+	v := NewCompositeDatabaseValidator(c)
+
+	t.Run("both is refused", func(t *testing.T) {
+		cd := composite("cineasts", remoteConstituent("p", "neo4j+s://o:7687",
+			func(r *neo4jv1beta1.RemoteConstituent) {
+				r.OIDCCredentialForwarding = true
+				r.CredentialsSecretRef = "creds"
+			}))
+		require.NotEmpty(t, v.Validate(t.Context(), cd).Errors)
+	})
+
+	t.Run("neither is refused", func(t *testing.T) {
+		cd := composite("cineasts", remoteConstituent("p", "neo4j+s://o:7687", nil))
+		res := v.Validate(t.Context(), cd)
+		require.NotEmpty(t, res.Errors)
+		assert.Contains(t, res.Errors.ToAggregate().Error(), "authentication mode")
+	})
+}
+
+// DRIVER keys are Cypher map keys, which cannot be parameterised — the one part
+// of a remote-alias statement built from spec text, and so the one part that
+// must be constrained rather than escaped.
+func TestCompositeValidator_DriverSettingKeysAreConstrained(t *testing.T) {
+	c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).
+		WithObjects(deploymentWithKeystore("2026.08.1-enterprise", true)).Build()
+	v := NewCompositeDatabaseValidator(c)
+
+	cd := composite("cineasts", remoteConstituent("p", "neo4j+s://o:7687",
+		func(r *neo4jv1beta1.RemoteConstituent) {
+			r.OIDCCredentialForwarding = true
+			r.DriverSettings = map[string]string{"bad key: 1, evil": "x"}
+		}))
+	res := v.Validate(t.Context(), cd)
+	require.NotEmpty(t, res.Errors)
+	assert.Contains(t, res.Errors.ToAggregate().Error(), "map keys")
+}
+
+// A plaintext scheme carrying a stored credential is warned about, not refused:
+// a private network is an unusual but legitimate choice.
+func TestCompositeValidator_PlaintextSchemeWithStoredCredentialsWarns(t *testing.T) {
+	c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).
+		WithObjects(deploymentWithKeystore("2026.08.1-enterprise", true)).Build()
+	cd := composite("cineasts", remoteConstituent("p", "neo4j://other:7687",
+		func(r *neo4jv1beta1.RemoteConstituent) { r.CredentialsSecretRef = "creds" }))
+
+	res := NewCompositeDatabaseValidator(c).Validate(t.Context(), cd)
+	assert.Empty(t, res.Errors, "an unencrypted scheme is a warning, not a rejection")
+	require.NotEmpty(t, res.Warnings)
+	assert.Contains(t, res.Warnings[0], "neo4j+s://")
+}

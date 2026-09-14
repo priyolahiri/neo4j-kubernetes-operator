@@ -206,21 +206,51 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 		return nil, fmt.Errorf("list aliases: %w", err)
 	}
 	// Only aliases inside this composite's namespace are ours to manage.
-	existing := map[string]string{} // short name → current target
+	existing := map[string]neo4jclient.AliasInfo{}
 	prefix := composite + "."
 	for _, a := range live {
 		if strings.HasPrefix(a.Name, prefix) {
-			existing[strings.TrimPrefix(a.Name, prefix)] = a.Database
+			existing[strings.TrimPrefix(a.Name, prefix)] = a
 		}
 	}
 
-	desired := map[string]string{}
+	desired := map[string]struct{}{}
 	for _, c := range cd.Spec.Constituents {
-		desired[c.Name] = c.TargetDatabase
+		desired[c.Name] = struct{}{}
 	}
 
 	for _, c := range cd.Spec.Constituents {
 		current, present := existing[c.Name]
+
+		if c.Remote != nil {
+			auth, err := r.remoteAuth(ctx, cd.Namespace, c.Remote)
+			if err != nil {
+				return nil, err
+			}
+			switch {
+			case !present:
+				// No existence check on the target: it lives in another DBMS
+				// the operator cannot see. If it is wrong, the remote server
+				// says so when a query is routed there.
+				if err := nc.CreateRemoteConstituent(ctx, composite, c.Name,
+					c.TargetDatabase, c.Remote.URL, auth); err != nil {
+					return nil, err
+				}
+				r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeConstituentAdded,
+					"Constituent %q now resolves to %q on %s",
+					neo4jclient.QualifyConstituent(composite, c.Name), c.TargetDatabase, c.Remote.URL)
+			case remoteConstituentDrifted(current, c, auth):
+				if err := nc.AlterRemoteConstituent(ctx, composite, c.Name,
+					c.TargetDatabase, c.Remote.URL, auth); err != nil {
+					return nil, err
+				}
+				r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeConstituentMoved,
+					"Constituent %q re-pointed to %q on %s",
+					neo4jclient.QualifyConstituent(composite, c.Name), c.TargetDatabase, c.Remote.URL)
+			}
+			continue
+		}
+
 		switch {
 		case !present:
 			// The target need not exist yet — but CREATE ALIAS against a
@@ -240,13 +270,15 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 				"Constituent %q now resolves to %q",
 				neo4jclient.QualifyConstituent(composite, c.Name), c.TargetDatabase)
 
-		case current != c.TargetDatabase:
+		case current.Database != c.TargetDatabase || current.Location == "remote":
+			// Location changing from remote to local is a real transition: the
+			// alias has to be re-pointed at a local database.
 			if err := nc.AlterCompositeConstituent(ctx, composite, c.Name, c.TargetDatabase); err != nil {
 				return nil, err
 			}
 			r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeConstituentMoved,
 				"Constituent %q re-pointed from %q to %q",
-				neo4jclient.QualifyConstituent(composite, c.Name), current, c.TargetDatabase)
+				neo4jclient.QualifyConstituent(composite, c.Name), current.Database, c.TargetDatabase)
 		}
 	}
 
@@ -274,6 +306,64 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 	out := append([]string(nil), info.Constituents...)
 	sort.Strings(out)
 	return out, nil
+}
+
+// remoteAuth resolves a remote constituent's credentials into the form the
+// Cypher builder takes.
+//
+// For OIDC forwarding there is nothing to read: no credential is stored, which
+// is the whole point of that mode.
+func (r *Neo4jCompositeDatabaseReconciler) remoteAuth(
+	ctx context.Context, namespace string, remote *neo4jv1beta1.RemoteConstituent,
+) (neo4jclient.RemoteConstituentAuth, error) {
+	auth := neo4jclient.RemoteConstituentAuth{DriverSettings: remote.DriverSettings}
+	if remote.OIDCCredentialForwarding {
+		auth.OIDCForwarding = true
+		return auth, nil
+	}
+
+	var secret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{
+		Name: remote.CredentialsSecretRef, Namespace: namespace,
+	}, &secret); err != nil {
+		return auth, fmt.Errorf("read credentials Secret %q: %w", remote.CredentialsSecretRef, err)
+	}
+	user, okUser := secret.Data["username"]
+	pass, okPass := secret.Data["password"]
+	if !okUser || !okPass {
+		return auth, fmt.Errorf(
+			"secret %q must contain both `username` and `password` keys for a remote constituent",
+			remote.CredentialsSecretRef)
+	}
+	auth.Username = string(user)
+	auth.Password = string(pass)
+	return auth, nil
+}
+
+// remoteConstituentDrifted reports whether a live remote alias no longer
+// matches spec.
+//
+// The credential itself is deliberately NOT compared, because it cannot be:
+// SHOW ALIASES never returns the password on any alias. So a password rotated
+// in the Secret alone is invisible here. Rather than let that silently persist,
+// the reconcile re-issues ALTER whenever anything else about the alias moved,
+// and a password-only change is handled by the operator re-applying on the
+// user's next spec touch — documented in the guide, because a check that
+// cannot see the field must not pretend otherwise.
+func remoteConstituentDrifted(
+	current neo4jclient.AliasInfo, c neo4jv1beta1.CompositeConstituent,
+	auth neo4jclient.RemoteConstituentAuth,
+) bool {
+	if current.Location != "remote" {
+		// It is a LOCAL alias today and spec wants it remote.
+		return true
+	}
+	if current.Database != c.TargetDatabase || current.URL != c.Remote.URL {
+		return true
+	}
+	// OIDC forwarding stores no user; stored credentials do. A change between
+	// the two modes shows up exactly there.
+	return current.User != auth.Username
 }
 
 // namespaceBlocker reports an existing alias sitting in the composite's

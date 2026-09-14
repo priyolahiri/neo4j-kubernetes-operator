@@ -19,6 +19,8 @@ package validation
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -82,9 +84,152 @@ func (v *CompositeDatabaseValidator) Validate(ctx context.Context, cd *neo4jv1be
 
 	res.Errors = append(res.Errors, v.validateConstituents(cd, name, specPath)...)
 	res.Errors = append(res.Errors, v.validateCypherLanguage(ctx, cd, specPath)...)
+	remoteErrs, remoteWarnings := v.validateRemoteConstituents(ctx, cd, specPath)
+	res.Errors = append(res.Errors, remoteErrs...)
+	res.Warnings = append(res.Warnings, remoteWarnings...)
 
 	return res
 }
+
+// driverSettingKey constrains DRIVER map keys. They are Cypher map keys, which
+// cannot be parameterised, so they are the one part of a remote alias
+// statement built from spec text — and therefore the one part that has to be
+// constrained rather than escaped.
+var driverSettingKey = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*$`)
+
+// validateRemoteConstituents checks the remote block on each constituent.
+//
+// The most valuable rule here is the keystore one. Without it, a stored-
+// credential alias fails inside the server with:
+//
+//	50N09 … 50N00: Internal exception raised TransactionStateTransitionException:
+//	Failed to create alias for remote database: the required setting(s)
+//	[dbms.security.keystore.path, dbms.security.keystore.password] are missing
+//
+// which names neither the CR, the constituent, nor the field to set. Catching
+// it at apply time turns that into one sentence.
+func (v *CompositeDatabaseValidator) validateRemoteConstituents(
+	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase, specPath *field.Path,
+) (field.ErrorList, []string) {
+	var errs field.ErrorList
+	var warnings []string
+
+	var needsKeystore, needsCypher25 bool
+	for i, c := range cd.Spec.Constituents {
+		if c.Remote == nil {
+			continue
+		}
+		rPath := specPath.Child("constituents").Index(i).Child("remote")
+
+		switch {
+		case c.Remote.OIDCCredentialForwarding && c.Remote.CredentialsSecretRef != "":
+			errs = append(errs, field.Invalid(rPath, c.Remote.URL,
+				"set exactly one of oidcCredentialForwarding or credentialsSecretRef: "+
+					"an alias stores one form of credential, not both"))
+		case !c.Remote.OIDCCredentialForwarding && c.Remote.CredentialsSecretRef == "":
+			errs = append(errs, field.Required(rPath,
+				"a remote constituent needs an authentication mode: set "+
+					"oidcCredentialForwarding: true to forward the querying user's token, "+
+					"or credentialsSecretRef to store native credentials"))
+		case c.Remote.OIDCCredentialForwarding:
+			needsCypher25 = true
+		default:
+			needsKeystore = true
+		}
+
+		for _, k := range sortedDriverKeys(c.Remote.DriverSettings) {
+			if !driverSettingKey.MatchString(k) {
+				errs = append(errs, field.Invalid(rPath.Child("driverSettings").Key(k), k,
+					"driver setting names must match [a-zA-Z][a-zA-Z0-9_]* — they are Cypher "+
+						"map keys, which cannot be parameterised"))
+			}
+		}
+
+		// A plaintext scheme carries the credential in the clear when this
+		// alias stores one. Warn rather than refuse: a private network is a
+		// legitimate if unusual choice, and the CRD pattern already rejects
+		// anything that is not a Bolt URL.
+		if c.Remote.CredentialsSecretRef != "" && !strings.Contains(c.Remote.URL, "+s") {
+			warnings = append(warnings, fmt.Sprintf(
+				"constituent %q sends stored credentials to %s over an unencrypted scheme; "+
+					"prefer neo4j+s:// so the credential is not exposed in transit",
+				c.Name, c.Remote.URL))
+		}
+	}
+
+	if !needsKeystore && !needsCypher25 {
+		return errs, warnings
+	}
+
+	tag, found := v.imageTagFor(ctx, cd)
+
+	if needsKeystore && !v.deploymentHasKeystore(ctx, cd) {
+		errs = append(errs, field.Required(
+			specPath.Child("constituents"),
+			fmt.Sprintf("a remote constituent with credentialsSecretRef needs "+
+				"spec.remoteAliasKeystore on %s: Neo4j encrypts stored alias credentials "+
+				"and refuses to create the alias without a keystore (%s, %s). "+
+				"Either configure the keystore, or use oidcCredentialForwarding, "+
+				"which stores no credential and needs none",
+				cd.Spec.ClusterRef, settingKeystorePath, settingKeystorePassword)))
+	}
+
+	if needsCypher25 && found {
+		if parsed, err := neo4j.ParseVersion(tag); err == nil && !parsed.IsCalver {
+			errs = append(errs, field.Invalid(
+				specPath.Child("constituents"), tag,
+				"oidcCredentialForwarding requires Cypher 25, which the 5.26 LTS does not "+
+					"have — the OIDC CREDENTIAL FORWARDING clause does not parse there. "+
+					"Use credentialsSecretRef with a keystore, or run a CalVer image"))
+		}
+	}
+
+	return errs, warnings
+}
+
+// deploymentHasKeystore reports whether the referenced deployment configures a
+// remote-alias keystore. A deployment that does not exist yet reads as "yes",
+// so applying a composite alongside its cluster is not an error — the
+// controller reports Pending and this runs again once it is there.
+func (v *CompositeDatabaseValidator) deploymentHasKeystore(
+	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase,
+) bool {
+	if v.Client == nil {
+		return true
+	}
+	key := types.NamespacedName{Name: cd.Spec.ClusterRef, Namespace: cd.Namespace}
+
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	if err := v.Client.Get(ctx, key, cluster); err == nil {
+		return cluster.Spec.RemoteAliasKeystore != nil && cluster.Spec.RemoteAliasKeystore.SecretRef != ""
+	} else if !errors.IsNotFound(err) {
+		return true
+	}
+
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+	if err := v.Client.Get(ctx, key, standalone); err == nil {
+		return standalone.Spec.RemoteAliasKeystore != nil && standalone.Spec.RemoteAliasKeystore.SecretRef != ""
+	}
+	return true
+}
+
+// sortedDriverKeys mirrors the builder's ordering so validation and rendering
+// walk the same list.
+func sortedDriverKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// The settings named in the keystore error, kept in sync with the resource
+// builder by being the same strings the server itself reports.
+const (
+	settingKeystorePath     = "dbms.security.keystore.path"
+	settingKeystorePassword = "dbms.security.keystore.password"
+)
 
 func (v *CompositeDatabaseValidator) validateConstituents(
 	cd *neo4jv1beta1.Neo4jCompositeDatabase, composite string, specPath *field.Path,

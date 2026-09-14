@@ -322,6 +322,28 @@ networkPolicy:
   enabled: true   # opt-in; requires a CNI that enforces NetworkPolicy
 ```
 
+#### `remoteAliasKeystore` (RemoteAliasKeystoreSpec)
+
+Keystore used to encrypt the credentials of remote database aliases that store
+native credentials — including the remote constituents of a
+[`Neo4jCompositeDatabase`](neo4jcompositedatabase.md). Required for that mode
+only; aliases using OIDC credential forwarding store no credential and need no
+keystore.
+
+```yaml
+remoteAliasKeystore:
+  secretRef: remote-alias-keystore   # keys: keystore.p12, password
+  keyName: my-key                    # the keytool -alias
+```
+
+The operator does not generate the keystore; create it with
+`keytool -genseckey -keyalg aes -keysize 256 -storetype pkcs12`. The password
+reaches Neo4j as an environment variable sourced from the Secret, so it never
+appears in the ConfigMap. See
+[`RemoteAliasKeystoreSpec`](neo4jenterprisecluster.md#remotealiaskeystorespec)
+for the full description, including why rotating it invalidates every existing
+remote alias.
+
 #### `trustedCASecrets` ([]TrustedCASecret)
 
 CA bundles to add to Neo4j's JVM truststore for outgoing TLS — OIDC providers
