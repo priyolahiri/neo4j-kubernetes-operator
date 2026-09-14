@@ -114,7 +114,8 @@ rather than only what was requested.
 | The alias name may not equal its target | Neo4j rejects it, and it is never what was meant |
 | `system` can be neither aliased nor used as an alias name | Not permitted by Neo4j |
 | Names may not contain a backtick | Alias DDL takes no query parameters for identifiers, so names are interpolated; the validator rejects backticks as an injection guard |
-| Local aliases only | Remote aliases (`… AT '<url>' USER … PASSWORD …`) and composite-database constituents are not modelled by this CRD |
+| Local aliases only | Remote aliases (`… AT '<url>' USER … PASSWORD …`) are not modelled by this CRD |
+| Composite constituents live elsewhere | A constituent of a composite database is an alias in the composite's namespace, and is declared on the [`Neo4jCompositeDatabase`](composite_databases.md) that owns it — creating one through this CRD would break the ordering a composite depends on |
 
 Alias names follow the same rules as database names: 3–63 characters, starting
 with an ASCII letter.

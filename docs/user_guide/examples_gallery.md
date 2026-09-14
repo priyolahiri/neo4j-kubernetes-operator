@@ -128,6 +128,8 @@ Job-per-CR `Neo4jBackup` (one-shot and scheduled) and `Neo4jRestore` scenarios. 
 
 Read-only replicas of a database on **another** Neo4j cluster, fed by a differential backup chain in object storage — plus the aliases that keep connection strings stable across a failover. See the [Cross-Cluster Replication guide](guides/cross_cluster_replication.md) and the [Database aliases guide](guides/database_aliases.md).
 
+Composite databases give one query endpoint over several constituent databases (`USE cineasts.latest`). See the [Composite databases guide](guides/composite_databases.md).
+
 Apply these across **two** Kubernetes clusters, in order: 01 upstream, 02–04 downstream.
 
 | Example | What it shows | Notable fields |

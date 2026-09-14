@@ -33,7 +33,10 @@ import (
 // rather than during the failover window.
 //
 // Scope: LOCAL aliases only. Remote aliases (`... AT '<url>' USER ... PASSWORD
-// ...`) and composite-database constituents are not modelled here.
+// ...`) are not modelled here. Constituents of a composite database are also
+// aliases, but they belong to the Neo4jCompositeDatabase that owns them:
+// creating one here would place the alias before its composite exists, which
+// permanently blocks the composite from being created.
 type Neo4jDatabaseAliasSpec struct {
 	// ClusterRef is the Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone in
 	// the same namespace that hosts both the alias and its target.

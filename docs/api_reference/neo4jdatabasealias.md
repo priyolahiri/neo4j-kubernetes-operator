@@ -12,7 +12,9 @@ A **local database alias** — a second name for an existing database in the sam
 - **Supported Neo4j Versions**: 5.26 LTS and all CalVer
 - **Reconciliation**: alias existence and target drift, via `SHOW ALIASES FOR DATABASE`
 
-Scope: **local aliases only**. Remote aliases (`... AT '<url>' USER ... PASSWORD ...`) and composite-database constituents are not modelled.
+Scope: **local aliases only**. Remote aliases (`... AT '<url>' USER ... PASSWORD ...`) are not modelled.
+
+Constituents of a composite database are *also* aliases, but they are not created here — they are declared on the [`Neo4jCompositeDatabase`](neo4jcompositedatabase.md) that owns them. Creating one through this CRD would put the alias in place before its composite exists, which permanently blocks the composite from being created.
 
 ## Why this exists
 
