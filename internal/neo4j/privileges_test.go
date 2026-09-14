@@ -438,3 +438,42 @@ func TestPrivilegeDatabaseTargets(t *testing.T) {
 func TestPrivilegeDatabaseTargets_BacktickedKeywordName(t *testing.T) {
 	require.Equal(t, []string{"TO"}, PrivilegeDatabaseTargets("GRANT ACCESS ON DATABASE `TO` TO r"))
 }
+
+// PrivilegeGraphTargets exists for one rule, and the rule is scope-specific.
+//
+// On a composite database `GRANT ACCESS ON DATABASE <composite>` is CORRECT
+// and required — it is how a user is permitted to query through the composite
+// at all. `GRANT MATCH {*} ON GRAPH <composite>` is inert: graph privileges
+// attach to the constituents' target databases. Neo4j accepts the second,
+// persists it, and shows it back in SHOW ROLE PRIVILEGES (verified on 5.26.30
+// and 2026.08.1), so nothing in the system reveals that it does nothing.
+//
+// Conflating the two scopes would mean telling users to remove the ACCESS
+// grant that makes a composite usable.
+func TestPrivilegeGraphTargets_OnlyGraphScope(t *testing.T) {
+	cases := []struct {
+		name string
+		stmt string
+		want []string
+	}{
+		{"graph scope is reported", "GRANT MATCH {*} ON GRAPH cineasts NODES * TO r", []string{"cineasts"}},
+		{"database scope is NOT reported", "GRANT ACCESS ON DATABASE cineasts TO r", nil},
+		{"a graph list", "GRANT TRAVERSE ON GRAPHS a, b NODES * TO r", []string{"a", "b"}},
+		{"DBMS scope has neither", "GRANT ROLE MANAGEMENT ON DBMS TO r", nil},
+		{"the wildcard names nothing", "GRANT MATCH {*} ON GRAPH * NODES * TO r", nil},
+		{"HOME GRAPH names nothing", "GRANT MATCH {*} ON HOME GRAPH NODES * TO r", nil},
+		{"a quoted composite name", "DENY WRITE ON GRAPH `my-composite` TO r", []string{"my-composite"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, PrivilegeGraphTargets(tc.stmt))
+		})
+	}
+}
+
+// The database-scope extractor must keep seeing BOTH scopes: its job is the
+// does-this-database-exist check, and a graph privilege names a database too.
+func TestPrivilegeDatabaseTargets_StillSeesBothScopes(t *testing.T) {
+	require.Equal(t, []string{"foo"}, PrivilegeDatabaseTargets("GRANT ACCESS ON DATABASE foo TO r"))
+	require.Equal(t, []string{"foo"}, PrivilegeDatabaseTargets("GRANT MATCH {*} ON GRAPH foo NODES * TO r"))
+}

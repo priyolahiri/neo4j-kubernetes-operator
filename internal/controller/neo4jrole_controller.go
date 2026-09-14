@@ -351,6 +351,26 @@ func (r *Neo4jRoleReconciler) reportUnresolvedPrivilegeDatabases(
 		return
 	}
 
+	// A graph privilege on a COMPOSITE database is accepted, persisted, shown
+	// back by SHOW ROLE PRIVILEGES — and does nothing, because graph
+	// privileges attach to the constituents' target databases. Verified on
+	// 5.26.30 and 2026.08.1. The database exists, so the unresolved check
+	// below will never see it; this is a separate, equally silent failure.
+	if composites := r.compositeGraphTargets(ctx, nc, role); len(composites) > 0 {
+		msg := fmt.Sprintf(
+			"role %q grants GRAPH privileges on %s, which %s composite database(s). "+
+				"Neo4j accepts such a grant and shows it back, but it does nothing: graph "+
+				"privileges attach to a composite's CONSTITUENT target databases, not to the "+
+				"composite. Grant ACCESS on the composite (that part is needed), and grant the "+
+				"graph privileges on each constituent's target database instead.",
+			roleName, quoteAndJoin(composites), pluralIs(len(composites)))
+		if r.setNamedCondition(ctx, role, ConditionTypePrivilegesResolve, metav1.ConditionFalse,
+			"GraphPrivilegeOnComposite", msg) {
+			r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonPrivilegeUnknownDatabase, msg)
+		}
+		return
+	}
+
 	unresolved := unresolvedDatabaseNames(named, known)
 	if len(unresolved) == 0 {
 		r.setNamedCondition(ctx, role, ConditionTypePrivilegesResolve, metav1.ConditionTrue,
@@ -401,6 +421,50 @@ func unresolvedDatabaseNames(named []string, known map[string]bool) []string {
 		}
 	}
 	return unresolved
+}
+
+// compositeGraphTargets returns the composite databases this role grants GRAPH
+// privileges on — a grant that is accepted and inert.
+//
+// Only GRAPH scope counts. `GRANT ACCESS ON DATABASE <composite>` is correct
+// and required; flagging it would be telling users to remove the one privilege
+// that makes a composite usable.
+func (r *Neo4jRoleReconciler) compositeGraphTargets(
+	ctx context.Context, nc *neo4jclient.Client, role *neo4jv1beta1.Neo4jRole,
+) []string {
+	var named []string
+	seen := map[string]bool{}
+	for _, stmt := range role.Spec.Privileges {
+		for _, name := range neo4jclient.PrivilegeGraphTargets(stmt) {
+			if !seen[name] {
+				seen[name] = true
+				named = append(named, name)
+			}
+		}
+	}
+	if len(named) == 0 {
+		return nil
+	}
+
+	databases, err := nc.GetDatabases(ctx)
+	if err != nil {
+		// Cannot look, so cannot claim. Silence beats a wrong warning.
+		return nil
+	}
+	composite := map[string]bool{}
+	for _, db := range databases {
+		if db.Type == neo4jclient.CompositeDatabaseType {
+			composite[db.Name] = true
+		}
+	}
+
+	var out []string
+	for _, name := range named {
+		if composite[name] {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // resolvableDatabaseNames is every name a privilege could legitimately target:
