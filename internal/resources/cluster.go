@@ -125,8 +125,40 @@ const (
 // of truth. The two wrappers below keep the CR-override semantics that
 // only the cluster CR exposes.
 
-// OperatorUDCPackagingValue returns the value for the NEO4J_UDC_PACKAGING environment variable.
-// It reads the OPERATOR_VERSION env var and returns "k8s-<version>", or "k8s-development" if unset.
+// OperatorUDCPackagingValue returns the value for the NEO4J_UDC_PACKAGING
+// environment variable. It reads OPERATOR_VERSION and returns "k8s-<version>",
+// or "k8s-development" if unset.
+//
+// CURRENTLY UNUSED, and deliberately kept. The variable is meant to be exactly
+// that — an environment variable, which the server reads to attribute the
+// deployment in its telemetry. It is not a neo4j.conf setting and was never
+// meant to become one.
+//
+// The Neo4j Docker entrypoint makes it one anyway. It converts every NEO4J_
+// variable outside its own control-variable allowlist into a setting:
+//
+//	not_configs=("NEO4J_ACCEPT_LICENSE_AGREEMENT" "NEO4J_AUTH" "NEO4J_AUTH_PATH"
+//	             "NEO4J_DEBUG" "NEO4J_EDITION" "NEO4J_HOME" "NEO4J_PLUGINS"
+//	             "NEO4J_SHA256" "NEO4J_TARBALL" "NEO4J_DEPRECATION_WARNING")
+//
+// NEO4J_UDC_PACKAGING is absent from that list, so it becomes `UDC.PACKAGING`,
+// which no Neo4j version declares, and the operator's strict config validation
+// then refuses to start the server:
+//
+//	Unrecognized setting. No declared setting with name: UDC.PACKAGING
+//
+// Every operator-side workaround costs more than the marker is worth: the
+// allowlist is a literal in the image with no runtime override; the *_FILE
+// suffix that the loop skips would rename the variable out of the server's
+// reach; an empty value is skipped but carries nothing; passing the entrypoint
+// a command other than "neo4j" runs after the loop but skips
+// set_initial_password, which is gated on an exact match; and disabling strict
+// validation would cost every user startup detection of typo'd and deprecated
+// settings.
+//
+// The fix belongs in the Neo4j image — one more entry in not_configs. Restore
+// the two call sites (the cluster pod spec and the standalone's buildEnvVars)
+// once an image carrying it is the anchor, and delete this note.
 // buildClusterSSLPolicyTrustConfig emits the trust-anchor and client-auth
 // lines of dbms.ssl.policy.cluster.*, gated on
 // cluster.Spec.TLS.StrictPeerValidation. Default-true; explicit false opts
