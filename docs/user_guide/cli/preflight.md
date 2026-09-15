@@ -57,6 +57,22 @@ Capacity is compared against a **single node's** allocatable memory, never the c
 | `source.credentialsSecretRef` names a Secret that exists | It records **which** Secret the credentials come from; it does not project them. A name with nothing behind it is worth knowing about |
 | Network mode | Says so and checks nothing — reading over the wire needs no bucket credentials |
 
+**Cross-cluster replication (the proxy load balancer)**
+
+Enabling `spec.crossClusterReplication` creates a `LoadBalancer` Service in front of every server's transaction-shipping port. `loadBalancerInternal` (default `true`) asks for a private one, and the operator requests it by emitting the union of the AWS, Azure and GKE internal-LB annotations — it cannot know which cloud it is on, and a provider ignores keys it does not recognise.
+
+That works on the three clouds the union covers. On any other, the request is accepted, reported, and **silently does nothing**.
+
+| Check | Why it matters |
+|---|---|
+| The detected cloud reads one of the annotations the operator emits | On a provider that reads none of them, `loadBalancerInternal: true` has no effect and the load balancer is **public**, in front of the transaction-shipping port. Set your provider's own annotation under `spec.crossClusterReplication.annotations` — it is applied after the operator's set and wins on shared keys |
+| The address the Service was actually assigned | The decisive one. A public IP on a Service that asked to be internal is proof rather than prediction, so it is reported whatever the annotation table said |
+| `loadBalancerInternal: false` | Said out loud once. It is a deliberate setting, not an error — but the port is then reachable from the internet, and should be restricted with a source-range annotation or a NetworkPolicy, and require TLS |
+
+The cloud is detected from a node's `spec.providerID`, which the kubelet sets — more reliable than node labels, which anyone can edit. On Kind this reports a development limitation (no load-balancer controller, so the Service stays `Pending`) rather than an exposure risk.
+
+An AWS load balancer is handed out as a **hostname**, not an IP. Resolving it would be reachability, so preflight reports the hostname as unchecked and gives you the `dig` command rather than implying it looked.
+
 This replaces the ritual the troubleshooting guide documents today — `kubectl run backup-auth-check --image=amazon/aws-cli …`, in three vendor variants — which you only reach for **after** a backup has already failed.
 
 ## What it does not check

@@ -105,7 +105,8 @@ Usage:
 "validate" checks the manifest. This checks the cluster it is about to land in:
 does the StorageClass exist and can it expand, is there a node big enough for
 the pod, does the credentials Secret carry the keys the backup Job will mount,
-does the ServiceAccount carry a cloud identity. Read-only.
+does the ServiceAccount carry a cloud identity, does this cloud honour the CCDR
+proxy's request for a private load balancer. Read-only.
 
 It checks SHAPE, not REACHABILITY: it never contacts S3, GCS or Azure and never
 runs a probe pod, so a bucket that exists but denies access still fails later.
@@ -197,6 +198,9 @@ func preflightObject(ctx context.Context, c client.Client, ns, source string, ra
 		res.checks = preflightInstance(ctx, c, ns,
 			subject.cluster.Spec.Storage, subject.cluster.Spec.Image,
 			subject.cluster.Spec.Resources, int(subject.cluster.Spec.Topology.Servers))
+		// Cluster-only: CCDR's proxy is a LoadBalancer, and whether this cloud
+		// honours the private-LB request is a substrate fact (preflight_cloud.go).
+		res.checks = append(res.checks, checkCCDRProxyExposure(ctx, c, ns, subject.cluster)...)
 	case subject.standalone != nil:
 		res.checks = preflightInstance(ctx, c, ns,
 			subject.standalone.Spec.Storage, subject.standalone.Spec.Image,
