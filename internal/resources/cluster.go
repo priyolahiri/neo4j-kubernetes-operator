@@ -83,6 +83,21 @@ const (
 	LogsVolume = "logs"
 	// ConfigVolume is the name of the config volume
 	ConfigVolume = "config"
+
+	// OperatorConfStagingPath is where the operator's ConfigMap is mounted.
+	//
+	// It is NOT /conf. The Neo4j entrypoint treats /conf as its input and
+	// copies it into ${NEO4J_HOME}/conf, where it also appends every
+	// NEO4J_<setting> environment variable — so /conf has to be a directory
+	// the startup script can write the per-pod runtime values into, which a
+	// ConfigMap mount is not.
+	OperatorConfStagingPath = "/operator-conf"
+
+	// EntrypointConfVolume is the writable emptyDir mounted at /conf. The
+	// startup script assembles the effective configuration there (ConfigMap
+	// contents plus the advertised addresses and discovery settings that can
+	// only be computed at pod start), and the entrypoint takes it from there.
+	EntrypointConfVolume = "entrypoint-conf"
 	// CertsVolume is the name of the certificates volume
 	CertsVolume = "certs"
 
@@ -1196,10 +1211,6 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 			Value: cluster.Spec.AcceptLicenseAgreement,
 		},
 		{
-			Name:  "NEO4J_UDC_PACKAGING",
-			Value: OperatorUDCPackagingValue(),
-		},
-		{
 			Name: "DB_USERNAME",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
@@ -1235,7 +1246,13 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 
 	// Add server-specific environment variable
 	env = append(env, corev1.EnvVar{
-		Name:  "NEO4J_SERVER_NAME",
+		// OPERATOR_ prefix, not NEO4J_: the Neo4j entrypoint converts every
+		// NEO4J_<name> variable outside its own control-variable allowlist
+		// into a neo4j.conf setting, and this one would become `SERVER.NAME`,
+		// which no Neo4j version declares — strict config validation then
+		// refuses to start the server. It is only echoed by the startup
+		// script, so the rename costs nothing.
+		Name:  "OPERATOR_SERVER_NAME",
 		Value: serverName,
 	})
 
@@ -1284,8 +1301,13 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 			MountPath: "/data",
 		},
 		{
-			Name:      ConfigVolume,
+			Name:      EntrypointConfVolume,
 			MountPath: "/conf",
+		},
+		{
+			Name:      ConfigVolume,
+			MountPath: OperatorConfStagingPath,
+			ReadOnly:  true,
 		},
 		{
 			Name:      LogsVolume,
@@ -1385,7 +1407,11 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 		Command: []string{
 			"/bin/bash",
 			"-c",
-			"/conf/startup.sh",
+			// The startup script is a ConfigMap file, so it lives at the
+			// staging path — /conf is an empty emptyDir until this script
+			// populates it. The health probes still read /conf/health.sh,
+			// which this script copies across before Neo4j starts.
+			OperatorConfStagingPath + "/startup.sh",
 		},
 	}
 
@@ -1415,6 +1441,12 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 
 	// Volumes
 	volumes := []corev1.Volume{
+		{
+			Name: EntrypointConfVolume,
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		},
 		{
 			Name: ConfigVolume,
 			VolumeSource: corev1.VolumeSource{
@@ -2383,31 +2415,41 @@ export NEO4J_AUTH="${DB_USERNAME}/${DB_PASSWORD}"
 # Extract server index from pod hostname BEFORE overriding HOSTNAME.
 # StatefulSet pod hostnames follow the pattern: {cluster-name}-server-{ordinal}
 # e.g. "my-cluster-server-0" -> SERVER_INDEX="0"
-# NEO4J_SERVER_NAME is a static value ("server") and cannot be used for index extraction.
+# OPERATOR_SERVER_NAME is a static value ("server") and cannot be used for index extraction.
 SERVER_INDEX="${HOSTNAME##*-}"
 
 # Set fully qualified domain name for clustering
 export HOSTNAME_FQDN="${HOSTNAME}.` + cluster.Name + `-headless.` + cluster.Namespace + `.svc.cluster.local"
 echo "Pod hostname: ${HOSTNAME}"
 echo "Pod FQDN: ${HOSTNAME_FQDN}"
-echo "Server name: ${NEO4J_SERVER_NAME}"
+echo "Server name: ${OPERATOR_SERVER_NAME}"
 echo "Server index: ${SERVER_INDEX}"
 
 # Override the HOSTNAME variable with FQDN for Neo4j configuration
 export HOSTNAME="${HOSTNAME_FQDN}"
 
-# Create writable config directory
-mkdir -p /tmp/neo4j-config
-
-# Copy base config
-cp /conf/neo4j.conf /tmp/neo4j-config/neo4j.conf
+# Assemble the effective configuration in /conf, a writable emptyDir.
+#
+# /conf is the Neo4j entrypoint's INPUT: it copies that directory into
+# ${NEO4J_HOME}/conf and appends every NEO4J_<setting> environment variable to
+# the result, which is the file the server actually reads. Writing the per-pod
+# runtime values here — rather than into a separate directory pointed at by
+# NEO4J_CONF — is what lets BOTH survive: the operator's rendered config and
+# anything delivered by environment variable.
+#
+# Each file is dereferenced individually because a ConfigMap mount is a tree of
+# symlinks beside a ..data directory, and a recursive copy would carry that
+# structure into the entrypoint's input.
+for f in /operator-conf/*; do
+  [ -f "$f" ] && cp -L "$f" /conf/
+done
 
 # Add FQDN-based advertised addresses
 # Port assignment (same for 5.26.x and all CalVer releases):
 #   5000 = tcp-discovery: legacy V1 discovery port (DEPRECATED, not used by this operator)
 #   6000 = tcp-tx: V2 discovery + cluster catchup traffic (server.cluster.advertised_address)
 #   7000 = raft: RAFT consensus (server.cluster.raft.advertised_address)
-cat >> /tmp/neo4j-config/neo4j.conf << EOF
+cat >> /conf/neo4j.conf << EOF
 
 # Advertised addresses using pod FQDN (applies to all supported versions)
 server.default_advertised_address=${HOSTNAME_FQDN}
@@ -2428,7 +2470,7 @@ echo "Multi-server cluster: using LIST discovery with static pod FQDNs"
 
 ` + buildBootstrapStrategyShellBlock(cluster) + `
 
-cat >> /tmp/neo4j-config/neo4j.conf << EOF
+cat >> /conf/neo4j.conf << EOF
 
 # Multi-node cluster using LIST discovery with static pod FQDNs via headless service.
 # LIST discovery provides deterministic peer addresses (one per pod) unlike K8S ClusterIP
@@ -2442,7 +2484,7 @@ EOF
 # without waiting for all peers to be visible (avoids blocking StatefulSet rolling updates).
 if [ ! -d "/data/databases/system" ]; then
     echo "Initial formation: setting ` + getMinInitialPrimariesSetting(cluster) + `=` + fmt.Sprintf("%d", cluster.EffectiveMinSystemPrimaries()) + `"
-    echo "` + getMinInitialPrimariesSetting(cluster) + `=` + fmt.Sprintf("%d", cluster.EffectiveMinSystemPrimaries()) + `" >> /tmp/neo4j-config/neo4j.conf
+    echo "` + getMinInitialPrimariesSetting(cluster) + `=` + fmt.Sprintf("%d", cluster.EffectiveMinSystemPrimaries()) + `" >> /conf/neo4j.conf
 else
     echo "Restart detected (/data/databases/system exists) - skipping minimum primaries count"
 fi
@@ -2450,8 +2492,10 @@ fi
 # Add server mode constraint if specified
 ` + buildServerModeConstraintConfig(cluster) + `
 
-# Set NEO4J config directory
-export NEO4J_CONF=/tmp/neo4j-config
+# NEO4J_CONF is deliberately NOT exported. The entrypoint writes the settings
+# it derives from environment variables into ${NEO4J_HOME}/conf, never into
+# NEO4J_CONF, so overriding it pointed the server at a file the entrypoint does
+# not maintain and silently discarded every one of them.
 
 # Start Neo4j
 exec /startup/docker-entrypoint.sh neo4j
@@ -2482,7 +2526,7 @@ fi
 		config += `
 # Apply the server mode constraint if not NONE
 if [ "$SERVER_MODE_CONSTRAINT" != "NONE" ]; then
-cat >> /tmp/neo4j-config/neo4j.conf << EOF
+cat >> /conf/neo4j.conf << EOF
 # Server mode constraint for this specific server
 initial.server.mode_constraint=$SERVER_MODE_CONSTRAINT
 EOF
@@ -2492,7 +2536,7 @@ fi
 		// Fall back to global server mode constraint
 		config = fmt.Sprintf(`
 # Global server mode constraint configuration
-cat >> /tmp/neo4j-config/neo4j.conf << EOF
+cat >> /conf/neo4j.conf << EOF
 # Constrain all servers to %s mode
 initial.server.mode_constraint=%s
 EOF
