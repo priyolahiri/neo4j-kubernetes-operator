@@ -41,11 +41,14 @@ helm install neo4j-operator neo4j-operator/neo4j-operator \
 ```
 
 Prefer plain `kubectl`? Each release attaches a single apply-able bundle
-(CRDs + RBAC + Deployment) as a **Release asset** — it's not a file in the repo,
-download it from the `releases/download/<tag>/` URL:
+(CRDs + RBAC + Deployment) as a **Release asset** — it's not a file in the repo.
+`releases/latest/download/` always resolves to the newest release's asset;
+substitute `releases/download/<tag>/` to pin one. Use `--server-side`: the
+largest CRDs in the bundle exceed the annotation limit a client-side apply
+relies on.
 
 ```bash
-kubectl apply -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.13.0/neo4j-kubernetes-operator-complete.yaml
+kubectl apply --server-side -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/latest/download/neo4j-kubernetes-operator-complete.yaml
 ```
 
 See the [Installation guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/installation/#method-3-quick-install-from-github-release) for CRDs-only and latest-version variants.

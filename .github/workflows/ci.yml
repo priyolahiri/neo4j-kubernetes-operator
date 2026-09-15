@@ -72,6 +72,12 @@ jobs:
     - name: Every kubectl-neo4j command is documented and reachable
       run: make check-cli-docs
 
+    # Depends on this job's fetch-depth: 0 for tags — without them the check
+    # still enforces that the install surfaces agree with each other, but
+    # cannot tell whether they agree on the CURRENT release.
+    - name: Install docs name the current release
+      run: make check-docs-release-pins
+
     - name: Every CRD listed on docs landing page, README and nav
       run: make check-crd-catalog
 

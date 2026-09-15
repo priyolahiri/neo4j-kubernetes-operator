@@ -22,7 +22,7 @@ helm install neo4j-operator neo4j-operator/neo4j-operator \
 **Pin to a specific version**:
 ```bash
 helm install neo4j-operator neo4j-operator/neo4j-operator \
-  --version 1.13.0 \
+  --version 1.15.0 \
   --namespace neo4j-operator-system \
   --create-namespace
 ```
@@ -71,12 +71,12 @@ Helm 3.8 or later is required for OCI support.
 
 ```bash
 helm install neo4j-operator oci://ghcr.io/priyolahiri/charts/neo4j-operator \
-  --version 1.13.0 \
+  --version 1.15.0 \
   --namespace neo4j-operator-system \
   --create-namespace
 ```
 
-Use the chart version without the `v` prefix (for example, `1.13.0`).
+Use the chart version without the `v` prefix (for example, `1.15.0`).
 
 ### Method 3: Quick Install from GitHub Release
 
@@ -91,7 +91,7 @@ For environments where running `helm` is inconvenient, every release also publis
 > `${RELEASE_VERSION}`).
 
 ```bash
-RELEASE_VERSION=v1.13.0  # Replace with desired version
+RELEASE_VERSION=v1.15.0  # Replace with desired version
 
 kubectl apply --server-side -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/${RELEASE_VERSION}/neo4j-kubernetes-operator-complete.yaml
 ```
@@ -100,12 +100,17 @@ Use `--server-side`: the largest CRDs in the bundle exceed the 256 KiB
 `last-applied-configuration` annotation limit that client-side `kubectl apply`
 relies on, so server-side apply is the recommended form.
 
-To always pull the latest published release:
+To always pull the latest published release, use the `latest/download/`
+path — GitHub redirects it to the newest release's asset, so no tag lookup and
+no `gh` CLI are needed:
 
 ```bash
-RELEASE_VERSION=$(gh release list --repo priyolahiri/neo4j-kubernetes-operator --limit 1 --json tagName --jq '.[0].tagName')
-kubectl apply --server-side -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/${RELEASE_VERSION}/neo4j-kubernetes-operator-complete.yaml
+kubectl apply --server-side -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/latest/download/neo4j-kubernetes-operator-complete.yaml
 ```
+
+Pin an explicit tag for anything reproducible — a GitOps repo, a runbook, or a
+cluster you need to be able to rebuild identically. `latest` is for a first
+look, and it moves under you.
 
 **What this installs**:
 
@@ -135,7 +140,7 @@ bundle (server-side). It includes the updated CRDs, and the operator
 Deployment rolls to the new image automatically:
 
 ```bash
-RELEASE_VERSION=v1.13.0  # The version you are upgrading to
+RELEASE_VERSION=v1.15.0  # The version you are upgrading to
 
 kubectl apply --server-side -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/${RELEASE_VERSION}/neo4j-kubernetes-operator-complete.yaml
 ```
@@ -154,7 +159,7 @@ git checkout $LATEST_TAG    # or omit to test main
 helm install neo4j-operator ./charts/neo4j-operator \
   --namespace neo4j-operator-system \
   --create-namespace \
-  --set image.tag="${LATEST_TAG#v}"   # e.g. 1.11.0 — see note below
+  --set image.tag="${LATEST_TAG#v}"   # e.g. 1.15.0 — see note below
 ```
 
 > **You must set `image.tag` for a from-clone install.** In the repository,
@@ -353,7 +358,7 @@ If you haven't cloned the repository, apply an example straight from the raw
 file URL at a release tag (no download or extract step needed):
 
 ```bash
-RELEASE_VERSION=v1.13.0  # Replace with your installed version
+RELEASE_VERSION=v1.15.0  # Replace with your installed version
 
 # Create admin secret (required for Neo4j authentication)
 kubectl create secret generic neo4j-admin-secret \
