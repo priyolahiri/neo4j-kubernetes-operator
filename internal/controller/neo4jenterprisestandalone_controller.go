@@ -2092,7 +2092,34 @@ func (r *Neo4jEnterpriseStandaloneReconciler) cleanupResources(ctx context.Conte
 	return nil
 }
 
-// buildEnvVars builds environment variables for the standalone Neo4j container
+// buildEnvVars builds the Neo4j container's environment.
+//
+// Two variables are deliberately ABSENT, and they are the same bug seen from
+// two ends.
+//
+// NEO4J_UDC_PACKAGING was set to identify this operator to Neo4j's usage data
+// collection. The Neo4j entrypoint translates every NEO4J_<name> variable that
+// is not on its own control-variable allowlist into a neo4j.conf setting, and
+// this one is not on that list — so it became the setting `UDC.PACKAGING`,
+// which no Neo4j version declares. With the operator's strict config
+// validation on, the server then refused to start:
+//
+//	Failed to read config /var/lib/neo4j/conf/neo4j.conf
+//	Unrecognized setting. No declared setting with name: UDC.PACKAGING
+//
+// It is also obsolete: the image ships /var/lib/neo4j/packaging_info
+// ("Package Type: docker trixie"), which is how packaging is reported now.
+//
+// NEO4J_CONF=/conf was the workaround for that crash. It pointed the server at
+// the read-only ConfigMap mount — the entrypoint's INPUT — instead of the
+// merged configuration the entrypoint assembles in ${NEO4J_HOME}/conf. That
+// dodged the bad setting, and silently discarded EVERY env-var-delivered
+// setting along with it, including the LDAP system-account credentials that
+// are passed as env vars precisely so they never appear in the ConfigMap.
+//
+// With the UDC variable gone the workaround is unnecessary, so both are
+// removed: the entrypoint's own default config directory stands, and
+// NEO4J_<setting> variables reach the server as intended.
 func (r *Neo4jEnterpriseStandaloneReconciler) buildEnvVars(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) []corev1.EnvVar {
 	envVars := []corev1.EnvVar{}
 
@@ -2106,10 +2133,6 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildEnvVars(standalone *neo4jv1be
 		// validated upstream — the operator never accepts on the user's behalf.
 		Name:  "NEO4J_ACCEPT_LICENSE_AGREEMENT",
 		Value: standalone.Spec.AcceptLicenseAgreement,
-	})
-	envVars = append(envVars, corev1.EnvVar{
-		Name:  "NEO4J_UDC_PACKAGING",
-		Value: resources.OperatorUDCPackagingValue(),
 	})
 
 	// Determine auth secret name (use default if not specified)
@@ -2171,10 +2194,6 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildEnvVars(standalone *neo4jv1be
 	// in reconcileAuraFleetManagement, not baked here, so it merges with other plugins.
 
 	// Set the config directory (always present now)
-	envVars = append(envVars, corev1.EnvVar{
-		Name:  "NEO4J_CONF",
-		Value: "/conf",
-	})
 
 	return envVars
 }
