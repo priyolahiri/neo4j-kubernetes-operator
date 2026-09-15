@@ -2876,6 +2876,34 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#remoteconstituent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoteConstituent
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="RemoteConstituent">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#choosing-a-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3915,6 +3943,34 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#remoteconstituent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoteConstituent
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="RemoteConstituent">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#choosing-a-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4113,10 +4169,61 @@ A <code>composite: true</code> flag would leave most of that spec silently inert
 <tr>
 <td><code>targetDatabase</code></td>
 <td><code>string</code></td>
-<td><strong>Required.</strong> A database in this same DBMS. It does not have to exist yet: the controller skips that constituent and retries, so a composite and its targets can be applied together.</td>
+<td><strong>Required.</strong> The database the constituent resolves to — in this DBMS when <code>remote</code> is unset, or on the remote DBMS when it is set. A local target need not exist yet: the controller skips that constituent and retries. A remote target is never checked, because the operator cannot see the other DBMS.</td>
+</tr>
+<tr>
+<td><code>remote</code></td>
+<td><a href="#remoteconstituent"><code>RemoteConstituent</code></a></td>
+<td>Points the constituent at a database in <strong>another</strong> Neo4j DBMS. Omit for a local constituent.</td>
 </tr>
 </tbody>
 </table>
+<h3 id="remoteconstituent">RemoteConstituent<a class="headerlink" href="#remoteconstituent" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td><code>string</code></td>
+<td><strong>Required.</strong> The remote DBMS's Bolt endpoint, e.g. <code>neo4j+s://other.example.com:7687</code>. Prefer a <code>+s</code> scheme — this connection carries query traffic between two DBMSs, and with stored credentials it carries the authentication too.</td>
+</tr>
+<tr>
+<td><code>oidcCredentialForwarding</code></td>
+<td><code>bool</code></td>
+<td>Forwards the querying user's own OIDC token instead of storing any credential. <strong>Requires Cypher 25</strong>, so CalVer only. Mutually exclusive with <code>credentialsSecretRef</code>.</td>
+</tr>
+<tr>
+<td><code>credentialsSecretRef</code></td>
+<td><code>string</code></td>
+<td>A Secret in this namespace with <code>username</code> and <code>password</code> keys. <strong>Requires <code>spec.remoteAliasKeystore</code> on the deployment.</strong> Mutually exclusive with <code>oidcCredentialForwarding</code>.</td>
+</tr>
+<tr>
+<td><code>driverSettings</code></td>
+<td><code>map[string]string</code></td>
+<td>Passed through to the alias's <code>DRIVER</code> clause (e.g. <code>connection_timeout</code>). Emitted verbatim as Cypher map values.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="choosing-a-mode">Choosing a mode<a class="headerlink" href="#choosing-a-mode" title="Anchor link to this section">&para;</a></h4>
+<p><strong>Prefer <code>oidcCredentialForwarding</code> where both DBMSs trust the same identity
+provider.</strong> No credential is stored, so there is nothing to leak, rotate or
+encrypt — and it needs no keystore at all.</p>
+<p><code>credentialsSecretRef</code> stores a username and password on the alias. Neo4j
+encrypts them in the system database, which is why it requires
+<code>spec.remoteAliasKeystore</code>; without one the server refuses alias creation
+outright. The operator passes the password as a <strong>Cypher parameter</strong>, never
+interpolated into the statement text, so it does not reach the query log.
+<code>SHOW ALIASES</code> never returns a password on any alias.</p>
+<p>A composite with a <code>credentialsSecretRef</code> constituent on a deployment that has
+no keystore is rejected at apply time, naming the field to set — rather than
+failing later inside the server with an internal <code>50N09</code>/<code>50N00</code> error that
+mentions neither the CR nor the constituent.</p>
 <h2 id="ordering-the-composite-always-comes-first">Ordering: the composite always comes first<a class="headerlink" href="#ordering-the-composite-always-comes-first" title="Anchor link to this section">&para;</a></h2>
 <p>Neo4j accepts <code>CREATE ALIAS cineasts.latest</code> <strong>even when no composite
 <code>cineasts</code> exists</strong>. The result is an ordinary alias whose name merely contains
@@ -4209,7 +4316,7 @@ name a composite reports <code>PrivilegesResolve=False</code>.</p>
 </table>
 <h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><strong>Local constituents only.</strong> Remote constituents (<code>... AT '&lt;url&gt;' USER ... PASSWORD ...</code>) are not modelled, because they require <code>dbms.security.keystore.path</code> and <code>dbms.security.keystore.password</code> to be configured on every server first — creating one without a keystore fails outright.</li>
+<li><strong>Remote constituents need setup.</strong> OIDC credential forwarding requires Cypher 25 (CalVer only). Stored native credentials require <code>spec.remoteAliasKeystore</code> on the deployment — without it Neo4j refuses to create the alias.</li>
 <li><strong>No <code>OPTIONS</code>.</strong> Composites have none; the operator never emits the clause.</li>
 <li><strong>No topology.</strong> A composite has no store to place.</li>
 <li>Composites cannot be nested, and cannot hold data themselves.</li>

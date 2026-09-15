@@ -938,6 +938,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#remote-constituents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Remote constituents
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Remote constituents">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#oidc-credential-forwarding-prefer-this" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OIDC credential forwarding — prefer this
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stored-native-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stored native credentials
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#limits" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3890,6 +3929,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#remote-constituents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Remote constituents
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Remote constituents">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#oidc-credential-forwarding-prefer-this" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OIDC credential forwarding — prefer this
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stored-native-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stored native credentials
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#limits" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4033,6 +4111,67 @@ refused while constituents exist — and it removes only the constituent
 <strong>aliases</strong>. The databases they target are untouched.</p>
 <p>Use <code>deletionPolicy: Retain</code> to keep the composite in Neo4j when the CR goes
 away.</p>
+<h2 id="remote-constituents">Remote constituents<a class="headerlink" href="#remote-constituents" title="Anchor link to this section">&para;</a></h2>
+<p>A constituent can point at a database in <strong>another</strong> Neo4j DBMS. There are two
+ways to authenticate, and they cost very different things to run.</p>
+<h3 id="oidc-credential-forwarding-prefer-this">OIDC credential forwarding — prefer this<a class="headerlink" href="#oidc-credential-forwarding-prefer-this" title="Anchor link to this section">&para;</a></h3>
+<p>The querying user's own token is forwarded to the remote DBMS. Nothing is
+stored, so there is no credential to leak, rotate or encrypt — and no keystore
+is needed.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">constituents</span><span class="p">:</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">partner</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">movies</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="nt">remote</span><span class="p">:</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">      </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j+s://partner.example.com:7687</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">      </span><span class="nt">oidcCredentialForwarding</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span></code></pre></div>
+<p>Both DBMSs must trust the same identity provider, and it needs <strong>Cypher 25</strong>,
+so a CalVer image. On the 5.26 LTS the clause does not parse and the CR is
+rejected with a message saying so.</p>
+<h3 id="stored-native-credentials">Stored native credentials<a class="headerlink" href="#stored-native-credentials" title="Anchor link to this section">&para;</a></h3>
+<p>A username and password are stored on the alias. Neo4j encrypts them in the
+system database, which is why this mode needs a keystore on the deployment.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># on the deployment</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">remoteAliasKeystore</span><span class="p">:</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span><span class="nt">secretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">remote-alias-keystore</span><span class="w">   </span><span class="c1"># keys: keystore.p12, password</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span><span class="nt">keyName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-key</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nn">---</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="c1"># on the composite</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="nt">constituents</span><span class="p">:</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">partner</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">    </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">movies</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">    </span><span class="nt">remote</span><span class="p">:</span>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">      </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j+s://partner.example.com:7687</span>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">      </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">partner-creds</span><span class="w">   </span><span class="c1"># keys: username, password</span>
+</span></code></pre></div>
+<p>Create the keystore with the JDK's keytool — ideally on the same Java version
+Neo4j runs, as Neo4j advises:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>keytool<span class="w"> </span>-genseckey<span class="w"> </span>-keyalg<span class="w"> </span>aes<span class="w"> </span>-keysize<span class="w"> </span><span class="m">256</span><span class="w"> </span>-storetype<span class="w"> </span>pkcs12<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">        </span>-keystore<span class="w"> </span>keystore.p12<span class="w"> </span>-alias<span class="w"> </span>my-key<span class="w"> </span>-storepass<span class="w"> </span><span class="s2">"</span><span class="nv">$PASSWORD</span><span class="s2">"</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>kubectl<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>remote-alias-keystore<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">        </span>--from-file<span class="o">=</span>keystore.p12<span class="w"> </span>--from-literal<span class="o">=</span><span class="nv">password</span><span class="o">=</span><span class="s2">"</span><span class="nv">$PASSWORD</span><span class="s2">"</span>
+</span></code></pre></div>
+<p>Every server mounts the same Secret, which is what satisfies Neo4j's
+requirement that the keystore be identical across a cluster.</p>
+<div class="admonition danger">
+<p class="admonition-title">Rotating the keystore invalidates every existing remote alias</p>
+<p>Neo4j encrypts each alias's credentials with this key. Changing the
+keystore or the key name makes all existing remote-alias credentials
+permanently unreadable, and the aliases must be recreated. Treat rotation
+as delete-and-recreate, not an edit.</p>
+</div>
+<div class="admonition info">
+<p class="admonition-title">Where the password does and does not go</p>
+<p>The operator passes it to Neo4j as a <strong>Cypher parameter</strong>, never
+interpolated into the statement, so it does not reach the query log. Neo4j
+stores it encrypted, and <code>SHOW ALIASES</code> never returns a password on any
+alias — so alias output is safe to include in a support bundle.</p>
+<p>Forget the keystore and the CR is rejected at apply time naming the field
+to set, instead of failing inside the server with an internal error that
+mentions neither the CR nor the constituent.</p>
+</div>
 <h2 id="limits">Limits<a class="headerlink" href="#limits" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
@@ -4043,8 +4182,8 @@ away.</p>
 </thead>
 <tbody>
 <tr>
-<td>Local constituents only</td>
-<td>Remote constituents (targeting another DBMS) are not modelled. They require <code>dbms.security.keystore.path</code> and <code>dbms.security.keystore.password</code> on every server before one can be created at all.</td>
+<td>Remote constituents need setup</td>
+<td>OIDC forwarding needs Cypher 25 (CalVer). Stored credentials need <code>spec.remoteAliasKeystore</code> on the deployment. See <a href="#remote-constituents">Remote constituents</a>.</td>
 </tr>
 <tr>
 <td>No options</td>
