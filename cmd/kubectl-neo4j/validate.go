@@ -364,21 +364,74 @@ func warnOnVersionSkew(c client.Client, stdout *os.File) {
 		return
 	}
 	for _, d := range deployments.Items {
-		for _, ctr := range d.Spec.Template.Spec.Containers {
-			for _, env := range ctr.Env {
-				if env.Name != "OPERATOR_VERSION" || env.Value == "" || env.Value == "latest" {
-					continue
-				}
-				if strings.TrimPrefix(env.Value, "v") != strings.TrimPrefix(version, "v") {
-					fmt.Fprintf(stdout,
-						"⚠ version skew: this CLI carries %s rules, but the operator in %s/%s is %s.\n"+
-							"  Rules added or removed between those releases are checked incorrectly here.\n",
-						version, d.Namespace, d.Name, env.Value)
-				}
-				return
+		deployed := deployedOperatorVersion(d)
+		if deployed == "" {
+			continue
+		}
+		if strings.TrimPrefix(deployed, "v") != strings.TrimPrefix(version, "v") {
+			fmt.Fprintf(stdout,
+				"⚠ version skew: this CLI carries %s rules, but the operator in %s/%s is %s.\n"+
+					"  Rules added or removed between those releases are checked incorrectly here.\n",
+				version, d.Namespace, d.Name, deployed)
+		}
+		return
+	}
+}
+
+// deployedOperatorVersion reports which operator release a Deployment runs, or
+// "" when it cannot tell.
+//
+// OPERATOR_VERSION is the intended source and is stamped by the Helm chart, the
+// CSV, and the release workflow's manifest. It is NOT reliable on its own: the
+// kustomize base carries the literal placeholder "latest"
+// (config/manager/manager.yaml), which survives into any install that layers
+// its own kustomization on config/default — a documented path, where users pin
+// the image tag and have no reason to suspect a separate env var also needs
+// patching. Such an install would silently never get a skew warning.
+//
+// So fall back to the image tag, which is the release actually running and the
+// one thing such an install always sets. Tags that name no release ("latest",
+// "dev", a digest pin) are rejected rather than reported as a version.
+func deployedOperatorVersion(d appsv1.Deployment) string {
+	var imageTag string
+	for _, ctr := range d.Spec.Template.Spec.Containers {
+		for _, env := range ctr.Env {
+			if env.Name == "OPERATOR_VERSION" && isReleaseVersion(env.Value) {
+				return env.Value
 			}
 		}
+		if imageTag == "" {
+			imageTag = tagFromImage(ctr.Image)
+		}
 	}
+	if isReleaseVersion(imageTag) {
+		return imageTag
+	}
+	return ""
+}
+
+// tagFromImage pulls the tag off an image reference, tolerating a registry port
+// (the colon in "registry:5000/img" is not a tag separator) and returning ""
+// for a digest pin, which names no release.
+func tagFromImage(image string) string {
+	if image == "" || strings.Contains(image, "@") {
+		return ""
+	}
+	i := strings.LastIndex(image, ":")
+	if i < 0 || strings.Contains(image[i+1:], "/") {
+		return ""
+	}
+	return image[i+1:]
+}
+
+// isReleaseVersion rejects the stand-ins that appear when nothing stamped a
+// real version. Mirrors isPlaceholderVersion in internal/metrics.
+func isReleaseVersion(v string) bool {
+	switch v {
+	case "", "dev", "latest", "(devel)", "main", "edge":
+		return false
+	}
+	return true
 }
 
 // validateSource reads one input (a path, or "-" for stdin) and validates every
