@@ -169,6 +169,34 @@ The operator handles plugin installation and token registration automatically. S
 
 The operator registers the following Prometheus metrics. All metrics use the prefix `neo4j_operator_` (composed from the `neo4j_operator` subsystem in `internal/metrics/metrics.go`).
 
+### Build metadata
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_build_info` | Gauge | `version`, `vcs_ref`, `build_date`, `go_version` | Always `1` — the information is in the labels. Which operator build is running. |
+
+Exposed from the moment the manager starts, before any Neo4j deployment
+exists, so it is also the quickest way to confirm a rollout actually landed:
+
+```promql
+neo4j_operator_build_info
+# neo4j_operator_build_info{version="v1.15.0", vcs_ref="191ef05",
+#   build_date="2026-09-14T09:12:41Z", go_version="go1.27.0"} 1
+```
+
+Released images carry a real version and commit. A binary built outside the
+release pipeline reports what it can — `go install` leaves `version` as the
+module version Go recorded, a `go build` from a working tree reports
+`development` — and every label falls back to `unknown` rather than an empty
+string, so a missing value is visible instead of silently absent.
+
+Two uses worth wiring up:
+
+- **Alert on version skew across namespaces** if you run more than one operator:
+  `count(count by (version) (neo4j_operator_build_info)) > 1`.
+- **Include it in bug reports.** The `version` and `vcs_ref` pair identifies the
+  exact build far more reliably than an image tag, which can be overwritten.
+
 ### Cluster metrics
 
 | Metric | Type | Labels | Description |

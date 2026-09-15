@@ -4,7 +4,7 @@
     "method": "GET",
     "path": "/metrics",
     "name": "Operator metrics",
-    "description": "Prometheus metrics endpoint for the operator's own controller-runtime manager (neo4j_operator_server_health and friends), bound to --metrics-bind-address (default :8080). neo4j_operator_server_health additionally carries a k8s_cluster label naming the Kubernetes cluster this operator instance runs in, set via --kubernetes-cluster-name; it is empty unless that flag is supplied, so scrapes from several clusters can be federated without series colliding.",
+    "description": "Prometheus metrics endpoint for the operator's own controller-runtime manager (neo4j_operator_server_health and friends), bound to --metrics-bind-address (default :8080). neo4j_operator_server_health additionally carries a k8s_cluster label naming the Kubernetes cluster this operator instance runs in, set via --kubernetes-cluster-name; it is empty unless that flag is supplied, so scrapes from several clusters can be federated without series colliding. The endpoint also exposes neo4j_operator_build_info{version,vcs_ref,build_date,go_version}, a constant-1 gauge published once at manager startup (SetBuildInfo in internal/metrics/metrics.go) that identifies which operator build is running. It is present before any Neo4j deployment exists, so it doubles as a rollout confirmation; values are taken from the Dockerfile's ldflags and fall back independently to the OPERATOR_VERSION env var and Go's embedded VCS stamps.",
     "serverUnitId": "su-platform-manager",
     "moduleId": "mod-platform",
     "auth": false
