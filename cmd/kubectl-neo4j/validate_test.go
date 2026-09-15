@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -374,4 +375,49 @@ spec:
 	}
 	assert.NotContains(t, joined, "clusterRef",
 		"with --namespace team-a the clusterRef must resolve; findings were: %s", joined)
+}
+
+// The skew check reads the deployed release off the operator Deployment. The
+// env var is the intended source but is unreliable on its own: the kustomize
+// base ships the literal "latest", which survives into any install layered on
+// config/default — where the user pins the image and never touches the env var.
+func TestDeployedOperatorVersion(t *testing.T) {
+	deploy := func(image string, env ...corev1.EnvVar) appsv1.Deployment {
+		return appsv1.Deployment{Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{Name: "manager", Image: image, Env: env}},
+			}},
+		}}
+	}
+	ver := func(v string) corev1.EnvVar {
+		return corev1.EnvVar{Name: "OPERATOR_VERSION", Value: v}
+	}
+
+	tests := []struct {
+		name string
+		d    appsv1.Deployment
+		want string
+	}{
+		{"env var wins when it names a release",
+			deploy("ghcr.io/x/op:v1.14.0", ver("v1.15.0")), "v1.15.0"},
+		{"placeholder env falls through to the image tag",
+			deploy("ghcr.io/x/op:v1.15.0", ver("latest")), "v1.15.0"},
+		{"no env var at all still resolves from the image",
+			deploy("ghcr.io/x/op:v1.15.0"), "v1.15.0"},
+		{"registry port is not a tag",
+			deploy("registry:5000/op", ver("latest")), ""},
+		{"registry port with a real tag",
+			deploy("registry:5000/op:v1.15.0"), "v1.15.0"},
+		{"digest pin names no release",
+			deploy("ghcr.io/x/op@sha256:" + strings.Repeat("a", 64)), ""},
+		{"both placeholders means we cannot tell",
+			deploy("ghcr.io/x/op:latest", ver("latest")), ""},
+		{"a dev build is not a release",
+			deploy("neo4j-operator:dev", ver("dev")), ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, deployedOperatorVersion(tc.d))
+		})
+	}
 }

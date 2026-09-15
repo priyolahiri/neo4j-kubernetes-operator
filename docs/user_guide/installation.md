@@ -219,6 +219,42 @@ images:
 kubectl apply -k .
 ```
 
+!!! tip "Also patch `OPERATOR_VERSION`"
+    `config/default` carries the placeholder `OPERATOR_VERSION: latest`, which
+    only the release workflow overwrites. Pinning `newTag` above does not
+    change it, so tooling that reads the Deployment — such as `kubectl neo4j
+    validate`'s version-skew warning — falls back to reading your image tag.
+    That works, but setting both is clearer, and is required if you pull the
+    image by digest:
+
+    ```yaml
+    patches:
+    - target:
+        kind: Deployment
+        labelSelector: control-plane=controller-manager
+      patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: controller-manager
+        spec:
+          template:
+            spec:
+              containers:
+              - name: manager
+                env:
+                - name: OPERATOR_VERSION
+                  value: v1.0.0
+    ```
+
+    This is a strategic merge patch, matched on the container and variable
+    *names*. A positional JSON patch (`/env/0/value`) would silently rewrite
+    the wrong variable if the base ever reorders its `env` list.
+
+    The operator's own `neo4j_operator_build_info` metric is unaffected either
+    way — it reads the version compiled into the released binary, not the
+    environment. See [Monitoring](guides/monitoring.md#build-metadata).
+
 For local development (Kind cluster + local image build) use `make dev-cluster` followed by `make operator-setup`. See the [developer guide](../developer_guide/development.md) for the full inner-loop workflow.
 
 ## Verifying Image Signatures

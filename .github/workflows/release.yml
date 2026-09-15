@@ -315,6 +315,22 @@ jobs:
         grep -q "image: ghcr.io/priyolahiri/neo4j-kubernetes-operator:${TAG_NAME}" \
           release-artifacts/neo4j-kubernetes-operator-complete.yaml || {
           echo "ERROR: complete.yaml is not pinned to ${TAG_NAME}" >&2; exit 1; }
+        # Same assertion for the version stamp. The patch above is matched by
+        # kind + labelSelector, so a label rename in config/default would make
+        # it select nothing and kustomize would NOT complain — the artifact
+        # would ship with the base's placeholder "latest", and every install
+        # from it would misreport its own version to `kubectl neo4j validate`.
+        # The image pin had exactly this shape of silent failure before it was
+        # asserted.
+        # Compared as an exact string, not a regex or a substring: kustomize
+        # emits the value unquoted, and a tag's dots would match anything.
+        stamped=$(grep -A1 'name: OPERATOR_VERSION' \
+          release-artifacts/neo4j-kubernetes-operator-complete.yaml \
+          | grep 'value:' | head -1 | sed -e 's/.*value: *//' -e 's/^"//' -e 's/"$//')
+        if [ "${stamped}" != "${TAG_NAME}" ]; then
+          echo "ERROR: complete.yaml stamps OPERATOR_VERSION='${stamped}', expected '${TAG_NAME}'" >&2
+          exit 1
+        fi
 
     # kubectl-neo4j plugin binaries. Deliberately NOT a separate workflow or a
     # goreleaser config: this job already checks out the source and sets up Go,
