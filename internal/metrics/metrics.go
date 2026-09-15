@@ -19,6 +19,9 @@ package metrics
 
 import (
 	"context"
+	"os"
+	"runtime"
+	"runtime/debug"
 	"sync/atomic"
 	"time"
 
@@ -81,6 +84,24 @@ var (
 	// `primary`/`secondary`, but Neo4j's server-based architecture (5.26+)
 	// has no static primary/secondary split — all servers are servers and
 	// roles are assigned at runtime via `serverModeConstraint`. Per-server
+	// buildInfo identifies the running operator, in the Prometheus convention
+	// for build metadata: the value is always 1 and everything useful is in
+	// the labels, so a query can join on it or group by version.
+	//
+	// It exists because "which operator version is this?" was previously only
+	// answerable by reading the Deployment's image tag — which is the tag
+	// someone deployed, not necessarily what the binary was built from. It is
+	// also the first thing worth pasting into a bug report.
+	buildInfo = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: subsystem,
+			Name:      "build_info",
+			Help: "Operator build metadata. Always 1; read the labels. " +
+				"version is the release, vcs_ref the commit it was built from.",
+		},
+		[]string{"version", "vcs_ref", "build_date", "go_version"},
+	)
+
 	// role health is exposed separately by `neo4j_operator_server_health`.
 	clusterReplicas = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -278,6 +299,7 @@ func KubernetesClusterName() string {
 func init() {
 	// Register Prometheus metrics
 	metrics.Registry.MustRegister(
+		buildInfo,
 		clusterReplicas,
 		clusterHealthy,
 		clusterPhase,
@@ -849,4 +871,86 @@ func (m *ClusterMetrics) RecordServerHealth(servers []ServerHealth) {
 		}
 		serverHealth.WithLabelValues(m.clusterName, m.namespace, s.Name, s.Address, KubernetesClusterName()).Set(value)
 	}
+}
+
+// operatorVersionEnv is set on the operator Deployment by both the kustomize
+// manifest (config/manager/manager.yaml) and the Helm chart, and stamped with
+// the real value by the release workflow.
+const operatorVersionEnv = "OPERATOR_VERSION"
+
+// SetBuildInfo publishes neo4j_operator_build_info. Call it once at startup.
+//
+// The arguments come from the binary's ldflags, which the Dockerfile stamps
+// from its VERSION / VCS_REF / BUILD_DATE build args. Each falls back
+// independently, because they are stamped by different mechanisms and a
+// missing one should not blank the others:
+//
+//   - version: ldflags, then the OPERATOR_VERSION env var the deployment
+//     manifests set, then the module version Go embeds, then "development".
+//     Placeholders ("dev", "latest", "(devel)") are skipped at every step.
+//   - vcs_ref: ldflags, then the VCS revision Go embeds for a repo build.
+//   - build_date: ldflags, then the VCS time Go embeds.
+//
+// The embedded-build-info fallbacks matter for `go install`, which cannot
+// apply a module's ldflags at all — the same gap that made the CLI report
+// itself as "dev".
+func SetBuildInfo(version, vcsRef, buildDate string) {
+	info, haveInfo := debug.ReadBuildInfo()
+
+	if isPlaceholderVersion(version) {
+		if v := os.Getenv(operatorVersionEnv); !isPlaceholderVersion(v) {
+			version = v
+		} else if haveInfo && !isPlaceholderVersion(info.Main.Version) {
+			version = info.Main.Version
+		} else {
+			version = "development"
+		}
+	}
+	if vcsRef == "" && haveInfo {
+		vcsRef = buildSetting(info, "vcs.revision")
+	}
+	if buildDate == "" && haveInfo {
+		buildDate = buildSetting(info, "vcs.time")
+	}
+
+	// Labels must never be empty: an empty label value is indistinguishable
+	// from an absent one in most query languages, and "unknown" is a fact
+	// worth reading rather than a hole.
+	buildInfo.WithLabelValues(
+		orUnknown(version), orUnknown(vcsRef), orUnknown(buildDate), runtime.Version(),
+	).Set(1)
+}
+
+// isPlaceholderVersion reports whether a version string is one of the stand-ins
+// that appear when nothing stamped a real one. "latest" is the literal value in
+// the kustomize base (config/manager/manager.yaml), which only the release flow
+// overwrites — reporting it as the version would turn "nobody stamped this"
+// into a plausible-looking answer. The CLI's version-skew check skips it for
+// the same reason (cmd/kubectl-neo4j/validate.go).
+func isPlaceholderVersion(v string) bool {
+	switch v {
+	case "", "dev", "latest", "(devel)":
+		return true
+	}
+	return false
+}
+
+// buildSetting reads one key from the build info Go embeds.
+func buildSetting(info *debug.BuildInfo, key string) string {
+	if info == nil {
+		return ""
+	}
+	for _, s := range info.Settings {
+		if s.Key == key {
+			return s.Value
+		}
+	}
+	return ""
+}
+
+func orUnknown(v string) string {
+	if v == "" {
+		return "unknown"
+	}
+	return v
 }

@@ -118,6 +118,26 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+// Build metadata, stamped by the Dockerfile:
+//
+//	-ldflags "-X main.version=${VERSION} -X main.buildDate=${BUILD_DATE} \
+//	          -X main.vcsRef=${VCS_REF}"
+//
+// These declarations are what make that work. Until they existed the linker
+// had no such symbols to set, so the Dockerfile's VERSION / BUILD_DATE /
+// VCS_REF build args — which CI passes on every build — were silently
+// discarded. `-X` on an undefined symbol is not an error, so nothing ever
+// said so.
+//
+// They are surfaced as neo4j_operator_build_info. SetBuildInfo falls back to
+// the OPERATOR_VERSION env var the deployment manifests set, and then to the
+// build info Go embeds, so an unstamped binary still reports something true.
+var (
+	version   = "dev"
+	buildDate = ""
+	vcsRef    = ""
+)
+
 // devControllerKeys is the default set of controllers dev mode loads. It must
 // cover every key in devControllerRegistry — production mode loads all of them,
 // so anything omitted here is a CRD that works when installed by Helm and is
@@ -1077,7 +1097,13 @@ func runManager(ctx context.Context, settings managerSettings, selection watchNa
 		return fmt.Errorf("unable to set up ready check: %w", err)
 	}
 
-	setupLog.Info("starting manager")
+	// Publish build metadata before the manager starts, so the metric is
+	// already there the first time anything scrapes — including when the
+	// operator then fails to start and someone needs to know which build it
+	// was.
+	operatormetrics.SetBuildInfo(version, vcsRef, buildDate)
+	setupLog.Info("starting manager",
+		"version", version, "vcsRef", vcsRef, "buildDate", buildDate)
 	go startupFeedback(ctx, settings.operatorMode, settings.metricsAddr, settings.probeAddr, settings.skipCacheWait, started.ch)
 
 	if settings.skipCacheWait {
