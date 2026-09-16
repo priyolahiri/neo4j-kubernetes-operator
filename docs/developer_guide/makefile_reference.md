@@ -189,6 +189,17 @@ Chains: `manifests` → `generate` → `sync-kustomize` → `sync-editor-viewer-
 **Usage**: `make check-csv-coverage`
 **Why**: the CSV's `customresourcedefinitions.owned` list is hand-curated (display names, descriptions need human input) — it's easy to forget to register a new CRD, which would silently ship a broken OperatorHub bundle.
 
+### `make check-docs-release-pins`
+**Description**: Verify every documented install command names the current release. Quick-starts must install from `releases/latest/download/` and pin nothing; pinned surfaces (Helm `--version`, the `RELEASE_VERSION` examples, the ArgoCD `targetRevision`, `go install`) must agree with each other and with the newest git tag.
+**Usage**: `make check-docs-release-pins`
+**Why**: `README.md`'s quick-install pinned v1.13.0 two releases after v1.15.0 shipped. The line was correct when written, and no generator or drift check looks at it.
+**Notes**: docs **ahead** of the newest tag pass with a notice — the docs bump lands on `main` before the tag is pushed, and strict equality would fail every PR in that window. Docs **behind** the newest tag fail. Currency needs tags; in a checkout without them the consistency half still runs. **Bump the pins before pushing a release tag**, or CI on `main` goes red until they catch up.
+
+### `make check-examples-catalog`
+**Description**: Verify every `examples/` subdirectory is listed in `examples/README.md` (and every listed directory exists), and that every example `.yaml` is named in its own directory's README or the top-level one.
+**Usage**: `make check-examples-catalog`
+**Why**: the directory list had been missing `cross-cluster-replication/` since that capability shipped — a whole capability's examples invisible to anyone browsing. The file-level half catches the other version of it: an example nobody links to is one nobody finds.
+
 ### `make helm-lint`, `make helm-template`, `make helm-package`
 Standard helm chart targets. `helm-package` depends on `helm-sync-crds`, `helm-sync-rbac`, and `helm-sync-artifacthub-crds`, so packaging never ships stale rules or annotations. `helm-template` renders the chart into the `neo4j-operator-system` namespace.
 

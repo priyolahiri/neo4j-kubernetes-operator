@@ -463,6 +463,10 @@ check-cli-asset-names: ## Verify the kubectl-neo4j release asset naming conventi
 check-docs-release-pins: ## Verify every documented install command names the current release.
 	@./scripts/check-docs-release-pins.sh
 
+.PHONY: check-examples-catalog
+check-examples-catalog: ## Verify every examples/ directory is listed and every example is reachable from a README.
+	@./scripts/check-examples-catalog.sh
+
 .PHONY: check-knowledge-drift
 check-knowledge-drift: ## Verify every 'pinned-by:'/file reference in docs/knowledge/ still resolves to a real path.
 	@./scripts/check-knowledge-drift.sh

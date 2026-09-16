@@ -78,6 +78,9 @@ jobs:
     - name: Install docs name the current release
       run: make check-docs-release-pins
 
+    - name: Every examples/ directory is listed and every example is linked
+      run: make check-examples-catalog
+
     - name: Every CRD listed on docs landing page, README and nav
       run: make check-crd-catalog
 
