@@ -3922,6 +3922,10 @@
 <td>Without it <code>spec.storage.size</code> is effectively immutable — discovered during the resize a full disk made urgent</td>
 </tr>
 <tr>
+<td>When <code>className</code> is empty, the <strong>cluster default</strong> is resolved and gets the same expansion check</td>
+<td>The class is stamped onto the PVC at admission, so it is knowable before anything is scheduled. EKS's in-tree <code>gp2</code> default has shipped with <code>allowVolumeExpansion</code> unset — an immutable volume size on a cluster where nobody configured storage at all. No default class at all is a problem: every PVC stays <code>Pending</code>. Several classes marked default is a warning naming the one Kubernetes will use (the most recently created)</td>
+</tr>
+<tr>
 <td>A Ready node can fit the memory request</td>
 <td>The top pod-startup failure, invisible to any manifest-level check</td>
 </tr>
@@ -3982,6 +3986,47 @@
 </tr>
 </tbody>
 </table>
+<p><strong>Placement (zones)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Enough zones exist for the placement asked for</td>
+<td><code>topologySpread</code> defaults to <code>whenUnsatisfiable: DoNotSchedule</code> on <code>topology.kubernetes.io/zone</code>, and <code>antiAffinity.type: required</code> (or <code>enforceDistribution</code>) becomes a required rule on the same key. Three servers across two zones means one stays <code>Pending</code> forever, and nothing in the manifest hints at it</td>
+</tr>
+<tr>
+<td>Nodes carry the zone label at all</td>
+<td>A hard constraint on a topology key no node has can never be satisfied, however many nodes you add — the single-node and bare-metal case</td>
+</tr>
+</tbody>
+</table>
+<p>Soft constraints are left alone: <code>ScheduleAnyway</code> and preferred anti-affinity degrade rather than block, which is what they are for.</p>
+<p><strong>Pod Security Admission</strong></p>
+<p><code>spec.securityContext</code> <strong>replaces</strong> the operator's hardened default rather than merging with it. Setting one field to fix a permissions problem silently drops <code>runAsNonRoot</code>, the <code>RuntimeDefault</code> seccomp profile and <code>capabilities.drop: [ALL]</code> along with it.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>An override in a namespace enforcing <code>restricted</code> or <code>baseline</code> still satisfies it</td>
+<td>Fatal in the worst-shaped way: the StatefulSet is created and admission rejects its <strong>pods</strong>, so the CR looks applied, no pod exists, and the reason is only on the StatefulSet's events. Every missing field is named</td>
+</tr>
+<tr>
+<td>An override anywhere else</td>
+<td>A warning — the hardening is still lost, but that is a choice rather than a failure</td>
+</tr>
+</tbody>
+</table>
+<p>The operator's own default already satisfies <code>restricted</code>, so a CR with no override is silent.</p>
 <p><strong>Cross-cluster replication (the proxy load balancer)</strong></p>
 <p>Enabling <code>spec.crossClusterReplication</code> creates a <code>LoadBalancer</code> Service in front of every server's transaction-shipping port. <code>loadBalancerInternal</code> (default <code>true</code>) asks for a private one, and the operator requests it by emitting the union of the AWS, Azure and GKE internal-LB annotations — it cannot know which cloud it is on, and a provider ignores keys it does not recognise.</p>
 <p>That works on the three clouds the union covers. On any other, the request is accepted, reported, and <strong>silently does nothing</strong>.</p>
