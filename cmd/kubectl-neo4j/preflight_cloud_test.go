@@ -21,10 +21,12 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -211,3 +213,223 @@ func TestIsPrivateIP(t *testing.T) {
 		assert.False(t, isPrivateIP(net.ParseIP(s)), "%s should be public", s)
 	}
 }
+
+func storageClass(name string, isDefault, expand bool, created time.Time) *storagev1.StorageClass {
+	sc := &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              name,
+			CreationTimestamp: metav1.NewTime(created),
+		},
+		AllowVolumeExpansion: &expand,
+	}
+	if isDefault {
+		sc.Annotations = map[string]string{"storageclass.kubernetes.io/is-default-class": "true"}
+	}
+	return sc
+}
+
+// An empty spec.storage.className used to report "not checked". The class is
+// in fact resolvable: the DefaultStorageClass admission plugin stamps it onto
+// the PVC before any scheduling happens.
+func TestCheckDefaultStorageClass(t *testing.T) {
+	ctx := context.Background()
+	t0 := time.Now().Add(-time.Hour)
+
+	t.Run("an expanding default is silent", func(t *testing.T) {
+		c := testClient(t, storageClass("gp3", true, true, t0))
+		assert.Empty(t, checkDefaultStorageClass(ctx, c))
+	})
+
+	// EKS's in-tree gp2 default has shipped with allowVolumeExpansion unset,
+	// which makes spec.storage.size immutable on a cluster nobody configured
+	// storage for.
+	t.Run("a non-expanding default is a warning naming it", func(t *testing.T) {
+		c := testClient(t, storageClass("gp2", true, false, t0))
+		got := checkDefaultStorageClass(ctx, c)
+		require.Len(t, got, 1)
+		assert.Equal(t, markWarning, got[0].mark)
+		assert.Contains(t, got[0].subject, "gp2")
+		assert.Contains(t, got[0].subject, "cluster default")
+	})
+
+	t.Run("no default at all is a problem", func(t *testing.T) {
+		c := testClient(t, storageClass("gp3", false, true, t0))
+		got := checkDefaultStorageClass(ctx, c)
+		require.Len(t, got, 1)
+		assert.Equal(t, markProblem, got[0].mark)
+		assert.Contains(t, got[0].what, "no default class")
+	})
+
+	// Kubernetes uses the most recently created default. Say which one wins
+	// rather than picking silently — it changes what the expansion check is
+	// even about.
+	t.Run("several defaults name the winner", func(t *testing.T) {
+		older := storageClass("gp2", true, true, t0)
+		newer := storageClass("gp3", true, false, t0.Add(time.Minute))
+		c := testClient(t, older, newer)
+		got := checkDefaultStorageClass(ctx, c)
+		require.Len(t, got, 2, "ambiguity, then the winner's expansion: %s", marksOf(got))
+		assert.Contains(t, got[0].what, "several classes are marked default")
+		assert.Contains(t, got[0].action, "gp3")
+		assert.Contains(t, got[1].subject, "gp3", "the newest default is the one checked")
+	})
+}
+
+func zonedNode(name, zone string) *corev1.Node {
+	n := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Status: corev1.NodeStatus{
+			Conditions: []corev1.NodeCondition{
+				{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+	if zone != "" {
+		n.Labels = map[string]string{"topology.kubernetes.io/zone": zone}
+	}
+	return n
+}
+
+func withSpread(servers int32, whenUnsatisfiable string) *neo4jv1beta1.Neo4jEnterpriseCluster {
+	return &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			Topology: neo4jv1beta1.TopologyConfiguration{
+				Servers: servers,
+				Placement: &neo4jv1beta1.PlacementConfig{
+					TopologySpread: &neo4jv1beta1.TopologySpreadConfig{
+						Enabled:           true,
+						WhenUnsatisfiable: whenUnsatisfiable,
+					},
+				},
+			},
+		},
+	}
+}
+
+// A hard zone constraint the cluster's zones cannot satisfy leaves servers
+// Pending forever, and nothing in the manifest hints at it.
+func TestCheckZoneCapacity(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("no placement means nothing to check", func(t *testing.T) {
+		cl := withSpread(3, "")
+		cl.Spec.Topology.Placement = nil
+		c := testClient(t, zonedNode("n1", "a"))
+		assert.Empty(t, checkZoneCapacity(ctx, c, cl))
+	})
+
+	t.Run("enough zones is silent", func(t *testing.T) {
+		c := testClient(t, zonedNode("n1", "a"), zonedNode("n2", "b"), zonedNode("n3", "c"))
+		assert.Empty(t, checkZoneCapacity(ctx, c, withSpread(3, "")))
+	})
+
+	t.Run("too few zones for a hard constraint is a problem", func(t *testing.T) {
+		c := testClient(t, zonedNode("n1", "a"), zonedNode("n2", "b"))
+		got := checkZoneCapacity(ctx, c, withSpread(3, ""))
+		require.Len(t, got, 1)
+		assert.Equal(t, markProblem, got[0].mark)
+		assert.Contains(t, got[0].what, "2 zone(s) for 3 server(s)")
+		assert.Contains(t, got[0].detail, "a, b")
+	})
+
+	// A soft constraint degrades instead of blocking, which is what it is for.
+	t.Run("ScheduleAnyway is left alone", func(t *testing.T) {
+		c := testClient(t, zonedNode("n1", "a"))
+		assert.Empty(t, checkZoneCapacity(ctx, c, withSpread(3, "ScheduleAnyway")))
+	})
+
+	// The hard case: a required constraint on a key no node carries can never
+	// be satisfied, however many nodes are added.
+	t.Run("unlabelled nodes cannot satisfy a zone constraint", func(t *testing.T) {
+		c := testClient(t, zonedNode("n1", ""), zonedNode("n2", ""))
+		got := checkZoneCapacity(ctx, c, withSpread(2, ""))
+		require.Len(t, got, 1)
+		assert.Equal(t, markProblem, got[0].mark)
+		assert.Contains(t, got[0].what, "no Ready node carries")
+	})
+
+	t.Run("required anti-affinity counts too", func(t *testing.T) {
+		cl := withSpread(3, "ScheduleAnyway")
+		cl.Spec.Topology.Placement.AntiAffinity = &neo4jv1beta1.PodAntiAffinityConfig{
+			Enabled: true, Type: "required",
+		}
+		c := testClient(t, zonedNode("n1", "a"))
+		got := checkZoneCapacity(ctx, c, cl)
+		require.Len(t, got, 1)
+		assert.Equal(t, markProblem, got[0].mark)
+		assert.Contains(t, got[0].what, "antiAffinity")
+	})
+}
+
+func nsWithLevel(name, level string) *corev1.Namespace {
+	n := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+	if level != "" {
+		n.Labels = map[string]string{podSecurityEnforceLabel: level}
+	}
+	return n
+}
+
+// spec.securityContext REPLACES the operator's default rather than merging, so
+// setting one field to fix a permissions problem drops runAsNonRoot, the
+// seccomp profile and the dropped capabilities with it.
+func TestCheckPodSecurityAdmission(t *testing.T) {
+	ctx := context.Background()
+	fsGroupOnly := &neo4jv1beta1.SecurityContextSpec{
+		PodSecurityContext: &corev1.PodSecurityContext{FSGroup: ptrInt64(1000)},
+	}
+
+	t.Run("no override means the hardened default applies", func(t *testing.T) {
+		c := testClient(t, nsWithLevel("neo4j", "restricted"))
+		assert.Empty(t, checkPodSecurityAdmission(ctx, c, "neo4j", nil))
+	})
+
+	t.Run("an override in an unenforced namespace is a warning", func(t *testing.T) {
+		c := testClient(t, nsWithLevel("neo4j", ""))
+		got := checkPodSecurityAdmission(ctx, c, "neo4j", fsGroupOnly)
+		require.Len(t, got, 1)
+		assert.Equal(t, markWarning, got[0].mark)
+		assert.Contains(t, got[0].what, "replaces")
+	})
+
+	t.Run("an override under restricted names every missing field", func(t *testing.T) {
+		c := testClient(t, nsWithLevel("neo4j", "restricted"))
+		got := checkPodSecurityAdmission(ctx, c, "neo4j", fsGroupOnly)
+		require.Len(t, got, 1)
+		assert.Equal(t, markProblem, got[0].mark)
+		assert.Contains(t, got[0].what, "runAsNonRoot: true")
+		assert.Contains(t, got[0].what, "seccompProfile.type: RuntimeDefault")
+		assert.Contains(t, got[0].action, "StatefulSet")
+	})
+
+	// baseline does not require seccomp or dropped capabilities, so reporting
+	// them would send the user to restate fields nothing will reject.
+	t.Run("baseline asks for less than restricted", func(t *testing.T) {
+		c := testClient(t, nsWithLevel("neo4j", "baseline"))
+		got := checkPodSecurityAdmission(ctx, c, "neo4j", fsGroupOnly)
+		require.Len(t, got, 1)
+		assert.NotContains(t, got[0].what, "seccompProfile")
+		assert.Contains(t, got[0].what, "runAsNonRoot: true")
+	})
+
+	t.Run("an override that restates everything passes", func(t *testing.T) {
+		yes, no := true, false
+		c := testClient(t, nsWithLevel("neo4j", "restricted"))
+		complete := &neo4jv1beta1.SecurityContextSpec{
+			PodSecurityContext: &corev1.PodSecurityContext{
+				FSGroup:      ptrInt64(1000),
+				RunAsNonRoot: &yes,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			ContainerSecurityContext: &corev1.SecurityContext{
+				AllowPrivilegeEscalation: &no,
+				Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+			},
+		}
+		assert.Empty(t, checkPodSecurityAdmission(ctx, c, "neo4j", complete))
+	})
+}
+
+func ptrInt64(v int64) *int64 { return &v }

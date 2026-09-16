@@ -49,6 +49,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -301,6 +302,279 @@ func providerLabel(p cloudProvider) string {
 }
 
 func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// The rest of the cloud substrate: the default StorageClass, zone capacity for
+// the placement the CR asks for, and Pod Security Admission.
+// ---------------------------------------------------------------------------
+
+// checkDefaultStorageClass resolves the class an empty spec.storage.className
+// will actually get, and applies the same expansion check a named class gets.
+//
+// This used to report "not checked", on the reasoning that the class in use is
+// the scheduler's decision. That is not quite right, and the difference
+// matters: the class is stamped onto the PVC at ADMISSION by the
+// DefaultStorageClass plugin, from the class annotated
+// storageclass.kubernetes.io/is-default-class, before any scheduling happens.
+// What the scheduler decides later is which volume and zone to bind — not
+// which class. So the class IS knowable here, and worth knowing: EKS's in-tree
+// gp2 default has shipped with allowVolumeExpansion unset, which makes
+// spec.storage.size immutable on a cluster nobody configured storage for.
+func checkDefaultStorageClass(ctx context.Context, c client.Client) []symptom {
+	var classes storagev1.StorageClassList
+	if err := c.List(ctx, &classes); err != nil {
+		return []symptom{{
+			mark: markWarning, subject: "storageclass",
+			what:   "not specified, and the cluster's classes could not be listed",
+			detail: err.Error(),
+			action: "The default class's expansion support is unknown. If you may need to grow " +
+				"the volume later, name a class with allowVolumeExpansion: true.",
+		}}
+	}
+
+	var defaults []storagev1.StorageClass
+	for _, sc := range classes.Items {
+		if sc.Annotations["storageclass.kubernetes.io/is-default-class"] == "true" {
+			defaults = append(defaults, sc)
+		}
+	}
+
+	if len(defaults) == 0 {
+		return []symptom{{
+			mark: markProblem, subject: "storageclass",
+			what: "not specified, and this cluster has no default class",
+			action: "Every PVC will stay Pending with no class to satisfy it. Set " +
+				"spec.storage.className, or mark a class default with " +
+				"storageclass.kubernetes.io/is-default-class=true.",
+		}}
+	}
+
+	// More than one default is a cluster-configuration mistake rather than
+	// ours, but it changes which class this check is about, so say which one
+	// wins instead of picking silently.
+	chosen := defaults[0]
+	var symptoms []symptom
+	if len(defaults) > 1 {
+		names := make([]string, 0, len(defaults))
+		for _, sc := range defaults {
+			names = append(names, sc.Name)
+			if sc.CreationTimestamp.After(chosen.CreationTimestamp.Time) {
+				chosen = sc
+			}
+		}
+		sort.Strings(names)
+		symptoms = append(symptoms, symptom{
+			mark: markWarning, subject: "storageclass",
+			what: "several classes are marked default: " + strings.Join(names, ", "),
+			action: "Kubernetes uses the most recently created one — " + chosen.Name +
+				" here. Mark exactly one default, or name the class you want in " +
+				"spec.storage.className.",
+		})
+	}
+
+	if chosen.AllowVolumeExpansion == nil || !*chosen.AllowVolumeExpansion {
+		symptoms = append(symptoms, symptom{
+			mark: markWarning, subject: "storageclass " + chosen.Name + " (cluster default)",
+			what: "does not allow volume expansion",
+			action: "spec.storage.size will be effectively immutable: the operator rejects an " +
+				"expansion on a class with allowVolumeExpansion != true. Fix it before the " +
+				"PVCs exist with kubectl patch storageclass " + chosen.Name +
+				` -p '{"allowVolumeExpansion": true}'` + ", or name a class that allows it — " +
+				"afterwards, growing them means a data migration.",
+		})
+	}
+	return symptoms
+}
+
+// checkZoneCapacity answers whether the placement the CR asks for can be
+// satisfied by the zones that exist.
+//
+// Only relevant when the CR asks for a HARD zone constraint: topology spread
+// defaults to whenUnsatisfiable=DoNotSchedule on topology.kubernetes.io/zone,
+// and anti-affinity with type "required" (or spec.topology.enforceDistribution)
+// becomes requiredDuringScheduling on the same key. Either way, servers beyond
+// the zone count stay Pending forever, and nothing in the manifest hints at it.
+//
+// A soft constraint is left alone: ScheduleAnyway and preferred anti-affinity
+// degrade rather than block, which is what they are for.
+func checkZoneCapacity(ctx context.Context, c client.Client,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []symptom {
+	placement := cluster.Spec.Topology.Placement
+	if placement == nil {
+		return nil
+	}
+
+	zoneKey := "topology.kubernetes.io/zone"
+	hard, reason := false, ""
+	if ts := placement.TopologySpread; ts != nil && ts.Enabled {
+		key := ts.TopologyKey
+		if key == "" {
+			key = zoneKey
+		}
+		if key == zoneKey && ts.WhenUnsatisfiable != "ScheduleAnyway" {
+			hard, reason = true, "topologySpread (whenUnsatisfiable defaults to DoNotSchedule)"
+		}
+	}
+	if aa := placement.AntiAffinity; aa != nil && aa.Enabled {
+		key := aa.TopologyKey
+		if key == "" {
+			key = zoneKey
+		}
+		if key == zoneKey && (aa.Type == "required" || cluster.Spec.Topology.EnforceDistribution) {
+			hard, reason = true, "antiAffinity type: required on the zone key"
+		}
+	}
+	if !hard {
+		return nil
+	}
+
+	var nodes corev1.NodeList
+	if err := c.List(ctx, &nodes); err != nil {
+		return []symptom{{
+			mark: markWarning, subject: "zones",
+			what:   "could not be counted, so " + reason + " was not checked",
+			detail: err.Error(),
+		}}
+	}
+
+	zones := map[string]bool{}
+	unlabelled := 0
+	for i := range nodes.Items {
+		n := &nodes.Items[i]
+		if !nodeReady(n) {
+			continue
+		}
+		if z := n.Labels[zoneKey]; z != "" {
+			zones[z] = true
+		} else {
+			unlabelled++
+		}
+	}
+
+	servers := int(cluster.Spec.Topology.Servers)
+	if len(zones) == 0 {
+		return []symptom{{
+			mark: markProblem, subject: "zones",
+			what:   "no Ready node carries a " + zoneKey + " label, but " + reason + " requires one",
+			detail: fmt.Sprintf("%d Ready node(s), none labelled", unlabelled),
+			action: "Every server will stay Pending as Unschedulable: a hard constraint on a " +
+				"topology key no node has can never be satisfied. Single-node and bare-metal " +
+				"clusters have no zones — set whenUnsatisfiable: ScheduleAnyway, use a " +
+				"topologyKey your nodes do carry (kubernetes.io/hostname), or disable the " +
+				"constraint.",
+		}}
+	}
+	if len(zones) < servers {
+		return []symptom{{
+			mark: markProblem, subject: "zones",
+			what:   fmt.Sprintf("%d zone(s) for %d server(s), with %s", len(zones), servers, reason),
+			detail: "zones: " + strings.Join(sortedSet(zones), ", "),
+			action: fmt.Sprintf("Only %d server(s) can be placed; the rest stay Pending. Add "+
+				"nodes in more zones, reduce spec.topology.servers, or soften the constraint "+
+				"(whenUnsatisfiable: ScheduleAnyway, or anti-affinity type: preferred).",
+				len(zones)),
+		}}
+	}
+	return nil
+}
+
+// podSecurityStandard is the level a namespace enforces, if any.
+const podSecurityEnforceLabel = "pod-security.kubernetes.io/enforce"
+
+// checkPodSecurityAdmission catches a security-context override that a
+// hardened namespace will reject.
+//
+// spec.securityContext REPLACES the operator's default wholesale — it does not
+// merge (internal/resources/cluster.go). So setting one field to fix a
+// permissions problem silently drops runAsNonRoot, the seccomp profile and the
+// dropped capabilities along with it. In an ordinary namespace that is a
+// quiet loss of hardening. In one enforcing the `restricted` standard it is
+// fatal, and fatal in the worst-shaped way: the StatefulSet is created and
+// admission rejects its PODS, so the CR looks applied, no pod exists, and the
+// reason is on the StatefulSet's events rather than anywhere the CR points.
+func checkPodSecurityAdmission(ctx context.Context, c client.Client, ns string,
+	sec *neo4jv1beta1.SecurityContextSpec) []symptom {
+	if sec == nil || (sec.PodSecurityContext == nil && sec.ContainerSecurityContext == nil) {
+		return nil // the operator's defaults already satisfy `restricted`
+	}
+
+	var namespace corev1.Namespace
+	if err := c.Get(ctx, types.NamespacedName{Name: ns}, &namespace); err != nil {
+		return nil // not readable: say nothing rather than guess at the level
+	}
+	level := namespace.Labels[podSecurityEnforceLabel]
+	if level != "restricted" && level != "baseline" {
+		// No enforcement: the override still drops hardening, which is worth
+		// one line, but it is a choice rather than a failure.
+		return []symptom{{
+			mark: markWarning, subject: "spec.securityContext",
+			what: "replaces the operator's hardened default rather than merging with it",
+			action: "Any field you do not restate is lost — including runAsNonRoot, the " +
+				"RuntimeDefault seccomp profile and capabilities.drop: [ALL]. Restate them " +
+				"alongside your change.",
+		}}
+	}
+
+	var missing []string
+	if pod := sec.PodSecurityContext; pod != nil {
+		if pod.RunAsNonRoot == nil || !*pod.RunAsNonRoot {
+			missing = append(missing, "runAsNonRoot: true")
+		}
+		if level == "restricted" &&
+			(pod.SeccompProfile == nil || pod.SeccompProfile.Type == corev1.SeccompProfileTypeUnconfined) {
+			missing = append(missing, "seccompProfile.type: RuntimeDefault")
+		}
+	}
+	if ctr := sec.ContainerSecurityContext; ctr != nil {
+		if ctr.AllowPrivilegeEscalation == nil || *ctr.AllowPrivilegeEscalation {
+			missing = append(missing, "allowPrivilegeEscalation: false")
+		}
+		if level == "restricted" && !dropsAll(ctr.Capabilities) {
+			missing = append(missing, "capabilities.drop: [ALL]")
+		}
+		if ctr.Privileged != nil && *ctr.Privileged {
+			missing = append(missing, "privileged: false")
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	sort.Strings(missing)
+	return []symptom{{
+		mark:    markProblem,
+		subject: "spec.securityContext",
+		what: fmt.Sprintf("namespace %s enforces the %s pod-security standard, and the override is missing: %s",
+			ns, level, strings.Join(missing, ", ")),
+		action: "spec.securityContext REPLACES the operator's default rather than merging, so " +
+			"anything you do not restate is dropped — and admission will reject the pods " +
+			"while the StatefulSet itself is created happily. The CR will look applied with " +
+			"no pod running, and the reason will only be on the StatefulSet's events. " +
+			"Restate the missing fields, or remove the override and let the operator's " +
+			"default (which already satisfies restricted) apply.",
+	}}
+}
+
+func dropsAll(caps *corev1.Capabilities) bool {
+	if caps == nil {
+		return false
+	}
+	for _, d := range caps.Drop {
+		if strings.EqualFold(string(d), "ALL") {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedSet(m map[string]bool) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
