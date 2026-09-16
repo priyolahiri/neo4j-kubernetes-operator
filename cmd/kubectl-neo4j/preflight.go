@@ -198,13 +198,22 @@ func preflightObject(ctx context.Context, c client.Client, ns, source string, ra
 		res.checks = preflightInstance(ctx, c, ns,
 			subject.cluster.Spec.Storage, subject.cluster.Spec.Image,
 			subject.cluster.Spec.Resources, int(subject.cluster.Spec.Topology.Servers))
-		// Cluster-only: CCDR's proxy is a LoadBalancer, and whether this cloud
-		// honours the private-LB request is a substrate fact (preflight_cloud.go).
+		// Cluster-only substrate checks (preflight_cloud.go): whether this
+		// cloud honours the CCDR proxy's private-LB request, whether the zones
+		// exist for the placement asked for, and whether a security-context
+		// override survives the namespace's pod-security level.
 		res.checks = append(res.checks, checkCCDRProxyExposure(ctx, c, ns, subject.cluster)...)
+		res.checks = append(res.checks, checkZoneCapacity(ctx, c, subject.cluster)...)
+		res.checks = append(res.checks,
+			checkPodSecurityAdmission(ctx, c, ns, subject.cluster.Spec.SecurityContext)...)
 	case subject.standalone != nil:
 		res.checks = preflightInstance(ctx, c, ns,
 			subject.standalone.Spec.Storage, subject.standalone.Spec.Image,
 			subject.standalone.Spec.Resources, 1)
+		// A standalone has no topology to place and no CCDR proxy, but the
+		// same security-context override applies to it.
+		res.checks = append(res.checks,
+			checkPodSecurityAdmission(ctx, c, ns, subject.standalone.Spec.SecurityContext)...)
 	case subject.backup != nil:
 		res.checks = preflightBackup(ctx, c, ns, subject.backup)
 	case subject.replica != nil:
@@ -376,15 +385,10 @@ func preflightInstance(ctx context.Context, c client.Client, ns string,
 // during the resize that a full disk made urgent.
 func checkStorageClass(ctx context.Context, c client.Client, className string) []symptom {
 	if className == "" {
-		// An empty className means the cluster default, which cannot be
-		// resolved by name. Saying "not checked" is more honest than looking
-		// up the default-annotated class and asserting it is the one that will
-		// be used, which the scheduler decides, not us.
-		return []symptom{{
-			mark: markWarning, subject: "storageclass", what: "not specified, so the cluster default will be used",
-			action: "The default class's expansion support is not checked here. If you may need " +
-				"to grow the volume later, name a class with allowVolumeExpansion: true.",
-		}}
+		// An empty className means the cluster default, which IS resolvable:
+		// the DefaultStorageClass admission plugin stamps it onto the PVC
+		// before scheduling. See checkDefaultStorageClass in preflight_cloud.go.
+		return checkDefaultStorageClass(ctx, c)
 	}
 
 	var sc storagev1.StorageClass

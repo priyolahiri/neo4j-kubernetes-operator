@@ -35,6 +35,7 @@ Shape only: no bucket, registry or endpoint was contacted.
 |---|---|
 | `spec.storage.className` exists | The operator refuses to build the StatefulSet and records `StorageClassNotFound` |
 | That class allows volume expansion | Without it `spec.storage.size` is effectively immutable — discovered during the resize a full disk made urgent |
+| When `className` is empty, the **cluster default** is resolved and gets the same expansion check | The class is stamped onto the PVC at admission, so it is knowable before anything is scheduled. EKS's in-tree `gp2` default has shipped with `allowVolumeExpansion` unset — an immutable volume size on a cluster where nobody configured storage at all. No default class at all is a problem: every PVC stays `Pending`. Several classes marked default is a warning naming the one Kubernetes will use (the most recently created) |
 | A Ready node can fit the memory request | The top pod-startup failure, invisible to any manifest-level check |
 | `spec.image.pullSecrets` exist | Otherwise every pod sits in `ImagePullBackOff` |
 
@@ -56,6 +57,26 @@ Capacity is compared against a **single node's** allocatable memory, never the c
 | The downstream cluster has `AWS_REGION` in `spec.env` | The seed and every pull run **on the Neo4j server**, through the AWS SDK's default credential chain — so the object-store settings must be in the server's environment, not on the replica CR. Without it the replica fails inside the SDK with *"Unable to load region from any of the providers"*, which mentions neither replicas nor buckets |
 | `source.credentialsSecretRef` names a Secret that exists | It records **which** Secret the credentials come from; it does not project them. A name with nothing behind it is worth knowing about |
 | Network mode | Says so and checks nothing — reading over the wire needs no bucket credentials |
+
+**Placement (zones)**
+
+| Check | Why it matters |
+|---|---|
+| Enough zones exist for the placement asked for | `topologySpread` defaults to `whenUnsatisfiable: DoNotSchedule` on `topology.kubernetes.io/zone`, and `antiAffinity.type: required` (or `enforceDistribution`) becomes a required rule on the same key. Three servers across two zones means one stays `Pending` forever, and nothing in the manifest hints at it |
+| Nodes carry the zone label at all | A hard constraint on a topology key no node has can never be satisfied, however many nodes you add — the single-node and bare-metal case |
+
+Soft constraints are left alone: `ScheduleAnyway` and preferred anti-affinity degrade rather than block, which is what they are for.
+
+**Pod Security Admission**
+
+`spec.securityContext` **replaces** the operator's hardened default rather than merging with it. Setting one field to fix a permissions problem silently drops `runAsNonRoot`, the `RuntimeDefault` seccomp profile and `capabilities.drop: [ALL]` along with it.
+
+| Check | Why it matters |
+|---|---|
+| An override in a namespace enforcing `restricted` or `baseline` still satisfies it | Fatal in the worst-shaped way: the StatefulSet is created and admission rejects its **pods**, so the CR looks applied, no pod exists, and the reason is only on the StatefulSet's events. Every missing field is named |
+| An override anywhere else | A warning — the hardening is still lost, but that is a choice rather than a failure |
+
+The operator's own default already satisfies `restricted`, so a CR with no override is silent.
 
 **Cross-cluster replication (the proxy load balancer)**
 
