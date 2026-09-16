@@ -3816,6 +3816,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#make-check-docs-release-pins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        make check-docs-release-pins
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#make-check-examples-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        make check-examples-catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#make-helm-lint-make-helm-template-make-helm-package" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5681,6 +5703,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#make-check-docs-release-pins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        make check-docs-release-pins
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#make-check-examples-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        make check-examples-catalog
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#make-helm-lint-make-helm-template-make-helm-package" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -7283,6 +7327,15 @@ Chains: <code>manifests</code> → <code>generate</code> → <code>sync-kustomiz
 <p><strong>Description</strong>: Verify that every CRD in <code>config/crd/bases/</code> is registered in both the source CSV (<code>config/manifests/bases/*.csv.yaml</code>) and the bundle CSV (<code>bundle/manifests/*.csv.yaml</code>). Fails non-zero with a list of missing kinds.
 <strong>Usage</strong>: <code>make check-csv-coverage</code>
 <strong>Why</strong>: the CSV's <code>customresourcedefinitions.owned</code> list is hand-curated (display names, descriptions need human input) — it's easy to forget to register a new CRD, which would silently ship a broken OperatorHub bundle.</p>
+<h3 id="make-check-docs-release-pins"><code>make check-docs-release-pins</code><a class="headerlink" href="#make-check-docs-release-pins" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Description</strong>: Verify every documented install command names the current release. Quick-starts must install from <code>releases/latest/download/</code> and pin nothing; pinned surfaces (Helm <code>--version</code>, the <code>RELEASE_VERSION</code> examples, the ArgoCD <code>targetRevision</code>, <code>go install</code>) must agree with each other and with the newest git tag.
+<strong>Usage</strong>: <code>make check-docs-release-pins</code>
+<strong>Why</strong>: <code>README.md</code>'s quick-install pinned v1.13.0 two releases after v1.15.0 shipped. The line was correct when written, and no generator or drift check looks at it.
+<strong>Notes</strong>: docs <strong>ahead</strong> of the newest tag pass with a notice — the docs bump lands on <code>main</code> before the tag is pushed, and strict equality would fail every PR in that window. Docs <strong>behind</strong> the newest tag fail. Currency needs tags; in a checkout without them the consistency half still runs. <strong>Bump the pins before pushing a release tag</strong>, or CI on <code>main</code> goes red until they catch up.</p>
+<h3 id="make-check-examples-catalog"><code>make check-examples-catalog</code><a class="headerlink" href="#make-check-examples-catalog" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Description</strong>: Verify every <code>examples/</code> subdirectory is listed in <code>examples/README.md</code> (and every listed directory exists), and that every example <code>.yaml</code> is named in its own directory's README or the top-level one.
+<strong>Usage</strong>: <code>make check-examples-catalog</code>
+<strong>Why</strong>: the directory list had been missing <code>cross-cluster-replication/</code> since that capability shipped — a whole capability's examples invisible to anyone browsing. The file-level half catches the other version of it: an example nobody links to is one nobody finds.</p>
 <h3 id="make-helm-lint-make-helm-template-make-helm-package"><code>make helm-lint</code>, <code>make helm-template</code>, <code>make helm-package</code><a class="headerlink" href="#make-helm-lint-make-helm-template-make-helm-package" title="Anchor link to this section">&para;</a></h3>
 <p>Standard helm chart targets. <code>helm-package</code> depends on <code>helm-sync-crds</code>, <code>helm-sync-rbac</code>, and <code>helm-sync-artifacthub-crds</code>, so packaging never ships stale rules or annotations. <code>helm-template</code> renders the chart into the <code>neo4j-operator-system</code> namespace.</p>
 <h3 id="make-helm-install-make-helm-upgrade-make-helm-uninstall-make-helm-install-test-make-helm-docs"><code>make helm-install</code>, <code>make helm-upgrade</code>, <code>make helm-uninstall</code>, <code>make helm-install-test</code>, <code>make helm-docs</code><a class="headerlink" href="#make-helm-install-make-helm-upgrade-make-helm-uninstall-make-helm-install-test-make-helm-docs" title="Anchor link to this section">&para;</a></h3>
