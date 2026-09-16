@@ -4029,6 +4029,8 @@ parameter), then <code>USE</code> the constituent from there.</p>
 <p>It <strong>stores no data of its own</strong>. No topology, no store, no indexes or
 constraints, no seeding — the constituent databases hold everything, and the
 composite is the way in.</p>
+<p>Runnable manifests for everything below are in
+<a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/composite-databases"><code>examples/composite-databases/</code></a>.</p>
 <h2 id="creating-one">Creating one<a class="headerlink" href="#creating-one" title="Anchor link to this section">&para;</a></h2>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jCompositeDatabase</span>
@@ -4074,6 +4076,15 @@ names the alias to drop.</p>
 namespace that is not in spec gets removed. Set <code>enforceConstituents: false</code>
 to leave out-of-band constituents alone, in which case the operator only ever
 adds.</p>
+<div class="admonition info">
+<p class="admonition-title">Do not use <code>Neo4jDatabaseAlias</code> for a constituent</p>
+<p><a href="../database_aliases/"><code>Neo4jDatabaseAlias</code></a> manages ordinary aliases, and
+creating a dotted one through it is how you reach the <code>42N87</code> above — it
+cannot know a composite is coming. Constituents belong on the composite
+that owns them. If you already have a dotted alias from that route,
+<code>kubectl neo4j explain CompositeDatabaseNameBlocked</code> walks through
+clearing it.</p>
+</div>
 <h2 id="privileges-go-on-the-constituents-never-on-the-composite">Privileges go on the constituents, never on the composite<a class="headerlink" href="#privileges-go-on-the-constituents-never-on-the-composite" title="Anchor link to this section">&para;</a></h2>
 <p>This is the mistake to watch for, and Neo4j gives you no warning about it:</p>
 <div class="language-cypher highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="err">--</span><span class="w"> </span><span class="n">accepted</span><span class="p">.</span><span class="w"> </span><span class="n">persisted</span><span class="p">.</span><span class="w"> </span><span class="n">does</span><span class="w"> </span><span class="n">nothing</span><span class="p">.</span>

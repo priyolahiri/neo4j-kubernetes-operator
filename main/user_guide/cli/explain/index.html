@@ -1548,6 +1548,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#reasons-not-just-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reasons, not just conditions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#it-admits-what-it-does-not-know" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3791,6 +3802,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#reasons-not-just-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reasons, not just conditions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#it-admits-what-it-does-not-know" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3838,10 +3860,11 @@
 
 
 <h1 id="explain"><code>explain</code><a class="headerlink" href="#explain" title="Anchor link to this section">&para;</a></h1>
-<p>Turns a status condition or phase into what it means and what to do about it — the troubleshooting guide, made executable.</p>
+<p>Turns a status condition, phase or reason into what it means and what to do about it — the troubleshooting guide, made executable.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>explain<span class="w"> </span>Neo4jEnterpriseCluster/prod<span class="w">    </span><span class="c1"># a live resource</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>explain<span class="w"> </span>ServersHealthy<span class="w">                 </span><span class="c1"># a single term</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>explain<span class="w"> </span>--list<span class="w">                         </span><span class="c1"># everything it knows</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>explain<span class="w"> </span>CompositeDatabaseNameBlocked<span class="w">   </span><span class="c1"># a condition reason</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>explain<span class="w"> </span>--list<span class="w">                         </span><span class="c1"># everything it knows</span>
 </span></code></pre></div>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>$ kubectl neo4j explain ServersHealthy
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ServersHealthy (condition)
@@ -3860,14 +3883,25 @@
 </span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    every server reported Enabled and Available by SHOW SERVERS.
 </span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    → When false, ... Check their pod logs for OOMKilled (exit 137).
 </span></code></pre></div>
+<h3 id="reasons-not-just-conditions">Reasons, not just conditions<a class="headerlink" href="#reasons-not-just-conditions" title="Anchor link to this section">&para;</a></h3>
+<p>A condition tells you something is false; its <strong>reason</strong> tells you which of several unrelated causes it was. It is the most specific thing a status carries, and the least guessable from the string itself — so reasons are explained as their own kind of term, and are printed alongside each condition of a live resource.</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>$ kubectl neo4j explain CompositeDatabaseNameBlocked
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>CompositeDatabaseNameBlocked (reason)
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  a dotted alias already occupies the composite's name, so the composite cannot be created.
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>  → Neo4j accepts CREATE ALIAS cineasts.latest even when no composite `cineasts`
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    exists ... it permanently blocks the composite with 42N87. The server's own
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    error never mentions ordering. The CR's message names the alias to drop ...
+</span></code></pre></div>
+<p>Only reasons that are <em>not</em> guessable get an entry. A reason that restates its condition needs none, and a list padded with those would rot without helping anyone.</p>
 <h3 id="it-admits-what-it-does-not-know">It admits what it does not know<a class="headerlink" href="#it-admits-what-it-does-not-know" title="Anchor link to this section">&para;</a></h3>
-<p>The explanations describe the operator release this CLI was built from. A newer deployment can report conditions or phases it has never heard of, and in that case it says so — naming its own version — rather than inventing an explanation:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>  (no guidance for this phase — it may be newer than this CLI, which carries v1.15.0 rules)
+<p>The explanations describe the operator release this CLI was built from. A newer deployment can report conditions, phases or reasons it has never heard of, and in that case it says so — naming its own version — rather than inventing an explanation:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>  (no guidance for this phase — it may be newer than this CLI, which carries v1.15.0 rules)
 </span></code></pre></div>
 <p>Guessing would be worse than admitting the gap, because a confident wrong answer during an incident costs more than no answer.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><a href="../../guides/troubleshooting/">Troubleshooting</a> — the long-form version of this knowledge</li>
+<li><a href="../../guides/composite_databases/">Composite databases</a> — the guide behind the composite reasons above</li>
 <li><a href="../status/"><code>status</code></a> — see which resources have conditions worth explaining</li>
 </ul>
 
