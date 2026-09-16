@@ -3982,6 +3982,33 @@
 </tr>
 </tbody>
 </table>
+<p><strong>Cross-cluster replication (the proxy load balancer)</strong></p>
+<p>Enabling <code>spec.crossClusterReplication</code> creates a <code>LoadBalancer</code> Service in front of every server's transaction-shipping port. <code>loadBalancerInternal</code> (default <code>true</code>) asks for a private one, and the operator requests it by emitting the union of the AWS, Azure and GKE internal-LB annotations — it cannot know which cloud it is on, and a provider ignores keys it does not recognise.</p>
+<p>That works on the three clouds the union covers. On any other, the request is accepted, reported, and <strong>silently does nothing</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The detected cloud reads one of the annotations the operator emits</td>
+<td>On a provider that reads none of them, <code>loadBalancerInternal: true</code> has no effect and the load balancer is <strong>public</strong>, in front of the transaction-shipping port. Set your provider's own annotation under <code>spec.crossClusterReplication.annotations</code> — it is applied after the operator's set and wins on shared keys</td>
+</tr>
+<tr>
+<td>The address the Service was actually assigned</td>
+<td>The decisive one. A public IP on a Service that asked to be internal is proof rather than prediction, so it is reported whatever the annotation table said</td>
+</tr>
+<tr>
+<td><code>loadBalancerInternal: false</code></td>
+<td>Said out loud once. It is a deliberate setting, not an error — but the port is then reachable from the internet, and should be restricted with a source-range annotation or a NetworkPolicy, and require TLS</td>
+</tr>
+</tbody>
+</table>
+<p>The cloud is detected from a node's <code>spec.providerID</code>, which the kubelet sets — more reliable than node labels, which anyone can edit. On Kind this reports a development limitation (no load-balancer controller, so the Service stays <code>Pending</code>) rather than an exposure risk.</p>
+<p>An AWS load balancer is handed out as a <strong>hostname</strong>, not an IP. Resolving it would be reachability, so preflight reports the hostname as unchecked and gives you the <code>dig</code> command rather than implying it looked.</p>
 <p>This replaces the ritual the troubleshooting guide documents today — <code>kubectl run backup-auth-check --image=amazon/aws-cli …</code>, in three vendor variants — which you only reach for <strong>after</strong> a backup has already failed.</p>
 <h2 id="what-it-does-not-check">What it does not check<a class="headerlink" href="#what-it-does-not-check" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Shape, not reachability.</strong> It reads Kubernetes objects: a StorageClass, a Secret's key names, a ServiceAccount's annotations, node allocatable capacity. It never contacts S3, GCS or Azure, never talks to a registry, and never runs a probe pod.</p>
