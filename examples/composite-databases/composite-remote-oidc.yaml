@@ -1,0 +1,36 @@
+# A composite whose constituent lives in ANOTHER Neo4j DBMS, authenticated by
+# forwarding the querying user's own OIDC token.
+#
+# Prefer this mode wherever both DBMSs trust the same identity provider:
+# nothing is stored, so there is no credential to leak, rotate or encrypt — and
+# it needs no keystore at all.
+#
+# Requires Cypher 25, so a CalVer image (2025.x / 2026.x). On the 5.26 LTS the
+# clause does not parse, and the operator rejects the CR with a message saying
+# so rather than letting the server emit a raw syntax error.
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jCompositeDatabase
+metadata:
+  name: federated
+  namespace: neo4j
+spec:
+  clusterRef: prod-cluster
+  constituents:
+    # Local: in this DBMS.
+    - name: house
+      targetDatabase: movies-latest
+
+    # Remote: in the partner's DBMS. The target is never checked — the
+    # operator cannot see the other DBMS.
+    - name: partner
+      targetDatabase: movies
+      remote:
+        # Prefer a +s scheme. This connection carries query traffic between two
+        # DBMSs, and with stored credentials it would carry the authentication
+        # too.
+        url: neo4j+s://partner.example.com:7687
+        oidcCredentialForwarding: true
+
+        # Passed through to the alias's DRIVER clause.
+        driverSettings:
+          connection_timeout: 30s

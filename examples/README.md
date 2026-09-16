@@ -331,6 +331,8 @@ kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manag
 - **`standalone/`** - Single-node Neo4j deployments for development
 - **`backup-restore/`** - `Neo4jBackup` and `Neo4jRestore` examples (one-shot, scheduled, incremental, PITR, overwrite)
 - **`databases/`** - `Neo4jDatabase` creation, topology, and seed-from-backup examples
+- **`composite-databases/`** - `Neo4jCompositeDatabase`: one query endpoint over several constituent databases, local and remote
+- **`cross-cluster-replication/`** - `Neo4jReplicaDatabase` and `Neo4jReplicaPromotion` for cross-cluster DR
 - **`fleet-management/`** - Aura Fleet Management integration examples
 - **`plugins/`** - Plugin installation examples (APOC, GDS, Bloom, etc.)
 - **`property_sharding/`** - Property-sharded database examples (Neo4j 2025.12+)

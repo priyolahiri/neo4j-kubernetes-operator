@@ -1,0 +1,63 @@
+# A composite database over two local databases.
+#
+# The composite stores no data of its own: it is a single query endpoint, and
+# the constituent databases hold everything. Applications connect to the
+# COMPOSITE and address the parts through it:
+#
+#   cypher-shell -d cineasts
+#   USE cineasts.latest MATCH (m:Movie) RETURN m.title
+#
+# A constituent is NOT reachable from a session on any other database (42N04),
+# and connecting to it by its qualified name does not work either (22N51) —
+# despite what the first error suggests. From a composite session,
+# `RETURN graph.names()` lists what is reachable.
+#
+# Apply this whole file at once: a constituent whose target database does not
+# exist yet is skipped and retried, so ordering between the databases and the
+# composite does not matter. Ordering between the composite and its ALIASES
+# does, which is why constituents are declared inline here rather than as
+# separate Neo4jDatabaseAlias resources.
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jDatabase
+metadata:
+  name: movies-latest
+  namespace: neo4j
+spec:
+  clusterRef: prod-cluster
+  name: movies-latest
+---
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jDatabase
+metadata:
+  name: movies-upcoming
+  namespace: neo4j
+spec:
+  clusterRef: prod-cluster
+  name: movies-upcoming
+---
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jCompositeDatabase
+metadata:
+  name: cineasts
+  namespace: neo4j
+spec:
+  clusterRef: prod-cluster
+
+  # Each constituent becomes an alias `cineasts.<name>`, which is also how
+  # queries address it. `name` may not contain a dot — it is already namespaced
+  # by the composite.
+  constituents:
+    - name: latest
+      targetDatabase: movies-latest
+    - name: upcoming
+      targetDatabase: movies-upcoming
+
+  # Default true: spec.constituents is authoritative, and an alias in the
+  # composite's namespace that is absent from spec is dropped. Set false to
+  # leave out-of-band constituents alone, in which case this CR only ever adds.
+  enforceConstituents: true
+
+  # Default Delete, which issues DROP COMPOSITE DATABASE ... CASCADE ALIASES.
+  # That removes the constituent ALIASES only — the databases they target are
+  # untouched. Retain leaves the composite in Neo4j when the CR goes away.
+  deletionPolicy: Delete

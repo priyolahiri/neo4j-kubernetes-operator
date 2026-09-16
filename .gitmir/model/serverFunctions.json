@@ -1822,7 +1822,7 @@
     "name": "CLI Explain",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Decodes a status condition or phase into what it means and what to do, keyed off the operator's exported condition constants so a rename breaks the build rather than leaving the explanation stale. Reports unrecognised terms as unrecognised, naming its own version.",
+    "description": "Decodes a status condition, phase or condition REASON into what it means and what to do, keyed off the operator's exported condition constants so a rename breaks the build rather than leaving the explanation stale. A live resource's conditions are printed with their reason, explained after the condition's general guidance since the reason is the more specific signal; only reasons that are not guessable from the string itself get an entry. Reports unrecognised terms as unrecognised, naming its own version.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],

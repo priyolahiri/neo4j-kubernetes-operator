@@ -165,3 +165,75 @@ func TestEveryPhaseConstantHasGuidance(t *testing.T) {
 		assert.NotEmpty(t, g.action, "phase %q has an empty action", phase)
 	}
 }
+
+// A condition's REASON is the most specific thing a status carries and the
+// least guessable. explain read type, status and message and dropped the
+// reason, so the one token worth looking up was the one it could not explain.
+func TestExplainTerm_ExplainsReasons(t *testing.T) {
+	for _, reason := range []string{
+		controller.EventReasonCompositeNameBlocked,
+		controller.ReasonGraphPrivilegeOnComposite,
+	} {
+		out := captureExplain(t, func(f *os.File) bool { return explainTerm(reason, f) })
+		assert.Contains(t, out, reason)
+		assert.Contains(t, out, "(reason)")
+	}
+
+	// Case-insensitive, like conditions and phases.
+	out := captureExplain(t, func(f *os.File) bool {
+		return explainTerm("compositedatabasenameblocked", f)
+	})
+	assert.Contains(t, out, "42N87", "the ordering trap is the whole point of this entry")
+}
+
+// The reason a composite is blocked is the case that motivated the dimension:
+// Neo4j's own 42N87 never mentions ordering, so the reason string is the only
+// route to the explanation.
+func TestExplainResource_SurfacesTheConditionReason(t *testing.T) {
+	c := testClient(t, &neo4jv1beta1.Neo4jCompositeDatabase{
+		ObjectMeta: metav1.ObjectMeta{Name: "cineasts", Namespace: "neo4j"},
+		Status: neo4jv1beta1.Neo4jCompositeDatabaseStatus{
+			Phase: "Failed",
+			Conditions: []metav1.Condition{{
+				Type:    "Ready",
+				Status:  metav1.ConditionFalse,
+				Reason:  controller.EventReasonCompositeNameBlocked,
+				Message: "alias cineasts.latest already exists; drop it first",
+			}},
+		},
+	})
+
+	out := captureExplainErr(t, func(f *os.File) error {
+		return explainResource(context.Background(), c, "neo4j", "Neo4jCompositeDatabase/cineasts", f)
+	})
+
+	assert.Contains(t, out, "alias cineasts.latest already exists")
+	assert.Contains(t, out, "reason "+controller.EventReasonCompositeNameBlocked)
+	assert.Contains(t, out, "DROP ALIAS", "the guidance has to say what to actually do")
+}
+
+// A reason with no entry must leave the output alone rather than print an
+// empty explanation — most reasons restate their condition and need none.
+func TestExplainResource_UnknownReasonAddsNothing(t *testing.T) {
+	c := testClient(t, &neo4jv1beta1.Neo4jCompositeDatabase{
+		ObjectMeta: metav1.ObjectMeta{Name: "cineasts", Namespace: "neo4j"},
+		Status: neo4jv1beta1.Neo4jCompositeDatabaseStatus{
+			Phase: "Ready",
+			Conditions: []metav1.Condition{{
+				Type: "Ready", Status: metav1.ConditionTrue, Reason: "CompositeDatabaseReady",
+			}},
+		},
+	})
+
+	out := captureExplainErr(t, func(f *os.File) error {
+		return explainResource(context.Background(), c, "neo4j", "Neo4jCompositeDatabase/cineasts", f)
+	})
+	assert.NotContains(t, out, "reason CompositeDatabaseReady:")
+}
+
+func TestExplainList_IncludesReasons(t *testing.T) {
+	out := captureExplain(t, func(f *os.File) bool { renderExplainList(f); return true })
+	assert.Contains(t, out, "Reasons:")
+	assert.Contains(t, out, controller.EventReasonCompositeNameBlocked)
+	assert.Contains(t, out, "reasons this CLI does not know about")
+}
