@@ -232,6 +232,41 @@ var phaseGuidance = map[string]guidance{
 	},
 }
 
+// reasonGuidance explains condition REASONS — the short CamelCase strings that
+// carry the most specific information a status has, and the least guessable.
+//
+// A condition tells you something is false; its reason tells you which of
+// several unrelated causes it was. `kubectl describe` prints it, and until now
+// this command read type, status and message and dropped the reason on the
+// floor — so the one token worth looking up was the one it could not explain.
+//
+// Deliberately NOT an attempt to enumerate every reason the operator emits.
+// Entries earn their place by being unguessable from the string itself: a
+// reason that restates its condition needs no entry, and a list padded with
+// those would rot without helping anyone.
+var reasonGuidance = map[string]guidance{
+	controller.EventReasonCompositeNameBlocked: {
+		meaning: "a dotted alias already occupies the composite's name, so the composite " +
+			"cannot be created.",
+		action: "Neo4j accepts CREATE ALIAS cineasts.latest even when no composite `cineasts` " +
+			"exists — the result is an ordinary alias whose name merely contains a dot, and it " +
+			"permanently blocks the composite with 42N87. The server's own error never mentions " +
+			"ordering. The CR's message names the alias to drop; DROP ALIAS it (its target " +
+			"database is untouched) and the composite is created on the next reconcile. A " +
+			"Neo4jCompositeDatabase owns its constituents precisely so this ordering cannot " +
+			"happen through the operator — a dotted alias here was created out of band, or " +
+			"through Neo4jDatabaseAlias.",
+	},
+	controller.ReasonGraphPrivilegeOnComposite: {
+		meaning: "a privilege names a composite database as a GRAPH, which Neo4j accepts and " +
+			"then ignores.",
+		action: "Graph privileges attach to the constituents' TARGET databases, not to the " +
+			"composite. Nothing warns about this: the grant is accepted, persisted, and grants " +
+			"access to nothing. Grant ACCESS on the composite, and ACCESS plus the graph " +
+			"privileges on each constituent's target database.",
+	},
+}
+
 func runExplain(args []string, stdout, stderr *os.File) int {
 	fs := flag.NewFlagSet("explain", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -243,18 +278,19 @@ func runExplain(args []string, stdout, stderr *os.File) int {
 
 Usage:
   kubectl neo4j explain <Kind>/<name> [-n <namespace>]   # explain a live resource
-  kubectl neo4j explain <Condition|Phase>                # explain a term
+  kubectl neo4j explain <Condition|Phase|Reason>          # explain a term
   kubectl neo4j explain --list                           # everything it knows
 
 Examples:
   kubectl neo4j explain Neo4jEnterpriseCluster/prod
   kubectl neo4j explain ServersHealthy
+  kubectl neo4j explain CompositeDatabaseNameBlocked
 
 Flags:
 `)
 		fs.PrintDefaults()
 	}
-	list := fs.Bool("list", false, "List every condition and phase this command can explain")
+	list := fs.Bool("list", false, "List every condition, phase and reason this command can explain")
 	if err := parseFlags(fs, args); err != nil {
 		return exitUsage
 	}
@@ -307,6 +343,12 @@ func explainTerm(term string, stdout *os.File) bool {
 	for name, g := range phaseGuidance {
 		if strings.EqualFold(name, term) {
 			fmt.Fprintf(stdout, "%s (phase)\n  %s\n  → %s\n", name, g.meaning, g.action)
+			return true
+		}
+	}
+	for name, g := range reasonGuidance {
+		if strings.EqualFold(name, term) {
+			fmt.Fprintf(stdout, "%s (reason)\n  %s\n  → %s\n", name, g.meaning, g.action)
 			return true
 		}
 	}
@@ -364,6 +406,7 @@ func explainResource(ctx context.Context, c client.Client, namespace, ref string
 		ctype, _ := cond["type"].(string)
 		cstatus, _ := cond["status"].(string)
 		cmsg, _ := cond["message"].(string)
+		creason, _ := cond["reason"].(string)
 
 		mark := "✓"
 		if cstatus != "True" {
@@ -375,6 +418,11 @@ func explainResource(ctx context.Context, c client.Client, namespace, ref string
 		}
 		if g, ok := conditionGuidance[ctype]; ok {
 			fmt.Fprintf(stdout, "    %s\n    → %s\n", g.meaning, g.action)
+		}
+		// The reason is the more specific signal, so it comes after the
+		// condition's general guidance and overrides it in practice.
+		if g, ok := reasonGuidance[creason]; ok {
+			fmt.Fprintf(stdout, "    reason %s: %s\n    → %s\n", creason, g.meaning, g.action)
 		}
 	}
 	return nil
@@ -400,6 +448,16 @@ func renderExplainList(stdout *os.File) {
 	for _, n := range names {
 		fmt.Fprintf(stdout, "  %s\n", n)
 	}
+	fmt.Fprintln(stdout, "\nReasons:")
+	names = names[:0]
+	for n := range reasonGuidance {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		fmt.Fprintf(stdout, "  %s\n", n)
+	}
+
 	fmt.Fprintf(stdout, "\nExplanations describe operator %s. A newer deployment may report\n", version)
-	fmt.Fprintln(stdout, "conditions or phases this CLI does not know about.")
+	fmt.Fprintln(stdout, "conditions, phases or reasons this CLI does not know about.")
 }

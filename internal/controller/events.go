@@ -327,6 +327,12 @@ const (
 	// alias whose name contains a dot; `CREATE COMPOSITE DATABASE x` then
 	// fails forever with 42N87 and an error that never mentions ordering.
 	EventReasonCompositeNameBlocked = "CompositeDatabaseNameBlocked"
+	// ReasonGraphPrivilegeOnComposite is a CONDITION reason, not an event
+	// reason: it is set on Neo4jRole's PrivilegesResolve when a privilege
+	// names a composite as a GRAPH. Neo4j accepts and shows back such a
+	// grant while it does nothing, so the reason is the only signal. Named
+	// here because the CLI's `explain` looks it up.
+	ReasonGraphPrivilegeOnComposite = "GraphPrivilegeOnComposite"
 
 	// Database alias event reasons.
 	EventReasonAliasCreated    = "AliasCreated"

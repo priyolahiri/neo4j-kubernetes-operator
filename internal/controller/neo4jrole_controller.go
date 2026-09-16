@@ -365,7 +365,7 @@ func (r *Neo4jRoleReconciler) reportUnresolvedPrivilegeDatabases(
 				"graph privileges on each constituent's target database instead.",
 			roleName, quoteAndJoin(composites), pluralIs(len(composites)))
 		if r.setNamedCondition(ctx, role, ConditionTypePrivilegesResolve, metav1.ConditionFalse,
-			"GraphPrivilegeOnComposite", msg) {
+			ReasonGraphPrivilegeOnComposite, msg) {
 			r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonPrivilegeUnknownDatabase, msg)
 		}
 		return

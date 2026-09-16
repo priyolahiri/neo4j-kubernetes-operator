@@ -1,0 +1,52 @@
+# Granting access THROUGH a composite.
+#
+# The mistake to avoid, and Neo4j gives no warning about it:
+#
+#   GRANT MATCH {*} ON GRAPH cineasts NODES * TO analyst
+#
+# That is accepted, persisted, shown back by SHOW ROLE ... PRIVILEGES — and
+# does nothing. Graph privileges attach to the constituents' TARGET databases,
+# never to the composite.
+#
+# A user reading through the composite needs three things: ACCESS on the
+# composite, ACCESS on each constituent's target, and the graph privileges on
+# those targets.
+#
+# The operator catches the mistake for you: a Neo4jRole whose privileges name a
+# composite as a GRAPH reports PrivilegesResolve=False with reason
+# GraphPrivilegeOnComposite. Run `kubectl neo4j explain
+# GraphPrivilegeOnComposite` for the detail.
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jRole
+metadata:
+  name: analyst
+  namespace: neo4j
+spec:
+  clusterRef: prod-cluster
+  name: analyst
+  privileges:
+    # 1. The way in. Without this, the composite cannot be used at all.
+    - "GRANT ACCESS ON DATABASE cineasts TO analyst"
+
+    # 2. and 3. The data. Backticks are required around names containing a
+    # dash — Neo4j database names accept ASCII letters, digits, dots and
+    # dashes, and underscores are rejected by the server.
+    - "GRANT ACCESS ON DATABASE `movies-latest` TO analyst"
+    - "GRANT MATCH {*} ON GRAPH `movies-latest` NODES * TO analyst"
+    - "GRANT ACCESS ON DATABASE `movies-upcoming` TO analyst"
+    - "GRANT MATCH {*} ON GRAPH `movies-upcoming` NODES * TO analyst"
+---
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jUser
+metadata:
+  name: ana
+  namespace: neo4j
+spec:
+  clusterRef: prod-cluster
+  username: ana
+  passwordSecretRef:
+    name: ana-password
+    key: password
+  # Privileges live on the role, never on the user.
+  roles:
+    - analyst

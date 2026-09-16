@@ -35,6 +35,9 @@ It **stores no data of its own**. No topology, no store, no indexes or
 constraints, no seeding — the constituent databases hold everything, and the
 composite is the way in.
 
+Runnable manifests for everything below are in
+[`examples/composite-databases/`](https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/composite-databases).
+
 ## Creating one
 
 ```yaml
@@ -92,6 +95,15 @@ By default `spec.constituents` is authoritative: an alias in the composite's
 namespace that is not in spec gets removed. Set `enforceConstituents: false`
 to leave out-of-band constituents alone, in which case the operator only ever
 adds.
+
+!!! info "Do not use `Neo4jDatabaseAlias` for a constituent"
+
+    [`Neo4jDatabaseAlias`](database_aliases.md) manages ordinary aliases, and
+    creating a dotted one through it is how you reach the `42N87` above — it
+    cannot know a composite is coming. Constituents belong on the composite
+    that owns them. If you already have a dotted alias from that route,
+    `kubectl neo4j explain CompositeDatabaseNameBlocked` walks through
+    clearing it.
 
 ## Privileges go on the constituents, never on the composite
 
