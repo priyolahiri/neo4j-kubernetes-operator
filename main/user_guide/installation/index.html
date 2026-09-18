@@ -4465,7 +4465,7 @@ updated automatically on every operator release.</p>
 </span></code></pre></div>
 <p><strong>Pin to a specific version</strong>:
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>helm<span class="w"> </span>install<span class="w"> </span>neo4j-operator<span class="w"> </span>neo4j-operator/neo4j-operator<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--version<span class="w"> </span><span class="m">1</span>.15.0<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--version<span class="w"> </span><span class="m">1</span>.16.0<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--namespace<span class="w"> </span>neo4j-operator-system<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>--create-namespace
 </span></code></pre></div></p>
@@ -4506,11 +4506,11 @@ upgrade. Prefer re-passing your overrides explicitly (<code>-f my-values.yaml</c
 <h3 id="method-2-oci-registry">Method 2: OCI Registry<a class="headerlink" href="#method-2-oci-registry" title="Anchor link to this section">&para;</a></h3>
 <p>Helm 3.8 or later is required for OCI support.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>helm<span class="w"> </span>install<span class="w"> </span>neo4j-operator<span class="w"> </span>oci://ghcr.io/priyolahiri/charts/neo4j-operator<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--version<span class="w"> </span><span class="m">1</span>.15.0<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--version<span class="w"> </span><span class="m">1</span>.16.0<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--namespace<span class="w"> </span>neo4j-operator-system<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--create-namespace
 </span></code></pre></div>
-<p>Use the chart version without the <code>v</code> prefix (for example, <code>1.15.0</code>).</p>
+<p>Use the chart version without the <code>v</code> prefix (for example, <code>1.16.0</code>).</p>
 <h3 id="method-3-quick-install-from-github-release">Method 3: Quick Install from GitHub Release<a class="headerlink" href="#method-3-quick-install-from-github-release" title="Anchor link to this section">&para;</a></h3>
 <p>For environments where running <code>helm</code> is inconvenient, every release also publishes a single kubectl-applyable YAML bundle.</p>
 <blockquote>
@@ -4522,7 +4522,7 @@ the <strong>Code</strong> tab — it's attached to each tagged release under
 <code>releases/download/&lt;tag&gt;/</code> URL below (substitute a real <code>&lt;tag&gt;</code> for
 <code>${RELEASE_VERSION}</code>).</p>
 </blockquote>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nv">RELEASE_VERSION</span><span class="o">=</span>v1.15.0<span class="w">  </span><span class="c1"># Replace with desired version</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nv">RELEASE_VERSION</span><span class="o">=</span>v1.16.0<span class="w">  </span><span class="c1"># Replace with desired version</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>--server-side<span class="w"> </span>-f<span class="w"> </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/<span class="si">${</span><span class="nv">RELEASE_VERSION</span><span class="si">}</span>/neo4j-kubernetes-operator-complete.yaml
 </span></code></pre></div>
@@ -4557,7 +4557,7 @@ look, and it moves under you.</p>
 <p>Upgrading a Method 3 install is just applying the new release's complete
 bundle (server-side). It includes the updated CRDs, and the operator
 Deployment rolls to the new image automatically:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nv">RELEASE_VERSION</span><span class="o">=</span>v1.15.0<span class="w">  </span><span class="c1"># The version you are upgrading to</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nv">RELEASE_VERSION</span><span class="o">=</span>v1.16.0<span class="w">  </span><span class="c1"># The version you are upgrading to</span>
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
 </span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>--server-side<span class="w"> </span>-f<span class="w"> </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/<span class="si">${</span><span class="nv">RELEASE_VERSION</span><span class="si">}</span>/neo4j-kubernetes-operator-complete.yaml
 </span></code></pre></div>
@@ -4572,7 +4572,7 @@ Deployment rolls to the new image automatically:</p>
 </span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>helm<span class="w"> </span>install<span class="w"> </span>neo4j-operator<span class="w"> </span>./charts/neo4j-operator<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">  </span>--namespace<span class="w"> </span>neo4j-operator-system<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">  </span>--create-namespace<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">  </span>--set<span class="w"> </span>image.tag<span class="o">=</span><span class="s2">"</span><span class="si">${</span><span class="nv">LATEST_TAG</span><span class="p">#v</span><span class="si">}</span><span class="s2">"</span><span class="w">   </span><span class="c1"># e.g. 1.15.0 — see note below</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">  </span>--set<span class="w"> </span>image.tag<span class="o">=</span><span class="s2">"</span><span class="si">${</span><span class="nv">LATEST_TAG</span><span class="p">#v</span><span class="si">}</span><span class="s2">"</span><span class="w">   </span><span class="c1"># e.g. 1.16.0 — see note below</span>
 </span></code></pre></div>
 <blockquote>
 <p><strong>You must set <code>image.tag</code> for a from-clone install.</strong> In the repository,
@@ -4811,7 +4811,7 @@ the blocking install/upgrade/uninstall gate), see
 <h3 id="option-1-apply-an-example-directly-from-github">Option 1: Apply an Example Directly from GitHub<a class="headerlink" href="#option-1-apply-an-example-directly-from-github" title="Anchor link to this section">&para;</a></h3>
 <p>If you haven't cloned the repository, apply an example straight from the raw
 file URL at a release tag (no download or extract step needed):</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nv">RELEASE_VERSION</span><span class="o">=</span>v1.15.0<span class="w">  </span><span class="c1"># Replace with your installed version</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nv">RELEASE_VERSION</span><span class="o">=</span>v1.16.0<span class="w">  </span><span class="c1"># Replace with your installed version</span>
 </span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>
 </span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="c1"># Create admin secret (required for Neo4j authentication)</span>
 </span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>kubectl<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>neo4j-admin-secret<span class="w"> </span><span class="se">\</span>
