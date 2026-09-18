@@ -5356,13 +5356,38 @@
 <p><strong>Page Cache Formula (Neo4j Official):</strong>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>Page Cache Size = Database Size × 1.2 (20% growth buffer)
 </span></code></pre></div></p>
-<p><strong>Examples:</strong>
-| Database Size | Recommended Page Cache | Container Memory |
-|--------------|------------------------|------------------|
-| 10GB | 12GB | 16GB+ |
-| 50GB | 60GB | 80GB+ |
-| 100GB | 120GB | 160GB+ |
-| 500GB | 600GB | 640GB+ |</p>
+<p><strong>Examples:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Database Size</th>
+<th>Recommended Page Cache</th>
+<th>Container Memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10GB</td>
+<td>12GB</td>
+<td>16GB+</td>
+</tr>
+<tr>
+<td>50GB</td>
+<td>60GB</td>
+<td>80GB+</td>
+</tr>
+<tr>
+<td>100GB</td>
+<td>120GB</td>
+<td>160GB+</td>
+</tr>
+<tr>
+<td>500GB</td>
+<td>600GB</td>
+<td>640GB+</td>
+</tr>
+</tbody>
+</table>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Example for 50GB database</span>
 </span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">  </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"16G"</span><span class="w">      </span><span class="c1"># For operations</span>

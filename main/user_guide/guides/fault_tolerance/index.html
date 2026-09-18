@@ -4703,12 +4703,37 @@
 <li>❌ <strong>Single Point of Failure</strong>: If one node fails, cluster becomes read-only</li>
 <li>⚠️ <strong>Manual Intervention Required</strong>: Recovery often requires operator intervention</li>
 </ul>
-<p><strong>Fault Tolerance Matrix:</strong>
-| Scenario | Available Nodes | Quorum (2/2 + 1 = 2) | Cluster State |
-|----------|-----------------|----------------------|---------------|
-| Normal | 2 | ✅ Met | Fully Operational |
-| 1 Node Down | 1 | ❌ Not Met | Read-Only Mode |
-| Network Split | 1+1 | ❌ Not Met | Both Partitions Read-Only |</p>
+<p><strong>Fault Tolerance Matrix:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Available Nodes</th>
+<th>Quorum (2/2 + 1 = 2)</th>
+<th>Cluster State</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Normal</td>
+<td>2</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>1 Node Down</td>
+<td>1</td>
+<td>❌ Not Met</td>
+<td>Read-Only Mode</td>
+</tr>
+<tr>
+<td>Network Split</td>
+<td>1+1</td>
+<td>❌ Not Met</td>
+<td>Both Partitions Read-Only</td>
+</tr>
+</tbody>
+</table>
 <p><strong>When to Consider:</strong></p>
 <ul>
 <li>Development environments requiring some clustering features</li>
@@ -4728,13 +4753,43 @@
 <li>✅ <strong>Automatic Recovery</strong>: Cluster remains operational with &#8532; nodes</li>
 <li>✅ <strong>Split-Brain Protection</strong>: Minority partition becomes read-only</li>
 </ul>
-<p><strong>Fault Tolerance Matrix:</strong>
-| Scenario | Available Nodes | Quorum (3/2 + 1 = 2) | Cluster State |
-|----------|-----------------|----------------------|---------------|
-| Normal | 3 | ✅ Met | Fully Operational |
-| 1 Node Down | 2 | ✅ Met | Fully Operational |
-| 2 Nodes Down | 1 | ❌ Not Met | Read-Only Mode |
-| Network Split (2+1) | 2 vs 1 | ✅/❌ Met/Not Met | Majority Operational |</p>
+<p><strong>Fault Tolerance Matrix:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Available Nodes</th>
+<th>Quorum (3/2 + 1 = 2)</th>
+<th>Cluster State</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Normal</td>
+<td>3</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>1 Node Down</td>
+<td>2</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>2 Nodes Down</td>
+<td>1</td>
+<td>❌ Not Met</td>
+<td>Read-Only Mode</td>
+</tr>
+<tr>
+<td>Network Split (2+1)</td>
+<td>2 vs 1</td>
+<td>✅/❌ Met/Not Met</td>
+<td>Majority Operational</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Best For:</strong></p>
 <ul>
 <li>Production environments</li>
@@ -4754,12 +4809,37 @@
 <li>❌ <strong>Resource Inefficiency</strong>: Extra node provides no additional fault tolerance</li>
 <li>⚠️ <strong>Increased Consensus Overhead</strong>: More nodes participating in consensus</li>
 </ul>
-<p><strong>Fault Tolerance Matrix:</strong>
-| Scenario | Available Nodes | Quorum (4/2 + 1 = 3) | Cluster State |
-|----------|-----------------|----------------------|---------------|
-| Normal | 4 | ✅ Met | Fully Operational |
-| 1 Node Down | 3 | ✅ Met | Fully Operational |
-| 2 Nodes Down | 2 | ❌ Not Met | Read-Only Mode |</p>
+<p><strong>Fault Tolerance Matrix:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Available Nodes</th>
+<th>Quorum (4/2 + 1 = 3)</th>
+<th>Cluster State</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Normal</td>
+<td>4</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>1 Node Down</td>
+<td>3</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>2 Nodes Down</td>
+<td>2</td>
+<td>❌ Not Met</td>
+<td>Read-Only Mode</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Consider Instead:</strong> 4 servers (allows 3 servers to host database primaries + 1 for read scaling)</p>
 <hr />
 <h3 id="5-five-primary-nodes-high-fault-tolerance">5. Five Primary Nodes ✅ (High Fault Tolerance)<a class="headerlink" href="#5-five-primary-nodes-high-fault-tolerance" title="Anchor link to this section">&para;</a></h3>
@@ -4774,13 +4854,43 @@
 <li>✅ <strong>Complex Partition Tolerance</strong>: Better handling of network partitions</li>
 <li>⚠️ <strong>Increased Complexity</strong>: More nodes to manage and monitor</li>
 </ul>
-<p><strong>Fault Tolerance Matrix:</strong>
-| Scenario | Available Nodes | Quorum (5/2 + 1 = 3) | Cluster State |
-|----------|-----------------|----------------------|---------------|
-| Normal | 5 | ✅ Met | Fully Operational |
-| 1 Node Down | 4 | ✅ Met | Fully Operational |
-| 2 Nodes Down | 3 | ✅ Met | Fully Operational |
-| 3 Nodes Down | 2 | ❌ Not Met | Read-Only Mode |</p>
+<p><strong>Fault Tolerance Matrix:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Available Nodes</th>
+<th>Quorum (5/2 + 1 = 3)</th>
+<th>Cluster State</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Normal</td>
+<td>5</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>1 Node Down</td>
+<td>4</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>2 Nodes Down</td>
+<td>3</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>3 Nodes Down</td>
+<td>2</td>
+<td>❌ Not Met</td>
+<td>Read-Only Mode</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Best For:</strong></p>
 <ul>
 <li>Mission-critical applications</li>
@@ -4814,14 +4924,49 @@
 <li>⚠️ <strong>High Resource Requirements</strong>: Significant infrastructure investment</li>
 <li>⚠️ <strong>Performance Impact</strong>: Consensus overhead becomes noticeable</li>
 </ul>
-<p><strong>Fault Tolerance Matrix:</strong>
-| Scenario | Available Nodes | Quorum (7/2 + 1 = 4) | Cluster State |
-|----------|-----------------|----------------------|---------------|
-| Normal | 7 | ✅ Met | Fully Operational |
-| 1 Node Down | 6 | ✅ Met | Fully Operational |
-| 2 Nodes Down | 5 | ✅ Met | Fully Operational |
-| 3 Nodes Down | 4 | ✅ Met | Fully Operational |
-| 4 Nodes Down | 3 | ❌ Not Met | Read-Only Mode |</p>
+<p><strong>Fault Tolerance Matrix:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Available Nodes</th>
+<th>Quorum (7/2 + 1 = 4)</th>
+<th>Cluster State</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Normal</td>
+<td>7</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>1 Node Down</td>
+<td>6</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>2 Nodes Down</td>
+<td>5</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>3 Nodes Down</td>
+<td>4</td>
+<td>✅ Met</td>
+<td>Fully Operational</td>
+</tr>
+<tr>
+<td>4 Nodes Down</td>
+<td>3</td>
+<td>❌ Not Met</td>
+<td>Read-Only Mode</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Best For:</strong></p>
 <ul>
 <li>Extremely critical applications</li>

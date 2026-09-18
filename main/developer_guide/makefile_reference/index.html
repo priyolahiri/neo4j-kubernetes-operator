@@ -3838,6 +3838,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#make-check-docs-tables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        make check-docs-tables
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#make-helm-lint-make-helm-template-make-helm-package" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5725,6 +5736,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#make-check-docs-tables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        make check-docs-tables
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#make-helm-lint-make-helm-template-make-helm-package" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -7336,6 +7358,12 @@ Chains: <code>manifests</code> → <code>generate</code> → <code>sync-kustomiz
 <p><strong>Description</strong>: Verify every <code>examples/</code> subdirectory is listed in <code>examples/README.md</code> (and every listed directory exists), and that every example <code>.yaml</code> is named in its own directory's README or the top-level one.
 <strong>Usage</strong>: <code>make check-examples-catalog</code>
 <strong>Why</strong>: the directory list had been missing <code>cross-cluster-replication/</code> since that capability shipped — a whole capability's examples invisible to anyone browsing. The file-level half catches the other version of it: an example nobody links to is one nobody finds.</p>
+<h3 id="make-check-docs-tables"><code>make check-docs-tables</code><a class="headerlink" href="#make-check-docs-tables" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Description</strong>: Verify every Markdown table under <code>docs/</code> begins a new block, so Python-Markdown renders it as a table.
+<strong>Usage</strong>: <code>make check-docs-tables</code>
+<strong>Why</strong>: all five tables on the Fault Tolerance page shipped as literal rows of pipes. Written directly under a paragraph line, a table is swallowed as lazy continuation of that paragraph — and the source looks correct in an editor and in GitHub's preview, which is lenient here. It only showed up on the published site, and a user reported it.
+<strong>Notes</strong>: a table directly under a <strong>heading</strong> is fine and is not flagged — the heading closes the preceding block. That exception was checked against Python-Markdown with this site's extension set rather than assumed.</p>
+<p>It also checks <strong>box diagrams</strong>: every line of a rectangle must be the same width with its right border in the same column. Only true rectangles (a block with a <code>┌───┐</code> top edge) are checked — tree listings and state-machine flows use the same characters with deliberately ragged edges, and 6 of the 8 diagrams under <code>docs/</code> are one of those. That split was measured before the rule was written, so it starts with no false positives.</p>
 <h3 id="make-helm-lint-make-helm-template-make-helm-package"><code>make helm-lint</code>, <code>make helm-template</code>, <code>make helm-package</code><a class="headerlink" href="#make-helm-lint-make-helm-template-make-helm-package" title="Anchor link to this section">&para;</a></h3>
 <p>Standard helm chart targets. <code>helm-package</code> depends on <code>helm-sync-crds</code>, <code>helm-sync-rbac</code>, and <code>helm-sync-artifacthub-crds</code>, so packaging never ships stale rules or annotations. <code>helm-template</code> renders the chart into the <code>neo4j-operator-system</code> namespace.</p>
 <h3 id="make-helm-install-make-helm-upgrade-make-helm-uninstall-make-helm-install-test-make-helm-docs"><code>make helm-install</code>, <code>make helm-upgrade</code>, <code>make helm-uninstall</code>, <code>make helm-install-test</code>, <code>make helm-docs</code><a class="headerlink" href="#make-helm-install-make-helm-upgrade-make-helm-uninstall-make-helm-install-test-make-helm-docs" title="Anchor link to this section">&para;</a></h3>
