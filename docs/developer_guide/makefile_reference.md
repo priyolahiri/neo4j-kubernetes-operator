@@ -200,6 +200,12 @@ Chains: `manifests` → `generate` → `sync-kustomize` → `sync-editor-viewer-
 **Usage**: `make check-examples-catalog`
 **Why**: the directory list had been missing `cross-cluster-replication/` since that capability shipped — a whole capability's examples invisible to anyone browsing. The file-level half catches the other version of it: an example nobody links to is one nobody finds.
 
+### `make check-docs-tables`
+**Description**: Verify every Markdown table under `docs/` begins a new block, so Python-Markdown renders it as a table.
+**Usage**: `make check-docs-tables`
+**Why**: all five tables on the Fault Tolerance page shipped as literal rows of pipes. Written directly under a paragraph line, a table is swallowed as lazy continuation of that paragraph — and the source looks correct in an editor and in GitHub's preview, which is lenient here. It only showed up on the published site, and a user reported it.
+**Notes**: a table directly under a **heading** is fine and is not flagged — the heading closes the preceding block. That exception was checked against Python-Markdown with this site's extension set rather than assumed.
+
 ### `make helm-lint`, `make helm-template`, `make helm-package`
 Standard helm chart targets. `helm-package` depends on `helm-sync-crds`, `helm-sync-rbac`, and `helm-sync-artifacthub-crds`, so packaging never ships stale rules or annotations. `helm-template` renders the chart into the `neo4j-operator-system` namespace.
 
