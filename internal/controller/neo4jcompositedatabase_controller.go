@@ -179,7 +179,7 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// STEP 2 — constituents, now that the namespace exists.
-	observed, err := r.reconcileConstituents(ctx, nc, cd, name, requeue)
+	observed, lookalikes, err := r.reconcileConstituents(ctx, nc, cd, name, requeue)
 	if err != nil {
 		return r.fail(ctx, cd, "reconcile constituents failed", err, requeue)
 	}
@@ -189,6 +189,17 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 			"Composite database %q is ready with %d constituent(s)", name, len(observed))
 	}
 	msg := fmt.Sprintf("composite database %q exposes %d constituent(s)", name, len(observed))
+	// An ordinary alias named like a constituent is NOT one and is not ours to
+	// remove, but it is indistinguishable from a constituent in any listing
+	// that shows only names — so say so here rather than leaving the user to
+	// wonder why enforceConstituents appears to ignore it. In status rather
+	// than as an event: this is a standing condition of the DBMS, and an event
+	// per reconcile would be noise forever.
+	if len(lookalikes) > 0 {
+		msg += fmt.Sprintf("; note %d alias(es) named like constituents but not part of "+
+			"this composite and so not managed by it: %s",
+			len(lookalikes), strings.Join(lookalikes, ", "))
+	}
 	r.setStatus(ctx, cd, neo4jv1beta1.PhaseReady, metav1.ConditionTrue,
 		EventReasonCompositeReady, msg, observed)
 	return ctrl.Result{RequeueAfter: requeue}, nil
@@ -196,23 +207,17 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 
 // reconcileConstituents adds, re-points and (when enforcing) removes
 // constituent aliases, returning the fully-qualified list the server reports
-// afterwards.
+// afterwards, plus any ordinary alias whose name merely looks like one of
+// ours.
 func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 	ctx context.Context, nc *neo4jclient.Client,
 	cd *neo4jv1beta1.Neo4jCompositeDatabase, composite string, _ time.Duration,
-) ([]string, error) {
+) (constituents []string, lookalikes []string, err error) {
 	live, err := nc.ShowAliases(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list aliases: %w", err)
+		return nil, nil, fmt.Errorf("list aliases: %w", err)
 	}
-	// Only aliases inside this composite's namespace are ours to manage.
-	existing := map[string]neo4jclient.AliasInfo{}
-	prefix := composite + "."
-	for _, a := range live {
-		if strings.HasPrefix(a.Name, prefix) {
-			existing[strings.TrimPrefix(a.Name, prefix)] = a
-		}
-	}
+	existing, lookalikes := classifyAliases(live, composite)
 
 	desired := map[string]struct{}{}
 	for _, c := range cd.Spec.Constituents {
@@ -225,7 +230,7 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 		if c.Remote != nil {
 			auth, err := r.remoteAuth(ctx, cd.Namespace, c.Remote)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			switch {
 			case !present:
@@ -234,7 +239,7 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 				// says so when a query is routed there.
 				if err := nc.CreateRemoteConstituent(ctx, composite, c.Name,
 					c.TargetDatabase, c.Remote.URL, auth); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeConstituentAdded,
 					"Constituent %q now resolves to %q on %s",
@@ -242,7 +247,7 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 			case remoteConstituentDrifted(current, c, auth):
 				if err := nc.AlterRemoteConstituent(ctx, composite, c.Name,
 					c.TargetDatabase, c.Remote.URL, auth); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeConstituentMoved,
 					"Constituent %q re-pointed to %q on %s",
@@ -258,13 +263,13 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 			// composite. The next reconcile picks it up.
 			dbInfo, err := nc.GetDatabaseInfo(ctx, c.TargetDatabase)
 			if err != nil {
-				return nil, fmt.Errorf("look up constituent target %q: %w", c.TargetDatabase, err)
+				return nil, nil, fmt.Errorf("look up constituent target %q: %w", c.TargetDatabase, err)
 			}
 			if dbInfo == nil {
 				continue
 			}
 			if err := nc.CreateCompositeConstituent(ctx, composite, c.Name, c.TargetDatabase); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeConstituentAdded,
 				"Constituent %q now resolves to %q",
@@ -274,7 +279,7 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 			// Location changing from remote to local is a real transition: the
 			// alias has to be re-pointed at a local database.
 			if err := nc.AlterCompositeConstituent(ctx, composite, c.Name, c.TargetDatabase); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeConstituentMoved,
 				"Constituent %q re-pointed from %q to %q",
@@ -288,7 +293,7 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 				continue
 			}
 			if err := nc.DropCompositeConstituent(ctx, composite, name); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeConstituentRemoved,
 				"Constituent %q removed — not in spec.constituents",
@@ -301,11 +306,46 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 	// should say what is true.
 	info, err := nc.ShowCompositeDatabase(ctx, composite)
 	if err != nil || info == nil {
-		return nil, err
+		return nil, lookalikes, err
 	}
 	out := append([]string(nil), info.Constituents...)
 	sort.Strings(out)
-	return out, nil
+	return out, lookalikes, nil
+}
+
+// classifyAliases splits every alias in the DBMS into the constituents of this
+// composite and the ordinary aliases that merely look like them.
+//
+// The `composite` column is the only thing that tells them apart. Matching on
+// the name prefix instead treats a plain alias as a constituent: Neo4j accepts
+// CREATE ALIAS `x.y` with no composite `x` in sight, and the result is listed
+// identically. The operator then tried to drop it as a constituent — DROP
+// ALIAS `x`.`y`, which matches nothing — and IF EXISTS swallowed the miss, so
+// it announced a removal that had not happened, on every reconcile, forever.
+//
+// A lookalike is not ours to drop: nothing in this CR's spec claims it, and
+// deleting a resource the user created out of band on the strength of a name
+// collision would be worse than leaving it. It is returned so the caller can
+// say it out loud, because it is invisible in any listing that shows only
+// names.
+func classifyAliases(live []neo4jclient.AliasInfo, composite string) (
+	map[string]neo4jclient.AliasInfo, []string,
+) {
+	existing := map[string]neo4jclient.AliasInfo{}
+	var lookalikes []string
+	prefix := composite + "."
+	for _, a := range live {
+		switch {
+		case a.Composite == composite:
+			existing[neo4jclient.UnqualifyConstituent(composite, a.Name)] = a
+		case strings.HasPrefix(a.Name, prefix):
+			// Belongs to no composite, or to a different one — either way it
+			// is not a constituent of ours, however much the name suggests it.
+			lookalikes = append(lookalikes, a.Name)
+		}
+	}
+	sort.Strings(lookalikes)
+	return existing, lookalikes
 }
 
 // remoteAuth resolves a remote constituent's credentials into the form the

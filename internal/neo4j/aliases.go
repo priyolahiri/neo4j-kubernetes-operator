@@ -27,6 +27,16 @@ import (
 type AliasInfo struct {
 	// Name is the alias name.
 	Name string
+	// Composite is the composite database this alias is a constituent of, or
+	// "" for an ordinary alias.
+	//
+	// This is the ONLY reliable way to tell a constituent from an ordinary
+	// alias whose name merely contains a dot. Neo4j accepts
+	// `CREATE ALIAS \`x.y\`` with no composite `x` in sight, producing a plain
+	// alias that looks exactly like a constituent of `x` in every listing.
+	// Matching on the name prefix treats the two as the same thing; this
+	// column does not.
+	Composite string
 	// Database is the database the alias resolves to.
 	Database string
 	// Location is "local" or "remote".
@@ -67,8 +77,8 @@ func (c *Client) ShowAliases(ctx context.Context) ([]AliasInfo, error) {
 	defer c.closeSession(ctx, session)
 
 	result, err := session.Run(ctx,
-		"SHOW ALIASES FOR DATABASE YIELD name, database, location, url, user "+
-			"RETURN name, database, location, url, user", nil)
+		"SHOW ALIASES FOR DATABASE YIELD name, composite, database, location, url, user "+
+			"RETURN name, composite, database, location, url, user", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show aliases: %w", err)
 	}
@@ -77,16 +87,19 @@ func (c *Client) ShowAliases(ctx context.Context) ([]AliasInfo, error) {
 	for result.Next(ctx) {
 		rec := result.Record()
 		name, _ := rec.Get("name")
+		composite, _ := rec.Get("composite")
 		database, _ := rec.Get("database")
 		location, _ := rec.Get("location")
 		url, _ := rec.Get("url")
 		user, _ := rec.Get("user")
 		out = append(out, AliasInfo{
-			Name:     columnString(name),
-			Database: columnString(database),
-			Location: columnString(location),
-			URL:      columnString(url),
-			User:     columnString(user),
+			Name: columnString(name),
+			// NULL for an ordinary alias, which columnString renders as "".
+			Composite: columnString(composite),
+			Database:  columnString(database),
+			Location:  columnString(location),
+			URL:       columnString(url),
+			User:      columnString(user),
 		})
 	}
 	if err := result.Err(); err != nil {
