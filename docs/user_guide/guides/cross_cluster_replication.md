@@ -75,19 +75,19 @@ Network mode, separate clusters — a real network path, mediated by a proxy
 the operator manages — no per-pod Services, no DNS setup required of you:
 
 ```
-UPSTREAM cluster (K8s cluster A)                    DOWNSTREAM cluster (K8s cluster B)
+UPSTREAM cluster (K8s cluster A)                     DOWNSTREAM cluster (K8s cluster B)
 ┌───────────────────────────────────────┐            ┌──────────────────────────────────┐
 │ Neo4jEnterpriseCluster                │            │ Neo4jEnterpriseCluster           │
 │   database: foo                       │            │                                  │
 │   crossClusterReplication.enabled     │            │ Neo4jReplicaDatabase             │
-│                                        │            │   name: foo-replica  (read-only) │
-│ ┌────────────┐   LoadBalancer   :6000  │  stream    │   source.mode: network           │
-│ │ CCDR proxy │◄──────────────── server-0│◄───────────┤   source.addresses: [...]        │
-│ │ (HAProxy)  │   :16000+i       server-N│            │                                  │
-│ └────────────┘                         │            │ Neo4jDatabaseAlias               │
-│   status.crossClusterReplication      ─┼────────────┤─► paste one address into         │
-│   .addresses                          │             │   source.addresses               │
-└───────────────────────────────────────┘             └──────────────────────────────────┘
+│                                       │            │   name: foo-replica  (read-only) │
+│ ┌────────────┐  LoadBalancer  :6000   │            │   source.mode: network           │
+│ │ CCDR proxy │◄──────── server-0      │◄───────────┤   source.addresses: [...]        │
+│ │ (HAProxy)  │  :16000+i  server-N    │            │                                  │
+│ └────────────┘                        │            │ Neo4jDatabaseAlias               │
+│   status.crossClusterReplication      ├────────────┤ ► paste one address into         │
+│   .addresses                          │            │     source.addresses             │
+└───────────────────────────────────────┘            └──────────────────────────────────┘
 ```
 
 RAFT (7000) and routing (7688) are never exposed by the proxy — only the

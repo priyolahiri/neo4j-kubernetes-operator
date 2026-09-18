@@ -206,6 +206,8 @@ Chains: `manifests` → `generate` → `sync-kustomize` → `sync-editor-viewer-
 **Why**: all five tables on the Fault Tolerance page shipped as literal rows of pipes. Written directly under a paragraph line, a table is swallowed as lazy continuation of that paragraph — and the source looks correct in an editor and in GitHub's preview, which is lenient here. It only showed up on the published site, and a user reported it.
 **Notes**: a table directly under a **heading** is fine and is not flagged — the heading closes the preceding block. That exception was checked against Python-Markdown with this site's extension set rather than assumed.
 
+It also checks **box diagrams**: every line of a rectangle must be the same width with its right border in the same column. Only true rectangles (a block with a `┌───┐` top edge) are checked — tree listings and state-machine flows use the same characters with deliberately ragged edges, and 6 of the 8 diagrams under `docs/` are one of those. That split was measured before the rule was written, so it starts with no false positives.
+
 ### `make helm-lint`, `make helm-template`, `make helm-package`
 Standard helm chart targets. `helm-package` depends on `helm-sync-crds`, `helm-sync-rbac`, and `helm-sync-artifacthub-crds`, so packaging never ships stale rules or annotations. `helm-template` renders the chart into the `neo4j-operator-system` namespace.
 

@@ -63,5 +63,55 @@ if [ -n "$found" ]; then
   exit 1
 fi
 
+# --- Box diagrams ---------------------------------------------------------
+#
+# The same class of breakage, one layer down: a rectangle whose sides do not
+# line up renders as a mess on the site exactly as it does here. The network-
+# mode CCDR diagram drifted across three different right-border columns.
+#
+# Only TRUE RECTANGLES are checked — a block containing a `┌───┐` top edge.
+# Tree listings (`├── foo`) and state-machine flows use the same characters
+# with deliberately ragged right edges, and 6 of the 8 diagrams in docs/ are
+# one of those. Measured before this rule was written, so it starts at zero
+# false positives rather than teaching people to ignore it.
+diag=$(python3 - <<'PY'
+import pathlib, re, sys
+BOX = set('┌┐└┘│├┤┬┴┼')
+TOP = re.compile(r'┌─{3,}┐')
+bad, count = [], 0
+for p in sorted(pathlib.Path('docs').rglob('*.md')):
+    lines, infence, cur, start = p.read_text().split('\n'), False, [], 0
+    def flush(block, ln0):
+        global count
+        if len(block) < 2 or not any(TOP.search(l) for l in block):
+            return                       # a tree or a flow, ragged by design
+        count += 1
+        widths = sorted({len(l) for l in block})
+        right = sorted({len(l) - 1 - next(j for j, c in enumerate(reversed(l)) if c in BOX)
+                        for l in block})
+        if len(widths) > 1 or len(right) > 1:
+            bad.append(f"{p}:{ln0}: box diagram sides do not line up\n"
+                       f"    line widths        : {widths}\n"
+                       f"    right-border column: {right}")
+    for i, ln in enumerate(lines):
+        if ln.startswith('```'):
+            if infence: flush(cur, start)
+            cur, infence, start = [], not infence, i + 2
+            continue
+        if infence and any(c in BOX for c in ln):
+            cur.append(ln)
+    if infence and cur: flush(cur, start)
+if bad:
+    print('\n'.join(bad)); sys.exit(1)
+print(count)
+PY
+) || {
+  echo "ERROR: box diagram(s) whose sides do not line up:" >&2
+  echo "$diag" >&2
+  echo "  Every line of a rectangle must be the same width, with its right" >&2
+  echo "  border in the same column." >&2
+  exit 1
+}
+
 tables=$(grep -rhcE '^\s*\|[ :|-]+\|\s*$' docs --include='*.md' | paste -sd+ - | bc)
-echo "check-docs-tables: OK — ${tables} table(s), each starting a new block."
+echo "check-docs-tables: OK — ${tables} table(s) starting a new block, ${diag} box diagram(s) aligned."
