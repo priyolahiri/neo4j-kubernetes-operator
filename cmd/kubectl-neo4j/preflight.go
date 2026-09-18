@@ -635,18 +635,33 @@ func checkBackupPVC(ctx context.Context, c client.Client, ns string, backup *neo
 	if pvc == nil {
 		return nil
 	}
-	if pvc.Name != "" {
-		var existing corev1.PersistentVolumeClaim
-		if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: pvc.Name}, &existing); apierrors.IsNotFound(err) {
-			return []symptom{{
-				mark: markProblem, subject: "pvc " + pvc.Name, what: "does not exist in " + ns,
-				action: "spec.storage.pvc.name references an existing claim. Create it, or drop " +
-					"the name so the operator provisions one.",
-			}}
-		}
-		return nil
+	// A nameless PVC is refused by the operator outright, so catching it here
+	// is the whole point of running preflight first. This used to fall through
+	// to the StorageClass check and pass, while the advice for a MISSING named
+	// PVC told the user to drop the name — steering them into exactly this
+	// rejection, whose reason is that artifacts land in an EmptyDir and are
+	// discarded. Keep both halves in step with
+	// internal/validation/backup_validator.go.
+	if strings.TrimSpace(pvc.Name) == "" {
+		return []symptom{{
+			mark: markProblem, subject: "spec.storage.pvc.name", what: "is not set",
+			action: "The operator refuses a PVC-backed backup without it: the artifacts " +
+				"would be written to an EmptyDir and discarded when the Job's TTL " +
+				"elapses. Name a claim that exists, or use a different storage type.",
+		}}
 	}
-	return checkStorageClass(ctx, c, pvc.StorageClassName)
+
+	var existing corev1.PersistentVolumeClaim
+	if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: pvc.Name}, &existing); apierrors.IsNotFound(err) {
+		return []symptom{{
+			mark: markProblem, subject: "pvc " + pvc.Name, what: "does not exist in " + ns,
+			action: "spec.storage.pvc.name must reference a claim that already exists — the " +
+				"operator does not provision one, and refuses the CR if the name is " +
+				"blank. Create the PVC first (any StorageClass that can bind), or point " +
+				"the name at an existing claim.",
+		}}
+	}
+	return nil
 }
 
 // decodeSubject turns one manifest document into the typed object its Kind
