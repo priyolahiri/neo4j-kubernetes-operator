@@ -4132,7 +4132,7 @@ A <code>composite: true</code> flag would leave most of that spec silently inert
 <tr>
 <td><code>enforceConstituents</code></td>
 <td><code>bool</code></td>
-<td>Default <code>true</code>. Makes <code>constituents</code> authoritative: an alias in the composite's namespace that is absent from spec is dropped. Set <code>false</code> to leave out-of-band constituents alone, in which case this CR only ever adds. Same posture as <code>Neo4jRole.enforcePrivileges</code>.</td>
+<td>Default <code>true</code>. Makes <code>constituents</code> authoritative: a <strong>constituent</strong> of this composite that is absent from spec is dropped. Set <code>false</code> to leave out-of-band constituents alone, in which case this CR only ever adds. Same posture as <code>Neo4jRole.enforcePrivileges</code>. An ordinary alias that merely <em>looks</em> like a constituent (<code>&lt;composite&gt;.&lt;x&gt;</code> with no composite behind it — Neo4j's <code>composite</code> column is <code>NULL</code>) is never dropped: it is not a constituent, and it is reported in <code>status.message</code> instead.</td>
 </tr>
 <tr>
 <td><code>defaultCypherLanguage</code></td>

@@ -4077,6 +4077,18 @@ namespace that is not in spec gets removed. Set <code>enforceConstituents: false
 to leave out-of-band constituents alone, in which case the operator only ever
 adds.</p>
 <div class="admonition info">
+<p class="admonition-title">An alias that only <em>looks</em> like a constituent is left alone</p>
+<p>Neo4j distinguishes a constituent from an ordinary alias by a <code>composite</code>
+column, not by the name — so <code>cineasts.stray</code>, created out of band with no
+composite behind it, is <strong>not</strong> a constituent of <code>cineasts</code> however much it
+reads like one. <code>enforceConstituents</code> does not remove it: nothing in this
+CR claims it, and deleting a resource on the strength of a name collision
+would be worse than leaving it.</p>
+<p>It is named in <code>status.message</code> instead, because <code>SHOW ALIASES</code> shows only
+the name and the two are otherwise indistinguishable. To see which is
+which: <code>SHOW ALIASES FOR DATABASE YIELD name, composite</code>.</p>
+</div>
+<div class="admonition info">
 <p class="admonition-title">Do not use <code>Neo4jDatabaseAlias</code> for a constituent</p>
 <p><a href="../database_aliases/"><code>Neo4jDatabaseAlias</code></a> manages ordinary aliases, and
 creating a dotted one through it is how you reach the <code>42N87</code> above — it
