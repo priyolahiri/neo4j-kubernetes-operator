@@ -4195,6 +4195,11 @@ cluster only when it <em>needs</em> clustering.</p>
 <td>Alias DDL is deployment-independent; the CCDR failover behaviour is covered in Phase 5</td>
 </tr>
 <tr>
+<td><strong>Composite databases</strong> (<code>Neo4jCompositeDatabase</code>)</td>
+<td>Standalone</td>
+<td>A composite stores no data and has no topology, so clustering adds nothing to its code path — it is alias DDL plus an ordering guard. A <strong>remote</strong> constituent would need a second DBMS; pointing one back at the same server proves the keystore path without a second Enterprise JVM, so it stays here too</td>
+</tr>
+<tr>
 <td><strong>Operator→Neo4j TLS verification</strong> (CA path + <code>tls.crt</code> pinning)</td>
 <td>Standalone</td>
 <td>Standalone never reads <code>ca.crt</code> server-side (no cluster SSL policy), so removing that key from the TLS Secret isolates the <em>operator's</em> client verification with nothing else changing. On a cluster the same edit also breaks intra-cluster mTLS and the two failures are indistinguishable</td>
@@ -4298,11 +4303,16 @@ because plugin discovery by binary name is part of what is being verified:</p>
 <td><code>kubectl neo4j explain ServersHealthy</code> → meaning plus guidance; <code>explain --list</code> enumerates everything it knows</td>
 </tr>
 <tr>
+<td><code>explain</code> a condition REASON</td>
+<td><code>kubectl neo4j explain CompositeDatabaseNameBlocked</code> → <code>(reason)</code>, the ordering trap and how to clear it; <code>explain --list</code> has a <strong>Reasons:</strong> section. Reasons are the most specific thing a status carries and were unreachable before v1.16.0</td>
+</tr>
+<tr>
 <td><code>explain</code> admits a gap</td>
 <td>an invented term (<code>explain NotARealCondition</code>) prints <em>no explanation for …</em>, points at <code>--list</code>, and exits <code>2</code> — it never guesses. The other half of this, an unrecognised phase on a live resource naming the CLI's own version, is only reachable against an operator newer than the CLI; note it as unreachable rather than recording it as passed</td>
 </tr>
 </tbody>
 </table>
+<p>| <code>preflight</code> on the cloud substrate | on Kind, a cluster with <code>spec.crossClusterReplication.enabled</code> reports the <strong>Kind</strong> case (<code>…</code> — no load-balancer controller), not a false exposure problem. A cluster with a hard zone constraint (<code>topologySpread.enabled</code>, default <code>DoNotSchedule</code>) on a single unlabelled-node Kind reports <code>✗ zones</code>. A <code>spec.securityContext</code> override that drops <code>runAsNonRoot</code> in a namespace labelled <code>pod-security.kubernetes.io/enforce=restricted</code> reports <code>✗ spec.securityContext</code> naming each missing field. All three are new in v1.16.0 and need no running database |</p>
 <p><strong>Part B — the failure paths (operator up, no Neo4j running):</strong></p>
 <p>Every resource below is built <em>not to start</em>, so none of them runs a JVM and
 none of them counts against the one-deployment-at-a-time rule. Apply, read,
@@ -4404,6 +4414,34 @@ back to 1 replica.</p>
 <tr>
 <td>Alias drift is corrected</td>
 <td><code>ALTER ALIAS</code> it elsewhere by hand → next reconcile restores <code>spec.targetDatabase</code></td>
+</tr>
+<tr>
+<td>Composite database</td>
+<td><code>Neo4jCompositeDatabase</code> with two local constituents → Ready; <code>status.observedConstituents</code> lists them <strong>fully qualified</strong> (<code>cineasts.latest</code>), read back from the server rather than echoed from spec</td>
+</tr>
+<tr>
+<td>Composite: where a constituent is reachable from</td>
+<td>from a session <strong>on the composite</strong> (<code>cypher-shell -d cineasts</code>), <code>USE cineasts.latest MATCH (n) RETURN count(n)</code> succeeds and <code>RETURN graph.names()</code> lists the constituents. From the default database the same <code>USE</code> is refused with <code>42N04</code> — <strong>and following that error's own advice to "connect to <code>cineasts.latest</code> directly" fails with <code>22N51</code></strong>. Both halves matter: the guide tells users to ignore the server's suggestion, so a release that changed this would make the docs wrong</td>
+</tr>
+<tr>
+<td>Composite: the ordering trap is guarded</td>
+<td>create <code>CREATE ALIAS cineasts.latest</code> by hand with no composite present, then apply a <code>Neo4jCompositeDatabase</code> named <code>cineasts</code>: the CR reports <code>Failed</code> with reason <code>CompositeDatabaseNameBlocked</code> and <strong>names the alias to drop</strong>. Drop it → the composite is created on the next reconcile. Neo4j's own <code>42N87</code> never mentions ordering, so the operator's message is the only route out</td>
+</tr>
+<tr>
+<td>Composite: constituents are enforced</td>
+<td>with <code>enforceConstituents: true</code> (the default), create an extra alias in the composite's namespace by hand → next reconcile removes it. Set <code>false</code> → a hand-made constituent survives and appears in <code>observedConstituents</code></td>
+</tr>
+<tr>
+<td>Composite: a GRAPH privilege on it is caught</td>
+<td>a <code>Neo4jRole</code> granting <code>MATCH {*} ON GRAPH &lt;composite&gt;</code> → <code>PrivilegesResolve=False</code> with reason <code>GraphPrivilegeOnComposite</code>. Neo4j accepts and persists such a grant while it does nothing, so the operator's warning is the only signal</td>
+</tr>
+<tr>
+<td>Composite: deletion removes aliases, not data</td>
+<td><code>deletionPolicy: Delete</code> → <code>DROP COMPOSITE DATABASE ... CASCADE ALIASES</code>; afterwards <code>SHOW ALIASES</code> has none of them and <strong>both target databases are still online with their data</strong></td>
+</tr>
+<tr>
+<td>Composite: remote constituent keystore</td>
+<td>set <code>spec.remoteAliasKeystore</code> on the standalone, then a constituent with <code>remote.credentialsSecretRef</code> whose <code>url</code> points back at <strong>this same DBMS</strong> — enough to prove the keystore mounts and Neo4j can encrypt the alias credentials, without a second Enterprise JVM. Omitting the keystore must be refused <strong>at apply time</strong> naming the field, not inside the server with a <code>50N09</code>/<code>50N00</code> that mentions neither the CR nor the constituent</td>
 </tr>
 <tr>
 <td>TLS: CA path</td>
@@ -5050,6 +5088,15 @@ the first walk. The scripted steps already do.</p>
 <td style="text-align: center;">✅ (survives promotion)</td>
 </tr>
 <tr>
+<td>Composite databases</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (local + the keystore path)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
 <td>Operator→Neo4j TLS (CA + pinned)</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
@@ -5072,6 +5119,24 @@ the first walk. The scripted steps already do.</p>
 <td style="text-align: center;">✅ (caused on purpose)</td>
 <td style="text-align: center;">✅ (<code>preflight</code> on what is deployed)</td>
 <td style="text-align: center;">✅ (<code>…</code> during a restart)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>CLI: cloud substrate (<code>preflight</code> zones / PSA / default class / private LB)</td>
+<td style="text-align: center;">✅ (all four reachable on Kind)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Operator build metadata (<code>neo4j_operator_build_info</code>)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (scrape <code>/metrics</code>)</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
