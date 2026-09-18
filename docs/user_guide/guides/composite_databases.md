@@ -96,6 +96,19 @@ namespace that is not in spec gets removed. Set `enforceConstituents: false`
 to leave out-of-band constituents alone, in which case the operator only ever
 adds.
 
+!!! info "An alias that only *looks* like a constituent is left alone"
+
+    Neo4j distinguishes a constituent from an ordinary alias by a `composite`
+    column, not by the name — so `cineasts.stray`, created out of band with no
+    composite behind it, is **not** a constituent of `cineasts` however much it
+    reads like one. `enforceConstituents` does not remove it: nothing in this
+    CR claims it, and deleting a resource on the strength of a name collision
+    would be worse than leaving it.
+
+    It is named in `status.message` instead, because `SHOW ALIASES` shows only
+    the name and the two are otherwise indistinguishable. To see which is
+    which: `SHOW ALIASES FOR DATABASE YIELD name, composite`.
+
 !!! info "Do not use `Neo4jDatabaseAlias` for a constituent"
 
     [`Neo4jDatabaseAlias`](database_aliases.md) manages ordinary aliases, and
