@@ -128,5 +128,14 @@ update-alm-examples
 unit-tests.json
 unit-junit.xml
 
+# kubectl-neo4j support bundles. The command writes them to the CURRENT
+# directory, so a verification journey run from inside the repo drops them
+# wherever it happened to be. Eight were committed to cmd/kubectl-neo4j/
+# across six commits before this rule existed (two still tracked at the time
+# it was added). They are diagnostics from a throwaway Kind cluster and are
+# never worth committing.
+neo4j-support-bundle-*.tar.gz
+neo4j-support-bundle-*/
+
 # Local-only Claude Code instructions (per-developer, never committed)
 CLAUDE.local.md
