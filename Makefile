@@ -467,6 +467,10 @@ check-docs-release-pins: ## Verify every documented install command names the cu
 check-examples-catalog: ## Verify every examples/ directory is listed and every example is reachable from a README.
 	@./scripts/check-examples-catalog.sh
 
+.PHONY: check-docs-tables
+check-docs-tables: ## Verify every Markdown table in docs/ renders as a table, not as literal pipes.
+	@./scripts/check-docs-tables.sh
+
 .PHONY: check-knowledge-drift
 check-knowledge-drift: ## Verify every 'pinned-by:'/file reference in docs/knowledge/ still resolves to a real path.
 	@./scripts/check-knowledge-drift.sh

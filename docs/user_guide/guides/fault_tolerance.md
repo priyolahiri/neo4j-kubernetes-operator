@@ -55,6 +55,7 @@ spec:
 - ⚠️ **Manual Intervention Required**: Recovery often requires operator intervention
 
 **Fault Tolerance Matrix:**
+
 | Scenario | Available Nodes | Quorum (2/2 + 1 = 2) | Cluster State |
 |----------|-----------------|----------------------|---------------|
 | Normal | 2 | ✅ Met | Fully Operational |
@@ -84,6 +85,7 @@ spec:
 - ✅ **Split-Brain Protection**: Minority partition becomes read-only
 
 **Fault Tolerance Matrix:**
+
 | Scenario | Available Nodes | Quorum (3/2 + 1 = 2) | Cluster State |
 |----------|-----------------|----------------------|---------------|
 | Normal | 3 | ✅ Met | Fully Operational |
@@ -114,6 +116,7 @@ spec:
 - ⚠️ **Increased Consensus Overhead**: More nodes participating in consensus
 
 **Fault Tolerance Matrix:**
+
 | Scenario | Available Nodes | Quorum (4/2 + 1 = 3) | Cluster State |
 |----------|-----------------|----------------------|---------------|
 | Normal | 4 | ✅ Met | Fully Operational |
@@ -139,6 +142,7 @@ spec:
 - ⚠️ **Increased Complexity**: More nodes to manage and monitor
 
 **Fault Tolerance Matrix:**
+
 | Scenario | Available Nodes | Quorum (5/2 + 1 = 3) | Cluster State |
 |----------|-----------------|----------------------|---------------|
 | Normal | 5 | ✅ Met | Fully Operational |
@@ -187,6 +191,7 @@ spec:
 - ⚠️ **Performance Impact**: Consensus overhead becomes noticeable
 
 **Fault Tolerance Matrix:**
+
 | Scenario | Available Nodes | Quorum (7/2 + 1 = 4) | Cluster State |
 |----------|-----------------|----------------------|---------------|
 | Normal | 7 | ✅ Met | Fully Operational |

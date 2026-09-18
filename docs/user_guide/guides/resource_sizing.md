@@ -488,6 +488,7 @@ Page Cache Size = Database Size × 1.2 (20% growth buffer)
 ```
 
 **Examples:**
+
 | Database Size | Recommended Page Cache | Container Memory |
 |--------------|------------------------|------------------|
 | 10GB | 12GB | 16GB+ |

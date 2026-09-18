@@ -81,6 +81,9 @@ jobs:
     - name: Every examples/ directory is listed and every example is linked
       run: make check-examples-catalog
 
+    - name: Markdown tables render as tables
+      run: make check-docs-tables
+
     - name: Every CRD listed on docs landing page, README and nav
       run: make check-crd-catalog
 
