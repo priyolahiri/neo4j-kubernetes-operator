@@ -65,6 +65,15 @@ This is the most common manifest error there is, and it used to pass: the docume
 
 Open maps are left alone, because every key in them is your data rather than a field name: `spec.config`, a composite constituent's `driverSettings`, labels and annotations. `metadata` and `status` are not walked either — they belong to Kubernetes, not to this operator.
 
+This check is **offline**, so it runs on every kind — including the ones whose cross-reference rules need `--connect`. Such a document reports the typo *and* says what is still unchecked:
+
+```
+Neo4jShardedDatabase/products-sharded (sharded.yaml):
+  ✗ spec.propertyShards: Invalid value: unknown field: …
+  - not fully checked — Neo4jShardedDatabase validation resolves cross-references;
+    re-run with --connect to check it
+```
+
 ### It is not a replacement for `--dry-run=server`
 
 `kubectl apply --dry-run=server` already enforces the **CRD schema**: field types, enums, numeric ranges, required fields, and the CEL immutability rules. `validate` does **not** duplicate that.

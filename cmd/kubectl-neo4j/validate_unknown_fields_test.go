@@ -158,3 +158,30 @@ func TestKindTypesCoversEveryValidator(t *testing.T) {
 		assert.True(t, ok, "kindTypes has %q, which is not a validated kind", kind)
 	}
 }
+
+// A kind whose validator needs a cluster is skipped offline — but the
+// unknown-field check reads only the document and the Go type, so it must run
+// anyway. It used to sit after the skip, which left the six cross-referencing
+// kinds with no typo check at all: a bad `spec.propertyShards` on a
+// Neo4jShardedDatabase passed `validate` and was then refused by the API
+// server during the v1.16.0 journey.
+func TestUnknownFieldsAreCheckedOnKindsThatSkipOffline(t *testing.T) {
+	skipOffline := []string{}
+	for kind, kv := range validators {
+		if kv.needsClient {
+			skipOffline = append(skipOffline, kind)
+		}
+	}
+	assert.NotEmpty(t, skipOffline, "the premise of this test is that some kinds skip offline")
+
+	for _, kind := range skipOffline {
+		newObj, ok := kindTypes[kind]
+		assert.True(t, ok, "%s skips offline and has no type, so typos in it are invisible", kind)
+		if !ok {
+			continue
+		}
+		doc := []byte("spec:\n  definitelyNotAField: 1\n")
+		assert.Equal(t, []string{"spec.definitelyNotAField"}, unknownFieldPaths(doc, newObj()),
+			"%s must still be typo-checked while its cross-reference rules are skipped", kind)
+	}
+}
