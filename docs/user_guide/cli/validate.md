@@ -49,6 +49,22 @@ These are a stable contract, so you can rely on them in CI:
 
 ## What it checks — and what it doesn't
 
+### Misspelled fields
+
+A key the kind does not have is reported with its full path, one line per field:
+
+```
+$ kubectl neo4j validate -f standalone.yaml
+Neo4jEnterpriseStandalone/db (standalone.yaml):
+  ✗ spec.auth.secretRef: Invalid value: unknown field: this kind has no such
+    field. Check the spelling against the API reference — the operator ignores
+    it and the API server rejects the manifest.
+```
+
+This is the most common manifest error there is, and it used to pass: the document was decoded leniently, so an unrecognised key was dropped in silence and the file reported clean — then `kubectl apply` refused it with a strict-decoding error.
+
+Open maps are left alone, because every key in them is your data rather than a field name: `spec.config`, a composite constituent's `driverSettings`, labels and annotations. `metadata` and `status` are not walked either — they belong to Kubernetes, not to this operator.
+
 ### It is not a replacement for `--dry-run=server`
 
 `kubectl apply --dry-run=server` already enforces the **CRD schema**: field types, enums, numeric ranges, required fields, and the CEL immutability rules. `validate` does **not** duplicate that.
@@ -66,11 +82,11 @@ The two are complementary. In CI, run both.
 
 ### What gets checked, and what doesn't
 
-The operator has **26 CRD kinds, but only 12 have operator-side validators**. The command reports three distinct outcomes, and the distinction matters:
+The operator has **27 CRD kinds, but only 13 have operator-side validators**. The command reports three distinct outcomes, and the distinction matters:
 
 | | Kinds | Behaviour |
 |---|---|---|
-| **Checked offline** | `Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`, `Neo4jBackup`, `Neo4jPlugin`, `Neo4jDatabaseAlias`, `Neo4jReplicaDatabase` | Validated with no cluster |
+| **Checked offline** | `Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`, `Neo4jBackup`, `Neo4jPlugin`, `Neo4jDatabaseAlias`, `Neo4jCompositeDatabase`, `Neo4jReplicaDatabase` | Validated with no cluster |
 | **Need `--connect`** | `Neo4jDatabase`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jShardedDatabase` | Skipped offline; validated when connected |
 | **No validator at all** | the 12 Aura kinds, `Neo4jRestore`, `Neo4jReplicaPromotion` | Only the CRD schema applies — use `kubectl apply --dry-run=server` |
 

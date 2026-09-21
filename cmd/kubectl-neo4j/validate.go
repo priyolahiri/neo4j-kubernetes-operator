@@ -198,6 +198,29 @@ var validators = map[string]kindValidator{
 	}},
 }
 
+// kindTypes gives the dispatcher an empty value of each kind, so a document
+// can be walked against the type's own json tags and every unrecognised key
+// reported with its full path (validate_unknown_fields.go).
+//
+// Kept in step with `validators` by TestKindTypesCoversEveryValidator — a kind
+// here with no entry there would silently stop being checked for typos, which
+// is the failure this whole check exists to prevent.
+var kindTypes = map[string]func() any{
+	"Neo4jEnterpriseCluster":    func() any { return &neo4jv1beta1.Neo4jEnterpriseCluster{} },
+	"Neo4jEnterpriseStandalone": func() any { return &neo4jv1beta1.Neo4jEnterpriseStandalone{} },
+	"Neo4jBackup":               func() any { return &neo4jv1beta1.Neo4jBackup{} },
+	"Neo4jPlugin":               func() any { return &neo4jv1beta1.Neo4jPlugin{} },
+	"Neo4jDatabaseAlias":        func() any { return &neo4jv1beta1.Neo4jDatabaseAlias{} },
+	"Neo4jCompositeDatabase":    func() any { return &neo4jv1beta1.Neo4jCompositeDatabase{} },
+	"Neo4jReplicaDatabase":      func() any { return &neo4jv1beta1.Neo4jReplicaDatabase{} },
+	"Neo4jDatabase":             func() any { return &neo4jv1beta1.Neo4jDatabase{} },
+	"Neo4jUser":                 func() any { return &neo4jv1beta1.Neo4jUser{} },
+	"Neo4jRole":                 func() any { return &neo4jv1beta1.Neo4jRole{} },
+	"Neo4jRoleBinding":          func() any { return &neo4jv1beta1.Neo4jRoleBinding{} },
+	"Neo4jAuthRule":             func() any { return &neo4jv1beta1.Neo4jAuthRule{} },
+	"Neo4jShardedDatabase":      func() any { return &neo4jv1beta1.Neo4jShardedDatabase{} },
+}
+
 // finding is one rendered line of output, decoupled from field.Error so that
 // errors and warnings can be sorted and printed uniformly.
 type finding struct {
@@ -540,6 +563,17 @@ func validateDoc(doc []byte, source string, c client.Client, defaultNamespace st
 	errs, warns, pending, err := kv.fn(doc, c)
 	if err != nil {
 		return docResult{}, fmt.Errorf("cannot decode %s: %w", meta.Kind, err)
+	}
+	// A key the type does not have is a validation error, not a decode
+	// failure: it gets a finding and exit 1 like every other error, rather
+	// than aborting the file with exit 2 and hiding the rest of its findings.
+	if newObj, ok := kindTypes[meta.Kind]; ok {
+		for _, path := range unknownFieldPaths(doc, newObj()) {
+			res.findings = append(res.findings, finding{"error", path,
+				"Invalid value: unknown field: this kind has no such field. " +
+					"Check the spelling against the API reference — the operator " +
+					"ignores it and the API server rejects the manifest."})
+		}
 	}
 	for _, e := range errs {
 		res.findings = append(res.findings, finding{"error", e.Field, e.ErrorBody()})

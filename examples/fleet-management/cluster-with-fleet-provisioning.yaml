@@ -50,9 +50,9 @@ spec:
     tag: 5.26-enterprise
   topology:
     servers: 3
-  authentication:
-    passwordSecretRef:
-      name: neo4j-admin-secret
+  auth:
+    authenticationProviders: ["native"]
+    adminSecret: neo4j-admin-secret
   storage:
     size: 10Gi
 
