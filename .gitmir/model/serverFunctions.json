@@ -1770,7 +1770,7 @@
     "name": "CLI Validate",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Runs the operator's own validators (internal/validation) over manifest files before they are applied, offline for the 21 validators that never touch the client and connected for the cross-reference ones. Distinguishes errors, warnings and Pending, prints the ruleset version it carries, and warns on skew against the operator running in the cluster.",
+    "description": "Runs the operator's own validators (internal/validation) over manifest files before they are applied, offline for the 21 validators that never touch the client and connected for the cross-reference ones. Distinguishes errors, warnings and Pending, prints the ruleset version it carries, and warns on skew against the operator running in the cluster. It also reports every key a kind has no field for, with its full path, by walking the document against the type's json tags \u2014 open maps (spec.config, driverSettings), metadata and status are skipped, since their keys are data rather than field names.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
