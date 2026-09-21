@@ -4465,7 +4465,7 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>CLI: <code>cypher</code> never moves the password</td>
-<td><code>kubectl neo4j cypher &lt;name&gt; -c "SHOW DATABASES"</code> returns the same rows as the by-hand <code>kubectl exec</code>, and the exec line <code>connect</code> prints references <code>$DB_USERNAME</code> / <code>$DB_PASSWORD</code> <strong>by name</strong>. The password must appear in neither the printed command nor your shell history</td>
+<td><code>kubectl neo4j cypher &lt;name&gt; -c "SHOW DATABASES"</code> returns the same rows as the by-hand <code>kubectl exec</code>. <strong><code>connect</code> prints no exec line at all</strong> — it points at <code>kubectl neo4j cypher</code> and says the credentials are already in the pod; it is <code>cypher</code> that execs, referencing <code>$DB_USERNAME</code> / <code>$DB_PASSWORD</code> <strong>by name</strong> (<code>connect.go</code>), so the value reaches neither your shell history nor the API audit log. Check by grepping <code>connect</code>'s whole output for the real admin password: zero hits</td>
 </tr>
 <tr>
 <td>CLI: <code>explain</code> against a live resource</td>
