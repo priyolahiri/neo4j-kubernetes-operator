@@ -537,6 +537,27 @@ func validateDoc(doc []byte, source string, c client.Client, defaultNamespace st
 		return res, nil
 	}
 
+	// Unknown fields are checked BEFORE any skip decision: the check reads
+	// only the document and the Go type, so a kind whose validator needs a
+	// cluster has no reason to escape it. It used to sit after dispatch, which
+	// meant `Neo4jShardedDatabase` and the five other cross-referencing kinds
+	// were never typo-checked offline — and a bad spec.propertyShards sailed
+	// through `validate` into a rejected apply during the v1.16.0 journey.
+	//
+	// A key the type does not have is a validation error, not a decode
+	// failure: it gets a finding and exit 1 like every other error, rather
+	// than aborting the file with exit 2 and hiding the rest of its findings.
+	var unknownFindings []finding
+	if newObj, ok := kindTypes[meta.Kind]; ok {
+		for _, path := range unknownFieldPaths(doc, newObj()) {
+			unknownFindings = append(unknownFindings, finding{"error", path,
+				"Invalid value: unknown field: this kind has no such field. " +
+					"Check the spelling against the API reference — the operator " +
+					"ignores it and the API server rejects the manifest."})
+		}
+	}
+	res.findings = append(res.findings, unknownFindings...)
+
 	kv, ok := validators[meta.Kind]
 	if !ok {
 		// Precisely worded on purpose. These kinds have NO operator-side
@@ -548,6 +569,10 @@ func validateDoc(doc []byte, source string, c client.Client, defaultNamespace st
 		return res, nil
 	}
 	if kv.needsClient && c == nil {
+		// Both halves are true when a skipped kind has a typo: the
+		// cross-reference rules did not run, and the unknown field did get
+		// caught. The renderer shows the findings and then says what is still
+		// unchecked, rather than picking one and hiding the other.
 		res.skipped = fmt.Sprintf(
 			"%s validation resolves cross-references; re-run with --connect to check it", meta.Kind)
 		return res, nil
@@ -563,17 +588,6 @@ func validateDoc(doc []byte, source string, c client.Client, defaultNamespace st
 	errs, warns, pending, err := kv.fn(doc, c)
 	if err != nil {
 		return docResult{}, fmt.Errorf("cannot decode %s: %w", meta.Kind, err)
-	}
-	// A key the type does not have is a validation error, not a decode
-	// failure: it gets a finding and exit 1 like every other error, rather
-	// than aborting the file with exit 2 and hiding the rest of its findings.
-	if newObj, ok := kindTypes[meta.Kind]; ok {
-		for _, path := range unknownFieldPaths(doc, newObj()) {
-			res.findings = append(res.findings, finding{"error", path,
-				"Invalid value: unknown field: this kind has no such field. " +
-					"Check the spelling against the API reference — the operator " +
-					"ignores it and the API server rejects the manifest."})
-		}
 	}
 	for _, e := range errs {
 		res.findings = append(res.findings, finding{"error", e.Field, e.ErrorBody()})
@@ -600,7 +614,10 @@ func report(results []docResult, stdout *os.File, strict, quiet, connected bool)
 	totalErr, totalWarn, totalPending, validated, skipped := 0, 0, 0, 0, 0
 
 	for _, r := range results {
-		if r.skipped != "" {
+		// Skipped AND findings happens when a kind whose validator needs a
+		// cluster carries an unknown field: the typo check is offline, so it
+		// ran. Printing only "skipped" would hide a real error.
+		if r.skipped != "" && len(r.findings) == 0 {
 			skipped++
 			if !quiet {
 				fmt.Fprintf(stdout, "- %s: skipped — %s\n", describe(r), r.skipped)
@@ -632,6 +649,11 @@ func report(results []docResult, stdout *os.File, strict, quiet, connected bool)
 			} else {
 				fmt.Fprintf(stdout, "  %s %s\n", mark, f.detail)
 			}
+		}
+		// What was found is not all that was checked. Say what still was not,
+		// so a reported typo is not mistaken for a clean bill of health.
+		if r.skipped != "" && !quiet {
+			fmt.Fprintf(stdout, "  - not fully checked — %s\n", r.skipped)
 		}
 	}
 
