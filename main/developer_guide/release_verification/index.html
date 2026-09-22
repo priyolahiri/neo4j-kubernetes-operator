@@ -4517,7 +4517,7 @@ standalone backup" as one of Phase 1's outputs.</p>
 </tr>
 <tr>
 <td>Cross-topology restore</td>
-<td>restore the <strong>retained standalone backup</strong> from Phase 1 into the <strong>cluster</strong> via <code>instanceRef</code>; confirm the data round-trips. The cluster path stands up a short-lived <code>backup-seed-proxy-&lt;restore&gt;</code> Deployment that serves the backup PVC over HTTP, so the seed URI in <code>status</code> is an <code>http://…</code> URL, not a <code>file://</code> path</td>
+<td>restore the <strong>retained standalone backup</strong> from Phase 1 into the <strong>cluster</strong> via <code>instanceRef</code>; confirm the data round-trips. The cluster path stands up a short-lived <code>backup-seed-proxy-&lt;restore&gt;</code> Deployment that serves the backup PVC over HTTP. <strong>The seed URI is not in <code>status</code></strong> — <code>Neo4jRestore.status</code> has no such field; read it from the <code>RestoreStarted</code> event (<code>kubectl get events -n &lt;ns&gt; --field-selector reason=RestoreStarted</code>), which carries <code>seedURI=http://backup-seed-proxy-&lt;restore&gt;.&lt;ns&gt;.svc.cluster.local:8080/&lt;path&gt;/&lt;artifact&gt;.backup</code> — an <code>http://</code> URL, not a <code>file://</code> path. The proxy Deployment appearing and then being reaped is the other half of the evidence</td>
 </tr>
 <tr>
 <td>CLI: a healthy cluster reads as healthy</td>
