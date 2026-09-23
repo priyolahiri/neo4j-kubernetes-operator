@@ -297,14 +297,33 @@ var _ = Describe("Neo4jAuthRule end-to-end", Label("extended"), func() {
 		// the rule out-of-band.
 		time.Sleep(5 * time.Second)
 
+		// Dropping the rule out of band is the whole point of this spec, but
+		// it races the operator: drift correction is recreating the rule at
+		// the same time, and two writers on the system database can deadlock —
+		// 50N05, which Neo4j raises correctly rather than corrupting anything.
+		//
+		// The settle above makes the collision unlikely, not impossible: the
+		// operator reconciles on its own schedule, so no sleep can rule it
+		// out. This failed the 2026-09-23 extended run that way while the
+		// identical spec had passed on 2026-09-14.
+		//
+		// A deadlock is transient by definition, so retry rather than fail.
+		// Anything else is still a hard failure on the first attempt.
 		By("Manually dropping the rule via cypher-shell to simulate drift")
-		cmd, cancel := boundedExec(ctx, podName, namespace.Name,
-			"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
-			"CYPHER 25 DROP AUTH RULE analytics_team",
-		)
-		defer cancel()
-		out, err := cmd.CombinedOutput()
-		Expect(err).ToNot(HaveOccurred(), "cypher-shell DROP AUTH RULE failed; output: %s", string(out))
+		Eventually(func() error {
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
+				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
+				"CYPHER 25 DROP AUTH RULE analytics_team",
+			)
+			defer cancel()
+			out, err := cmd.CombinedOutput()
+			if err != nil && strings.Contains(string(out), "50N05") {
+				return fmt.Errorf("deadlocked against the operator's reconcile, retrying: %s", out)
+			}
+			Expect(err).ToNot(HaveOccurred(), "cypher-shell DROP AUTH RULE failed; output: %s", string(out))
+			return nil
+		}, 90*time.Second, 5*time.Second).Should(Succeed(),
+			"DROP AUTH RULE kept deadlocking against the operator")
 
 		By("Waiting for the operator to recreate the rule (drift reconciliation)")
 		Eventually(func() bool {
