@@ -65,7 +65,7 @@ This is the most common manifest error there is, and it used to pass: the docume
 
 Open maps are left alone, because every key in them is your data rather than a field name: `spec.config`, a composite constituent's `driverSettings`, labels and annotations. `metadata` and `status` are not walked either — they belong to Kubernetes, not to this operator.
 
-This check is **offline**, so it runs on every kind — including the ones whose cross-reference rules need `--connect`. Such a document reports the typo *and* says what is still unchecked:
+This check is **offline**, so it runs on **every one of the 27 kinds** — including the ones whose cross-reference rules need `--connect`, and the ones with no operator-side validator at all. "No validator" is not "no spelling": the kinds governed only by their CRD schema can still be misspelled, and the API server is a slower place to find out. The types come from the API scheme, so a CRD added later is covered the day it lands. Such a document reports the typo *and* says what is still unchecked:
 
 ```
 Neo4jShardedDatabase/products-sharded (sharded.yaml):
