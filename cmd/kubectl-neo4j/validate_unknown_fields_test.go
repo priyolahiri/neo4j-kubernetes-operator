@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -143,18 +144,62 @@ spec:
 	}
 }
 
-// A kind that validates but has no type here silently stops being checked for
-// typos — the exact gap this was written to close.
-func TestKindTypesCoversEveryValidator(t *testing.T) {
-	for kind := range validators {
-		newObj, ok := kindTypes[kind]
-		assert.True(t, ok, "kind %q validates but has no kindTypes entry, so typos in it are invisible", kind)
-		if ok {
-			assert.NotNil(t, newObj(), "kindTypes[%q] must build an object", kind)
+// EVERY Neo4j CRD kind must be typo-checked, not just the 13 with
+// operator-side validators. "No validator" is not "no spelling": a
+// Neo4jReplicaPromotion with spec.replicaDatabaseRef instead of
+// spec.replicaRef passed validate and was refused by the API server during the
+// v1.16.0 journey.
+//
+// Deriving the type from the scheme is what makes this hold for CRDs added
+// later — a hand-written list would omit them silently.
+func TestEveryRegisteredKindIsTypoChecked(t *testing.T) {
+	kinds := 0
+	for gvk := range neo4jScheme.AllKnownTypes() {
+		if gvk.Group != neo4jv1beta1.GroupVersion.Group || strings.HasSuffix(gvk.Kind, "List") {
+			continue
+		}
+		// Skip the meta types the scheme registers alongside ours.
+		if !strings.HasPrefix(gvk.Kind, "Neo4j") && !strings.HasPrefix(gvk.Kind, "Aura") {
+			continue
+		}
+		kinds++
+		obj := newObjectForKind(gvk.Kind)
+		assert.NotNil(t, obj, "%s is a registered CRD kind with no type lookup", gvk.Kind)
+		if obj == nil {
+			continue
+		}
+		doc := []byte("spec:\n  definitelyNotAField: 1\n")
+		assert.Equal(t, []string{"spec.definitelyNotAField"}, unknownFieldPaths(doc, obj),
+			"%s must be typo-checked", gvk.Kind)
+	}
+	assert.GreaterOrEqual(t, kinds, 27, "expected every CRD kind to be covered")
+}
+
+// Kinds whose validators need a cluster are skipped offline; the typo check
+// reads only the document and the type, so it must run anyway.
+func TestUnknownFieldsAreCheckedOnKindsThatSkipOffline(t *testing.T) {
+	skipOffline := []string{}
+	for kind, kv := range validators {
+		if kv.needsClient {
+			skipOffline = append(skipOffline, kind)
 		}
 	}
-	for kind := range kindTypes {
-		_, ok := validators[kind]
-		assert.True(t, ok, "kindTypes has %q, which is not a validated kind", kind)
+	assert.NotEmpty(t, skipOffline, "the premise of this test is that some kinds skip offline")
+	for _, kind := range skipOffline {
+		obj := newObjectForKind(kind)
+		assert.NotNil(t, obj, "%s skips offline and has no type, so typos in it are invisible", kind)
+		if obj == nil {
+			continue
+		}
+		doc := []byte("spec:\n  definitelyNotAField: 1\n")
+		assert.Equal(t, []string{"spec.definitelyNotAField"}, unknownFieldPaths(doc, obj),
+			"%s must still be typo-checked while its cross-reference rules are skipped", kind)
+	}
+}
+
+// A kind that is not ours at all must not be claimed.
+func TestNewObjectForKind_IgnoresForeignKinds(t *testing.T) {
+	for _, kind := range []string{"ConfigMap", "Deployment", "NotAKind", ""} {
+		assert.Nil(t, newObjectForKind(kind), "%q is not a Neo4j CRD kind", kind)
 	}
 }

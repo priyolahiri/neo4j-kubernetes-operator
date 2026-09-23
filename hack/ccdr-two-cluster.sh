@@ -40,14 +40,39 @@ log() { printf '\033[1;36m[ccdr]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[ccdr]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31m[ccdr]\033[0m %s\n' "$*" >&2; exit 1; }
 
+# cluster_config renders hack/kind-config.yaml for one cluster.
+#
+# That config pins `apiServerPort: 6443`, which is right for the single dev
+# cluster and fatal for the second one here: both would publish 127.0.0.1:6443
+# and the second create dies with "Bind for 127.0.0.1:6443 failed: port is
+# already allocated". The shared config has pinned the port since the initial
+# commit, and this script reused it for both clusters from the day it was
+# written — so `ccdr-e2e-up` could never create the downstream, and the Part E
+# walk it exists to automate was still being done by hand.
+#
+# The upstream keeps 6443, so existing habits and any tooling that assumes it
+# still work. The downstream drops the line entirely and lets Kind pick a free
+# port — no second hardcoded number to collide with something else later.
+cluster_config() {
+    local name="$1" out="$2"
+    if [ "${name}" = "${UPSTREAM}" ]; then
+        cp "${REPO_ROOT}/hack/kind-config.yaml" "${out}"
+    else
+        grep -v '^  apiServerPort:' "${REPO_ROOT}/hack/kind-config.yaml" > "${out}"
+    fi
+}
+
 create_cluster() {
     local name="$1" ctx="kind-$1"
     if kind get clusters 2>/dev/null | grep -qx "${name}"; then
         log "${name} already exists"
     else
         log "creating ${name}"
-        kind create cluster --name "${name}" --image "${KIND_NODE_IMAGE}" \
-            --config "${REPO_ROOT}/hack/kind-config.yaml"
+        local cfg
+        cfg="$(mktemp -t kind-config-XXXXXX.yaml)"
+        cluster_config "${name}" "${cfg}"
+        kind create cluster --name "${name}" --image "${KIND_NODE_IMAGE}" --config "${cfg}"
+        rm -f "${cfg}"
         kubectl --context "${ctx}" wait --for=condition=ready node --all --timeout=300s
     fi
 
