@@ -31,6 +31,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -198,28 +199,35 @@ var validators = map[string]kindValidator{
 	}},
 }
 
-// kindTypes gives the dispatcher an empty value of each kind, so a document
-// can be walked against the type's own json tags and every unrecognised key
-// reported with its full path (validate_unknown_fields.go).
+// newObjectForKind returns an empty instance of a Neo4j CRD kind, or nil when
+// the kind is not one of ours.
 //
-// Kept in step with `validators` by TestKindTypesCoversEveryValidator — a kind
-// here with no entry there would silently stop being checked for typos, which
-// is the failure this whole check exists to prevent.
-var kindTypes = map[string]func() any{
-	"Neo4jEnterpriseCluster":    func() any { return &neo4jv1beta1.Neo4jEnterpriseCluster{} },
-	"Neo4jEnterpriseStandalone": func() any { return &neo4jv1beta1.Neo4jEnterpriseStandalone{} },
-	"Neo4jBackup":               func() any { return &neo4jv1beta1.Neo4jBackup{} },
-	"Neo4jPlugin":               func() any { return &neo4jv1beta1.Neo4jPlugin{} },
-	"Neo4jDatabaseAlias":        func() any { return &neo4jv1beta1.Neo4jDatabaseAlias{} },
-	"Neo4jCompositeDatabase":    func() any { return &neo4jv1beta1.Neo4jCompositeDatabase{} },
-	"Neo4jReplicaDatabase":      func() any { return &neo4jv1beta1.Neo4jReplicaDatabase{} },
-	"Neo4jDatabase":             func() any { return &neo4jv1beta1.Neo4jDatabase{} },
-	"Neo4jUser":                 func() any { return &neo4jv1beta1.Neo4jUser{} },
-	"Neo4jRole":                 func() any { return &neo4jv1beta1.Neo4jRole{} },
-	"Neo4jRoleBinding":          func() any { return &neo4jv1beta1.Neo4jRoleBinding{} },
-	"Neo4jAuthRule":             func() any { return &neo4jv1beta1.Neo4jAuthRule{} },
-	"Neo4jShardedDatabase":      func() any { return &neo4jv1beta1.Neo4jShardedDatabase{} },
+// Derived from the API scheme rather than a hand-written map. Every root type
+// registers itself with SchemeBuilder, so a new CRD is typo-checked the day it
+// is added — a list maintained by hand would silently omit it, which is the
+// exact drift this check exists to catch.
+//
+// This deliberately covers ALL kinds, not just the 13 with operator-side
+// validators. The other 14 (the Aura suite, Neo4jRestore,
+// Neo4jReplicaPromotion) are governed by their CRD schema alone, and "no
+// validator" is not "no spelling". A Neo4jReplicaPromotion with
+// spec.replicaDatabaseRef instead of spec.replicaRef passed validate and was
+// then refused by the API server, during the very journey that added this
+// check.
+func newObjectForKind(kind string) any {
+	obj, err := neo4jScheme.New(neo4jv1beta1.GroupVersion.WithKind(kind))
+	if err != nil {
+		return nil
+	}
+	return obj
 }
+
+// neo4jScheme holds only this operator's types; it never needs a cluster.
+var neo4jScheme = func() *runtime.Scheme {
+	s := runtime.NewScheme()
+	utilruntime.Must(neo4jv1beta1.AddToScheme(s))
+	return s
+}()
 
 // finding is one rendered line of output, decoupled from field.Error so that
 // errors and warnings can be sorted and printed uniformly.
@@ -548,8 +556,8 @@ func validateDoc(doc []byte, source string, c client.Client, defaultNamespace st
 	// failure: it gets a finding and exit 1 like every other error, rather
 	// than aborting the file with exit 2 and hiding the rest of its findings.
 	var unknownFindings []finding
-	if newObj, ok := kindTypes[meta.Kind]; ok {
-		for _, path := range unknownFieldPaths(doc, newObj()) {
+	if obj := newObjectForKind(meta.Kind); obj != nil {
+		for _, path := range unknownFieldPaths(doc, obj) {
 			unknownFindings = append(unknownFindings, finding{"error", path,
 				"Invalid value: unknown field: this kind has no such field. " +
 					"Check the spelling against the API reference — the operator " +
