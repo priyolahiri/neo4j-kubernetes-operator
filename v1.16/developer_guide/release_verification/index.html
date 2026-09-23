@@ -1,0 +1,5423 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A Kubernetes operator for Neo4j Enterprise — declarative clusters, databases, users, roles, backups, and plugins.">
+      
+      
+        <meta name="author" content="Priyo Lahiri">
+      
+      
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/v1.16/developer_guide/release_verification/">
+      
+      
+        <link rel="prev" href="../testing/">
+      
+      
+        <link rel="next" href="../makefile_reference/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Release Verification - Neo4j Kubernetes Operator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/neo4j.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#release-verification" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Neo4j Kubernetes Operator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Release Verification
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    priyolahiri/neo4j-kubernetes-operator
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Neo4j Kubernetes Operator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    priyolahiri/neo4j-kubernetes-operator
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/getting_started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/operator-modes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operator Modes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/demo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Try the Demo
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/version_support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Neo4j Versions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/migration_guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configure & Deploy
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configure & Deploy
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/examples_gallery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/resource_sizing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Sizing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/clustering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clustering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/topology_placement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology Placement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/property_sharding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Property Sharding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/composite_databases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Composite Databases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/external_access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External Access (LB / NodePort / Ingress / Route)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugin Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/seed-uri/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Seed URI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/aura_fleet_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Aura Fleet Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/aura_orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Aura Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/mcp_client_setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Client Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication & Authorization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/tls_configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TLS Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/user_role_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Users, Roles & Auth Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../user_guide/cli/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/cli/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installing the CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/cli/validate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    validate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/cli/preflight/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    preflight
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/cli/status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/cli/diagnose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    diagnose
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/cli/connect/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    connect & cypher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/cli/support-bundle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    support-bundle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/cli/explain/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    explain
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/cli/export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    export
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operate
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/backup_restore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup & Restore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/cross_cluster_replication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-Cluster Replication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/database_aliases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Aliases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/upgrades/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrades
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/storage_expansion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage Expansion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/fault_tolerance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fault Tolerance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/multi_cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiple Kubernetes Clusters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_8" id="__nav_6_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Monitoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/prometheus-grafana-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prometheus & Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/kubernetes-events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kubernetes Events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_9" id="__nav_6_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Performance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tuning Neo4j Workloads
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tuning the Operator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshoot
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Troubleshoot
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    General Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/troubleshooting/backup_restore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup & Restore Issues
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/troubleshooting/split-brain-recovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Split-Brain Recovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../gitops/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_1" id="__nav_8_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CRD Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CRD Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jEnterpriseCluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jEnterpriseStandalone
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jdatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jShardedDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4juser/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jUser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jrole/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jRole
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jrolebinding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jRoleBinding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jauthrule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jAuthRule
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jplugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jPlugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jbackup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jBackup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jrestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jReplicaPromotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jcompositedatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jCompositeDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/neo4jdatabasealias/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neo4jDatabaseAlias
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraproviderconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraProviderConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurainstance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraInstance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurasnapshot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraSnapshot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurarestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auracustomermanagedkey/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraCustomerManagedKey
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraipfilter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraIPFilter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabasebackup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseBackup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auradatabaserestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraDatabaseRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraorganizationmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraOrganizationMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/auraprojectmember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraProjectMember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/aurainvite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AuraInvite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribute
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contribute
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../QUICKSTART/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../collaboration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Collaboration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ci_and_workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD & Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Verification
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#ground-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ground rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capability-routing-why-each-lands-where-it-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capability routing — why each lands where it does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-phase-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The phase plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The phase plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-0-cli-no-neo4j-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 — CLI (no Neo4j deployment)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-standalone-1-pod-2gi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — Standalone (1 pod, ~2Gi)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-cluster-3-servers-6gi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Cluster, 3 servers (~6Gi)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-property-sharding-cluster-202606-enterprise-3-2gi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 — Property sharding (cluster, 2026.06-enterprise, 3 × 2Gi)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-aura-no-kind-deployment-needs-aura-api-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — Aura (no Kind deployment; needs Aura API credentials)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-cross-cluster-replication-two-deployments-sequential-for-backup-mode-concurrent-for-network-mode-needs-202608" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 — Cross-cluster replication (two deployments; sequential for backup mode, concurrent for network mode; needs 2026.08+)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#coverage-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coverage at a glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keeping-this-current" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keeping this current
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification log
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../makefile_reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Makefile Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../openshift_olm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenShift OLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_9_11" id="__nav_9_11_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI-Assisted Contribution
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    AI-Assisted Contribution
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../llm-contribution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing with an LLM Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../AGENT-GUARDRAILS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Guardrails
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../knowledge/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Invariants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#ground-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ground rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capability-routing-why-each-lands-where-it-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capability routing — why each lands where it does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-phase-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The phase plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The phase plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-0-cli-no-neo4j-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 — CLI (no Neo4j deployment)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-standalone-1-pod-2gi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — Standalone (1 pod, ~2Gi)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-cluster-3-servers-6gi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Cluster, 3 servers (~6Gi)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-property-sharding-cluster-202606-enterprise-3-2gi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 — Property sharding (cluster, 2026.06-enterprise, 3 × 2Gi)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-aura-no-kind-deployment-needs-aura-api-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — Aura (no Kind deployment; needs Aura API credentials)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-cross-cluster-replication-two-deployments-sequential-for-backup-mode-concurrent-for-network-mode-needs-202608" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 — Cross-cluster replication (two deployments; sequential for backup mode, concurrent for network mode; needs 2026.08+)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#coverage-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coverage at a glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keeping-this-current" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keeping this current
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification log
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/developer_guide/release_verification.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="release-verification">Release Verification<a class="headerlink" href="#release-verification" title="Anchor link to this section">&para;</a></h1>
+<p>The <strong>pre-release verification journey</strong>: a manual + LLM-driven walk of the real
+user scenarios on a clean cluster, run from <code>main</code> before cutting any release.
+It is the canonical source of truth for <strong>what we verify, on which deployment,
+at what size, and why</strong> — keep it current as the product grows.</p>
+<div class="admonition info">
+<p class="admonition-title">Why this exists alongside the automated suites</p>
+<p>Unit and integration tests (<a href="../testing/">Testing</a>) validate the <strong>code
+against itself</strong>. This journey validates the <strong>published instructions and
+end-to-end behaviour against a clean machine</strong> — the only check that catches
+a doc that lies, a dead image tag, a tutorial ordering bug, or a
+CR-name/logical-name mismatch. Real passes have caught all of these
+(most recently the sharded <code>target.name</code> doc bug, a <code>#270</code> follow-up).</p>
+</div>
+<p>The <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/.claude/skills/verify-journey/SKILL.md"><code>verify-journey</code> skill</a>
+executes this document. <strong>LLM agents and developers should follow the matrix
+below verbatim</strong>; the skill holds only the mechanics (build, kind-load retry,
+teardown, reporting) and defers to this page for <em>what</em> to test.</p>
+<h2 id="ground-rules">Ground rules<a class="headerlink" href="#ground-rules" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li><strong>KIND only. Enterprise images only</strong> (<code>neo4j:*-enterprise</code>) — the project
+  <a href="../../knowledge/invariants/">invariants</a>.</li>
+<li><strong>Follow the published docs literally</strong> for Phases 1–2. A wrong/out-of-order
+  step <em>is</em> a finding — record the exact doc location, don't silently fix it.</li>
+<li><strong>One Enterprise deployment in the cluster at a time</strong> (the <em>anti-wedge</em>
+  rule). Running standalone + cluster + sharding JVMs concurrently on a laptop
+  VM wedges Bolt (the HTTP probe reports <code>Ready</code> but ports 7687/6362 time out).
+  Phases run <strong>sequentially with full teardown between them</strong>; the Kind cluster,
+  operator, and cert-manager stay up across phases. <strong>One deliberate exception:</strong>
+  Phase 5 Part C runs two small clusters concurrently, because network-mode
+  replication cannot be tested sequentially — kept small (2 servers each) to
+  bound the wedging risk this rule exists to avoid.</li>
+<li><strong>Restore must be walked on BOTH standalone and cluster</strong> — the mechanism
+  differs (see the routing table) and one never covers the other.</li>
+</ul>
+<h2 id="capability-routing-why-each-lands-where-it-does">Capability routing — why each lands where it does<a class="headerlink" href="#capability-routing-why-each-lands-where-it-does" title="Anchor link to this section">&para;</a></h2>
+<p>Each capability is verified on the <strong>minimum deployment that actually exercises
+its code path</strong>. Standalone is the cheap workhorse; a capability moves to the
+cluster only when it <em>needs</em> clustering.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Where</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Database lifecycle (create/show/drop)</td>
+<td>Standalone</td>
+<td>Same <code>CREATE DATABASE</code> Cypher everywhere</td>
+</tr>
+<tr>
+<td>Database <strong>topology</strong> (<code>n PRIMARIES m SECONDARIES</code>)</td>
+<td>Cluster</td>
+<td>Meaningless on standalone (validator only warns)</td>
+</tr>
+<tr>
+<td>Users / Roles / RoleBindings</td>
+<td>Standalone</td>
+<td>Auth model is deployment-independent</td>
+</tr>
+<tr>
+<td>Plugins (APOC, …)</td>
+<td>Standalone (ConfigMap path)</td>
+<td>Cluster uses the <strong>env-var</strong> path; ConfigMap path is the cheaper of the two to smoke</td>
+</tr>
+<tr>
+<td><strong>Backup → restore</strong></td>
+<td><strong>Both</strong></td>
+<td>Standalone restores via the <code>neo4j-admin</code> path (supports PITR <code>--restore-until</code>); cluster restores via the in-place <strong>Cypher</strong> path (PITR is <em>rejected</em> on clusters). Separate code paths.</td>
+</tr>
+<tr>
+<td>Property sharding</td>
+<td>Cluster (CalVer)</td>
+<td>Cluster-only by nature; needs a CalVer image and is memory-heavy</td>
+</tr>
+<tr>
+<td><strong>Aura orchestration</strong> (<code>Aura*</code> CRDs)</td>
+<td><strong>Phase 4 — no Kind deployment</strong>; needs Aura API credentials</td>
+<td>Talks to a <em>cloud</em> API, not a local DBMS, so no phase above exercises it. Read-only checks need only a client ID/secret; write checks mutate real cloud resources — see the phase for what is and is not safe</td>
+</tr>
+<tr>
+<td><strong>Aura Fleet Management</strong></td>
+<td>Standalone (+ Aura creds for <code>provision</code>)</td>
+<td>The plugin/registration path is deployment-independent, so the cheap phase covers it; operator-driven <code>provision</code> additionally needs Aura API credentials</td>
+</tr>
+<tr>
+<td><strong>Cross-cluster replication</strong> (<code>Neo4jReplicaDatabase</code>, <code>Neo4jReplicaPromotion</code>)</td>
+<td><strong>Phase 5 — two deployments, run SEQUENTIALLY</strong>; needs a <code>2026.08+</code> image</td>
+<td>Needs an upstream <em>and</em> a downstream, which looks like it breaks the one-deployment-at-a-time rule — but backup-based replication couples the two only through a bucket, so the upstream can be torn down before the downstream comes up. See the phase</td>
+</tr>
+<tr>
+<td><strong>The CCDR proxy + cross-cluster TLS trust, together</strong></td>
+<td><strong>Phase 5 Part E — two Kind clusters</strong>, <code>make ccdr-e2e-up</code></td>
+<td>The proxy, the certificate SANs, the advertised-address override and peer-CA trust only interact when TLS is on across two real clusters. Nothing smaller reaches it: the IP-SAN bug, the peer-CA mount bug and the unrepairable-forming-cluster bug were all invisible until this ran</td>
+</tr>
+<tr>
+<td><strong>Database aliases</strong> (<code>Neo4jDatabaseAlias</code>)</td>
+<td>Standalone</td>
+<td>Alias DDL is deployment-independent; the CCDR failover behaviour is covered in Phase 5</td>
+</tr>
+<tr>
+<td><strong>Composite databases</strong> (<code>Neo4jCompositeDatabase</code>)</td>
+<td>Standalone</td>
+<td>A composite stores no data and has no topology, so clustering adds nothing to its code path — it is alias DDL plus an ordering guard. A <strong>remote</strong> constituent would need a second DBMS; pointing one back at the same server proves the keystore path without a second Enterprise JVM, so it stays here too</td>
+</tr>
+<tr>
+<td><strong>Operator→Neo4j TLS verification</strong> (CA path + <code>tls.crt</code> pinning)</td>
+<td>Standalone</td>
+<td>Standalone never reads <code>ca.crt</code> server-side (no cluster SSL policy), so removing that key from the TLS Secret isolates the <em>operator's</em> client verification with nothing else changing. On a cluster the same edit also breaks intra-cluster mTLS and the two failures are indistinguishable</td>
+</tr>
+<tr>
+<td><strong><code>kubectl-neo4j</code> — offline half</strong> (<code>validate</code>, <code>explain &lt;term&gt;</code>, exit codes)</td>
+<td><strong>Phase 0</strong>, no deployment</td>
+<td>It reads manifests and its own guidance map. Nothing it checks needs a running database, so it costs no memory and can run before the first pod exists</td>
+</tr>
+<tr>
+<td><strong><code>kubectl-neo4j</code> — the failure paths</strong> (<code>diagnose</code>, <code>preflight</code>)</td>
+<td><strong>Phase 0</strong>, on resources built to fail</td>
+<td><code>diagnose</code> exists for the layer <em>below</em> the CR — an unschedulable pod, <code>ImagePullBackOff</code>, a PVC that never binds. Those have to be caused on purpose, and a deployment that never schedules starts no JVM, so this is the one place they can be produced without touching the one-deployment-at-a-time rule</td>
+</tr>
+<tr>
+<td><strong><code>kubectl-neo4j</code> — the healthy lens</strong> (<code>status</code>, <code>connect</code>/<code>cypher</code>, <code>support-bundle</code>, <code>validate --connect</code>)</td>
+<td><strong>Rides Phases 1–3</strong>, no deployment of its own</td>
+<td>The CLI is a lens on whatever is deployed. Giving it a phase of its own would mean standing up a fourth Enterprise JVM for it to look at — forbidden by the anti-wedge rule, and it would show nothing the deployments already in Phases 1–3 do not</td>
+</tr>
+<tr>
+<td><strong><code>kubectl-neo4j export replica-database</code></strong></td>
+<td><strong>Phase 5</strong></td>
+<td>Its only inputs are an upstream <code>Neo4jBackup.status.replicationPullURI</code> and an upstream cluster's <code>status.internalAddresses</code>, which exist nowhere else in the journey</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-phase-plan">The phase plan<a class="headerlink" href="#the-phase-plan" title="Anchor link to this section">&para;</a></h2>
+<p>Run <strong>Phases 0-3 every time</strong> (Phase 3 included — sharding regularly surfaces
+issues the lighter phases miss). Phase 0 is minutes and no memory, and it goes
+first for a second reason: it proves the operator, the CRDs and the CLI are
+wired before a real deployment costs twenty. Phase 4 (Aura) needs cloud credentials rather
+than a Kind cluster: run its <strong>read-only sweep</strong> whenever anything under
+<code>internal/aura/</code> or an <code>Aura*</code> CRD changed. <strong>Phase 5 (CCDR) is now a standing gate, not an
+occasional one.</strong> Run it whenever a release touches anything under the
+replication CRDs, <code>internal/resources/ccdr_proxy.go</code>, the CCDR proxy
+controller, or <code>spec.tls</code> — that last one because the proxy, the certificate
+SANs and cross-cluster CA trust are one system, and Part E is the only place
+they are exercised together. It has found a release blocker on every pass so
+far. The image floor is <code>2026.08+</code>, which is the pinned CI anchor as of
+v1.15.0, so "no such image" is no longer a reason to skip it; if a pass really
+is skipped, say so in the log rather than recording the phase as passed.</p>
+<h3 id="phase-0-cli-no-neo4j-deployment">Phase 0 — CLI (no Neo4j deployment)<a class="headerlink" href="#phase-0-cli-no-neo4j-deployment" title="Anchor link to this section">&para;</a></h3>
+<p><code>kubectl-neo4j</code> ships on the operator's own tag, under the operator's own
+support statement, so it is verified on the same pass. It is not a deployment
+but a lens on one — which is why most of its scenarios ride Phases 1–3 (see the
+routing table). What lands <em>here</em> is everything that needs no healthy database:
+the offline half, and the failure paths that have to be caused deliberately.</p>
+<p>Build it from the same tree as the operator and reach it <strong>through <code>kubectl</code></strong>,
+because plugin discovery by binary name is part of what is being verified:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>make<span class="w"> </span>build-cli<span class="w">          </span><span class="c1"># stamps -X main.version=$(git describe --tags --always --dirty)</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">/bin:</span><span class="nv">$PATH</span><span class="s2">"</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>kubectl<span class="w"> </span>plugin<span class="w"> </span>list<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>kubectl-neo4j
+</span></code></pre></div>
+<p><strong>Part A — offline (no cluster contact):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Plugin discovery</td>
+<td><code>kubectl neo4j</code> prints usage when invoked <em>through</em> <code>kubectl</code>, not only as <code>./bin/kubectl-neo4j</code>. The binary name is the contract</td>
+</tr>
+<tr>
+<td>The good case</td>
+<td><code>kubectl neo4j validate -f config/samples/</code> → exit <code>0</code></td>
+</tr>
+<tr>
+<td>The bad case</td>
+<td>a manifest with a known-bad spec (<code>spec.config.dbms.default_database</code>, an out-of-range <code>serverRoles[].serverIndex</code>) → one line per finding, errors before warnings, each sorted by field path, exit <code>1</code></td>
+</tr>
+<tr>
+<td>Every error, not the first</td>
+<td>one manifest broken in several places at once — a bad <code>spec.image</code>, a deprecated <code>spec.config</code> key, an out-of-range <code>serverRoles</code> index, a missing <code>acceptLicenseAgreement</code> — must report <strong>all</strong> of them from a single run. The fix-one-rerun loop that #354 removed must not be back</td>
+</tr>
+<tr>
+<td>Ruleset banner</td>
+<td>every non-<code>--quiet</code> run ends <code>validated against operator rules &lt;version&gt;</code>. On a journey build that is a <code>git describe</code> string such as <code>v1.14.0-41-g3aa9f21</code>, <strong>not</strong> a release version — only a tagged build prints a clean one. If it reads <code>dev</code> the ldflags did not apply, and the skew check in Part B is silently disabled</td>
+</tr>
+<tr>
+<td>Skip taxonomy — the distinction that matters</td>
+<td>a kind whose validator resolves cross-references (<code>Neo4jDatabase</code>) skips with <em>"resolves cross-references; re-run with <code>--connect</code>"</em>. A kind with <strong>no operator-side validator at all</strong> (<code>Neo4jRestore</code>, <code>Neo4jReplicaPromotion</code>, any <code>Aura*</code>) skips with <em>"no operator-side validator … <code>kubectl apply --dry-run=server</code>"</em>. Sending a user to <code>--connect</code> for a check that does not exist is the exact bug this wording was written to prevent</td>
+</tr>
+<tr>
+<td>Pending is not failure</td>
+<td>a manifest whose dependency cannot be satisfied <em>yet</em> renders <code>…</code> and does <strong>not</strong> change the exit code, including under <code>--strict</code></td>
+</tr>
+<tr>
+<td>Exit-code contract</td>
+<td><code>0</code> clean · <code>1</code> a validation error, or a warning under <code>--strict</code> · <code>2</code> a usage problem (bad flag, unreadable file, undecodable YAML). Documented as stable, so CI users pin them</td>
+</tr>
+<tr>
+<td>stdin</td>
+<td>rendering the Helm chart with <code>helm template</code> and passing it to <code>validate -f -</code> reports normally</td>
+</tr>
+<tr>
+<td><code>explain</code> a term</td>
+<td><code>kubectl neo4j explain ServersHealthy</code> → meaning plus guidance; <code>explain --list</code> enumerates everything it knows</td>
+</tr>
+<tr>
+<td><code>explain</code> a condition REASON</td>
+<td><code>kubectl neo4j explain CompositeDatabaseNameBlocked</code> → <code>(reason)</code>, the ordering trap and how to clear it; <code>explain --list</code> has a <strong>Reasons:</strong> section. Reasons are the most specific thing a status carries and were unreachable before v1.16.0</td>
+</tr>
+<tr>
+<td><code>explain</code> admits a gap</td>
+<td>an invented term (<code>explain NotARealCondition</code>) prints <em>no explanation for …</em>, points at <code>--list</code>, and exits <code>2</code> — it never guesses. The other half of this, an unrecognised phase on a live resource naming the CLI's own version, is only reachable against an operator newer than the CLI; note it as unreachable rather than recording it as passed</td>
+</tr>
+</tbody>
+</table>
+<p>| <code>preflight</code> on the cloud substrate | on Kind, a cluster with <code>spec.crossClusterReplication.enabled</code> reports the <strong>Kind</strong> case (<code>…</code> — no load-balancer controller), not a false exposure problem. A cluster with a hard zone constraint (<code>topologySpread.enabled</code>, default <code>DoNotSchedule</code>) on a single unlabelled-node Kind reports <code>✗ zones</code>. A <code>spec.securityContext</code> override that drops <code>runAsNonRoot</code> in a namespace labelled <code>pod-security.kubernetes.io/enforce=restricted</code> reports <code>✗ spec.securityContext</code> naming each missing field. All three are new in v1.16.0 and need no running database |</p>
+<p><strong>Part B — the failure paths (operator up, no Neo4j running):</strong></p>
+<p>Every resource below is built <em>not to start</em>, so none of them runs a JVM and
+none of them counts against the one-deployment-at-a-time rule. Apply, read,
+delete.</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nothing ever reconciled</td>
+<td><code>kubectl scale -n &lt;operator-ns&gt; deployment/&lt;operator-deploy&gt; --replicas=0</code>, apply a standalone, wait past the 2-minute grace → <code>status</code> shows it with no phase, and <code>diagnose</code> reports <em>"has no status after …"</em> and names all three causes (operator not running, no RBAC for the kind, namespace-scoped and not watching). Scale back up afterwards. This is the only signal #282 has</td>
+</tr>
+<tr>
+<td>Unschedulable</td>
+<td>a standalone requesting more memory than any Ready node has → <code>diagnose</code> reports the pod as unschedulable <strong>with the scheduler's own message</strong>, plus the node-capacity guidance and the 1.5Gi Enterprise floor; exit <code>1</code></td>
+</tr>
+<tr>
+<td>Image will not pull</td>
+<td>the same manifest with a typo'd tag → <code>ImagePullBackOff</code> named as the cause, rather than the CR's <code>Pending</code> restated</td>
+</tr>
+<tr>
+<td>StorageClass missing</td>
+<td><code>spec.storage.className</code> naming a class that does not exist → the operator <strong>refuses to build the StatefulSet at all</strong>, so there is no PVC and no pod: the CR goes <code>Failed</code>, <code>status</code> shows the operator's own message, and <code>diagnose</code> adds the <code>StorageClassNotFound</code> event. Then run <code>preflight -f</code> on the same file: it must have caught this <strong>before</strong> apply. Confirm the two agree — that pairing is the whole argument for <code>preflight</code> existing</td>
+</tr>
+<tr>
+<td>PVC never bound</td>
+<td>this appears in the <strong>unschedulable</strong> case above, not the missing-class one: with a <code>WaitForFirstConsumer</code> class the PVC stays <code>Pending</code> until a pod is scheduled, so <code>diagnose</code> reports it alongside the scheduling failure</td>
+</tr>
+<tr>
+<td><code>preflight</code> never overclaims</td>
+<td>every run, clean or not, ends with the shape-only line (<em>no bucket, registry or endpoint was contacted</em>)</td>
+</tr>
+<tr>
+<td>Backup credential shape</td>
+<td>a <code>Neo4jBackup</code> whose <code>credentialsSecretRef</code> is absent, then one that exists but is missing a key the Job mounts → reported distinctly. This replaces the <code>kubectl run backup-auth-check --image=amazon/aws-cli …</code> ritual, which today is only reached <em>after</em> a backup has failed</td>
+</tr>
+<tr>
+<td>Crash-loop is recognised</td>
+<td>a 1Gi memory limit against the example's 2G heap does <strong>not</strong> produce an OOMKill: Neo4j validates its own memory settings first and exits 3 with <em>"Invalid memory configuration - exceeds physical memory"</em>. <code>diagnose</code> must name the crash-loop with its restart count and point at <code>kubectl logs --previous</code> — the reason is in the log of the run that died. True <code>OOMKilled</code> / exit 137 needs a JVM that starts and then grows past the limit; record it as <strong>not run</strong> rather than faking it</td>
+</tr>
+<tr>
+<td>Version skew warning</td>
+<td>the kustomize dev deploy sets <code>OPERATOR_VERSION=latest</code>, which suppresses the check <strong>by design</strong>, so force it: <code>kubectl -n &lt;operator-ns&gt; set env deployment/&lt;operator-deploy&gt; OPERATOR_VERSION=v0.0.1</code> → <code>validate --connect</code> prints <code>⚠ version skew</code> naming both versions. Set it back to <code>latest</code> after. CI never has two versions, so this is reachable only by hand</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Delete every broken resource</strong> before Phase 1, and confirm the operator is
+back to 1 replica.</p>
+<h3 id="phase-1-standalone-1-pod-2gi">Phase 1 — Standalone (1 pod, ~2Gi)<a class="headerlink" href="#phase-1-standalone-1-pod-2gi" title="Anchor link to this section">&para;</a></h3>
+<p><code>Neo4jEnterpriseStandalone</code> → <code>Ready</code>, then on it:</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Standalone reconciles</td>
+<td><code>status.phase=Ready</code>, pod <code>1/1</code></td>
+</tr>
+<tr>
+<td>Database lifecycle</td>
+<td><code>Neo4jDatabase</code> Ready; <code>SHOW DATABASES</code> shows it <code>online</code></td>
+</tr>
+<tr>
+<td>Users / Roles / RoleBinding</td>
+<td><code>Neo4jUser</code>/<code>Role</code>/<code>RoleBinding</code> Ready; <code>SHOW USERS</code>/<code>SHOW ROLES</code>. <strong>Reference at least one role by its hyphenated CR <code>metadata.name</code></strong> (not <code>spec.name</code>) and confirm the grant lands (no <code>RolesPending</code>) and a <code>RolesResolved</code> event fires.</td>
+</tr>
+<tr>
+<td>Plugin (APOC)</td>
+<td><code>Neo4jPlugin</code> Ready; <code>RETURN apoc.version()</code> returns a version (standalone <strong>ConfigMap</strong> path)</td>
+</tr>
+<tr>
+<td>Backup → restore</td>
+<td><code>neo4j-admin</code> path with <code>stopCluster: true</code>: add a marker node → back up → delete the marker → restore → confirm the marker returns</td>
+</tr>
+<tr>
+<td>All-databases restore (standalone)</td>
+<td>two user DBs → <code>Neo4jBackup</code> <code>allDatabases: true</code> → mutate both → <code>Neo4jRestore</code> <code>allDatabases: true</code> (<code>stopCluster: true</code>, <code>options.replaceExisting: true</code>); confirm both round-trip via the single offline Job and <code>status.databaseResults</code> are all <code>Completed</code> (<code>system</code> excluded) (#288)</td>
+</tr>
+<tr>
+<td>Standalone recommended labels</td>
+<td><code>kubectl get pods -l app.kubernetes.io/name=neo4j</code> returns the standalone pod (it carries <code>app.kubernetes.io/{name,instance,managed-by}</code>)</td>
+</tr>
+<tr>
+<td><code>system</code> is not restorable</td>
+<td>a <code>Neo4jRestore</code> with <code>database: system</code> → <code>Failed</code> with an actionable message</td>
+</tr>
+<tr>
+<td>Database alias</td>
+<td><code>Neo4jDatabaseAlias</code> → Ready; connect via the alias name and reach the target; <code>SHOW ALIASES FOR DATABASE</code> lists it. Then re-point <code>spec.targetDatabase</code> at a second database and confirm the same connection string now reaches the new one</td>
+</tr>
+<tr>
+<td>Alias drift is corrected</td>
+<td><code>ALTER ALIAS</code> it elsewhere by hand → next reconcile restores <code>spec.targetDatabase</code></td>
+</tr>
+<tr>
+<td>Composite database</td>
+<td><code>Neo4jCompositeDatabase</code> with two local constituents → Ready; <code>status.observedConstituents</code> lists them <strong>fully qualified</strong> (<code>cineasts.latest</code>), read back from the server rather than echoed from spec</td>
+</tr>
+<tr>
+<td>Composite: where a constituent is reachable from</td>
+<td>from a session <strong>on the composite</strong> (<code>cypher-shell -d cineasts</code>), <code>USE cineasts.latest MATCH (n) RETURN count(n)</code> succeeds and <code>RETURN graph.names()</code> lists the constituents. From the default database the same <code>USE</code> is refused with <code>42N04</code> — <strong>and following that error's own advice to "connect to <code>cineasts.latest</code> directly" fails with <code>22N51</code></strong>. Both halves matter: the guide tells users to ignore the server's suggestion, so a release that changed this would make the docs wrong</td>
+</tr>
+<tr>
+<td>Composite: the ordering trap is guarded</td>
+<td>create <code>CREATE ALIAS cineasts.latest</code> by hand with no composite present, then apply a <code>Neo4jCompositeDatabase</code> named <code>cineasts</code>: the CR reports <code>Failed</code> with reason <code>CompositeDatabaseNameBlocked</code> and <strong>names the alias to drop</strong>. Drop it → the composite is created on the next reconcile. Neo4j's own <code>42N87</code> never mentions ordering, so the operator's message is the only route out</td>
+</tr>
+<tr>
+<td>Composite: constituents are enforced</td>
+<td>with <code>enforceConstituents: true</code> (the default), create an extra alias in the composite's namespace by hand → next reconcile removes it. Set <code>false</code> → a hand-made constituent survives and appears in <code>observedConstituents</code></td>
+</tr>
+<tr>
+<td>Composite: a GRAPH privilege on it is caught</td>
+<td>a <code>Neo4jRole</code> granting <code>MATCH {*} ON GRAPH &lt;composite&gt;</code> → <code>PrivilegesResolve=False</code> with reason <code>GraphPrivilegeOnComposite</code>. Neo4j accepts and persists such a grant while it does nothing, so the operator's warning is the only signal</td>
+</tr>
+<tr>
+<td>Composite: deletion removes aliases, not data</td>
+<td><code>deletionPolicy: Delete</code> → <code>DROP COMPOSITE DATABASE ... CASCADE ALIASES</code>; afterwards <code>SHOW ALIASES</code> has none of them and <strong>both target databases are still online with their data</strong></td>
+</tr>
+<tr>
+<td>Composite: remote constituent keystore</td>
+<td>set <code>spec.remoteAliasKeystore</code> on the standalone, then a constituent with <code>remote.credentialsSecretRef</code> whose <code>url</code> points back at <strong>this same DBMS</strong> — enough to prove the keystore mounts and Neo4j can encrypt the alias credentials, without a second Enterprise JVM. Omitting the keystore must be refused <strong>at apply time</strong> naming the field, not inside the server with a <code>50N09</code>/<code>50N00</code> that mentions neither the CR nor the constituent</td>
+</tr>
+<tr>
+<td>TLS: CA path</td>
+<td><code>spec.tls.mode: cert-manager</code> + <code>ca-cluster-issuer</code> → Ready, diagnostics collected, and <strong>no</strong> <code>PINNING</code> line in the operator log</td>
+</tr>
+<tr>
+<td>TLS: certificate pinning</td>
+<td>scale <code>cert-manager</code> to 0 (so it cannot restore the key), <code>kubectl patch secret &lt;name&gt;-tls-secret --type=json -p '[{"op":"remove","path":"/data/ca.crt"}]'</code>, then nudge a reconcile. Expect the operator to log <code>verifying the server by PINNING its certificate from 'tls.crt'</code> with a <code>pinnedFingerprintSHA256</code> equal to <code>openssl x509 -in tls.crt -noout -fingerprint -sha256</code>, <strong>and</strong> <code>status.diagnostics.lastCollected</code> to keep advancing — the pinned connection is a real authenticated session, not a fallback that merely logs</td>
+</tr>
+<tr>
+<td>TLS: pin rejects a mismatch</td>
+<td>with <code>ca.crt</code> still absent, replace the Secret's <code>tls.crt</code> with a <em>different</em> certificate carrying the same SANs and do <strong>not</strong> restart the Neo4j pod (it keeps serving the keystore it loaded at startup). Next reconcile must fail with <code>x509: certificate signed by unknown authority</code> in <code>status.diagnostics.collectionError</code>. Restore <code>tls.crt</code> → the next reconcile recovers. This is the only place the pin is proven to <em>reject</em>; CI cannot reach it because every CI Secret has <code>ca.crt</code></td>
+</tr>
+<tr>
+<td>CLI: <code>status</code> on a healthy namespace</td>
+<td>one <code>kubectl neo4j status -n &lt;ns&gt;</code> lists the standalone <strong>and</strong> its Database/User/Role/Plugin CRs with their phases; <code>--problems</code> prints nothing while everything is Ready. This replaces <code>kubectl get</code> against 26 kinds</td>
+</tr>
+<tr>
+<td>CLI: <code>connect</code> tells the truth about TLS</td>
+<td>run it around the TLS scenarios above: with TLS enabled, <code>connect &lt;name&gt;</code> prints <code>bolt+s://</code> and states that plain <code>bolt://</code> is rejected; before it, <code>bolt://</code>. The scheme is derived from the deployment, so a wrong one here is a real bug in the command customers reach for first</td>
+</tr>
+<tr>
+<td>CLI: <code>cypher</code> never moves the password</td>
+<td><code>kubectl neo4j cypher &lt;name&gt; -c "SHOW DATABASES"</code> returns the same rows as the by-hand <code>kubectl exec</code>. <strong><code>connect</code> prints no exec line at all</strong> — it points at <code>kubectl neo4j cypher</code> and says the credentials are already in the pod; it is <code>cypher</code> that execs, referencing <code>$DB_USERNAME</code> / <code>$DB_PASSWORD</code> <strong>by name</strong> (<code>connect.go</code>), so the value reaches neither your shell history nor the API audit log. Check by grepping <code>connect</code>'s whole output for the real admin password: zero hits</td>
+</tr>
+<tr>
+<td>CLI: <code>explain</code> against a live resource</td>
+<td><code>kubectl neo4j explain Neo4jEnterpriseStandalone/&lt;name&gt;</code> prints the phase, then each condition with the operator's <em>own</em> message and the guidance for it</td>
+</tr>
+<tr>
+<td>CLI: <code>support-bundle</code> withholds the secret</td>
+<td><code>support-bundle -n &lt;ns&gt; -o bundle.tar.gz</code>, extract, and <strong>grep the whole archive for the admin password</strong> — zero hits. <code>REDACTIONS.txt</code> is present and enumerates what was withheld; Secrets appear as names, types and key names only; <code>valueFrom</code> references are still there, deliberately. Grepping for the real password is the check that matters — a redactor is only as good as its worst path</td>
+</tr>
+<tr>
+<td>CLI: <code>validate --connect</code> and <code>preflight</code> on what is deployed</td>
+<td>a <code>Neo4jDatabase</code> naming a cluster that does not exist → error; the same manifest naming this standalone → validated, and the kinds skipped offline in Phase 0 are no longer skipped. <code>preflight -n &lt;ns&gt;</code> with no arguments checks the deployed resources and still ends with the shape-only line</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Tear down the standalone fully</strong> before Phase 2 — but <strong>KEEP the backup PVC</strong>
+(and the <code>Neo4jBackup</code> CR that owns it, so retention does not prune the artifact).
+Phase 2's cross-topology scenario restores that standalone-produced artifact into
+the cluster, and the one-deployment-at-a-time rule means you cannot stand the
+standalone back up alongside the cluster to re-make it. Deleting the PVC here
+costs a full standalone rebuild-and-teardown cycle later, so treat "a retained
+standalone backup" as one of Phase 1's outputs.</p>
+<h3 id="phase-2-cluster-3-servers-6gi">Phase 2 — Cluster, 3 servers (~6Gi)<a class="headerlink" href="#phase-2-cluster-3-servers-6gi" title="Anchor link to this section">&para;</a></h3>
+<p><code>Neo4jEnterpriseCluster</code> with <code>servers: 3</code> → <code>Ready</code>; pods
+<code>{cluster}-server-0..2</code>; <code>SHOW SERVERS</code> lists 3 <code>Enabled</code>/<code>Available</code>. Then:</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cluster forms</td>
+<td>3 members <code>Enabled</code>/<code>Available</code>; server-based pod names</td>
+</tr>
+<tr>
+<td>Database <strong>with topology</strong></td>
+<td>e.g. <code>3 PRIMARIES</code>; <code>SHOW DATABASE &lt;db&gt;</code> shows the primaries <code>online</code></td>
+</tr>
+<tr>
+<td>Backup → restore (cluster)</td>
+<td>in-place <strong>Cypher</strong> path: back up one DB (<code>instanceRef</code> + <code>database</code>), restore into a <strong>new</strong> database, confirm the data round-trips</td>
+</tr>
+<tr>
+<td>All-databases restore (cluster)</td>
+<td><code>Neo4jBackup</code> <code>allDatabases: true</code> → <code>Neo4jRestore</code> <code>allDatabases: true</code> (cloud-backed); confirm every user DB round-trips and <code>status.databaseResults</code> are all <code>Completed</code> (#222)</td>
+</tr>
+<tr>
+<td>Cross-topology restore</td>
+<td>restore the <strong>retained standalone backup</strong> from Phase 1 into the <strong>cluster</strong> via <code>instanceRef</code>; confirm the data round-trips. The cluster path stands up a short-lived <code>backup-seed-proxy-&lt;restore&gt;</code> Deployment that serves the backup PVC over HTTP. <strong>The seed URI is not in <code>status</code></strong> — <code>Neo4jRestore.status</code> has no such field; read it from the <code>RestoreStarted</code> event (<code>kubectl get events -n &lt;ns&gt; --field-selector reason=RestoreStarted</code>), which carries <code>seedURI=http://backup-seed-proxy-&lt;restore&gt;.&lt;ns&gt;.svc.cluster.local:8080/&lt;path&gt;/&lt;artifact&gt;.backup</code> — an <code>http://</code> URL, not a <code>file://</code> path. The proxy Deployment appearing and then being reaped is the other half of the evidence</td>
+</tr>
+<tr>
+<td>CLI: a healthy cluster reads as healthy</td>
+<td><code>kubectl neo4j status</code> shows the cluster <code>Ready</code> next to the topology-bearing <code>Neo4jDatabase</code>; <code>diagnose</code> reports <code>3/3 pods ready</code> and exits <code>0</code> rather than inventing a problem. A diagnostic that cries wolf on a healthy cluster is worse than none</td>
+</tr>
+<tr>
+<td>CLI: <code>diagnose</code> during a restart is not a failure</td>
+<td>delete one server pod (<code>kubectl delete pod &lt;cluster&gt;-server-1</code>) and run <code>diagnose</code> inside the restart window: the not-ready pod is marked <code>…</code>, the exit code stays <code>0</code>, and the pod returns. Enterprise takes tens of seconds to open Bolt, so an exit code that failed during a normal restart would be useless in the loop it exists for</td>
+</tr>
+</tbody>
+</table>
+<p>3 servers (not 2) keeps split-brain / 3-primary quorum behaviour in the routine
+walk. → <strong>Tear down the cluster fully</strong> before Phase 3.</p>
+<h3 id="phase-3-property-sharding-cluster-202606-enterprise-3-2gi">Phase 3 — Property sharding (cluster, <code>2026.06-enterprise</code>, 3 × 2Gi)<a class="headerlink" href="#phase-3-property-sharding-cluster-202606-enterprise-3-2gi" title="Anchor link to this section">&para;</a></h3>
+<p>Sharding's documented floor is <strong>4Gi + 1 core per server</strong>. To fit a laptop we
+deliberately relax it — <strong>this phase is operator-mechanics verification, not
+doc-following</strong>. The relax is operator-side and DEV/TEST only:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Downgrades the 4Gi/1-core hard rejects to warnings.</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>&lt;operator-ns&gt;<span class="w"> </span><span class="nb">set</span><span class="w"> </span>env<span class="w"> </span>deployment/&lt;operator-deploy&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nv">NEO4J_SHARDING_RELAX_MEMORY_MIN</span><span class="o">=</span><span class="nb">true</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>&lt;operator-ns&gt;<span class="w"> </span>rollout<span class="w"> </span>status<span class="w"> </span>deployment/&lt;operator-deploy&gt;
+</span></code></pre></div>
+<p>Use <strong><code>2026.06-enterprise</code></strong> (the pinned CI anchor) so local sharding matches
+what the <a href="../ci_and_workflows/">extended suite</a> validates. On a <code>servers: 3</code>
+cluster (~2Gi each):</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sharding cluster</td>
+<td><code>CALL dbms.components()</code> → <code>2026.06.x</code> enterprise; <code>status.propertyShardingReady=true</code></td>
+</tr>
+<tr>
+<td>Sharded database</td>
+<td><code>Neo4jShardedDatabase</code> whose <strong><code>metadata.name</code> differs from <code>spec.name</code></strong> (e.g. CR <code>products-sharded</code> / <code>spec.name: products</code>) → Ready; <code>SHOW DATABASES WHERE name STARTS WITH '&lt;logical&gt;'</code> lists the graph + property shards <code>online</code></td>
+</tr>
+<tr>
+<td>Sharded backup <strong>by CR name</strong></td>
+<td><code>Neo4jBackup</code> with <strong><code>spec.shardedDatabase</code></strong> = the <code>Neo4jShardedDatabase</code> <strong>CR metadata name</strong> → <code>Succeeded</code>; <code>status.history[].shardArtifacts</code> lists every shard, and the filenames carry the LOGICAL names (<code>&lt;spec.name&gt;-g000</code>, <code>-p000</code>, <code>-p001</code>). Using the <em>logical</em> name instead fails with <code>Neo4jShardedDatabase "&lt;name&gt;" not found</code>. (This row said <code>kind=ShardedDatabase</code> with <code>target.name</code> until 2026-09-03; <code>spec.target</code> does not exist on <code>Neo4jBackup</code> and the row was unfollowable as written.)</td>
+</tr>
+<tr>
+<td>CLI: the sharded CR is legible</td>
+<td><code>status -n &lt;ns&gt;</code> lists the <code>Neo4jShardedDatabase</code> by its <strong>CR <code>metadata.name</code></strong> — the same name vs. <code>spec.name</code> distinction the row above exists to catch — with its phase, alongside the cluster. <code>explain Neo4jShardedDatabase/&lt;cr&gt;</code> either decodes its conditions or says plainly that it carries none this CLI knows, which is the correct answer rather than a guess</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Tear down</strong>, then delete the Kind cluster.</p>
+<h3 id="phase-4-aura-no-kind-deployment-needs-aura-api-credentials">Phase 4 — Aura (no Kind deployment; needs Aura API credentials)<a class="headerlink" href="#phase-4-aura-no-kind-deployment-needs-aura-api-credentials" title="Anchor link to this section">&para;</a></h3>
+<p><strong>BETA / best-effort surface.</strong> The <code>Aura*</code> CRDs talk to the Aura cloud API, so
+nothing in Phases 1-3 touches them. This phase is <strong>optional but strongly
+recommended</strong> whenever an <code>Aura*</code> CRD or <code>internal/aura/</code> changed, because the
+published Aura OpenAPI spec is known to disagree with the live API (see
+<code>docs/knowledge/operations.md</code> id 87).</p>
+<p><strong>Take that disagreement seriously.</strong> As of 2026-08-01 every Aura surface except
+CMK has been driven against a real account, and three of them — fleet
+provisioning, IP filters and invites — were <strong>broken in ways the unit suite could
+not see</strong>, because the fixtures asserted the client matched the <em>spec</em> rather
+than the API. A green <code>make test-unit</code> is not evidence that an Aura write path
+works.</p>
+<p><strong>Cheap technique worth reusing:</strong> to learn an enum or a required field without
+mutating anything, send a deliberately invalid value — the API answers with the
+full list of accepted values, or names the missing field, and changes nothing.</p>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>Live-verified</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Instances (v1 lifecycle), snapshots, restore</td>
+<td>2026-08-01</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Databases + per-database backup/restore (v2beta1)</td>
+<td>2026-07-31</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>IP filters (v2beta1)</td>
+<td>2026-08-01</td>
+<td>✅ contract corrected</td>
+</tr>
+<tr>
+<td>Console RBAC: members, invites (v2beta1)</td>
+<td>2026-08-01</td>
+<td>✅ invite contract corrected</td>
+</tr>
+<tr>
+<td>Fleet provisioning (v2beta1)</td>
+<td>2026-07-31</td>
+<td>✅ contract corrected</td>
+</tr>
+<tr>
+<td><strong>Customer-managed keys (v1)</strong></td>
+<td>—</td>
+<td>❌ <strong>never exercised; needs a real cloud KMS key</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Set up an <code>AuraProviderConfig</code> (or an inline <code>credentialsSecretRef</code>) with an API
+client ID + secret from the Aura console.</p>
+<p><strong>Read-only sweep — always safe, do this every time:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Credentials + auth</td>
+<td>A token from <code>/oauth/token</code> authenticates <strong>both</strong> v1 and v2beta1 calls</td>
+</tr>
+<tr>
+<td>Org/project discovery</td>
+<td><code>GET /v2beta1/organizations</code> and <code>…/projects</code> return <code>{id,name}</code></td>
+</tr>
+<tr>
+<td>Read shapes still match</td>
+<td>Org users return <code>user_id</code> + <code>organization_roles[]</code> with <code>organization-*</code> values; ip-filters return a <strong>bare</strong> array (no <code>data</code> envelope); the v1 CMK list returns only <code>id</code>/<code>name</code>/<code>tenant_id</code>; <code>DatabaseSummary</code> returns only <code>id</code></td>
+</tr>
+<tr>
+<td>Fleet reads</td>
+<td>Fleet deployment single-GET <strong>is</strong> <code>data</code>-wrapped; token field is <code>auto_rotated</code>; server field is <code>mode_constraint</code> (singular); shard/txn/lag data appears only on <code>…/servers/{id}/databases</code></td>
+</tr>
+</tbody>
+</table>
+<p>A GET-only sweep needs no throwaway resources and cannot damage anything. It is
+what caught four real client bugs during the 2026-07-30 re-diff.</p>
+<p><strong>Write checks — ONLY in a disposable Aura project, never production:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AuraInstance</code> lifecycle</td>
+<td>create → Ready → resize (<code>memory</code>) → pause → resume → delete; <code>status.instanceId</code> pinned via the <code>neo4j.com/external-instance-id</code> annotation. <strong>Set <code>deletionPolicy: Delete</code> on the throwaway instance</strong> — the default is <code>Orphan</code>, so otherwise deleting the CR leaves the instance running and billing (see the teardown note below), and the delete path itself goes untested</td>
+</tr>
+<tr>
+<td><code>AuraDatabase</code> + backup</td>
+<td><strong>Needs an instance created with <code>multiDatabase: true</code></strong> — a Business Critical tier alone is not enough, and the flag cannot be added later (<code>docs/knowledge/operations.md</code> id 90). Against any other instance expect <code>Ready=False</code>, reason <code>InstanceNotMultiDatabase</code>, with <strong>no requeue</strong>. On a multi-database instance: <code>AuraDatabaseBackup</code> reaches <code>Completed</code> (<strong>not</strong> on first observe — an empty status must read as <code>Pending</code>, and the backup does not appear in the backups LIST until it completes, so it must be polled by ID); <code>AuraDatabaseRestore</code> reports <code>Submitted</code>, never <code>Completed</code></td>
+</tr>
+<tr>
+<td>Multi-database create</td>
+<td>An <code>AuraInstance</code> with <code>multiDatabase: true</code> + <code>organizationId</code> is created via <strong>v2beta1</strong> (v1 <code>type</code> names are translated), then remains manageable through v1; <code>status.atProvider.multiDatabase</code> reports <code>true</code>. On a v1-created instance the field reports the <strong>true</strong> value from the v2beta1 probe — <code>false</code> is correct there, and it stays <strong>absent</strong> (unknown) only when no <code>organizationId</code> is resolvable, since the v1 GET carries no such field</td>
+</tr>
+<tr>
+<td>Console RBAC</td>
+<td><code>AuraProjectMember</code> for an existing <strong>org</strong> member is added without an invite; role PATCH bodies are accepted (they are <code>{organization_roles:[…]}</code> / <code>{project_roles:[…]}</code>, not a scalar)</td>
+</tr>
+<tr>
+<td>Fleet <code>provision</code></td>
+<td>Deployment registered, token minted into the Secret, DBMS registers; deleting the Secret with the default <code>tokenPolicy</code> <strong>refuses to rotate</strong> and says why</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Tear down</strong> every resource created here; Aura bills by the hour. Deleting the
+CRs is <strong>not</strong> sufficient proof: <code>deletionPolicy</code> defaults to <code>Orphan</code>, so a CR
+delete can leave a running instance behind. Confirm with
+<code>GET /v1/instances/&lt;id&gt;</code> → <strong>404</strong> and a project instance list of <strong>0</strong> before you
+call the phase done.</p>
+<h3 id="phase-5-cross-cluster-replication-two-deployments-sequential-for-backup-mode-concurrent-for-network-mode-needs-202608">Phase 5 — Cross-cluster replication (two deployments; sequential for backup mode, concurrent for network mode; needs <code>2026.08+</code>)<a class="headerlink" href="#phase-5-cross-cluster-replication-two-deployments-sequential-for-backup-mode-concurrent-for-network-mode-needs-202608" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Run this only when a <code>2026.08+</code> enterprise image is available.</strong> Hosting a
+replica requires it, and the check is enforced — on an older image the CR fails
+with <code>ReplicaVersionTooOld</code> and nothing else in this phase can proceed. That is
+itself scenario 1: confirm the gate fires rather than silently doing nothing.</p>
+<p>Parts A/B below (backup mode, <code>source.mode: backup</code>) look like they break the
+<strong>one Enterprise deployment at a time</strong> ground rule. They do not, and the
+reason is the point of that mode: the two clusters are coupled <strong>only through
+the object store</strong>, never over the network. So the upstream produces its
+chain, gets torn down, and <em>then</em> the downstream comes up and pulls from the
+bucket. Two deployments, never concurrent.</p>
+<p>Network mode (<code>source.mode: network</code>, Parts C/D below) needs a live network
+path, but "two clusters" doesn't mean leaving Kind or leaving this single
+deployment session: Part C runs the real replication mechanism between two
+<code>Neo4jEnterpriseCluster</code>s in different namespaces on <strong>this same Kind
+cluster</strong>, reachable over ordinary in-cluster DNS — no proxy, no
+<code>crossClusterReplication</code>, no LoadBalancer needed. Part D smoke-tests the
+<code>crossClusterReplication</code> toggle on a single plain Kind cluster, where the
+proxy's Service never gets an address. <strong>Part E is the one that matters most</strong>:
+two Kind clusters, TLS on with mutual CA trust, the proxy holding a real
+MetalLB address — the configuration CCDR is actually sold with, and the only
+one that exercises the proxy, the certificate SANs, the advertised-address
+override and cross-cluster trust together. See each part for what it does and
+does not cover.</p>
+<p>Stand up MinIO as the shared bucket (same pattern the backup specs use) for
+Parts A/B.</p>
+<p><strong>Part A — upstream (standalone is enough):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Replication-source backup</td>
+<td><code>Neo4jBackup</code> <code>mode: replication-source</code> + <code>database</code> + <code>schedule</code> → <code>status.replicationPullURI</code> is populated and points at the chain directory. <strong>Copy this value</strong></td>
+</tr>
+<tr>
+<td>Chain-breaking configs rejected</td>
+<td>the same CR with <code>retention</code> set, or <code>allDatabases: true</code>, or no <code>schedule</code> → phase <code>Invalid</code>, message names the rule</td>
+</tr>
+<tr>
+<td>A second writer to the same path is refused</td>
+<td>while ANOTHER <code>Neo4jBackup</code> targets the same bucket + <code>storage.path</code>, the chain refuses to run and says why — <em>"a second writer can interleave artifacts and break the differential chain a replica depends on"</em> — pointing at <code>storage.path</code> or <code>spec.chainFromBackup</code>. Easy to trigger by accident: the rejected CRs from the row above collide with the good one unless they use a different path, and the chain stays stuck until they are deleted</td>
+</tr>
+<tr>
+<td>A FULL then a DIFF</td>
+<td>let (or force) two runs so the bucket holds a full <strong>and</strong> a differential — a seed-only chain does not exercise the pull path. <strong><code>status.history[]</code> does not record the backup type</strong>, so read it from the run's Job log (<code>Finished full backup … Downloaded from tx -1 to tx N</code> then <code>Finished differential backup … from tx N+1</code>) or from the artifact sizes in the bucket. Run 1 logs <em>"Start differential … Falling back to full"</em> — correct, there is no parent yet. Write to the CHAIN'S database between runs, not the default one: <code>kubectl neo4j cypher</code> has no <code>-d</code> flag, so use <code>kubectl exec … cypher-shell -d &lt;db&gt;</code> or the diff has nothing to carry</td>
+</tr>
+<tr>
+<td>CLI replaces the copy step</td>
+<td><code>kubectl neo4j export replica-database &lt;name&gt; --from-backup &lt;backup&gt; --cluster-ref &lt;downstream&gt; --upstream-database &lt;db&gt;</code> emits a <code>Neo4jReplicaDatabase</code> on <strong>stdout only</strong> — redirect it and confirm the file is a clean manifest with the notes on stderr — carrying the same <code>pullURI</code> you copied by hand above. Then run <code>validate -f</code> on the generated file: the command already validates before printing, so a manifest <code>validate</code> rejects must never appear</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Tear the upstream down completely.</strong> Leave the MinIO bucket intact.</p>
+<p><strong>Part B — downstream (fresh deployment, <code>2026.08+</code>):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Replica seeds</td>
+<td><code>Neo4jReplicaDatabase</code> with <code>source.pullURI</code>/<code>seedURI</code> from Part A → phase <code>Replicating</code>; <code>SHOW DATABASES</code> shows <code>type=replica</code>, <code>access=read-only</code>, <code>writer=false</code> on <strong>every</strong> copy including primaries</td>
+</tr>
+<tr>
+<td>Replica is read-only</td>
+<td>a write via <code>cypher-shell</code> fails; the same query with <code>--access-mode=read</code> succeeds</td>
+</tr>
+<tr>
+<td>Alias pre-staged against a replica</td>
+<td><code>Neo4jDatabaseAlias</code> targeting the replica → <code>Ready</code> <strong>while the target is still a replica</strong> (this is what removes work from the failover window)</td>
+</tr>
+<tr>
+<td>Promotion</td>
+<td><code>Neo4jReplicaPromotion</code> → <code>Completed</code>; <code>status.observedLagTxIds</code> recorded; <code>SHOW DATABASES</code> now shows a standard read-write type</td>
+</tr>
+<tr>
+<td>Alias survives promotion</td>
+<td>the <strong>same</strong> alias now resolves to a read-write database — no CR change, no client reconfiguration</td>
+</tr>
+<tr>
+<td>Replica CR goes inert</td>
+<td>the <code>Neo4jReplicaDatabase</code> is <code>phase: Promoted</code>; <strong>delete it and confirm the database is NOT dropped</strong></td>
+</tr>
+<tr>
+<td>Out-of-band promotion is safe</td>
+<td>on a second replica, promote by hand at a <code>cypher-shell</code>, then let the operator reconcile → it goes <code>Promoted</code> (reason <code>DetectedOutOfBand</code>) rather than "correcting" the drift by dropping the database</td>
+</tr>
+</tbody>
+</table>
+<p>That last row is the one worth doing carefully: it is the failure mode the
+whole observe-before-act design exists to prevent, and it is invisible to unit
+tests.</p>
+<p><strong>Part C — network mode core mechanism, same Kind cluster, no proxy (two concurrent deployments):</strong></p>
+<p><strong>Automated</strong> — <code>test/integration/ccdr_same_cluster_network_mode_test.go</code>,
+<code>Label("extended")</code>, gated by <code>isCCDRReplicaCompatible()</code> (dormant on the
+default CI anchor; runs when dispatched with <code>neo4j-version:
+2026.08-enterprise+</code>). Uses <code>source.upstreamClusterRef</code> rather than a
+hand-typed <code>source.addresses</code> FQDN — exercises the same underlying mechanism
+via the newer, higher-level API. Re-run manually only if you want the
+hand-typed-address path specifically, or a version this repo's CI cannot yet
+dispatch.</p>
+<p>This is the highest-value scenario in this phase: it is the first time
+<code>CREATE REPLICA DATABASE ... OPTIONS {replicaConfig: {remote, addresses}}</code>
+runs against a real server, rather than being inferred from documentation.</p>
+<p>Deploy two small <code>Neo4jEnterpriseCluster</code>s (2 servers each, CI-sized
+resources) in different namespaces on <strong>this same Kind cluster</strong> — e.g.
+<code>prod-cluster</code> in namespace <code>prod</code>, <code>dr-cluster</code> in namespace <code>dr</code>. Leave
+<code>spec.crossClusterReplication</code> <strong>unset</strong> on the upstream; do not create the
+proxy at all. Point the downstream <code>Neo4jReplicaDatabase</code> directly at the
+upstream's plain internal pod FQDN — reachable across namespaces on the same
+cluster by ordinary in-cluster DNS, no Service changes needed:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>prod-cluster-server-0.prod-cluster-headless.prod.svc.cluster.local:6000
+</span></code></pre></div>
+<p><strong>This deliberately breaks the one-deployment-at-a-time rule</strong> — network
+replication cannot be tested sequentially the way backup mode can, the two
+clusters must be up together. Keep both small (2 servers, CI-appropriate
+resource requirements) to limit the Bolt-wedging risk the anti-wedge rule
+exists for; if Bolt does wedge here, that is itself a real finding about
+concurrent-deployment resource limits, not a test artifact to work around.</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Network replica seeds from a plain internal FQDN</td>
+<td><code>Neo4jReplicaDatabase</code> with <code>source.mode: network</code>, <code>source.addresses</code> set to the upstream's server-0 pod FQDN above → phase <code>Replicating</code>; <code>SHOW DATABASES</code> shows <code>type=replica</code>, <code>access=read-only</code>, <code>writer=false</code></td>
+</tr>
+<tr>
+<td>One address is sufficient</td>
+<td>list only server-0's address, not all N — replication still reaches every ordinal, confirming the design doc's Q1 finding that the upstream hands back the addresses the downstream actually uses</td>
+</tr>
+<tr>
+<td>Malformed/missing address rejected before any Cypher runs</td>
+<td><code>source.addresses: []</code> or a host with no port → validator error, no <code>CREATE REPLICA DATABASE</code> attempt</td>
+</tr>
+<tr>
+<td>Promotion works the same as backup mode</td>
+<td><code>Neo4jReplicaPromotion</code> against this replica → <code>Completed</code>, <code>SHOW DATABASES</code> now shows a standard read-write type</td>
+</tr>
+<tr>
+<td>CLI replaces the hand-typed FQDN</td>
+<td><code>kubectl neo4j export replica-database &lt;name&gt; --from-cluster prod-cluster --cluster-ref dr-cluster --upstream-database &lt;db&gt;</code> emits the same manifest with <code>source.addresses</code> read from the upstream's <code>status.internalAddresses</code> — the FQDN typed by hand above. Confirm they match. Note in the log that on <strong>one</strong> Kubernetes cluster <code>source.upstreamClusterRef</code> is the better answer and the docs say so; the exported literal is for a downstream on a different cluster, which is the only case no ref can reach</td>
+</tr>
+</tbody>
+</table>
+<p>This scenario does <strong>not</strong> exercise <code>spec.crossClusterReplication</code> itself —
+no proxy, no advertised-address override, no cert SAN, no NetworkPolicy rule.
+That gate depends on the proxy's Service reaching a real
+<code>status.loadBalancer.ingress</code> state, which is identical whether one Kind
+cluster or two are involved (see Part D) — this scenario is about the
+replication <em>mechanism</em>, deliberately isolated from that gate.</p>
+<p>→ <strong>Tear down both deployments</strong>, then delete the Kind cluster.</p>
+<p><strong>Part D — network mode proxy toggle, Kind-only smoke check (single deployment):</strong></p>
+<p><strong>Automated</strong> — <code>test/integration/ccdr_proxy_test.go</code>, <code>Label("core")</code>. Needs
+no version gate (nothing here hosts a replica), so it runs on every PR
+against both CI anchors, not just on dispatch — the manual walk below is
+useful only for exploring interactively, not for verifying this before a
+release.</p>
+<p>Part C covers the replication mechanism; this part covers the one piece it
+deliberately left out — <code>spec.crossClusterReplication</code> itself. That gate
+depends on the proxy's Service reaching a real <code>status.loadBalancer.ingress</code>
+state, which a <code>type: LoadBalancer</code> Service never gets on <em>plain</em> Kind.
+<strong><code>make ccdr-lb</code> now supplies it</strong> (<code>hack/metallb-setup.sh</code> — MetalLB L2 with a
+pool carved from the top of the shared <code>kind</code> Docker network), so the proxy
+path is verifiable locally, and Part E below walks it end to end across two
+Kind clusters. This part stays useful as the single-cluster smoke check: the
+toggle must never break normal cluster formation, whether or not a real load
+balancer is present to service it. Run it <strong>without</strong> <code>make ccdr-lb</code> — the
+rows below describe the no-address state on purpose.</p>
+<p>What <em>is</em> verifiable on a single plain Kind cluster is that the toggle itself
+is safe — it must never break normal cluster formation, whether or not a real
+load balancer is present to service it:</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Proxy resources render</td>
+<td><code>Neo4jEnterpriseCluster</code> with <code>spec.crossClusterReplication.enabled: true</code> → a <code>&lt;name&gt;-ccdr</code> ConfigMap/Deployment/Service appear, and the cluster still reaches <code>Ready</code> (this proves the toggle doesn't wedge formation even when the LoadBalancer never gets an address on plain Kind)</td>
+</tr>
+<tr>
+<td>NetworkPolicy stays additive</td>
+<td>with <code>spec.networkPolicy.enabled: true</code> too → the existing 3 ingress rules are unchanged and a 4<sup>th</sup> rule admits only the <code>ccdr-proxy</code> pod on port 6000</td>
+</tr>
+<tr>
+<td>Advertised address stays internal until ready</td>
+<td><code>status.crossClusterReplication</code> stays empty (Kind has no LoadBalancer controller, so the Service never gets an ingress address) → the EFFECTIVE config in the pod still advertises the pod itself: <code>server.cluster.advertised_address=&lt;pod FQDN&gt;:6000</code>, not the proxy's hostname. <strong>Do not hardcode the path — ask the process</strong>, because it has moved three times: <code>kubectl exec &lt;pod&gt; -c neo4j -- sh -c 'CONF=$(ps aux | grep -o "config-dir=[^ ]*" | head -1 | cut -d= -f2); echo $CONF; grep ^server.cluster.advertised_address $CONF/neo4j.conf'</code>. The ConfigMap never holds advertised addresses at all (it says so: <em>"advertised addresses will be set dynamically by startup script"</em>) — <code>buildStartupScriptForEnterprise</code> substitutes them at pod start, overriding 6000 only once <code>status.crossClusterReplication.LoadBalancerHostname</code> is set. This row named the ConfigMap until 2026-09-12, <code>/var/lib/neo4j/conf</code> until 2026-09-13, then <code>/tmp/neo4j-config</code> until 2026-09-23 — when the env-var config fix (99e60e1/0cb2ee8) stopped the startup script pointing <code>NEO4J_CONF</code> at its own directory, so <code>--config-dir</code> went back to <code>/var/lib/neo4j/conf</code> and <code>/tmp/neo4j-config</code> no longer exists. A grep of an absent path returns nothing, which reads exactly like the override failing</td>
+</tr>
+<tr>
+<td>Toggling off tears down cleanly</td>
+<td>flip <code>enabled</code> back to <code>false</code> → the ConfigMap/Deployment/Service are deleted and <code>status.crossClusterReplication</code> clears</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Tear down</strong>, then delete the Kind cluster.</p>
+<p><strong>Part E — the whole proxy path, two Kind clusters, TLS ON (two concurrent deployments):</strong></p>
+<p>This is the configuration CCDR is actually sold with, and the only part that
+exercises the proxy, the certificate SANs, the advertised-address override and
+cross-cluster CA trust <em>together</em>. All of that was verified for the first time
+on 2026-09-14, and three defects fell out of it that nothing else had reached
+— run it before every release that touches CCDR or TLS.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>make<span class="w"> </span>ccdr-e2e-up<span class="w">      </span><span class="c1"># both Kind clusters, cert-manager + issuer, MetalLB on</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">                      </span><span class="c1"># the upstream, the operator built from this tree on both</span>
+</span></code></pre></div>
+<p>Then apply a <code>Neo4jEnterpriseCluster</code> to <strong>each</strong> — by hand, from the published
+docs, because that is what is under test. Both get <code>spec.tls.mode:
+cert-manager</code> with <code>strictPeerValidation: true</code> (the default) and 2 CI-sized
+servers; the upstream also gets <code>spec.crossClusterReplication.enabled: true</code>.
+Once both are <code>Ready</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>make<span class="w"> </span>ccdr-e2e-trust<span class="w">   </span><span class="c1"># exchange the CAs, patch additionalClusterTrustCAs on both</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>make<span class="w"> </span>ccdr-e2e-status<span class="w">  </span><span class="c1"># where everything is</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>make<span class="w"> </span>ccdr-e2e-down<span class="w">    </span><span class="c1"># delete both clusters</span>
+</span></code></pre></div>
+<p>Put <code>--context</code> on every <code>kubectl</code> you run yourself. <code>kind create cluster</code>
+switches the current context, and a batch of commands aimed at the wrong
+cluster is the easiest mistake to make here — it produced a false blocker on
+the first walk. The scripted steps already do.</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CA exchange really crossed</td>
+<td>copy each cluster's <code>ca.crt</code> out of its <code>&lt;name&gt;-tls-secret</code> into a Secret on the <em>other</em> cluster and reference it from <code>spec.tls.additionalClusterTrustCAs</code>. Then check it landed: <code>md5sum /ssl/trusted/*.crt</code> in each <code>server-0</code> — the upstream's <code>peer-ca-0.crt</code> must equal the downstream's own <code>ca.crt</code>, and vice versa. Both clusters must still reach <code>Ready</code>; a peer CA that stops a pod starting is a blocker, not a warning</td>
+</tr>
+<tr>
+<td>A wedged cluster can still be repaired</td>
+<td>while you are here: if a template change does NOT reach a cluster that is stuck mid-formation, that is the bug fixed in 40713d7 regressing. Editing the CR must change the StatefulSet even when no pod is ready</td>
+</tr>
+<tr>
+<td>The proxy gets a real address</td>
+<td><code>status.crossClusterReplication.ready: true</code> with one address per server ordinal (<code>&lt;ip&gt;:16000</code>, <code>:16001</code>), and <code>server.cluster.advertised_address=&lt;ip&gt;:16000</code> in the effective config — find it with the <code>--config-dir</code> one-liner in Part D rather than a hardcoded path. RAFT and routing must stay internal; only the tx-shipping port is proxied. The override applies only once the Service has an ingress address, so this is the first place it is observable at all</td>
+</tr>
+<tr>
+<td>The certificate covers that address</td>
+<td>the proxy address is an <strong>IP</strong>, so it belongs in the certificate's <code>IPAddresses</code>, never <code>DNSNames</code> — an IP in <code>DNSNames</code> yields a certificate the cluster cannot form on. <code>kubectl get certificate &lt;name&gt; -o yaml</code></td>
+</tr>
+<tr>
+<td>Replica streams between the two clusters</td>
+<td><code>Neo4jReplicaDatabase</code>, <code>source.mode: network</code>, <code>source.addresses: ["&lt;proxy ip&gt;:16000"]</code> → <code>Replicating</code>, "0 transactions behind"</td>
+</tr>
+<tr>
+<td>The stream is live, not just the seed</td>
+<td>rows written upstream <em>after</em> the replica exists appear downstream; a write against the replica is refused</td>
+</tr>
+<tr>
+<td>The cluster says what guards the exposed port</td>
+<td><code>status.conditions[CrossClusterProxySecure]</code> is <code>True</code>/<code>MutualTLSRequired</code> with TLS on. It reads <code>False</code>/<code>NoClusterTLS</code> when the proxy is enabled without <code>spec.tls</code> — nothing authenticates the tx-shipping port then, and the proxy authenticates nothing itself</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Tear down both</strong>: <code>kind delete cluster --name neo4j-operator-dev --name neo4j-dr</code>.</p>
+<h2 id="coverage-at-a-glance">Coverage at a glance<a class="headerlink" href="#coverage-at-a-glance" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th style="text-align: center;">CLI (Phase 0)</th>
+<th style="text-align: center;">Standalone</th>
+<th style="text-align: center;">Cluster (3)</th>
+<th style="text-align: center;">Sharding (2026.06)</th>
+<th style="text-align: center;">Aura (Phase 4)</th>
+<th style="text-align: center;">CCDR (Phase 5, 2026.08+)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Reconcile → Ready</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ (instance)</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Database lifecycle</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (<code>AuraDatabase</code>)</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Database topology</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">n/a (Aura-managed)</td>
+<td style="text-align: center;">✅ (replica)</td>
+</tr>
+<tr>
+<td>Users / Roles / Bindings</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">n/a (console-RBAC only)</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Plugins (APOC)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (ConfigMap)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">n/a</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Backup → restore</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (neo4j-admin)</td>
+<td style="text-align: center;">✅ (Cypher)</td>
+<td style="text-align: center;">✅ (sharded)</td>
+<td style="text-align: center;">✅ (per-DB, API)</td>
+<td style="text-align: center;">✅ (chain as source)</td>
+</tr>
+<tr>
+<td>Property sharding</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Aura Fleet Management</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (plugin + token)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (<code>provision</code>)</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Aura console RBAC</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Aura read-contract sweep</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (GET-only)</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Cross-cluster replication</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ backup mode + network mode mechanism (same-cluster) + the full proxy path across two Kind clusters with TLS on (<code>make ccdr-lb</code>, Part E)</td>
+</tr>
+<tr>
+<td>Database aliases</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (survives promotion)</td>
+</tr>
+<tr>
+<td>Composite databases</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (local + the keystore path)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Operator→Neo4j TLS (CA + pinned)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">n/a (HTTPS to Aura)</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>CLI: offline (<code>validate</code>, <code>explain</code>, exit codes)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>CLI: failure paths (<code>diagnose</code>, <code>preflight</code>)</td>
+<td style="text-align: center;">✅ (caused on purpose)</td>
+<td style="text-align: center;">✅ (<code>preflight</code> on what is deployed)</td>
+<td style="text-align: center;">✅ (<code>…</code> during a restart)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>CLI: cloud substrate (<code>preflight</code> zones / PSA / default class / private LB)</td>
+<td style="text-align: center;">✅ (all four reachable on Kind)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Operator build metadata (<code>neo4j_operator_build_info</code>)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (scrape <code>/metrics</code>)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>CLI: healthy lens (<code>status</code>, <code>connect</code>/<code>cypher</code>, <code>support-bundle</code>)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ (<code>status</code>)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>CLI: manifest authoring (<code>export replica-database</code>)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (both modes)</td>
+</tr>
+<tr>
+<td>CLI ↔ operator version skew</td>
+<td style="text-align: center;">✅ (forced by hand)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+</tbody>
+</table>
+<h2 id="keeping-this-current">Keeping this current<a class="headerlink" href="#keeping-this-current" title="Anchor link to this section">&para;</a></h2>
+<p>When you <strong>add or change a capability</strong>, update this page in the same PR:</p>
+<ol>
+<li>Add a row to the <strong>routing table</strong> (which deployment, and <em>why</em> there).</li>
+<li>Add the scenario + its in-DB check to the relevant <strong>phase</strong>.</li>
+<li>Tick the <strong>coverage</strong> matrix.</li>
+<li>If it changes the operator install or sizing, update the phase headers.</li>
+<li>If it adds or changes a <strong>CLI</strong> command, put it in the phase whose
+   deployment it reads — Phase 0 if it needs none, or a broken resource if what
+   it reports is a failure. A command verified only against a healthy cluster
+   is verified in the state nobody runs it in.</li>
+</ol>
+<p>When a release fixes a specific bug, add a one-line scenario that would have
+caught it (the v1.12.2 pass added the standalone-label, <code>system</code>-reject,
+role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.</p>
+<h2 id="verification-log">Verification log<a class="headerlink" href="#verification-log" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Release</th>
+<th>Date</th>
+<th>Result</th>
+<th>Findings</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>v1.16.0 release verification</strong></td>
+<td>2026-09-23</td>
+<td>✅ Phases 0-3 and all of Phase 5 pass; <strong>eleven findings, nine fixed, two needed no code</strong></td>
+<td>Full journey on the release candidate. <strong>Phase 0</strong> — every offline check, the exit-code contract, both skip taxonomies, and the three new cloud-substrate <code>preflight</code> checks on Kind; the new default-StorageClass check found a true finding immediately (Kind's <code>standard</code> is <code>WaitForFirstConsumer</code> with <code>allowVolumeExpansion</code> unset). The PSA check's claim that the operator's default satisfies <code>restricted</code> was proved against real admission: default <strong>admitted</strong>, override <strong>rejected</strong>. <strong>Phase 1</strong> — standalone on 5.26.30; composites end to end including all three halves of the reachability trap (<code>42N04</code>, and the server's own advice failing with <code>22N51</code>), the <code>42N87</code> ordering guard, and <code>GraphPrivilegeOnComposite</code>; users/roles with a hyphenated CR name and a real login; alias re-point and drift correction; APOC holding Ready across 8 samples; backup→restore with the marker returning; <code>system</code> refused; support bundle with <strong>zero hits for both real passwords</strong>. <strong>Phase 2</strong> — 3 servers <code>Available</code>/<code>Enabled</code>, a 3-primary database, <code>cypher</code> routing correctly on a cluster, <code>diagnose</code> exit 0 both healthy and mid-restart, restore into a new database, all-databases restore, and <strong>cross-topology restore carrying a marker from a 5.26.30 standalone into a 2026.08.1 cluster</strong> — across a topology <em>and</em> a version boundary. <strong>Phase 3</strong> — <code>2026.06.0</code>, <code>propertyShardingReady</code>, the shard family online with the CR name differing from the logical name, sharded backup by <strong>CR name</strong> capturing all three artifacts, and the logical name correctly refused. <strong>Phase 5</strong> — A/B on MinIO: <code>replicationPullURI</code>, all three chain-breaking configs rejected, a real FULL (<code>tx -1 to 5</code>) then DIFF (<code>tx 6 to 6</code>) chain, <code>export replica-database</code> emitting a clean manifest that validates; then the downstream pulled from the bucket <strong>after the upstream was deleted</strong>, all 4 rows arriving, write refused, alias pre-staged against a replica, promotion to <code>standard</code>, <strong>the alias surviving with generation still 1</strong> (a write through it succeeded), the <code>Promoted</code> CR deleted without dropping the database, and <strong>out-of-band promotion observed rather than corrected</strong>. C and D passed in the dispatched extended suite. <strong>Part E</strong> — two Kind clusters, TLS, mutual CA trust: proxy on <code>172.18.255.200:16000/:16001</code>, the IP in the certificate's <code>ipAddresses</code>, CA md5s matching both ways, replica <code>Replicating</code> 0 behind, and a row written upstream appearing downstream in <strong>10s</strong>. <strong>Findings.</strong> Fixed: the composite constituent lookalike loop (#394); preflight contradicting the backup validator (#395); <code>validate</code> ignoring misspelled fields, plus a published example using <code>spec.authentication</code> that could never have worked (#396); the typo check skipping kinds that skip offline (#397); <strong><code>ccdr-e2e-up</code> never able to create its second cluster — both bound <code>127.0.0.1:6443</code>, so Part E's automation had never run</strong> (#401); the typo check covering only 13 of 27 kinds (#402); an auth-rule spec that deadlocks against the operator it tests (#403). Docs: the <code>connect</code> row, the <code>validate</code> kind counts, the restore seed URI (in an event, not status), and <strong>the advertised-address row now naming the file it warns against</strong> — this release's env-var fix moved <code>--config-dir</code> back to <code>/var/lib/neo4j/conf</code> and deleted <code>/tmp/neo4j-config</code>, so the row greps an absent path and reads exactly like the override failing. No change needed: <code>--access-mode</code> (docs already correct, my error), and <code>writer=TRUE</code> on a replica — Neo4j's own column alongside <code>access=read-only</code>, with the write functionally <strong>refused</strong>. Phase 4 <strong>not run</strong> — nothing under <code>internal/aura/</code> changed.</td>
+</tr>
+<tr>
+<td>v1.12.2</td>
+<td>2026-06-14</td>
+<td>✅ all phases pass</td>
+<td>Doc bug: <code>backup_restore.md</code> sharded <code>target.name</code> said <em>logical name</em>, must be <em>CR name</em> (fixed, <code>#270</code> follow-up). v1.12.2 surfaces (#260/#268/#269/#270) verified live.</td>
+</tr>
+<tr>
+<td><em>(pre-merge, PR #333)</em></td>
+<td>2026-08-07</td>
+<td>⚠️ partial — Phases 1 (alias scenarios) + 5A/5B validation only</td>
+<td><strong>Bug found + fixed:</strong> <code>spec.auth</code> is optional on Cluster/Standalone, but five call sites dereferenced <code>Spec.Auth.AdminSecret</code> unguarded — a <code>Neo4jDatabase</code> against a standalone without <code>spec.auth</code> panicked the reconciler and the CR sat with an empty status forever, with nothing on the CR explaining why. Widest site was <code>ResolvedTarget.NewClient</code>, shared by the user/role/binding/authrule and replication controllers. Fixed to use the existing nil-safe helpers. <strong>Also:</strong> <code>make deploy-dev-local</code> reports "deployment configured" without restarting the pod when the <code>:dev</code> tag is unchanged, so a rebuilt binary silently does not take effect — needs <code>kubectl rollout restart</code>. <strong>Verified pass:</strong> alias create/resolve, blue-green re-point, drift correction, alias delete does not drop the target; replica version gate (2026.08 required, refused on 2026.06), network-mode rejection naming <code>advertised_address</code>, replication-source R1/R2/R4 rejections, <code>status.replicationPullURI</code> published. <strong>Not run:</strong> replica seeding, promotion, and alias-survives-promotion — need a 2026.08+ image, which is not yet published (highest on Docker Hub is 2026.06).</td>
+</tr>
+<tr>
+<td><em>(pre-merge, PR #343)</em></td>
+<td>2026-08-21</td>
+<td>⚠️ partial — Phase 1 TLS scenarios only</td>
+<td><strong>Bug found + fixed:</strong> the operator's "insecure TLS fallback" for Secrets without <code>ca.crt</code> had never worked. It set <code>InsecureSkipVerify: true</code>, but the Bolt driver derives that field from the URI scheme and resets it (<code>connector.tlsConfig()</code>), so Go verified against system roots and every connection failed <code>x509: certificate signed by unknown authority</code> — while the operator logged that verification was disabled. So <code>spec.tls.strictPeerValidation: false</code> could not connect at all, and the warning named a state that never existed. Replaced with pinning <code>tls.crt</code> as a one-certificate <code>RootCAs</code>. <strong>A/B on one cluster, same Secret:</strong> pre-pinning binary failed 6/6 reconciles; pinning binary connected and collected diagnostics. <strong>Also verified:</strong> CA path unchanged (no <code>PINNING</code> line, diagnostics fresh), pinned fingerprint matches <code>openssl</code>, a mismatched <code>tls.crt</code> is refused, and restoring it recovers. <strong>Lesson:</strong> handshake unit tests dialed the config verbatim and so could not see the driver's override — they now emulate it (<code>asDriverWouldUse</code>).</td>
+</tr>
+<tr>
+<td><em>(pre-release, v1.15.0 candidate)</em></td>
+<td>2026-09-03</td>
+<td>⚠️ Phases 0-3 walked incl. the TLS trio; Phase 5 blocked — <strong>all findings below fixed and re-verified live the same day</strong></td>
+<td><strong>3 blockers.</strong> (1) <strong>Flags after a positional argument are silently ignored</strong> across <code>diagnose</code>/<code>explain</code>/<code>connect</code>/<code>cypher</code>/<code>preflight</code>/<code>export</code> — stdlib <code>flag</code> stops parsing at the first non-flag arg. It fails in the wrong direction: the wrong namespace is queried and reported as "not found". Every documented <code>export</code> invocation fails outright; <code>preflight Neo4jBackup/nightly -n neo4j</code> and <code>cypher prod -n neo4j</code> from the published docs silently target <code>default</code>. (2) <strong><code>cypher -c</code> can hang forever</strong> and leaves an orphaned <code>cypher-shell</code> inside the database pod: it execs with <code>-i</code> and no <code>--non-interactive</code>, so the shell runs the query then reads stdin for more. Twelve orphans accumulated across two hangs and the database stopped answering over Bolt <em>and</em> HTTP while the pod stayed <code>Ready</code> — the anti-wedge signature, reached with a single deployment. (3) <strong><code>cypher</code> is unusable against a cluster</strong>: it dials <code>bolt://localhost</code> on one chosen pod instead of routing, and the default <code>neo4j</code> database has 1 primary, so 2 of 3 servers answer "Database neo4j not found"; there is no database flag to work around it. <strong>Also:</strong> cross-topology restore (this doc's own Phase 2 scenario) <strong>fails</strong> — a single-database restore from an <code>allDatabases</code> backup demands <code>artifactFilename</code>, which such a backup never sets, while <code>databaseArtifacts</code> holds the exact filename; the error tells the user to "re-run the backup with a recent operator", which does not help. <code>Neo4jPlugin</code> phase flaps Ready↔Installing forever while APOC works. <code>support-bundle</code> collects no operator logs though its help text and docs promise them. <code>explain</code> does not know the phase <code>Ready</code>. Two validator asymmetries: <code>dbms.mode</code> is rejected on standalone but accepted on cluster; heap-vs-limit is rejected on cluster but accepted on standalone (demonstrated: a standalone that validated clean crash-looped). Three published examples fail validation (<code>plugins/standalone-plugin-example.yaml</code>, <code>property_sharding/advanced-property-sharding.yaml</code>, <code>end-to-end/complete-deployment.yaml</code>) — <strong>and all 8 of those errors pass <code>kubectl apply --dry-run=server</code>, which answers design Q1 empirically: <code>validate</code> earns its place.</strong> <strong>Second pass (TLS trio + Phase 3) found one more CLI defect and one doc defect.</strong> <code>kubectl neo4j cypher</code> could not connect to ANY TLS deployment: cypher-shell takes trust from the JVM truststore and has no CA flag, so a cert-manager certificate produced only "Failed to establish secured connection with the server". Fixed by building a throwaway truststore in the pod from <code>/ssl/ca.crt</code> (falling back to <code>/ssl/tls.crt</code>, which is the anchor the operator itself pins when <code>ca.crt</code> is absent) rather than dropping to the unverified <code>+ssc</code> scheme — and the verification was proven REAL by pointing it at a mismatched certificate and watching it refuse. The Phase 3 sharded-backup row named a field (<code>spec.target</code>) that does not exist; corrected above. <strong>TLS trio all pass:</strong> CA path (no <code>PINNING</code> line, diagnostics fresh); pinning engages with <code>pinnedFingerprintSHA256</code> equal to <code>openssl</code>'s and diagnostics still advancing; a same-SAN certificate from another CA is refused with <code>x509: certificate signed by unknown authority</code>, and restoring <code>tls.crt</code> recovers. <strong>Phase 3 all pass</strong> on <code>2026.06.0</code> enterprise with <code>propertyShardingReady=true</code>: a <code>Neo4jShardedDatabase</code> whose CR name (<code>test-sharded-db</code>) differs from its logical name (<code>testdata</code>) went Ready with <code>testdata</code>, <code>testdata-g000</code>, <code>testdata-p000</code> and <code>testdata-p001</code> all online, and one backup captured all three shard artifacts. <strong>Fixes verified live on a fresh cluster afterwards:</strong> the documented <code>export</code> form parses; <code>cypher -c</code> returns on a cluster (5/5, zero orphaned shells, writes included); <code>diagnose Kind/name -n ns</code> works; <code>explain Ready</code> gives guidance; the support bundle carries <code>operator/&lt;ns&gt;/&lt;pod&gt;/manager.log</code> (found via the Deployment's selector — the identifying label is on the Deployment, not its pods) with redaction intact; the plugin phase held <code>Ready</code> across 12 samples while APOC answered <code>apoc.version()</code>, and plugin reconciles fell from ~1/second to 2/minute. <strong>Verified pass:</strong> standalone Ready in 96s from the published URL, database/user/role incl. hyphenated CR-name resolution and all three privileges, APOC, backup→restore round trip, <code>system</code> not restorable, alias create/re-point/drift-correction, support-bundle redaction (grepped for all three real passwords, zero hits), cluster formation 3/3 with 3-primary topology, <code>diagnose</code> on healthy vs. restarting pods.</td>
+</tr>
+<tr>
+<td><em>(v1.15.0 — network mode across TWO Kind clusters)</em></td>
+<td>2026-09-13</td>
+<td>✅ the last unverified path in CCDR now works end to end</td>
+<td>With <code>make ccdr-lb</code> there is no longer a reason to leave this unrun. Two separate Kind clusters, operator in both, MetalLB on the upstream only: the proxy took <code>172.18.255.200</code>, the downstream cluster reached it (<code>nc -z</code> from a pod in the second cluster), and a <code>Neo4jReplicaDatabase</code> with <code>source.mode: network</code> and <code>source.addresses</code> pointing at the proxy reached <code>Replicating</code> "0 transactions behind". <code>type=replica</code>/<code>access=read-only</code>/<code>writer=false</code> on both copies, the seeded rows readable downstream, and a row written to the upstream appeared downstream within 40s — so the live stream works, not just the seed. <strong>Two false alarms worth recording, both mine.</strong> <code>kind create cluster</code> switches the current context, so a batch of <code>kubectl</code> commands silently targeted the wrong cluster. Then the downstream appeared to be missing the <code>Neo4jReplicaDatabase</code>, <code>Neo4jReplicaPromotion</code> and <code>Neo4jDatabaseAlias</code> controllers in production mode — 23 started, not 26 — which looked exactly like a release blocker. It was the harness: <code>config/default</code> renders <code>ghcr.io/…:latest</code>, not <code>controller:latest</code>, so the sed that was meant to swap in the local build did nothing and the cluster ran a PUBLISHED release predating those controllers. With the right image all 26 start. <strong>If you deploy a second cluster by hand, check the image before believing a missing controller.</strong></td>
+</tr>
+<tr>
+<td><em>(v1.15.0 — CCDR proxy, first time ever)</em></td>
+<td>2026-09-13</td>
+<td>✅ the proxy path verified end to end with MetalLB; <strong>one security defect found and fixed</strong></td>
+<td>The gap this doc recorded as "no LoadBalancer-on-Kind tooling today" was hiding a live defect, not just an unverified path. <code>spec.crossClusterReplication.loadBalancerInternal</code> defaults to <code>true</code> and calls itself the main mitigation against public exposure; it was computed and thrown away — <code>CCDRProxyLoadBalancerInternalEffective</code> had no caller outside its own unit test, and no internal-LB annotation existed anywhere in the codebase. On AWS, Azure or GCP that meant a PUBLIC load balancer in front of the transaction-shipping port. Fixed in 9c46aaa, verified live on the Service. <strong>The harness:</strong> <code>hack/metallb-setup.sh</code> + <code>make ccdr-lb</code>, an L2 pool carved from the top of the <code>kind</code> Docker network (<code>172.18.255.200-250</code>), which Kind clusters share — so it is reachable from a second Kind cluster with no host routing. <strong>Verified with it:</strong> the proxy Service gets <code>172.18.255.200</code>, <code>status.crossClusterReplication</code> goes <code>ready: true</code> publishing one address per server ordinal (<code>:16000</code>, <code>:16001</code>), and the servers advertise the proxy endpoint — <code>server.cluster.advertised_address=172.18.255.200:16000</code>. None of that had ever been observed. <strong>Also corrected:</strong> the Part D advertised-address row named the wrong file for the second day running; the server runs with <code>--config-dir=/tmp/neo4j-config</code>, and <code>/var/lib/neo4j/conf/neo4j.conf</code> is the image default the operator never writes.</td>
+</tr>
+<tr>
+<td><em>(v1.15.0 — network mode with TLS ON, two Kind clusters)</em></td>
+<td>2026-09-14</td>
+<td>✅ the configuration CCDR is actually sold with now works; <strong>two operator bugs found, both release blockers</strong></td>
+<td>Every earlier network-mode run had TLS off. Turning it on — <code>mode: cert-manager</code>, <code>strictPeerValidation: true</code>, each cluster carrying the other's CA in <code>spec.tls.additionalClusterTrustCAs</code> — broke it twice, in ways no unit test could see. <strong>(1) The peer-CA feature could not work at all.</strong> Each CA was mounted as its own volume with a subPath at <code>/ssl/trusted/peer-ca-&lt;i&gt;.crt</code>, but <code>/ssl/trusted/</code> is content of the certs volume itself (its own <code>trusted/ca.crt</code> item), and a volume cannot be mounted inside another volume's content: the kubelet refused the pod with <em>"not a directory"</em> and the server crash-looped with exit 128. The certs volume is now a projected volume carrying the cluster's own material plus one <code>trusted/peer-ca-&lt;i&gt;.crt</code> item per peer (d36c775) — which is what the API reference already claimed it did. <strong>(2) The fix changed nothing, which was the second bug.</strong> A forming StatefulSet accepted only <code>hasCriticalTemplateChanges</code> (image, resources, securityContext, serviceAccount) — not volumes, env or init containers. So a template defect that stops the pods going ready makes every reconcile take the conservative branch, which drops the repair, which keeps the pods from going ready: <strong>a cluster wedged by its own template could not be fixed by editing the CR</strong>, only by deleting the StatefulSet by hand. A forming StatefulSet now also accepts a template whose hash differs from the one the controller last stamped, since that is intent rather than churn (40713d7). <strong>Verified after both fixes:</strong> the corrected volume reached a StatefulSet at 1-of-2 ready, both servers rolled, both clusters went Ready; each side holds the other's CA in <code>/ssl/trusted/</code> (md5 of dev's <code>peer-ca-0.crt</code> equals DR's own <code>ca.crt</code> and vice versa); a <code>Neo4jReplicaDatabase</code> in network mode against the proxy at <code>172.18.255.200:16000</code> reached <code>Replicating</code> "0 transactions behind"; the 3 seeded rows read downstream, a 4<sup>th</sup> written upstream appeared downstream, and a write to the replica was refused. <strong>Both bugs needed a real two-cluster TLS walk</strong> — the first is a kubelet behaviour, the second only appears when a cluster is <em>already</em> failing. <strong>Observation, not fixed:</strong> the replica's <code>ClusterNotReady</code> condition is negative-polarity (<code>status: False</code> + <code>reason: ClusterReady</code> means the cluster IS ready). It is consistent across the role, rolebinding and replica controllers, so it is a naming convention rather than a defect; renaming it is a status-API break and not release-day work.</td>
+</tr>
+<tr>
+<td><strong>v1.15.0 release verification</strong></td>
+<td>2026-09-13</td>
+<td>✅ Phases 0-3 + TLS trio + Phase 5 pass on current <code>main</code>; <strong>one incomplete fix caught and finished</strong></td>
+<td>Full journey on the release candidate, after the day's CCDR and CLI work. <strong>Phase 0</strong> — plugin discovery, exit-code contract, every example directory clean, <code>--version</code>, <code>explain Ready</code>; <code>preflight</code> caught the unschedulable request and the missing StorageClass before apply; <code>diagnose</code> named ImagePullBackOff, the unbound PVC (now marked <code>…</code> as the consequence it is), the missing class and the scheduling failure; version skew fires when forced. <strong>Phase 1</strong> — standalone Ready from the published raw URL; users/roles incl. hyphenated CR-name resolution; APOC working with the plugin phase holding <code>Ready</code> across 8 samples (the flap fix); backup→restore round trip with the marker returning; <code>cypher -c</code> writing without hanging; support bundle carrying <code>operator/&lt;ns&gt;/&lt;pod&gt;/</code> logs with <strong>zero</strong> hits for either real password. <strong>TLS trio all pass</strong> — CA path clean, pinning with a fingerprint equal to <code>openssl</code>'s, a same-SAN rogue certificate refused with <code>x509: certificate signed by unknown authority</code> and recovery on restore; the CLI reached a TLS deployment and fell back to <code>tls.crt</code> while <code>ca.crt</code> was absent. <strong>Phase 2</strong> — 3 servers Available, a 3-primary database online, <code>cypher</code> routed correctly on a cluster. <strong>Phase 3</strong> — <code>propertyShardingReady</code>, the sharded family online, and a backup by CR name capturing all three shard artifacts. <strong>Phase 5</strong> — <code>preflight</code> and the operator both catch a downstream with no <code>AWS_REGION</code>, the CR failing immediately with a message naming the variable and the cluster instead of stalling in <code>Seeding</code>; adding the variable unblocks it. <strong>The find:</strong> the morning's failure-surface fix was incomplete. It stopped duplicate status writes but not the alternation — <code>Seeding</code> was announced before every attempt and <code>Failed</code> written after it, so each pass was a genuine change and drove the next reconcile: <strong>1153 failures logged in 45 seconds</strong> against a bucket that did not exist. Announcing <code>Seeding</code> only when the previous attempt had not already failed brought that to <strong>0 in a settled minute</strong>, with the phase staying <code>Failed</code> and the server's own error in <code>status.message</code>. Only running it found that.</td>
+</tr>
+<tr>
+<td><em>(follow-up, v1.15.0 — backup-mode credentials)</em></td>
+<td>2026-09-13</td>
+<td>✅ backup mode <strong>works</strong>; the gap is documentation, not machinery</td>
+<td>Re-tested the open item from 2026-09-12. Backup-mode replication seeds and replicates <strong>as shipped</strong>, provided the downstream cluster carries the bucket credentials in <code>spec.env</code> — <code>AWS_REGION</code>, <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, plus <code>AWS_ENDPOINT_URL_S3</code> for S3-compatible stores. Verified end to end on <code>2026.08.1</code>: all four vars reached the server container, the replica went <code>Replicating</code> "0 transactions behind", and both seeded nodes were readable from the MinIO chain with <code>type=replica</code>/<code>access=read-only</code> on every copy. The seed and pull are performed by the SERVER via the AWS SDK's default chain, which is why the credentials belong there — so this is a <strong>documentation and failure-surface gap, not a missing feature</strong>, and the earlier "cannot work against object storage" reading was too strong. <code>spec.source.credentialsSecretRef</code> is still consumed nowhere and is now documented as such on the field itself, in the guide, in the troubleshooting table and in the example. <strong>Still worth fixing:</strong> the CR stays <code>Seeding</code> with an optimistic message while the server refuses, and retries a permanent <code>ArgumentError</code> about once a second — the error never reaches <code>status.message</code>, which is what made this expensive to diagnose.</td>
+</tr>
+<tr>
+<td><em>(pre-release, v1.15.0 — Phase 5 B and C)</em></td>
+<td>2026-09-12</td>
+<td>⚠️ Parts B and C run on the first real <code>2026.08.1</code>; <strong>two operator bugs fixed, one open</strong></td>
+<td><strong>Three CCDR statements were unusable on the version that introduces the feature.</strong> <code>CREATE REPLICA DATABASE</code> and <code>CALL dbms.promoteReplicaDatabase</code> are Cypher 25 syntax, and <code>system</code> still defaults to Cypher 5 on 2026.08, so the server does not warn — it reports the feature as ABSENT (<em>"Invalid input 'DATABASE': expected a graph pattern"</em>; <em>"There is no procedure with the name … registered"</em>). Both fixed by prefixing with <code>CYPHER 25</code> (aa1fea6, e242a9c) and verified end to end. The operations manual omits the prefix because its examples assume a Cypher 25 default — no unit test can see a parser's opinion, so only running it against a real server could find this. <strong>STILL OPEN — backup-mode replication cannot work against object storage:</strong> the seed and pull are performed by the SERVER, which therefore needs cloud credentials and a region in its own environment. <code>AWS_REGION</code> is projected only into backup/restore <strong>Jobs</strong>, never onto the servers, and <code>Neo4jReplicaDatabase.spec.source.credentialsSecretRef</code> is declared in the CRD and <strong>read nowhere in the codebase</strong>. Live result: <code>CREATE REPLICA DATABASE</code> reaches the server and fails <em>"Unable to load region from any of the providers"</em>, while the CR sits at <code>Seeding</code> forever with a message that never mentions the error, retried ~1×/second on a permanent <code>ArgumentError</code>. <strong>Part C (network mode) passes fully</strong> and needs no object storage: replica <code>Replicating</code> "0 transactions behind", <code>type=replica</code>/<code>access=read-only</code>/<code>writer=false</code> on all three copies, data across the wire. <strong>Part B passes on a network-sourced replica</strong>, which exercises the same promotion machinery: write refused (<em>"database is read only"</em>) while <code>--access-mode=read</code> succeeds; an alias pre-staged against the replica goes <code>Ready</code> and, unchanged, accepts writes after promotion; CR-driven promotion converts every copy; deleting a <code>Promoted</code> CR leaves the database and its data intact; and <strong>out-of-band promotion is observed, not "corrected"</strong> — promoted by hand at a cypher-shell, the operator reported <code>Completed</code>/<code>Promoted</code> without dropping the database, which is the failure mode the whole observe-before-act design exists to prevent. <code>observedLagTxIds</code> is absent at zero lag by design; the message carries <em>"0 transactions of lag were made permanent"</em> and <code>lastCommittedTxn</code>.</td>
+</tr>
+<tr>
+<td><em>(pre-release, v1.15.0 — Phase 5 partial)</em></td>
+<td>2026-09-12</td>
+<td>⚠️ Phase 5: version gate + Parts A and D pass; <strong>Parts B and C still blocked</strong></td>
+<td><strong>The 2026.08 tags on Docker Hub are EMPTY.</strong> <code>2026.08-enterprise</code> and <code>2026.08.1-enterprise</code> appeared on 2026-09-11 and are listed by the Hub tags API, but carry no image: <code>images: []</code>, <code>docker manifest inspect</code> says <em>"no such manifest"</em>, and an explicit pull fails for <strong>both</strong> amd64 and arm64. A tag listing is not an image — check <code>images[]</code> is non-empty before concluding a version is available. The real pullable ceiling is still <strong>2026.07.1</strong>. <strong>Ran anyway, because only <em>hosting</em> a replica needs 2026.08:</strong> scenario 1 — the version gate — fires exactly, <code>Ready=False(ReplicaVersionTooOld)</code> with <em>"requires Neo4j 2026.08 or later on the downstream cluster; ccdr-cluster runs 2026.06-enterprise"</em>, and it is checked BEFORE a missing credentials Secret, so nothing else proceeds as designed. <strong>Part A all pass</strong> on a 2026.06 upstream: <code>replicationPullURI</code> published, all three chain-breaking configs refused with the rule named, a FULL (tx -1→2) then a real differential (tx 3→5) landing as 5.1KiB + 2.0KiB artifacts at exactly the published URI, and <code>export replica-database</code> emitting a clean manifest on stdout with notes on stderr that <code>validate</code> then accepts. <strong>Part D all pass</strong>: proxy ConfigMap/Deployment/Service render and the cluster still reaches <code>Ready</code> with the LoadBalancer stuck <code>&lt;pending&gt;</code>; NetworkPolicy goes 3 → 4 ingress rules with the new one scoped to the <code>ccdr-proxy</code> pod on 6000 only; the advertised address stays the pod's own; toggling off removes everything and returns the policy to 3 rules. <strong>Three doc rows corrected</strong> (the advertised-address row named the ConfigMap, which never holds the value; Part A gained the same-path guard; the FULL/DIFF row now says where the backup type actually lives). <strong>One CI defect found:</strong> <code>minio/minio:latest</code> and <code>minio/mc:latest</code> on Docker Hub are no longer anonymously pullable (<em>pull access denied … insufficient_scope</em>, on both the host and a Kind node), which would fail the extended MinIO specs; switched to quay.io, where the published example already pointed. <strong>Parts B and C need a real 2026.08+ image and remain unrun.</strong></td>
+</tr>
+<tr>
+<td>v1.14.0</td>
+<td>2026-08-02</td>
+<td>✅ all 4 phases pass (19/19 scenarios) — 3 bugs + 4 doc gaps found</td>
+<td><strong>Bugs:</strong> (1) deleting a <code>Neo4jPlugin</code> against a live deployment never finalizes — the removal Job is re-created every reconcile and fails <code>already exists</code>, so the CR stays Terminating and blocks namespace deletion; (2) <code>examples/property_sharding/development-property-sharding.yaml</code> does not boot — <code>spec.propertySharding.config</code> bypasses the memory-key exclusion that <code>spec.config</code> gets, so a user <code>heap.max_size</code> contradicts the operator-derived <code>heap.initial_size</code> and the JVM refuses to start; (3) <code>make dev-up</code> loads no <code>aura*</code> controller (the dev <code>-controllers</code> default omits all 12), so every Aura CR is accepted and then silently ignored — no status, no events, no logs. <strong>Doc gaps:</strong> Phase 1 teardown destroys the backup Phase 2's cross-topology scenario needs; Phase 4 teardown leaves a billing instance because <code>deletionPolicy</code> defaults to <code>Orphan</code>; the <code>multiDatabase</code>-stays-absent rule holds only with no org configured; sharding examples pin <code>2026.04</code> while the CI anchor is <code>2026.06</code>. <strong>Also:</strong> a crash-looping member surfaces only as <code>ConnectivityDegraded</code>, which points at Bolt rather than the container.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li><a href="../testing/">Testing</a> — the automated unit/integration suites and the
+  core/extended label split.</li>
+<li><a href="../ci_and_workflows/">CI/CD &amp; Workflows</a> — what runs per-PR vs. the manual extended suite.</li>
+<li><a href="../../user_guide/cli/"><code>kubectl-neo4j</code> CLI</a> — the command docs Phase 0
+  and the per-phase CLI rows follow, including the exit-code contracts.</li>
+<li><a href="../../user_guide/guides/backup_restore/">Backup &amp; Restore</a>,
+  <a href="../../user_guide/property_sharding/">Property Sharding</a> — the user docs this
+  journey follows.</li>
+<li><a href="../../knowledge/invariants/">Project Invariants</a> — the hard constraints
+  (KIND-only, Enterprise-only, etc.) every phase respects.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../testing/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Testing">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Testing
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../makefile_reference/" class="md-footer__link md-footer__link--next" aria-label="Next: Makefile Reference">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Makefile Reference
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://hub.docker.com/r/neo4j/neo4j-enterprise" target="_blank" rel="noopener" title="hub.docker.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M349.9 236.3h-66.1v-59.4h66.1zm0-204.3h-66.1v60.7h66.1zm78.2 144.8H362v59.4h66.1zm-156.3-72.1h-66.1v60.1h66.1zm78.1 0h-66.1v60.1h66.1zm276.8 100c-14.4-9.7-47.6-13.2-73.1-8.4-3.3-24-16.7-44.9-41.1-63.7l-14-9.3-9.3 14c-18.4 27.8-23.4 73.6-3.7 103.8-8.7 4.7-25.8 11.1-48.4 10.7H2.4c-8.7 50.8 5.8 116.8 44 162.1 37.1 43.9 92.7 66.2 165.4 66.2 157.4 0 273.9-72.5 328.4-204.2 21.4.4 67.6.1 91.3-45.2 1.5-2.5 6.6-13.2 8.5-17.1zm-511.1-27.9h-66v59.4h66.1v-59.4zm78.1 0h-66.1v59.4h66.1zm78.1 0h-66.1v59.4h66.1zm-78.1-72.1h-66.1v60.1h66.1z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
