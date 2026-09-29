@@ -322,6 +322,14 @@ networkPolicy:
   enabled: true   # opt-in; requires a CNI that enforces NetworkPolicy
 ```
 
+#### `serverDefaultCypherLanguage` (string)
+
+Cypher version a database gets when it is created without one of its own — Neo4j's `db.query.default_language`. `CYPHER_5` or `CYPHER_25`. **Unset**, the operator picks once and records it in `status.effectiveCypherLanguage`: `CYPHER_25` for a deployment it creates on a CalVer image, `CYPHER_5` on the 5.26 LTS, and whatever an existing deployment already runs — an operator upgrade never changes it. Neo4j fixes a database's language at creation, so this applies only to databases created afterwards; change an existing one with `ALTER DATABASE … SET DEFAULT LANGUAGE`. Changing the field restarts the servers. `CYPHER_25` needs a CalVer image, and nothing is ever written on the LTS (the setting does not exist there). Don't also set `db.query.default_language` in `spec.config`; the two are refused when they disagree.
+
+```yaml
+serverDefaultCypherLanguage: CYPHER_25   # CalVer only
+```
+
 #### `remoteAliasKeystore` (RemoteAliasKeystoreSpec)
 
 Keystore used to encrypt the credentials of remote database aliases that store
@@ -446,6 +454,11 @@ Current deployment phase:
 - `Ready`: Deployment is running and ready for connections
 - `Failed`: Deployment has failed
 - `ValidationFailed`: Spec validation failed
+
+#### `effectiveCypherLanguage` (string)
+The server default Cypher version the operator resolved (see
+`spec.serverDefaultCypherLanguage`), recorded once so an unset spec never
+changes meaning under a running deployment.
 
 #### `ready` (boolean)
 Indicates if the standalone deployment is ready for connections.

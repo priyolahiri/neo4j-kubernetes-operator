@@ -1907,6 +1907,22 @@ server.metrics.csv.enabled=false
 		}
 	}
 
+	// Server default Cypher language (spec.serverDefaultCypherLanguage). The
+	// controller records the resolved value in status before building this;
+	// see cypher_language.go. Written before spec.config, which is where a user
+	// who set db.query.default_language directly still has it written — in
+	// that case nothing is emitted here.
+	var shardingConfig map[string]string
+	if cluster.Spec.PropertySharding != nil {
+		shardingConfig = cluster.Spec.PropertySharding.Config
+	}
+	if lang := ServerCypherLanguageForCluster(cluster.Spec.ServerDefaultCypherLanguage,
+		cluster.Status.EffectiveCypherLanguage, cluster.Spec.Image.Tag,
+		cluster.Spec.Config, shardingConfig); lang != "" {
+		config += "\n# Server default Cypher language (for databases created without their own)\n"
+		config += ServerCypherLanguageKey + "=" + lang + "\n"
+	}
+
 	// Add custom configuration (excluding memory settings and auth-generated keys)
 	if cluster.Spec.Config != nil {
 		// Keys already set by the operator — user's spec.config values are skipped for these
@@ -2412,10 +2428,16 @@ func operatorManagedConfKeys() map[string]bool {
 
 // buildPropertyShardingConfig merges required property sharding settings with user overrides
 func buildPropertyShardingConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) map[string]string {
+	// No db.query.default_language here. Shard sub-databases inherit the
+	// PARENT database's language, not the server's, and a sharded family works
+	// with the server on Cypher 5 (measured on 2026.06.0), so sharding does not
+	// need the server-wide setting. The sharded CREATE sets the family's
+	// language itself. Forcing it here made enabling sharding change the
+	// language of every database created on the cluster afterwards — see
+	// docs/design/cypher-language-defaulting.md §5.9.
 	config := map[string]string{
 		"internal.dbms.sharded_property_database.enabled":                     "true",
 		"internal.dbms.sharded_property_database.allow_external_shard_access": "false",
-		"db.query.default_language":                                           "CYPHER_25",
 	}
 
 	if cluster.Spec.PropertySharding != nil && cluster.Spec.PropertySharding.Config != nil {

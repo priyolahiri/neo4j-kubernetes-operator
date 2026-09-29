@@ -247,6 +247,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		}
 	}
 
+	// Resolve the server default Cypher language before the ConfigMap that
+	// renders it (spec.serverDefaultCypherLanguage; server_cypher_language.go).
+	if err := r.stampStandaloneCypherLanguage(ctx, standalone); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to resolve the server default Cypher language: %w", err)
+	}
+
 	// Reconcile ConfigMap (always needed for config). The standalone controller
 	// owns neo4j.conf (incl. plugin-derived settings) and rolls the pod itself
 	// when the rendered conf changes.
@@ -1353,6 +1359,18 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv
 				authGeneratedKeys[key] = true
 			}
 		}
+	}
+
+	// Server default Cypher language (spec.serverDefaultCypherLanguage), from
+	// the value stampStandaloneCypherLanguage recorded. Nothing is written when
+	// the user set db.query.default_language in spec.config — that line is.
+	if lang := resources.EmitServerCypherLanguage(standalone.Spec.ServerDefaultCypherLanguage,
+		resources.LegacyServerCypherLanguage(standalone.Spec.Config),
+		standalone.Status.EffectiveCypherLanguage,
+		resources.IsCalverImage(standalone.Spec.Image.Tag)); lang != "" {
+		configLines = append(configLines, "# Server default Cypher language (for databases created without their own)")
+		configLines = append(configLines, resources.ServerCypherLanguageKey+"="+lang)
+		configLines = append(configLines, "")
 	}
 
 	// Add user-provided configuration. SSL policy keys are excluded

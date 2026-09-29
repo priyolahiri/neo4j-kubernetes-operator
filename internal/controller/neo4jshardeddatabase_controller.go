@@ -490,16 +490,10 @@ func (r *Neo4jShardedDatabaseReconciler) dropShardedDatabaseIfExists(ctx context
 }
 
 // createShardedDatabase creates the sharded database using Cypher 25 syntax
-func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
-	logger := log.FromContext(ctx).WithValues("database", shardedDB.Spec.Name)
-
-	// Build the Cypher 25 CREATE DATABASE command for property sharding
-	// Format: CREATE DATABASE name [IF NOT EXISTS]
-	//         SET DEFAULT LANGUAGE CYPHER 25
-	//         SET GRAPH SHARD { TOPOLOGY n PRIMARIES m SECONDARIES }
-	//         SET PROPERTY SHARDS { COUNT n TOPOLOGY m REPLICAS }
-	//         OPTIONS { seedURI: ..., seedConfig: ..., seedSourceDatabase: ..., seedRestoreUntil: ..., txLogEnrichment: ... }
-
+// buildCreateShardedDatabaseCypher renders the sharded CREATE DATABASE and its
+// parameters. Separate from createShardedDatabase so the statement can be
+// tested without a server.
+func buildCreateShardedDatabaseCypher(shardedDB *neo4jv1beta1.Neo4jShardedDatabase) (string, map[string]any, error) {
 	var query strings.Builder
 
 	// Start with Cypher 25 prefix and CREATE DATABASE
@@ -510,10 +504,16 @@ func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Conte
 		query.WriteString(" IF NOT EXISTS")
 	}
 
-	// Add default Cypher language
-	if shardedDB.Spec.DefaultCypherLanguage != "" {
-		fmt.Fprintf(&query, " SET DEFAULT LANGUAGE CYPHER %s", shardedDB.Spec.DefaultCypherLanguage)
+	// Always set the family's language. Shard sub-databases inherit the
+	// PARENT's default language, not the server's (measured on 2026.06.0), and
+	// the server no longer forces CYPHER_25 for sharding (design §5.9) — so
+	// without this clause a sharded family would take whatever
+	// serverDefaultCypherLanguage says. The CRD admits only "25".
+	lang := shardedDB.Spec.DefaultCypherLanguage
+	if lang == "" {
+		lang = "25"
 	}
+	fmt.Fprintf(&query, " SET DEFAULT LANGUAGE CYPHER %s", lang)
 
 	// Add graph shard topology
 	graphShard := shardedDB.Spec.PropertySharding.GraphShard
@@ -556,7 +556,7 @@ func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Conte
 	// parameters (params) so seed URIs / config can't inject Cypher (#170).
 	options, params, err := buildShardedDatabaseOptions(shardedDB)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	if options != "" {
 		query.WriteString(" OPTIONS { ")
@@ -570,6 +570,23 @@ func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Conte
 	}
 
 	queryStr := query.String()
+	return queryStr, params, nil
+}
+
+func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
+	logger := log.FromContext(ctx).WithValues("database", shardedDB.Spec.Name)
+
+	// Build the Cypher 25 CREATE DATABASE command for property sharding
+	// Format: CREATE DATABASE name [IF NOT EXISTS]
+	//         SET DEFAULT LANGUAGE CYPHER 25
+	//         SET GRAPH SHARD { TOPOLOGY n PRIMARIES m SECONDARIES }
+	//         SET PROPERTY SHARDS { COUNT n TOPOLOGY m REPLICAS }
+	//         OPTIONS { seedURI: ..., seedConfig: ..., seedSourceDatabase: ..., seedRestoreUntil: ..., txLogEnrichment: ... }
+
+	queryStr, params, err := buildCreateShardedDatabaseCypher(shardedDB)
+	if err != nil {
+		return err
+	}
 	logger.Info("Executing sharded database creation", "query", queryStr)
 
 	// Execute the command with retry logic
