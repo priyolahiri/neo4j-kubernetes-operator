@@ -129,7 +129,15 @@
          <lastmod>2026-09-29</lastmod>
     </url>
     <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/design/cypher-language-defaulting/</loc>
+         <lastmod>2026-09-29</lastmod>
+    </url>
+    <url>
          <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/design/multi-cluster-control-plane/</loc>
+         <lastmod>2026-09-29</lastmod>
+    </url>
+    <url>
+         <loc>https://priyolahiri.github.io/neo4j-kubernetes-operator/main/design/privilege-database-references/</loc>
          <lastmod>2026-09-29</lastmod>
     </url>
     <url>

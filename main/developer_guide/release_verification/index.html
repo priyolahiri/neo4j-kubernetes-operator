@@ -4441,7 +4441,7 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>Composite: remote constituent keystore</td>
-<td>set <code>spec.remoteAliasKeystore</code> on the standalone, then a constituent with <code>remote.credentialsSecretRef</code> whose <code>url</code> points back at <strong>this same DBMS</strong> — enough to prove the keystore mounts and Neo4j can encrypt the alias credentials, without a second Enterprise JVM. Omitting the keystore must be refused <strong>at apply time</strong> naming the field, not inside the server with a <code>50N09</code>/<code>50N00</code> that mentions neither the CR nor the constituent</td>
+<td>set <code>spec.remoteAliasKeystore</code> on the standalone, then a constituent with <code>remote.credentialsSecretRef</code> whose <code>url</code> points back at <strong>this same DBMS</strong> — enough to prove the keystore mounts and Neo4j can encrypt the alias credentials, without a second Enterprise JVM. Omitting the keystore must be refused <strong>at apply time</strong> naming the field, not inside the server with a <code>50N09</code>/<code>50N00</code> that mentions neither the CR nor the constituent. <strong>Walk it on the 5.26 LTS</strong>, not only CalVer: v1.16.0 shipped this path broken on 5.26 (every remote alias carried a <code>CYPHER 25</code> directive the LTS rejects), and the URL must be <code>neo4j+s://</code> or <code>neo4j+ssc://</code></td>
 </tr>
 <tr>
 <td>TLS: CA path</td>
@@ -4562,6 +4562,10 @@ cluster (~2Gi each):</p>
 <tr>
 <td>Sharded backup <strong>by CR name</strong></td>
 <td><code>Neo4jBackup</code> with <strong><code>spec.shardedDatabase</code></strong> = the <code>Neo4jShardedDatabase</code> <strong>CR metadata name</strong> → <code>Succeeded</code>; <code>status.history[].shardArtifacts</code> lists every shard, and the filenames carry the LOGICAL names (<code>&lt;spec.name&gt;-g000</code>, <code>-p000</code>, <code>-p001</code>). Using the <em>logical</em> name instead fails with <code>Neo4jShardedDatabase "&lt;name&gt;" not found</code>. (This row said <code>kind=ShardedDatabase</code> with <code>target.name</code> until 2026-09-03; <code>spec.target</code> does not exist on <code>Neo4jBackup</code> and the row was unfollowable as written.)</td>
+</tr>
+<tr>
+<td>Shard language follows the parent</td>
+<td><code>SHOW DATABASES YIELD name, defaultLanguage WHERE name STARTS WITH '&lt;logical&gt;'</code> → the parent, <code>-g000</code> and every <code>-p00n</code> report the <strong>same</strong> language as the parent (measured 2026-09-29 on 2026.06.0: a parent created with <code>SET DEFAULT LANGUAGE CYPHER 5</code> on a <code>CYPHER_25</code> server gave a <code>CYPHER 5</code> family). Neo4j fixes a database's language at creation, so also confirm the default <code>neo4j</code> database's <code>defaultLanguage</code> is what the design expects for this operator version — see <a href="../../design/cypher-language-defaulting/">cypher-language-defaulting.md</a> §5.8–5.9</td>
 </tr>
 <tr>
 <td>CLI: the sharded CR is legible</td>

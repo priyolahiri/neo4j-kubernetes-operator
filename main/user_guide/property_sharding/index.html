@@ -4812,6 +4812,27 @@ URIs when seeding from dumps or multiple locations.</p>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">db.query.default_language</span><span class="p">:</span><span class="w"> </span><span class="s">"CYPHER_25"</span>
 </span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">internal.dbms.sharded_property_database.allow_external_shard_access</span><span class="p">:</span><span class="w"> </span><span class="s">"false"</span>
 </span></code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Enabling sharding sets the language of databases created afterwards</p>
+<p><code>db.query.default_language</code> is a <strong>server-wide</strong> setting, not a sharding
+one, and Neo4j applies it when a database is <strong>created</strong>: a database
+created without a default language of its own gets the server's, keeps
+it, and never re-reads the setting (measured on 2026.06.0). So with
+<code>CYPHER_25</code>:</p>
+<ul>
+<li>databases created <strong>after</strong> sharding is enabled, without their own
+  language, run queries as <strong>Cypher 25</strong> unless a query starts with
+  <code>CYPHER 5</code>. On a cluster created with sharding on, that includes the
+  default <code>neo4j</code> database;</li>
+<li>databases that <strong>already exist</strong> when you enable sharding keep the
+  language they have — enabling it moves nothing.</li>
+</ul>
+<p>To keep a database on Cypher 5, give it its own language:
+<code>defaultCypherLanguage: "5"</code> on a <code>Neo4jDatabase</code> the operator has not
+created yet (the field is applied only at creation), or
+<code>ALTER DATABASE &lt;name&gt; SET DEFAULT LANGUAGE CYPHER 5</code> on an existing one.
+Applications can also prefix their queries with <code>CYPHER 5</code>.</p>
+</div>
 <h4 id="optional-performance-tuning">Optional Performance Tuning<a class="headerlink" href="#optional-performance-tuning" title="Anchor link to this section">&para;</a></h4>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="c1"># Transaction log retention (critical for shard sync)</span>

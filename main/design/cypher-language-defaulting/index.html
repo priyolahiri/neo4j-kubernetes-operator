@@ -12,31 +12,27 @@
         <meta name="author" content="Priyo Lahiri">
       
       
-        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/composite_databases/">
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/design/cypher-language-defaulting/">
       
       
-        <link rel="prev" href="../../property_sharding/">
-      
-      
-        <link rel="next" href="../../external_access/">
       
       
         
       
       
-      <link rel="icon" href="../../../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Composite Databases - Neo4j Kubernetes Operator</title>
+        <title>Design: Cypher language defaulting on CalVer - Neo4j Kubernetes Operator</title>
       
     
     
-      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -55,9 +51,9 @@
       
     
     
-      <link rel="stylesheet" href="../../../stylesheets/neo4j.css">
+      <link rel="stylesheet" href="../../stylesheets/neo4j.css">
     
-    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -82,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#composite-databases" class="md-skip">
+        <a href="#design-cypher-language-defaulting-on-calver" class="md-skip">
           Skip to content
         </a>
       
@@ -102,7 +98,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+    <a href="../.." title="Neo4j Kubernetes Operator" class="md-header__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -122,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Composite Databases
+              Design: Cypher language defaulting on CalVer
             
           </span>
         </div>
@@ -245,7 +241,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
+    <a href="../.." title="Neo4j Kubernetes Operator" class="md-nav__button md-logo" aria-label="Neo4j Kubernetes Operator" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -275,7 +271,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../.." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -370,7 +366,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../getting_started/" class="md-nav__link">
+      <a href="../../user_guide/getting_started/" class="md-nav__link">
         
   
   
@@ -398,7 +394,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../installation/" class="md-nav__link">
+      <a href="../../user_guide/installation/" class="md-nav__link">
         
   
   
@@ -426,7 +422,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../deployment/" class="md-nav__link">
+      <a href="../../user_guide/deployment/" class="md-nav__link">
         
   
   
@@ -454,7 +450,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../operator-modes/" class="md-nav__link">
+      <a href="../../user_guide/operator-modes/" class="md-nav__link">
         
   
   
@@ -482,7 +478,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../demo/" class="md-nav__link">
+      <a href="../../user_guide/guides/demo/" class="md-nav__link">
         
   
   
@@ -510,7 +506,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../version_support/" class="md-nav__link">
+      <a href="../../user_guide/version_support/" class="md-nav__link">
         
   
   
@@ -538,7 +534,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../migration_guide/" class="md-nav__link">
+      <a href="../../user_guide/migration_guide/" class="md-nav__link">
         
   
   
@@ -570,10 +566,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -612,11 +606,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -637,7 +631,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -655,7 +649,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../configuration/" class="md-nav__link">
+      <a href="../../user_guide/configuration/" class="md-nav__link">
         
   
   
@@ -683,7 +677,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../examples_gallery/" class="md-nav__link">
+      <a href="../../user_guide/examples_gallery/" class="md-nav__link">
         
   
   
@@ -711,7 +705,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../resource_sizing/" class="md-nav__link">
+      <a href="../../user_guide/guides/resource_sizing/" class="md-nav__link">
         
   
   
@@ -739,7 +733,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../clustering/" class="md-nav__link">
+      <a href="../../user_guide/clustering/" class="md-nav__link">
         
   
   
@@ -767,7 +761,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../topology_placement/" class="md-nav__link">
+      <a href="../../user_guide/topology_placement/" class="md-nav__link">
         
   
   
@@ -795,7 +789,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../property_sharding/" class="md-nav__link">
+      <a href="../../user_guide/property_sharding/" class="md-nav__link">
         
   
   
@@ -820,37 +814,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Composite Databases
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/composite_databases/" class="md-nav__link">
         
   
   
@@ -866,131 +833,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#creating-one" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Creating one
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#constituents-are-managed-with-the-composite" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Constituents are managed with the composite
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#privileges-go-on-the-constituents-never-on-the-composite" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Privileges go on the constituents, never on the composite
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#stopping-a-composite" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Stopping a composite
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#deleting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Deleting
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#remote-constituents" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Remote constituents
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Remote constituents">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#oidc-credential-forwarding-prefer-this" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        OIDC credential forwarding — prefer this
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#stored-native-credentials" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Stored native credentials
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#limits" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Limits
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1003,7 +845,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../external_access/" class="md-nav__link">
+      <a href="../../user_guide/external_access/" class="md-nav__link">
         
   
   
@@ -1031,7 +873,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../plugins/" class="md-nav__link">
+      <a href="../../user_guide/guides/plugins/" class="md-nav__link">
         
   
   
@@ -1059,7 +901,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../seed-uri/" class="md-nav__link">
+      <a href="../../user_guide/guides/seed-uri/" class="md-nav__link">
         
   
   
@@ -1087,7 +929,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../aura_fleet_management/" class="md-nav__link">
+      <a href="../../user_guide/aura_fleet_management/" class="md-nav__link">
         
   
   
@@ -1115,7 +957,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../aura_orchestration/" class="md-nav__link">
+      <a href="../../user_guide/aura_orchestration/" class="md-nav__link">
         
   
   
@@ -1143,7 +985,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mcp_client_setup/" class="md-nav__link">
+      <a href="../../user_guide/guides/mcp_client_setup/" class="md-nav__link">
         
   
   
@@ -1240,7 +1082,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../security/" class="md-nav__link">
+      <a href="../../user_guide/security/" class="md-nav__link">
         
   
   
@@ -1268,7 +1110,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../security/" class="md-nav__link">
+      <a href="../../user_guide/guides/security/" class="md-nav__link">
         
   
   
@@ -1296,7 +1138,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../tls_configuration/" class="md-nav__link">
+      <a href="../../user_guide/tls_configuration/" class="md-nav__link">
         
   
   
@@ -1324,7 +1166,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user_role_management/" class="md-nav__link">
+      <a href="../../user_guide/user_role_management/" class="md-nav__link">
         
   
   
@@ -1400,7 +1242,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../cli/" class="md-nav__link ">
+            <a href="../../user_guide/cli/" class="md-nav__link ">
               
   
   
@@ -1444,7 +1286,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/install/" class="md-nav__link">
+      <a href="../../user_guide/cli/install/" class="md-nav__link">
         
   
   
@@ -1472,7 +1314,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/validate/" class="md-nav__link">
+      <a href="../../user_guide/cli/validate/" class="md-nav__link">
         
   
   
@@ -1500,7 +1342,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/preflight/" class="md-nav__link">
+      <a href="../../user_guide/cli/preflight/" class="md-nav__link">
         
   
   
@@ -1528,7 +1370,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/status/" class="md-nav__link">
+      <a href="../../user_guide/cli/status/" class="md-nav__link">
         
   
   
@@ -1556,7 +1398,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/diagnose/" class="md-nav__link">
+      <a href="../../user_guide/cli/diagnose/" class="md-nav__link">
         
   
   
@@ -1584,7 +1426,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/connect/" class="md-nav__link">
+      <a href="../../user_guide/cli/connect/" class="md-nav__link">
         
   
   
@@ -1612,7 +1454,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/support-bundle/" class="md-nav__link">
+      <a href="../../user_guide/cli/support-bundle/" class="md-nav__link">
         
   
   
@@ -1640,7 +1482,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/explain/" class="md-nav__link">
+      <a href="../../user_guide/cli/explain/" class="md-nav__link">
         
   
   
@@ -1668,7 +1510,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/export/" class="md-nav__link">
+      <a href="../../user_guide/cli/export/" class="md-nav__link">
         
   
   
@@ -1775,7 +1617,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../backup_restore/" class="md-nav__link">
+      <a href="../../user_guide/guides/backup_restore/" class="md-nav__link">
         
   
   
@@ -1803,7 +1645,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cross_cluster_replication/" class="md-nav__link">
+      <a href="../../user_guide/guides/cross_cluster_replication/" class="md-nav__link">
         
   
   
@@ -1831,7 +1673,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../database_aliases/" class="md-nav__link">
+      <a href="../../user_guide/guides/database_aliases/" class="md-nav__link">
         
   
   
@@ -1859,7 +1701,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../upgrades/" class="md-nav__link">
+      <a href="../../user_guide/guides/upgrades/" class="md-nav__link">
         
   
   
@@ -1887,7 +1729,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../storage_expansion/" class="md-nav__link">
+      <a href="../../user_guide/guides/storage_expansion/" class="md-nav__link">
         
   
   
@@ -1915,7 +1757,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../fault_tolerance/" class="md-nav__link">
+      <a href="../../user_guide/guides/fault_tolerance/" class="md-nav__link">
         
   
   
@@ -1943,7 +1785,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../multi_cluster/" class="md-nav__link">
+      <a href="../../user_guide/guides/multi_cluster/" class="md-nav__link">
         
   
   
@@ -2028,7 +1870,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../monitoring/" class="md-nav__link">
+      <a href="../../user_guide/guides/monitoring/" class="md-nav__link">
         
   
   
@@ -2056,7 +1898,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../prometheus-grafana-setup/" class="md-nav__link">
+      <a href="../../user_guide/guides/prometheus-grafana-setup/" class="md-nav__link">
         
   
   
@@ -2084,7 +1926,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../kubernetes-events/" class="md-nav__link">
+      <a href="../../user_guide/guides/kubernetes-events/" class="md-nav__link">
         
   
   
@@ -2175,7 +2017,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../performance/" class="md-nav__link">
+      <a href="../../user_guide/performance/" class="md-nav__link">
         
   
   
@@ -2203,7 +2045,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../performance/" class="md-nav__link">
+      <a href="../../user_guide/guides/performance/" class="md-nav__link">
         
   
   
@@ -2306,7 +2148,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../troubleshooting/" class="md-nav__link">
+      <a href="../../user_guide/guides/troubleshooting/" class="md-nav__link">
         
   
   
@@ -2334,7 +2176,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../troubleshooting/backup_restore/" class="md-nav__link">
+      <a href="../../user_guide/troubleshooting/backup_restore/" class="md-nav__link">
         
   
   
@@ -2362,7 +2204,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../troubleshooting/split-brain-recovery/" class="md-nav__link">
+      <a href="../../user_guide/troubleshooting/split-brain-recovery/" class="md-nav__link">
         
   
   
@@ -2422,7 +2264,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../gitops/" class="md-nav__link ">
+            <a href="../../gitops/" class="md-nav__link ">
               
   
   
@@ -2569,7 +2411,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
+      <a href="../../api_reference/neo4jenterprisecluster/" class="md-nav__link">
         
   
   
@@ -2597,7 +2439,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
+      <a href="../../api_reference/neo4jenterprisestandalone/" class="md-nav__link">
         
   
   
@@ -2625,7 +2467,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jdatabase/" class="md-nav__link">
+      <a href="../../api_reference/neo4jdatabase/" class="md-nav__link">
         
   
   
@@ -2653,7 +2495,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
+      <a href="../../api_reference/neo4jshardeddatabase/" class="md-nav__link">
         
   
   
@@ -2681,7 +2523,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4juser/" class="md-nav__link">
+      <a href="../../api_reference/neo4juser/" class="md-nav__link">
         
   
   
@@ -2709,7 +2551,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jrole/" class="md-nav__link">
+      <a href="../../api_reference/neo4jrole/" class="md-nav__link">
         
   
   
@@ -2737,7 +2579,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jrolebinding/" class="md-nav__link">
+      <a href="../../api_reference/neo4jrolebinding/" class="md-nav__link">
         
   
   
@@ -2765,7 +2607,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jauthrule/" class="md-nav__link">
+      <a href="../../api_reference/neo4jauthrule/" class="md-nav__link">
         
   
   
@@ -2793,7 +2635,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jplugin/" class="md-nav__link">
+      <a href="../../api_reference/neo4jplugin/" class="md-nav__link">
         
   
   
@@ -2821,7 +2663,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jbackup/" class="md-nav__link">
+      <a href="../../api_reference/neo4jbackup/" class="md-nav__link">
         
   
   
@@ -2849,7 +2691,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jrestore/" class="md-nav__link">
+      <a href="../../api_reference/neo4jrestore/" class="md-nav__link">
         
   
   
@@ -2877,7 +2719,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
+      <a href="../../api_reference/neo4jreplicadatabase/" class="md-nav__link">
         
   
   
@@ -2905,7 +2747,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
+      <a href="../../api_reference/neo4jreplicapromotion/" class="md-nav__link">
         
   
   
@@ -2933,7 +2775,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jcompositedatabase/" class="md-nav__link">
+      <a href="../../api_reference/neo4jcompositedatabase/" class="md-nav__link">
         
   
   
@@ -2961,7 +2803,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/neo4jdatabasealias/" class="md-nav__link">
+      <a href="../../api_reference/neo4jdatabasealias/" class="md-nav__link">
         
   
   
@@ -2989,7 +2831,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auraproviderconfig/" class="md-nav__link">
+      <a href="../../api_reference/auraproviderconfig/" class="md-nav__link">
         
   
   
@@ -3017,7 +2859,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/aurainstance/" class="md-nav__link">
+      <a href="../../api_reference/aurainstance/" class="md-nav__link">
         
   
   
@@ -3045,7 +2887,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/aurasnapshot/" class="md-nav__link">
+      <a href="../../api_reference/aurasnapshot/" class="md-nav__link">
         
   
   
@@ -3073,7 +2915,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/aurarestore/" class="md-nav__link">
+      <a href="../../api_reference/aurarestore/" class="md-nav__link">
         
   
   
@@ -3101,7 +2943,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auracustomermanagedkey/" class="md-nav__link">
+      <a href="../../api_reference/auracustomermanagedkey/" class="md-nav__link">
         
   
   
@@ -3129,7 +2971,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auraipfilter/" class="md-nav__link">
+      <a href="../../api_reference/auraipfilter/" class="md-nav__link">
         
   
   
@@ -3157,7 +2999,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auradatabase/" class="md-nav__link">
+      <a href="../../api_reference/auradatabase/" class="md-nav__link">
         
   
   
@@ -3185,7 +3027,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auradatabasebackup/" class="md-nav__link">
+      <a href="../../api_reference/auradatabasebackup/" class="md-nav__link">
         
   
   
@@ -3213,7 +3055,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auradatabaserestore/" class="md-nav__link">
+      <a href="../../api_reference/auradatabaserestore/" class="md-nav__link">
         
   
   
@@ -3241,7 +3083,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auraorganizationmember/" class="md-nav__link">
+      <a href="../../api_reference/auraorganizationmember/" class="md-nav__link">
         
   
   
@@ -3269,7 +3111,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/auraprojectmember/" class="md-nav__link">
+      <a href="../../api_reference/auraprojectmember/" class="md-nav__link">
         
   
   
@@ -3297,7 +3139,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api_reference/aurainvite/" class="md-nav__link">
+      <a href="../../api_reference/aurainvite/" class="md-nav__link">
         
   
   
@@ -3418,7 +3260,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/QUICKSTART/" class="md-nav__link">
+      <a href="../../developer_guide/QUICKSTART/" class="md-nav__link">
         
   
   
@@ -3446,7 +3288,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/development/" class="md-nav__link">
+      <a href="../../developer_guide/development/" class="md-nav__link">
         
   
   
@@ -3474,7 +3316,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/contributing/" class="md-nav__link">
+      <a href="../../developer_guide/contributing/" class="md-nav__link">
         
   
   
@@ -3502,7 +3344,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/collaboration/" class="md-nav__link">
+      <a href="../../developer_guide/collaboration/" class="md-nav__link">
         
   
   
@@ -3530,7 +3372,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/ci_and_workflows/" class="md-nav__link">
+      <a href="../../developer_guide/ci_and_workflows/" class="md-nav__link">
         
   
   
@@ -3558,7 +3400,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/architecture/" class="md-nav__link">
+      <a href="../../developer_guide/architecture/" class="md-nav__link">
         
   
   
@@ -3586,7 +3428,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/testing/" class="md-nav__link">
+      <a href="../../developer_guide/testing/" class="md-nav__link">
         
   
   
@@ -3614,7 +3456,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/release_verification/" class="md-nav__link">
+      <a href="../../developer_guide/release_verification/" class="md-nav__link">
         
   
   
@@ -3642,7 +3484,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/makefile_reference/" class="md-nav__link">
+      <a href="../../developer_guide/makefile_reference/" class="md-nav__link">
         
   
   
@@ -3670,7 +3512,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/openshift_olm/" class="md-nav__link">
+      <a href="../../developer_guide/openshift_olm/" class="md-nav__link">
         
   
   
@@ -3755,7 +3597,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/llm-contribution/" class="md-nav__link">
+      <a href="../../developer_guide/llm-contribution/" class="md-nav__link">
         
   
   
@@ -3783,7 +3625,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer_guide/AGENT-GUARDRAILS/" class="md-nav__link">
+      <a href="../../developer_guide/AGENT-GUARDRAILS/" class="md-nav__link">
         
   
   
@@ -3811,7 +3653,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../knowledge/invariants/" class="md-nav__link">
+      <a href="../../knowledge/invariants/" class="md-nav__link">
         
   
   
@@ -3874,10 +3716,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#creating-one" class="md-nav__link">
+  <a href="#1-the-problem" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Creating one
+        1. The problem
       
     </span>
   </a>
@@ -3885,10 +3727,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#constituents-are-managed-with-the-composite" class="md-nav__link">
+  <a href="#2-the-lever-that-looks-right-and-is-not" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Constituents are managed with the composite
+        2. The lever that looks right and is not
       
     </span>
   </a>
@@ -3896,55 +3738,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#privileges-go-on-the-constituents-never-on-the-composite" class="md-nav__link">
+  <a href="#3-proposal" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Privileges go on the constituents, never on the composite
+        3. Proposal
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#stopping-a-composite" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Stopping a composite
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#deleting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Deleting
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#remote-constituents" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Remote constituents
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Remote constituents">
+    <nav class="md-nav" aria-label="3. Proposal">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#oidc-credential-forwarding-prefer-this" class="md-nav__link">
+  <a href="#31-make-the-prefix-structural-not-remembered" class="md-nav__link">
     <span class="md-ellipsis">
       
-        OIDC credential forwarding — prefer this
+        3.1 Make the prefix structural, not remembered
       
     </span>
   </a>
@@ -3952,10 +3761,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#stored-native-credentials" class="md-nav__link">
+  <a href="#32-a-guard-that-fails-the-build-not-a-comment-that-asks-nicely" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Stored native credentials
+        3.2 A guard that fails the build, not a comment that asks nicely
       
     </span>
   </a>
@@ -3968,10 +3777,137 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#limits" class="md-nav__link">
+  <a href="#4-what-this-deliberately-does-not-do" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Limits
+        4. What this deliberately does not do
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-specserverdefaultcypherlanguage-the-server-level-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. spec.serverDefaultCypherLanguage — the server-level default
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. spec.serverDefaultCypherLanguage — the server-level default">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-why-not-just-default-it-on-calver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Why not just default it on CalVer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Naming
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-the-lts-rule-is-never-emit-not-emit-cypher_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 The LTS rule is "never emit", not "emit CYPHER_5"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-resolution-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Resolution matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-new-has-to-be-detected-not-assumed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 "New" has to be detected, not assumed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-changing-it-later-is-a-restart-and-should-say-so" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 Changing it later is a restart, and should say so
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#57-upgrading-526-calver-does-not-silently-switch-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.7 Upgrading 5.26 → CalVer does not silently switch language
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#58-neo4j-fixes-a-databases-language-when-it-is-created" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.8 Neo4j fixes a database's language when it is created
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#59-interaction-with-property-sharding-resolved-an-artifact" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.9 Interaction with property sharding — resolved: an artifact
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-resolved-the-prefix-is-not-version-conditional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Resolved: the prefix is not version-conditional
       
     </span>
   </a>
@@ -3995,7 +3931,7 @@
 
 
   
-    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/guides/composite_databases.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/design/cypher-language-defaulting.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -4003,238 +3939,297 @@
   
 
 
-<h1 id="composite-databases">Composite databases<a class="headerlink" href="#composite-databases" title="Anchor link to this section">&para;</a></h1>
-<p>A composite database is a single query endpoint over several constituent
-databases. Applications <strong>connect to the composite</strong> and address the parts
-through it:</p>
-<div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gp">$ </span>cypher-shell<span class="w"> </span>-d<span class="w"> </span>cineasts
+<h1 id="design-cypher-language-defaulting-on-calver">Design: Cypher language defaulting on CalVer<a class="headerlink" href="#design-cypher-language-defaulting-on-calver" title="Anchor link to this section">&para;</a></h1>
+<blockquote>
+<p><strong>Status:</strong> proposed, not built. No PM roadmap governs this repo
+(<a href="#">wiki: <code>project-k8s-operator</code> closed 2026-06-18</a>), so this is a
+maintainer decision.</p>
+</blockquote>
+<h2 id="1-the-problem">1. The problem<a class="headerlink" href="#1-the-problem" title="Anchor link to this section">&para;</a></h2>
+<p>Some statements the operator emits are Cypher 25 syntax. On a CalVer server the
+<code>system</code> database still defaults to <strong>Cypher 5</strong>, and the failure is not a
+warning — the parser reports invalid input, which reads as though the feature
+does not exist:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Invalid input 'DATABASE': expected a graph pattern
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>There is no procedure with the name `dbms.promoteReplicaDatabase` registered
 </span></code></pre></div>
-<div class="language-cypher highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">USE</span><span class="w"> </span><span class="n">cineasts</span><span class="p">.</span><span class="n">latest</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">MATCH</span><span class="w"> </span><span class="p">(</span><span class="n">m</span><span class="p">:</span><span class="n">Movie</span><span class="p">)</span><span class="w"> </span><span class="k">RETURN</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">title</span>
+<p>Today the fix is a per-statement literal, <code>cypher25Prefix</code>, and a comment
+asking the next author to remember:</p>
+<div class="language-go highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1">// Current users: AUTH RULE (here) and CREATE REPLICA DATABASE (replicas.go).</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1">// The second was missed until the v1.15.0 journey ran it against a real</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1">// 2026.08 server; if you add a third, prefix it.</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="kd">const</span><span class="w"> </span><span class="nx">cypher25Prefix</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"CYPHER 25 "</span>
 </span></code></pre></div>
-<div class="admonition warning">
-<p class="admonition-title">Constituents are reachable only from a session on the composite</p>
-<p>Running <code>USE cineasts.latest</code> while connected to some other database is
-refused:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>42N04: Failed to access database identified by `cineasts.latest` while
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>       connected to session database `neo4j`.
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>       Connect to `cineasts.latest` directly.
-</span></code></pre></div>
-<p><strong>Ignore that last sentence</strong> — connecting to the constituent by its
-qualified name does not work either (<code>22N51: graph reference not found</code>).
-Connect to the <strong>composite</strong> (<code>-d cineasts</code>, or your driver's database
-parameter), then <code>USE</code> the constituent from there.</p>
-<p>From a composite session, <code>RETURN graph.names()</code> lists what is reachable.</p>
-</div>
-<p>It <strong>stores no data of its own</strong>. No topology, no store, no indexes or
-constraints, no seeding — the constituent databases hold everything, and the
-composite is the way in.</p>
-<p>Runnable manifests for everything below are in
-<a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/composite-databases"><code>examples/composite-databases/</code></a>.</p>
-<h2 id="creating-one">Creating one<a class="headerlink" href="#creating-one" title="Anchor link to this section">&para;</a></h2>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jCompositeDatabase</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cineasts</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-cluster</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="nt">constituents</span><span class="p">:</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">latest</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">      </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">movies-latest</span>
-</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">upcoming</span>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">      </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">movies-upcoming</span>
-</span></code></pre></div>
-<p>Each constituent becomes an alias <code>cineasts.&lt;name&gt;</code>. The target databases do
-not have to exist yet — a constituent whose target is missing is skipped and
-retried, so you can apply a composite and its databases together.</p>
-<div class="language-console highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="gp">$ </span>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jcompositedatabase<span class="w"> </span>cineasts<span class="w"> </span>-n<span class="w"> </span>neo4j
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="go">NAME       CLUSTER        PHASE   READY   AGE</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="go">cineasts   prod-cluster   Ready   True    30s</span>
-</span></code></pre></div>
-<p><code>status.observedConstituents</code> is read back from the server, so it tells you
-what the DBMS actually exposes rather than repeating your spec.</p>
-<h2 id="constituents-are-managed-with-the-composite">Constituents are managed with the composite<a class="headerlink" href="#constituents-are-managed-with-the-composite" title="Anchor link to this section">&para;</a></h2>
-<p>They are declared inline rather than as separate CRs, for a reason worth
-knowing about.</p>
-<div class="admonition warning">
-<p class="admonition-title">The composite must exist before any constituent</p>
-<p>Neo4j accepts <code>CREATE ALIAS cineasts.latest</code> <strong>even when no composite
-<code>cineasts</code> exists</strong>. You get an ordinary alias whose name happens to
-contain a dot — <code>SHOW ALIASES</code> lists it, and it is even queryable. But the
-composite can then never be created:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>42N87: The database or alias name `cineasts` conflicts with the name
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>       `cineasts.latest` of an existing database or alias.
-</span></code></pre></div>
-<p>The error never mentions ordering, and the only way out is dropping the
-alias. Because this CR owns the composite and its constituents together,
-the ordering is guaranteed. If a stray dotted alias is already in the way,
-the CR reports <code>Failed</code> with reason <code>CompositeDatabaseNameBlocked</code> and
-names the alias to drop.</p>
-</div>
-<p>By default <code>spec.constituents</code> is authoritative: an alias in the composite's
-namespace that is not in spec gets removed. Set <code>enforceConstituents: false</code>
-to leave out-of-band constituents alone, in which case the operator only ever
-adds.</p>
-<div class="admonition info">
-<p class="admonition-title">An alias that only <em>looks</em> like a constituent is left alone</p>
-<p>Neo4j distinguishes a constituent from an ordinary alias by a <code>composite</code>
-column, not by the name — so <code>cineasts.stray</code>, created out of band with no
-composite behind it, is <strong>not</strong> a constituent of <code>cineasts</code> however much it
-reads like one. <code>enforceConstituents</code> does not remove it: nothing in this
-CR claims it, and deleting a resource on the strength of a name collision
-would be worse than leaving it.</p>
-<p>It is named in <code>status.message</code> instead, because <code>SHOW ALIASES</code> shows only
-the name and the two are otherwise indistinguishable. To see which is
-which: <code>SHOW ALIASES FOR DATABASE YIELD name, composite</code>.</p>
-</div>
-<div class="admonition info">
-<p class="admonition-title">Do not use <code>Neo4jDatabaseAlias</code> for a constituent</p>
-<p><a href="../database_aliases/"><code>Neo4jDatabaseAlias</code></a> manages ordinary aliases, and
-creating a dotted one through it is how you reach the <code>42N87</code> above — it
-cannot know a composite is coming. Constituents belong on the composite
-that owns them. If you already have a dotted alias from that route,
-<code>kubectl neo4j explain CompositeDatabaseNameBlocked</code> walks through
-clearing it.</p>
-</div>
-<h2 id="privileges-go-on-the-constituents-never-on-the-composite">Privileges go on the constituents, never on the composite<a class="headerlink" href="#privileges-go-on-the-constituents-never-on-the-composite" title="Anchor link to this section">&para;</a></h2>
-<p>This is the mistake to watch for, and Neo4j gives you no warning about it:</p>
-<div class="language-cypher highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="err">--</span><span class="w"> </span><span class="n">accepted</span><span class="p">.</span><span class="w"> </span><span class="n">persisted</span><span class="p">.</span><span class="w"> </span><span class="n">does</span><span class="w"> </span><span class="n">nothing</span><span class="p">.</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">GRANT</span><span class="w"> </span><span class="k">MATCH</span><span class="w"> </span><span class="p">{*}</span><span class="w"> </span><span class="n">ON</span><span class="w"> </span><span class="n">GRAPH</span><span class="w"> </span><span class="n">cineasts</span><span class="w"> </span><span class="n">NODES</span><span class="w"> </span><span class="p">*</span><span class="w"> </span><span class="n">TO</span><span class="w"> </span><span class="n">analyst</span>
-</span></code></pre></div>
-<p>Graph privileges attach to the <strong>constituent target databases</strong>. A user reading
-through the composite needs:</p>
+<p><strong>That convention has already failed twice.</strong></p>
 <ol>
-<li><code>ACCESS</code> on the composite,</li>
-<li><code>ACCESS</code> on each constituent's target database,</li>
-<li>the graph privileges (<code>MATCH</code>, <code>TRAVERSE</code>, …) on those target databases.</li>
+<li><code>CREATE REPLICA DATABASE</code> and <code>dbms.promoteReplicaDatabase</code> shipped without
+   it and were only caught by a live journey against a real 2026.08 server —
+   no unit test can see a parser's opinion.</li>
+<li>The comment is <em>already stale</em>: <code>composite.go</code> is a third user, added after
+   the comment was written, and the comment does not mention it.</li>
 </ol>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRole</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-cluster</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analyst</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="nt">privileges</span><span class="p">:</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"GRANT</span><span class="nv"> </span><span class="s">ACCESS</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">DATABASE</span><span class="nv"> </span><span class="s">cineasts</span><span class="nv"> </span><span class="s">TO</span><span class="nv"> </span><span class="s">analyst"</span><span class="w">          </span><span class="c1"># the composite</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"GRANT</span><span class="nv"> </span><span class="s">ACCESS</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">DATABASE</span><span class="nv"> </span><span class="s">`movies-latest`</span><span class="nv"> </span><span class="s">TO</span><span class="nv"> </span><span class="s">analyst"</span><span class="w">   </span><span class="c1"># the constituent</span>
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"GRANT</span><span class="nv"> </span><span class="s">MATCH</span><span class="nv"> </span><span class="s">{*}</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">GRAPH</span><span class="nv"> </span><span class="s">`movies-latest`</span><span class="nv"> </span><span class="s">NODES</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">TO</span><span class="nv"> </span><span class="s">analyst"</span>
+<p>A rule enforced by a comment is a rule that degrades. The question is what
+replaces it.</p>
+<h2 id="2-the-lever-that-looks-right-and-is-not">2. The lever that looks right and is not<a class="headerlink" href="#2-the-lever-that-looks-right-and-is-not" title="Anchor link to this section">&para;</a></h2>
+<p><code>db.query.default_language=CYPHER_25</code> would make everything default to Cypher
+25 with no per-statement discipline at all. The operator already sets it — but
+only on the property-sharding path, where sharding requires it.</p>
+<p>Doing it generally is wrong, for a reason the setting's own documentation
+states:</p>
+<blockquote>
+<p>"The default language of a database determines which language is used to
+evaluate queries that <strong>do not explicitly select a language</strong>."</p>
+</blockquote>
+<p>It affects <strong>every query the server receives</strong>, not just the operator's. A user
+whose application sends Cypher 5 would silently have it parsed as Cypher 25.
+That is a breaking change to someone else's workload, introduced by upgrading
+the operator, and it is <strong>not a dynamic setting</strong> — it needs a restart to undo.</p>
+<p>The operator's job is to make its <em>own</em> statements parse. It has no business
+changing what a user's queries mean.</p>
+<p><strong>Rejected.</strong></p>
+<h2 id="3-proposal">3. Proposal<a class="headerlink" href="#3-proposal" title="Anchor link to this section">&para;</a></h2>
+<p>Two changes, neither user-visible.</p>
+<h3 id="31-make-the-prefix-structural-not-remembered">3.1 Make the prefix structural, not remembered<a class="headerlink" href="#31-make-the-prefix-structural-not-remembered" title="Anchor link to this section">&para;</a></h3>
+<p>Every Cypher-25-only statement the operator sends goes through the <code>system</code>
+database. Route those through one helper that applies the prefix, instead of
+each call site prepending a constant:</p>
+<div class="language-go highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1">// systemDDL25 runs a statement whose syntax is a Cypher 25 language feature.</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1">// The prefix is applied here so no call site has to remember it — the</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1">// mechanism that failed for CREATE REPLICA DATABASE in v1.15.0.</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Client</span><span class="p">)</span><span class="w"> </span><span class="nx">systemDDL25</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">query</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">params</span><span class="w"> </span><span class="kt">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">any</span><span class="p">,</span><span class="w"> </span><span class="nx">desc</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span>
 </span></code></pre></div>
-<p>A <code>Neo4jRole</code> whose privileges name a composite as a <strong>graph</strong> reports
-<code>PrivilegesResolve=False</code> with reason <code>GraphPrivilegeOnComposite</code>, because that
-privilege will silently do nothing.</p>
-<h2 id="stopping-a-composite">Stopping a composite<a class="headerlink" href="#stopping-a-composite" title="Anchor link to this section">&para;</a></h2>
-<p><code>STOP DATABASE cineasts</code> takes the endpoint offline. <strong>The constituent
-databases stay online</strong> — only the way in closes, and queries through the
-composite fail with "database unavailable". Starting it restores access. So
-stopping a composite is an access-layer switch, not a data operation.</p>
-<h2 id="deleting">Deleting<a class="headerlink" href="#deleting" title="Anchor link to this section">&para;</a></h2>
-<p><code>deletionPolicy: Delete</code> (the default) issues <code>DROP COMPOSITE DATABASE
-cineasts CASCADE ALIASES</code>. <code>CASCADE ALIASES</code> is required — a plain drop is
-refused while constituents exist — and it removes only the constituent
-<strong>aliases</strong>. The databases they target are untouched.</p>
-<p>Use <code>deletionPolicy: Retain</code> to keep the composite in Neo4j when the CR goes
-away.</p>
-<h2 id="remote-constituents">Remote constituents<a class="headerlink" href="#remote-constituents" title="Anchor link to this section">&para;</a></h2>
-<p>A constituent can point at a database in <strong>another</strong> Neo4j DBMS. There are two
-ways to authenticate, and they cost very different things to run.</p>
-<h3 id="oidc-credential-forwarding-prefer-this">OIDC credential forwarding — prefer this<a class="headerlink" href="#oidc-credential-forwarding-prefer-this" title="Anchor link to this section">&para;</a></h3>
-<p>The querying user's own token is forwarded to the remote DBMS. Nothing is
-stored, so there is no credential to leak, rotate or encrypt — and no keystore
-is needed.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">constituents</span><span class="p">:</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">partner</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">movies</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="nt">remote</span><span class="p">:</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">      </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j+s://partner.example.com:7687</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">      </span><span class="nt">oidcCredentialForwarding</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<p>The prefix stays a literal prepend rather than a server setting, so it changes
+nothing outside the statement it is attached to. It is already safe when the
+database default is 25.</p>
+<h3 id="32-a-guard-that-fails-the-build-not-a-comment-that-asks-nicely">3.2 A guard that fails the build, not a comment that asks nicely<a class="headerlink" href="#32-a-guard-that-fails-the-build-not-a-comment-that-asks-nicely" title="Anchor link to this section">&para;</a></h3>
+<p>A unit test over <code>internal/neo4j</code>: any statement string containing a
+Cypher-25-only construct must carry the prefix. Seed the construct list from
+what we already know needs it — <code>AUTH RULE</code>, <code>REPLICA DATABASE</code>,
+<code>promoteReplicaDatabase</code>, <code>COMPOSITE</code>-with-<code>DEFAULT LANGUAGE</code> — and extend it
+when a new one is found.</p>
+<p>This is the part that matters. The prefix helper prevents <em>new</em> call sites from
+forgetting; the test catches the case the helper cannot see, which is someone
+writing a raw <code>session.Run</code> with 25-only syntax.</p>
+<h2 id="4-what-this-deliberately-does-not-do">4. What this deliberately does not do<a class="headerlink" href="#4-what-this-deliberately-does-not-do" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li><strong>Does not change any user-facing default.</strong> <code>spec.config</code> can still set
+  <code>db.query.default_language</code> for anyone who wants it; the operator will not
+  set it on their behalf outside sharding.</li>
+<li><strong>Does not try to detect Cypher 25 syntax generally.</strong> The guard is a
+  keyword list, not a parser. A list that misses a construct fails the same way
+  today's comment does — but a list is greppable and testable, and a comment is
+  neither.</li>
+</ul>
+<h2 id="5-specserverdefaultcypherlanguage-the-server-level-default">5. <code>spec.serverDefaultCypherLanguage</code> — the server-level default<a class="headerlink" href="#5-specserverdefaultcypherlanguage-the-server-level-default" title="Anchor link to this section">&para;</a></h2>
+<p>Decided: the language becomes a first-class field on
+<code>Neo4jEnterpriseCluster</code> / <code>Neo4jEnterpriseStandalone</code>, <strong>stamped at creation</strong>
+so an operator upgrade never changes a running cluster.</p>
+<h3 id="51-why-not-just-default-it-on-calver">5.1 Why not just default it on CalVer<a class="headerlink" href="#51-why-not-just-default-it-on-calver" title="Anchor link to this section">&para;</a></h3>
+<p>Tempting, and wrong for clusters that already exist. <code>db.query.default_language</code>
+is <strong>not dynamic</strong>, and the cluster controller reconciles the ConfigMap "with
+immediate updates and pod restarts". So defaulting it on a live CalVer cluster
+would, on operator upgrade alone, roll every Neo4j pod <strong>and</strong> silently change
+how the user's application queries are parsed. Two unrequested things at once.</p>
+<p>For a <em>new</em> deployment the modern default is clearly right. The tension is
+only with clusters that already exist, so the resolution is to distinguish
+them.</p>
+<h3 id="52-naming">5.2 Naming<a class="headerlink" href="#52-naming" title="Anchor link to this section">&para;</a></h3>
+<p><code>defaultCypherLanguage</code> is taken: <code>Neo4jDatabase</code>, <code>Neo4jCompositeDatabase</code>
+and <code>Neo4jShardedDatabase</code> all use it for the per-database <code>DEFAULT LANGUAGE
+CYPHER n</code> DDL clause. This field is a different layer — the <em>server</em> setting
+<code>db.query.default_language</code>, which supplies the default for databases that do
+not specify one.</p>
+<p>Use <strong><code>spec.serverDefaultCypherLanguage</code></strong> on the deployment kinds. Reusing the
+bare name across two layers would make "which default wins" unanswerable from
+the spec alone.</p>
+<h3 id="53-the-lts-rule-is-never-emit-not-emit-cypher_5">5.3 The LTS rule is "never emit", not "emit CYPHER_5"<a class="headerlink" href="#53-the-lts-rule-is-never-emit-not-emit-cypher_5" title="Anchor link to this section">&para;</a></h3>
+<p><code>db.query.default_language</code> <strong>does not exist in 5.26</strong> — it is absent from the
+whole 5.x configuration reference. With the operator's strict config
+validation, writing it there reproduces the <code>UDC.PACKAGING</code> failure exactly:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Unrecognized setting. No declared setting with name: db.query.default_language
 </span></code></pre></div>
-<p>Both DBMSs must trust the same identity provider, and it needs <strong>Cypher 25</strong>,
-so a CalVer image. On the 5.26 LTS the clause does not parse and the CR is
-rejected with a message saying so.</p>
-<h3 id="stored-native-credentials">Stored native credentials<a class="headerlink" href="#stored-native-credentials" title="Anchor link to this section">&para;</a></h3>
-<p>A username and password are stored on the alias. Neo4j encrypts them in the
-system database, which is why this mode needs a keystore on the deployment.
-This mode works on both the 5.26 LTS and CalVer. (Up to v1.16.0 the operator
-sent it with a <code>CYPHER 25</code> directive that 5.26 rejects, so on 5.26 it never
-got past <code>25 is not a valid option for cypher version</code>.) Neo4j requires a
-secure scheme for any remote alias: <code>neo4j+s://</code>, or <code>neo4j+ssc://</code> to accept
-a self-signed certificate.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># on the deployment</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">remoteAliasKeystore</span><span class="p">:</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span><span class="nt">secretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">remote-alias-keystore</span><span class="w">   </span><span class="c1"># keys: keystore.p12, password</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span><span class="nt">keyName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-key</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nn">---</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="c1"># on the composite</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="nt">constituents</span><span class="p">:</span>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">partner</span>
-</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">    </span><span class="nt">targetDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">movies</span>
-</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">    </span><span class="nt">remote</span><span class="p">:</span>
-</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">      </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j+s://partner.example.com:7687</span>
-</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">      </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">partner-creds</span><span class="w">   </span><span class="c1"># keys: username, password</span>
-</span></code></pre></div>
-<p>Create the keystore with the JDK's keytool — ideally on the same Java version
-Neo4j runs, as Neo4j advises:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>keytool<span class="w"> </span>-genseckey<span class="w"> </span>-keyalg<span class="w"> </span>aes<span class="w"> </span>-keysize<span class="w"> </span><span class="m">256</span><span class="w"> </span>-storetype<span class="w"> </span>pkcs12<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">        </span>-keystore<span class="w"> </span>keystore.p12<span class="w"> </span>-alias<span class="w"> </span>my-key<span class="w"> </span>-storepass<span class="w"> </span><span class="s2">"</span><span class="nv">$PASSWORD</span><span class="s2">"</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
-</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>kubectl<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>remote-alias-keystore<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">        </span>--from-file<span class="o">=</span>keystore.p12<span class="w"> </span>--from-literal<span class="o">=</span><span class="nv">password</span><span class="o">=</span><span class="s2">"</span><span class="nv">$PASSWORD</span><span class="s2">"</span>
-</span></code></pre></div>
-<p>Every server mounts the same Secret, which is what satisfies Neo4j's
-requirement that the keystore be identical across a cluster.</p>
-<div class="admonition danger">
-<p class="admonition-title">Rotating the keystore invalidates every existing remote alias</p>
-<p>Neo4j encrypts each alias's credentials with this key. Changing the
-keystore or the key name makes all existing remote-alias credentials
-permanently unreadable, and the aliases must be recreated. Treat rotation
-as delete-and-recreate, not an edit.</p>
-</div>
-<div class="admonition info">
-<p class="admonition-title">Where the password does and does not go</p>
-<p>The operator passes it to Neo4j as a <strong>Cypher parameter</strong>, never
-interpolated into the statement, so it does not reach the query log. Neo4j
-stores it encrypted, and <code>SHOW ALIASES</code> never returns a password on any
-alias — so alias output is safe to include in a support bundle.</p>
-<p>Forget the keystore and the CR is rejected at apply time naming the field
-to set, instead of failing inside the server with an internal error that
-mentions neither the CR nor the constituent.</p>
-</div>
-<h2 id="limits">Limits<a class="headerlink" href="#limits" title="Anchor link to this section">&para;</a></h2>
+<p>and the server refuses to start. On the LTS the field is a <em>validation rule</em>,
+never a value to write.</p>
+<h3 id="54-resolution-matrix">5.4 Resolution matrix<a class="headerlink" href="#54-resolution-matrix" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th></th>
-<th></th>
+<th><code>spec.serverDefaultCypherLanguage</code></th>
+<th>5.26 LTS</th>
+<th>CalVer</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Remote constituents need setup</td>
-<td>OIDC forwarding needs Cypher 25 (CalVer). Stored credentials need <code>spec.remoteAliasKeystore</code> on the deployment. See <a href="#remote-constituents">Remote constituents</a>.</td>
+<td>unset, <strong>new</strong> deployment</td>
+<td>no key emitted; stamp <code>CYPHER_5</code></td>
+<td>emit <code>CYPHER_25</code>; stamp it</td>
 </tr>
 <tr>
-<td>No options</td>
-<td>Composites have none. The operator never emits an <code>OPTIONS</code> clause.</td>
+<td>unset, <strong>pre-existing</strong> deployment</td>
+<td>no key emitted; stamp <code>CYPHER_5</code></td>
+<td><strong>no key emitted</strong>; stamp <code>CYPHER_5</code></td>
 </tr>
 <tr>
-<td>No topology</td>
-<td>There is no store to place.</td>
+<td><code>CYPHER_5</code></td>
+<td>no key emitted (already the server default)</td>
+<td>emit <code>CYPHER_5</code></td>
 </tr>
 <tr>
-<td><code>defaultCypherLanguage</code> is CalVer-only</td>
-<td>The <code>DEFAULT LANGUAGE CYPHER</code> clause does not parse on the 5.26 LTS. It is also the only property of a composite that can be changed after creation.</td>
-</tr>
-<tr>
-<td>Writes are single-graph</td>
-<td>A transaction may read across constituents but write to only one.</td>
-</tr>
-<tr>
-<td>No nesting</td>
-<td>A composite cannot contain another composite.</td>
+<td><code>CYPHER_25</code></td>
+<td><strong>reject</strong> — validator names the version</td>
+<td>emit <code>CYPHER_25</code></td>
 </tr>
 </tbody>
 </table>
+<h3 id="55-new-has-to-be-detected-not-assumed">5.5 "New" has to be detected, not assumed<a class="headerlink" href="#55-new-has-to-be-detected-not-assumed" title="Anchor link to this section">&para;</a></h3>
+<p>This is the crux. A cluster that already exists has <strong>no stamp</strong>, and so does
+a brand-new one. Treating "no stamp + CalVer + unset" as <code>CYPHER_25</code> would
+reintroduce the exact breaking change this design avoids, on the first
+reconcile after an operator upgrade.</p>
+<p>The discriminator is the workload, not the CR: stamp during the same reconcile
+that <strong>creates</strong> the StatefulSet. If the StatefulSet already exists and there
+is no stamp, the cluster predates this field — stamp <code>CYPHER_5</code> and emit
+nothing. <code>sts.UID != ""</code> is the existence check the codebase already uses for
+this (never <code>ResourceVersion</code>, which is populated for objects that were never
+created).</p>
+<p>Once stamped, <code>status.effectiveCypherLanguage</code> is authoritative for an unset
+spec. Re-deriving it on every reconcile is what would make the value drift
+under the user.</p>
+<h3 id="56-changing-it-later-is-a-restart-and-should-say-so">5.6 Changing it later is a restart, and should say so<a class="headerlink" href="#56-changing-it-later-is-a-restart-and-should-say-so" title="Anchor link to this section">&para;</a></h3>
+<p>Setting the field explicitly on a running cluster is an intentional change:
+emit the new value, roll the pods. That is correct, but the field's
+documentation must say it restarts the database — not doing so is how this
+becomes a surprise a second time — and that it only sets the language of
+databases created afterwards (§5.8).</p>
+<h3 id="57-upgrading-526-calver-does-not-silently-switch-language">5.7 Upgrading 5.26 → CalVer does not silently switch language<a class="headerlink" href="#57-upgrading-526-calver-does-not-silently-switch-language" title="Anchor link to this section">&para;</a></h3>
+<p>A cluster stamped <code>CYPHER_5</code> on the LTS keeps that stamp when its image moves
+to CalVer, so the operator emits <code>CYPHER_5</code> and the queries keep meaning what
+they meant. Getting Cypher 25 is then an explicit edit. Consistent with the
+rest of this design: the operator does not redefine a user's queries as a side
+effect of something else they asked for.</p>
+<h3 id="58-neo4j-fixes-a-databases-language-when-it-is-created">5.8 Neo4j fixes a database's language when it is created<a class="headerlink" href="#58-neo4j-fixes-a-databases-language-when-it-is-created" title="Anchor link to this section">&para;</a></h3>
+<p>Measured on 2026.06.0 (3-server sharding cluster, 2026-09-29), and the
+premise of the rest of §5 depends on it:</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Server on <code>CYPHER_25</code>; create <code>neo4j</code> (bootstrap), <code>langnone</code></td>
+<td>both <code>defaultLanguage = CYPHER 25</code></td>
+</tr>
+<tr>
+<td>Restart the servers with the setting removed (server default → <code>CYPHER_5</code>)</td>
+<td><code>neo4j</code> and <code>langnone</code> <strong>still <code>CYPHER 25</code></strong></td>
+</tr>
+<tr>
+<td>Create <code>plain5</code> under <code>CYPHER_5</code></td>
+<td><code>CYPHER 5</code></td>
+</tr>
+<tr>
+<td>Restore <code>CYPHER_25</code>, restart</td>
+<td><code>plain5</code> <strong>still <code>CYPHER 5</code></strong>; a new <code>plain25</code> gets <code>CYPHER 25</code></td>
+</tr>
+</tbody>
+</table>
+<p>So <code>db.query.default_language</code> is, in effect, <strong>the language a database gets
+when it is created without one of its own</strong>. It is stamped on the database at
+creation and never re-read; changing the setting later moves nothing that
+already exists. Only <code>ALTER DATABASE … SET DEFAULT LANGUAGE</code> does.</p>
+<p>Consequences for this design:</p>
+<ul>
+<li><strong>§5.5 still stands, with a smaller blast radius than it implies.</strong> Emitting
+  <code>CYPHER_25</code> on an existing cluster would not change any existing database —
+  but it would silently change every database created afterwards, which is
+  still the surprise stamping exists to prevent.</li>
+<li><strong>§5.6 must say both halves.</strong> Changing the field rolls the pods <em>and</em>
+  applies only to databases created from then on. The field's documentation
+  has to point at <code>ALTER DATABASE … SET DEFAULT LANGUAGE</code> for existing ones.
+  (The operator could offer to ALTER them; that is a separate, explicit
+  decision, not a side effect of this field.)</li>
+</ul>
+<h3 id="59-interaction-with-property-sharding-resolved-an-artifact">5.9 Interaction with property sharding — resolved: an artifact<a class="headerlink" href="#59-interaction-with-property-sharding-resolved-an-artifact" title="Anchor link to this section">&para;</a></h3>
+<p>Sharding sets <code>db.query.default_language=CYPHER_25</code> today, which collided
+with <code>serverDefaultCypherLanguage: CYPHER_5</code>. The design said not to arbitrate
+the conflict before checking whether it needs to exist. <strong>It does not.</strong>
+Measured on 2026.06.0 by issuing the operator's sharded <code>CREATE DATABASE</code>
+directly (the CRD only admits <code>defaultCypherLanguage: "25"</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Sharded family, server on <code>CYPHER_25</code></th>
+<th>parent</th>
+<th><code>-g000</code></th>
+<th><code>-p000</code>, <code>-p001</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SET DEFAULT LANGUAGE CYPHER 5</code></td>
+<td><code>CYPHER 5</code></td>
+<td><code>CYPHER 5</code></td>
+<td><code>CYPHER 5</code></td>
+</tr>
+<tr>
+<td><code>SET DEFAULT LANGUAGE CYPHER 25</code></td>
+<td><code>CYPHER 25</code></td>
+<td><code>CYPHER 25</code></td>
+<td><code>CYPHER 25</code></td>
+</tr>
+<tr>
+<td>no clause</td>
+<td><code>CYPHER 25</code> (server)</td>
+<td><code>CYPHER 25</code></td>
+<td><code>CYPHER 25</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>The shard sub-databases inherit the parent's language, not the server's.</strong>
+And sharding does not need Cypher 25 at run time: on the Cypher 5 family, a
+write, a read of a property stored on a property shard, an explicit <code>CYPHER 25</code>
+query and Cypher-5-only syntax (<code>id()</code>) all succeeded. With the servers
+restarted <strong>without</strong> the setting at all, a new sharded family with no
+language clause came up <code>CYPHER 5</code> throughout and read and wrote property-shard
+data normally. Only the sharding DDL is Cypher 25 — and it already goes
+through <code>Cypher25()</code> (§3).</p>
+<p><strong>Decision — the first branch:</strong></p>
+<ul>
+<li>Remove <code>db.query.default_language</code> from <code>buildPropertyShardingConfig</code> and
+  from the sharding validator's <code>requiredSettings</code>. Enabling sharding stops
+  changing the language of every database created on the cluster afterwards.</li>
+<li>Make the sharded <code>CREATE</code> <strong>always</strong> emit <code>SET DEFAULT LANGUAGE CYPHER 25</code>
+  (defaulting <code>spec.defaultCypherLanguage</code>, whose CRD enum is already <code>"25"</code>
+  only), so a sharded family keeps Cypher 25 whatever the server default is.</li>
+<li>Ship it with the §5 field, not before: after the change a sharding cluster's
+  <em>non-sharded</em> databases created later get the server default (Cypher 5 on
+  CalVer unless <code>serverDefaultCypherLanguage</code> says otherwise). Existing
+  databases are unaffected (§5.8). Release-note it.</li>
+</ul>
+<p>The earlier note that "enabling property sharding changes the query language
+for every application" overstated it: per §5.8 it changes the language of
+databases <strong>created after</strong> sharding is enabled — including, on a cluster
+created with sharding on, the default <code>neo4j</code> database. The sharding guide
+says so (#413).</p>
+<h2 id="6-resolved-the-prefix-is-not-version-conditional">6. Resolved: the prefix is not version-conditional<a class="headerlink" href="#6-resolved-the-prefix-is-not-version-conditional" title="Anchor link to this section">&para;</a></h2>
+<p>The question was whether §3's helper should apply <code>CYPHER 25</code> only on CalVer.
+It has since bitten, in the other direction: the remote-alias builder
+prefixed <strong>every</strong> remote alias, and the 5.26 LTS rejects the directive
+itself (<code>25 is not a valid option for cypher version</code>), so stored-credential
+remote constituents never worked on 5.26 — fixed in #414, verified on 5.26.31
+and 2026.08.1.</p>
+<p>The answer that came out of it: <code>Cypher25()</code> wraps <strong>only statements whose
+syntax exists only in Cypher 25</strong>, and a statement that must also run on 5.26
+is never wrapped. Whether a Cypher-25-only feature may be used on a given
+server is a <em>validation</em> question, answered where every other capability gate
+is (e.g. OIDC forwarding is refused on 5.26 at apply time) — not something the
+prefix helper should decide by silently dropping the directive.
+<code>TestCypher25Guard</code> pins the first half, and
+<code>TestRemoteAliasStatementPinsCypher25OnlyForOIDC</code> the second.</p>
 
 
 
@@ -4267,44 +4262,6 @@ mentions neither the CR nor the constituent.</p>
       
         <footer class="md-footer">
   
-    
-      
-      <nav class="md-footer__inner md-grid" aria-label="Footer" >
-        
-          
-          <a href="../../property_sharding/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Property Sharding">
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
-            </div>
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              <div class="md-ellipsis">
-                Property Sharding
-              </div>
-            </div>
-          </a>
-        
-        
-          
-          <a href="../../external_access/" class="md-footer__link md-footer__link--next" aria-label="Next: External Access (LB / NodePort / Ingress / Route)">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                External Access (LB / NodePort / Ingress / Route)
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
-            </div>
-          </a>
-        
-      </nav>
     
   
   <div class="md-footer-meta md-typeset">
@@ -4359,10 +4316,10 @@ mentions neither the CR nor the constituent.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
