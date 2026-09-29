@@ -36,8 +36,9 @@ func TestCanonicaliseDesired_MapsCanonicalToOriginal(t *testing.T) {
 		canon, byCanonical, err := r.canonicaliseDesired([]string{orig})
 		assert.NoError(t, err)
 		assert.Len(t, canon, 1)
-		// Canonical upper-cases the bare role name (it is a reserved keyword).
-		assert.Equal(t, "GRANT ACCESS ON DATABASE neo4j TO USERS", canon[0])
+		// The role name is a NAME, so it keeps its case even though it spells
+		// a keyword (it used to be upper-cased to USERS).
+		assert.Equal(t, "GRANT ACCESS ON DATABASE neo4j TO users", canon[0])
 		// But the map gives back the original text we must actually execute.
 		assert.Equal(t, orig, byCanonical[canon[0]],
 			"add loop must run the original statement, not the upper-cased canonical")

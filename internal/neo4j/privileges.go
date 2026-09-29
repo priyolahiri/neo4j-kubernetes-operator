@@ -106,7 +106,12 @@ var privilegeKeywords = map[string]struct{}{
 	"USER":          {},
 	"USERS":         {},
 	"NAME":          {},
+	"NAMES":         {},
 	"LABEL":         {},
+	"LABELS":        {},
+	"NEW":           {},
+	"TYPE":          {},
+	"TYPES":         {},
 	"PROPERTY":      {},
 	"EXECUTE":       {},
 	"PROCEDURE":     {},
@@ -232,40 +237,66 @@ func collapseWhitespacePreservingQuotes(s string) string {
 }
 
 // upperCaseReservedKeywords walks tokens (delimited by ASCII whitespace and
-// punctuation) and upper-cases any that match privilegeKeywords. Quoted
+// punctuation) and upper-cases any that match privilegeKeywords — unless the
+// token sits where Cypher expects a NAME (see identifierPositions). Quoted
 // strings and backtick-delimited identifiers are passed through unchanged.
+//
+// Names are case-sensitive in Neo4j: property `name` and property `NAME` are
+// different properties, label `Role` is not label `ROLE`, a role called `user`
+// is not one called `USER`. Upper-casing a name that happens to spell a
+// keyword made two different privileges canonicalise to the same string, so
+// the diff could take a foreign `READ {NAME}` as satisfying the spec's
+// `READ {name}` and never grant it — or never revoke the foreign one.
 func upperCaseReservedKeywords(s string) string {
-	// Fast path: split on whitespace, walk each segment, upper-case if a
-	// "bare" keyword. Punctuation like '{', '}', '(', ')', ',' is treated
-	// as a terminator and preserved.
+	items := privilegeItems(s)
+	ident := identifierPositions(items)
+
 	var out strings.Builder
 	out.Grow(len(s))
-
-	inSingle, inDouble, inBacktick, escape := false, false, false, false
-	var token strings.Builder
-	flush := func() {
-		t := token.String()
-		token.Reset()
-		if t == "" {
-			return
+	for i, it := range items {
+		if !it.token {
+			out.WriteString(it.text)
+			continue
 		}
+		t := it.text
 		// Drop redundant backticks around simple identifiers (e.g. `neo4j` →
 		// neo4j) so spec and `AS COMMANDS` forms canonicalise identically.
 		// This is what stops the privilege diff from seeing perpetual drift
 		// (and GRANT/REVOKE-churning every reconcile) under enforcePrivileges.
 		if inner, ok := redundantlyBacktickedIdentifier(t); ok {
 			out.WriteString(inner)
-			return
+			continue
 		}
-		if _, ok := privilegeKeywords[strings.ToUpper(t)]; ok {
-			// Only mutate if it does not contain a quote character (already
-			// handled below — bare tokens cannot contain quotes by
-			// construction).
+		if _, ok := privilegeKeywords[strings.ToUpper(t)]; ok && !ident[i] {
 			out.WriteString(strings.ToUpper(t))
-			return
+			continue
 		}
 		out.WriteString(t)
 	}
+	return out.String()
+}
+
+// privilegeItem is a token (a word, a quoted string or a backtick-quoted
+// identifier) or the literal separator text between tokens.
+type privilegeItem struct {
+	text  string
+	token bool
+}
+
+// privilegeItems splits s the way upperCaseReservedKeywords always has:
+// whitespace and the punctuation below end a token and are kept verbatim;
+// quoted strings and backtick identifiers are single tokens.
+func privilegeItems(s string) []privilegeItem {
+	var items []privilegeItem
+	inSingle, inDouble, inBacktick, escape := false, false, false, false
+	var token strings.Builder
+	flush := func() {
+		if token.Len() > 0 {
+			items = append(items, privilegeItem{text: token.String(), token: true})
+			token.Reset()
+		}
+	}
+	sep := func(r rune) { items = append(items, privilegeItem{text: string(r)}) }
 
 	for _, r := range s {
 		if escape {
@@ -273,27 +304,15 @@ func upperCaseReservedKeywords(s string) string {
 			escape = false
 			continue
 		}
-		if inSingle {
+		if inSingle || inDouble {
 			token.WriteRune(r)
 			if r == '\\' {
 				escape = true
 				continue
 			}
-			if r == '\'' {
+			if (inSingle && r == '\'') || (inDouble && r == '"') {
 				flush()
-				inSingle = false
-			}
-			continue
-		}
-		if inDouble {
-			token.WriteRune(r)
-			if r == '\\' {
-				escape = true
-				continue
-			}
-			if r == '"' {
-				flush()
-				inDouble = false
+				inSingle, inDouble = false, false
 			}
 			continue
 		}
@@ -320,16 +339,103 @@ func upperCaseReservedKeywords(s string) string {
 			token.WriteRune(r)
 		case ' ', '\t', '\n', '\r':
 			flush()
-			out.WriteRune(' ')
+			items = append(items, privilegeItem{text: " "})
 		case '{', '}', '(', ')', ',', '*', '/', ':', ';':
 			flush()
-			out.WriteRune(r)
+			sep(r)
 		default:
 			token.WriteRune(r)
 		}
 	}
 	flush()
-	return out.String()
+	return items
+}
+
+var (
+	scopeKeywords   = map[string]bool{"GRAPH": true, "GRAPHS": true, "DATABASE": true, "DATABASES": true}
+	segmentKeywords = map[string]bool{
+		"NODE": true, "NODES": true, "RELATIONSHIP": true, "RELATIONSHIPS": true, "ELEMENT": true, "ELEMENTS": true,
+	}
+)
+
+// identifierPositions marks the tokens Cypher reads as names, not keywords:
+//
+//	READ {name, age}                  property names
+//	IMPERSONATE (alice, bob)          user names (and PBAC FOR (n:Label …))
+//	ON GRAPH sales / ON DATABASES a, b  database and graph names
+//	… ON GRAPH g NODE Person, Movie   labels and relationship types
+//	SET LABEL Foo, Bar                labels
+//	TO reader / FROM reader           the role
+//
+// and the comma-separated continuation of each of those lists.
+func identifierPositions(items []privilegeItem) map[int]bool {
+	ident := map[int]bool{}
+	braces, parens := 0, 0
+	// sig holds the indices of the significant (non-space) items so far.
+	var sig []int
+	at := func(back int) (privilegeItem, int, bool) {
+		if len(sig) < back {
+			return privilegeItem{}, -1, false
+		}
+		j := sig[len(sig)-back]
+		return items[j], j, true
+	}
+	upper := func(it privilegeItem) string {
+		if !it.token {
+			return it.text
+		}
+		return strings.ToUpper(it.text)
+	}
+
+	for i, it := range items {
+		if !it.token {
+			switch it.text {
+			case "{":
+				braces++
+			case "}":
+				braces--
+			case "(":
+				parens++
+			case ")":
+				parens--
+			}
+			if it.text != " " {
+				sig = append(sig, i)
+			}
+			continue
+		}
+		if strings.HasPrefix(it.text, "`") {
+			ident[i] = true
+			sig = append(sig, i)
+			continue
+		}
+
+		prev, _, hasPrev := at(1)
+		prev2, prev2Idx, hasPrev2 := at(2)
+		switch {
+		case braces > 0:
+			ident[i] = true
+		case parens > 0:
+			ident[i] = hasPrev && !prev.token && (prev.text == "(" || prev.text == "," || prev.text == ":")
+		case hasPrev && !prev.token && prev.text == ",":
+			// A list continues only if what came before the comma was a name.
+			ident[i] = hasPrev2 && ident[prev2Idx]
+		case hasPrev && prev.token && hasPrev2 && scopeKeywords[upper(prev)] && upper(prev2) == "ON":
+			ident[i] = true
+		case hasPrev && prev.token && segmentKeywords[upper(prev)] && hasPrev2 &&
+			(ident[prev2Idx] || prev2.text == "*" || upper(prev2) == "GRAPH"):
+			// A segment after a graph name, `*`, or HOME/DEFAULT GRAPH. Not
+			// `CREATE NEW NODE LABEL`, where NODE follows NEW.
+			ident[i] = true
+		case hasPrev && prev.token && (upper(prev) == "LABEL" || upper(prev) == "LABELS") && hasPrev2 &&
+			(upper(prev2) == "SET" || upper(prev2) == "REMOVE"):
+			ident[i] = true
+		case hasPrev && prev.token && (upper(prev) == "TO" || upper(prev) == "FROM"):
+			ident[i] = true
+		}
+		sig = append(sig, i)
+	}
+	return ident
 }
 
 // DerivePrivilegeRevoke turns a GRANT or DENY statement into the matching
