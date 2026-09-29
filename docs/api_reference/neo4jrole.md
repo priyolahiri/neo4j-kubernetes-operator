@@ -47,7 +47,7 @@ The `Neo4jRole` Custom Resource Definition (CRD) provides declarative management
 | `privilegeDrift` | `boolean` | True when one or more privileges could not be reconciled (e.g. immutable extras). |
 | `privilegeRenderings` | `[]{statement, rows, ambiguous}` | Learn mode (the default; not used with `--privilege-normalisation=probe`): how Neo4j stored each `spec.privileges` statement, learned from the operator's own grants. `ambiguous: true` means everything the statement grants was already on the role, so which rows are its own is unknown. |
 | `privilegeRenderingScope` | `string` | Learn mode: digest of the server, image and alias targets the renderings were learned against. A change re-learns them. |
-| `unattributedPrivileges` | `[]string` | Learn mode: rows learn mode cannot attribute to a spec statement, which it therefore never revokes. See [Learn mode](../user_guide/user_role_management.md#learn-mode). |
+| `unattributedPrivileges` | `[]string` | Learn mode: rows learn mode cannot attribute to a spec statement, which it therefore never revokes. See [Learn mode](../user_guide/user_role_management.md#learn-mode-default). |
 | `conditions` | `[]Condition` | See [Conditions](#conditions). |
 
 ### Conditions
