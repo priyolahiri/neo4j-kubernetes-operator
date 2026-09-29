@@ -124,9 +124,15 @@ func TestPropertyShardingNoLongerForcesTheServerLanguage(t *testing.T) {
 	assert.Empty(t, languageLines(buildNeo4jConfigForEnterprise(c)))
 
 	// A pre-existing sharding cluster is stamped CYPHER_25 from its ConfigMap,
-	// so it keeps writing exactly what it wrote before.
+	// so it keeps writing exactly what it wrote before — in the same place,
+	// the property-sharding block, so neo4j.conf is byte-identical and an
+	// operator upgrade does not roll the servers.
 	c.Status.EffectiveCypherLanguage = CypherLanguage25
-	assert.Equal(t, []string{"db.query.default_language=CYPHER_25"}, languageLines(buildNeo4jConfigForEnterprise(c)))
+	conf := buildNeo4jConfigForEnterprise(c)
+	assert.Equal(t, []string{"db.query.default_language=CYPHER_25"}, languageLines(conf))
+	shardingBlock := conf[strings.Index(conf, "# Property Sharding Configuration"):]
+	assert.Contains(t, shardingBlock, "db.query.default_language=CYPHER_25",
+		"written inside the sharding block, where releases up to v1.16.0 wrote it")
 }
 
 // A user who set the key directly keeps exactly one line: theirs.

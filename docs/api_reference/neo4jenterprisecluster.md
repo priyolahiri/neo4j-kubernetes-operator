@@ -556,8 +556,11 @@ Configures property sharding for horizontal scaling of large datasets. Property 
 **Required Configuration** (automatically applied when enabled):
 
 - `internal.dbms.sharded_property_database.enabled: "true"`
-- `db.query.default_language: "CYPHER_25"`
 - `internal.dbms.sharded_property_database.allow_external_shard_access: "false"`
+
+Sharding does not set `db.query.default_language`: shard sub-databases inherit
+the parent database's language, which the operator sets to Cypher 25 on every
+sharded database. The server default is `serverDefaultCypherLanguage`'s.
 
 **Performance Tuning Options**:
 

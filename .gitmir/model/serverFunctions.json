@@ -603,7 +603,7 @@
     "name": "Create Sharded Database",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "create",
-    "description": "createShardedDatabase() builds and executes `CYPHER 25 CREATE DATABASE ... SET GRAPH SHARD {...} SET PROPERTY SHARDS {...} OPTIONS {...}`, binding every seed/user-supplied value as a driver parameter.",
+    "description": "createShardedDatabase() executes the statement buildCreateShardedDatabaseCypher() renders: `CYPHER 25 CREATE DATABASE ... SET DEFAULT LANGUAGE CYPHER 25 SET GRAPH SHARD {...} SET PROPERTY SHARDS {...} OPTIONS {...}`, binding every seed/user-supplied value as a driver parameter. The language clause is always emitted: shard sub-databases inherit the parent's language, and the server no longer forces CYPHER_25 for sharding.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1868,5 +1868,24 @@
     "emitsEventIds": [],
     "subscribesEventIds": [],
     "moduleId": "mod-cli"
+  },
+  {
+    "id": "sf-stamp-server-cypher-language",
+    "name": "Stamp Server Default Cypher Language",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "stampClusterCypherLanguage()/stampStandaloneCypherLanguage() resolve spec.serverDefaultCypherLanguage (resources.StampServerCypherLanguage) from the spec, a legacy db.query.default_language key, the existing stamp, the image line, whether the StatefulSet exists and the value in the current ConfigMap, and persist it to status.effectiveCypherLanguage before the ConfigMap that renders it is built (internal/controller/server_cypher_language.go).",
+    "readsFieldIds": [
+      "f-neo4jenterprisecluster-server-default-cypher-language",
+      "f-neo4jenterprisestandalone-server-default-cypher-language"
+    ],
+    "writesFieldIds": [
+      "f-neo4jenterprisecluster-status-effective-cypher-language",
+      "f-neo4jenterprisestandalone-status-effective-cypher-language"
+    ],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
   }
 ]

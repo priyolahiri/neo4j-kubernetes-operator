@@ -1912,15 +1912,21 @@ server.metrics.csv.enabled=false
 	// see cypher_language.go. Written before spec.config, which is where a user
 	// who set db.query.default_language directly still has it written — in
 	// that case nothing is emitted here.
+	sharding := cluster.Spec.PropertySharding != nil && cluster.Spec.PropertySharding.Enabled
 	var shardingConfig map[string]string
 	if cluster.Spec.PropertySharding != nil {
 		shardingConfig = cluster.Spec.PropertySharding.Config
 	}
-	if lang := ServerCypherLanguageForCluster(cluster.Spec.ServerDefaultCypherLanguage,
+	serverLanguage := ServerCypherLanguageForCluster(cluster.Spec.ServerDefaultCypherLanguage,
 		cluster.Status.EffectiveCypherLanguage, cluster.Spec.Image.Tag,
-		cluster.Spec.Config, shardingConfig); lang != "" {
+		cluster.Spec.Config, shardingConfig)
+	// On a sharding cluster the line goes where sharding used to write it, in
+	// the property-sharding block below: an existing sharding cluster then
+	// renders a byte-identical neo4j.conf after an operator upgrade, and does
+	// not roll its servers for a setting whose value did not change.
+	if serverLanguage != "" && !sharding {
 		config += "\n# Server default Cypher language (for databases created without their own)\n"
-		config += ServerCypherLanguageKey + "=" + lang + "\n"
+		config += ServerCypherLanguageKey + "=" + serverLanguage + "\n"
 	}
 
 	// Add custom configuration (excluding memory settings and auth-generated keys)
@@ -1973,6 +1979,9 @@ server.metrics.csv.enabled=false
 		config += "\n# Property Sharding Configuration (CRITICAL: placed at end to avoid script overwrites)\n"
 
 		propertyShardingConfig := buildPropertyShardingConfig(cluster)
+		if serverLanguage != "" {
+			propertyShardingConfig[ServerCypherLanguageKey] = serverLanguage
+		}
 
 		// Sort keys to ensure deterministic order
 		var propertyShardingKeys []string
