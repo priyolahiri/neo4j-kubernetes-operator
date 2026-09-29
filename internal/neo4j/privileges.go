@@ -532,14 +532,13 @@ func PrivilegeStatementVerb(stmt string) string {
 // PrivilegeDatabaseTargets returns the database or graph names a privilege
 // statement is scoped to.
 //
-// It exists because a privilege that names a database which does not exist is
-// accepted by Neo4j without complaint. On a DR cluster that is the difference
-// between working authorization and none: the replica of `foo` is called
-// `foo-replica` (Cypher has no RENAME DATABASE), privileges attach to the
-// database rather than to an alias, and a role copied verbatim from the
-// upstream therefore grants access to nothing. The Neo4jRole reconciles to
-// Ready, `enforcePrivileges: true` holds it there, and the failure is visible
-// only at failover — which is the one moment it must not be.
+// It exists because Neo4j refuses a grant on a database that does not exist
+// and drops a role's privileges along with a dropped database (verified on
+// 5.26 and 2026.08.1), so the role controller must skip such a statement and
+// say so rather than fail on it every reconcile. On a DR cluster that is the
+// difference between working authorization and none: the replica of `foo` is
+// called `foo-replica` (Cypher has no RENAME DATABASE), and a role copied
+// verbatim from the upstream names a database the replica cluster lacks.
 //
 // Returns nil for statements with no database scope: ON DBMS, ON HOME/DEFAULT
 // DATABASE, and the ON DATABASE * / ON GRAPH * wildcards, none of which names
@@ -644,4 +643,61 @@ func privilegeTokens(s string) []string {
 	}
 	flush()
 	return tokens
+}
+
+// ReplacePrivilegeGrantee rewrites the role a GRANT/DENY statement is granted
+// TO, leaving the rest of the statement byte-for-byte as written.
+//
+// It exists so a statement can be granted to a throwaway role and its stored
+// form read back (see Client.ProbePrivilegeRendering), then mapped back onto
+// the real role. The last bare TO outside quotes and backticks is the grantee
+// boundary — the validator requires every Neo4jRole privilege to end with
+// `TO <role>` — so a property, label or database literally named TO is not
+// mistaken for it.
+func ReplacePrivilegeGrantee(stmt, role string) (string, error) {
+	s := strings.TrimSpace(stmt)
+	s = strings.TrimSpace(strings.TrimSuffix(s, ";"))
+
+	lastTo := -1
+	var quote rune // 0, '`', '\'' or '"'
+	wordStart := -1
+	isSpace := func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' }
+	endWord := func(end int) {
+		if wordStart >= 0 && strings.EqualFold(s[wordStart:end], "TO") &&
+			wordStart > 0 && isSpace(rune(s[wordStart-1])) {
+			lastTo = wordStart
+		}
+		wordStart = -1
+	}
+	for i, r := range s {
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch {
+		case r == '`' || r == '\'' || r == '"':
+			endWord(i)
+			quote = r
+		case (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z'):
+			if wordStart < 0 {
+				wordStart = i
+			}
+		default:
+			if wordStart >= 0 {
+				// Only a word ended by whitespace is the keyword; `TO,` or
+				// `TO.x` is part of something else.
+				if isSpace(r) {
+					endWord(i)
+				} else {
+					wordStart = -1
+				}
+			}
+		}
+	}
+	if lastTo < 0 {
+		return "", fmt.Errorf("statement missing TO <role>: %q", stmt)
+	}
+	return strings.TrimRight(s[:lastTo], " \t\n\r") + " TO `" + escapeBackticks(role) + "`", nil
 }

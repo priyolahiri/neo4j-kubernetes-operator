@@ -241,8 +241,28 @@ spec:
 The role controller treats `.privileges` as the source of truth. On every reconcile it:
 
 1. Reads `SHOW ROLE <name> PRIVILEGES AS COMMANDS` from Neo4j.
-2. Canonicalises both the desired set (from spec) and the live set (from Neo4j) — whitespace, case, trailing semicolons all normalised.
+2. Works out what each `.privileges` statement looks like **once Neo4j has stored it**, and compares that with the live set.
 3. Applies the difference: missing privileges get a fresh `GRANT/DENY`; extra privileges get a derived `REVOKE`.
+
+Step 2 matters because Neo4j does not store a privilege as you wrote it:
+
+| You write | Neo4j stores |
+|---|---|
+| `GRANT MATCH {*} ON GRAPH sales NODES * TO r` | `... ON GRAPH sales NODE * TO r` |
+| `GRANT ACCESS ON DATABASES a, b TO r` | one row per database |
+| `GRANT READ {name, age} ON GRAPH g NODES Person TO r` | one row per property |
+| `GRANT MATCH {*} ON GRAPH g TO r` (no segment) | a `NODE *` row and a `RELATIONSHIP *` row |
+| `GRANT EXECUTE FUNCTIONS apoc.* ON DBMS TO r` | `... EXECUTE USER DEFINED FUNCTION apoc.* ...` |
+| `GRANT ACCESS ON DATABASE Sales TO r` | `... ON DATABASE sales ...` |
+| `GRANT ACCESS ON DATABASE myalias TO r` | the alias's **target** database |
+
+So you can write privileges in any form Neo4j accepts. The operator learns each
+statement's stored form by granting it once to a short-lived role named
+`operator_privilege_probe_<random>`, reading it back and dropping that role. The
+result is cached per server version and alias layout, so this happens once per
+statement, not on every reconcile. Those short-lived roles appear in Neo4j's
+security log. A role with that prefix that survives was left by an operator crash
+mid-probe; it holds one privilege, has no users, and is safe to drop.
 
 If you `kubectl exec` into a pod and run `REVOKE ACCESS ON DATABASE x FROM analytics_reader` directly, the controller will re-apply that grant within ~30 seconds. To opt out per-role:
 

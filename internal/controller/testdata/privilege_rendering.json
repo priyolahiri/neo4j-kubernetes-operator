@@ -1,0 +1,274 @@
+{
+  "_comment": "Recorded live: each statement granted TO a fresh role 'probe', then SHOW ROLE probe PRIVILEGES AS COMMANDS. Identical on Neo4j 5.26.31 and 2026.08.1. Databases 'sales' and 'probedb' existed; no aliases.",
+  "servers": [
+    "5.26.31",
+    "2026.08.1"
+  ],
+  "cases": [
+    {
+      "statement": "GRANT ACCESS ON DATABASES * TO probe",
+      "stored": [
+        "GRANT ACCESS ON DATABASE * TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT ACCESS ON DATABASES sales, probedb TO probe",
+      "stored": [
+        "GRANT ACCESS ON DATABASE `probedb` TO `probe`",
+        "GRANT ACCESS ON DATABASE `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT ACCESS ON DATABASE SALES TO probe",
+      "stored": [
+        "GRANT ACCESS ON DATABASE `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT ACCESS ON HOME DATABASE TO probe",
+      "stored": [
+        "GRANT ACCESS ON HOME DATABASE TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT TRAVERSE ON GRAPHS sales, probedb NODES Person, Movie TO probe",
+      "stored": [
+        "GRANT TRAVERSE ON GRAPH `probedb` NODE Movie TO `probe`",
+        "GRANT TRAVERSE ON GRAPH `probedb` NODE Person TO `probe`",
+        "GRANT TRAVERSE ON GRAPH `sales` NODE Movie TO `probe`",
+        "GRANT TRAVERSE ON GRAPH `sales` NODE Person TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT READ {name} ON GRAPH sales RELATIONSHIPS * TO probe",
+      "stored": [
+        "GRANT READ {name} ON GRAPH `sales` RELATIONSHIP * TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT READ {name, age} ON GRAPH sales NODES Person TO probe",
+      "stored": [
+        "GRANT READ {age} ON GRAPH `sales` NODE Person TO `probe`",
+        "GRANT READ {name} ON GRAPH `sales` NODE Person TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT MATCH {*} ON GRAPH sales ELEMENTS * TO probe",
+      "stored": [
+        "GRANT MATCH {*} ON GRAPH `sales` NODE * TO `probe`",
+        "GRANT MATCH {*} ON GRAPH `sales` RELATIONSHIP * TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT MATCH {*} ON GRAPH sales NODES * TO probe",
+      "stored": [
+        "GRANT MATCH {*} ON GRAPH `sales` NODE * TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT MATCH {*} ON GRAPH sales TO probe",
+      "stored": [
+        "GRANT MATCH {*} ON GRAPH `sales` NODE * TO `probe`",
+        "GRANT MATCH {*} ON GRAPH `sales` RELATIONSHIP * TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT MATCH {*} ON HOME GRAPH NODES * TO probe",
+      "stored": [
+        "GRANT MATCH {*} ON HOME GRAPH NODE * TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT MATCH {*} ON GRAPH sales FOR (n:Secret) WHERE n.level < 3 TO probe",
+      "stored": [
+        "GRANT MATCH {*} ON GRAPH `sales` FOR (n:Secret) WHERE n.level < 3 TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT TRAVERSE ON GRAPH sales ELEMENTS Person TO probe",
+      "stored": [
+        "GRANT TRAVERSE ON GRAPH `sales` NODE Person TO `probe`",
+        "GRANT TRAVERSE ON GRAPH `sales` RELATIONSHIP Person TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT TRAVERSE ON GRAPH sales NODES `Weird Label`, Other TO probe",
+      "stored": [
+        "GRANT TRAVERSE ON GRAPH `sales` NODE Other TO `probe`",
+        "GRANT TRAVERSE ON GRAPH `sales` NODE `Weird Label` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT WRITE ON GRAPHS * TO probe",
+      "stored": [
+        "GRANT WRITE ON GRAPH * TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT WRITE ON GRAPHS sales, probedb TO probe",
+      "stored": [
+        "GRANT WRITE ON GRAPH `probedb` TO `probe`",
+        "GRANT WRITE ON GRAPH `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT CREATE ON GRAPH sales NODES Person TO probe",
+      "stored": [
+        "GRANT CREATE ON GRAPH `sales` NODE Person TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT DELETE ON GRAPH sales RELATIONSHIPS KNOWS TO probe",
+      "stored": [
+        "GRANT DELETE ON GRAPH `sales` RELATIONSHIP KNOWS TO `probe`"
+      ]
+    },
+    {
+      "statement": "DENY SET PROPERTY {x} ON GRAPH sales NODES * TO probe",
+      "stored": [
+        "DENY SET PROPERTY {x} ON GRAPH `sales` NODE * TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT SET PROPERTY {a, b} ON GRAPHS sales ELEMENTS * TO probe",
+      "stored": [
+        "GRANT SET PROPERTY {a} ON GRAPH `sales` NODE * TO `probe`",
+        "GRANT SET PROPERTY {a} ON GRAPH `sales` RELATIONSHIP * TO `probe`",
+        "GRANT SET PROPERTY {b} ON GRAPH `sales` NODE * TO `probe`",
+        "GRANT SET PROPERTY {b} ON GRAPH `sales` RELATIONSHIP * TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT SET LABEL Foo, Bar ON GRAPH sales TO probe",
+      "stored": [
+        "GRANT SET LABEL Bar ON GRAPH `sales` TO `probe`",
+        "GRANT SET LABEL Foo ON GRAPH `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT REMOVE LABEL * ON GRAPH sales TO probe",
+      "stored": [
+        "GRANT REMOVE LABEL * ON GRAPH `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT ALL GRAPH PRIVILEGES ON GRAPH sales TO probe",
+      "stored": [
+        "GRANT ALL GRAPH PRIVILEGES ON GRAPH `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT ALL DATABASE PRIVILEGES ON DATABASE sales TO probe",
+      "stored": [
+        "GRANT ALL DATABASE PRIVILEGES ON DATABASE `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT ALL DBMS PRIVILEGES ON DBMS TO probe",
+      "stored": [
+        "GRANT ALL DBMS PRIVILEGES ON DBMS TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT INDEX MANAGEMENT ON DATABASES * TO probe",
+      "stored": [
+        "GRANT INDEX MANAGEMENT ON DATABASE * TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT CREATE NEW NODE LABELS ON DATABASES sales, probedb TO probe",
+      "stored": [
+        "GRANT CREATE NEW NODE LABEL ON DATABASE `probedb` TO `probe`",
+        "GRANT CREATE NEW NODE LABEL ON DATABASE `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT CREATE NEW RELATIONSHIP TYPES ON DATABASE sales TO probe",
+      "stored": [
+        "GRANT CREATE NEW RELATIONSHIP TYPE ON DATABASE `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT CREATE NEW PROPERTY NAMES ON DATABASE sales TO probe",
+      "stored": [
+        "GRANT CREATE NEW PROPERTY NAME ON DATABASE `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT START ON DATABASES sales, probedb TO probe",
+      "stored": [
+        "GRANT START ON DATABASE `probedb` TO `probe`",
+        "GRANT START ON DATABASE `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT SHOW INDEXES ON DATABASE sales TO probe",
+      "stored": [
+        "GRANT SHOW INDEX ON DATABASE `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT SHOW CONSTRAINTS ON DATABASE sales TO probe",
+      "stored": [
+        "GRANT SHOW CONSTRAINT ON DATABASE `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT SHOW TRANSACTIONS ON DATABASE sales TO probe",
+      "stored": [
+        "GRANT SHOW TRANSACTION (*) ON DATABASE `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT TERMINATE TRANSACTIONS ON DATABASE sales TO probe",
+      "stored": [
+        "GRANT TERMINATE TRANSACTION (*) ON DATABASE `sales` TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT SHOW TRANSACTION (alice, bob) ON DATABASES * TO probe",
+      "stored": [
+        "GRANT SHOW TRANSACTION (alice) ON DATABASE * TO `probe`",
+        "GRANT SHOW TRANSACTION (bob) ON DATABASE * TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT EXECUTE PROCEDURE db.labels, db.schema.* ON DBMS TO probe",
+      "stored": [
+        "GRANT EXECUTE PROCEDURE db.labels ON DBMS TO `probe`",
+        "GRANT EXECUTE PROCEDURE db.schema.* ON DBMS TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT EXECUTE FUNCTIONS apoc.* ON DBMS TO probe",
+      "stored": [
+        "GRANT EXECUTE USER DEFINED FUNCTION apoc.* ON DBMS TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT EXECUTE BOOSTED PROCEDURES * ON DBMS TO probe",
+      "stored": [
+        "GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT SHOW SERVERS ON DBMS TO probe",
+      "stored": [
+        "GRANT SHOW SERVERS ON DBMS TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT SHOW SETTINGS * ON DBMS TO probe",
+      "stored": [
+        "GRANT SHOW SETTING * ON DBMS TO `probe`"
+      ]
+    },
+    {
+      "statement": "GRANT IMPERSONATE (alice, bob) ON DBMS TO probe",
+      "stored": [
+        "GRANT IMPERSONATE (alice) ON DBMS TO `probe`",
+        "GRANT IMPERSONATE (bob) ON DBMS TO `probe`"
+      ]
+    }
+  ]
+}

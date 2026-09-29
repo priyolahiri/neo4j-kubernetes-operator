@@ -130,6 +130,42 @@ var _ = Describe("Neo4jRole end-to-end", Label("core"), func() {
 			g.Expect(r.Status.AppliedPrivileges).To(HaveLen(len(r.Spec.Privileges)))
 		}, clusterTimeout, interval).Should(Succeed())
 
+		// Neo4j stores `NODES *` as `NODE *`. When the controller compared spec
+		// text against stored rows, the MATCH privilege was re-granted and then
+		// revoked as foreign on alternating reconciles — present half the time,
+		// which the Eventually above cannot see. Force reconciles and require
+		// the stored set to hold still.
+		By("Verifying the stored privileges stay put across reconciles")
+		showCommands := func() string {
+			cmd, cancel := boundedExec(ctx, podName, namespace.Name,
+				"cypher-shell", "--format", "plain", "-u", "neo4j", "-p", adminPass,
+				"SHOW ROLE analytics_reader PRIVILEGES AS COMMANDS YIELD command RETURN command ORDER BY command",
+			)
+			defer cancel()
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return "error: " + string(out)
+			}
+			return string(out)
+		}
+		settled := showCommands()
+		Expect(settled).To(ContainSubstring("NODE *"))
+		for i := 0; i < 4; i++ {
+			Eventually(func() error {
+				r := &neo4jv1beta1.Neo4jRole{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: "analytics-reader", Namespace: namespace.Name}, r); err != nil {
+					return err
+				}
+				if r.Annotations == nil {
+					r.Annotations = map[string]string{}
+				}
+				r.Annotations["test.neo4j.com/poke"] = fmt.Sprintf("%d", i)
+				return k8sClient.Update(ctx, r)
+			}, 30*time.Second, time.Second).Should(Succeed())
+			Consistently(showCommands, 6*time.Second, 2*time.Second).Should(Equal(settled),
+				"a reconcile must not revoke a privilege the spec asks for")
+		}
+
 		// Small pause to let any in-flight reconcile finish before issuing the
 		// manual REVOKE — concurrent privilege writes on the same role can
 		// fail with a transaction conflict on the system database.

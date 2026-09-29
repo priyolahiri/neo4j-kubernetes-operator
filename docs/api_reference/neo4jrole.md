@@ -71,12 +71,12 @@ The `Neo4jRole` Custom Resource Definition (CRD) provides declarative management
 The controller treats `spec.privileges` as the source of truth and reconciles drift on every loop:
 
 1. **Read live**: `SHOW ROLE <name> PRIVILEGES AS COMMANDS YIELD command, immutable`.
-2. **Canonicalise** both desired (spec) and live (Neo4j) statements:
+2. **Normalise** the desired side to Neo4j's stored form. Neo4j expands lists, singularises plurals, fills in default segments, renames some verbs, lower-cases database names and resolves aliases, so spec text rarely equals the stored row. Each statement is granted once to a short-lived `operator_privilege_probe_<random>` role and read back; the result is cached per server version and alias layout. A statement that cannot be probed (it names a missing database, or the probe grant fails) falls back to textual canonicalisation. Both sides are then canonicalised:
    - Whitespace runs collapsed to a single space (outside quoted strings).
    - Reserved keywords upper-cased (`grant` → `GRANT`, `database` → `DATABASE`, etc.).
    - Trailing semicolons stripped.
 3. **Diff sets**:
-   - Desired ∖ live → execute the original `GRANT/DENY` statement.
+   - Desired ∖ live → execute the original `GRANT/DENY` statement (once, even when it stands for several stored rows).
    - Live ∖ desired → derive a `REVOKE` form by replacing the leading verb (`GRANT`/`DENY`) with `REVOKE GRANT`/`REVOKE DENY` and `TO role` with `FROM role`. Skip immutable rows.
 4. **Update status** with `appliedPrivileges` set to the post-apply canonical list and `privilegeDrift` set when any extras could not be revoked.
 
