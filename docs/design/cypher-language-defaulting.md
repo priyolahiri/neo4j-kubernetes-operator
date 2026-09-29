@@ -187,23 +187,82 @@ they meant. Getting Cypher 25 is then an explicit edit. Consistent with the
 rest of this design: the operator does not redefine a user's queries as a side
 effect of something else they asked for.
 
-### 5.8 Interaction with property sharding
+### 5.8 Interaction with property sharding — probably an artifact
 
-Sharding **requires** `CYPHER_25` and sets it today. The existing validator
-already rejects a contradicting override inside `spec.propertySharding.config`:
+Sharding sets `db.query.default_language=CYPHER_25` today, which collides with
+`serverDefaultCypherLanguage: CYPHER_5`. **Do not arbitrate this conflict
+before checking whether it needs to exist.**
+
+Neo4j offers the requirement as an either/or
+([sharded property databases — configuration](https://neo4j.com/docs/operations-manual/current/scalability/sharded-property-databases/configuration/)):
+
+> "you must also ensure that the default Cypher version is set to Cypher 25 by
+> adding `db.query.default_language=CYPHER_25` parameter to the `neo4j.conf`
+> file on each server **or by prefixing your Cypher queries with `CYPHER_25`**."
+
+The operator already does *both* of the alternatives, in the statement it
+emits for a sharded database:
+
+```go
+fmt.Fprintf(&query, "CYPHER 25 CREATE DATABASE `%s`", ...)   // prefixed
+fmt.Fprintf(&query, " SET DEFAULT LANGUAGE CYPHER %s", ...)  // own default
+```
+
+So the server-wide setting looks redundant — and it is the one with blast
+radius, because it redefines the language for **every** database on the
+cluster rather than the sharded one.
+
+#### The check that decides it
+
+The shard sub-databases (`<name>-g000`, `<name>-p000`, …) are created by Neo4j
+internally, so no `SET DEFAULT LANGUAGE` clause from the operator reaches
+them. **If they inherit the server default rather than the parent
+database's, the server setting is load-bearing and the conflict is real.** The
+documentation does not say which, and this must not be assumed in either
+direction.
+
+Run on the family Phase 3 already builds, before implementing either branch:
+
+```cypher
+SHOW DATABASES YIELD name, ... WHERE name STARTS WITH '<logical>'
+```
+
+confirming the column that exposes a database's default language on the target
+version — the point is to read the language of `-g000` and `-p000`, not just
+the parent. A minute on an existing sharding cluster settles it.
+
+#### The two branches
+
+**If the shards inherit the parent's language** — remove
+`db.query.default_language` from `buildPropertyShardingConfig`. Sharding then
+needs no server-wide setting, the two features stop competing, there is no
+conflict to resolve, and sharding stops silently changing the query language
+for every application on the cluster.
+
+**If the shards inherit the server default** — the setting is required, and
+`propertySharding.enabled: true` with `serverDefaultCypherLanguage: CYPHER_5`
+must be **rejected**, naming both fields. Not silently resolved in either
+direction: sharding winning would change query semantics without being asked,
+which is the failure mode this whole design exists to prevent. This also
+matches the existing validator, which already refuses a contradicting override
+rather than overriding it:
 
 ```go
 return fmt.Errorf("property sharding requires %s=%s, got %s=%s", ...)
 ```
 
-Extend the same check to the new field: `propertySharding.enabled: true` with
-`serverDefaultCypherLanguage: CYPHER_5` is a contradiction and must be
-rejected by name, not silently resolved in either direction.
+Either way, a sharding cluster stamps `CYPHER_25`, so `status` reflects what
+the server is actually doing.
 
-Note for the sharding guide, independent of this design: enabling property
-sharding *already* changes the query language for every application on that
-cluster, and the examples list the setting under "required settings (applied
-automatically)" without saying so.
+#### Two notes that stand regardless
+
+- The sharded `CREATE` uses a **hardcoded** `"CYPHER 25 "` literal rather than
+  the `cypher25Prefix` constant — a fourth user of the convention that does not
+  reference it. More evidence for §3.1.
+- Enabling property sharding *already* changes the query language for every
+  application on that cluster. The examples list the setting under "required
+  settings (applied automatically)" without saying so; the sharding guide
+  should, independent of this design.
 
 ## 6. Open question
 
