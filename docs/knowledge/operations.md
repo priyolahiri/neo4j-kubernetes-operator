@@ -232,12 +232,12 @@
 
 ## Auth / AuthRule / OIDC
 
-### id 30 — AUTH RULE Cypher requires `CYPHER 25` prefix
-- **scope:** `internal/neo4j/auth_rules.go` (`cypher25Prefix = "CYPHER 25 "` L32; prepended to every AUTH RULE statement — SHOW/CREATE/ALTER/DROP ~L62-245)
-- **rule:** Every AUTH RULE statement prepends `cypher25Prefix`. The 2026.x system DB defaults to Cypher 5; without the prefix you get `42I06: Invalid input 'AUTH'`. Keep the prefix even after the default flips.
-- **why:** AUTH RULE syntax is Cypher 25-only; the system DB's default language is not guaranteed to be 25, so the prefix is mandatory.
-- **pinned-by:** auth_rules Cypher-prefix unit tests in `internal/neo4j/`.
-- **enforcement:** unit test + code review.
+### id 30 — Cypher-25-only statements go through `Cypher25()`, and ONLY those
+- **scope:** `internal/neo4j/cypher25.go` (`Cypher25`, `HasCypher25Prefix`); every caller — AUTH RULE (`auth_rules.go`), CREATE REPLICA DATABASE and `dbms.promoteReplicaDatabase` (`replicas.go`), the OIDC remote alias (`composite.go`), the sharded CREATE/DROP (`neo4jshardeddatabase_controller.go`).
+- **rule:** A statement using Cypher-25-only syntax MUST be wrapped in `Cypher25()`; nothing else may spell the `CYPHER 25` directive. A statement that must also run on 5.26 MUST NOT be wrapped. Keep the directive even after the system default flips.
+- **why:** CalVer defaults the system DB to Cypher 5, and a Cypher-25-only statement then fails to PARSE (`42I06`, or `42I67` "parsable in CYPHER 25") — it reads as though the feature did not exist. The hand-prepended constant was missed twice (CREATE REPLICA DATABASE until the v1.15.0 journey). The opposite mistake is just as real: the 5.26 LTS rejects the directive itself (`25 is not a valid option for cypher version`), and prefixing EVERY remote alias made stored-credential remote constituents impossible on 5.26 — shipped broken in v1.16.0; only the OIDC form needs it. Verified on 5.26.31 and 2026.08.1.
+- **pinned-by:** `TestCypher25Guard` (`internal/neo4j/cypher25_guard_test.go`) parses `internal/neo4j` and every controller function that sends Cypher, and fails on Cypher-25-only syntax without a `Cypher25` call or a hand-written directive — extend `cypher25OnlySyntax` when a new construct is found. `TestRemoteAliasStatementPinsCypher25OnlyForOIDC` pins the 5.26 direction.
+- **enforcement:** unit test (AST guard).
 
 ### id 31 — `oidc-`-prefixed provider name in ABAC config
 - **scope:** `internal/controller/neo4jauthrule_controller.go` (`abacAuthorizationProvidersKey = "dbms.security.abac.authorization_providers"` ~L54, precondition check ~L518); `internal/validation/auth_validator.go` (`strings.HasPrefix(provider, "oidc-")` ~L87); cluster authz providers emitted in `internal/resources/cluster.go` (`dbms.security.authorization_providers` ~L2818)
