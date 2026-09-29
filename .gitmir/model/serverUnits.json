@@ -314,6 +314,7 @@
     "moduleId": "mod-security",
     "paths": [
       "internal/controller/neo4jrole_normalise.go",
+      "internal/controller/neo4jrole_learn.go",
       "internal/controller/neo4jrole_controller.go"
     ]
   },

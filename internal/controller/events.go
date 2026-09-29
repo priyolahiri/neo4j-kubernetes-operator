@@ -231,6 +231,10 @@ const (
 	ConditionReasonRoleReady         = "RoleReady"
 	ConditionReasonPrivilegesSynced  = "PrivilegesMatch"
 	ConditionReasonPrivilegesDrifted = "PrivilegesDrifted"
+	// ConditionReasonPrivilegesUnattributed: learn mode holds rows it cannot
+	// attribute to a spec statement and so will not revoke (Neo4jRole
+	// status.unattributedPrivileges).
+	ConditionReasonPrivilegesUnattributed = "UnattributedPrivileges"
 )
 
 // Aura orchestration (control-plane) event reasons.

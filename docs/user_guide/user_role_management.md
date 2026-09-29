@@ -264,6 +264,40 @@ statement, not on every reconcile. Those short-lived roles appear in Neo4j's
 security log. A role with that prefix that survives was left by an operator crash
 mid-probe; it holds one privilege, has no users, and is safe to drop.
 
+#### Learn mode
+
+If your security policy will not accept those short-lived roles, run the
+operator with `--privilege-normalisation=learn` (Helm:
+`privilegeNormalisation: learn`). It is an operator-wide setting. Learn mode
+learns each statement's stored form from the operator's **own** grant to the
+real role — it reads the role's privileges, grants, and reads again — and keeps
+the result in the role's `status.privilegeRenderings`. It writes nothing to
+Neo4j that the operator would not have written anyway.
+
+What it cannot see is a privilege that was **already on the role** before the
+operator granted it: that grant is a no-op, so nothing new appears. Learn mode
+never guesses about such rows. It records them in
+`status.unattributedPrivileges`, never revokes them, and sets
+`PrivilegesSynced` to `Unknown` with reason `UnattributedPrivileges` and a
+message naming them. That covers:
+
+- a role that had privileges before its `Neo4jRole` existed — adopted
+  built-ins, roles created by hand, or an existing role when you switch an
+  installation from probe to learn mode;
+- a role whose status was lost (an etcd restore) — everything is treated as
+  pre-existing again, which is safe and only weakens enforcement.
+
+Rows granted **after** learn mode met the role are attributed exactly, and
+out-of-band additions are revoked as usual. To get full enforcement on a role
+with unattributed rows, remove the unwanted ones by hand: when an unattributed
+row goes away, learn mode re-learns, and the next grant attributes whatever the
+spec still needs.
+
+One difference from probe mode: when an alias is retargeted, a privilege
+granted through it stays on the **old** target — as it does in Neo4j itself —
+and gains the new one. Probe mode moves it. Revoke the old target's row by hand
+if it should go.
+
 If you `kubectl exec` into a pod and run `REVOKE ACCESS ON DATABASE x FROM analytics_reader` directly, the controller will re-apply that grant within ~30 seconds. To opt out per-role:
 
 ```yaml

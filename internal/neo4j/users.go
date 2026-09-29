@@ -559,6 +559,60 @@ func (c *Client) ProbePrivilegeRendering(ctx context.Context, probeRole, stmt st
 	return rows, nil
 }
 
+// GrantAndReadPrivileges runs one GRANT/DENY against roleName and returns the
+// role's privilege commands immediately before and after it, all in one
+// session so both reads are causally ordered around the write on a cluster.
+// The rows in after but not before are exactly how Neo4j stored the
+// statement — unless some of them already existed, which the caller must
+// allow for (see the learn mode in internal/controller/neo4jrole_learn.go).
+//
+// A transient system-database conflict (25N11) retries the whole sequence,
+// re-reading "before", so a retry cannot misattribute rows.
+func (c *Client) GrantAndReadPrivileges(ctx context.Context, roleName, stmt string) (before, after []string, err error) {
+	read := func(session neo4j.SessionWithContext) ([]string, error) {
+		q := fmt.Sprintf("SHOW ROLE `%s` PRIVILEGES AS COMMANDS YIELD command RETURN command", escapeBackticks(roleName))
+		res, err := session.Run(ctx, q, nil)
+		if err != nil {
+			return nil, err
+		}
+		var rows []string
+		for res.Next(ctx) {
+			rows = append(rows, stringValue(res.Record(), "command"))
+		}
+		return rows, res.Err()
+	}
+
+	const maxAttempts = 4
+	for attempt := 1; ; attempt++ {
+		session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+			AccessMode:   neo4j.AccessModeWrite,
+			DatabaseName: "system",
+		})
+		before, err = read(session)
+		if err == nil {
+			var res neo4j.ResultWithContext
+			if res, err = session.Run(ctx, stmt, nil); err == nil {
+				_, err = res.Consume(ctx)
+			}
+		}
+		if err == nil {
+			after, err = read(session)
+		}
+		c.closeSession(ctx, session)
+		if err == nil {
+			return before, after, nil
+		}
+		if !isTransientNeo4jError(err) || attempt == maxAttempts {
+			return nil, nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case <-time.After(time.Duration(attempt) * 200 * time.Millisecond):
+		}
+	}
+}
+
 func (c *Client) showRolePrivilegesLegacy(ctx context.Context, roleName string) ([]PrivilegeCommand, error) {
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
 		AccessMode:   neo4j.AccessModeRead,

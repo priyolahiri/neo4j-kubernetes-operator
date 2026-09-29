@@ -126,6 +126,43 @@ type Neo4jRoleStatus struct {
 	// removed). When EnforcePrivileges is false this is informational only.
 	// +optional
 	PrivilegeDrift bool `json:"privilegeDrift,omitempty"`
+
+	// PrivilegeRenderings records how Neo4j stored each spec.privileges
+	// statement, learned from the operator's own GRANTs. Populated only when
+	// the operator runs with --privilege-normalisation=learn; in the default
+	// probe mode the rendering is cached in memory instead.
+	// +optional
+	PrivilegeRenderings []PrivilegeRendering `json:"privilegeRenderings,omitempty"`
+
+	// PrivilegeRenderingScope is a digest of what the renderings depend on:
+	// the server, its image and the alias targets. A change re-learns them.
+	// +optional
+	PrivilegeRenderingScope string `json:"privilegeRenderingScope,omitempty"`
+
+	// UnattributedPrivileges are rows learn mode cannot attribute to a spec
+	// statement: those the role already had when learn mode first met it,
+	// and any unclaimed while some statement's rows are unknown (Ambiguous).
+	// Learn mode never revokes one — it may be a spec statement's own row —
+	// and reports them through PrivilegesSynced instead.
+	// +optional
+	UnattributedPrivileges []string `json:"unattributedPrivileges,omitempty"`
+}
+
+// PrivilegeRendering is the stored form of one spec.privileges statement.
+type PrivilegeRendering struct {
+	// Statement is the spec.privileges entry, exactly as written.
+	Statement string `json:"statement"`
+
+	// Rows are the canonical rows Neo4j stored for Statement.
+	// +optional
+	Rows []string `json:"rows,omitempty"`
+
+	// Ambiguous is true when granting Statement created no new rows and its
+	// text matches none of the role's rows: everything it grants was already
+	// there, so which rows are its own is unknown. Re-learned when one of
+	// those rows goes away.
+	// +optional
+	Ambiguous bool `json:"ambiguous,omitempty"`
 }
 
 // +kubebuilder:object:root=true

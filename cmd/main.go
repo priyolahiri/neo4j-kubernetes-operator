@@ -180,6 +180,14 @@ func main() {
 		// already an established metric label meaning the *Neo4j* cluster.
 		kubernetesClusterName = flag.String("kubernetes-cluster-name", "", "Name of the Kubernetes cluster this operator runs in; emitted as the k8s_cluster metric label (default: unset, label empty)")
 
+		// How Neo4jRole reconcilers learn Neo4j's stored form of a privilege.
+		// "probe" grants each statement once to a short-lived role; "learn"
+		// learns from the operator's own grants, for environments that will
+		// not accept those roles in their security log. See
+		// internal/controller/neo4jrole_learn.go.
+		privilegeNormalisation = flag.String("privilege-normalisation", controller.PrivilegeNormalisationProbe,
+			"How Neo4jRole privileges are matched to Neo4j's stored form: probe (short-lived probe roles) or learn (learn from the operator's own grants)")
+
 		// Development mode specific flags
 		// Must stay in sync with the dev controller registry in
 		// setupDevelopmentControllers — a key that is registered but missing here
@@ -202,6 +210,10 @@ func main() {
 	// Must happen before the manager starts so that no controller records a
 	// metric before the label is available.
 	operatormetrics.SetKubernetesClusterName(*kubernetesClusterName)
+	if err := controller.SetPrivilegeNormalisation(*privilegeNormalisation); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
 	// Validate and normalize mode
 	operatorMode := OperatorMode(strings.ToLower(*mode))
