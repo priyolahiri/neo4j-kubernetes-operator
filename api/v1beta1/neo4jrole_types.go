@@ -153,7 +153,8 @@ type PrivilegeRendering struct {
 	// Statement is the spec.privileges entry, exactly as written.
 	Statement string `json:"statement"`
 
-	// Rows are the canonical rows Neo4j stored for Statement.
+	// Rows are the rows Neo4j stored for Statement, as SHOW ROLE PRIVILEGES
+	// AS COMMANDS shows them.
 	// +optional
 	Rows []string `json:"rows,omitempty"`
 

@@ -88,7 +88,7 @@ func (s *fakeRoleServer) revokeCanonical(canon string) {
 
 func (s *fakeRoleServer) list() []string { return sortedKeys(s.rows) }
 
-func (s *fakeRoleServer) current() map[string]bool { return canonicalSet(s.list()) }
+func (s *fakeRoleServer) current() map[string]bool { return newLearnState("").rememberAll(s.list()) }
 
 func (s *fakeRoleServer) GrantAndReadPrivileges(_ context.Context, role, stmt string) ([]string, []string, error) {
 	require.Equal(s.t, learnRole, role)
@@ -125,7 +125,7 @@ func revocable(lo learnOutcome, now map[string]bool) []string {
 
 func learn(t *testing.T, s *fakeRoleServer, stmts []string, prior learnState, scope string) learnOutcome {
 	t.Helper()
-	lo, err := learnDesired(context.Background(), s, learnRole, stmts, nil, prior, scope, s.current(), false)
+	lo, err := learnDesired(context.Background(), s, learnRole, stmts, nil, prior, scope, s.list(), false)
 	require.NoError(t, err)
 	return lo
 }
@@ -249,7 +249,7 @@ func TestLearnDesired_LostRenderingDoesNotCostThePrivilege(t *testing.T) {
 	s := newFakeRoleServer(t)
 	stmts := []string{spec(t, "GRANT MATCH {*} ON GRAPH sales NODES * TO probe")}
 	learn(t, s, stmts, learnState{}, "scope") // granted...
-	lost := learnState{scope: scopeDigest("scope"), renderings: map[string]learnedRendering{}, baseline: map[string]bool{}}
+	lost := newLearnState(scopeDigest("scope"))
 
 	lo := learn(t, s, stmts, lost, "scope") // ...but never recorded
 
@@ -290,7 +290,7 @@ func TestLearnDesired_OverlapSurvivesRemovalOfTheOtherStatement(t *testing.T) {
 	}
 	require.True(t, relearn)
 
-	after, err := learnDesired(context.Background(), s, learnRole, remaining, nil, lo.state, "scope", s.current(), true)
+	after, err := learnDesired(context.Background(), s, learnRole, remaining, nil, lo.state, "scope", s.list(), true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"GRANT ACCESS ON DATABASE `sales` TO `r`"}, s.list(), "the remaining statement's row is back")
 	assert.Empty(t, after.ambiguous, "and now it is attributed")
@@ -338,7 +338,7 @@ func TestLearnDesired_ErrorKeepsUnreachedRenderings(t *testing.T) {
 
 	s.revokeCanonical("GRANT WRITE ON GRAPH sales TO r")
 	s.failOn = stmts[0]
-	lo, err := learnDesired(context.Background(), s, learnRole, stmts, nil, first.state, "scope", s.current(), false)
+	lo, err := learnDesired(context.Background(), s, learnRole, stmts, nil, first.state, "scope", s.list(), false)
 
 	require.Error(t, err)
 	assert.Equal(t, stmts[0], lo.grantErrStm)
@@ -351,7 +351,7 @@ func TestLearnDesired_UnresolvedIsNeitherGrantedNorForgotten(t *testing.T) {
 	first := learn(t, s, stmts, learnState{}, "scope")
 
 	lo, err := learnDesired(context.Background(), s, learnRole, stmts,
-		func(string) bool { return false }, first.state, "scope", s.current(), false)
+		func(string) bool { return false }, first.state, "scope", s.list(), false)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, s.grants)
@@ -371,7 +371,26 @@ func TestLearnStateRoundTripsThroughStatus(t *testing.T) {
 		PrivilegeRenderings:     renderings,
 		UnattributedPrivileges:  baseline,
 	})
-	assert.Equal(t, lo.state, back)
+	assert.Equal(t, lo.state.scope, back.scope)
+	assert.Equal(t, lo.state.renderings, back.renderings)
+	assert.Equal(t, lo.state.baseline, back.baseline)
+}
+
+// Status holds rows as Neo4j showed them, not in canonical form, so a change
+// to CanonicalisePrivilegeStatement cannot strand what was learned.
+func TestLearnStatePersistsNeo4jsOwnWording(t *testing.T) {
+	s := newFakeRoleServer(t)
+	s.grant("GRANT WRITE ON GRAPHS * TO probe")
+	stmts := []string{spec(t, "GRANT READ {name, age} ON GRAPH sales NODES Person TO probe")}
+	lo := learn(t, s, stmts, learnState{}, "scope")
+
+	renderings, baseline := lo.state.toStatus(stmts)
+	require.Len(t, renderings, 1)
+	assert.ElementsMatch(t, []string{
+		"GRANT READ {age} ON GRAPH `sales` NODE Person TO `r`",
+		"GRANT READ {name} ON GRAPH `sales` NODE Person TO `r`",
+	}, renderings[0].Rows)
+	assert.Equal(t, []string{"GRANT WRITE ON GRAPH * TO `r`"}, baseline)
 }
 
 func TestSetPrivilegeNormalisation(t *testing.T) {

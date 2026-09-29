@@ -253,7 +253,9 @@ spec:
                         those rows goes away.
                       type: boolean
                     rows:
-                      description: Rows are the canonical rows Neo4j stored for Statement.
+                      description: |-
+                        Rows are the rows Neo4j stored for Statement, as SHOW ROLE PRIVILEGES
+                        AS COMMANDS shows them.
                       items:
                         type: string
                       type: array

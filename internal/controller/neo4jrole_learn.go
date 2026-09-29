@@ -102,28 +102,64 @@ type learnedRendering struct {
 }
 
 // learnState is the persisted part of learn mode, as held in status.
+//
+// Everything is compared by canonical form, but PERSISTED as the raw text
+// Neo4j showed (raw: canonical -> as shown). A canonical string in status
+// would silently stop matching the day CanonicalisePrivilegeStatement
+// changes, and every role would degrade to unattributed on upgrade; Neo4j's
+// own rendering is canonicalised afresh on every read instead.
 type learnState struct {
 	scope      string // digest
 	renderings map[string]learnedRendering
 	baseline   map[string]bool
+	raw        map[string]string
+}
+
+func newLearnState(scope string) learnState {
+	return learnState{scope: scope, renderings: map[string]learnedRendering{},
+		baseline: map[string]bool{}, raw: map[string]string{}}
+}
+
+// remember records how Neo4j showed a row, returning its canonical form.
+func (s learnState) remember(shown string) string {
+	canon := neo4jclient.CanonicalisePrivilegeStatement(shown)
+	if canon != "" {
+		if _, ok := s.raw[canon]; !ok {
+			s.raw[canon] = shown
+		}
+	}
+	return canon
+}
+
+func (s learnState) shown(canon string) string {
+	if r, ok := s.raw[canon]; ok {
+		return r
+	}
+	return canon
 }
 
 func learnStateFromStatus(st neo4jv1beta1.Neo4jRoleStatus) learnState {
-	s := learnState{
-		scope:      st.PrivilegeRenderingScope,
-		renderings: map[string]learnedRendering{},
-		baseline:   map[string]bool{},
-	}
+	s := newLearnState(st.PrivilegeRenderingScope)
 	for _, r := range st.PrivilegeRenderings {
-		s.renderings[r.Statement] = learnedRendering{rows: r.Rows, ambiguous: r.Ambiguous}
+		lr := learnedRendering{ambiguous: r.Ambiguous}
+		for _, row := range r.Rows {
+			if canon := s.remember(row); canon != "" {
+				lr.rows = append(lr.rows, canon)
+			}
+		}
+		sort.Strings(lr.rows)
+		s.renderings[r.Statement] = lr
 	}
 	for _, row := range st.UnattributedPrivileges {
-		s.baseline[row] = true
+		if canon := s.remember(row); canon != "" {
+			s.baseline[canon] = true
+		}
 	}
 	return s
 }
 
-// toStatus renders the state in spec order, so status is stable.
+// toStatus renders the state in spec order, so status is stable, with each
+// row as Neo4j showed it.
 func (s learnState) toStatus(stmts []string) ([]neo4jv1beta1.PrivilegeRendering, []string) {
 	var out []neo4jv1beta1.PrivilegeRendering
 	seen := map[string]bool{}
@@ -133,9 +169,17 @@ func (s learnState) toStatus(stmts []string) ([]neo4jv1beta1.PrivilegeRendering,
 			continue
 		}
 		seen[stmt] = true
-		out = append(out, neo4jv1beta1.PrivilegeRendering{Statement: stmt, Rows: lr.rows, Ambiguous: lr.ambiguous})
+		var rows []string
+		for _, canon := range lr.rows {
+			rows = append(rows, s.shown(canon))
+		}
+		out = append(out, neo4jv1beta1.PrivilegeRendering{Statement: stmt, Rows: rows, Ambiguous: lr.ambiguous})
 	}
-	return out, sortedKeys(s.baseline)
+	var baseline []string
+	for _, canon := range sortedKeys(s.baseline) {
+		baseline = append(baseline, s.shown(canon))
+	}
+	return out, baseline
 }
 
 // learnOutcome is one learning pass.
@@ -157,31 +201,39 @@ func scopeDigest(scope string) string {
 
 // learnDesired runs one learning pass over the spec statements.
 //
-// current is the role's canonical rows now. forceRelearn re-grants every
+// current is the role's rows now, as Neo4j shows them. forceRelearn re-grants every
 // statement; it is set by the caller after revoking rows of statements that
 // left the spec, since those rows may have been hiding another statement's.
 func learnDesired(
 	ctx context.Context, learner privilegeLearner, roleName string,
 	stmts []string, resolves func(string) bool,
-	prior learnState, scope string, current map[string]bool, forceRelearn bool,
+	prior learnState, scope string, current []string, forceRelearn bool,
 ) (learnOutcome, error) {
 	digest := scopeDigest(scope)
 	out := learnOutcome{
-		state:   learnState{scope: digest, renderings: map[string]learnedRendering{}, baseline: map[string]bool{}},
+		state:   newLearnState(digest),
 		desired: map[string]string{},
-		current: copySet(current),
+		current: map[string]bool{},
+	}
+	for canon, shown := range prior.raw {
+		out.state.raw[canon] = shown
+	}
+	for _, row := range current {
+		if canon := out.state.remember(row); canon != "" {
+			out.current[canon] = true
+		}
 	}
 
 	relearnAll := forceRelearn
 	if prior.scope == "" {
 		// First time learn mode meets this role: whatever it already has is
 		// unattributable.
-		for row := range current {
+		for row := range out.current {
 			out.state.baseline[row] = true
 		}
 	} else {
 		for row := range prior.baseline {
-			if current[row] {
+			if out.current[row] {
 				out.state.baseline[row] = true
 			} else {
 				// It may have been hiding a statement's row.
@@ -248,7 +300,7 @@ func learnDesired(
 			return out, err
 		}
 		out.granted++
-		b, a := canonicalSet(before), canonicalSet(after)
+		b, a := out.state.rememberAll(before), out.state.rememberAll(after)
 		out.current = a
 
 		rows := map[string]bool{}
@@ -317,10 +369,11 @@ func orphanedRows(prior learnState, stmts []string) map[string]bool {
 	return out
 }
 
-func canonicalSet(commands []string) map[string]bool {
-	out := make(map[string]bool, len(commands))
-	for _, c := range commands {
-		if canon := neo4jclient.CanonicalisePrivilegeStatement(c); canon != "" {
+// rememberAll canonicalises rows as Neo4j showed them, recording each.
+func (s learnState) rememberAll(shown []string) map[string]bool {
+	out := make(map[string]bool, len(shown))
+	for _, row := range shown {
+		if canon := s.remember(row); canon != "" {
 			out[canon] = true
 		}
 	}
@@ -334,14 +387,6 @@ func subsetOf(rows []string, set map[string]bool) bool {
 		}
 	}
 	return true
-}
-
-func copySet(in map[string]bool) map[string]bool {
-	out := make(map[string]bool, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }
 
 func sortedKeys(m map[string]bool) []string {
@@ -358,10 +403,11 @@ func (r *Neo4jRoleReconciler) reconcileLearned(
 	ctx context.Context, nc *neo4jclient.Client, role *neo4jv1beta1.Neo4jRole,
 	roleName, scope string, resolves func(string) bool, requeue time.Duration,
 ) (ctrl.Result, error) {
-	current, _, _, err := r.fetchCurrentPrivileges(ctx, nc, roleName)
+	_, _, currentShown, err := r.fetchCurrentPrivileges(ctx, nc, roleName)
 	if err != nil {
 		return r.fail(ctx, role, "fetch current privileges failed", err, requeue)
 	}
+	current := shownRows(currentShown)
 	prior := learnStateFromStatus(role.Status)
 	stmts := role.Spec.Privileges
 
@@ -371,14 +417,19 @@ func (r *Neo4jRoleReconciler) reconcileLearned(
 	// statement is sent — instead of after a round of grants on every
 	// reconcile.
 	if prior.scope == "" {
-		first := learnState{scope: scopeDigest(scope), renderings: map[string]learnedRendering{}, baseline: toSet(current)}
+		first := newLearnState(scopeDigest(scope))
+		for _, row := range current {
+			if canon := first.remember(row); canon != "" {
+				first.baseline[canon] = true
+			}
+		}
 		if err := r.setLearnState(ctx, role, first, stmts); err != nil {
 			return r.fail(ctx, role, "persisting learned privilege renderings failed", err, requeue)
 		}
 		prior = first
 	}
 
-	lo, err := learnDesired(ctx, nc, roleName, stmts, resolves, prior, scope, toSet(current), false)
+	lo, err := learnDesired(ctx, nc, roleName, stmts, resolves, prior, scope, current, false)
 	if err != nil {
 		// Record what was learned before the failure: those grants happened.
 		_ = r.setLearnState(ctx, role, lo.state, stmts)
@@ -421,11 +472,11 @@ func (r *Neo4jRoleReconciler) reconcileLearned(
 		if !orphans[row] {
 			continue
 		}
-		after, _, _, err := r.fetchCurrentPrivileges(ctx, nc, roleName)
+		_, _, afterShown, err := r.fetchCurrentPrivileges(ctx, nc, roleName)
 		if err != nil {
 			return r.fail(ctx, role, "fetch current privileges failed", err, requeue)
 		}
-		relearned, err := learnDesired(ctx, nc, roleName, stmts, resolves, lo.state, scope, toSet(after), true)
+		relearned, err := learnDesired(ctx, nc, roleName, stmts, resolves, lo.state, scope, shownRows(afterShown), true)
 		if err != nil {
 			_ = r.setLearnState(ctx, role, relearned.state, stmts)
 			return r.fail(ctx, role, fmt.Sprintf("apply privilege %q failed", relearned.grantErrStm), err, requeue)
@@ -441,7 +492,7 @@ func (r *Neo4jRoleReconciler) reconcileLearned(
 	var unattributed []string
 	for _, row := range sortedKeys(lo.state.baseline) {
 		if _, wanted := lo.desired[row]; !wanted {
-			unattributed = append(unattributed, row)
+			unattributed = append(unattributed, lo.state.shown(row))
 		}
 	}
 	switch {
@@ -547,10 +598,16 @@ func stringSlicesEqual(a, b []string) bool {
 	return true
 }
 
-func toSet(rows []string) map[string]bool {
-	out := make(map[string]bool, len(rows))
-	for _, r := range rows {
-		out[r] = true
+// shownRows turns fetchCurrentPrivileges' canonical -> shown map into the
+// rows as Neo4j showed them.
+func shownRows(byCanonical map[string]string) []string {
+	out := make([]string, 0, len(byCanonical))
+	for canon, shown := range byCanonical {
+		if shown == "" {
+			shown = canon
+		}
+		out = append(out, shown)
 	}
+	sort.Strings(out)
 	return out
 }
