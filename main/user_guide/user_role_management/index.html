@@ -4627,9 +4627,55 @@ and is how a user is permitted to query through the composite at all.</p>
 <p>The role controller treats <code>.privileges</code> as the source of truth. On every reconcile it:</p>
 <ol>
 <li>Reads <code>SHOW ROLE &lt;name&gt; PRIVILEGES AS COMMANDS</code> from Neo4j.</li>
-<li>Canonicalises both the desired set (from spec) and the live set (from Neo4j) — whitespace, case, trailing semicolons all normalised.</li>
+<li>Works out what each <code>.privileges</code> statement looks like <strong>once Neo4j has stored it</strong>, and compares that with the live set.</li>
 <li>Applies the difference: missing privileges get a fresh <code>GRANT/DENY</code>; extra privileges get a derived <code>REVOKE</code>.</li>
 </ol>
+<p>Step 2 matters because Neo4j does not store a privilege as you wrote it:</p>
+<table>
+<thead>
+<tr>
+<th>You write</th>
+<th>Neo4j stores</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GRANT MATCH {*} ON GRAPH sales NODES * TO r</code></td>
+<td><code>... ON GRAPH sales NODE * TO r</code></td>
+</tr>
+<tr>
+<td><code>GRANT ACCESS ON DATABASES a, b TO r</code></td>
+<td>one row per database</td>
+</tr>
+<tr>
+<td><code>GRANT READ {name, age} ON GRAPH g NODES Person TO r</code></td>
+<td>one row per property</td>
+</tr>
+<tr>
+<td><code>GRANT MATCH {*} ON GRAPH g TO r</code> (no segment)</td>
+<td>a <code>NODE *</code> row and a <code>RELATIONSHIP *</code> row</td>
+</tr>
+<tr>
+<td><code>GRANT EXECUTE FUNCTIONS apoc.* ON DBMS TO r</code></td>
+<td><code>... EXECUTE USER DEFINED FUNCTION apoc.* ...</code></td>
+</tr>
+<tr>
+<td><code>GRANT ACCESS ON DATABASE Sales TO r</code></td>
+<td><code>... ON DATABASE sales ...</code></td>
+</tr>
+<tr>
+<td><code>GRANT ACCESS ON DATABASE myalias TO r</code></td>
+<td>the alias's <strong>target</strong> database</td>
+</tr>
+</tbody>
+</table>
+<p>So you can write privileges in any form Neo4j accepts. The operator learns each
+statement's stored form by granting it once to a short-lived role named
+<code>operator_privilege_probe_&lt;random&gt;</code>, reading it back and dropping that role. The
+result is cached per server version and alias layout, so this happens once per
+statement, not on every reconcile. Those short-lived roles appear in Neo4j's
+security log. A role with that prefix that survives was left by an operator crash
+mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 <p>If you <code>kubectl exec</code> into a pod and run <code>REVOKE ACCESS ON DATABASE x FROM analytics_reader</code> directly, the controller will re-apply that grant within ~30 seconds. To opt out per-role:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">enforcePrivileges</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>

@@ -4352,12 +4352,12 @@
 <p>The controller treats <code>spec.privileges</code> as the source of truth and reconciles drift on every loop:</p>
 <ol>
 <li><strong>Read live</strong>: <code>SHOW ROLE &lt;name&gt; PRIVILEGES AS COMMANDS YIELD command, immutable</code>.</li>
-<li><strong>Canonicalise</strong> both desired (spec) and live (Neo4j) statements:</li>
+<li><strong>Normalise</strong> the desired side to Neo4j's stored form. Neo4j expands lists, singularises plurals, fills in default segments, renames some verbs, lower-cases database names and resolves aliases, so spec text rarely equals the stored row. Each statement is granted once to a short-lived <code>operator_privilege_probe_&lt;random&gt;</code> role and read back; the result is cached per server version and alias layout. A statement that cannot be probed (it names a missing database, or the probe grant fails) falls back to textual canonicalisation. Both sides are then canonicalised:</li>
 <li>Whitespace runs collapsed to a single space (outside quoted strings).</li>
 <li>Reserved keywords upper-cased (<code>grant</code> → <code>GRANT</code>, <code>database</code> → <code>DATABASE</code>, etc.).</li>
 <li>Trailing semicolons stripped.</li>
 <li><strong>Diff sets</strong>:</li>
-<li>Desired ∖ live → execute the original <code>GRANT/DENY</code> statement.</li>
+<li>Desired ∖ live → execute the original <code>GRANT/DENY</code> statement (once, even when it stands for several stored rows).</li>
 <li>Live ∖ desired → derive a <code>REVOKE</code> form by replacing the leading verb (<code>GRANT</code>/<code>DENY</code>) with <code>REVOKE GRANT</code>/<code>REVOKE DENY</code> and <code>TO role</code> with <code>FROM role</code>. Skip immutable rows.</li>
 <li><strong>Update status</strong> with <code>appliedPrivileges</code> set to the post-apply canonical list and <code>privilegeDrift</code> set when any extras could not be revoked.</li>
 </ol>
