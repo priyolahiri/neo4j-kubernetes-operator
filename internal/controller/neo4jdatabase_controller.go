@@ -176,7 +176,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		logger.Error(err, "Failed to create Neo4j client after retries")
 		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonConnectionFailed,
 			"Failed to connect to Neo4j cluster")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 	defer func() {
 		if err := neo4jClient.Close(); err != nil {
@@ -229,7 +229,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			fmt.Sprintf("Failed to create database: %v", err))
 		r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonCreationFailed,
 			"Failed to create database: %v", err)
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 	duration := time.Since(dbCreateStart)
 	logger.Info("Database creation/verification completed successfully", "database", database.Spec.Name, "duration", duration)
@@ -242,7 +242,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				fmt.Sprintf("Failed to import initial data: %v", err))
 			r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonDataImportFailed,
 				"Failed to import initial data: %v", err)
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 
 		// Mark data as imported

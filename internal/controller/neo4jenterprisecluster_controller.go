@@ -252,7 +252,12 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 					logger.Error(err, "Cluster update validation failed")
 					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "Cluster update validation failed: %v", err)
 					_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Update validation failed: %v", err))
-					return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+					// A spec the user must fix is not a reconcile error: it is
+					// already logged, evented and in status, and returning it
+					// would make controller-runtime ignore RequeueAfter and
+					// retry on error backoff instead. The same holds for the
+					// validation returns below.
+					return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 				}
 			}
 		}
@@ -272,7 +277,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 				logger.Error(err, "Cluster validation failed")
 				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "Cluster validation failed: %v", err)
 				_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Validation failed: %v", err))
-				return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
 		}
 
@@ -283,9 +288,8 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 				logger.Error(fmt.Errorf("server role validation error"), roleError)
 				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonServerRoleFailed, "Server role hint validation failed: %s", roleError)
 			}
-			err := fmt.Errorf("server role validation failed: %v", roleHintErrors)
 			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Server role validation failed: %v", roleHintErrors))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 	}
 
@@ -295,7 +299,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			logger.Error(err, "Property sharding validation failed")
 			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonPropertyShardingFailed, "Property sharding validation failed: %v", err)
 			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Property sharding validation failed: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 	}
 
@@ -305,7 +309,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// signal. An empty className is allowed and inherits the cluster default.
 	if exists, err := storageClassExists(ctx, r.Client, cluster.Spec.Storage.ClassName); err != nil {
 		logger.Error(err, "Failed to look up StorageClass", "storageClass", cluster.Spec.Storage.ClassName)
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	} else if !exists {
 		msg := fmt.Sprintf("StorageClass %q not found; create it or set spec.storage.className to an existing class (or leave it empty to use the cluster default)", cluster.Spec.Storage.ClassName)
 		logger.Error(fmt.Errorf("storage class not found"), msg)
@@ -361,7 +365,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			if err := r.createOrUpdateResource(ctx, certificate, cluster); err != nil {
 				logger.Error(err, "Failed to create Certificate")
 				_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Certificate: %v", err))
-				return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+				return ctrl.Result{}, err
 			}
 		}
 
@@ -411,7 +415,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		if err := r.createExternalSecretForTLS(ctx, cluster); err != nil {
 			logger.Error(err, "Failed to create TLS ExternalSecret")
 			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create TLS ExternalSecret: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -419,7 +423,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		if err := r.createExternalSecretForAuth(ctx, cluster); err != nil {
 			logger.Error(err, "Failed to create Auth ExternalSecret")
 			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Auth ExternalSecret: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -431,7 +435,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	if err != nil {
 		logger.Error(err, "Failed to reconcile CCDR proxy")
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to reconcile CCDR proxy: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 	cluster.Status.CrossClusterReplication = ccdrStatus
 
@@ -439,7 +443,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	if err := r.ConfigMapManager.ReconcileConfigMap(ctx, cluster); err != nil {
 		logger.Error(err, "Failed to reconcile ConfigMap")
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Create RBAC resources for Kubernetes discovery
@@ -447,21 +451,21 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	if err := r.createOrUpdateResource(ctx, serviceAccount, cluster); err != nil {
 		logger.Error(err, "Failed to create discovery ServiceAccount", "serviceAccount", serviceAccount.Name)
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create ServiceAccount %s: %v", serviceAccount.Name, err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	role := resources.BuildDiscoveryRoleForEnterprise(cluster)
 	if err := r.createOrUpdateResource(ctx, role, cluster); err != nil {
 		logger.Error(err, "Failed to create discovery Role", "role", role.Name)
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Role %s: %v", role.Name, err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	roleBinding := resources.BuildDiscoveryRoleBindingForEnterprise(cluster)
 	if err := r.createOrUpdateResource(ctx, roleBinding, cluster); err != nil {
 		logger.Error(err, "Failed to create discovery RoleBinding", "roleBinding", roleBinding.Name)
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create RoleBinding %s: %v", roleBinding.Name, err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Create Services
@@ -485,7 +489,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		if err := r.createOrUpdateResource(ctx, service, cluster); err != nil {
 			logger.Error(err, "Failed to create Service", "service", service.Name)
 			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Service %s: %v", service.Name, err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -496,7 +500,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			if err := r.createOrUpdateResource(ctx, ingress, cluster); err != nil {
 				logger.Error(err, "Failed to create Ingress")
 				_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Ingress: %v", err))
-				return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+				return ctrl.Result{}, err
 			}
 		}
 	}
@@ -510,7 +514,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		if err := r.createOrUpdateResource(ctx, np, cluster); err != nil {
 			logger.Error(err, "Failed to create NetworkPolicy")
 			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create NetworkPolicy: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -518,14 +522,14 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	if err := r.reconcileRoute(ctx, cluster); err != nil {
 		logger.Error(err, "Failed to reconcile Route")
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to reconcile Route: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Reconcile MCP resources if enabled
 	if err := r.reconcileMCP(ctx, cluster); err != nil {
 		logger.Error(err, "Failed to reconcile MCP resources")
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to reconcile MCP resources: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Reconcile Aura Fleet Management registration if enabled
@@ -553,7 +557,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			logger.Error(err, "Failed to calculate topology placement")
 			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to calculate topology placement: %v", err))
 			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonTopologyPlacementFailed, fmt.Sprintf("Failed to calculate topology placement: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 		topologyPlacement = placement
 		logger.Info("Calculated topology placement",
@@ -580,7 +584,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// then we requeue so the next reconcile recreates it with updated VolumeClaimTemplates.
 	if requeue, err := r.reconcileStorageExpansion(ctx, cluster); err != nil {
 		logger.Error(err, "Failed to reconcile storage expansion")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	} else if requeue {
 		logger.Info("Storage expansion completed, requeueing to recreate StatefulSet")
 		// The orphan-delete above triggers an Owns(&appsv1.StatefulSet{}) watch
@@ -596,7 +600,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		if err := r.TopologyScheduler.ApplyTopologyConstraints(ctx, serverStatefulSet, cluster, topologyPlacement); err != nil {
 			logger.Error(err, "Failed to apply topology constraints to server StatefulSet")
 			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to apply topology constraints to server StatefulSet: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -612,7 +616,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	if err := r.createOrUpdateResource(ctx, serverStatefulSet, cluster); err != nil {
 		logger.Error(err, "Failed to create server StatefulSet")
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create server StatefulSet: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Handle Query Performance Monitoring
@@ -727,7 +731,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 		logger.Info("Cleaning up PVCs due to Delete retention policy", "retentionPolicy", retentionPolicy)
 		if err := r.cleanupPVCs(ctx, cluster); err != nil {
 			logger.Error(err, "Failed to cleanup PVCs")
-			return ctrl.Result{RequeueAfter: time.Second * 10}, err
+			return ctrl.Result{}, err
 		}
 		logger.Info("Successfully cleaned up PVCs")
 	} else {

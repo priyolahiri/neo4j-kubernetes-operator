@@ -123,7 +123,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	target, err := ResolveClusterRef(ctx, r.Client, user.Namespace, user.Spec.ClusterRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve target ref")
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if !target.Found {
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(user.Spec.ClusterRef))
@@ -146,7 +146,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if err != nil {
 			msg := fmt.Sprintf("password secret read failed: %v", err)
 			r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserSyncFailed, msg, nil, "", nil)
-			return ctrl.Result{RequeueAfter: requeue}, err
+			return ctrl.Result{}, err
 		}
 		passwordValue = pw
 		// NOT a hash of the password — see readPasswordSecret.
@@ -159,7 +159,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, "", nil)
 		r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	defer func() {
 		if err := nc.Close(); err != nil {
@@ -348,7 +348,7 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 
 	target, err := ResolveClusterRef(ctx, r.Client, user.Namespace, user.Spec.ClusterRef)
 	if err != nil {
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if !target.Found {
 		controllerutil.RemoveFinalizer(user, Neo4jUserFinalizer)
@@ -575,7 +575,19 @@ func (r *Neo4jUserReconciler) fail(ctx context.Context, user *neo4jv1beta1.Neo4j
 	}
 	r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserSyncFailed, msg, nil, "", nil)
 	r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonUserSyncFailed, msg)
-	return ctrl.Result{RequeueAfter: requeue}, err
+	// A rejection the server will repeat (Neo.ClientError.*: a malformed
+	// statement, a missing role or user, an argument it refuses) cannot
+	// resolve without someone changing something, and error backoff would
+	// retry it within milliseconds and bury the one event that explains it.
+	// It is already in status and the event above; retry it on the fixed
+	// interval. Anything else — a connectivity blip, a transient conflict —
+	// goes back as an error, to controller-runtime's backoff. Same rule as
+	// Neo4jReplicaDatabase's fail(). Never return a requeue WITH an error:
+	// controller-runtime ignores it (TestNoRequeueWithError).
+	if isPermanentServerRejection(err) {
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	}
+	return ctrl.Result{}, err
 }
 
 func (r *Neo4jUserReconciler) setStatus(
