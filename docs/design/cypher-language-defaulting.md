@@ -177,7 +177,8 @@ under the user.
 Setting the field explicitly on a running cluster is an intentional change:
 emit the new value, roll the pods. That is correct, but the field's
 documentation must say it restarts the database — not doing so is how this
-becomes a surprise a second time.
+becomes a surprise a second time — and that it only sets the language of
+databases created afterwards (§5.8).
 
 ### 5.7 Upgrading 5.26 → CalVer does not silently switch language
 
@@ -187,96 +188,91 @@ they meant. Getting Cypher 25 is then an explicit edit. Consistent with the
 rest of this design: the operator does not redefine a user's queries as a side
 effect of something else they asked for.
 
-### 5.8 Interaction with property sharding — probably an artifact
+### 5.8 Neo4j fixes a database's language when it is created
 
-Sharding sets `db.query.default_language=CYPHER_25` today, which collides with
-`serverDefaultCypherLanguage: CYPHER_5`. **Do not arbitrate this conflict
-before checking whether it needs to exist.**
+Measured on 2026.06.0 (3-server sharding cluster, 2026-09-29), and the
+premise of the rest of §5 depends on it:
 
-Neo4j offers the requirement as an either/or
-([sharded property databases — configuration](https://neo4j.com/docs/operations-manual/current/scalability/sharded-property-databases/configuration/)):
+| Step | Result |
+|---|---|
+| Server on `CYPHER_25`; create `neo4j` (bootstrap), `langnone` | both `defaultLanguage = CYPHER 25` |
+| Restart the servers with the setting removed (server default → `CYPHER_5`) | `neo4j` and `langnone` **still `CYPHER 25`** |
+| Create `plain5` under `CYPHER_5` | `CYPHER 5` |
+| Restore `CYPHER_25`, restart | `plain5` **still `CYPHER 5`**; a new `plain25` gets `CYPHER 25` |
 
-> "you must also ensure that the default Cypher version is set to Cypher 25 by
-> adding `db.query.default_language=CYPHER_25` parameter to the `neo4j.conf`
-> file on each server **or by prefixing your Cypher queries with `CYPHER_25`**."
+So `db.query.default_language` is, in effect, **the language a database gets
+when it is created without one of its own**. It is stamped on the database at
+creation and never re-read; changing the setting later moves nothing that
+already exists. Only `ALTER DATABASE … SET DEFAULT LANGUAGE` does.
 
-The operator already does *both* of the alternatives, in the statement it
-emits for a sharded database:
+Consequences for this design:
 
-```go
-fmt.Fprintf(&query, "CYPHER 25 CREATE DATABASE `%s`", ...)   // prefixed
-fmt.Fprintf(&query, " SET DEFAULT LANGUAGE CYPHER %s", ...)  // own default
-```
+- **§5.5 still stands, with a smaller blast radius than it implies.** Emitting
+  `CYPHER_25` on an existing cluster would not change any existing database —
+  but it would silently change every database created afterwards, which is
+  still the surprise stamping exists to prevent.
+- **§5.6 must say both halves.** Changing the field rolls the pods *and*
+  applies only to databases created from then on. The field's documentation
+  has to point at `ALTER DATABASE … SET DEFAULT LANGUAGE` for existing ones.
+  (The operator could offer to ALTER them; that is a separate, explicit
+  decision, not a side effect of this field.)
 
-So the server-wide setting looks redundant — and it is the one with blast
-radius, because it redefines the language for **every** database on the
-cluster rather than the sharded one.
+### 5.9 Interaction with property sharding — resolved: an artifact
 
-#### The check that decides it
+Sharding sets `db.query.default_language=CYPHER_25` today, which collided
+with `serverDefaultCypherLanguage: CYPHER_5`. The design said not to arbitrate
+the conflict before checking whether it needs to exist. **It does not.**
+Measured on 2026.06.0 by issuing the operator's sharded `CREATE DATABASE`
+directly (the CRD only admits `defaultCypherLanguage: "25"`):
 
-The shard sub-databases (`<name>-g000`, `<name>-p000`, …) are created by Neo4j
-internally, so no `SET DEFAULT LANGUAGE` clause from the operator reaches
-them. **If they inherit the server default rather than the parent
-database's, the server setting is load-bearing and the conflict is real.** The
-documentation does not say which, and this must not be assumed in either
-direction.
+| Sharded family, server on `CYPHER_25` | parent | `-g000` | `-p000`, `-p001` |
+|---|---|---|---|
+| `SET DEFAULT LANGUAGE CYPHER 5` | `CYPHER 5` | `CYPHER 5` | `CYPHER 5` |
+| `SET DEFAULT LANGUAGE CYPHER 25` | `CYPHER 25` | `CYPHER 25` | `CYPHER 25` |
+| no clause | `CYPHER 25` (server) | `CYPHER 25` | `CYPHER 25` |
 
-Run on the family Phase 3 already builds, before implementing either branch:
+**The shard sub-databases inherit the parent's language, not the server's.**
+And sharding does not need Cypher 25 at run time: on the Cypher 5 family, a
+write, a read of a property stored on a property shard, an explicit `CYPHER 25`
+query and Cypher-5-only syntax (`id()`) all succeeded. With the servers
+restarted **without** the setting at all, a new sharded family with no
+language clause came up `CYPHER 5` throughout and read and wrote property-shard
+data normally. Only the sharding DDL is Cypher 25 — and it already goes
+through `Cypher25()` (§3).
 
-```cypher
-SHOW DATABASES YIELD name, ... WHERE name STARTS WITH '<logical>'
-```
+**Decision — the first branch:**
 
-confirming the column that exposes a database's default language on the target
-version — the point is to read the language of `-g000` and `-p000`, not just
-the parent. A minute on an existing sharding cluster settles it.
+- Remove `db.query.default_language` from `buildPropertyShardingConfig` and
+  from the sharding validator's `requiredSettings`. Enabling sharding stops
+  changing the language of every database created on the cluster afterwards.
+- Make the sharded `CREATE` **always** emit `SET DEFAULT LANGUAGE CYPHER 25`
+  (defaulting `spec.defaultCypherLanguage`, whose CRD enum is already `"25"`
+  only), so a sharded family keeps Cypher 25 whatever the server default is.
+- Ship it with the §5 field, not before: after the change a sharding cluster's
+  *non-sharded* databases created later get the server default (Cypher 5 on
+  CalVer unless `serverDefaultCypherLanguage` says otherwise). Existing
+  databases are unaffected (§5.8). Release-note it.
 
-#### The two branches
+The earlier note that "enabling property sharding changes the query language
+for every application" overstated it: per §5.8 it changes the language of
+databases **created after** sharding is enabled — including, on a cluster
+created with sharding on, the default `neo4j` database. The sharding guide
+says so (#413).
 
-**If the shards inherit the parent's language** — remove
-`db.query.default_language` from `buildPropertyShardingConfig`. Sharding then
-needs no server-wide setting, the two features stop competing, there is no
-conflict to resolve, and sharding stops silently changing the query language
-for every application on the cluster.
+## 6. Resolved: the prefix is not version-conditional
 
-**If the shards inherit the server default** — the setting is required, and
-`propertySharding.enabled: true` with `serverDefaultCypherLanguage: CYPHER_5`
-must be **rejected**, naming both fields. Not silently resolved in either
-direction: sharding winning would change query semantics without being asked,
-which is the failure mode this whole design exists to prevent. This also
-matches the existing validator, which already refuses a contradicting override
-rather than overriding it:
+The question was whether §3's helper should apply `CYPHER 25` only on CalVer.
+It has since bitten, in the other direction: the remote-alias builder
+prefixed **every** remote alias, and the 5.26 LTS rejects the directive
+itself (`25 is not a valid option for cypher version`), so stored-credential
+remote constituents never worked on 5.26 — fixed in #414, verified on 5.26.31
+and 2026.08.1.
 
-```go
-return fmt.Errorf("property sharding requires %s=%s, got %s=%s", ...)
-```
-
-Either way, a sharding cluster stamps `CYPHER_25`, so `status` reflects what
-the server is actually doing.
-
-#### Two notes that stand regardless
-
-- The sharded `CREATE` uses a **hardcoded** `"CYPHER 25 "` literal rather than
-  the `cypher25Prefix` constant — a fourth user of the convention that does not
-  reference it. More evidence for §3.1.
-- Enabling property sharding *already* changes the query language for every
-  application on that cluster. The examples list the setting under "required
-  settings (applied automatically)" without saying so; the sharding guide
-  should, independent of this design.
-
-## 6. Open question
-
-
-Should the prefix be conditional on the server being CalVer, or unconditional?
-
-(On §3's prefix helper, not the field above.) Unconditional is simpler and the constant's comment already says prepending is
-safe when the default is already 25. But on the **5.26 LTS** a `CYPHER 25`
-prefix is not merely redundant — the LTS has no Cypher 25, so the prefix is a
-parse error. Every current user of the prefix is a CalVer-only feature
-(auth rules, replicas, composites' `DEFAULT LANGUAGE`), so the question has
-not bitten yet.
-
-**Recommendation:** make the helper take the resolved server `*Version` and
-apply the prefix only when `IsCalver`. That way a future 25-only statement on a
-mixed-version deployment fails with a capability error rather than a syntax
-error.
+The answer that came out of it: `Cypher25()` wraps **only statements whose
+syntax exists only in Cypher 25**, and a statement that must also run on 5.26
+is never wrapped. Whether a Cypher-25-only feature may be used on a given
+server is a *validation* question, answered where every other capability gate
+is (e.g. OIDC forwarding is refused on 5.26 at apply time) — not something the
+prefix helper should decide by silently dropping the directive.
+`TestCypher25Guard` pins the first half, and
+`TestRemoteAliasStatementPinsCypher25OnlyForOIDC` the second.

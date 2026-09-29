@@ -224,28 +224,25 @@ config:
   internal.dbms.sharded_property_database.allow_external_shard_access: "false"
 ```
 
-!!! warning "Enabling sharding changes the query language for every application"
+!!! warning "Enabling sharding sets the language of databases created afterwards"
     `db.query.default_language` is a **server-wide** setting, not a sharding
-    one. With `CYPHER_25`, every database on the cluster that has no default
-    language of its own — including the default `neo4j` database and any
-    database created without `defaultCypherLanguage` — runs queries as
-    **Cypher 25** unless a query starts with an explicit `CYPHER 5` prefix.
-    That reaches every application talking to the cluster, not only the ones
-    using the sharded database.
+    one, and Neo4j applies it when a database is **created**: a database
+    created without a default language of its own gets the server's, keeps
+    it, and never re-reads the setting (measured on 2026.06.0). So with
+    `CYPHER_25`:
 
-    Before enabling sharding on a cluster that already serves Cypher 5
-    applications:
+    - databases created **after** sharding is enabled, without their own
+      language, run queries as **Cypher 25** unless a query starts with
+      `CYPHER 5`. On a cluster created with sharding on, that includes the
+      default `neo4j` database;
+    - databases that **already exist** when you enable sharding keep the
+      language they have — enabling it moves nothing.
 
-    - pin those databases to Cypher 5 with
-      `ALTER DATABASE <name> SET DEFAULT LANGUAGE CYPHER 5`. For a database
-      not created yet, `defaultCypherLanguage: "5"` on its `Neo4jDatabase`
-      does the same — but the operator applies that field only when it
-      creates the database, never to one that already exists; or
-    - have those applications prefix their queries with `CYPHER 5`; or
-    - run the sharded database on its own cluster.
-
-    The setting is read at server start, so it takes effect with the rollout
-    that enables sharding.
+    To keep a database on Cypher 5, give it its own language:
+    `defaultCypherLanguage: "5"` on a `Neo4jDatabase` the operator has not
+    created yet (the field is applied only at creation), or
+    `ALTER DATABASE <name> SET DEFAULT LANGUAGE CYPHER 5` on an existing one.
+    Applications can also prefix their queries with `CYPHER 5`.
 
 #### Optional Performance Tuning
 
