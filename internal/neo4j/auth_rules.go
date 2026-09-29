@@ -25,19 +25,6 @@ import (
 	neo4j "github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-// cypher25Prefix must be prepended to EVERY statement whose syntax is a Cypher
-// 25 language feature. Neo4j 2026.x defaults the system database to Cypher 5
-// unless explicitly opted in, and the failure is not a warning — the server
-// cannot parse the statement and reports it as invalid input, which reads as
-// though the feature did not exist.
-//
-// Current users: AUTH RULE (here) and CREATE REPLICA DATABASE (replicas.go).
-// The second was missed until the v1.15.0 journey ran it against a real
-// 2026.08 server; if you add a third, prefix it.
-//
-// Prepending the directive is safe even when the database default is already 25.
-const cypher25Prefix = "CYPHER 25 "
-
 // AuthRuleInfo is the projection of one row of `SHOW AUTH RULES`. Used by the
 // Neo4jAuthRule controller to diff desired vs. observed state.
 type AuthRuleInfo struct {
@@ -66,8 +53,8 @@ func (c *Client) ShowAuthRule(ctx context.Context, ruleName string) (*AuthRuleIn
 	// enabled, and roles (a list of strings). Filtering by name keeps the
 	// driver round-trip small even on large clusters.
 	result, err := session.Run(ctx,
-		cypher25Prefix+"SHOW AUTH RULES YIELD name, condition, enabled, roles WHERE name = $name "+
-			"RETURN name, condition, enabled, roles",
+		Cypher25("SHOW AUTH RULES YIELD name, condition, enabled, roles WHERE name = $name "+
+			"RETURN name, condition, enabled, roles"),
 		map[string]any{"name": ruleName},
 	)
 	if err != nil {
@@ -102,8 +89,8 @@ func (c *Client) ListAuthRules(ctx context.Context) ([]AuthRuleInfo, error) {
 	defer session.Close(ctx)
 
 	result, err := session.Run(ctx,
-		cypher25Prefix+"SHOW AUTH RULES YIELD name, condition, enabled, roles "+
-			"RETURN name, condition, enabled, roles ORDER BY name",
+		Cypher25("SHOW AUTH RULES YIELD name, condition, enabled, roles "+
+			"RETURN name, condition, enabled, roles ORDER BY name"),
 		nil,
 	)
 	if err != nil {
@@ -146,12 +133,12 @@ func (c *Client) CreateOrReplaceAuthRule(ctx context.Context, ruleName, conditio
 	if !enabled {
 		enabledClause = "SET ENABLED false"
 	}
-	query := fmt.Sprintf(
-		cypher25Prefix+"CREATE OR REPLACE AUTH RULE `%s` SET CONDITION %s %s",
+	query := Cypher25(fmt.Sprintf(
+		"CREATE OR REPLACE AUTH RULE `%s` SET CONDITION %s %s",
 		escapeBackticks(ruleName),
 		condition,
 		enabledClause,
-	)
+	))
 	if _, err := session.Run(ctx, query, nil); err != nil {
 		return fmt.Errorf("failed to create or replace auth rule %s: %w", ruleName, err)
 	}
@@ -182,11 +169,11 @@ func (c *Client) AlterAuthRule(ctx context.Context, ruleName string, setConditio
 			clauses = append(clauses, "SET ENABLED false")
 		}
 	}
-	query := fmt.Sprintf(
-		cypher25Prefix+"ALTER AUTH RULE `%s` %s",
+	query := Cypher25(fmt.Sprintf(
+		"ALTER AUTH RULE `%s` %s",
 		escapeBackticks(ruleName),
 		strings.Join(clauses, " "),
-	)
+	))
 	if _, err := session.Run(ctx, query, nil); err != nil {
 		return fmt.Errorf("failed to alter auth rule %s: %w", ruleName, err)
 	}
@@ -202,7 +189,7 @@ func (c *Client) DropAuthRuleIfExists(ctx context.Context, ruleName string) erro
 	})
 	defer session.Close(ctx)
 
-	query := fmt.Sprintf(cypher25Prefix+"DROP AUTH RULE `%s` IF EXISTS", escapeBackticks(ruleName))
+	query := Cypher25(fmt.Sprintf("DROP AUTH RULE `%s` IF EXISTS", escapeBackticks(ruleName)))
 	if _, err := session.Run(ctx, query, nil); err != nil {
 		return fmt.Errorf("failed to drop auth rule %s: %w", ruleName, err)
 	}
@@ -222,11 +209,11 @@ func (c *Client) GrantRolesToAuthRule(ctx context.Context, ruleName string, role
 	defer session.Close(ctx)
 
 	roleList := joinBacktickedIdentifiers(roles)
-	query := fmt.Sprintf(
-		cypher25Prefix+"GRANT ROLES %s TO AUTH RULE `%s`",
+	query := Cypher25(fmt.Sprintf(
+		"GRANT ROLES %s TO AUTH RULE `%s`",
 		roleList,
 		escapeBackticks(ruleName),
-	)
+	))
 	if _, err := session.Run(ctx, query, nil); err != nil {
 		return fmt.Errorf("failed to grant roles to auth rule %s: %w", ruleName, err)
 	}
@@ -246,11 +233,11 @@ func (c *Client) RevokeRolesFromAuthRule(ctx context.Context, ruleName string, r
 	defer session.Close(ctx)
 
 	roleList := joinBacktickedIdentifiers(roles)
-	query := fmt.Sprintf(
-		cypher25Prefix+"REVOKE ROLES %s FROM AUTH RULE `%s`",
+	query := Cypher25(fmt.Sprintf(
+		"REVOKE ROLES %s FROM AUTH RULE `%s`",
 		roleList,
 		escapeBackticks(ruleName),
-	)
+	))
 	if _, err := session.Run(ctx, query, nil); err != nil {
 		return fmt.Errorf("failed to revoke roles from auth rule %s: %w", ruleName, err)
 	}

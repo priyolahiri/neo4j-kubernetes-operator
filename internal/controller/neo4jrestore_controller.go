@@ -245,7 +245,7 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 		logger.Error(err, "Failed to get target cluster")
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to get target cluster: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Validate Neo4j version compatibility (5.26+ or 2025.01+)
@@ -307,7 +307,7 @@ func (r *Neo4jRestoreReconciler) handleDeletion(ctx context.Context, restore *ne
 	// Clean up restore jobs
 	if err := r.cleanupRestoreJobs(ctx, restore); err != nil {
 		logger.Error(err, "Failed to cleanup restore jobs")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Tear down the PVC seed proxy stack (owner-ref GC would also get it,
@@ -323,7 +323,7 @@ func (r *Neo4jRestoreReconciler) handleDeletion(ctx context.Context, restore *ne
 	if restore.Spec.InstanceRef != "" {
 		if err := r.clearRestoreInProgressAnnotation(ctx, restore, restore.Spec.InstanceRef, restore.Namespace); err != nil {
 			logger.Error(err, "Failed to clear restore-in-progress annotation during finalizer cleanup")
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -350,13 +350,13 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	if restore.Status.ObservedGeneration != 0 && restore.Status.ObservedGeneration != restore.Generation {
 		if err := r.clearCypherRestoreIssued(ctx, restore); err != nil {
 			logger.Error(err, "Failed to clear stale cypher-restore-issued annotation")
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 		// A stale seed-proxy wait anchor from the previous attempt would
 		// instantly expire the new attempt's proxy wait (#227).
 		if err := r.clearSeedProxyWaitStarted(ctx, restore); err != nil {
 			logger.Error(err, "Failed to clear stale seed-proxy wait anchor")
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 	if snap := resolvedBackupSnapshot(restore); snap != nil &&
@@ -365,7 +365,7 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 			"pinned", snap.BackupRef, "current", restore.Spec.Source.BackupRef)
 		if err := r.clearResolvedSource(ctx, restore); err != nil {
 			logger.Error(err, "Failed to clear stale resolved source")
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -402,7 +402,7 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	if lookupErr != nil {
 		logger.Error(lookupErr, "Failed to determine target type")
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Target lookup failed: %v", lookupErr))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, lookupErr
+		return ctrl.Result{}, lookupErr
 	}
 	// All-databases restore (#222/#288). CLUSTER targets drive one per-database
 	// in-place Cypher restore per pass via the resolved per-database artifact map
@@ -444,7 +444,7 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PreRestore, hookPhasePreRestore); err != nil {
 			logger.Error(err, "Pre-restore hooks failed")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Pre-restore hooks failed: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -456,7 +456,7 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		if err := r.setRestoreInProgressAnnotation(ctx, restore, cluster); err != nil {
 			logger.Error(err, "Failed to set restore-in-progress annotation")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to coordinate cluster scale-down: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 		if err := r.stopCluster(ctx, cluster); err != nil {
 			logger.Error(err, "Failed to stop cluster")
@@ -467,7 +467,7 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 				logger.Error(cleanupErr, "Failed to clear restore-in-progress annotation after stopCluster failure")
 			}
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to stop cluster: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	} else {
 		// stopCluster=false means "the cluster is already quiesced — don't
@@ -509,7 +509,7 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		// instance back up and release the annotation (#218).
 		r.restoreClusterAfterFailure(ctx, restore, cluster)
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to create restore job: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Update status
@@ -564,7 +564,7 @@ func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, resto
 			return ctrl.Result{}, nil
 		}
 		logger.Error(err, "Failed to get restore job")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Decide on terminal Job CONDITIONS, not raw pod counts: with BackoffLimit>0
@@ -633,7 +633,7 @@ func (r *Neo4jRestoreReconciler) handleRestoreSuccess(ctx context.Context, resto
 		if err := r.startCluster(ctx, cluster); err != nil {
 			logger.Error(err, "Failed to start cluster after restore")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to start cluster after restore: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 
 		// Release the cluster controller's hold on Replicas now that we've
@@ -650,7 +650,7 @@ func (r *Neo4jRestoreReconciler) handleRestoreSuccess(ctx context.Context, resto
 		if err := r.waitForClusterReady(ctx, restore, cluster); err != nil {
 			logger.Error(err, "Standalone not ready after restore")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Cluster not ready after restore: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -677,7 +677,7 @@ func (r *Neo4jRestoreReconciler) handleRestoreSuccess(ctx context.Context, resto
 		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PostRestore, hookPhasePostRestore); err != nil {
 			logger.Error(err, "Post-restore hooks failed")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Post-restore hooks failed: %v", err))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -2849,7 +2849,7 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 			} else {
 				logger.Error(err, "Failed to resolve backupRef")
 				r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to resolve backupRef: %v", err))
-				return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+				return ctrl.Result{}, err
 			}
 		}
 	}
@@ -2990,7 +2990,7 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 	if err != nil {
 		logger.Error(err, "Failed to create Neo4j client for cluster Cypher restore")
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to connect to cluster: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 	defer func() { _ = neo4jClient.Close() }()
 
@@ -2998,7 +2998,7 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 	if err != nil {
 		logger.Error(err, "Failed to check database existence")
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Database existence check failed: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	imageTag := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
@@ -3049,7 +3049,7 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		if recreateErr != nil {
 			logger.Error(recreateErr, "dbms.recreateDatabase with seedURI failed")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("recreateDatabase failed: %v", recreateErr))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, recreateErr
+			return ctrl.Result{}, recreateErr
 		}
 		if !applied {
 			// Version doesn't support recreate. CREATE DATABASE OPTIONS{seedURI}
@@ -3066,7 +3066,7 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		// rather than holding the worker.
 		if err := r.markCypherRestoreIssued(ctx, restore); err != nil {
 			logger.Error(err, "Failed to mark cypher restore issued")
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 		r.updateRestoreStatus(ctx, restore, StatusRunning,
 			fmt.Sprintf("Database %q recreate issued; waiting for seed to converge online (seedURI=%s)", restore.Spec.Database, seedURI))
@@ -3083,7 +3083,7 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 	if createErr := neo4jClient.CreateDatabaseWithSeedURIOptions(ctx, restore.Spec.Database, seedURI, false); createErr != nil {
 		logger.Error(createErr, "CREATE DATABASE OPTIONS{seedURI} failed")
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("CREATE DATABASE OPTIONS{seedURI} failed: %v", createErr))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, createErr
+		return ctrl.Result{}, createErr
 	}
 
 	if failMsg, ferr := neo4jClient.DatabaseSeedFailureMessage(ctx, restore.Spec.Database); ferr == nil && failMsg != "" {
@@ -3103,7 +3103,7 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		// poll (bounded by spec.timeout), which Completes on online and
 		// Fails at the deadline with the live diagnosis.
 		if err := r.markCypherRestoreIssued(ctx, restore); err != nil {
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 		r.updateRestoreStatus(ctx, restore, StatusRunning,
 			fmt.Sprintf("Database %q created; waiting for the seed to converge online", restore.Spec.Database))

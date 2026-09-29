@@ -215,7 +215,7 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 		logger.Error(err, "Failed to get target cluster")
 		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to get target cluster: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Validate Neo4j version compatibility (5.26+ or 2025.01+)
@@ -242,7 +242,7 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// createBackupCronJob, which always asserts suspend=false.
 		if err := r.suspendBackupCronJob(ctx, backup); err != nil {
 			logger.Error(err, "Failed to suspend backup CronJob")
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 		r.updateBackupStatus(ctx, backup, "Suspended", "Backup is suspended")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -275,13 +275,13 @@ func (r *Neo4jBackupReconciler) handleDeletion(ctx context.Context, backup *neo4
 	// Clean up backup jobs
 	if err := r.cleanupBackupJobs(ctx, backup); err != nil {
 		logger.Error(err, "Failed to cleanup backup jobs")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Clean up backup artifacts (if retention policy requires it)
 	if err := r.cleanupBackupArtifacts(ctx, backup); err != nil {
 		logger.Error(err, "Failed to cleanup backup artifacts")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Remove finalizer
@@ -313,7 +313,7 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 		}
 		logger.Error(err, "Failed to create backup CronJob")
 		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to create CronJob: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Update status
@@ -559,7 +559,7 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 	// still sheds a leftover CronJob.
 	if err := r.cleanupOrphanedCronJob(ctx, backup); err != nil {
 		logger.Error(err, "Failed to delete orphaned backup CronJob")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// One-time backups are terminal once Completed or Failed. Without this
@@ -612,7 +612,7 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 		}
 		logger.Error(err, "Failed to create backup job")
 		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to create backup job: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Update status

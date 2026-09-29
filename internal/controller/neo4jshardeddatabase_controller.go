@@ -115,7 +115,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		logger.Info("Initializing Neo4jShardedDatabase status")
 		if err := r.updateStatus(ctx, &shardedDatabase, "Validating", "Validating sharded database configuration", nil); err != nil {
 			logger.Error(err, "Failed to initialize status")
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -134,7 +134,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	if shardedDatabase.Status.Phase == "Validating" {
 		if err := r.updateStatus(ctx, &shardedDatabase, "Creating", "Configuration validated, preparing to create sharded database", nil); err != nil {
 			logger.Error(err, "Failed to update status after validation")
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -147,7 +147,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Cluster not found: %v", err), nil); statusErr != nil {
 			logger.Error(statusErr, "Failed to update status after cluster lookup failure")
 		}
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Verify cluster supports property sharding. Capability (spec/version)
@@ -185,7 +185,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Failed to create Neo4j client: %v", err), nil); statusErr != nil {
 			logger.Error(statusErr, "Failed to update status after client creation failure")
 		}
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 	defer neo4jClient.Close()
 
@@ -305,7 +305,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Reconcile failed: %v", err), nil); statusErr != nil {
 			logger.Error(statusErr, "Failed to update status after reconcile failure")
 		}
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Update status to Ready if everything succeeded. When the destructive
@@ -322,7 +322,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 	if err := r.updateStatus(ctx, &shardedDatabase, "Ready", "Sharded database is operational", &ready); err != nil {
 		logger.Error(err, "Failed to update status to Ready")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 	if destructive {
 		if err := r.recordDestructiveRestoreGeneration(ctx, &shardedDatabase); err != nil {
@@ -483,7 +483,7 @@ func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Co
 // of the sharded DB Cypher path is Cypher 25 so the prefix stays
 // consistent (CLAUDE.md rule 30 territory).
 func (r *Neo4jShardedDatabaseReconciler) dropShardedDatabaseIfExists(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
-	query := fmt.Sprintf("CYPHER 25 DROP DATABASE `%s` IF EXISTS DESTROY DATA WAIT", shardedDB.Spec.Name)
+	query := neo4j.Cypher25(fmt.Sprintf("DROP DATABASE `%s` IF EXISTS DESTROY DATA WAIT", neo4j.EscapeBackticks(shardedDB.Spec.Name)))
 	logger := log.FromContext(ctx).WithValues("database", shardedDB.Spec.Name, "query", query)
 	logger.Info("Executing destructive DROP DATABASE for replaceExisting")
 	return client.ExecuteCypher(ctx, "system", query)
@@ -502,8 +502,8 @@ func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Conte
 
 	var query strings.Builder
 
-	// Start with Cypher 25 prefix and CREATE DATABASE
-	fmt.Fprintf(&query, "CYPHER 25 CREATE DATABASE `%s`", shardedDB.Spec.Name)
+	// CREATE DATABASE; the Cypher 25 directive is applied once the statement is built
+	fmt.Fprintf(&query, "CREATE DATABASE `%s`", neo4j.EscapeBackticks(shardedDB.Spec.Name))
 
 	// Add IF NOT EXISTS if specified
 	if shardedDB.Spec.IfNotExistsEffective() {
@@ -569,7 +569,8 @@ func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Conte
 		query.WriteString(" WAIT")
 	}
 
-	queryStr := query.String()
+	// Cypher 25 syntax end to end (SET GRAPH SHARD, SET PROPERTY SHARDS).
+	queryStr := neo4j.Cypher25(query.String())
 	logger.Info("Executing sharded database creation", "query", queryStr)
 
 	// Execute the command with retry logic

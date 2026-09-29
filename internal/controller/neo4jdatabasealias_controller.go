@@ -104,7 +104,7 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 	target, err := ResolveClusterRef(ctx, r.Client, alias.Namespace, alias.Spec.ClusterRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve cluster ref")
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if !target.Found {
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(alias.Spec.ClusterRef))
@@ -124,7 +124,7 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, "")
 		r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	defer func() {
 		if err := nc.Close(); err != nil {
@@ -193,7 +193,7 @@ func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias
 
 	target, err := ResolveClusterRef(ctx, r.Client, alias.Namespace, alias.Spec.ClusterRef)
 	if err != nil {
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if !target.Found {
 		controllerutil.RemoveFinalizer(alias, Neo4jDatabaseAliasFinalizer)
@@ -239,7 +239,19 @@ func (r *Neo4jDatabaseAliasReconciler) fail(ctx context.Context, alias *neo4jv1b
 	}
 	r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonAliasFailed, msg, "")
 	r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonAliasFailed, msg)
-	return ctrl.Result{RequeueAfter: requeue}, err
+	// A rejection the server will repeat (Neo.ClientError.*: a malformed
+	// statement, a missing role or user, an argument it refuses) cannot
+	// resolve without someone changing something, and error backoff would
+	// retry it within milliseconds and bury the one event that explains it.
+	// It is already in status and the event above; retry it on the fixed
+	// interval. Anything else — a connectivity blip, a transient conflict —
+	// goes back as an error, to controller-runtime's backoff. Same rule as
+	// Neo4jReplicaDatabase's fail(). Never return a requeue WITH an error:
+	// controller-runtime ignores it (TestNoRequeueWithError).
+	if isPermanentServerRejection(err) {
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	}
+	return ctrl.Result{}, err
 }
 
 func (r *Neo4jDatabaseAliasReconciler) setStatus(

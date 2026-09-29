@@ -243,9 +243,11 @@ type RemoteConstituentAuth struct {
 // Two things here are not obvious and were established against a live server:
 //
 //   - `OIDC CREDENTIAL FORWARDING` is CYPHER 25 syntax. On a system database
-//     defaulting to Cypher 5 it fails as an unsupported language feature, not
-//     as a missing feature — the same trap that made CREATE REPLICA DATABASE
-//     look absent. Hence cypher25Prefix, exactly as the replica builders use.
+//     defaulting to Cypher 5 it fails as an unsupported language feature
+//     (42I67), not as a missing feature — the same trap that made CREATE
+//     REPLICA DATABASE look absent. So that form, and only that form, goes
+//     through Cypher25; see buildRemoteAliasStatement for why the rest must
+//     not.
 //   - The PASSWORD accepts a Cypher PARAMETER. That matters: the operator never
 //     has to interpolate a credential into statement text, so the password
 //     cannot reach the query log. Identifiers still cannot be parameterised,
@@ -276,10 +278,6 @@ func buildRemoteAliasStatement(
 	params := map[string]any{}
 
 	var b strings.Builder
-	// CYPHER 25 on every remote-alias statement, not only the OIDC one: the
-	// clause set is Cypher 25's, and pinning the language makes the statement
-	// independent of whatever the system database's default happens to be.
-	b.WriteString(cypher25Prefix)
 	fmt.Fprintf(&b, head,
 		escapeBackticks(composite), escapeBackticks(constituent), escapeBackticks(targetDatabase))
 
@@ -311,6 +309,16 @@ func buildRemoteAliasStatement(
 		b.WriteString("}")
 	}
 
+	// The Cypher 25 directive goes on the OIDC form ONLY. The stored-
+	// credential form (USER/PASSWORD, with or without DRIVER) is Cypher 5
+	// syntax that both lines parse, while the 5.26 LTS rejects the directive
+	// itself — "25 is not a valid option for cypher version" — so prefixing
+	// every remote alias, as this used to, made stored-credential remote
+	// constituents impossible on 5.26, the one line they are for once OIDC is
+	// gated to CalVer. Verified on 5.26.31 and 2026.08.1.
+	if auth.OIDCForwarding {
+		return Cypher25(b.String()), params
+	}
 	return b.String(), params
 }
 
