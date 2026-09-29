@@ -368,7 +368,7 @@ func (r *Neo4jPluginReconciler) handleDeletion(ctx context.Context, plugin *neo4
 	// Uninstall plugin
 	if err := r.uninstallPlugin(ctx, plugin); err != nil {
 		logger.Error(err, "Failed to uninstall plugin")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Remove finalizer
