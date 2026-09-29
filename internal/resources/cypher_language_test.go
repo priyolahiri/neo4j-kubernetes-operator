@@ -130,7 +130,8 @@ func TestPropertyShardingNoLongerForcesTheServerLanguage(t *testing.T) {
 	c.Status.EffectiveCypherLanguage = CypherLanguage25
 	conf := buildNeo4jConfigForEnterprise(c)
 	assert.Equal(t, []string{"db.query.default_language=CYPHER_25"}, languageLines(conf))
-	shardingBlock := conf[strings.Index(conf, "# Property Sharding Configuration"):]
+	_, shardingBlock, found := strings.Cut(conf, "# Property Sharding Configuration")
+	assert.True(t, found, "the property-sharding block is rendered")
 	assert.Contains(t, shardingBlock, "db.query.default_language=CYPHER_25",
 		"written inside the sharding block, where releases up to v1.16.0 wrote it")
 }
