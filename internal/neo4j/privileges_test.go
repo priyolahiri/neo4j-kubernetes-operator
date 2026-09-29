@@ -477,3 +477,38 @@ func TestPrivilegeDatabaseTargets_StillSeesBothScopes(t *testing.T) {
 	require.Equal(t, []string{"foo"}, PrivilegeDatabaseTargets("GRANT ACCESS ON DATABASE foo TO r"))
 	require.Equal(t, []string{"foo"}, PrivilegeDatabaseTargets("GRANT MATCH {*} ON GRAPH foo NODES * TO r"))
 }
+
+func TestReplacePrivilegeGrantee(t *testing.T) {
+	tests := []struct {
+		name, in, role, want string
+	}{
+		{"plain", "GRANT ACCESS ON DATABASE sales TO reader", "p",
+			"GRANT ACCESS ON DATABASE sales TO `p`"},
+		{"backticked grantee", "GRANT ACCESS ON DATABASE sales TO `sales-reader`", "p",
+			"GRANT ACCESS ON DATABASE sales TO `p`"},
+		{"lower-case to, trailing semicolon", "grant access on database sales to reader ;", "p",
+			"grant access on database sales TO `p`"},
+		{"database literally named TO", "GRANT ACCESS ON DATABASE `TO` TO reader", "p",
+			"GRANT ACCESS ON DATABASE `TO` TO `p`"},
+		{"TO inside a PBAC string", "GRANT MATCH {*} ON GRAPH g FOR (n) WHERE n.x = ' TO y' TO reader", "p",
+			"GRANT MATCH {*} ON GRAPH g FOR (n) WHERE n.x = ' TO y' TO `p`"},
+		{"no space before backtick", "GRANT ACCESS ON DATABASE sales TO`reader`", "p",
+			"GRANT ACCESS ON DATABASE sales TO `p`"},
+		{"new role needs escaping", "GRANT ACCESS ON DATABASE sales TO reader", "a`b",
+			"GRANT ACCESS ON DATABASE sales TO `a``b`"},
+		{"stored row round-trips", "GRANT MATCH {*} ON GRAPH `sales` NODE * TO `probe`", "salesReader",
+			"GRANT MATCH {*} ON GRAPH `sales` NODE * TO `salesReader`"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReplacePrivilegeGrantee(tt.in, tt.role)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+
+	_, err := ReplacePrivilegeGrantee("GRANT ACCESS ON DATABASE sales", "p")
+	require.Error(t, err)
+	_, err = ReplacePrivilegeGrantee("GRANT ACCESS ON DATABASE `x TO y`", "p")
+	require.Error(t, err, "a TO inside backticks is not the grantee boundary")
+}

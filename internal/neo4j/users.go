@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -492,6 +493,70 @@ func (c *Client) ShowRolePrivileges(ctx context.Context, roleName string) ([]Pri
 		return nil, fmt.Errorf("failed reading privileges for role %s: %w", roleName, err)
 	}
 	return out, nil
+}
+
+// ProbePrivilegeRendering returns the rows Neo4j stores for one privilege
+// statement, by granting it to a throwaway role, reading that role's
+// privileges back, and dropping it.
+//
+// Neo4j does not store a privilege as written. It expands every list into one
+// row per item (`ON GRAPHS a, b NODES X, Y` is four rows), singularises most
+// plurals (NODES, DATABASES, INDEXES — but not SHOW SERVERS), renames some
+// verbs (EXECUTE FUNCTIONS becomes EXECUTE USER DEFINED FUNCTION), fills in
+// defaults (a graph privilege with no segment becomes a NODE * row and a
+// RELATIONSHIP * row), lower-cases database names, and resolves an alias to
+// its target database. Measured on 5.26.31 and 2026.08.1, identical on both.
+// Comparing spec text against SHOW ROLE PRIVILEGES therefore needs the
+// server's own rendering; a rewrite table in the operator would lag the
+// grammar and, under enforcePrivileges, revoke whatever it failed to predict.
+//
+// stmt must already be granted TO probeRole (see ReplacePrivilegeGrantee).
+// Every step runs in one session, so the read is causally after the grant on
+// a cluster too. The role is dropped even if the context is cancelled.
+func (c *Client) ProbePrivilegeRendering(ctx context.Context, probeRole, stmt string) ([]string, error) {
+	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+		AccessMode:   neo4j.AccessModeWrite,
+		DatabaseName: "system",
+	})
+	defer c.closeSession(ctx, session)
+
+	quoted := "`" + escapeBackticks(probeRole) + "`"
+	run := func(ctx context.Context, q string) (neo4j.ResultWithContext, error) {
+		return session.Run(ctx, q, nil)
+	}
+	consume := func(ctx context.Context, q string) error {
+		res, err := run(ctx, q)
+		if err != nil {
+			return err
+		}
+		_, err = res.Consume(ctx)
+		return err
+	}
+
+	if err := consume(ctx, "CREATE ROLE "+quoted); err != nil {
+		return nil, fmt.Errorf("create probe role: %w", err)
+	}
+	defer func() {
+		dropCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_ = consume(dropCtx, "DROP ROLE "+quoted+" IF EXISTS")
+	}()
+
+	if err := consume(ctx, stmt); err != nil {
+		return nil, err
+	}
+	res, err := run(ctx, "SHOW ROLE "+quoted+" PRIVILEGES AS COMMANDS YIELD command RETURN command")
+	if err != nil {
+		return nil, fmt.Errorf("read probe role privileges: %w", err)
+	}
+	var rows []string
+	for res.Next(ctx) {
+		rows = append(rows, stringValue(res.Record(), "command"))
+	}
+	if err := res.Err(); err != nil {
+		return nil, fmt.Errorf("read probe role privileges: %w", err)
+	}
+	return rows, nil
 }
 
 func (c *Client) showRolePrivilegesLegacy(ctx context.Context, roleName string) ([]PrivilegeCommand, error) {

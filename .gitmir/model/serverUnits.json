@@ -302,7 +302,7 @@
     "id": "su-neo4jrole",
     "name": "Neo4jRole Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jRole CRD: creates the Neo4j role, canonicalises spec.privileges against SHOW ROLE PRIVILEGES AS COMMANDS to diff them, and applies GRANT/DENY statements verbatim while deriving REVOKE statements textually for privileges no longer desired.",
+    "description": "Reconciler for the Neo4jRole CRD: creates the Neo4j role, normalises spec.privileges to Neo4j's stored form (probing each statement once on a throwaway role, cached per target, image and alias map) and diffs that against SHOW ROLE PRIVILEGES AS COMMANDS, and applies GRANT/DENY statements verbatim while deriving REVOKE statements textually for privileges no longer desired.",
     "entityIds": [
       "ent-neo4jrole"
     ],
@@ -313,6 +313,7 @@
     ],
     "moduleId": "mod-security",
     "paths": [
+      "internal/controller/neo4jrole_normalise.go",
       "internal/controller/neo4jrole_controller.go"
     ]
   },
