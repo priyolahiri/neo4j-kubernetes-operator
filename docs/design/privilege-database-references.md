@@ -17,24 +17,38 @@ privileges:
 `analytics` is a substring of free text, not a reference. So:
 
 - Nothing ties the privilege to the `Neo4jDatabase` that owns that name.
-- Renaming or deleting the database leaves the role granting on nothing —
-  **Neo4j accepts a grant on a database that does not exist, without
-  complaint.**
-- There is no ordering, no cascade, and no admission-time rejection.
+- A name the cluster does not have is only discovered at apply time. Neo4j
+  **refuses** a grant on a database that does not exist (5.26: `Database 'x'
+  does not exist`; CalVer: `42N00 graph reference not found`), and **drops** a
+  role's privileges along with a dropped database — verified on 5.26.31 and
+  2026.08.1. (An earlier draft said Neo4j accepts such a grant in silence. It
+  does not.)
+- So a misspelt or not-yet-created database, or one dropped from under a role,
+  leaves part of the role's spec simply absent from the server.
+- There is no ordering and no cascade into the CR.
 
-The operator compensates after the fact: `PrivilegesResolve=False` when a
-privilege names a database the cluster does not have, and reason
-`GraphPrivilegeOnComposite` when it names a composite as a `GRAPH` (accepted,
-persisted, inert). Both exist *because* the name is text.
+The operator compensates after the fact. It skips a grant that names a
+missing database rather than failing on it every reconcile, and reports it as
+`PrivilegesResolve=False/DatabaseNotFound`; it warns on the role
+(`PrivilegeTargetDropped`) when a `Neo4jDatabase` it grants on is deleted
+(#408); and it reports `GraphPrivilegeOnComposite` when a `GRAPH` privilege
+names a composite (accepted, persisted, inert). All of it exists *because* the
+name is text, extracted by `PrivilegeDatabaseTargets`, which is deliberately
+conservative and can miss.
 
 ## 2. Why it is a string today
 
 The controller reconciles by reading `SHOW ROLE <name> PRIVILEGES AS
-COMMANDS`, canonicalising both sides, and applying the difference. **Neo4j
-emits privileges as Cypher strings.** Keeping the desired state in the same
-representation makes the diff a string comparison against the server's own
-output. `DerivePrivilegeRevoke` follows from the same choice: revokes are
-derived textually rather than asked of the user.
+COMMANDS` and applying the difference against the desired state. **Neo4j
+emits privileges as Cypher strings** — but not the strings you wrote: it
+expands lists, singularises plurals, fills in default segments, renames verbs
+and resolves aliases. So the desired side is Neo4j's own rendering of each
+spec statement, learned from the operator's grants (learn mode, the default)
+or from a throwaway probe role (probe mode) — #409, #410. Keeping the desired
+state as Cypher is what makes that possible: the server renders it, and the
+diff is a comparison between two server renderings. `DerivePrivilegeRevoke`
+follows from the same choice: revokes are derived textually rather than asked
+of the user.
 
 The alternative — a structured spec — needs the round trip:
 
@@ -78,8 +92,9 @@ Parsing is only needed to turn *Neo4j's output* back into structure. It is not
 needed to let a user express a reference.
 
 Add an **optional structured form** alongside the string form. The operator
-renders it to Cypher; the diff is unchanged, because the rendered string is
-canonicalised against `SHOW … AS COMMANDS` exactly as a hand-written one is.
+renders it to Cypher, and from there it is an ordinary statement: normalised
+to Neo4j's stored form and diffed exactly like a hand-written one. The
+renderer's output format does not matter — only that Neo4j accepts it.
 
 ```yaml
 spec:
@@ -114,8 +129,10 @@ object-reference semantics. Be precise about what that does and does not buy:
 
 **It does buy** — none of which needs a parser:
 
-- **Admission-time rejection** of a privilege naming a database that does not
-  exist, instead of a `PrivilegesResolve=False` condition afterwards.
+- **Refusal before any grant** of a privilege naming a database that does not
+  exist, by the inline validator (there are no admission webhooks — invariant
+  1), as a clear validation error on the field instead of a skip plus a
+  `PrivilegesResolve=False` condition.
 - **Exactness.** The check reads a field instead of extracting a name from
   text. `PrivilegeDatabaseTargets` is deliberately conservative and feeds a
   warning precisely because it can be wrong; a field cannot.
@@ -130,7 +147,9 @@ first two:
 - **Rename following.** A name is a spelling. Rename the database and the
   privilege still names the old one; you get a rejection or a condition, not a
   fix.
-- **Ownership or cascade.** Deleting a database does not revoke anything.
+- **Ownership or cascade.** Deleting a database makes Neo4j drop its
+  privileges, but nothing cascades into the `Neo4jRole`: its spec still asks
+  for them.
 - Anything at all for privileges left in the string form.
 
 ### 4.2 Scope
@@ -149,9 +168,9 @@ to be complete.
 | risk | mitigation |
 |---|---|
 | Two ways to express one privilege | Reject a CR where a `privilegeRules` entry renders to a statement already present in `privileges` — same canonical form, caught by the canonicaliser we already have |
-| Rendered Cypher must canonicalise identically to `SHOW` output | Directly testable: render → canonicalise → compare against the server's own emission, in the existing integration suite |
+| Rendered Cypher must match what Neo4j stores | No longer a risk: since #409/#410 every statement, rendered or hand-written, is compared by Neo4j's own stored form. The renderer only has to emit Cypher Neo4j accepts; the fixture-replay tests cover the stored forms |
 | Scope creep toward "model everything" | The table in §4.1 is the contract; new verbs need a decision, not a reflex |
-| Users assume a ref means cascade-delete | It does not. Deleting a database does not revoke privileges — document explicitly |
+| Users assume a name field means cascade-delete | It does not. Neo4j drops a dropped database's privileges, but the role's spec keeps asking for them, and the role reports the database missing — document explicitly |
 
 ## 6. What this does not fix
 
@@ -167,12 +186,13 @@ fact; refusing a bad privilege at apply time is worth the API surface.
 **Decided — a name, not a CR ref.** See §4.1. Follows the operator's existing
 convention and works for databases it does not manage.
 
-**Still open:**
+**Resolved since the first draft:**
 
-1. Should `Neo4jDatabase` deletion *warn* when a role still references it?
-   Useful independently of this design and far cheaper than it — worth doing
-   whether or not the structured form is built.
-2. Does the rendered statement need to reproduce the operator's own
-   canonical form exactly, or merely canonicalise to the same value? The
-   latter is sufficient for the diff and is what the tests should assert;
-   pinning the former would couple the renderer to a formatting detail.
+1. *Should `Neo4jDatabase` deletion warn when a role still references it?*
+   Yes — built in #408 (`PrivilegeTargetDropped`, on each affected role and
+   once on the database).
+2. *Must the rendered statement reproduce the canonical form exactly?* Moot.
+   The diff compares Neo4j's stored renderings (#409/#410), so the renderer
+   only has to emit Cypher the server accepts.
+
+**Still open:** nothing blocking. The field list in §4.2 is the build scope.

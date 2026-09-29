@@ -224,6 +224,29 @@ config:
   internal.dbms.sharded_property_database.allow_external_shard_access: "false"
 ```
 
+!!! warning "Enabling sharding changes the query language for every application"
+    `db.query.default_language` is a **server-wide** setting, not a sharding
+    one. With `CYPHER_25`, every database on the cluster that has no default
+    language of its own — including the default `neo4j` database and any
+    database created without `defaultCypherLanguage` — runs queries as
+    **Cypher 25** unless a query starts with an explicit `CYPHER 5` prefix.
+    That reaches every application talking to the cluster, not only the ones
+    using the sharded database.
+
+    Before enabling sharding on a cluster that already serves Cypher 5
+    applications:
+
+    - pin those databases to Cypher 5 with
+      `ALTER DATABASE <name> SET DEFAULT LANGUAGE CYPHER 5`. For a database
+      not created yet, `defaultCypherLanguage: "5"` on its `Neo4jDatabase`
+      does the same — but the operator applies that field only when it
+      creates the database, never to one that already exists; or
+    - have those applications prefix their queries with `CYPHER 5`; or
+    - run the sharded database on its own cluster.
+
+    The setting is read at server start, so it takes effect with the rollout
+    that enables sharding.
+
 #### Optional Performance Tuning
 
 ```yaml
