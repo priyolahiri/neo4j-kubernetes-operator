@@ -375,7 +375,8 @@ func TestLearnStateRoundTripsThroughStatus(t *testing.T) {
 }
 
 func TestSetPrivilegeNormalisation(t *testing.T) {
-	defer func() { privilegeNormalisationMode = PrivilegeNormalisationProbe }()
+	defer func() { privilegeNormalisationMode = PrivilegeNormalisationLearn }()
+	assert.True(t, (&Neo4jRoleReconciler{}).learnMode(), "learn is the default")
 	require.NoError(t, SetPrivilegeNormalisation("learn"))
 	assert.True(t, (&Neo4jRoleReconciler{}).learnMode())
 	assert.False(t, (&Neo4jRoleReconciler{PrivilegeNormalisation: "probe"}).learnMode())

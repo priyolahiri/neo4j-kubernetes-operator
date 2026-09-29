@@ -1906,7 +1906,7 @@
     "name": "Learn Role Privileges",
     "serverUnitId": "su-neo4jrole",
     "operation": "business_action",
-    "description": "Learn mode (--privilege-normalisation=learn) alternative to the probe: reconcileLearned()/learnDesired() learn each spec statement's stored rows from the operator's own grant (before/after diff), persist them in status.privilegeRenderings BEFORE any revoke, never revoke status.unattributedPrivileges, and re-learn on scope change, a vanished unattributed row, or revocation of a removed statement's rows. Fails loudly when the installed CRD prunes these status fields (internal/controller/neo4jrole_learn.go).",
+    "description": "Learn mode (--privilege-normalisation=learn, the default; the probe is opt-in): reconcileLearned()/learnDesired() learn each spec statement's stored rows from the operator's own grant (before/after diff), persist them in status.privilegeRenderings BEFORE any revoke, never revoke status.unattributedPrivileges, and re-learn on scope change, a vanished unattributed row, or revocation of a removed statement's rows. Fails loudly when the installed CRD prunes these status fields (internal/controller/neo4jrole_learn.go).",
     "readsFieldIds": [
       "f-neo4jrole-privileges",
       "f-neo4jrole-status-privilege-renderings",

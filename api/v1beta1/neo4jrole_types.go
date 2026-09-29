@@ -128,9 +128,9 @@ type Neo4jRoleStatus struct {
 	PrivilegeDrift bool `json:"privilegeDrift,omitempty"`
 
 	// PrivilegeRenderings records how Neo4j stored each spec.privileges
-	// statement, learned from the operator's own GRANTs. Populated only when
-	// the operator runs with --privilege-normalisation=learn; in the default
-	// probe mode the rendering is cached in memory instead.
+	// statement, learned from the operator's own GRANTs. Populated in learn
+	// mode, the default; with --privilege-normalisation=probe the rendering is
+	// cached in memory instead.
 	// +optional
 	PrivilegeRenderings []PrivilegeRendering `json:"privilegeRenderings,omitempty"`
 

@@ -97,7 +97,7 @@ The following table lists the configurable parameters of the Neo4j Operator char
 | `watchNamespaces` | Namespaces/patterns to watch (when mode is `namespaces`) | `[]` |
 | `developmentMode` | Enable development mode | `false` |
 | `logLevel` | Log level: `debug`, `info`, `warn`, `error` | `info` |
-| `privilegeNormalisation` | How `Neo4jRole` privileges are matched to Neo4j's stored form: `probe` (short-lived `operator_privilege_probe_*` roles, exact) or `learn` (learns from the operator's own grants; never revokes rows it cannot attribute). See [user role management](../../docs/user_guide/user_role_management.md). | `probe` |
+| `privilegeNormalisation` | How `Neo4jRole` privileges are matched to Neo4j's stored form: `learn` (learns from the operator's own grants; never revokes rows it cannot attribute; needs this chart's CRDs) or `probe` (short-lived `operator_privilege_probe_*` roles, exact, visible in the security log). See [user role management](../../docs/user_guide/user_role_management.md). | `learn` |
 
 ### RBAC Configuration
 

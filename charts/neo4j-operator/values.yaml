@@ -41,15 +41,17 @@ kubernetesClusterName: ""
 
 # How Neo4jRole privileges are matched to the form Neo4j stores them in (Neo4j
 # rewrites statements: lists expanded, plurals singularised, aliases resolved).
-#   probe (default) — each distinct statement is granted once to a short-lived
-#                     role named operator_privilege_probe_<random>, read back and
-#                     dropped. Exact for every row. Those roles appear in
-#                     Neo4j's security log.
-#   learn           — learns from the operator's own grants instead; writes
-#                     nothing extra. Rows it cannot attribute (a role's
-#                     pre-existing privileges, for one) are reported, never
-#                     revoked. See docs/user_guide/user_role_management.md.
-privilegeNormalisation: probe
+#   learn (default) — learns from the operator's own grants; writes nothing
+#                     extra. Rows it cannot attribute (a role's pre-existing
+#                     privileges, including every existing role after an
+#                     upgrade) are reported, never revoked. Needs this
+#                     chart's CRDs — `helm upgrade` does not update them.
+#   probe           — each distinct statement is granted once to a short-lived
+#                     role named operator_privilege_probe_<random>, read back
+#                     and dropped. Exact for every row, but those roles appear
+#                     in Neo4j's security log.
+# See docs/user_guide/user_role_management.md.
+privilegeNormalisation: learn
 
 serviceAccount:
   # Specifies whether a service account should be created

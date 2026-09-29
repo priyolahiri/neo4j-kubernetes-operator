@@ -35,10 +35,11 @@ import (
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 )
 
-// Learn mode (--privilege-normalisation=learn): the same goal as the probe in
-// neo4jrole_normalise.go — diff against how Neo4j STORED each statement, not
-// the spec text — for environments that will not accept the probe's
-// short-lived roles in their security log.
+// Learn mode (--privilege-normalisation=learn, the DEFAULT): the same goal as
+// the probe in neo4jrole_normalise.go — diff against how Neo4j STORED each
+// statement, not the spec text — without the probe's short-lived roles, which
+// land in the security log. That was judged not acceptable as a default; the
+// probe stays available as an opt-in for exact attribution.
 //
 // Instead of probing, it learns from the operator's own GRANT on the real
 // role: read the role's rows, grant, read again, and the new rows are the
@@ -69,7 +70,7 @@ const (
 	PrivilegeNormalisationLearn = "learn"
 )
 
-var privilegeNormalisationMode = PrivilegeNormalisationProbe
+var privilegeNormalisationMode = PrivilegeNormalisationLearn
 
 // SetPrivilegeNormalisation selects how every Neo4jRole reconciler in this
 // process learns Neo4j's stored form of a privilege. Called once from main.

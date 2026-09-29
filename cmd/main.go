@@ -181,12 +181,12 @@ func main() {
 		kubernetesClusterName = flag.String("kubernetes-cluster-name", "", "Name of the Kubernetes cluster this operator runs in; emitted as the k8s_cluster metric label (default: unset, label empty)")
 
 		// How Neo4jRole reconcilers learn Neo4j's stored form of a privilege.
-		// "probe" grants each statement once to a short-lived role; "learn"
-		// learns from the operator's own grants, for environments that will
-		// not accept those roles in their security log. See
+		// "learn" (default) learns from the operator's own grants; "probe"
+		// grants each statement once to a short-lived role — exact, but those
+		// roles land in the security log, which is why it is opt-in. See
 		// internal/controller/neo4jrole_learn.go.
-		privilegeNormalisation = flag.String("privilege-normalisation", controller.PrivilegeNormalisationProbe,
-			"How Neo4jRole privileges are matched to Neo4j's stored form: probe (short-lived probe roles) or learn (learn from the operator's own grants)")
+		privilegeNormalisation = flag.String("privilege-normalisation", controller.PrivilegeNormalisationLearn,
+			"How Neo4jRole privileges are matched to Neo4j's stored form: learn (default; learn from the operator's own grants) or probe (short-lived probe roles, exact but visible in the security log)")
 
 		// Development mode specific flags
 		// Must stay in sync with the dev controller registry in
