@@ -236,6 +236,37 @@ spec:
 
 `copyOf` is consulted only when the role does not yet exist. Once created, `.privileges` is the source of truth for ongoing reconciliation.
 
+### Privileges as fields instead of Cypher
+
+For the common cases you can write privileges as structured rules instead of
+Cypher strings. The operator renders each one to a statement and reconciles it
+exactly like the string form:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jRole
+metadata:
+  name: analytics-reader
+spec:
+  clusterRef: my-cluster
+  name: analytics_reader
+  privilegeRules:
+    - grant: ACCESS
+      onDatabase: analytics
+    - grant: MATCH
+      properties: ["*"]
+      onGraph: analytics
+      nodes: ["*"]
+```
+
+Rules cover `ACCESS` on a database and `TRAVERSE`, `READ`, `MATCH` and `WRITE`
+on a graph. Anything else stays in `privileges`, and the two can be combined in
+one role. Because the database is a field, a misspelt or not-yet-created one is
+reported precisely — `PrivilegesResolve=False` names
+`spec.privilegeRules[0].onDatabase` — and the role picks the database up as
+soon as its `Neo4jDatabase` appears. The full field reference is in the
+[Neo4jRole API reference](../api_reference/neo4jrole.md#privilegerule).
+
 ## Privilege drift reconciliation
 
 The role controller treats `.privileges` as the source of truth. On every reconcile it:

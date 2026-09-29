@@ -32,6 +32,7 @@ The `Neo4jRole` Custom Resource Definition (CRD) provides declarative management
 | `name` | `string` | Role name in Neo4j. Defaults to `metadata.name`. Pattern `^[a-zA-Z][a-zA-Z0-9_]*$`. |
 | `copyOf` | `string` | Existing role to seed privileges from at creation time only (`CREATE ROLE name AS COPY OF other`). Ignored on subsequent reconciles. |
 | `privileges` | `[]string` | Desired set of `GRANT` and `DENY` statements. Each entry must be a complete Cypher statement starting with `GRANT` or `DENY` and ending with `TO <spec.name>`. |
+| `privilegeRules` | [`[]PrivilegeRule`](#privilegerule) | Privileges in structured form, rendered to Cypher by the operator and then reconciled exactly like `privileges`. Combine freely with `privileges`; a rule that renders to a statement already in `privileges` is refused. |
 | `enforcePrivileges` | `boolean` | Reconcile drift back to spec. Default `true`. When `false`, the controller applies missing privileges but never revokes anything added out-of-band. |
 | `adoptBuiltin` | `boolean` | Allow `name` to be a built-in role (`PUBLIC`, `reader`, `editor`, `publisher`, `architect`, `admin`). Default `false`. Adopted roles are never dropped on CR delete. |
 | `deletionPolicy` | `string` | One of `Delete` (default) or `Retain`. With `Retain`, deleting the CR releases the finalizer without dropping the role from Neo4j. |
@@ -58,6 +59,42 @@ The `Neo4jRole` Custom Resource Definition (CRD) provides declarative management
 | `PrivilegesSynced` | `PrivilegesMatch`, `PrivilegesDrifted`, `UnattributedPrivileges` | True when live privileges match `spec.privileges`. `Unknown`/`UnattributedPrivileges` (learn mode, the default) means the role holds rows the operator cannot attribute to a spec statement and so will not revoke; the message lists them. |
 | `PrivilegesResolve` | `AllDatabasesResolve`, `NoDatabaseScopedPrivileges`, `DatabaseNotFound`, `GraphPrivilegeOnComposite` | True when every database named by a privilege exists on this cluster (or is an alias for one). **False means those privileges are not on the role**: Neo4j refuses a grant on a database that does not exist, and drops a role's privileges along with a dropped database, so the operator skips them — the rest of the role is applied. The usual cause on a DR cluster is the replica's name: a replica of `foo` is called `foo-replica`, and privileges attach to the database, not to an alias. Reported, never enforced: the database may simply not be created yet, and the condition clears on its own when it is. `GraphPrivilegeOnComposite` is the same class of silent failure on a [composite database](neo4jcompositedatabase.md): a GRAPH privilege on a composite is accepted and shown back by `SHOW ROLE PRIVILEGES`, but graph privileges attach to the constituents' target databases, so it does nothing. (`ACCESS ON DATABASE <composite>` is correct and is not flagged.) |
 | `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced cluster. |
+
+### PrivilegeRule
+
+Exactly one of `grant` or `deny`, and exactly one of `onDatabase` or `onGraph`.
+
+| Field | Type | Description |
+|---|---|---|
+| `grant` / `deny` | `string` | `ACCESS`, `TRAVERSE`, `READ`, `MATCH` or `WRITE`. |
+| `onDatabase` | `string` | For `ACCESS`: a database name, or `"*"`. A **name**, not a reference to a `Neo4jDatabase` — the default `neo4j` database, replicas and shards have no CR. |
+| `onGraph` | `string` | For `TRAVERSE`, `READ`, `MATCH`, `WRITE`: a database name, or `"*"`. Not a composite database — graph privileges on a composite are accepted by Neo4j and do nothing. |
+| `properties` | `[]string` | For `READ` and `MATCH` (required there, refused elsewhere): property names, or `["*"]`. |
+| `nodes` / `relationships` / `elements` | `[]string` | For `TRAVERSE`, `READ`, `MATCH`: labels or types, or `["*"]`. At most one of the three; none means nodes and relationships. |
+
+```yaml
+privilegeRules:
+  - grant: ACCESS              # GRANT ACCESS ON DATABASE `analytics` TO `analytics_reader`
+    onDatabase: analytics
+  - grant: MATCH               # GRANT MATCH {*} ON GRAPH `analytics` NODES * TO `analytics_reader`
+    properties: ["*"]
+    onGraph: analytics
+    nodes: ["*"]
+  - deny: READ                 # DENY READ {`ssn`} ON GRAPH `analytics` NODES `Person` TO `analytics_reader`
+    properties: [ssn]
+    onGraph: analytics
+    nodes: [Person]
+```
+
+Everything else — DBMS privileges, `FOR … WHERE` property rules, `IMMUTABLE`,
+`HOME GRAPH` — stays in `privileges`, which is not deprecated.
+
+What the field buys over a string: the database is checked exactly (a string's
+is extracted from Cypher text), a missing one is reported by field path in
+`PrivilegesResolve` (e.g. `spec.privilegeRules[1].onGraph`), and the role
+re-reconciles as soon as a `Neo4jDatabase` of that name appears. What it does
+not buy: it does not follow a rename, and deleting the database does not
+remove the rule — a name is a spelling, not ownership.
 
 ## Validation rules
 

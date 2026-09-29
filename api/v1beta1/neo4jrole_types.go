@@ -64,6 +64,18 @@ type Neo4jRoleSpec struct {
 	// +optional
 	Privileges []string `json:"privileges,omitempty"`
 
+	// PrivilegeRules are privileges in structured form, which the operator
+	// renders to Cypher and then reconciles exactly like a spec.privileges
+	// statement. They cover what people most often write — ACCESS on a
+	// database; TRAVERSE, READ, MATCH and WRITE on a graph — with the
+	// database or graph as a FIELD rather than a substring of Cypher, so the
+	// operator can check it exactly and report a missing one by field path.
+	// Anything else (DBMS privileges, FOR … WHERE rules, IMMUTABLE) stays in
+	// spec.privileges, which is not deprecated. The two may be combined; a
+	// rule that renders to a statement already in spec.privileges is refused.
+	// +optional
+	PrivilegeRules []PrivilegeRule `json:"privilegeRules,omitempty"`
+
 	// EnforcePrivileges controls drift reconciliation for privileges.
 	// When true (default) the controller reverts manual privilege changes
 	// to match .privileges. When false the controller only applies
@@ -146,6 +158,62 @@ type Neo4jRoleStatus struct {
 	// and reports them through PrivilegesSynced instead.
 	// +optional
 	UnattributedPrivileges []string `json:"unattributedPrivileges,omitempty"`
+}
+
+// PrivilegeRule is one structured privilege. Exactly one of grant or deny,
+// and exactly one of onDatabase or onGraph.
+//
+//   - grant: ACCESS            →  GRANT ACCESS ON DATABASE `analytics` TO `role`
+//     onDatabase: analytics
+//   - grant: MATCH             →  GRANT MATCH {*} ON GRAPH `analytics` NODES * TO `role`
+//     properties: ["*"]
+//     onGraph: analytics
+//     nodes: ["*"]
+type PrivilegeRule struct {
+	// Grant is the privilege to grant.
+	// +optional
+	// +kubebuilder:validation:Enum=ACCESS;TRAVERSE;READ;MATCH;WRITE
+	Grant string `json:"grant,omitempty"`
+
+	// Deny is the privilege to deny. A DENY wins over any GRANT of the same
+	// privilege, from any role.
+	// +optional
+	// +kubebuilder:validation:Enum=ACCESS;TRAVERSE;READ;MATCH;WRITE
+	Deny string `json:"deny,omitempty"`
+
+	// OnDatabase is the database for ACCESS — a database name, "*" for all.
+	// A name, like every other database reference in this operator, not a
+	// reference to a Neo4jDatabase: most databases (the default neo4j
+	// database, replicas, shards, ones created out of band) have no CR.
+	// +optional
+	OnDatabase string `json:"onDatabase,omitempty"`
+
+	// OnGraph is the graph for TRAVERSE, READ, MATCH and WRITE — a database
+	// name, "*" for all. Not a composite database: graph privileges on a
+	// composite are accepted by Neo4j and do nothing.
+	// +optional
+	OnGraph string `json:"onGraph,omitempty"`
+
+	// Properties are the properties READ and MATCH apply to; ["*"] for all.
+	// Required for READ and MATCH, not allowed otherwise.
+	// +optional
+	Properties []string `json:"properties,omitempty"`
+
+	// Nodes limits TRAVERSE, READ or MATCH to these node labels; ["*"] for
+	// all. At most one of nodes, relationships and elements; none means both
+	// nodes and relationships, as in Neo4j.
+	// +optional
+	Nodes []string `json:"nodes,omitempty"`
+
+	// Relationships limits TRAVERSE, READ or MATCH to these relationship
+	// types; ["*"] for all.
+	// +optional
+	Relationships []string `json:"relationships,omitempty"`
+
+	// Elements limits TRAVERSE, READ or MATCH to nodes with these labels AND
+	// relationships with these types; ["*"] for all.
+	// +optional
+	Elements []string `json:"elements,omitempty"`
 }
 
 // PrivilegeRendering is the stored form of one spec.privileges statement.
