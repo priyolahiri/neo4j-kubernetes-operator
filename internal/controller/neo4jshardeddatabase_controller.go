@@ -483,7 +483,7 @@ func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Co
 // of the sharded DB Cypher path is Cypher 25 so the prefix stays
 // consistent (CLAUDE.md rule 30 territory).
 func (r *Neo4jShardedDatabaseReconciler) dropShardedDatabaseIfExists(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
-	query := fmt.Sprintf("CYPHER 25 DROP DATABASE `%s` IF EXISTS DESTROY DATA WAIT", shardedDB.Spec.Name)
+	query := neo4j.Cypher25(fmt.Sprintf("DROP DATABASE `%s` IF EXISTS DESTROY DATA WAIT", neo4j.EscapeBackticks(shardedDB.Spec.Name)))
 	logger := log.FromContext(ctx).WithValues("database", shardedDB.Spec.Name, "query", query)
 	logger.Info("Executing destructive DROP DATABASE for replaceExisting")
 	return client.ExecuteCypher(ctx, "system", query)
@@ -496,8 +496,8 @@ func (r *Neo4jShardedDatabaseReconciler) dropShardedDatabaseIfExists(ctx context
 func buildCreateShardedDatabaseCypher(shardedDB *neo4jv1beta1.Neo4jShardedDatabase) (string, map[string]any, error) {
 	var query strings.Builder
 
-	// Start with Cypher 25 prefix and CREATE DATABASE
-	fmt.Fprintf(&query, "CYPHER 25 CREATE DATABASE `%s`", shardedDB.Spec.Name)
+	// CREATE DATABASE; the Cypher 25 directive is applied once the statement is built
+	fmt.Fprintf(&query, "CREATE DATABASE `%s`", neo4j.EscapeBackticks(shardedDB.Spec.Name))
 
 	// Add IF NOT EXISTS if specified
 	if shardedDB.Spec.IfNotExistsEffective() {
@@ -569,7 +569,8 @@ func buildCreateShardedDatabaseCypher(shardedDB *neo4jv1beta1.Neo4jShardedDataba
 		query.WriteString(" WAIT")
 	}
 
-	queryStr := query.String()
+	// Cypher 25 syntax end to end (SET GRAPH SHARD, SET PROPERTY SHARDS).
+	queryStr := neo4j.Cypher25(query.String())
 	return queryStr, params, nil
 }
 
