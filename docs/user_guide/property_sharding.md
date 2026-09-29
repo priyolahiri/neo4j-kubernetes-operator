@@ -41,7 +41,7 @@ Property Sharding decouples data into:
 - **Storage Class**: Persistent storage class must be specified (e.g., `standard`, `fast-ssd`)
 - **Kubernetes Version**: 1.24+ for full operator compatibility
 - **Network Policy**: Allow inter-pod communication on discovery and bolt ports
-- **Cypher Version**: Must use Cypher 25 for sharded database operations
+- **Cypher Version**: sharded databases are created with Cypher 25 as their default language (the operator sets it on the whole sharded family); the rest of the server is governed by `spec.serverDefaultCypherLanguage`
 
 **Performance Considerations:**
 
@@ -144,7 +144,6 @@ spec:
     config:
       # Required configuration (applied automatically if not specified)
       internal.dbms.sharded_property_database.enabled: "true"
-      db.query.default_language: "CYPHER_25"
       internal.dbms.sharded_property_database.allow_external_shard_access: "false"
 
       # Performance tuning (optional)
@@ -167,8 +166,9 @@ spec:
   # Virtual database name (what users connect to)
   name: products
 
-  # Cypher language version: "5" or "25". Property sharding requires Cypher 25,
-  # which is only available on Neo4j 2025.x or later.
+  # The sharded family's default Cypher language. "25" is the only value, and
+  # the operator sets it even when this is omitted: the graph shard and every
+  # property shard inherit it from this, the parent database.
   defaultCypherLanguage: "25"
 
   # Property sharding configuration
@@ -220,29 +220,26 @@ When `propertySharding.enabled` is `true`, these settings are automatically appl
 ```yaml
 config:
   internal.dbms.sharded_property_database.enabled: "true"
-  db.query.default_language: "CYPHER_25"
   internal.dbms.sharded_property_database.allow_external_shard_access: "false"
 ```
 
-!!! warning "Enabling sharding sets the language of databases created afterwards"
-    `db.query.default_language` is a **server-wide** setting, not a sharding
-    one, and Neo4j applies it when a database is **created**: a database
-    created without a default language of its own gets the server's, keeps
-    it, and never re-reads the setting (measured on 2026.06.0). So with
-    `CYPHER_25`:
+Sharding does **not** set the server's default Cypher language. Neo4j docs
+suggest `db.query.default_language=CYPHER_25`, but it is not needed: a sharded
+database's graph shard and property shards inherit the **parent database's**
+language, not the server's, and the operator creates every sharded database
+with `SET DEFAULT LANGUAGE CYPHER 25` (measured on 2026.06.0, including a
+cluster with the server-wide setting removed). The server default is yours to
+set with `spec.serverDefaultCypherLanguage`, as on any other cluster.
 
-    - databases created **after** sharding is enabled, without their own
-      language, run queries as **Cypher 25** unless a query starts with
-      `CYPHER 5`. On a cluster created with sharding on, that includes the
-      default `neo4j` database;
-    - databases that **already exist** when you enable sharding keep the
-      language they have — enabling it moves nothing.
-
-    To keep a database on Cypher 5, give it its own language:
-    `defaultCypherLanguage: "5"` on a `Neo4jDatabase` the operator has not
-    created yet (the field is applied only at creation), or
-    `ALTER DATABASE <name> SET DEFAULT LANGUAGE CYPHER 5` on an existing one.
-    Applications can also prefix their queries with `CYPHER 5`.
+!!! note "Upgrading a sharding cluster"
+    Operator releases up to v1.16.0 set `db.query.default_language=CYPHER_25`
+    server-wide whenever sharding was enabled. An existing sharding cluster
+    keeps it: the operator records what the cluster already runs in
+    `status.effectiveCypherLanguage` and keeps writing it, so upgrading changes
+    nothing and restarts nothing. Set `spec.serverDefaultCypherLanguage:
+    CYPHER_5` if you want databases created from then on to default to
+    Cypher 5 — Neo4j fixes a database's language when it is created, so
+    existing databases keep theirs either way.
 
 #### Optional Performance Tuning
 
@@ -546,7 +543,7 @@ Property sharding cannot be enabled on existing databases. Migration approaches:
 
 - **No in-operator resharding**: Resharding requires offline `neo4j-admin database copy` and recreation
 - **Neo4j version**: Requires 2025.12+ enterprise
-- **Cypher version**: Must use Cypher 25
+- **Cypher version**: sharded databases are Cypher 25 (set by the operator); other databases follow `spec.serverDefaultCypherLanguage`
 - **No online resharding**: Plan shard count carefully
 - **Increased complexity**: More monitoring and operational overhead
 

@@ -1,6 +1,7 @@
 # Design: Cypher language defaulting on CalVer
 
-> **Status:** proposed, not built. No PM roadmap governs this repo
+> **Status:** built — §3 (the `Cypher25()` helper and guard) in #414; §5 and
+> the §5.9 sharding change in the `serverDefaultCypherLanguage` PR. No PM roadmap governs this repo
 > ([wiki: `project-k8s-operator` closed 2026-06-18](#)), so this is a
 > maintainer decision.
 

@@ -37,16 +37,18 @@ When `enabled: true`, these settings are automatically applied:
 ```yaml
 config:
   internal.dbms.sharded_property_database.enabled: "true"
-  db.query.default_language: "CYPHER_25"
   internal.dbms.sharded_property_database.allow_external_shard_access: "false"
 ```
+
+The server's `db.query.default_language` is not among them: the sharded
+database and its shards get `CYPHER 25` from the `SET DEFAULT LANGUAGE` the
+operator always emits on the sharded `CREATE`.
 
 #### Configuration Options
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `internal.dbms.sharded_property_database.enabled` | string | "true" | Enable property sharding database feature |
-| `db.query.default_language` | string | "CYPHER_25" | Default Cypher language version |
 | `internal.dbms.sharded_property_database.allow_external_shard_access` | string | "false" | Allow external access to individual shards |
 | `db.tx_log.rotation.retention_policy` | string | "7 days" | Transaction log retention policy |
 | `internal.dbms.sharded_property_database.property_pull_interval` | string | "10ms" | Property synchronization interval |

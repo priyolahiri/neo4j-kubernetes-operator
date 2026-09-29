@@ -203,6 +203,26 @@ type Neo4jEnterpriseClusterSpec struct {
 	// +optional
 	RemoteAliasKeystore *RemoteAliasKeystoreSpec `json:"remoteAliasKeystore,omitempty"`
 
+	// ServerDefaultCypherLanguage is the Cypher version a database gets when
+	// it is created without one of its own (Neo4j's db.query.default_language).
+	// One of CYPHER_5 or CYPHER_25.
+	//
+	// Unset, the operator picks once and records it in
+	// status.effectiveCypherLanguage: CYPHER_25 for a deployment it creates on
+	// a CalVer image, CYPHER_5 on the 5.26 LTS, and whatever an existing
+	// deployment already runs — so an operator upgrade never changes it.
+	//
+	// Neo4j fixes a database's language when the database is created, so this
+	// applies only to databases created afterwards; change an existing one with
+	// ALTER DATABASE … SET DEFAULT LANGUAGE (or a Neo4jDatabase's
+	// defaultCypherLanguage at creation). Changing this field restarts the
+	// servers. CYPHER_25 needs a CalVer image: the 5.26 LTS has no Cypher 25,
+	// and no db.query.default_language setting either — nothing is written
+	// there. Do not also set db.query.default_language in spec.config.
+	// +optional
+	// +kubebuilder:validation:Enum=CYPHER_5;CYPHER_25
+	ServerDefaultCypherLanguage string `json:"serverDefaultCypherLanguage,omitempty"`
+
 	// ExtraVolumes are additional pod volumes to attach to the Neo4j pod.
 	// Mount points must be wired separately via `extraVolumeMounts`.
 	// Use this for plugin JARs, custom config, per-policy SSL truststores
@@ -914,6 +934,13 @@ type ResourceRequirements struct {
 type Neo4jEnterpriseClusterStatus struct {
 	// Conditions represent the current state of the cluster
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// EffectiveCypherLanguage is the server default Cypher version the
+	// operator resolved for this deployment (see
+	// spec.serverDefaultCypherLanguage): recorded once, so an unset spec never
+	// changes meaning under a running deployment.
+	// +optional
+	EffectiveCypherLanguage string `json:"effectiveCypherLanguage,omitempty"`
 
 	// Replicas shows the current number of replicas
 	Replicas *ReplicaStatus `json:"replicas,omitempty"`
