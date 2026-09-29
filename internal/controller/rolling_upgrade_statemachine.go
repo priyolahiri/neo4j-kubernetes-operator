@@ -650,7 +650,7 @@ func (r *Neo4jEnterpriseClusterReconciler) failUpgrade(
 	r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonUpgradeFailed,
 		"Rolling upgrade failed: %v", cause)
 	_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Rolling upgrade failed: %v", cause))
-	return ctrl.Result{RequeueAfter: r.RequeueAfter}, cause
+	return ctrl.Result{}, cause
 }
 
 // isServerAvailable is a one-shot SHOW SERVERS check: does the server whose
