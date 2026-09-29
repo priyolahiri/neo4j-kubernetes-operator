@@ -4191,7 +4191,7 @@ A <code>composite: true</code> flag would leave most of that spec silently inert
 <tr>
 <td><code>url</code></td>
 <td><code>string</code></td>
-<td><strong>Required.</strong> The remote DBMS's Bolt endpoint, e.g. <code>neo4j+s://other.example.com:7687</code>. Prefer a <code>+s</code> scheme — this connection carries query traffic between two DBMSs, and with stored credentials it carries the authentication too.</td>
+<td><strong>Required.</strong> The remote DBMS's Bolt endpoint, e.g. <code>neo4j+s://other.example.com:7687</code>. Must be <code>neo4j+s://</code> or <code>neo4j+ssc://</code> (self-signed certificate): Neo4j refuses every other scheme for a remote alias — <code>neo4j://</code>, <code>bolt://</code> and even <code>bolt+s://</code> — on the 5.26 LTS and CalVer alike, so the CRD refuses them at apply time.</td>
 </tr>
 <tr>
 <td><code>oidcCredentialForwarding</code></td>
