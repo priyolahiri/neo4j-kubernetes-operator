@@ -462,13 +462,14 @@
     "name": "Drop Database On Deletion",
     "serverUnitId": "su-neo4jdatabase",
     "operation": "delete",
-    "description": "handleDeletion() resolves the host and issues DROP DATABASE for spec.name, releasing the finalizer on success or on a non-retryable failure.",
+    "description": "handleDeletion() resolves the host and issues DROP DATABASE for spec.name, releasing the finalizer on success or on a non-retryable failure. After a successful drop it lists Neo4jRoles on the same clusterRef and warns (non-fatally) on each role whose spec still grants on the dropped database, case-insensitively.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
     "emitsEventIds": [
       "ev-deletion-failed",
-      "ev-database-deleted"
+      "ev-database-deleted",
+      "ev-privilege-target-dropped"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-database"
@@ -1036,7 +1037,7 @@
     "name": "Reconcile Neo4jRole",
     "serverUnitId": "su-neo4jrole",
     "operation": "business_action",
-    "description": "Drives a Neo4jRole to its desired state each loop: validates the spec, creates the role if absent (refusing built-ins without adoptBuiltin), canonicalises spec.privileges against live SHOW ROLE PRIVILEGES AS COMMANDS output to diff them, applies missing GRANT/DENY statements verbatim, and derives REVOKE statements textually for privileges no longer desired (never revoking immutable ones).",
+    "description": "Drives a Neo4jRole to its desired state each loop: validates the spec, creates the role if absent (refusing built-ins without adoptBuiltin), canonicalises spec.privileges against live SHOW ROLE PRIVILEGES AS COMMANDS output to diff them, applies missing GRANT/DENY statements verbatim, and derives REVOKE statements textually for privileges no longer desired (never revoking immutable ones). Before applying, it resolves each missing grant's database names against SHOW DATABASES and aliases (case-insensitively) and skips grants naming a database that does not exist, reporting them via PrivilegesResolve=False instead of failing the reconcile; they apply once the database exists.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1054,7 +1055,8 @@
       "ev-role-deletion-failed",
       "ev-role-sync-failed",
       "ev-privileges-applied",
-      "ev-privileges-drift-kept"
+      "ev-privileges-drift-kept",
+      "ev-privilege-unknown-database"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-security"

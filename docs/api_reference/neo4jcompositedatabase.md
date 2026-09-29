@@ -64,7 +64,7 @@ A `composite: true` flag would leave most of that spec silently inert.
 
 | Field | Type | Description |
 |---|---|---|
-| `url` | `string` | **Required.** The remote DBMS's Bolt endpoint, e.g. `neo4j+s://other.example.com:7687`. Prefer a `+s` scheme — this connection carries query traffic between two DBMSs, and with stored credentials it carries the authentication too. |
+| `url` | `string` | **Required.** The remote DBMS's Bolt endpoint, e.g. `neo4j+s://other.example.com:7687`. Must be `neo4j+s://` or `neo4j+ssc://` (self-signed certificate): Neo4j refuses every other scheme for a remote alias — `neo4j://`, `bolt://` and even `bolt+s://` — on the 5.26 LTS and CalVer alike, so the CRD refuses them at apply time. |
 | `oidcCredentialForwarding` | `bool` | Forwards the querying user's own OIDC token instead of storing any credential. **Requires Cypher 25**, so CalVer only. Mutually exclusive with `credentialsSecretRef`. |
 | `credentialsSecretRef` | `string` | A Secret in this namespace with `username` and `password` keys. **Requires `spec.remoteAliasKeystore` on the deployment.** Mutually exclusive with `oidcCredentialForwarding`. |
 | `driverSettings` | `map[string]string` | Passed through to the alias's `DRIVER` clause (e.g. `connection_timeout`). Emitted verbatim as Cypher map values. |

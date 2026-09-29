@@ -186,7 +186,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	// An empty className is allowed and inherits the cluster default.
 	if exists, scErr := storageClassExists(ctx, r.Client, standalone.Spec.Storage.ClassName); scErr != nil {
 		logger.Error(scErr, "Failed to look up StorageClass", "storageClass", standalone.Spec.Storage.ClassName)
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, scErr
+		return ctrl.Result{}, scErr
 	} else if !exists {
 		msg := fmt.Sprintf("StorageClass %q not found; create it or set spec.storage.className to an existing class (or leave it empty to use the cluster default)", standalone.Spec.Storage.ClassName)
 		logger.Error(fmt.Errorf("storage class not found"), msg)
@@ -204,7 +204,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 
 		// Update status to reflect failure
 		r.setFailedStatus(ctx, standalone, fmt.Sprintf("Reconciliation failed: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	return result, nil
@@ -222,7 +222,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 	// Cleanup resources
 	if err := r.cleanupResources(ctx, standalone); err != nil {
 		logger.Error(err, "Failed to cleanup resources")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Remove finalizer
@@ -283,7 +283,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 	// Check if PVC storage expansion is needed before creating/updating the StatefulSet.
 	if requeue, err := r.reconcileStandaloneStorageExpansion(ctx, standalone); err != nil {
 		logger.Error(err, "Failed to reconcile storage expansion")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	} else if requeue {
 		logger.Info("Storage expansion completed, requeueing to recreate StatefulSet")
 		// The orphan-delete above triggers an Owns(&appsv1.StatefulSet{}) watch

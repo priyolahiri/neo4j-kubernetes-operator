@@ -161,12 +161,13 @@ type RemoteConstituent struct {
 	// URL is the remote DBMS's Bolt endpoint, e.g.
 	// "neo4j+s://other.example.com:7687".
 	//
-	// Prefer a +s (or +ssc) scheme: this connection carries query traffic
-	// between two DBMSs, and with stored native credentials it also carries
-	// the authentication.
+	// Must be neo4j+s:// or neo4j+ssc:// (the latter accepts a self-signed
+	// certificate). Neo4j refuses every other scheme for a remote alias —
+	// neo4j://, bolt:// and even bolt+s:// — with 22N04, on the 5.26 LTS and
+	// CalVer alike, for both authentication modes.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:Pattern=`^(neo4j|bolt)(\+s|\+ssc)?://.+$`
+	// +kubebuilder:validation:Pattern=`^neo4j\+(s|ssc)://.+$`
 	URL string `json:"url"`
 
 	// OIDCCredentialForwarding forwards the querying user's own OIDC token to

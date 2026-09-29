@@ -106,14 +106,14 @@ func (r *Neo4jReplicaPromotionReconciler) Reconcile(ctx context.Context, req ctr
 				EventReasonClusterNotFound, msg, nil)
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 
 	dbName := effectiveReplicaName(replica)
 
 	target, err := ResolveClusterRef(ctx, r.Client, replica.Namespace, replica.Spec.ClusterRef)
 	if err != nil {
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if !target.Found || !target.IsReady() {
 		msg := fmt.Sprintf("%s is not ready to accept a promotion", targetRefDisplay(replica.Spec.ClusterRef))
@@ -127,7 +127,7 @@ func (r *Neo4jReplicaPromotionReconciler) Reconcile(ctx context.Context, req ctr
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		r.setStatus(ctx, promo, neo4jv1beta1.PromotionPhasePending, metav1.ConditionFalse,
 			EventReasonConnectionFailed, msg, nil)
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	defer func() {
 		if err := nc.Close(); err != nil {
@@ -141,7 +141,7 @@ func (r *Neo4jReplicaPromotionReconciler) Reconcile(ctx context.Context, req ctr
 		msg := fmt.Sprintf("could not read database %q before promoting: %v", dbName, err)
 		r.setStatus(ctx, promo, neo4jv1beta1.PromotionPhasePending, metav1.ConditionFalse,
 			EventReasonPromotionFailed, msg, nil)
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if before == nil {
 		msg := fmt.Sprintf("database %q does not exist", dbName)
@@ -183,7 +183,7 @@ func (r *Neo4jReplicaPromotionReconciler) Reconcile(ctx context.Context, req ctr
 		r.setStatus(ctx, promo, neo4jv1beta1.PromotionPhasePromoting, metav1.ConditionFalse,
 			EventReasonPromotionFailed, msg, nil)
 		r.Recorder.Event(promo, corev1.EventTypeWarning, EventReasonPromotionFailed, msg)
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 
 	// CHECK again — confirm from live state rather than trusting the call.

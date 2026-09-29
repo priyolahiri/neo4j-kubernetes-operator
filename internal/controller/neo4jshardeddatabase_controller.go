@@ -115,7 +115,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		logger.Info("Initializing Neo4jShardedDatabase status")
 		if err := r.updateStatus(ctx, &shardedDatabase, "Validating", "Validating sharded database configuration", nil); err != nil {
 			logger.Error(err, "Failed to initialize status")
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -134,7 +134,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	if shardedDatabase.Status.Phase == "Validating" {
 		if err := r.updateStatus(ctx, &shardedDatabase, "Creating", "Configuration validated, preparing to create sharded database", nil); err != nil {
 			logger.Error(err, "Failed to update status after validation")
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -147,7 +147,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Cluster not found: %v", err), nil); statusErr != nil {
 			logger.Error(statusErr, "Failed to update status after cluster lookup failure")
 		}
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Verify cluster supports property sharding. Capability (spec/version)
@@ -185,7 +185,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Failed to create Neo4j client: %v", err), nil); statusErr != nil {
 			logger.Error(statusErr, "Failed to update status after client creation failure")
 		}
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 	defer neo4jClient.Close()
 
@@ -305,7 +305,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Reconcile failed: %v", err), nil); statusErr != nil {
 			logger.Error(statusErr, "Failed to update status after reconcile failure")
 		}
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Update status to Ready if everything succeeded. When the destructive
@@ -322,7 +322,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 	if err := r.updateStatus(ctx, &shardedDatabase, "Ready", "Sharded database is operational", &ready); err != nil {
 		logger.Error(err, "Failed to update status to Ready")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 	if destructive {
 		if err := r.recordDestructiveRestoreGeneration(ctx, &shardedDatabase); err != nil {

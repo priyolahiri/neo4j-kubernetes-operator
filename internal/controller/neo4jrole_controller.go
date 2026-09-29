@@ -111,7 +111,7 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	target, err := ResolveClusterRef(ctx, r.Client, role.Namespace, role.Spec.ClusterRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve target ref")
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if !target.Found {
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(role.Spec.ClusterRef))
@@ -132,7 +132,7 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, false)
 		r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	defer func() {
 		if err := nc.Close(); err != nil {
@@ -171,7 +171,40 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		toRemove = setDifference(current, desired)
 	}
 
+	// Resolve BEFORE applying. Neo4j REFUSES a grant naming a database that
+	// does not exist (5.26: "Database 'x' does not exist"; CalVer: 42N00 graph
+	// reference not found) and removes a role's privileges on a database when
+	// that database is dropped — verified on 5.26 and 2026.08.1.
+	// So a privilege naming a missing database fails to apply on every
+	// reconcile — and because the failure returned before the resolve check,
+	// PrivilegesResolve stayed True, stale, in exactly the case it exists for.
+	// Observed live: 18 failed applies a minute after a single DROP DATABASE.
+	//
+	// Skip those grants and report them instead: they cannot be applied, and
+	// trying only fails the reconcile. They apply on the first reconcile after
+	// the database exists.
+	//
+	// A failure to LIST databases skips nothing: unknown is not missing, and
+	// treating it as missing would silently withhold every grant on a
+	// transient error.
+	unresolvable := map[string]bool{}
+	if known, err := r.resolvableDatabaseNames(ctx, nc); err == nil {
+		for _, canon := range toAdd {
+			for _, name := range neo4jclient.PrivilegeDatabaseTargets(desiredByCanonical[canon]) {
+				if !known[strings.ToLower(name)] {
+					unresolvable[canon] = true
+					break
+				}
+			}
+		}
+	}
+
+	applied := 0
 	for _, canon := range toAdd {
+		if unresolvable[canon] {
+			continue // reported by reportUnresolvedPrivilegeDatabases below
+		}
+		applied++
 		// Execute the original spec text, never the canonical form: canonical
 		// upper-cases bare tokens including unquoted identifiers, so a role/
 		// graph/database named e.g. `users` written unquoted would canonicalise
@@ -210,10 +243,9 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
-	// A privilege can be perfectly in sync with spec and still grant access to
-	// nothing, because Neo4j accepts a grant against a database that does not
-	// exist without a word. Reported, never enforced — see
-	// reportUnresolvedPrivilegeDatabases.
+	// A privilege naming a database that does not exist grants access to
+	// nothing. It was skipped above rather than applied; this reports it.
+	// Reported, never enforced — see reportUnresolvedPrivilegeDatabases.
 	r.reportUnresolvedPrivilegeDatabases(ctx, nc, role, roleName)
 
 	// Re-read for the AppliedPrivileges status field.
@@ -231,9 +263,9 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			"privileges match spec")
 	}
 
-	if len(toAdd)+len(toRemove) > 0 {
+	if applied+len(toRemove) > 0 {
 		r.Recorder.Eventf(role, corev1.EventTypeNormal, EventReasonPrivilegesApplied,
-			"applied %d added / %d revoked privileges", len(toAdd), len(toRemove))
+			"applied %d added / %d revoked privileges", applied, len(toRemove))
 	}
 
 	// Emit RoleReady on the first transition to Ready (avoids spamming the
@@ -243,8 +275,12 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			"Role %q is ready (%d privileges in sync)", roleName, len(final))
 	}
 
-	r.setStatus(ctx, role, "Ready", metav1.ConditionTrue, ConditionReasonRoleReady,
-		fmt.Sprintf("role %q is in sync (%d privileges)", roleName, len(final)), final, drift)
+	readyMsg := fmt.Sprintf("role %q is in sync (%d privileges)", roleName, len(final))
+	if len(unresolvable) > 0 {
+		readyMsg = fmt.Sprintf("role %q is in sync (%d privileges; %d skipped until their database exists, see PrivilegesResolve)",
+			roleName, len(final), len(unresolvable))
+	}
+	r.setStatus(ctx, role, "Ready", metav1.ConditionTrue, ConditionReasonRoleReady, readyMsg, final, drift)
 
 	return ctrl.Result{RequeueAfter: requeue}, nil
 }
@@ -270,7 +306,7 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 
 	target, err := ResolveClusterRef(ctx, r.Client, role.Namespace, role.Spec.ClusterRef)
 	if err != nil {
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if !target.Found {
 		// Cluster gone — release the finalizer.
@@ -313,10 +349,11 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 // reportUnresolvedPrivilegeDatabases warns when spec.privileges name a
 // database this cluster does not have.
 //
-// Neo4j accepts `GRANT ACCESS ON DATABASE does_not_exist TO r` in silence — no
-// error, no warning — so the role reaches Ready, `enforcePrivileges: true`
-// holds it there, and every dashboard stays green while the role grants access
-// to nothing.
+// Neo4j refuses a grant on a database that does not exist, and drops a role's
+// privileges on a database along with the database (verified on 5.26 and
+// 2026.08.1). So such a privilege is skipped at apply time, and without this
+// report the role would sit at Ready, every dashboard green, while part of
+// its spec is simply absent from the server.
 //
 // The case that makes this matter is disaster recovery. A replica of `foo` is
 // named `foo-replica` (Cypher has no RENAME DATABASE), and privileges attach
@@ -381,8 +418,8 @@ func (r *Neo4jRoleReconciler) reportUnresolvedPrivilegeDatabases(
 
 	msg := fmt.Sprintf(
 		"role %q grants privileges on %s, which %s not exist on this cluster and %s not an alias "+
-			"for a database that does. Neo4j accepts such a grant silently, so the role is Ready "+
-			"and those privileges do nothing. On a DR cluster this is usually the replica's name: "+
+			"for a database that does. Those privileges are not applied — they would grant access "+
+			"to nothing — and the rest of the role is. On a DR cluster this is usually the replica's name: "+
 			"a replica of \"foo\" is called \"foo-replica\", and privileges attach to the database, "+
 			"not to an alias — rewrite the database name in spec.privileges. If the database is "+
 			"simply not created yet, this clears by itself once it is.",
@@ -416,7 +453,7 @@ func privilegeDatabaseNames(privileges []string) []string {
 func unresolvedDatabaseNames(named []string, known map[string]bool) []string {
 	var unresolved []string
 	for _, name := range named {
-		if !known[name] {
+		if !known[strings.ToLower(name)] {
 			unresolved = append(unresolved, name)
 		}
 	}
@@ -478,16 +515,21 @@ func (r *Neo4jRoleReconciler) resolvableDatabaseNames(
 	if err != nil {
 		return nil, err
 	}
+	// Keys are lower-cased: Neo4j database names are case-insensitive —
+	// GRANT ACCESS ON DATABASE `ORDERS` lands on `orders`, verified on
+	// 2026.08.1 — so an exact-case lookup would call a correctly written
+	// privilege unresolved. Harmless while this only warned; since unresolved
+	// privileges are now SKIPPED, it would silently drop a valid grant.
 	known := map[string]bool{}
 	for _, db := range databases {
-		known[db.Name] = true
+		known[strings.ToLower(db.Name)] = true
 	}
 	// Aliases are best-effort: a server that cannot list them still gives a
 	// useful answer for databases, and treating that failure as fatal would
 	// suppress the warning entirely.
 	if aliases, err := nc.ShowAliases(ctx); err == nil {
 		for _, a := range aliases {
-			known[a.Name] = true
+			known[strings.ToLower(a.Name)] = true
 		}
 	}
 	return known, nil
@@ -603,7 +645,19 @@ func (r *Neo4jRoleReconciler) fail(ctx context.Context, role *neo4jv1beta1.Neo4j
 	}
 	r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonRoleSyncFailed, msg, nil, false)
 	r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonRoleSyncFailed, msg)
-	return ctrl.Result{RequeueAfter: requeue}, err
+	// A rejection the server will repeat (Neo.ClientError.*: a malformed
+	// statement, a missing role or user, an argument it refuses) cannot
+	// resolve without someone changing something, and error backoff would
+	// retry it within milliseconds and bury the one event that explains it.
+	// It is already in status and the event above; retry it on the fixed
+	// interval. Anything else — a connectivity blip, a transient conflict —
+	// goes back as an error, to controller-runtime's backoff. Same rule as
+	// Neo4jReplicaDatabase's fail(). Never return a requeue WITH an error:
+	// controller-runtime ignores it (TestNoRequeueWithError).
+	if isPermanentServerRejection(err) {
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	}
+	return ctrl.Result{}, err
 }
 
 func (r *Neo4jRoleReconciler) setStatus(

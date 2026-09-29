@@ -59,6 +59,7 @@ const (
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jdatabases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jdatabases/finalizers,verbs=update
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jenterpriseclusters,verbs=get;list;watch
+// +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jroles,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile handles the reconciliation of Neo4jDatabase resources
@@ -176,7 +177,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		logger.Error(err, "Failed to create Neo4j client after retries")
 		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonConnectionFailed,
 			"Failed to connect to Neo4j cluster")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 	defer func() {
 		if err := neo4jClient.Close(); err != nil {
@@ -229,7 +230,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			fmt.Sprintf("Failed to create database: %v", err))
 		r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonCreationFailed,
 			"Failed to create database: %v", err)
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 	duration := time.Since(dbCreateStart)
 	logger.Info("Database creation/verification completed successfully", "database", database.Spec.Name, "duration", duration)
@@ -242,7 +243,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				fmt.Sprintf("Failed to import initial data: %v", err))
 			r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonDataImportFailed,
 				"Failed to import initial data: %v", err)
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+			return ctrl.Result{}, err
 		}
 
 		// Mark data as imported
@@ -336,6 +337,11 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 	}
 
 	r.Recorder.Event(database, corev1.EventTypeNormal, EventReasonDatabaseDeleted, "Database dropped successfully")
+
+	// Only now is it true that a role granting on this database grants on
+	// nothing. Warning before the drop would be wrong whenever the drop then
+	// fails; after it, it is a fact.
+	r.warnRolesStillGranting(ctx, database)
 
 	logger.Info("Removing finalizer from database", "finalizers", database.Finalizers, "deletionTimestamp", database.DeletionTimestamp)
 	controllerutil.RemoveFinalizer(database, DatabaseFinalizer)
@@ -622,4 +628,73 @@ func (r *Neo4jDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
 		}).
 		Complete(r)
+}
+
+// warnRolesStillGranting emits a Warning on every Neo4jRole on this database's
+// cluster whose spec still names it.
+//
+// Dropping a database removes the role privileges that named it (verified on
+// 5.26 and 2026.08.1: SHOW ROLE ... PRIVILEGES comes back empty), and Neo4j
+// then refuses to re-grant them ("does not exist" / 42N00). So the role's spec now
+// asks for privileges that cannot exist. The role controller skips them and
+// reports PrivilegesResolve=False on its next reconcile; this says so at the
+// moment it becomes true, on the object being deleted as well as the role.
+//
+// Non-fatal by construction: it returns nothing, and a failure to list roles
+// is logged, not propagated. A warning must never be able to wedge a
+// finalizer.
+func (r *Neo4jDatabaseReconciler) warnRolesStillGranting(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase) {
+	logger := log.FromContext(ctx)
+
+	var roles neo4jv1beta1.Neo4jRoleList
+	if err := r.List(ctx, &roles, client.InNamespace(database.Namespace)); err != nil {
+		logger.Info("Could not list roles to check for privileges on the dropped database",
+			"database", database.Spec.Name, "error", err.Error())
+		return
+	}
+
+	affected := rolesGrantingOn(roles.Items, database.Spec.ClusterRef, database.Spec.Name)
+	for i := range affected {
+		role := affected[i]
+		r.Recorder.Eventf(role, corev1.EventTypeWarning, EventReasonPrivilegeTargetDropped,
+			"Database %q was dropped, and this role's spec still grants on it. Neo4j removed "+
+				"those privileges with the database and will not re-grant them while it is "+
+				"gone, so they are skipped; remove them from spec.privileges, or recreate the "+
+				"database and they are applied again.", database.Spec.Name)
+	}
+	if len(affected) > 0 {
+		names := make([]string, 0, len(affected))
+		for _, role := range affected {
+			names = append(names, role.Name)
+		}
+		r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonPrivilegeTargetDropped,
+			"Dropped database %q while %d role(s) still grant on it in spec: %s. Neo4j removed "+
+				"those privileges with the database; the roles now ask for grants that cannot "+
+				"exist until it is recreated.", database.Spec.Name, len(names), strings.Join(names, ", "))
+	}
+}
+
+// rolesGrantingOn returns the roles on clusterRef whose privileges name
+// dbName. Pure, so the matching can be tested without a cluster.
+//
+// Compared case-insensitively: Neo4j normalises database names to lower case,
+// so a privilege written `ON DATABASE Sales` targets the database `sales`. A
+// case-sensitive match would miss it and stay silent, which is the one
+// outcome a warning cannot afford. A role on a DIFFERENT cluster naming a
+// database of the same name is unrelated and is never reported.
+func rolesGrantingOn(roles []neo4jv1beta1.Neo4jRole, clusterRef, dbName string) []*neo4jv1beta1.Neo4jRole {
+	var out []*neo4jv1beta1.Neo4jRole
+	for i := range roles {
+		role := &roles[i]
+		if role.Spec.ClusterRef != clusterRef {
+			continue
+		}
+		for _, name := range privilegeDatabaseNames(role.Spec.Privileges) {
+			if strings.EqualFold(name, dbName) {
+				out = append(out, role)
+				break
+			}
+		}
+	}
+	return out
 }

@@ -512,6 +512,13 @@
 - **pinned-by:** no automated guard — GitHub workflow/action YAML is not covered by the `unit-tests` job. Manual check (anchored so it matches real step conditions, not the prose/comments that *document* this rule): `grep -rnE '^[[:space:]]*if:[[:space:]]*failure\(\)' .github/actions/` must return **nothing** (0 today). The caller-side gate lives on the `uses: ./.github/actions/collect-logs` steps in both integration workflows.
 - **enforcement:** convention + code review — **PROSE-ONLY — at risk**. Deliberately not added to `scripts/check-invariants.sh` (that guard is reserved for the 5 constitution invariants; this is CI-harness wiring). Fixed alongside the 2026.04 → 2026.06 CalVer anchor bump.
 
+### id 95 — Never return a requeue Result together with a non-nil error
+- **scope:** every reconciler in `internal/controller/` (all non-test `.go` files).
+- **rule:** A `return` MUST NOT combine `ctrl.Result{RequeueAfter: …}` or `{Requeue: true}` with a non-nil error. Choose `ctrl.Result{}, err` for a transient failure (controller-runtime's error backoff retries it and the error metrics count it), or `ctrl.Result{RequeueAfter: d}, nil` for an expected condition that is already surfaced in status, an event or a log (a spec the user must fix; a server rejection that will repeat). `fail()` helpers route by `isPermanentServerRejection` (`Neo.ClientError.*` → fixed interval, `nil`; anything else → the error).
+- **why:** controller-runtime (v0.25.1) IGNORES the Result whenever the error is non-nil and logs a warning saying so, so every such return meant something other than it said: 99 had accumulated across 15 files, each one a dead delay plus a warning line per occurrence. They were NOT the cause of the Neo4jRole reconcile storm seen with a dropped database (#408) — that rate came from cluster status changes re-enqueuing roles through the dependent watch, which bypasses backoff; #408 fixed it by not attempting the doomed grant. The conversion to `{}, err` is behaviour-neutral for exactly this reason; only the validation returns in the cluster controller and the permanent-rejection branch of the `fail()` helpers changed behaviour, to the fixed interval their authors wrote.
+- **pinned-by:** `TestNoRequeueWithError` (`internal/controller/requeue_with_error_guard_test.go`) parses the package and fails on any such return.
+- **enforcement:** unit test (AST guard).
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

@@ -1018,5 +1018,17 @@
     "name": "UpstreamBackupNotReady",
     "description": "A Neo4jReplicaDatabase's source.upstreamBackupRef resolves to a real Neo4jBackup CR, but it has not yet run a backup (status.replicationPullURI is empty); the replica sits Pending and retries.",
     "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-privilege-target-dropped",
+    "name": "PrivilegeTargetDropped",
+    "description": "Warning emitted when a Neo4jDatabase is dropped while Neo4jRoles on the same cluster still grant on it in spec: one event on each affected role and one on the database naming them. Neo4j removes those privileges with the database and refuses to re-grant them while it is gone (neo4jdatabase_controller.go).",
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-privilege-unknown-database",
+    "name": "PrivilegeNamesUnknownDatabase",
+    "description": "Warning emitted when a Neo4jRole's spec.privileges name a database that does not exist and is not an alias (or grant graph privileges on a composite); the grants are skipped, not applied, and PrivilegesResolve is set False until the database exists (neo4jrole_controller.go).",
+    "moduleId": "mod-security"
   }
 ]
