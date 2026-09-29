@@ -46,6 +46,13 @@ var cypher25OnlySyntax = []*regexp.Regexp{
 // statement.
 var cypher25GuardDirs = map[string]bool{".": false, "../controller": true}
 
+// buildsCypher reports whether fn is a controller statement builder, by the
+// naming convention build…Cypher: it returns a statement a sender runs later,
+// so the directive has to be applied where the syntax is written.
+func buildsCypher(fn *ast.FuncDecl) bool {
+	return strings.HasPrefix(fn.Name.Name, "build") && strings.HasSuffix(fn.Name.Name, "Cypher")
+}
+
 // sendsCypher reports whether fn hands a statement to the server directly.
 func sendsCypher(fn *ast.FuncDecl) bool {
 	sends := false
@@ -87,7 +94,7 @@ func TestCypher25Guard(t *testing.T) {
 					continue
 				}
 				checked++
-				if sendersOnly && !sendsCypher(fn) {
+				if sendersOnly && !sendsCypher(fn) && !buildsCypher(fn) {
 					continue
 				}
 				checkCypher25Func(t, fset, filepath.Base(name), fn)

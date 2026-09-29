@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 )
 
 // ConfigValueHasControlChars reports whether a neo4j.conf value contains a
@@ -257,4 +258,58 @@ func (v *ConfigValidator) validateCloudStorageConfig(key, value string) error {
 var deprecatedSettingPrefixes = map[string]string{
 	"causal_clustering.": "the causal_clustering.* family was removed in Neo4j 5.x — clustering is configured by the operator from spec.topology",
 	"metrics.bolt.":      "the metrics.bolt.* family was removed in Neo4j 5.x — use the server.metrics.* settings instead",
+}
+
+// ValidateServerCypherLanguage checks spec.serverDefaultCypherLanguage and
+// db.query.default_language for ANY deployment kind (design:
+// docs/design/cypher-language-defaulting.md §5). Both aggregators call it, as
+// with ValidateConfigMap: these are properties of Neo4j, not of a Kind.
+//
+//   - CYPHER_25 needs a CalVer image; the 5.26 LTS has no Cypher 25.
+//   - db.query.default_language does not exist on the 5.26 LTS: with strict
+//     config validation the server refuses to start with "Unrecognized
+//     setting". Refused wherever it is set.
+//   - Setting the field AND the key is two answers to one question — refused
+//     when they disagree, so neither silently wins.
+//
+// legacy is each config map that may carry the key, with the path it is
+// reported at (spec.config, and propertySharding.config on a cluster).
+func ValidateServerCypherLanguage(spec, imageTag string, legacy ...ConfigAt) field.ErrorList {
+	var errs field.ErrorList
+	specPath := field.NewPath("spec", "serverDefaultCypherLanguage")
+	calver := false
+	if v, err := neo4j.ParseVersion(imageTag); err == nil {
+		calver = v.IsCalver
+	}
+
+	if spec == "CYPHER_25" && !calver {
+		errs = append(errs, field.Invalid(specPath, spec,
+			fmt.Sprintf("CYPHER_25 needs a CalVer image (2025.x or later); %q is the 5.26 LTS, which has no Cypher 25. "+
+				"Leave the field unset or use CYPHER_5", imageTag)))
+	}
+
+	for _, l := range legacy {
+		value, ok := l.Config["db.query.default_language"]
+		if !ok {
+			continue
+		}
+		keyPath := l.Path.Key("db.query.default_language")
+		switch {
+		case !calver:
+			errs = append(errs, field.Invalid(keyPath, value,
+				"db.query.default_language does not exist on the 5.26 LTS; the server would refuse to start "+
+					"(\"Unrecognized setting\"). Remove it — the LTS runs Cypher 5 only"))
+		case spec != "" && value != spec:
+			errs = append(errs, field.Invalid(keyPath, value,
+				fmt.Sprintf("conflicts with spec.serverDefaultCypherLanguage=%s; set the language in one place — "+
+					"spec.serverDefaultCypherLanguage is the supported one", spec)))
+		}
+	}
+	return errs
+}
+
+// ConfigAt is a config map and the field path it is reported at.
+type ConfigAt struct {
+	Path   *field.Path
+	Config map[string]string
 }

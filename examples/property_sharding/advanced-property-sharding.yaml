@@ -58,7 +58,6 @@ spec:
     config:
       # Required settings (applied automatically)
       internal.dbms.sharded_property_database.enabled: "true"
-      db.query.default_language: "CYPHER_25"
       internal.dbms.sharded_property_database.allow_external_shard_access: "false"
 
       # Performance tuning

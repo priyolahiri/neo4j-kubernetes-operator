@@ -439,6 +439,13 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	}
 	cluster.Status.CrossClusterReplication = ccdrStatus
 
+	// Resolve the server default Cypher language before the ConfigMap that
+	// renders it (spec.serverDefaultCypherLanguage; server_cypher_language.go).
+	if err := r.stampClusterCypherLanguage(ctx, cluster); err != nil {
+		logger.Error(err, "Failed to resolve the server default Cypher language")
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile ConfigMap with immediate updates and pod restarts
 	if err := r.ConfigMapManager.ReconcileConfigMap(ctx, cluster); err != nil {
 		logger.Error(err, "Failed to reconcile ConfigMap")
@@ -2515,9 +2522,11 @@ func (r *Neo4jEnterpriseClusterReconciler) validatePropertyShardingConfiguration
 	}
 
 	// Validate required configuration settings
+	// db.query.default_language is NOT required: shard sub-databases inherit
+	// the parent database's language, and the sharded CREATE sets that
+	// (design §5.9). It is the user's to set, via serverDefaultCypherLanguage.
 	requiredSettings := map[string]string{
 		"internal.dbms.sharded_property_database.enabled":                     "true",
-		"db.query.default_language":                                           "CYPHER_25",
 		"internal.dbms.sharded_property_database.allow_external_shard_access": "false",
 	}
 

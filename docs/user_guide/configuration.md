@@ -248,6 +248,41 @@ config:
   db.logs.query.parameter_logging_enabled: "true"
 ```
 
+### Default Cypher language — use `serverDefaultCypherLanguage`, not `spec.config`
+
+The Cypher version a database gets when it is created without one of its own
+is a first-class field on clusters and standalones:
+
+```yaml
+spec:
+  serverDefaultCypherLanguage: CYPHER_25   # or CYPHER_5
+```
+
+Leave it unset and the operator decides once, then records the answer in
+`status.effectiveCypherLanguage`:
+
+| Deployment | Unset resolves to |
+|---|---|
+| New, on a CalVer image | `CYPHER_25` (written as `db.query.default_language=CYPHER_25`) |
+| New, on the 5.26 LTS | `CYPHER_5` — nothing is written; the setting does not exist on the LTS |
+| Existing, when you upgrade the operator | whatever it already runs — the upgrade changes and restarts nothing |
+
+Three things to know:
+
+- **It sets the language of databases created afterwards.** Neo4j fixes a
+  database's language when the database is created and never re-reads the
+  setting. Change an existing database with
+  `ALTER DATABASE <name> SET DEFAULT LANGUAGE CYPHER 5|25`, or set
+  `defaultCypherLanguage` on a `Neo4jDatabase` before it is created.
+- **Changing the field restarts the servers**, because Neo4j reads the setting
+  at startup.
+- **`CYPHER_25` needs a CalVer image**, and is refused on the 5.26 LTS.
+
+Setting `db.query.default_language` in `spec.config` still works on CalVer —
+it is treated as your explicit choice — but setting both it and the field to
+different values is refused, and on the 5.26 LTS the key is refused outright
+(the server would not start).
+
 ### TLS — operator-managed, off-limits in `spec.config`
 
 TLS is configured via `spec.tls`, not `spec.config`. Setting any of the following keys in `spec.config` is rejected by the validator at apply time:
@@ -344,6 +379,7 @@ You don't need to set these yourself — the operator injects them at pod startu
 - `dbms.cluster.discovery.version=V2_ONLY` (5.26.x only — V2 is the only protocol in CalVer)
 - ME/OTHER bootstrap strategy (server-0 is the preferred bootstrapper)
 - RAFT and routing port advertisement
+- `db.query.default_language`, from `spec.serverDefaultCypherLanguage` (CalVer only; see above)
 
 **Standalone deployments**
 
