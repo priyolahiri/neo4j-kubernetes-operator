@@ -87,26 +87,53 @@ spec:
     - "GRANT TRAVERSE ON GRAPH legacy TO analytics_reader"
   privilegeRules:                   # new, optional
     - grant: ACCESS
-      onDatabase:
-        databaseRef: analytics      # a real reference
+      onDatabase: analytics         # a structured field, not a substring
     - grant: MATCH
       properties: "*"
-      onGraph:
-        databaseRef: analytics
+      onGraph: analytics
       nodes: "*"
 ```
 
-What the reference buys, none of which needs a parser:
+### 4.1 It is a structured field, not a Kubernetes object reference
+
+**Decided:** `onDatabase` / `onGraph` take a database **name**, matching every
+other database reference in this operator — `targetDatabase` on composite
+constituents and aliases, `upstreamDatabase` on replicas,
+`seedSourceDatabase` on sharded databases. Only *clusters* get a CR ref
+(`clusterRef`, `instanceRef`).
+
+That convention exists because most real databases are not `Neo4jDatabase`
+CRs: the default `neo4j` database is deliberately unmanaged, a replica is
+named by the operator rather than by a CR, shard sub-databases are created
+internally by Neo4j, and users create databases out of band. A CR ref would
+work for a minority and force the string form on everyone else — which is the
+problem, not a fix for it.
+
+So the win is **moving the name out of the Cypher string into a field**, not
+object-reference semantics. Be precise about what that does and does not buy:
+
+**It does buy** — none of which needs a parser:
 
 - **Admission-time rejection** of a privilege naming a database that does not
   exist, instead of a `PrivilegesResolve=False` condition afterwards.
-- **A watch**: the role re-reconciles when the database lands, the same way
-  `Neo4jUser` already watches `Neo4jRole`.
-- **Composite awareness at write time** — `onGraph` + a composite target is
-  refusable up front, rather than reported inert later.
-- **Rename detection**, because the ref resolves to an object, not a spelling.
+- **Exactness.** The check reads a field instead of extracting a name from
+  text. `PrivilegeDatabaseTargets` is deliberately conservative and feeds a
+  warning precisely because it can be wrong; a field cannot.
+- **A watch**: the role re-reconciles when the database appears, matched by
+  name — the same shape as `Neo4jUser` watching `Neo4jRole`.
+- **Composite awareness at write time** — `onGraph` naming a composite is
+  refusable up front, rather than reported inert afterwards.
 
-### 4.1 Scope
+**It does not buy** — and an earlier draft of this document wrongly claimed the
+first two:
+
+- **Rename following.** A name is a spelling. Rename the database and the
+  privilege still names the old one; you get a rejection or a condition, not a
+  fix.
+- **Ownership or cascade.** Deleting a database does not revoke anything.
+- Anything at all for privileges left in the string form.
+
+### 4.2 Scope
 
 Model only what people actually write: `ACCESS`, `TRAVERSE`, `READ`, `MATCH`,
 `WRITE` over `DATABASE` and `GRAPH`, with node/relationship/element qualifiers.
@@ -132,13 +159,20 @@ Existing string privileges stay strings. There is no migration, because
 migrating would need the parser this design exists to avoid. A user who wants
 references rewrites those entries by hand.
 
-## 7. Open questions
+## 7. Decisions and what is still open
 
-1. **Is the added API surface worth it**, given `PrivilegesResolve` already
-   *detects* the problem? The difference is refusal versus report — real, but
-   it is one condition versus a new spec shape to maintain forever.
-2. **Does `databaseRef` point at a `Neo4jDatabase` CR, or a database name in
-   the cluster?** A CR ref is stronger but only works for operator-managed
-   databases; plenty of real databases are not.
-3. Should `Neo4jDatabase` deletion *warn* when a role still references it?
-   That is useful independently of this design and much cheaper.
+**Decided — build it.** `PrivilegesResolve` detects the problem after the
+fact; refusing a bad privilege at apply time is worth the API surface.
+
+**Decided — a name, not a CR ref.** See §4.1. Follows the operator's existing
+convention and works for databases it does not manage.
+
+**Still open:**
+
+1. Should `Neo4jDatabase` deletion *warn* when a role still references it?
+   Useful independently of this design and far cheaper than it — worth doing
+   whether or not the structured form is built.
+2. Does the rendered statement need to reproduce the operator's own
+   canonical form exactly, or merely canonicalise to the same value? The
+   latter is sufficient for the diff and is what the tests should assert;
+   pinning the former would couple the renderer to a formatting detail.
