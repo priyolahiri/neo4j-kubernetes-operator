@@ -645,12 +645,19 @@ func (r *Neo4jRoleReconciler) fail(ctx context.Context, role *neo4jv1beta1.Neo4j
 	}
 	r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonRoleSyncFailed, msg, nil, false)
 	r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonRoleSyncFailed, msg)
-	// Return nil, not err. controller-runtime IGNORES RequeueAfter whenever
-	// the error is non-nil and requeues with its rate limiter instead, which
-	// starts at milliseconds — so the 30s this was written to wait never
-	// happened. The failure is not lost: status says Failed and the event
-	// above carries the cause. Same shape as the Aura controllers' fail().
-	return ctrl.Result{RequeueAfter: requeue}, nil
+	// A rejection the server will repeat (Neo.ClientError.*: a malformed
+	// statement, a missing role or user, an argument it refuses) cannot
+	// resolve without someone changing something, and error backoff would
+	// retry it within milliseconds and bury the one event that explains it.
+	// It is already in status and the event above; retry it on the fixed
+	// interval. Anything else — a connectivity blip, a transient conflict —
+	// goes back as an error, to controller-runtime's backoff. Same rule as
+	// Neo4jReplicaDatabase's fail(). Never return a requeue WITH an error:
+	// controller-runtime ignores it (TestNoRequeueWithError).
+	if isPermanentServerRejection(err) {
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	}
+	return ctrl.Result{}, err
 }
 
 func (r *Neo4jRoleReconciler) setStatus(
