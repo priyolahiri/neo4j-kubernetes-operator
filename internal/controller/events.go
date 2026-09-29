@@ -177,6 +177,15 @@ const (
 	// to the database rather than to an alias, and a role copied verbatim
 	// from the upstream is therefore inert exactly when it is needed.
 	EventReasonPrivilegeUnknownDatabase = "PrivilegeNamesUnknownDatabase"
+	// EventReasonPrivilegeTargetDropped — a Neo4jDatabase was just dropped while
+	// a Neo4jRole on the same cluster still grants on it. Emitted at the moment
+	// of the drop, on BOTH objects: on the role because it outlives the
+	// deletion and is where the fix is made, on the database because that is
+	// where someone watching the delete is looking. Neo4j removes the role's
+	// privileges on a dropped database and refuses to re-grant them, so the
+	// role's spec now asks for grants that cannot exist; without this the only
+	// signal is PrivilegesResolve=False on the role's next reconcile.
+	EventReasonPrivilegeTargetDropped = "PrivilegeTargetDropped"
 )
 
 // User and role-binding management events
