@@ -5895,6 +5895,11 @@ cluster reaches <code>Ready</code> — see <a href="../neo4jrestore/"><code>Neo4
 <td>CA bundles to add to Neo4j's JVM truststore (OIDC, LDAPS, plugin downloads, peer-cluster replication)</td>
 </tr>
 <tr>
+<td><code>serverDefaultCypherLanguage</code></td>
+<td><code>string</code></td>
+<td>Cypher version a database gets when it is created without one of its own — Neo4j's <code>db.query.default_language</code>. <code>CYPHER_5</code> or <code>CYPHER_25</code>. <strong>Unset</strong>, the operator picks once and records it in <code>status.effectiveCypherLanguage</code>: <code>CYPHER_25</code> for a deployment it creates on a CalVer image, <code>CYPHER_5</code> on the 5.26 LTS, and whatever an existing deployment already runs — an operator upgrade never changes it. Neo4j fixes a database's language at creation, so this applies only to databases created afterwards; change an existing one with <code>ALTER DATABASE … SET DEFAULT LANGUAGE</code>. Changing the field restarts the servers. <code>CYPHER_25</code> needs a CalVer image, and nothing is ever written on the LTS (the setting does not exist there). Don't also set <code>db.query.default_language</code> in <code>spec.config</code>; the two are refused when they disagree.</td>
+</tr>
+<tr>
 <td><code>remoteAliasKeystore</code></td>
 <td><a href="#remotealiaskeystorespec"><code>RemoteAliasKeystoreSpec</code></a></td>
 <td>Keystore used to encrypt the credentials of remote database aliases that store native credentials — including the remote constituents of a <a href="../neo4jcompositedatabase/"><code>Neo4jCompositeDatabase</code></a>. Required for that mode only; aliases using OIDC credential forwarding store no credential and need no keystore.</td>
@@ -6966,9 +6971,11 @@ downstream <code>Neo4jReplicaDatabase</code> in another Kubernetes cluster:</p>
 <p><strong>Required Configuration</strong> (automatically applied when enabled):</p>
 <ul>
 <li><code>internal.dbms.sharded_property_database.enabled: "true"</code></li>
-<li><code>db.query.default_language: "CYPHER_25"</code></li>
 <li><code>internal.dbms.sharded_property_database.allow_external_shard_access: "false"</code></li>
 </ul>
+<p>Sharding does not set <code>db.query.default_language</code>: shard sub-databases inherit
+the parent database's language, which the operator sets to Cypher 25 on every
+sharded database. The server default is <code>serverDefaultCypherLanguage</code>'s.</p>
 <p><strong>Performance Tuning Options</strong>:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">propertySharding</span><span class="p">:</span>
 </span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
@@ -7862,6 +7869,11 @@ for details.</p>
 <td><code>propertyShardingReady</code></td>
 <td><code>bool</code></td>
 <td>Whether property sharding is configured and ready (Neo4j 2025.12+)</td>
+</tr>
+<tr>
+<td><code>effectiveCypherLanguage</code></td>
+<td><code>string</code></td>
+<td>The server default Cypher version the operator resolved (see <code>spec.serverDefaultCypherLanguage</code>), recorded once so an unset spec never changes meaning under a running cluster</td>
 </tr>
 <tr>
 <td><code>auraFleetManagement</code></td>

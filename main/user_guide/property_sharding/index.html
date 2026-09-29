@@ -4637,7 +4637,7 @@
 <li><strong>Storage Class</strong>: Persistent storage class must be specified (e.g., <code>standard</code>, <code>fast-ssd</code>)</li>
 <li><strong>Kubernetes Version</strong>: 1.24+ for full operator compatibility</li>
 <li><strong>Network Policy</strong>: Allow inter-pod communication on discovery and bolt ports</li>
-<li><strong>Cypher Version</strong>: Must use Cypher 25 for sharded database operations</li>
+<li><strong>Cypher Version</strong>: sharded databases are created with Cypher 25 as their default language (the operator sets it on the whole sharded family); the rest of the server is governed by <code>spec.serverDefaultCypherLanguage</code></li>
 </ul>
 <p><strong>Performance Considerations:</strong></p>
 <ul>
@@ -4727,12 +4727,11 @@
 </span><span id="__span-4-34"><a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a><span class="w">    </span><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-4-35"><a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a><span class="w">      </span><span class="c1"># Required configuration (applied automatically if not specified)</span>
 </span><span id="__span-4-36"><a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a><span class="w">      </span><span class="nt">internal.dbms.sharded_property_database.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
-</span><span id="__span-4-37"><a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a><span class="w">      </span><span class="nt">db.query.default_language</span><span class="p">:</span><span class="w"> </span><span class="s">"CYPHER_25"</span>
-</span><span id="__span-4-38"><a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a><span class="w">      </span><span class="nt">internal.dbms.sharded_property_database.allow_external_shard_access</span><span class="p">:</span><span class="w"> </span><span class="s">"false"</span>
-</span><span id="__span-4-39"><a id="__codelineno-4-39" name="__codelineno-4-39" href="#__codelineno-4-39"></a>
-</span><span id="__span-4-40"><a id="__codelineno-4-40" name="__codelineno-4-40" href="#__codelineno-4-40"></a><span class="w">      </span><span class="c1"># Performance tuning (optional)</span>
-</span><span id="__span-4-41"><a id="__codelineno-4-41" name="__codelineno-4-41" href="#__codelineno-4-41"></a><span class="w">      </span><span class="nt">db.tx_log.rotation.retention_policy</span><span class="p">:</span><span class="w"> </span><span class="s">"7</span><span class="nv"> </span><span class="s">days"</span>
-</span><span id="__span-4-42"><a id="__codelineno-4-42" name="__codelineno-4-42" href="#__codelineno-4-42"></a><span class="w">      </span><span class="nt">internal.dbms.sharded_property_database.property_pull_interval</span><span class="p">:</span><span class="w"> </span><span class="s">"10ms"</span>
+</span><span id="__span-4-37"><a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a><span class="w">      </span><span class="nt">internal.dbms.sharded_property_database.allow_external_shard_access</span><span class="p">:</span><span class="w"> </span><span class="s">"false"</span>
+</span><span id="__span-4-38"><a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a>
+</span><span id="__span-4-39"><a id="__codelineno-4-39" name="__codelineno-4-39" href="#__codelineno-4-39"></a><span class="w">      </span><span class="c1"># Performance tuning (optional)</span>
+</span><span id="__span-4-40"><a id="__codelineno-4-40" name="__codelineno-4-40" href="#__codelineno-4-40"></a><span class="w">      </span><span class="nt">db.tx_log.rotation.retention_policy</span><span class="p">:</span><span class="w"> </span><span class="s">"7</span><span class="nv"> </span><span class="s">days"</span>
+</span><span id="__span-4-41"><a id="__codelineno-4-41" name="__codelineno-4-41" href="#__codelineno-4-41"></a><span class="w">      </span><span class="nt">internal.dbms.sharded_property_database.property_pull_interval</span><span class="p">:</span><span class="w"> </span><span class="s">"10ms"</span>
 </span></code></pre></div>
 <h3 id="2-create-sharded-database">2. Create Sharded Database<a class="headerlink" href="#2-create-sharded-database" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
@@ -4747,26 +4746,27 @@
 </span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="c1"># Virtual database name (what users connect to)</span>
 </span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">products</span>
 </span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>
-</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">  </span><span class="c1"># Cypher language version: "5" or "25". Property sharding requires Cypher 25,</span>
-</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">  </span><span class="c1"># which is only available on Neo4j 2025.x or later.</span>
-</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">  </span><span class="nt">defaultCypherLanguage</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span>
-</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>
-</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">  </span><span class="c1"># Property sharding configuration</span>
-</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">  </span><span class="nt">propertySharding</span><span class="p">:</span>
-</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">    </span><span class="nt">propertyShards</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span><span class="w">        </span><span class="c1"># Number of property shards</span>
-</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>
-</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">    </span><span class="c1"># Graph shard topology (stores nodes/relationships)</span>
-</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">    </span><span class="nt">graphShard</span><span class="p">:</span>
-</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">      </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">      </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a>
-</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">    </span><span class="c1"># Property shard topology (stores properties)</span>
-</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">    </span><span class="nt">propertyShardTopology</span><span class="p">:</span>
-</span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-</span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a>
-</span><span id="__span-5-30"><a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a><span class="w">  </span><span class="c1"># Database creation options</span>
-</span><span id="__span-5-31"><a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="w">  </span><span class="nt">wait</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">          </span><span class="c1"># Wait for creation to complete</span>
-</span><span id="__span-5-32"><a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># Don't fail if database exists</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">  </span><span class="c1"># The sharded family's default Cypher language. "25" is the only value, and</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">  </span><span class="c1"># the operator sets it even when this is omitted: the graph shard and every</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">  </span><span class="c1"># property shard inherit it from this, the parent database.</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="nt">defaultCypherLanguage</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>
+</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">  </span><span class="c1"># Property sharding configuration</span>
+</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">  </span><span class="nt">propertySharding</span><span class="p">:</span>
+</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">    </span><span class="nt">propertyShards</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span><span class="w">        </span><span class="c1"># Number of property shards</span>
+</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>
+</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">    </span><span class="c1"># Graph shard topology (stores nodes/relationships)</span>
+</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">    </span><span class="nt">graphShard</span><span class="p">:</span>
+</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">      </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">      </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a>
+</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">    </span><span class="c1"># Property shard topology (stores properties)</span>
+</span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="w">    </span><span class="nt">propertyShardTopology</span><span class="p">:</span>
+</span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span><span id="__span-5-30"><a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a>
+</span><span id="__span-5-31"><a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="w">  </span><span class="c1"># Database creation options</span>
+</span><span id="__span-5-32"><a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a><span class="w">  </span><span class="nt">wait</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">          </span><span class="c1"># Wait for creation to complete</span>
+</span><span id="__span-5-33"><a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># Don't fail if database exists</span>
 </span></code></pre></div>
 <h3 id="seeding-from-backups-optional">Seeding from Backups (Optional)<a class="headerlink" href="#seeding-from-backups-optional" title="Anchor link to this section">&para;</a></h3>
 <p>Use <code>seedURI</code> for a single backup location that contains shard-suffixed artifacts
@@ -4809,29 +4809,25 @@ URIs when seeding from dumps or multiple locations.</p>
 <p>When <code>propertySharding.enabled</code> is <code>true</code>, these settings are automatically applied:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">internal.dbms.sharded_property_database.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">db.query.default_language</span><span class="p">:</span><span class="w"> </span><span class="s">"CYPHER_25"</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">internal.dbms.sharded_property_database.allow_external_shard_access</span><span class="p">:</span><span class="w"> </span><span class="s">"false"</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">internal.dbms.sharded_property_database.allow_external_shard_access</span><span class="p">:</span><span class="w"> </span><span class="s">"false"</span>
 </span></code></pre></div>
-<div class="admonition warning">
-<p class="admonition-title">Enabling sharding sets the language of databases created afterwards</p>
-<p><code>db.query.default_language</code> is a <strong>server-wide</strong> setting, not a sharding
-one, and Neo4j applies it when a database is <strong>created</strong>: a database
-created without a default language of its own gets the server's, keeps
-it, and never re-reads the setting (measured on 2026.06.0). So with
-<code>CYPHER_25</code>:</p>
-<ul>
-<li>databases created <strong>after</strong> sharding is enabled, without their own
-  language, run queries as <strong>Cypher 25</strong> unless a query starts with
-  <code>CYPHER 5</code>. On a cluster created with sharding on, that includes the
-  default <code>neo4j</code> database;</li>
-<li>databases that <strong>already exist</strong> when you enable sharding keep the
-  language they have — enabling it moves nothing.</li>
-</ul>
-<p>To keep a database on Cypher 5, give it its own language:
-<code>defaultCypherLanguage: "5"</code> on a <code>Neo4jDatabase</code> the operator has not
-created yet (the field is applied only at creation), or
-<code>ALTER DATABASE &lt;name&gt; SET DEFAULT LANGUAGE CYPHER 5</code> on an existing one.
-Applications can also prefix their queries with <code>CYPHER 5</code>.</p>
+<p>Sharding does <strong>not</strong> set the server's default Cypher language. Neo4j docs
+suggest <code>db.query.default_language=CYPHER_25</code>, but it is not needed: a sharded
+database's graph shard and property shards inherit the <strong>parent database's</strong>
+language, not the server's, and the operator creates every sharded database
+with <code>SET DEFAULT LANGUAGE CYPHER 25</code> (measured on 2026.06.0, including a
+cluster with the server-wide setting removed). The server default is yours to
+set with <code>spec.serverDefaultCypherLanguage</code>, as on any other cluster.</p>
+<div class="admonition note">
+<p class="admonition-title">Upgrading a sharding cluster</p>
+<p>Operator releases up to v1.16.0 set <code>db.query.default_language=CYPHER_25</code>
+server-wide whenever sharding was enabled. An existing sharding cluster
+keeps it: the operator records what the cluster already runs in
+<code>status.effectiveCypherLanguage</code> and keeps writing it, so upgrading changes
+nothing and restarts nothing. Set <code>spec.serverDefaultCypherLanguage:
+CYPHER_5</code> if you want databases created from then on to default to
+Cypher 5 — Neo4j fixes a database's language when it is created, so
+existing databases keep theirs either way.</p>
 </div>
 <h4 id="optional-performance-tuning">Optional Performance Tuning<a class="headerlink" href="#optional-performance-tuning" title="Anchor link to this section">&para;</a></h4>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">config</span><span class="p">:</span>
@@ -5149,7 +5145,7 @@ destructive in-place restore with <code>spec.replaceExisting: true</code> + <cod
 <ul>
 <li><strong>No in-operator resharding</strong>: Resharding requires offline <code>neo4j-admin database copy</code> and recreation</li>
 <li><strong>Neo4j version</strong>: Requires 2025.12+ enterprise</li>
-<li><strong>Cypher version</strong>: Must use Cypher 25</li>
+<li><strong>Cypher version</strong>: sharded databases are Cypher 25 (set by the operator); other databases follow <code>spec.serverDefaultCypherLanguage</code></li>
 <li><strong>No online resharding</strong>: Plan shard count carefully</li>
 <li><strong>Increased complexity</strong>: More monitoring and operational overhead</li>
 </ul>

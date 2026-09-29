@@ -4758,9 +4758,11 @@
 <p>When <code>enabled: true</code>, these settings are automatically applied:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">internal.dbms.sharded_property_database.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">db.query.default_language</span><span class="p">:</span><span class="w"> </span><span class="s">"CYPHER_25"</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">internal.dbms.sharded_property_database.allow_external_shard_access</span><span class="p">:</span><span class="w"> </span><span class="s">"false"</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">internal.dbms.sharded_property_database.allow_external_shard_access</span><span class="p">:</span><span class="w"> </span><span class="s">"false"</span>
 </span></code></pre></div>
+<p>The server's <code>db.query.default_language</code> is not among them: the sharded
+database and its shards get <code>CYPHER 25</code> from the <code>SET DEFAULT LANGUAGE</code> the
+operator always emits on the sharded <code>CREATE</code>.</p>
 <h4 id="configuration-options">Configuration Options<a class="headerlink" href="#configuration-options" title="Anchor link to this section">&para;</a></h4>
 <table>
 <thead>
@@ -4777,12 +4779,6 @@
 <td>string</td>
 <td>"true"</td>
 <td>Enable property sharding database feature</td>
-</tr>
-<tr>
-<td><code>db.query.default_language</code></td>
-<td>string</td>
-<td>"CYPHER_25"</td>
-<td>Default Cypher language version</td>
 </tr>
 <tr>
 <td><code>internal.dbms.sharded_property_database.allow_external_shard_access</code></td>
