@@ -38,7 +38,7 @@ spec:
     secondaries: 0
   pullInterval: 1m             # db.cluster.backup.pull_interval — bounds the RPO
   source:
-    mode: backup               # `network` is not supported; see the guide
+    mode: backup               # or `network` — see the guide for which to use
     # Both URIs come from the upstream Neo4jBackup's status.replicationPullURI.
     # spec.source is IMMUTABLE — Neo4j cannot re-point an existing replica.
     pullURI: s3://prod-backups/inventory/inventory-chain/

@@ -130,7 +130,7 @@ kind: Neo4jPlugin
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `allowedProcedures` | `[]string` | List of allowed procedures/functions |
+| `allowedProcedures` | `[]string` | Becomes `dbms.security.procedures.allowlist` (and `…unrestricted` unless `sandbox: true`). An **allowlist**: plugin procedures and functions it does not match are not loaded at all, server-wide, and fail as *Unknown function*. |
 | `deniedProcedures` | `[]string` | List of denied procedures/functions |
 | `securityPolicy` | `string` | Security policy: "open", "restricted" |
 | `sandbox` | `boolean` | Enable sandbox mode |
