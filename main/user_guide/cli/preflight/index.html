@@ -3978,7 +3978,7 @@
 </tr>
 <tr>
 <td><code>source.credentialsSecretRef</code> names a Secret that exists</td>
-<td>It records <strong>which</strong> Secret the credentials come from; it does not project them. A name with nothing behind it is worth knowing about</td>
+<td>The operator projects that Secret onto the downstream servers before it seeds (one rolling restart), so a name with nothing behind it leaves the replica waiting indefinitely</td>
 </tr>
 <tr>
 <td>Network mode</td>
