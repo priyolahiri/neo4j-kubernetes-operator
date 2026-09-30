@@ -4300,6 +4300,21 @@
 <td>True when one or more privileges could not be reconciled (e.g. immutable extras).</td>
 </tr>
 <tr>
+<td><code>privilegeRenderings</code></td>
+<td><code>[]{statement, rows, ambiguous}</code></td>
+<td>Learn mode (the default; not used with <code>--privilege-normalisation=probe</code>): how Neo4j stored each <code>spec.privileges</code> statement, learned from the operator's own grants. <code>ambiguous: true</code> means everything the statement grants was already on the role, so which rows are its own is unknown.</td>
+</tr>
+<tr>
+<td><code>privilegeRenderingScope</code></td>
+<td><code>string</code></td>
+<td>Learn mode: digest of the server, image and alias targets the renderings were learned against. A change re-learns them.</td>
+</tr>
+<tr>
+<td><code>unattributedPrivileges</code></td>
+<td><code>[]string</code></td>
+<td>Learn mode: rows learn mode cannot attribute to a spec statement, which it therefore never revokes. See <a href="../../user_guide/user_role_management/#learn-mode-default">Learn mode</a>.</td>
+</tr>
+<tr>
 <td><code>conditions</code></td>
 <td><code>[]Condition</code></td>
 <td>See <a href="#conditions">Conditions</a>.</td>
@@ -4323,13 +4338,13 @@
 </tr>
 <tr>
 <td><code>PrivilegesSynced</code></td>
-<td><code>PrivilegesMatch</code>, <code>PrivilegesDrifted</code></td>
-<td>True when live privileges match <code>spec.privileges</code>.</td>
+<td><code>PrivilegesMatch</code>, <code>PrivilegesDrifted</code>, <code>UnattributedPrivileges</code></td>
+<td>True when live privileges match <code>spec.privileges</code>. <code>Unknown</code>/<code>UnattributedPrivileges</code> (learn mode, the default) means the role holds rows the operator cannot attribute to a spec statement and so will not revoke; the message lists them.</td>
 </tr>
 <tr>
 <td><code>PrivilegesResolve</code></td>
 <td><code>AllDatabasesResolve</code>, <code>NoDatabaseScopedPrivileges</code>, <code>DatabaseNotFound</code>, <code>GraphPrivilegeOnComposite</code></td>
-<td>True when every database named by a privilege exists on this cluster (or is an alias for one). <strong>False means the privileges are in sync with spec and grant access to nothing</strong> — Neo4j accepts a grant on a database that does not exist in silence. The usual cause on a DR cluster is the replica's name: a replica of <code>foo</code> is called <code>foo-replica</code>, and privileges attach to the database, not to an alias. Reported, never enforced: the database may simply not be created yet, and the condition clears on its own when it is. <code>GraphPrivilegeOnComposite</code> is the same class of silent failure on a <a href="../neo4jcompositedatabase/">composite database</a>: a GRAPH privilege on a composite is accepted and shown back by <code>SHOW ROLE PRIVILEGES</code>, but graph privileges attach to the constituents' target databases, so it does nothing. (<code>ACCESS ON DATABASE &lt;composite&gt;</code> is correct and is not flagged.)</td>
+<td>True when every database named by a privilege exists on this cluster (or is an alias for one). <strong>False means those privileges are not on the role</strong>: Neo4j refuses a grant on a database that does not exist, and drops a role's privileges along with a dropped database, so the operator skips them — the rest of the role is applied. The usual cause on a DR cluster is the replica's name: a replica of <code>foo</code> is called <code>foo-replica</code>, and privileges attach to the database, not to an alias. Reported, never enforced: the database may simply not be created yet, and the condition clears on its own when it is. <code>GraphPrivilegeOnComposite</code> is the same class of silent failure on a <a href="../neo4jcompositedatabase/">composite database</a>: a GRAPH privilege on a composite is accepted and shown back by <code>SHOW ROLE PRIVILEGES</code>, but graph privileges attach to the constituents' target databases, so it does nothing. (<code>ACCESS ON DATABASE &lt;composite&gt;</code> is correct and is not flagged.)</td>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
@@ -4352,7 +4367,7 @@
 <p>The controller treats <code>spec.privileges</code> as the source of truth and reconciles drift on every loop:</p>
 <ol>
 <li><strong>Read live</strong>: <code>SHOW ROLE &lt;name&gt; PRIVILEGES AS COMMANDS YIELD command, immutable</code>.</li>
-<li><strong>Normalise</strong> the desired side to Neo4j's stored form. Neo4j expands lists, singularises plurals, fills in default segments, renames some verbs, lower-cases database names and resolves aliases, so spec text rarely equals the stored row. Each statement is granted once to a short-lived <code>operator_privilege_probe_&lt;random&gt;</code> role and read back; the result is cached per server version and alias layout. A statement that cannot be probed (it names a missing database, or the probe grant fails) falls back to textual canonicalisation. Both sides are then canonicalised:</li>
+<li><strong>Normalise</strong> the desired side to Neo4j's stored form. Neo4j expands lists, singularises plurals, fills in default segments, renames some verbs, lower-cases database names and resolves aliases, so spec text rarely equals the stored row. By default (<strong>learn mode</strong>) each statement's stored rows are learned from the operator's own grant to the role and kept in <code>status.privilegeRenderings</code>; rows it cannot attribute are kept in <code>status.unattributedPrivileges</code> and never revoked. With <code>--privilege-normalisation=probe</code>, each statement is instead granted once to a short-lived <code>operator_privilege_probe_&lt;random&gt;</code> role and read back, cached per server version and alias layout. Either way, a statement that names a missing database falls back to textual canonicalisation. Both sides are then canonicalised:</li>
 <li>Whitespace runs collapsed to a single space (outside quoted strings).</li>
 <li>Reserved keywords upper-cased (<code>grant</code> → <code>GRANT</code>, <code>database</code> → <code>DATABASE</code>, etc.).</li>
 <li>Trailing semicolons stripped.</li>
