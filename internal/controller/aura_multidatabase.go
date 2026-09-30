@@ -134,6 +134,18 @@ func v2CreateReason(inst *neo4jv1beta1.AuraInstance) string {
 	return "graphAnalytics: serverless"
 }
 
+// v2CreateRefusalReason is the condition reason for a create that cannot
+// proceed. MultiDatabaseUnsupported predates serverless graph analytics, which
+// also forces the v2beta1 create; a serverless instance refused for, say, a
+// missing organization ID is not a multi-database problem and must not read
+// like one.
+func v2CreateRefusalReason(inst *neo4jv1beta1.AuraInstance) string {
+	if !wantsMultiDatabase(inst) && wantsV2Create(inst) {
+		return "ServerlessGraphAnalyticsUnsupported"
+	}
+	return "MultiDatabaseUnsupported"
+}
+
 // wantsMultiDatabase reports whether the CR asks for a multi-database instance.
 // Only an explicit true counts: unset and false both leave the plain v1 create
 // path in place.
@@ -366,7 +378,8 @@ func (r *AuraInstanceReconciler) createMultiDatabaseInstance(
 	r.recordMultiDatabaseFacts(ctx, req, multiDB, true, resp.DefaultDatabaseID)
 
 	r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceCreated,
-		fmt.Sprintf("Created multi-database Aura instance %s via the Aura API v2beta1 (multi_database=%t)", id, multiDB))
+		fmt.Sprintf("Created Aura instance %s via the Aura API v2beta1, which %s requires (multi_database=%t)",
+			id, v2CreateReason(inst), multiDB))
 	return id, false, nil
 }
 

@@ -810,3 +810,17 @@ func TestGraphAnalyticsResolutionAndV1Mapping(t *testing.T) {
 		}
 	}
 }
+
+// A serverless instance is created through v2beta1 like a multi-database one,
+// but a refusal of it must not be reported as a multi-database problem.
+func TestV2CreateRefusalReasonNamesTheCause(t *testing.T) {
+	yes := true
+	serverless := &neo4jv1beta1.AuraInstance{Spec: neo4jv1beta1.AuraInstanceSpec{GraphAnalytics: "serverless"}}
+	multi := &neo4jv1beta1.AuraInstance{Spec: neo4jv1beta1.AuraInstanceSpec{MultiDatabase: &yes, GraphAnalytics: "serverless"}}
+	if got := v2CreateRefusalReason(serverless); got != "ServerlessGraphAnalyticsUnsupported" {
+		t.Errorf("serverless refusal reason = %q", got)
+	}
+	if got := v2CreateRefusalReason(multi); got != "MultiDatabaseUnsupported" {
+		t.Errorf("multi-database refusal reason = %q", got)
+	}
+}
