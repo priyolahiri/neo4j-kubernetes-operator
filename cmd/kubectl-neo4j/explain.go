@@ -453,7 +453,7 @@ func explainResource(ctx context.Context, c client.Client, namespace, ref string
 		if cmsg != "" {
 			fmt.Fprintf(stdout, "    %s\n", cmsg)
 		}
-		if known && !(g.problemWhenTrue && healthy) {
+		if known && (!g.problemWhenTrue || !healthy) {
 			fmt.Fprintf(stdout, "    %s\n    → %s\n", g.meaning, g.action)
 		}
 		// The reason is the more specific signal, so it comes after the
