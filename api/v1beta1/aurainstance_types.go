@@ -63,7 +63,9 @@ type AuraInstanceSource struct {
 // +kubebuilder:validation:XValidation:rule="has(self.multiDatabase) == has(oldSelf.multiDatabase) && (!has(self.multiDatabase) || self.multiDatabase == oldSelf.multiDatabase)",message="multiDatabase is immutable: Aura fixes it when the instance is created and offers no way to convert an existing instance"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.organizationId) || (has(self.organizationId) && self.organizationId == oldSelf.organizationId)",message="organizationId is immutable once set"
 // +kubebuilder:validation:XValidation:rule="!has(self.multiDatabase) || !self.multiDatabase || self.type in ['business-critical','enterprise-db']",message="multiDatabase is only supported on business-critical or enterprise-db (Virtual Dedicated Cloud); Aura refuses it on every other tier"
-// +kubebuilder:validation:XValidation:rule="!has(self.multiDatabase) || !self.multiDatabase || (!has(self.secondariesCount) && !has(self.cdcEnrichmentMode) && !has(self.customerManagedKeyId) && !has(self.source))",message="multiDatabase creates the instance through the Aura v2beta1 API, which has no equivalent of secondariesCount, cdcEnrichmentMode, customerManagedKeyId or source: unset them or drop multiDatabase"
+// +kubebuilder:validation:XValidation:rule="((!has(self.multiDatabase) || !self.multiDatabase) && (!has(self.graphAnalytics) || self.graphAnalytics != 'serverless')) || (!has(self.secondariesCount) && !has(self.cdcEnrichmentMode) && !has(self.customerManagedKeyId) && !has(self.source))",message="multiDatabase and graphAnalytics: serverless create the instance through the Aura v2beta1 API, which has no equivalent of secondariesCount, cdcEnrichmentMode, customerManagedKeyId or source: unset them"
+// +kubebuilder:validation:XValidation:rule="!has(self.graphAnalytics) || !has(self.graphAnalyticsPlugin)",message="set graphAnalytics or the deprecated graphAnalyticsPlugin, not both"
+// +kubebuilder:validation:XValidation:rule="has(oldSelf.graphAnalytics) ? (has(self.graphAnalytics) && self.graphAnalytics == oldSelf.graphAnalytics) : (!has(self.graphAnalytics) || (has(oldSelf.graphAnalyticsPlugin) && self.graphAnalytics == (oldSelf.graphAnalyticsPlugin ? 'plugin' : 'unavailable')))",message="graphAnalytics is applied when the instance is created and cannot change afterwards; the only allowed edit is replacing the deprecated graphAnalyticsPlugin with its equivalent (true is plugin, false is unavailable)"
 // +kubebuilder:validation:XValidation:rule="!has(self.multiDatabase) || !self.multiDatabase || !has(self.vectorOptimized) || !self.vectorOptimized",message="vectorOptimized is not available on a multi-database instance: Aura refuses the combination (multi-database-capability-not-supported)"
 type AuraInstanceSpec struct {
 	// ProviderConfigRef selects the AuraProviderConfig (credentials + defaults +
@@ -132,7 +134,19 @@ type AuraInstanceSpec struct {
 	// +optional
 	VectorOptimized *bool `json:"vectorOptimized,omitempty"`
 
-	// GraphAnalyticsPlugin enables the graph-analytics plugin.
+	// GraphAnalytics chooses how Graph Data Science runs on the instance:
+	// unavailable, serverless (separate on-demand sessions) or plugin (inside
+	// the instance). serverless can only be expressed through the Aura v2beta1
+	// create, so an instance asking for it is created there — like a
+	// multiDatabase instance — and needs an organization ID. Applied at
+	// creation. Replaces graphAnalyticsPlugin; do not set both.
+	// +kubebuilder:validation:Enum=unavailable;serverless;plugin
+	// +optional
+	GraphAnalytics string `json:"graphAnalytics,omitempty"`
+
+	// GraphAnalyticsPlugin enables the graph-analytics plugin. DEPRECATED — use
+	// graphAnalytics (true is plugin, false is unavailable), which can also
+	// express serverless.
 	// +optional
 	GraphAnalyticsPlugin *bool `json:"graphAnalyticsPlugin,omitempty"`
 

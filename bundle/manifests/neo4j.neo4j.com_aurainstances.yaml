@@ -142,8 +142,24 @@ spec:
                   DeletionProtection blocks deletion of the cloud instance even when
                   deletionPolicy=Delete, until cleared.
                 type: boolean
+              graphAnalytics:
+                description: |-
+                  GraphAnalytics chooses how Graph Data Science runs on the instance:
+                  unavailable, serverless (separate on-demand sessions) or plugin (inside
+                  the instance). serverless can only be expressed through the Aura v2beta1
+                  create, so an instance asking for it is created there — like a
+                  multiDatabase instance — and needs an organization ID. Applied at
+                  creation. Replaces graphAnalyticsPlugin; do not set both.
+                enum:
+                - unavailable
+                - serverless
+                - plugin
+                type: string
               graphAnalyticsPlugin:
-                description: GraphAnalyticsPlugin enables the graph-analytics plugin.
+                description: |-
+                  GraphAnalyticsPlugin enables the graph-analytics plugin. DEPRECATED — use
+                  graphAnalytics (true is plugin, false is unavailable), which can also
+                  express serverless.
                 type: boolean
               instanceId:
                 description: |-
@@ -340,12 +356,24 @@ spec:
                 (Virtual Dedicated Cloud); Aura refuses it on every other tier
               rule: '!has(self.multiDatabase) || !self.multiDatabase || self.type
                 in [''business-critical'',''enterprise-db'']'
-            - message: 'multiDatabase creates the instance through the Aura v2beta1
-                API, which has no equivalent of secondariesCount, cdcEnrichmentMode,
-                customerManagedKeyId or source: unset them or drop multiDatabase'
-              rule: '!has(self.multiDatabase) || !self.multiDatabase || (!has(self.secondariesCount)
+            - message: 'multiDatabase and graphAnalytics: serverless create the instance
+                through the Aura v2beta1 API, which has no equivalent of secondariesCount,
+                cdcEnrichmentMode, customerManagedKeyId or source: unset them'
+              rule: ((!has(self.multiDatabase) || !self.multiDatabase) && (!has(self.graphAnalytics)
+                || self.graphAnalytics != 'serverless')) || (!has(self.secondariesCount)
                 && !has(self.cdcEnrichmentMode) && !has(self.customerManagedKeyId)
-                && !has(self.source))'
+                && !has(self.source))
+            - message: set graphAnalytics or the deprecated graphAnalyticsPlugin,
+                not both
+              rule: '!has(self.graphAnalytics) || !has(self.graphAnalyticsPlugin)'
+            - message: graphAnalytics is applied when the instance is created and
+                cannot change afterwards; the only allowed edit is replacing the deprecated
+                graphAnalyticsPlugin with its equivalent (true is plugin, false is
+                unavailable)
+              rule: 'has(oldSelf.graphAnalytics) ? (has(self.graphAnalytics) && self.graphAnalytics
+                == oldSelf.graphAnalytics) : (!has(self.graphAnalytics) || (has(oldSelf.graphAnalyticsPlugin)
+                && self.graphAnalytics == (oldSelf.graphAnalyticsPlugin ? ''plugin''
+                : ''unavailable'')))'
             - message: 'vectorOptimized is not available on a multi-database instance:
                 Aura refuses the combination (multi-database-capability-not-supported)'
               rule: '!has(self.multiDatabase) || !self.multiDatabase || !has(self.vectorOptimized)

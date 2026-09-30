@@ -2053,6 +2053,13 @@
         "note": "Immutable; only kind of instance AuraDatabase/AuraDatabaseBackup/AuraDatabaseRestore can target; switches the CREATE call to the v2beta1 API, which takes storage and graph analytics but refuses vectorOptimized with it (verified live 2026-09-30)."
       },
       {
+        "id": "f-aurainstance-spec-graph-analytics",
+        "name": "spec.graphAnalytics",
+        "type": "enum",
+        "isNullable": true,
+        "note": "unavailable, serverless or plugin; immutable after creation (except replacing the deprecated graphAnalyticsPlugin with its equivalent). serverless routes the CREATE through the v2beta1 API even without multiDatabase, because v1 has only the plugin boolean."
+      },
+      {
         "id": "f-aurainstance-spec-customer-managed-key-id",
         "name": "spec.customerManagedKeyId",
         "type": "ref",

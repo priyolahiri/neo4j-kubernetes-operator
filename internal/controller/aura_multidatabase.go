@@ -100,6 +100,40 @@ func resolveInstanceV2Client(factory auraInstanceV2ClientFactory, c auraCredenti
 	return defaultAuraInstanceV2ClientFactory(c)
 }
 
+// resolvedGraphAnalytics is the graph-analytics mode the CR asks for, in Aura's
+// own vocabulary (unavailable, serverless, plugin), or "" for unset.
+// spec.graphAnalytics wins; the deprecated graphAnalyticsPlugin boolean maps to
+// plugin/unavailable. CEL refuses setting both.
+func resolvedGraphAnalytics(inst *neo4jv1beta1.AuraInstance) string {
+	if inst.Spec.GraphAnalytics != "" {
+		return inst.Spec.GraphAnalytics
+	}
+	if inst.Spec.GraphAnalyticsPlugin != nil {
+		if *inst.Spec.GraphAnalyticsPlugin {
+			return "plugin"
+		}
+		return "unavailable"
+	}
+	return ""
+}
+
+// wantsV2Create reports whether the instance must be created through the
+// v2beta1 API because v1 cannot express what the CR asks for: a multi-database
+// instance, or serverless graph analytics (v1 has only the graph_analytics_plugin
+// boolean). Everything after the create stays on v1, which sees v2beta1-created
+// instances.
+func wantsV2Create(inst *neo4jv1beta1.AuraInstance) bool {
+	return wantsMultiDatabase(inst) || resolvedGraphAnalytics(inst) == "serverless"
+}
+
+// v2CreateReason names what forced the v2beta1 create, for refusal messages.
+func v2CreateReason(inst *neo4jv1beta1.AuraInstance) string {
+	if wantsMultiDatabase(inst) {
+		return "multiDatabase"
+	}
+	return "graphAnalytics: serverless"
+}
+
 // wantsMultiDatabase reports whether the CR asks for a multi-database instance.
 // Only an explicit true counts: unset and false both leave the plain v1 create
 // path in place.
@@ -119,24 +153,26 @@ func wantsMultiDatabase(inst *neo4jv1beta1.AuraInstance) bool {
 // combinations on write; this is the belt-and-braces check for CRs that
 // predate the rules.
 func multiDatabaseCreateRequest(inst *neo4jv1beta1.AuraInstance, name string) (aura.CreateInstanceV2Request, error) {
+	reason := v2CreateReason(inst)
+	multiDB := wantsMultiDatabase(inst)
 	v2Type, ok := aura.InstanceTypeV2(inst.Spec.Type)
 	if !ok {
 		return aura.CreateInstanceV2Request{}, refusef(
-			"multiDatabase is not available for type %q: the Aura v2beta1 API, the only one that can create a "+
-				"multi-database instance, knows only free-db, professional-db, business-critical and enterprise-db",
-			inst.Spec.Type)
+			"%s is not available for type %q: the Aura v2beta1 API, the only one that can create such an "+
+				"instance, knows only free-db, professional-db, business-critical and enterprise-db",
+			reason, inst.Spec.Type)
 	}
 	// Aura refuses multi_database outright on the smaller tiers (HTTP 400,
 	// multi-database-tier-not-supported). Say so locally: type is immutable, so
 	// the API's rejection would be terminal anyway, and only this message can
 	// point at the actual choice the user has to make.
-	if !aura.SupportsMultiDatabase(v2Type) {
+	if multiDB && !aura.SupportsMultiDatabase(v2Type) {
 		return aura.CreateInstanceV2Request{}, refusef(
 			"multiDatabase is not supported on type %q: Aura allows multi-database instances only on "+
 				"business-critical and enterprise-db (Virtual Dedicated Cloud)", inst.Spec.Type)
 	}
 
-	if inst.Spec.VectorOptimized != nil && *inst.Spec.VectorOptimized {
+	if multiDB && inst.Spec.VectorOptimized != nil && *inst.Spec.VectorOptimized {
 		return aura.CreateInstanceV2Request{}, refusef(
 			"vectorOptimized is not available on a multi-database instance — Aura refuses the combination " +
 				"(multi-database-capability-not-supported); drop one of them")
@@ -157,32 +193,31 @@ func multiDatabaseCreateRequest(inst *neo4jv1beta1.AuraInstance, name string) (a
 	}
 	if len(dropped) > 0 {
 		return aura.CreateInstanceV2Request{}, refusef(
-			"multiDatabase creates the instance through the Aura v2beta1 API, which has no equivalent of %v "+
-				"(it accepts name/type/cloudProvider/region/memory/storage/graphAnalyticsPlugin); remove them or drop multiDatabase",
-			dropped)
+			"%s creates the instance through the Aura v2beta1 API, which has no equivalent of %v "+
+				"(it accepts name/type/cloudProvider/region/memory/storage/graphAnalytics); remove them or drop %s",
+			reason, dropped, reason)
 	}
 
-	// graphAnalyticsPlugin is v1's boolean; v2beta1 has a three-way
-	// graph_analytics. true is the plugin; false is "unavailable". The third
-	// value, serverless, has no spelling in this CRD yet.
-	graphAnalytics := ""
-	if inst.Spec.GraphAnalyticsPlugin != nil {
-		graphAnalytics = "unavailable"
-		if *inst.Spec.GraphAnalyticsPlugin {
-			graphAnalytics = "plugin"
-		}
+	var multiDatabase *bool
+	if multiDB {
+		multiDatabase = &multiDB
 	}
-
-	multiDB := true
+	// vector_optimized is a v2beta1 create field too (the API validates it);
+	// only its combination with multi_database is refused, above.
+	var vectorOptimized *bool
+	if !multiDB {
+		vectorOptimized = inst.Spec.VectorOptimized
+	}
 	return aura.CreateInstanceV2Request{
-		Name:           name,
-		Type:           v2Type,
-		CloudProvider:  inst.Spec.CloudProvider,
-		Region:         inst.Spec.Region,
-		Memory:         inst.Spec.Memory,
-		Storage:        inst.Spec.Storage,
-		GraphAnalytics: graphAnalytics,
-		MultiDatabase:  &multiDB,
+		Name:            name,
+		Type:            v2Type,
+		CloudProvider:   inst.Spec.CloudProvider,
+		Region:          inst.Spec.Region,
+		Memory:          inst.Spec.Memory,
+		Storage:         inst.Spec.Storage,
+		GraphAnalytics:  resolvedGraphAnalytics(inst),
+		MultiDatabase:   multiDatabase,
+		VectorOptimized: vectorOptimized,
 		// No `version`: v2beta1 has no such field and picks the Neo4j version
 		// itself. spec.version is still required by the CRD (v1 needs it) and is
 		// simply not expressible here.
@@ -281,13 +316,13 @@ func resolveInstanceOrgID(ctx context.Context, k8s client.Client, inst *neo4jv1b
 
 // requireOrgIDForMultiDatabase turns a missing organization into an explanation
 // instead of a confusing 404 from the v2beta1 path builder.
-func requireOrgIDForMultiDatabase(orgID string) error {
+func requireOrgIDForMultiDatabase(orgID, reason string) error {
 	if orgID != "" {
 		return nil
 	}
-	return refusef("multiDatabase needs an Aura organization ID, because only the v2beta1 API can create a " +
-		"multi-database instance and its paths are organization-scoped; set spec.organizationId or " +
-		"defaultOrganizationId on the AuraProviderConfig")
+	return refusef("%s needs an Aura organization ID, because only the v2beta1 API can create such an "+
+		"instance and its paths are organization-scoped; set spec.organizationId or "+
+		"defaultOrganizationId on the AuraProviderConfig", reason)
 }
 
 // createMultiDatabaseInstance is observeOrCreate's create half for the one case
@@ -299,7 +334,7 @@ func (r *AuraInstanceReconciler) createMultiDatabaseInstance(
 	ctx context.Context, req ctrl.Request, inst *neo4jv1beta1.AuraInstance, projectID, name string,
 ) (id string, adopted bool, err error) {
 	orgID := resolveInstanceOrgID(ctx, r.Client, inst)
-	if err := requireOrgIDForMultiDatabase(orgID); err != nil {
+	if err := requireOrgIDForMultiDatabase(orgID, v2CreateReason(inst)); err != nil {
 		return "", false, err
 	}
 	createReq, err := multiDatabaseCreateRequest(inst, name)
@@ -446,4 +481,20 @@ func (r *AuraInstanceReconciler) verifyAdoptableAsMultiDatabase(
 			"multi-database); refusing to adopt it rather than bind this CR to an instance that may be unable to "+
 			"host databases (set spec.instanceId to adopt it deliberately)", errAdoptionUnverified, instanceID)
 	}
+}
+
+// v1GraphAnalyticsPlugin is the v1 create's graph_analytics_plugin for the CR:
+// v1 has only that boolean, so plugin is true, unavailable is false, and unset
+// is omitted. serverless never reaches the v1 path — wantsV2Create routes it to
+// v2beta1.
+func v1GraphAnalyticsPlugin(inst *neo4jv1beta1.AuraInstance) *bool {
+	switch resolvedGraphAnalytics(inst) {
+	case "plugin":
+		t := true
+		return &t
+	case "unavailable":
+		f := false
+		return &f
+	}
+	return nil
 }

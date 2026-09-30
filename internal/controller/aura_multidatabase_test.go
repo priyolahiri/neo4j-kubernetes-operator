@@ -751,3 +751,62 @@ func TestResolveAuraDBCoordsOrgPrecedence(t *testing.T) {
 		}
 	})
 }
+
+// serverless graph analytics can only be expressed on the v2beta1 create, so
+// it routes there even without multiDatabase — and then none of the
+// multi-database-only rules (tier, vectorOptimized) apply.
+func TestServerlessGraphAnalyticsRoutesToV2Create(t *testing.T) {
+	inst := &neo4jv1beta1.AuraInstance{}
+	inst.Spec.Type = "professional-db" // not a multi-database tier
+	inst.Spec.CloudProvider = "gcp"
+	inst.Spec.Region = "europe-west1"
+	inst.Spec.Memory = "2GB"
+	inst.Spec.GraphAnalytics = "serverless"
+	inst.Spec.VectorOptimized = ptrTo(true)
+
+	if !wantsV2Create(inst) || wantsMultiDatabase(inst) {
+		t.Fatalf("serverless must use the v2beta1 create without being a multi-database instance")
+	}
+	got, err := multiDatabaseCreateRequest(inst, "inst")
+	if err != nil {
+		t.Fatalf("serverless on professional-db must not be refused: %v", err)
+	}
+	if got.GraphAnalytics != "serverless" || got.MultiDatabase != nil {
+		t.Errorf("graph_analytics=%q multi_database=%v, want serverless and omitted", got.GraphAnalytics, got.MultiDatabase)
+	}
+	if got.VectorOptimized == nil || !*got.VectorOptimized {
+		t.Errorf("vectorOptimized must be passed on a non-multi-database v2beta1 create")
+	}
+
+	inst.Spec.GraphAnalytics = "plugin"
+	if wantsV2Create(inst) {
+		t.Errorf("plugin is expressible on v1 and must stay on the v1 create")
+	}
+}
+
+func TestGraphAnalyticsResolutionAndV1Mapping(t *testing.T) {
+	for _, tc := range []struct {
+		field  string
+		plugin *bool
+		want   string
+		v1     *bool
+	}{
+		{"", nil, "", nil},
+		{"plugin", nil, "plugin", ptrTo(true)},
+		{"unavailable", nil, "unavailable", ptrTo(false)},
+		{"serverless", nil, "serverless", nil},
+		{"", ptrTo(true), "plugin", ptrTo(true)},
+		{"", ptrTo(false), "unavailable", ptrTo(false)},
+	} {
+		inst := &neo4jv1beta1.AuraInstance{}
+		inst.Spec.GraphAnalytics = tc.field
+		inst.Spec.GraphAnalyticsPlugin = tc.plugin
+		if got := resolvedGraphAnalytics(inst); got != tc.want {
+			t.Errorf("field=%q plugin=%v: resolved %q, want %q", tc.field, tc.plugin, got, tc.want)
+		}
+		got := v1GraphAnalyticsPlugin(inst)
+		if (got == nil) != (tc.v1 == nil) || (got != nil && *got != *tc.v1) {
+			t.Errorf("field=%q plugin=%v: v1 graph_analytics_plugin=%v, want %v", tc.field, tc.plugin, got, tc.v1)
+		}
+	}
+}

@@ -174,6 +174,9 @@ type CreateInstanceV2Request struct {
 	// MultiDatabase is a pointer so it can be omitted entirely (letting Aura
 	// apply its own default) as distinct from explicitly requesting false.
 	MultiDatabase *bool `json:"multi_database,omitempty"`
+	// VectorOptimized is validated by the API (verified live 2026-09-30) but
+	// refused together with multi_database.
+	VectorOptimized *bool `json:"vector_optimized,omitempty"`
 }
 
 // CreateInstanceV2Response is the 202 body of the v2beta1 create. Like v1's, it
