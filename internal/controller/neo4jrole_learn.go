@@ -409,7 +409,7 @@ func (r *Neo4jRoleReconciler) reconcileLearned(
 	}
 	current := shownRows(currentShown)
 	prior := learnStateFromStatus(role.Status)
-	stmts := role.Spec.Privileges
+	stmts := rolePrivilegeStatements(role)
 
 	// First meeting: record what the role already has BEFORE granting
 	// anything. It makes the baseline durable ahead of the grants, and a CRD

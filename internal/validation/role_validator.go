@@ -131,6 +131,9 @@ func (v *RoleValidator) Validate(ctx context.Context, role *neo4jv1beta1.Neo4jRo
 		}
 	}
 
+	// Structured privileges (spec.privilegeRules).
+	validatePrivilegeRules(role, roleName, result)
+
 	// clusterRef must resolve to a cluster or standalone in the same namespace.
 	v.validateClusterRef(ctx, role, result)
 
@@ -264,4 +267,65 @@ func validateRoleName(name string, path *field.Path) field.ErrorList {
 			"must start with an ASCII letter and contain only letters, digits, or underscore"))
 	}
 	return errs
+}
+
+// validatePrivilegeRules checks each spec.privilegeRules entry by field path,
+// and refuses one that asks for the same thing twice — as another rule, or as
+// a spec.privileges statement (compared canonically, so a rule and its
+// hand-written twin are caught however each is spelled).
+func validatePrivilegeRules(role *neo4jv1beta1.Neo4jRole, roleName string, result *RoleValidationResult) {
+	written := map[string]int{}
+	for i, stmt := range role.Spec.Privileges {
+		if canon := neo4j.CanonicalisePrivilegeStatement(stmt); canon != "" {
+			written[canon] = i
+		}
+	}
+	rendered := map[string]int{}
+	for i, rule := range role.Spec.PrivilegeRules {
+		path := field.NewPath("spec", "privilegeRules").Index(i)
+		problems := neo4j.PrivilegeRuleProblems(rule)
+		for _, p := range problems {
+			result.Errors = append(result.Errors, field.Invalid(path.Child(p.Field), ruleFieldValue(rule, p.Field), p.Detail))
+		}
+		if len(problems) > 0 {
+			continue
+		}
+		stmt, err := neo4j.RenderPrivilegeRule(rule, roleName)
+		if err != nil {
+			result.Errors = append(result.Errors, field.Invalid(path, rule, err.Error()))
+			continue
+		}
+		canon := neo4j.CanonicalisePrivilegeStatement(stmt)
+		if j, dup := written[canon]; dup {
+			result.Errors = append(result.Errors, field.Duplicate(path,
+				fmt.Sprintf("renders to %q, which spec.privileges[%d] already grants; keep one", stmt, j)))
+		}
+		if j, dup := rendered[canon]; dup {
+			result.Errors = append(result.Errors, field.Duplicate(path,
+				fmt.Sprintf("the same privilege as spec.privilegeRules[%d]", j)))
+		}
+		rendered[canon] = i
+	}
+}
+
+func ruleFieldValue(rule neo4jv1beta1.PrivilegeRule, name string) any {
+	switch name {
+	case "grant":
+		return rule.Grant
+	case "deny":
+		return rule.Deny
+	case "onDatabase":
+		return rule.OnDatabase
+	case "onGraph":
+		return rule.OnGraph
+	case "properties":
+		return rule.Properties
+	case "nodes":
+		return rule.Nodes
+	case "relationships":
+		return rule.Relationships
+	case "elements":
+		return rule.Elements
+	}
+	return nil
 }

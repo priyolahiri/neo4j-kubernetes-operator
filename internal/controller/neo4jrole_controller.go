@@ -28,13 +28,16 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
@@ -69,6 +72,7 @@ type Neo4jRoleReconciler struct {
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jroles/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jroles/finalizers,verbs=update
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jenterpriseclusters,verbs=get;list;watch
+// +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jdatabases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jenterprisestandalones,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
@@ -189,7 +193,7 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// Privilege diff, against the server's own rendering of each statement
 	// (see neo4jrole_normalise.go) rather than the spec text.
-	desired, desiredByCanonical := r.normaliseDesired(ctx, nc, scope, roleName, role.Spec.Privileges, resolves)
+	desired, desiredByCanonical := r.normaliseDesired(ctx, nc, scope, roleName, rolePrivilegeStatements(role), resolves)
 	current, immutableSet, currentByCanonical, err := r.fetchCurrentPrivileges(ctx, nc, roleName)
 	if err != nil {
 		return r.fail(ctx, role, "fetch current privileges failed", err, requeue)
@@ -425,7 +429,7 @@ func (r *Neo4jRoleReconciler) reportUnresolvedPrivilegeDatabases(
 ) {
 	logger := log.FromContext(ctx)
 
-	named := privilegeDatabaseNames(role.Spec.Privileges)
+	named := roleDatabaseNames(role)
 	if len(named) == 0 {
 		r.setNamedCondition(ctx, role, ConditionTypePrivilegesResolve, metav1.ConditionTrue,
 			"NoDatabaseScopedPrivileges", "no privilege names a specific database")
@@ -473,10 +477,17 @@ func (r *Neo4jRoleReconciler) reportUnresolvedPrivilegeDatabases(
 			"for a database that does. Those privileges are not applied — they would grant access "+
 			"to nothing — and the rest of the role is. On a DR cluster this is usually the replica's name: "+
 			"a replica of \"foo\" is called \"foo-replica\", and privileges attach to the database, "+
-			"not to an alias — rewrite the database name in spec.privileges. If the database is "+
-			"simply not created yet, this clears by itself once it is.",
+			"not to an alias — rewrite the database name in spec.privileges or spec.privilegeRules. "+
+			"If the database is simply not created yet, this clears by itself once it is.",
 		roleName, quoteAndJoin(unresolved),
 		pluralDo(len(unresolved)), pluralIs(len(unresolved)))
+	var fields []string
+	for _, name := range unresolved {
+		fields = append(fields, ruleFieldsNaming(role, name)...)
+	}
+	if len(fields) > 0 {
+		msg += fmt.Sprintf(" Named by %s.", strings.Join(fields, ", "))
+	}
 
 	if r.setNamedCondition(ctx, role, ConditionTypePrivilegesResolve, metav1.ConditionFalse,
 		"DatabaseNotFound", msg) {
@@ -523,7 +534,7 @@ func (r *Neo4jRoleReconciler) compositeGraphTargets(
 ) []string {
 	var named []string
 	seen := map[string]bool{}
-	for _, stmt := range role.Spec.Privileges {
+	for _, stmt := range rolePrivilegeStatements(role) {
 		for _, name := range neo4jclient.PrivilegeGraphTargets(stmt) {
 			if !seen[name] {
 				seen[name] = true
@@ -800,6 +811,39 @@ func (r *Neo4jRoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&neo4jv1beta1.Neo4jRole{}).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseCluster{}, enqueueRolesForCluster).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseStandalone{}, enqueueRolesForCluster).
+		// A role naming a database that does not exist yet skips those grants
+		// (PrivilegesResolve=False). Re-reconcile it the moment the database's
+		// CR changes — typically when it becomes Ready — instead of waiting for
+		// the next requeue.
+		Watches(&neo4jv1beta1.Neo4jDatabase{}, handler.EnqueueRequestsFromMapFunc(r.rolesNamingDatabase)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
 		Complete(r)
+}
+
+// rolesNamingDatabase maps a Neo4jDatabase to the roles on the same cluster
+// that grant on it, in either form, matched case-insensitively as Neo4j
+// matches database names.
+func (r *Neo4jRoleReconciler) rolesNamingDatabase(ctx context.Context, obj client.Object) []reconcile.Request {
+	db, ok := obj.(*neo4jv1beta1.Neo4jDatabase)
+	if !ok {
+		return nil
+	}
+	roles := &neo4jv1beta1.Neo4jRoleList{}
+	if err := r.List(ctx, roles, client.InNamespace(db.Namespace)); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range roles.Items {
+		role := &roles.Items[i]
+		if role.Spec.ClusterRef != db.Spec.ClusterRef {
+			continue
+		}
+		for _, name := range roleDatabaseNames(role) {
+			if strings.EqualFold(name, db.Spec.Name) {
+				reqs = append(reqs, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: role.Namespace, Name: role.Name}})
+				break
+			}
+		}
+	}
+	return reqs
 }

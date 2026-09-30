@@ -1662,6 +1662,13 @@
         "note": "Desired set of complete GRANT/DENY Cypher statements ending 'TO <role-name>'. Privileges live ONLY on Neo4jRole, never on Neo4jUser or Neo4jRoleBinding. REVOKEs are derived textually by the controller, not user-supplied."
       },
       {
+        "id": "f-neo4jrole-privilege-rules",
+        "name": "privilegeRules",
+        "type": "json",
+        "isNullable": true,
+        "note": "Structured privileges (grant|deny ACCESS/TRAVERSE/READ/MATCH/WRITE, onDatabase|onGraph name, properties, nodes|relationships|elements), rendered to Cypher by the operator and reconciled like spec.privileges. A rule duplicating a spec.privileges statement is refused; a missing database is reported by field path."
+      },
+      {
         "id": "f-neo4jrole-enforce-privileges",
         "name": "enforcePrivileges",
         "type": "bool",

@@ -1064,6 +1064,22 @@
     "moduleId": "mod-security"
   },
   {
+    "id": "sf-render-privilege-rules",
+    "name": "Render Privilege Rules",
+    "serverUnitId": "su-neo4jrole",
+    "operation": "business_action",
+    "description": "rolePrivilegeStatements() renders each spec.privilegeRules entry with neo4j.RenderPrivilegeRule (backtick-escaped names, one segment) and appends it to spec.privileges, so every downstream path \u2014 normalisation, learn mode, resolve reporting, the dropped-database warning \u2014 sees one desired set. A Neo4jDatabase watch re-queues roles naming that database (internal/controller/neo4jrole_rules.go).",
+    "readsFieldIds": [
+      "f-neo4jrole-privileges",
+      "f-neo4jrole-privilege-rules"
+    ],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-security"
+  },
+  {
     "id": "sf-reconcile-rolebinding",
     "name": "Reconcile Neo4jRoleBinding",
     "serverUnitId": "su-neo4jrolebinding",

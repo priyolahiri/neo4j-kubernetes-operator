@@ -21,6 +21,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -220,4 +223,38 @@ func TestRoleValidator_PBACOnSharded(t *testing.T) {
 	if !gotStarWarn {
 		t.Errorf("expected a warning about PBAC on `ON GRAPH *`, got: %v", res.Warnings)
 	}
+}
+
+func TestRoleValidator_PrivilegeRules(t *testing.T) {
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "ns"}}
+	v := NewRoleValidator(newRoleValidatorClient(t, cluster))
+	role := func(privileges []string, rules ...neo4jv1beta1.PrivilegeRule) *neo4jv1beta1.Neo4jRole {
+		return &neo4jv1beta1.Neo4jRole{
+			ObjectMeta: metav1.ObjectMeta{Name: "x", Namespace: "ns"},
+			Spec: neo4jv1beta1.Neo4jRoleSpec{ClusterRef: "c", Name: "salesReader",
+				Privileges: privileges, PrivilegeRules: rules},
+		}
+	}
+	access := neo4jv1beta1.PrivilegeRule{Grant: "ACCESS", OnDatabase: "sales"}
+
+	t.Run("valid rules alongside strings", func(t *testing.T) {
+		res := v.Validate(context.Background(), role([]string{"GRANT ACCESS ON DATABASE orders TO salesReader"}, access,
+			neo4jv1beta1.PrivilegeRule{Grant: "MATCH", Properties: []string{"*"}, OnGraph: "sales", Nodes: []string{"*"}}))
+		assert.Empty(t, res.Errors)
+	})
+	t.Run("problems are reported by field path", func(t *testing.T) {
+		res := v.Validate(context.Background(), role(nil, access, neo4jv1beta1.PrivilegeRule{Grant: "READ", OnGraph: "sales"}))
+		require.NotEmpty(t, res.Errors)
+		assert.Contains(t, res.Errors.ToAggregate().Error(), "spec.privilegeRules[1].properties")
+	})
+	t.Run("a rule duplicating a spec.privileges statement, however spelled", func(t *testing.T) {
+		res := v.Validate(context.Background(), role([]string{"grant access on database `sales` to salesReader"}, access))
+		require.NotEmpty(t, res.Errors)
+		assert.Contains(t, res.Errors.ToAggregate().Error(), "spec.privileges[0] already grants")
+	})
+	t.Run("two rules asking for the same thing", func(t *testing.T) {
+		res := v.Validate(context.Background(), role(nil, access, access))
+		require.NotEmpty(t, res.Errors)
+		assert.Contains(t, res.Errors.ToAggregate().Error(), "spec.privilegeRules[1]")
+	})
 }

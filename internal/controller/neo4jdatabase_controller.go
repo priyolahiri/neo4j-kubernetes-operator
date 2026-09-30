@@ -689,7 +689,7 @@ func rolesGrantingOn(roles []neo4jv1beta1.Neo4jRole, clusterRef, dbName string) 
 		if role.Spec.ClusterRef != clusterRef {
 			continue
 		}
-		for _, name := range privilegeDatabaseNames(role.Spec.Privileges) {
+		for _, name := range roleDatabaseNames(role) {
 			if strings.EqualFold(name, dbName) {
 				out = append(out, role)
 				break
