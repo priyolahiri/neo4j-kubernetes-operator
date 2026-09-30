@@ -264,6 +264,18 @@ var reasonGuidance = map[string]guidance{
 			"happen through the operator — a dotted alias here was created out of band, or " +
 			"through Neo4jDatabaseAlias.",
 	},
+	controller.ConditionReasonPrivilegesUnattributed: {
+		meaning: "learn mode holds privilege rows on this role that it cannot attribute to a " +
+			"spec statement, so it will not revoke them.",
+		action: "Expected on every existing Neo4jRole after upgrading to v1.17.0: learn mode (the " +
+			"default) learns a statement's stored form from its own grant, and a row that was already " +
+			"there gives it nothing to learn from. Access is unchanged and nothing was revoked. " +
+			"status.unattributedPrivileges holds the rows the role had when learn mode first met it; " +
+			"the condition's message lists the ones no statement claims. Remove unwanted rows by hand " +
+			"(learn mode re-learns once one goes away), delete and recreate the Neo4jRole, or run the " +
+			"operator with --privilege-normalisation=probe (Helm privilegeNormalisation: probe), which " +
+			"attributes every row exactly.",
+	},
 	controller.ReasonGraphPrivilegeOnComposite: {
 		meaning: "a privilege names a composite database as a GRAPH, which Neo4j accepts and " +
 			"then ignores.",
