@@ -6348,11 +6348,15 @@ locations in the namespace, or split the CRs across namespaces.</p>
 <p><strong>External MinIO over TLS</strong>: Change <code>endpointURL</code> to <code>https://minio.example.com</code>. Ensure your MinIO TLS certificate is trusted by the container (or use a properly signed cert). Self-signed certs require mounting the CA into the pod — use <code>additionalArgs</code> to pass <code>--ssl-certificate-authorities</code> if needed.</p>
 </blockquote>
 <h4 id="verify-the-backup-reached-minio">Verify the backup reached MinIO<a class="headerlink" href="#verify-the-backup-reached-minio" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>kubectl<span class="w"> </span>run<span class="w"> </span>minio-client<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--restart<span class="o">=</span>Never<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">  </span>--image<span class="o">=</span>minio/mc<span class="w"> </span>--command<span class="w"> </span>--<span class="w"> </span>/bin/sh<span class="w"> </span>-c<span class="w"> </span><span class="s2">"</span>
-</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="s2">    mc alias set local http://minio.minio.svc:9000 minioadmin minioadmin</span>
-</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="s2">    mc ls local/neo4j-backups/cluster/"</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>kubectl<span class="w"> </span>run<span class="w"> </span>minio-client<span class="w"> </span>--rm<span class="w"> </span>-i<span class="w"> </span>--restart<span class="o">=</span>Never<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">  </span>--image<span class="o">=</span>cgr.dev/chainguard/minio-client<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="w">  </span>--env<span class="o">=</span><span class="nv">MC_HOST_local</span><span class="o">=</span>http://minioadmin:minioadmin@minio.minio.svc:9000<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="w">  </span>--<span class="w"> </span>ls<span class="w"> </span>--recursive<span class="w"> </span>local/neo4j-backups/cluster/
 </span></code></pre></div>
+<p>MinIO no longer publishes public images — <code>minio/mc</code> on Docker Hub and
+<code>quay.io/minio/mc</code> both require authentication — so this uses Chainguard's
+build of the same client. It has no shell, which is why the alias comes from
+the <code>MC_HOST_local</code> variable rather than <code>mc alias set</code>.</p>
 <h4 id="troubleshooting-minio">Troubleshooting MinIO<a class="headerlink" href="#troubleshooting-minio" title="Anchor link to this section">&para;</a></h4>
 <table>
 <thead>
