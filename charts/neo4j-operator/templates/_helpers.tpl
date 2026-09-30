@@ -206,5 +206,8 @@ Get container args based on configuration
 {{- if .Values.kubernetesClusterName }}
 - --kubernetes-cluster-name={{ .Values.kubernetesClusterName }}
 {{- end }}
+{{- with .Values.privilegeNormalisation }}
+- --privilege-normalisation={{ . }}
+{{- end }}
 
 {{- end }}

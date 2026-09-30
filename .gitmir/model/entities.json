@@ -1701,6 +1701,27 @@
         "type": "bool",
         "isNullable": true,
         "note": "True when live privileges differ from spec at end of reconcile (e.g. immutable privileges that cannot be removed)."
+      },
+      {
+        "id": "f-neo4jrole-status-privilege-renderings",
+        "name": "status.privilegeRenderings",
+        "type": "json",
+        "isNullable": true,
+        "note": "Learn mode only (--privilege-normalisation=learn): per spec statement, the canonical rows Neo4j stored for it, learned from the operator's own grant, or ambiguous=true when everything it grants already existed."
+      },
+      {
+        "id": "f-neo4jrole-status-privilege-rendering-scope",
+        "name": "status.privilegeRenderingScope",
+        "type": "string",
+        "isNullable": true,
+        "note": "Learn mode only: digest of target UID, image and alias targets; a change re-learns every statement."
+      },
+      {
+        "id": "f-neo4jrole-status-unattributed-privileges",
+        "name": "status.unattributedPrivileges",
+        "type": "json",
+        "isNullable": true,
+        "note": "Learn mode only: rows the operator cannot attribute to a spec statement (pre-existing at first meeting, or unclaimed while a statement is ambiguous); never revoked, reported via PrivilegesSynced=Unknown/UnattributedPrivileges."
       }
     ],
     "paths": [

@@ -1041,6 +1041,7 @@
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
+      "sf-learn-role-privileges",
       "sf-normalise-role-privileges",
       "sf-validate-role",
       "sf-create-role",
@@ -1912,6 +1913,45 @@
     "serverUnitId": "su-neo4j-client",
     "operation": "business_action",
     "description": "ProbePrivilegeRendering creates a throwaway operator_privilege_probe_<random> role, grants one privilege statement to it, reads SHOW ROLE PRIVILEGES AS COMMANDS back and drops the role, all in one system-database session so the read is causally after the grant (internal/neo4j/users.go).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-learn-role-privileges",
+    "name": "Learn Role Privileges",
+    "serverUnitId": "su-neo4jrole",
+    "operation": "business_action",
+    "description": "Learn mode (--privilege-normalisation=learn, the default; the probe is opt-in): reconcileLearned()/learnDesired() learn each spec statement's stored rows from the operator's own grant (before/after diff), persist them in status.privilegeRenderings BEFORE any revoke, never revoke status.unattributedPrivileges, and re-learn on scope change, a vanished unattributed row, or revocation of a removed statement's rows. Fails loudly when the installed CRD prunes these status fields (internal/controller/neo4jrole_learn.go).",
+    "readsFieldIds": [
+      "f-neo4jrole-privileges",
+      "f-neo4jrole-status-privilege-renderings",
+      "f-neo4jrole-status-unattributed-privileges"
+    ],
+    "writesFieldIds": [
+      "f-neo4jrole-status-privilege-renderings",
+      "f-neo4jrole-status-privilege-rendering-scope",
+      "f-neo4jrole-status-unattributed-privileges"
+    ],
+    "callsFunctionIds": [
+      "sf-grant-and-read-privileges",
+      "sf-revoke-privilege"
+    ],
+    "emitsEventIds": [
+      "ev-privileges-applied"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-security"
+  },
+  {
+    "id": "sf-grant-and-read-privileges",
+    "name": "Grant and read privileges",
+    "serverUnitId": "su-neo4j-client",
+    "operation": "business_action",
+    "description": "GrantAndReadPrivileges runs SHOW ROLE PRIVILEGES, one GRANT/DENY, and SHOW again in a single system-database session, returning the before/after rows so learn mode can attribute exactly the rows the statement created; transient 25N11 conflicts retry the whole sequence (internal/neo4j/users.go).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],

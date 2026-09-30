@@ -55,6 +55,10 @@ type Neo4jRoleReconciler struct {
 	RequeueAfter            time.Duration
 	Validator               *validation.RoleValidator
 
+	// PrivilegeNormalisation overrides the process-wide mode set by
+	// SetPrivilegeNormalisation ("probe" or "learn"); empty uses it. Tests.
+	PrivilegeNormalisation string
+
 	// rendering caches Neo4j's stored form of each privilege statement; see
 	// neo4jrole_normalise.go. Created on first use.
 	rendering          *privilegeRenderingCache
@@ -178,10 +182,14 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return true
 	}
 
+	scope := renderingScope(target, aliasPrint)
+	if r.learnMode() {
+		return r.reconcileLearned(ctx, nc, role, roleName, scope, resolves, requeue)
+	}
+
 	// Privilege diff, against the server's own rendering of each statement
 	// (see neo4jrole_normalise.go) rather than the spec text.
-	desired, desiredByCanonical := r.normaliseDesired(ctx, nc,
-		renderingScope(target, aliasPrint), roleName, role.Spec.Privileges, resolves)
+	desired, desiredByCanonical := r.normaliseDesired(ctx, nc, scope, roleName, role.Spec.Privileges, resolves)
 	current, immutableSet, currentByCanonical, err := r.fetchCurrentPrivileges(ctx, nc, roleName)
 	if err != nil {
 		return r.fail(ctx, role, "fetch current privileges failed", err, requeue)
@@ -235,7 +243,30 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
+	drift, revoked, res, err := r.revokeUnwanted(ctx, nc, role, toRemove, immutableSet, currentByCanonical, requeue)
+	if res != nil {
+		return *res, err
+	}
+
+	syncedStatus, syncedReason, syncedMsg := metav1.ConditionTrue, ConditionReasonPrivilegesSynced, "privileges match spec"
+	if drift {
+		syncedStatus, syncedReason, syncedMsg = metav1.ConditionFalse, ConditionReasonPrivilegesDrifted,
+			"some privileges could not be reconciled (e.g. immutable). See events."
+	}
+	return r.finishReconcile(ctx, nc, role, roleName, applied, len(revoked), len(unresolvable), drift,
+		syncedStatus, syncedReason, syncedMsg, requeue)
+}
+
+// revokeUnwanted revokes each row in toRemove, skipping immutable ones and
+// any it cannot derive a REVOKE for (both reported as drift). It returns the
+// rows actually revoked; a non-nil result means the reconcile must return it.
+func (r *Neo4jRoleReconciler) revokeUnwanted(
+	ctx context.Context, nc *neo4jclient.Client, role *neo4jv1beta1.Neo4jRole,
+	toRemove []string, immutableSet map[string]struct{}, currentByCanonical map[string]string,
+	requeue time.Duration,
+) (bool, []string, *ctrl.Result, error) {
 	drift := false
+	var revoked []string
 	for _, canon := range toRemove {
 		if _, immutable := immutableSet[canon]; immutable {
 			drift = true
@@ -255,12 +286,24 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			continue
 		}
 		if err := nc.ExecutePrivilegeStatement(ctx, revoke); err != nil {
-			return r.fail(ctx, role, fmt.Sprintf("revoke privilege %q failed", revoke), err, requeue)
+			res, ferr := r.fail(ctx, role, fmt.Sprintf("revoke privilege %q failed", revoke), err, requeue)
+			return drift, revoked, &res, ferr
 		}
+		revoked = append(revoked, canon)
 	}
+	return drift, revoked, nil, nil
+}
 
+// finishReconcile is the tail both normalisation modes share: report
+// unresolved databases, re-read, and write conditions, events and status.
+func (r *Neo4jRoleReconciler) finishReconcile(
+	ctx context.Context, nc *neo4jclient.Client, role *neo4jv1beta1.Neo4jRole, roleName string,
+	applied, revoked, unresolved int, drift bool,
+	syncedStatus metav1.ConditionStatus, syncedReason, syncedMsg string,
+	requeue time.Duration,
+) (ctrl.Result, error) {
 	// A privilege naming a database that does not exist grants access to
-	// nothing. It was skipped above rather than applied; this reports it.
+	// nothing. It was skipped rather than applied; this reports it.
 	// Reported, never enforced — see reportUnresolvedPrivilegeDatabases.
 	r.reportUnresolvedPrivilegeDatabases(ctx, nc, role, roleName)
 
@@ -270,18 +313,11 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.fail(ctx, role, "post-apply read failed", err, requeue)
 	}
 
-	// PrivilegesSynced condition
-	if drift {
-		r.setNamedCondition(ctx, role, ConditionTypePrivilegesSynced, metav1.ConditionFalse, ConditionReasonPrivilegesDrifted,
-			"some privileges could not be reconciled (e.g. immutable). See events.")
-	} else {
-		r.setNamedCondition(ctx, role, ConditionTypePrivilegesSynced, metav1.ConditionTrue, ConditionReasonPrivilegesSynced,
-			"privileges match spec")
-	}
+	r.setNamedCondition(ctx, role, ConditionTypePrivilegesSynced, syncedStatus, syncedReason, syncedMsg)
 
-	if applied+len(toRemove) > 0 {
+	if applied+revoked > 0 {
 		r.Recorder.Eventf(role, corev1.EventTypeNormal, EventReasonPrivilegesApplied,
-			"applied %d added / %d revoked privileges", applied, len(toRemove))
+			"applied %d added / %d revoked privileges", applied, revoked)
 	}
 
 	// Emit RoleReady on the first transition to Ready (avoids spamming the
@@ -292,9 +328,9 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	readyMsg := fmt.Sprintf("role %q is in sync (%d privileges)", roleName, len(final))
-	if len(unresolvable) > 0 {
+	if unresolved > 0 {
 		readyMsg = fmt.Sprintf("role %q is in sync (%d privileges; %d skipped until their database exists, see PrivilegesResolve)",
-			roleName, len(final), len(unresolvable))
+			roleName, len(final), unresolved)
 	}
 	r.setStatus(ctx, role, "Ready", metav1.ConditionTrue, ConditionReasonRoleReady, readyMsg, final, drift)
 

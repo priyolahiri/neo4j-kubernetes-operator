@@ -230,6 +230,53 @@ spec:
                   at the end of a reconcile (e.g. immutable privileges that cannot be
                   removed). When EnforcePrivileges is false this is informational only.
                 type: boolean
+              privilegeRenderingScope:
+                description: |-
+                  PrivilegeRenderingScope is a digest of what the renderings depend on:
+                  the server, its image and the alias targets. A change re-learns them.
+                type: string
+              privilegeRenderings:
+                description: |-
+                  PrivilegeRenderings records how Neo4j stored each spec.privileges
+                  statement, learned from the operator's own GRANTs. Populated in learn
+                  mode, the default; with --privilege-normalisation=probe the rendering is
+                  cached in memory instead.
+                items:
+                  description: PrivilegeRendering is the stored form of one spec.privileges
+                    statement.
+                  properties:
+                    ambiguous:
+                      description: |-
+                        Ambiguous is true when granting Statement created no new rows and its
+                        text matches none of the role's rows: everything it grants was already
+                        there, so which rows are its own is unknown. Re-learned when one of
+                        those rows goes away.
+                      type: boolean
+                    rows:
+                      description: |-
+                        Rows are the rows Neo4j stored for Statement, as SHOW ROLE PRIVILEGES
+                        AS COMMANDS shows them.
+                      items:
+                        type: string
+                      type: array
+                    statement:
+                      description: Statement is the spec.privileges entry, exactly
+                        as written.
+                      type: string
+                  required:
+                  - statement
+                  type: object
+                type: array
+              unattributedPrivileges:
+                description: |-
+                  UnattributedPrivileges are rows learn mode cannot attribute to a spec
+                  statement: those the role already had when learn mode first met it,
+                  and any unclaimed while some statement's rows are unknown (Ambiguous).
+                  Learn mode never revokes one — it may be a spec statement's own row —
+                  and reports them through PrivilegesSynced instead.
+                items:
+                  type: string
+                type: array
             type: object
         type: object
     served: true

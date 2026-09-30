@@ -257,12 +257,62 @@ Step 2 matters because Neo4j does not store a privilege as you wrote it:
 | `GRANT ACCESS ON DATABASE myalias TO r` | the alias's **target** database |
 
 So you can write privileges in any form Neo4j accepts. The operator learns each
-statement's stored form by granting it once to a short-lived role named
-`operator_privilege_probe_<random>`, reading it back and dropping that role. The
-result is cached per server version and alias layout, so this happens once per
-statement, not on every reconcile. Those short-lived roles appear in Neo4j's
-security log. A role with that prefix that survives was left by an operator crash
-mid-probe; it holds one privilege, has no users, and is safe to drop.
+statement's stored form in one of two ways, chosen once for the whole operator
+with `--privilege-normalisation` (Helm: `privilegeNormalisation`).
+
+#### Learn mode (default)
+
+The operator learns each statement's stored form from its **own** grant to the
+real role: it reads the role's privileges, grants, and reads again. It keeps the
+result in the role's `status.privilegeRenderings`. It writes nothing to Neo4j
+that it would not have written anyway.
+
+What it cannot see is a privilege that was **already on the role** before the
+operator granted it: that grant is a no-op, so nothing new appears. Learn mode
+never guesses about such rows. It records them in
+`status.unattributedPrivileges`, never revokes them, and sets
+`PrivilegesSynced` to `Unknown` with reason `UnattributedPrivileges` and a
+message naming them. That covers:
+
+- a role that had privileges before its `Neo4jRole` existed — adopted
+  built-ins, roles created by hand, and **every existing role when you upgrade
+  from an operator release without learn mode**;
+- a role whose status was lost (an etcd restore) — everything is treated as
+  pre-existing again, which is safe and only weakens enforcement.
+
+Rows granted **after** learn mode met the role are attributed exactly, and
+out-of-band additions are revoked as usual. To get full enforcement on a role
+with unattributed rows, remove the unwanted ones by hand: when an unattributed
+row goes away, learn mode re-learns, and the next grant attributes whatever the
+spec still needs. Deleting and recreating the `Neo4jRole` also works — the role
+starts empty, so everything is attributed.
+
+When an alias is retargeted, a privilege granted through it stays on the
+**old** target — as it does in Neo4j itself — and gains the new one. Revoke the
+old target's row by hand if it should go.
+
+!!! warning "Upgrade the CRDs with the operator"
+    Learn mode keeps its state in `Neo4jRole` status fields that older CRDs do
+    not have, and the API server silently drops fields its CRD does not
+    declare. `helm upgrade` does **not** update CRDs. If you upgrade the
+    operator without them, every `Neo4jRole` goes to `Failed` with a message
+    telling you to apply the chart's `crds/` directory. No privilege is
+    removed while it is `Failed`, but spec changes are not applied until the
+    CRDs are upgraded.
+
+#### Probe mode
+
+`--privilege-normalisation=probe` attributes every row exactly, including on
+roles that already had privileges. It grants each distinct statement once to a
+short-lived role named `operator_privilege_probe_<random>`, reads it back and
+drops that role. The result is cached in memory per server version and alias
+layout, so this happens once per statement per operator process, not on every
+reconcile. It also moves a privilege when the alias it was granted through is
+retargeted.
+
+Those short-lived roles appear in Neo4j's security log, which is why this is
+not the default. A role with that prefix that survives was left by an operator
+crash mid-probe; it holds one privilege, has no users, and is safe to drop.
 
 If you `kubectl exec` into a pod and run `REVOKE ACCESS ON DATABASE x FROM analytics_reader` directly, the controller will re-apply that grant within ~30 seconds. To opt out per-role:
 
