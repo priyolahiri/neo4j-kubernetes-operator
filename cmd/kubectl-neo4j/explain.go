@@ -93,17 +93,24 @@ var conditionGuidance = map[string]guidance{
 		action:  "When false, a listed role may not exist. Create the Neo4jRole; the user controller watches roles and retries when one lands.",
 	},
 	controller.ConditionTypePrivilegesSynced: {
-		meaning: "the role's privileges in Neo4j match spec.privileges.",
-		action:  "When false, read the message for the failing statement. With enforcePrivileges true the spec is authoritative and drift is reverted each loop.",
+		meaning: "the role's privileges in Neo4j match spec.privileges and spec.privilegeRules.",
+		action: "When false, read the message for the failing statement. With enforcePrivileges true the spec is authoritative and drift is reverted each loop. " +
+			"Unknown with reason UnattributedPrivileges comes from learn mode (--privilege-normalisation=learn, the default): " +
+			"the role holds rows it had before the operator granted to it — every existing role after an upgrade — which it " +
+			"cannot attribute to a spec statement and so never revokes; status.unattributedPrivileges lists them. " +
+			"Remove unwanted ones by hand (learn mode then re-learns), recreate the Neo4jRole, or run the operator with " +
+			"--privilege-normalisation=probe.",
 	},
 	controller.ConditionTypePrivilegesResolve: {
 		meaning: "every database named by a privilege exists on this cluster.",
-		action: "When false, the privileges are in sync with spec AND grant access to nothing — " +
-			"Neo4j accepts a grant on a database that does not exist without complaint. On a DR " +
+		action: "When false, the privileges naming a missing database are NOT on the role — Neo4j " +
+			"refuses a grant on a database that does not exist, so the operator skips them and applies " +
+			"the rest; the message names them, and for spec.privilegeRules the field. On a DR " +
 			"cluster the cause is usually the replica's name: a replica of \"foo\" is called " +
 			"\"foo-replica\", and privileges attach to the database, not to an alias. Rewrite the " +
-			"database name in spec.privileges. If the database is simply not created yet, this " +
-			"clears by itself. Reason GraphPrivilegeOnComposite is the same failure on a " +
+			"database name in spec.privileges or spec.privilegeRules. If the database is simply not " +
+			"created yet, this clears by itself — within seconds of its Neo4jDatabase appearing. " +
+			"Reason GraphPrivilegeOnComposite is a different failure on a " +
 			"composite database: a GRAPH privilege there is accepted and inert, because graph " +
 			"privileges attach to the constituents' target databases. Grant ACCESS on the " +
 			"composite and the graph privileges on each constituent's target.",

@@ -72,6 +72,53 @@ spec:                                     spec:
 Also new in v1.14 (additive, no action needed): `Neo4jRestore.status.stats.duration`
 and `status.backupInfo` are now populated on a successful restore.
 
+## Upgrading from v1.16.x
+
+Apply the new release's CRDs **before** upgrading the operator (step 1
+[below](#upgrading-between-future-releases)). This release needs them for more
+than new fields: learn mode keeps its state in new `Neo4jRole` status fields,
+and without the CRDs every `Neo4jRole` goes `Failed` saying so. No privilege is
+removed in that state.
+
+### `Neo4jRole`: privileges are matched by learn mode (behaviour change)
+
+Neo4j stores a privilege differently from how it is written (`NODES` becomes
+`NODE`, lists become one row per item, aliases resolve to their target). The
+operator used to compare the text, which toggled some privileges off on every
+other reconcile. It now compares against what Neo4j stores, learned from its
+own grants — **learn mode**, the new default; see
+[Privilege drift reconciliation](user_role_management.md#privilege-drift-reconciliation).
+
+What you will see on upgrade: **every existing role reports
+`PrivilegesSynced=Unknown` (reason `UnattributedPrivileges`)**, because learn
+mode cannot attribute rows that were already there. Nothing is revoked and
+access is unchanged; the difference is that out-of-band additions to those rows
+are not removed until you clean them up. To restore full enforcement on a
+role, remove unwanted rows by hand or delete and recreate the `Neo4jRole`. If
+you would rather have exact attribution immediately and can accept short-lived
+`operator_privilege_probe_*` roles in Neo4j's security log, set the Helm value
+`privilegeNormalisation: probe`.
+
+### Sharding no longer sets the server's Cypher language
+
+Enabling property sharding used to set `db.query.default_language=CYPHER_25`
+for the whole server. It no longer does: sharded databases get Cypher 25 on
+their own, and the server default is the new
+`spec.serverDefaultCypherLanguage`. **Existing clusters are unaffected** — the
+operator records what each one already runs and keeps writing it, so the
+upgrade restarts nothing. See the
+[property sharding guide](property_sharding.md).
+
+### New, no action needed
+
+- `spec.serverDefaultCypherLanguage` on clusters and standalones — see
+  [Configuration](configuration.md). Existing deployments keep their current
+  language.
+- `spec.privilegeRules` on `Neo4jRole`: privileges as fields instead of Cypher.
+- Remote composite constituents with stored credentials now work on the 5.26
+  LTS; they failed there in v1.16.0. Their URL must be `neo4j+s://` or
+  `neo4j+ssc://`, which is now checked at apply time.
+
 ## Upgrading between future releases
 
 When a newer version ships:
