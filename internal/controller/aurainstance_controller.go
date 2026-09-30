@@ -140,7 +140,7 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			// describes something no retry can change (type is immutable). Name it
 			// and stop, rather than rewriting the same status every 30s.
 			if isAuraRefusal(err) || aura.IsMultiDatabaseTierUnsupported(err) {
-				return r.failTerminal(ctx, req, inst, "MultiDatabaseUnsupported", err)
+				return r.failTerminal(ctx, req, inst, v2CreateRefusalReason(inst), err)
 			}
 			// Not terminal: the answer may become available later, so keep the
 			// explanation on status and retry rather than binding the wrong instance.
