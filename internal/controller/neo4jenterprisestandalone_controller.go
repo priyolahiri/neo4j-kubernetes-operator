@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/equality"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -2346,8 +2348,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileTLSCertificate(ctx contex
 		} else {
 			return fmt.Errorf("failed to get TLS Certificate: %w", err)
 		}
-	} else {
-		// Update existing Certificate
+	} else if !equality.Semantic.DeepEqual(existing.Spec, certificate.Spec) {
+		// Only when it changed, as the cluster controller does. An unconditional
+		// Update goes through cert-manager's admission webhook on every
+		// reconcile, so any webhook outage failed the whole standalone
+		// reconcile — diagnostics included — although nothing had changed.
 		existing.Spec = certificate.Spec
 		logger.Info("Updating TLS Certificate", "name", certificate.Name)
 		if err := r.Update(ctx, existing); err != nil {
