@@ -35,7 +35,9 @@ type AliasInfo struct {
 	// `CREATE ALIAS \`x.y\`` with no composite `x` in sight, producing a plain
 	// alias that looks exactly like a constituent of `x` in every listing.
 	// Matching on the name prefix treats the two as the same thing; this
-	// column does not.
+	// column does not. (That reading of `x.y` is Cypher 5's — Cypher 25 makes it
+	// constituent `y` of `x` — which is why this file's DDL is pinned with
+	// Cypher5.)
 	Composite string
 	// Database is the database the alias resolves to.
 	Database string
@@ -121,8 +123,8 @@ func (c *Client) CreateAlias(ctx context.Context, aliasName, targetDatabase stri
 	})
 	defer c.closeSession(ctx, session)
 
-	query := fmt.Sprintf("CREATE ALIAS `%s` IF NOT EXISTS FOR DATABASE `%s`",
-		escapeBackticks(aliasName), escapeBackticks(targetDatabase))
+	query := Cypher5(fmt.Sprintf("CREATE ALIAS `%s` IF NOT EXISTS FOR DATABASE `%s`",
+		escapeBackticks(aliasName), escapeBackticks(targetDatabase)))
 	if _, err := session.Run(ctx, query, nil); err != nil {
 		return fmt.Errorf("failed to create alias %s for database %s: %w", aliasName, targetDatabase, err)
 	}
@@ -137,8 +139,8 @@ func (c *Client) AlterAliasTarget(ctx context.Context, aliasName, targetDatabase
 	})
 	defer c.closeSession(ctx, session)
 
-	query := fmt.Sprintf("ALTER ALIAS `%s` SET DATABASE TARGET `%s`",
-		escapeBackticks(aliasName), escapeBackticks(targetDatabase))
+	query := Cypher5(fmt.Sprintf("ALTER ALIAS `%s` SET DATABASE TARGET `%s`",
+		escapeBackticks(aliasName), escapeBackticks(targetDatabase)))
 	if _, err := session.Run(ctx, query, nil); err != nil {
 		return fmt.Errorf("failed to alter alias %s to target %s: %w", aliasName, targetDatabase, err)
 	}
@@ -154,7 +156,7 @@ func (c *Client) DropAliasIfExists(ctx context.Context, aliasName string) error 
 	})
 	defer c.closeSession(ctx, session)
 
-	query := fmt.Sprintf("DROP ALIAS `%s` IF EXISTS FOR DATABASE", escapeBackticks(aliasName))
+	query := Cypher5(fmt.Sprintf("DROP ALIAS `%s` IF EXISTS FOR DATABASE", escapeBackticks(aliasName)))
 	if _, err := session.Run(ctx, query, nil); err != nil {
 		return fmt.Errorf("failed to drop alias %s: %w", aliasName, err)
 	}

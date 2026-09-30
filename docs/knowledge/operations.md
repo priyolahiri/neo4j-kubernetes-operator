@@ -526,6 +526,13 @@
 - **pinned-by:** `TestNoRequeueWithError` (`internal/controller/requeue_with_error_guard_test.go`) parses the package and fails on any such return.
 - **enforcement:** unit test (AST guard).
 
+### id 97 — Composite and alias DDL is pinned to a Cypher language; never left to the server default
+- **scope:** `internal/neo4j/composite.go` (constituent CREATE/ALTER/DROP, local and remote), `internal/neo4j/aliases.go` (Neo4jDatabaseAlias DDL), and any future statement containing a graph reference `<composite>.<name>`.
+- **rule:** Constituent and alias statements go through `Cypher5()` with the parts quoted separately (`` `comp`.`name` ``). The one Cypher-25-only form, OIDC credential forwarding, goes through `Cypher25()` with the qualified name quoted WHOLE (`` `comp.name` ``). Never emit either form unpinned.
+- **why:** the two languages read graph references differently. Cypher 5: `` `comp`.`name` `` is the constituent, `` `comp.name` `` a plain alias whose name contains a dot. Cypher 25: `` `comp`.`name` `` is refused outright (42NAA, "separate name parts should not be quoted individually") and `` `comp.name` `` is the constituent. Since v1.17.0 (#416) a new CalVer deployment defaults to Cypher 25, so the unpinned DDL made every composite on a fresh CalVer deployment `Failed` — caught by the extended suite on the release commit, 2026-09-30; the v1.16.0 journey had run composites only on 5.26, and the OIDC path (`CYPHER 25` + separately quoted parts) had never worked. `CYPHER 5` is accepted by 5.26.0, 5.26.28 and 2026.08.1. The dotted-alias ordering trap (42N87) exists in BOTH languages.
+- **pinned-by:** `TestRemoteAliasStatementPinsCypher25OnlyForOIDC`, `TestCompositeAndAliasDDLIsPinnedToCypher5` (`internal/neo4j/composite_remote_test.go`); the extended spec `composite_database_deployed_test.go` on the CalVer anchor.
+- **enforcement:** unit test + extended integration suite.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

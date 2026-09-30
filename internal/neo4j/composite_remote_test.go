@@ -27,7 +27,7 @@ import (
 // rejects OIDC CREDENTIAL FORWARDING without it (42I67). Verified on 5.26.31
 // and 2026.08.1.
 func TestRemoteAliasStatementPinsCypher25OnlyForOIDC(t *testing.T) {
-	head := "CREATE ALIAS `%s`.`%s` IF NOT EXISTS FOR DATABASE `%s`"
+	head := "CREATE ALIAS %s IF NOT EXISTS FOR DATABASE `%s`"
 	url := "neo4j+s://upstream.example:7687"
 
 	stored, params := buildRemoteAliasStatement(head, "cmp", "rem", "neo4j", url, RemoteConstituentAuth{
@@ -36,7 +36,7 @@ func TestRemoteAliasStatementPinsCypher25OnlyForOIDC(t *testing.T) {
 	if HasCypher25Prefix(stored) {
 		t.Errorf("stored-credential remote alias must run on 5.26, which rejects the Cypher 25 directive: %s", stored)
 	}
-	if !strings.HasPrefix(stored, "CREATE ALIAS `cmp`.`rem`") || !strings.Contains(stored, "USER $remoteUser PASSWORD $remotePassword") {
+	if !strings.HasPrefix(stored, "CYPHER 5 CREATE ALIAS `cmp`.`rem`") || !strings.Contains(stored, "USER $remoteUser PASSWORD $remotePassword") {
 		t.Errorf("unexpected stored-credential statement: %s", stored)
 	}
 	if params["remotePassword"] != "p" {
@@ -44,7 +44,26 @@ func TestRemoteAliasStatementPinsCypher25OnlyForOIDC(t *testing.T) {
 	}
 
 	oidc, _ := buildRemoteAliasStatement(head, "cmp", "rem", "neo4j", url, RemoteConstituentAuth{OIDCForwarding: true})
-	if !strings.HasPrefix(oidc, "CYPHER 25 CREATE ALIAS `cmp`.`rem`") || !strings.HasSuffix(oidc, "OIDC CREDENTIAL FORWARDING") {
-		t.Errorf("OIDC remote alias must be pinned to Cypher 25: %s", oidc)
+	// Cypher 25 refuses separately quoted name parts (42NAA) and reads the
+	// whole-quoted qualified name as the constituent. Verified on 2026.08.1.
+	if !strings.HasPrefix(oidc, "CYPHER 25 CREATE ALIAS `cmp.rem`") || !strings.HasSuffix(oidc, "OIDC CREDENTIAL FORWARDING") {
+		t.Errorf("OIDC remote alias must be pinned to Cypher 25 with the whole-quoted name: %s", oidc)
+	}
+}
+
+// Graph references mean different things in the two languages, so every
+// constituent and alias statement is pinned rather than left to the server's
+// default — which since v1.17.0 is Cypher 25 on a new CalVer deployment, where
+// the unpinned `comp`.`name` form is refused outright (42NAA). Verified on
+// 5.26.0, 5.26.28 and 2026.08.1: `CYPHER 5` is accepted by all three.
+func TestCompositeAndAliasDDLIsPinnedToCypher5(t *testing.T) {
+	for _, stmt := range []string{
+		Cypher5("CREATE ALIAS `a`.`b` IF NOT EXISTS FOR DATABASE `c`"),
+		Cypher5(Cypher5("DROP ALIAS `a`.`b` IF EXISTS FOR DATABASE")),
+		Cypher5("  cypher 5 ALTER ALIAS `a` SET DATABASE TARGET `c`"),
+	} {
+		if !strings.HasPrefix(strings.ToUpper(stmt), "CYPHER 5 ") || strings.Count(strings.ToUpper(stmt), "CYPHER 5") != 1 {
+			t.Errorf("want exactly one CYPHER 5 directive: %q", stmt)
+		}
 	}
 }
