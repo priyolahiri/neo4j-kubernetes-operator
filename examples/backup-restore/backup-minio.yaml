@@ -7,19 +7,24 @@
 #
 # Quick MinIO setup (for testing — not production-hardened):
 #
+# MinIO no longer publishes public images (Docker Hub minio/minio and
+# quay.io/minio/* both require authentication), so this uses Chainguard's
+# build of the same server and client. Neither image has a shell.
+#
 #   kubectl create namespace minio
-#   kubectl -n minio create deployment minio --image=quay.io/minio/minio \
-#     -- /bin/sh -c 'minio server /data --console-address :9001'
+#   kubectl -n minio create deployment minio --image=cgr.dev/chainguard/minio \
+#     -- /usr/bin/minio server /data --console-address :9001
 #   kubectl -n minio expose deployment minio --port=9000 --target-port=9000
 #
 # Or with the MinIO Operator (recommended for production):
 #   https://min.io/docs/minio/kubernetes/upstream/
 #
-# Once MinIO is running, create a bucket and access credentials:
-#   kubectl run minio-client --rm -it --restart=Never \
-#     --image=quay.io/minio/mc --command -- /bin/sh -c "
-#       mc alias set local http://minio.minio.svc:9000 minioadmin minioadmin;
-#       mc mb local/neo4j-backups"
+# Once MinIO is running, create the bucket. mc takes the alias from
+# MC_HOST_<alias>, since there is no shell to run `mc alias set` in:
+#   kubectl run minio-client --rm -i --restart=Never \
+#     --image=cgr.dev/chainguard/minio-client \
+#     --env=MC_HOST_local=http://minioadmin:minioadmin@minio.minio.svc:9000 \
+#     -- mb local/neo4j-backups
 #
 # Then create the credentials Secret:
 #   kubectl create secret generic minio-backup-credentials \

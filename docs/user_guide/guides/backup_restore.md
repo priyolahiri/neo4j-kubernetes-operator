@@ -451,11 +451,16 @@ spec:
 #### Verify the backup reached MinIO
 
 ```bash
-kubectl run minio-client --rm -it --restart=Never \
-  --image=minio/mc --command -- /bin/sh -c "
-    mc alias set local http://minio.minio.svc:9000 minioadmin minioadmin
-    mc ls local/neo4j-backups/cluster/"
+kubectl run minio-client --rm -i --restart=Never \
+  --image=cgr.dev/chainguard/minio-client \
+  --env=MC_HOST_local=http://minioadmin:minioadmin@minio.minio.svc:9000 \
+  -- ls --recursive local/neo4j-backups/cluster/
 ```
+
+MinIO no longer publishes public images — `minio/mc` on Docker Hub and
+`quay.io/minio/mc` both require authentication — so this uses Chainguard's
+build of the same client. It has no shell, which is why the alias comes from
+the `MC_HOST_local` variable rather than `mc alias set`.
 
 #### Troubleshooting MinIO
 

@@ -18,7 +18,6 @@ package integration_test
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -614,14 +613,15 @@ func deployMinIO(namespace, accessKey, secretKey string) {
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
 						Name: "minio",
-						// quay.io, not Docker Hub: `minio/minio:latest` there is no
-						// longer anonymously pullable — both the host and a Kind node
-						// get "pull access denied ... insufficient_scope" (observed
-						// 2026-09-12, while setting up Phase 5). The published example
-						// in examples/backup-restore/backup-minio.yaml already points
-						// at quay.io; this was the last Docker Hub reference left.
-						Image: "quay.io/minio/minio:latest",
-						Args:  []string{"server", "/data", "--console-address", ":9001"},
+						// Chainguard's build of the same server. MinIO withdrew its own
+						// public images: Docker Hub `minio/minio` stopped being
+						// anonymously pullable first (2026-09-12), then quay.io/minio
+						// began answering 401 "Requires authentication" (2026-09-30).
+						// The image is distroless and runs as 65532, hence the
+						// explicit writable /data below and no shell anywhere.
+						Image:        minioServerImage,
+						Args:         []string{"server", "/data", "--console-address", ":9001"},
+						VolumeMounts: []corev1.VolumeMount{{Name: "data", MountPath: "/data"}},
 						Env: []corev1.EnvVar{
 							{Name: "MINIO_ROOT_USER", Value: accessKey},
 							{Name: "MINIO_ROOT_PASSWORD", Value: secretKey},
@@ -640,6 +640,10 @@ func deployMinIO(namespace, accessKey, secretKey string) {
 							InitialDelaySeconds: 5,
 							PeriodSeconds:       5,
 						},
+					}},
+					Volumes: []corev1.Volume{{
+						Name:         "data",
+						VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 					}},
 				},
 			},
@@ -671,16 +675,20 @@ func waitForMinIOReady(namespace string, timeout time.Duration) {
 	}, timeout, 5*time.Second).Should(BeTrue(), "MinIO Deployment never became Ready")
 }
 
-// createMinIOBucket runs a one-shot Job using minio/mc to create the bucket.
+// The MinIO server and client images the integration suite runs. See
+// deployMinIO for why these are not MinIO's own.
+const (
+	minioServerImage = "cgr.dev/chainguard/minio:latest"
+	minioClientImage = "cgr.dev/chainguard/minio-client:latest"
+)
+
+// createMinIOBucket runs a one-shot Job using mc to create the bucket.
 // Returns when the Job reports Succeeded; fails the test if it doesn't.
+//
+// The client image has no shell, so there is no `mc alias set && mc mb`
+// script: mc reads the alias from MC_HOST_<alias> instead.
 func createMinIOBucket(namespace, bucket, accessKey, secretKey string, timeout time.Duration) {
 	jobName := "mc-mkbucket"
-	script := strings.Join([]string{
-		// `mc alias set local http://minio:9000 <key> <secret>`
-		// `mc mb --ignore-existing local/<bucket>`
-		"mc alias set local http://minio:9000 " + accessKey + " " + secretKey,
-		"mc mb --ignore-existing local/" + bucket,
-	}, " && ")
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
 		Spec: batchv1.JobSpec{
@@ -689,9 +697,13 @@ func createMinIOBucket(namespace, bucket, accessKey, secretKey string, timeout t
 				Spec: corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
 					Containers: []corev1.Container{{
-						Name:    "mc",
-						Image:   "quay.io/minio/mc:latest",
-						Command: []string{"/bin/sh", "-c", script},
+						Name:  "mc",
+						Image: minioClientImage,
+						Args:  []string{"mb", "--ignore-existing", "local/" + bucket},
+						Env: []corev1.EnvVar{{
+							Name:  "MC_HOST_local",
+							Value: "http://" + accessKey + ":" + secretKey + "@minio:9000",
+						}},
 					}},
 				},
 			},
