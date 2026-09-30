@@ -439,7 +439,8 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | Condition | Meaning |
 |---|---|
 | `Ready` | Role exists, privileges in sync |
-| `PrivilegesSynced` | Live privileges match `spec.privileges` (immutable extras excluded) |
+| `PrivilegesSynced` | Live privileges match `spec.privileges` and `spec.privilegeRules` (immutable extras excluded). `False`/`PrivilegesDrifted`: something could not be reconciled (see events). `Unknown`/`UnattributedPrivileges`: learn mode holds rows it cannot attribute and will not revoke — see [Learn mode](#learn-mode-default) |
+| `PrivilegesResolve` | Every database a privilege names exists. `False`/`DatabaseNotFound`: those privileges are skipped (Neo4j refuses a grant on a missing database) and the rest applied; the message names them, and the field for a `privilegeRules` entry. `False`/`GraphPrivilegeOnComposite`: a GRAPH privilege on a composite database, which Neo4j accepts and ignores |
 | `ClusterNotReady` | `spec.clusterRef` exists but is not in `Ready` phase |
 
 ### `Neo4jRoleBinding`
@@ -521,6 +522,45 @@ Confirm the Secret's `data.<key>` (default `password`) actually changed; `kubect
 **Symptom**: `validation failed: ... privilege statement must end with TO <role>`.
 
 Each entry in `Neo4jRole.spec.privileges` must end with `TO <spec.name>` so the operator can derive the matching `REVOKE`. The role name must match exactly (case-sensitive).
+
+**Symptom**: `PrivilegesSynced` is `Unknown` with reason `UnattributedPrivileges`.
+
+Learn mode (the default) found rows on the role that were there before the
+operator granted to it — every existing role shows this after upgrading to a
+release with learn mode. It will not revoke them, because it cannot tell
+whether one is a spec statement's own row; `status.unattributedPrivileges`
+lists them. Nothing is broken, but out-of-band additions to those rows are not
+removed. To restore full enforcement, either remove the unwanted rows by hand
+(when an unattributed row goes away, learn mode re-learns and the next grant
+attributes whatever the spec still needs), delete and recreate the
+`Neo4jRole` (it starts empty, so everything is attributed), or run the
+operator with `--privilege-normalisation=probe`. See [Learn mode](#learn-mode-default).
+
+**Symptom**: `PrivilegesResolve` is `False` with reason `DatabaseNotFound`.
+
+A privilege names a database this cluster does not have. Neo4j refuses such a
+grant, so the operator skips it and applies the rest of the role. If the
+database simply is not created yet, the condition clears on its own — within
+seconds of its `Neo4jDatabase` appearing. Otherwise fix the name; for a
+`privilegeRules` entry the message names the field, e.g.
+`spec.privilegeRules[2].onDatabase`. On a DR cluster, remember the replica of
+`foo` is called `foo-replica`.
+
+**Symptom**: every `Neo4jRole` is `Failed` with `the installed Neo4jRole CRD predates this operator`.
+
+The operator was upgraded without its CRDs. `helm upgrade` never updates CRDs,
+and the API server silently drops the status fields learn mode keeps its state
+in. Apply the release's CRDs (see the [Installation guide](installation.md));
+no privilege is removed while the roles are `Failed`, but spec changes are not
+applied until you do.
+
+**Symptom**: roles named `operator_privilege_probe_<random>` in `SHOW ROLES`, or in the security log.
+
+Those are probe mode's short-lived roles (`--privilege-normalisation=probe`),
+used to learn how Neo4j stores each statement; each is created, read and
+dropped within one call. One that survives was left by an operator crash
+mid-probe: it holds a single privilege, has no users, and is safe to drop.
+Learn mode, the default, never creates them.
 
 **Symptom**: `cannot revoke immutable privilege` warning.
 

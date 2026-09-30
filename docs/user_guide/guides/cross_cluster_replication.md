@@ -515,13 +515,15 @@ DR cluster.
     **privileges attach to the database, not the alias** — see
     [Aliases and privileges](database_aliases.md#aliases-and-privileges).
 
-    So a privilege copied verbatim grants access to a database that does not
-    exist on the DR cluster. **Neo4j accepts this without complaint**: the
-    `Neo4jRole` reconciles to `Ready`, `enforcePrivileges: true` holds it
-    there, and your dashboards stay green while DR authorization is silently
-    broken — the exact failure DR exists to prevent.
+    So a privilege copied verbatim names a database that does not exist on
+    the DR cluster. Neo4j refuses such a grant, so the operator skips it: the
+    `Neo4jRole` still reaches `Ready` with every *other* privilege applied, and
+    only `PrivilegesResolve=False` (reason `DatabaseNotFound`) says that the
+    ones DR depends on are missing — the exact failure DR exists to prevent.
+    Watch that condition, not `Ready`.
 
-    Rewrite every database name in `spec.privileges` to the replica's name.
+    Rewrite every database name in `spec.privileges` (or `onDatabase` /
+    `onGraph` in `spec.privilegeRules`) to the replica's name.
 
 What copies, and what does not:
 
