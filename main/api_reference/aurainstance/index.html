@@ -4108,9 +4108,14 @@
 <td>Enables vector optimization.</td>
 </tr>
 <tr>
+<td><code>graphAnalytics</code></td>
+<td><code>string</code></td>
+<td>How Graph Data Science runs: <code>unavailable</code>, <code>serverless</code> (on-demand sessions outside the instance) or <code>plugin</code> (inside the instance). Applied at creation and immutable afterwards. <strong><code>serverless</code> can only be expressed through the Aura v2beta1 API</strong>, so an instance asking for it is created there — exactly like a <code>multiDatabase</code> instance: it needs an organization ID, and <code>secondariesCount</code>, <code>cdcEnrichmentMode</code>, <code>customerManagedKeyId</code> and <code>source</code> are rejected with it. It is then managed through v1 as usual.</td>
+</tr>
+<tr>
 <td><code>graphAnalyticsPlugin</code></td>
 <td><code>*bool</code></td>
-<td>Enables the graph-analytics plugin.</td>
+<td><strong>Deprecated</strong> — use <code>graphAnalytics</code> (<code>true</code> is <code>plugin</code>, <code>false</code> is <code>unavailable</code>). Setting both is rejected. An existing CR can switch to the equivalent <code>graphAnalytics</code> value; any other change is rejected.</td>
 </tr>
 <tr>
 <td><code>secondariesCount</code></td>
@@ -4333,7 +4338,7 @@
 <li><strong>It changes which API creates the instance.</strong> <code>multi_database</code> exists only in the Aura <strong>v2beta1</strong> API, so the operator issues the create there and then manages the instance through v1 as usual (observe, resize, pause/resume, upgrade, delete all work against a v2beta1-created instance). v2beta1 is <strong>beta</strong> — see the caveat in <a href="../../user_guide/aura_orchestration/">Aura orchestration</a>.</li>
 <li><strong>Only two tiers support it</strong>: <code>business-critical</code> and <code>enterprise-db</code> (Virtual Dedicated Cloud). <code>free-db</code> and <code>professional-db</code> are rejected by Aura outright (<code>multi-database-tier-not-supported</code>), so the CRD rejects them on write.</li>
 <li><strong>It needs an organization ID</strong>, because the v2beta1 paths are organization-scoped. Set <code>spec.organizationId</code> or <code>defaultOrganizationId</code> on the <a href="../auraproviderconfig/"><code>AuraProviderConfig</code></a>.</li>
-<li><strong>A smaller set of fields applies.</strong> The v2beta1 create accepts only name, type, cloudProvider, region and memory, and <em>silently ignores</em> anything else. So <code>storage</code>, <code>vectorOptimized</code>, <code>graphAnalyticsPlugin</code>, <code>secondariesCount</code>, <code>cdcEnrichmentMode</code>, <code>customerManagedKeyId</code> and <code>source</code> are <strong>rejected</strong> in combination with <code>multiDatabase</code> rather than quietly dropped. <code>version</code> is not sent either — Aura picks the version — although the CRD still requires it.</li>
+<li><strong>A smaller set of fields applies.</strong> The v2beta1 create takes name, type, cloudProvider, region, memory, <code>storage</code> and <code>graphAnalytics</code> (including <code>serverless</code>). <code>vectorOptimized</code> is <strong>rejected</strong> with <code>multiDatabase</code>, because Aura refuses the combination. <code>secondariesCount</code>, <code>cdcEnrichmentMode</code>, <code>customerManagedKeyId</code> and <code>source</code> have no v2beta1 equivalent and are rejected too. <code>version</code> is not sent either — Aura picks the version — although the CRD still requires it.</li>
 <li><strong>Instances created by earlier operator versions are not multi-database</strong>, and cannot be made so. An <code>AuraDatabase</code> against one is refused with <code>Ready=False</code>, reason <code>InstanceNotMultiDatabase</code>; the fix is a new <code>AuraInstance</code> (and a data migration), not a spec edit.</li>
 </ul>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">spec</span><span class="p">:</span>

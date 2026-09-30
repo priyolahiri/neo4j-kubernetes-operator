@@ -4742,6 +4742,10 @@ what caught four real client bugs during the 2026-07-30 re-diff.</p>
 <td>An <code>AuraInstance</code> with <code>multiDatabase: true</code> + <code>organizationId</code> is created via <strong>v2beta1</strong> (v1 <code>type</code> names are translated), then remains manageable through v1; <code>status.atProvider.multiDatabase</code> reports <code>true</code>. On a v1-created instance the field reports the <strong>true</strong> value from the v2beta1 probe — <code>false</code> is correct there, and it stays <strong>absent</strong> (unknown) only when no <code>organizationId</code> is resolvable, since the v1 GET carries no such field</td>
 </tr>
 <tr>
+<td>Multi-database create options</td>
+<td>Same instance, created with <code>storage</code> set to a non-default size and <code>graphAnalytics</code> set: the v2beta1 <code>GET</code> reports that <code>storage</code> and that <code>graph_analytics</code>. Separately, a <strong>non</strong>-multi-database instance with <code>graphAnalytics: serverless</code> is created through v2beta1 (it needs <code>organizationId</code>) and its <code>GET</code> reports <code>graph_analytics: serverless</code> with <code>multi_database: false</code>; the instance stays <code>Ready</code> with <strong>no</strong> update attempted, even though v1 reports <code>graph_analytics_plugin: false</code> for it (v1 cannot express serverless). <code>graphAnalytics: plugin</code> on a plain instance still goes through v1. <code>vectorOptimized: true</code> with <code>multiDatabase</code> is refused at apply time with Aura's reason (<code>multi-database-capability-not-supported</code>), never sent. Also confirm the API still REJECTS unknown create fields and still accepts restore by <code>id</code> — both changed or drifted in the spec before (id 87 items 12 and 15)</td>
+</tr>
+<tr>
 <td>Console RBAC</td>
 <td><code>AuraProjectMember</code> for an existing <strong>org</strong> member is added without an invite; role PATCH bodies are accepted (they are <code>{organization_roles:[…]}</code> / <code>{project_roles:[…]}</code>, not a scalar)</td>
 </tr>
