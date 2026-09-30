@@ -4155,6 +4155,21 @@ cluster only when it <em>needs</em> clustering.</p>
 <td>Auth model is deployment-independent</td>
 </tr>
 <tr>
+<td><strong>Privilege matching</strong> (stored form; learn vs probe mode)</td>
+<td>Standalone <strong>and</strong> Cluster</td>
+<td>The diff compares against how Neo4j <em>stores</em> each statement (#409), learned from the operator's own grants (learn, the default) or a throwaway role (probe) (#410). The rendering is deployment-independent, so standalone covers the rules — but learn mode's before/after reads and probe's reads are only correct if they are causally ordered with the grant, which only a multi-server cluster actually tests</td>
+</tr>
+<tr>
+<td><strong>Upgrading from the previous release</strong></td>
+<td>Start of Phase 1, and Phase 3</td>
+<td>Two changes promise <em>nothing happens</em> on upgrade: learn mode must revoke nothing on existing roles, and <code>serverDefaultCypherLanguage</code> must record what a deployment already runs without rewriting <code>neo4j.conf</code> (a rewrite rolls the servers — observed once, on a sharding cluster). Only an object created by the <em>previous</em> operator exercises either</td>
+</tr>
+<tr>
+<td><strong>Server default Cypher language</strong> (<code>serverDefaultCypherLanguage</code>)</td>
+<td>Standalone (5.26) <strong>and</strong> Cluster (CalVer), Sharding for the upgrade</td>
+<td>The two lines behave oppositely — nothing is ever written on 5.26, where the setting does not exist; CalVer writes <code>CYPHER_25</code> for a new deployment — so each phase covers its own line</td>
+</tr>
+<tr>
 <td>Plugins (APOC, …)</td>
 <td>Standalone (ConfigMap path)</td>
 <td>Cluster uses the <strong>env-var</strong> path; ConfigMap path is the cheaper of the two to smoke</td>
@@ -4388,6 +4403,34 @@ back to 1 replica.</p>
 <td><code>Neo4jUser</code>/<code>Role</code>/<code>RoleBinding</code> Ready; <code>SHOW USERS</code>/<code>SHOW ROLES</code>. <strong>Reference at least one role by its hyphenated CR <code>metadata.name</code></strong> (not <code>spec.name</code>) and confirm the grant lands (no <code>RolesPending</code>) and a <code>RolesResolved</code> event fires.</td>
 </tr>
 <tr>
+<td><strong>Upgrade from the previous release</strong> (run FIRST, before building from <code>main</code>)</td>
+<td>Install the previous release (<code>ghcr.io/priyolahiri/neo4j-kubernetes-operator:&lt;previous tag&gt;</code>), then create a standalone and a <code>Neo4jRole</code> with a few privileges under it. Then deploy <code>main</code> <strong>without applying its CRDs</strong>: every <code>Neo4jRole</code> goes <code>Failed</code> with <code>the installed Neo4jRole CRD predates this operator</code>, and <code>SHOW ROLE … PRIVILEGES</code> is unchanged (nothing granted, nothing revoked). Apply the CRDs: the role goes <code>Ready</code> with <code>PrivilegesSynced=Unknown</code>/<code>UnattributedPrivileges</code> listing every pre-existing row, <strong>none revoked</strong>. The standalone records <code>status.effectiveCypherLanguage=CYPHER_5</code>, its <code>neo4j.conf</code> is <strong>byte-identical</strong> to the old operator's (diff the ConfigMap) and the pod <strong>did not restart</strong>. Remove one unattributed row by hand → it is re-learned and attributed. Then tear down and continue from a clean <code>main</code> install</td>
+</tr>
+<tr>
+<td>Privileges match Neo4j's <strong>stored form</strong></td>
+<td>A role written in forms Neo4j rewrites — <code>NODES *</code>, <code>ON DATABASES a, b</code>, <code>READ {name, age}</code>, no segment, <code>EXECUTE FUNCTIONS</code>, an upper-case database name, and one granted through an alias — reaches <code>PrivilegesSynced=True</code>; <code>SHOW ROLE … PRIVILEGES AS COMMANDS</code> is <strong>unchanged across three forced reconciles</strong> (annotate the CR to poke it) and exactly one <code>PrivilegesApplied</code> event exists. Drift both ways: revoke one row that came from a list → restored; grant a foreign row → revoked; the next reconcile changes nothing</td>
+</tr>
+<tr>
+<td>Learn mode (default)</td>
+<td><code>status.privilegeRenderings</code> lists each statement with the rows Neo4j stored (as <code>SHOW</code> shows them, backticks included); <code>SHOW ROLES</code> has <strong>no</strong> <code>operator_privilege_probe_*</code> roles at any point; restart the operator pod → zero new <code>PrivilegesApplied</code> (the state survived in status)</td>
+</tr>
+<tr>
+<td>Probe mode</td>
+<td>Redeploy the operator with <code>--privilege-normalisation=probe</code> (Helm <code>privilegeNormalisation: probe</code>) and repeat the stored-form row: same result, and afterwards <code>SHOW ROLES YIELD role WHERE role STARTS WITH 'operator_privilege_probe_'</code> returns <strong>0</strong> — each probe role is dropped. Switch back to learn before continuing</td>
+</tr>
+<tr>
+<td>Dropping a database a role grants on</td>
+<td>Delete a <code>Neo4jDatabase</code> while a role grants on it → a <code>PrivilegeTargetDropped</code> Warning on <strong>the role</strong> and on <strong>the database</strong> (an unaffected role gets none); the role stays <code>Ready</code> with <code>PrivilegesResolve=False</code>/<code>DatabaseNotFound</code>, and the operator log shows <strong>no reconcile-error storm</strong> (count "does not exist" errors over a minute: ~0, not ~20). Recreate it → the grant is back and <code>PrivilegesResolve=True</code> within seconds</td>
+</tr>
+<tr>
+<td><code>privilegeRules</code></td>
+<td>A role mixing <code>spec.privileges</code> with rules — ACCESS, <code>MATCH</code> with <code>nodes: ["*"]</code>, <code>READ</code> on two properties of a label, a <code>deny</code>, a relationship segment, and a dashed database name — goes <code>Ready</code> and stores the expected rows. A rule naming a database that does not exist → <code>PrivilegesResolve=False</code> whose message says <code>Named by spec.privilegeRules[N].onDatabase</code>; apply that <code>Neo4jDatabase</code> → resolved in <strong>seconds</strong>, not the 30s requeue (that is the watch). A <code>READ</code> rule without <code>properties</code> → <code>Failed</code> naming <code>spec.privilegeRules[N].properties</code>, existing privileges untouched</td>
+</tr>
+<tr>
+<td>Server default Cypher language (5.26)</td>
+<td>The Phase 1 standalone records <code>status.effectiveCypherLanguage=CYPHER_5</code> and its ConfigMap contains <strong>no</strong> <code>db.query.default_language</code>. A standalone with <code>serverDefaultCypherLanguage: CYPHER_25</code>, and one with <code>db.query.default_language</code> in <code>spec.config</code>, are each <code>Failed</code> naming the field, with <strong>no StatefulSet created</strong></td>
+</tr>
+<tr>
 <td>Plugin (APOC)</td>
 <td><code>Neo4jPlugin</code> Ready; <code>RETURN apoc.version()</code> returns a version (standalone <strong>ConfigMap</strong> path)</td>
 </tr>
@@ -4504,6 +4547,14 @@ standalone backup" as one of Phase 1's outputs.</p>
 <td>3 members <code>Enabled</code>/<code>Available</code>; server-based pod names</td>
 </tr>
 <tr>
+<td>Server default Cypher language (CalVer)</td>
+<td>The new cluster records <code>status.effectiveCypherLanguage=CYPHER_25</code>, its <code>neo4j.conf</code> has <code>db.query.default_language=CYPHER_25</code>, and <code>SHOW DATABASE neo4j YIELD defaultLanguage</code> is <code>CYPHER 25</code>. Set <code>serverDefaultCypherLanguage: CYPHER_5</code> → <strong>one</strong> rolling restart; a database created afterwards is <code>CYPHER 5</code> while <code>neo4j</code> <strong>keeps</strong> <code>CYPHER 25</code> (Neo4j fixes a database's language at creation)</td>
+</tr>
+<tr>
+<td>Privilege matching on a cluster</td>
+<td>Repeat Phase 1's stored-form row on the 3-server cluster: <code>PrivilegesSynced=True</code>, stable across forced reconciles, drift repaired both ways. This is the row that proves learn mode's before/after reads (and, with the flag, probe's) are causally ordered with the grant when the write lands on a leader the read might not</td>
+</tr>
+<tr>
 <td>Database <strong>with topology</strong></td>
 <td>e.g. <code>3 PRIMARIES</code>; <code>SHOW DATABASE &lt;db&gt;</code> shows the primaries <code>online</code></td>
 </tr>
@@ -4566,6 +4617,14 @@ cluster (~2Gi each):</p>
 <tr>
 <td>Shard language follows the parent</td>
 <td><code>SHOW DATABASES YIELD name, defaultLanguage WHERE name STARTS WITH '&lt;logical&gt;'</code> → the parent, <code>-g000</code> and every <code>-p00n</code> report the <strong>same</strong> language as the parent (measured 2026-09-29 on 2026.06.0: a parent created with <code>SET DEFAULT LANGUAGE CYPHER 5</code> on a <code>CYPHER_25</code> server gave a <code>CYPHER 5</code> family). Neo4j fixes a database's language at creation, so also confirm the default <code>neo4j</code> database's <code>defaultLanguage</code> is what the design expects for this operator version — see <a href="../../design/cypher-language-defaulting/">cypher-language-defaulting.md</a> §5.8–5.9</td>
+</tr>
+<tr>
+<td>Sharded family language</td>
+<td>The operator's <code>CREATE</code> (operator log, <code>Executing sharded database creation</code>) carries <code>SET DEFAULT LANGUAGE CYPHER 25</code> <strong>exactly once</strong>; the parent and every shard report <code>CYPHER 25</code></td>
+</tr>
+<tr>
+<td><strong>Upgrading a sharding cluster</strong> from the previous release</td>
+<td>Create the sharding cluster under the previous release, note the StatefulSet's <code>neo4j.neo4j.com/config-hash</code> and the pod start times, then upgrade to <code>main</code> (CRDs first). <code>status.effectiveCypherLanguage=CYPHER_25</code> (recorded from the ConfigMap the old operator wrote), the config hash is <strong>unchanged</strong>, <code>neo4j.conf</code> is byte-identical, and <strong>no pod restarted</strong>. Then clear the stamp (<code>kubectl patch … --subresource=status --type=merge -p '{"status":{"effectiveCypherLanguage":null}}'</code>) and restart the operator: re-derived <code>CYPHER_25</code>, still no restart — the etcd-restore case</td>
 </tr>
 <tr>
 <td>CLI: the sharded CR is legible</td>
@@ -5017,6 +5076,42 @@ the first walk. The scripted steps already do.</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">n/a (console-RBAC only)</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Privilege matching (stored form, learn / probe)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td><code>privilegeRules</code> (+ <code>Neo4jDatabase</code> watch)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Server default Cypher language</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (5.26: never written)</td>
+<td style="text-align: center;">✅ (CalVer: <code>CYPHER_25</code>)</td>
+<td style="text-align: center;">✅ (sharded family)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Upgrade from the previous release (nothing revoked, nothing restarted)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 </tr>
 <tr>
