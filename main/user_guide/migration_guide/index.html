@@ -639,6 +639,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v116x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.16.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.16.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#neo4jrole-privileges-are-matched-by-learn-mode-behaviour-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Neo4jRole: privileges are matched by learn mode (behaviour change)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharding-no-longer-sets-the-servers-cypher-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sharding no longer sets the server's Cypher language
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-no-action-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New, no action needed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3858,6 +3908,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v116x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.16.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.16.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#neo4jrole-privileges-are-matched-by-learn-mode-behaviour-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Neo4jRole: privileges are matched by learn mode (behaviour change)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharding-no-longer-sets-the-servers-cypher-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sharding no longer sets the server's Cypher language
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-no-action-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New, no action needed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3993,6 +4093,46 @@ are untouched.</p>
 </span></code></pre></div>
 <p>Also new in v1.14 (additive, no action needed): <code>Neo4jRestore.status.stats.duration</code>
 and <code>status.backupInfo</code> are now populated on a successful restore.</p>
+<h2 id="upgrading-from-v116x">Upgrading from v1.16.x<a class="headerlink" href="#upgrading-from-v116x" title="Anchor link to this section">&para;</a></h2>
+<p>Apply the new release's CRDs <strong>before</strong> upgrading the operator (step 1
+<a href="#upgrading-between-future-releases">below</a>). This release needs them for more
+than new fields: learn mode keeps its state in new <code>Neo4jRole</code> status fields,
+and without the CRDs every <code>Neo4jRole</code> goes <code>Failed</code> saying so. No privilege is
+removed in that state.</p>
+<h3 id="neo4jrole-privileges-are-matched-by-learn-mode-behaviour-change"><code>Neo4jRole</code>: privileges are matched by learn mode (behaviour change)<a class="headerlink" href="#neo4jrole-privileges-are-matched-by-learn-mode-behaviour-change" title="Anchor link to this section">&para;</a></h3>
+<p>Neo4j stores a privilege differently from how it is written (<code>NODES</code> becomes
+<code>NODE</code>, lists become one row per item, aliases resolve to their target). The
+operator used to compare the text, which toggled some privileges off on every
+other reconcile. It now compares against what Neo4j stores, learned from its
+own grants — <strong>learn mode</strong>, the new default; see
+<a href="../user_role_management/#privilege-drift-reconciliation">Privilege drift reconciliation</a>.</p>
+<p>What you will see on upgrade: <strong>every existing role reports
+<code>PrivilegesSynced=Unknown</code> (reason <code>UnattributedPrivileges</code>)</strong>, because learn
+mode cannot attribute rows that were already there. Nothing is revoked and
+access is unchanged; the difference is that out-of-band additions to those rows
+are not removed until you clean them up. To restore full enforcement on a
+role, remove unwanted rows by hand or delete and recreate the <code>Neo4jRole</code>. If
+you would rather have exact attribution immediately and can accept short-lived
+<code>operator_privilege_probe_*</code> roles in Neo4j's security log, set the Helm value
+<code>privilegeNormalisation: probe</code>.</p>
+<h3 id="sharding-no-longer-sets-the-servers-cypher-language">Sharding no longer sets the server's Cypher language<a class="headerlink" href="#sharding-no-longer-sets-the-servers-cypher-language" title="Anchor link to this section">&para;</a></h3>
+<p>Enabling property sharding used to set <code>db.query.default_language=CYPHER_25</code>
+for the whole server. It no longer does: sharded databases get Cypher 25 on
+their own, and the server default is the new
+<code>spec.serverDefaultCypherLanguage</code>. <strong>Existing clusters are unaffected</strong> — the
+operator records what each one already runs and keeps writing it, so the
+upgrade restarts nothing. See the
+<a href="../property_sharding/">property sharding guide</a>.</p>
+<h3 id="new-no-action-needed">New, no action needed<a class="headerlink" href="#new-no-action-needed" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><code>spec.serverDefaultCypherLanguage</code> on clusters and standalones — see
+  <a href="../configuration/">Configuration</a>. Existing deployments keep their current
+  language.</li>
+<li><code>spec.privilegeRules</code> on <code>Neo4jRole</code>: privileges as fields instead of Cypher.</li>
+<li>Remote composite constituents with stored credentials now work on the 5.26
+  LTS; they failed there in v1.16.0. Their URL must be <code>neo4j+s://</code> or
+  <code>neo4j+ssc://</code>, which is now checked at apply time.</li>
+</ul>
 <h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
 <p>When a newer version ships:</p>
 <ol>

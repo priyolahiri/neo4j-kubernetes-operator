@@ -4871,12 +4871,14 @@ DR cluster.</p>
 Cypher has no <code>RENAME DATABASE</code>, so it keeps that name permanently). And
 <strong>privileges attach to the database, not the alias</strong> — see
 <a href="../database_aliases/#aliases-and-privileges">Aliases and privileges</a>.</p>
-<p>So a privilege copied verbatim grants access to a database that does not
-exist on the DR cluster. <strong>Neo4j accepts this without complaint</strong>: the
-<code>Neo4jRole</code> reconciles to <code>Ready</code>, <code>enforcePrivileges: true</code> holds it
-there, and your dashboards stay green while DR authorization is silently
-broken — the exact failure DR exists to prevent.</p>
-<p>Rewrite every database name in <code>spec.privileges</code> to the replica's name.</p>
+<p>So a privilege copied verbatim names a database that does not exist on
+the DR cluster. Neo4j refuses such a grant, so the operator skips it: the
+<code>Neo4jRole</code> still reaches <code>Ready</code> with every <em>other</em> privilege applied, and
+only <code>PrivilegesResolve=False</code> (reason <code>DatabaseNotFound</code>) says that the
+ones DR depends on are missing — the exact failure DR exists to prevent.
+Watch that condition, not <code>Ready</code>.</p>
+<p>Rewrite every database name in <code>spec.privileges</code> (or <code>onDatabase</code> /
+<code>onGraph</code> in <code>spec.privilegeRules</code>) to the replica's name.</p>
 </div>
 <p>What copies, and what does not:</p>
 <table>

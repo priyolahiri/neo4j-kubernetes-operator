@@ -4917,7 +4917,11 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>PrivilegesSynced</code></td>
-<td>Live privileges match <code>spec.privileges</code> (immutable extras excluded)</td>
+<td>Live privileges match <code>spec.privileges</code> and <code>spec.privilegeRules</code> (immutable extras excluded). <code>False</code>/<code>PrivilegesDrifted</code>: something could not be reconciled (see events). <code>Unknown</code>/<code>UnattributedPrivileges</code>: learn mode holds rows it cannot attribute and will not revoke — see <a href="#learn-mode-default">Learn mode</a></td>
+</tr>
+<tr>
+<td><code>PrivilegesResolve</code></td>
+<td>Every database a privilege names exists. <code>False</code>/<code>DatabaseNotFound</code>: those privileges are skipped (Neo4j refuses a grant on a missing database) and the rest applied; the message names them, and the field for a <code>privilegeRules</code> entry. <code>False</code>/<code>GraphPrivilegeOnComposite</code>: a GRAPH privilege on a composite database, which Neo4j accepts and ignores</td>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
@@ -5032,6 +5036,37 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 <p>Confirm the Secret's <code>data.&lt;key&gt;</code> (default <code>password</code>) actually changed; <code>kubectl describe</code> the user and look for the <code>PasswordRotated</code> event. The controller hashes the bytes — re-applying an identical secret value is a no-op.</p>
 <p><strong>Symptom</strong>: <code>validation failed: ... privilege statement must end with TO &lt;role&gt;</code>.</p>
 <p>Each entry in <code>Neo4jRole.spec.privileges</code> must end with <code>TO &lt;spec.name&gt;</code> so the operator can derive the matching <code>REVOKE</code>. The role name must match exactly (case-sensitive).</p>
+<p><strong>Symptom</strong>: <code>PrivilegesSynced</code> is <code>Unknown</code> with reason <code>UnattributedPrivileges</code>.</p>
+<p>Learn mode (the default) found rows on the role that were there before the
+operator granted to it — every existing role shows this after upgrading to a
+release with learn mode. It will not revoke them, because it cannot tell
+whether one is a spec statement's own row; <code>status.unattributedPrivileges</code>
+lists them. Nothing is broken, but out-of-band additions to those rows are not
+removed. To restore full enforcement, either remove the unwanted rows by hand
+(when an unattributed row goes away, learn mode re-learns and the next grant
+attributes whatever the spec still needs), delete and recreate the
+<code>Neo4jRole</code> (it starts empty, so everything is attributed), or run the
+operator with <code>--privilege-normalisation=probe</code>. See <a href="#learn-mode-default">Learn mode</a>.</p>
+<p><strong>Symptom</strong>: <code>PrivilegesResolve</code> is <code>False</code> with reason <code>DatabaseNotFound</code>.</p>
+<p>A privilege names a database this cluster does not have. Neo4j refuses such a
+grant, so the operator skips it and applies the rest of the role. If the
+database simply is not created yet, the condition clears on its own — within
+seconds of its <code>Neo4jDatabase</code> appearing. Otherwise fix the name; for a
+<code>privilegeRules</code> entry the message names the field, e.g.
+<code>spec.privilegeRules[2].onDatabase</code>. On a DR cluster, remember the replica of
+<code>foo</code> is called <code>foo-replica</code>.</p>
+<p><strong>Symptom</strong>: every <code>Neo4jRole</code> is <code>Failed</code> with <code>the installed Neo4jRole CRD predates this operator</code>.</p>
+<p>The operator was upgraded without its CRDs. <code>helm upgrade</code> never updates CRDs,
+and the API server silently drops the status fields learn mode keeps its state
+in. Apply the release's CRDs (see the <a href="../installation/">Installation guide</a>);
+no privilege is removed while the roles are <code>Failed</code>, but spec changes are not
+applied until you do.</p>
+<p><strong>Symptom</strong>: roles named <code>operator_privilege_probe_&lt;random&gt;</code> in <code>SHOW ROLES</code>, or in the security log.</p>
+<p>Those are probe mode's short-lived roles (<code>--privilege-normalisation=probe</code>),
+used to learn how Neo4j stores each statement; each is created, read and
+dropped within one call. One that survives was left by an operator crash
+mid-probe: it holds a single privilege, has no users, and is safe to drop.
+Learn mode, the default, never creates them.</p>
 <p><strong>Symptom</strong>: <code>cannot revoke immutable privilege</code> warning.</p>
 <p>Some privileges were created with <code>GRANT IMMUTABLE</code> outside the operator and cannot be removed while auth is enabled. Either change <code>.privileges</code> to include them (so they no longer count as drift) or set <code>enforcePrivileges: false</code>.</p>
 <p><strong>Symptom</strong>: Cluster <code>Ready</code> but operator can't connect.</p>
