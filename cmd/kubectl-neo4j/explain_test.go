@@ -237,3 +237,28 @@ func TestExplainList_IncludesReasons(t *testing.T) {
 	assert.Contains(t, out, controller.EventReasonCompositeNameBlocked)
 	assert.Contains(t, out, "reasons this CLI does not know about")
 }
+
+// ClusterNotReady is negative-polarity: False is the healthy state. Every
+// Ready Neo4jRole carries ClusterNotReady=False, and explain used to mark it ✗
+// with guidance claiming the deployment was not Ready.
+func TestExplainResource_NegativePolarityConditionFalseIsHealthy(t *testing.T) {
+	c := testClient(t, &neo4jv1beta1.Neo4jRole{
+		ObjectMeta: metav1.ObjectMeta{Name: "reader", Namespace: "neo4j"},
+		Status: neo4jv1beta1.Neo4jRoleStatus{
+			Phase: "Ready",
+			Conditions: []metav1.Condition{
+				{Type: controller.ConditionTypeClusterNotReady, Status: metav1.ConditionFalse, Reason: "ClusterReady"},
+				{Type: controller.ConditionTypeUserNotFound, Status: metav1.ConditionTrue, Reason: "UserMissing"},
+			},
+		},
+	})
+
+	out := captureExplainErr(t, func(f *os.File) error {
+		return explainResource(context.Background(), c, "neo4j", "Neo4jRole/reader", f)
+	})
+
+	assert.Contains(t, out, "✓ ClusterNotReady = False")
+	assert.NotContains(t, out, "not Ready yet")
+	assert.Contains(t, out, "✗ UserNotFound = True")
+	assert.Contains(t, out, "Create the Neo4jUser")
+}
