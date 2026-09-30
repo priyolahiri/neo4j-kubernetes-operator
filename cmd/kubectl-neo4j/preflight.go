@@ -91,7 +91,7 @@ func runPreflight(args []string, stdout, stderr *os.File) int {
 	fs.SetOutput(stderr)
 	var files multiFlag
 	fs.Var(&files, "f", "Manifest to check before applying (repeatable, '-' for stdin)")
-	namespace := namespaceFlag(fs, "Namespace the resources live in, or will be applied to")
+	namespace := namespaceFlag(fs, "Namespace the resources live in, or will be applied to (a manifest's own metadata.namespace wins)")
 	kubeContext := fs.String("context", "", "Kubeconfig context to use")
 	kubeconfig := fs.String("kubeconfig", "", "Path to the kubeconfig file")
 	fs.Usage = func() {
@@ -178,6 +178,7 @@ Flags:
 type preflightSubject struct {
 	kind       string
 	name       string
+	namespace  string
 	cluster    *neo4jv1beta1.Neo4jEnterpriseCluster
 	standalone *neo4jv1beta1.Neo4jEnterpriseStandalone
 	backup     *neo4jv1beta1.Neo4jBackup
@@ -190,6 +191,14 @@ func preflightObject(ctx context.Context, c client.Client, ns, source string, ra
 		return preflightResult{source: source, kind: "?", name: "?", checks: []symptom{{
 			mark: markProblem, subject: "manifest", what: "could not be read", detail: err.Error(),
 		}}}
+	}
+
+	// A manifest that names its namespace is checked there, as `kubectl apply`
+	// would place it. Using the flag's namespace instead read the wrong
+	// namespace's pod-security label and looked up Secrets where the object
+	// will never live — a clean result for a manifest that would fail.
+	if subject.namespace != "" {
+		ns = subject.namespace
 	}
 
 	res := preflightResult{kind: subject.kind, name: subject.name, source: source}
@@ -670,7 +679,8 @@ func decodeSubject(raw []byte) (preflightSubject, error) {
 	var probe struct {
 		Kind     string `json:"kind"`
 		Metadata struct {
-			Name string `json:"name"`
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
 		} `json:"metadata"`
 	}
 	if err := yaml.Unmarshal(raw, &probe); err != nil {
@@ -680,7 +690,7 @@ func decodeSubject(raw []byte) (preflightSubject, error) {
 		return preflightSubject{}, errors.New("document has no kind field")
 	}
 
-	s := preflightSubject{kind: probe.Kind, name: probe.Metadata.Name}
+	s := preflightSubject{kind: probe.Kind, name: probe.Metadata.Name, namespace: probe.Metadata.Namespace}
 	switch probe.Kind {
 	case "Neo4jEnterpriseCluster":
 		var o neo4jv1beta1.Neo4jEnterpriseCluster

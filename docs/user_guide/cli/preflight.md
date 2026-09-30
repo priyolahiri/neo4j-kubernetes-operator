@@ -55,7 +55,7 @@ Capacity is compared against a **single node's** allocatable memory, never the c
 | Check | Why it matters |
 |---|---|
 | The downstream cluster has `AWS_REGION` in `spec.env` | The seed and every pull run **on the Neo4j server**, through the AWS SDK's default credential chain — so the object-store settings must be in the server's environment, not on the replica CR. Without it the replica fails inside the SDK with *"Unable to load region from any of the providers"*, which mentions neither replicas nor buckets |
-| `source.credentialsSecretRef` names a Secret that exists | It records **which** Secret the credentials come from; it does not project them. A name with nothing behind it is worth knowing about |
+| `source.credentialsSecretRef` names a Secret that exists | The operator projects that Secret onto the downstream servers before it seeds (one rolling restart), so a name with nothing behind it leaves the replica waiting indefinitely |
 | Network mode | Says so and checks nothing — reading over the wire needs no bucket credentials |
 
 **Placement (zones)**

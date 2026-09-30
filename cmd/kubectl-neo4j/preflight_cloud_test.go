@@ -433,3 +433,30 @@ func TestCheckPodSecurityAdmission(t *testing.T) {
 }
 
 func ptrInt64(v int64) *int64 { return &v }
+
+// A manifest names its own namespace, and that is where it will be applied.
+// preflight used to check the -n / kubeconfig namespace instead, so a
+// standalone bound for a `restricted` namespace was graded against `default`
+// and got a warning where admission would reject its pods.
+func TestPreflightChecksTheManifestsOwnNamespace(t *testing.T) {
+	c := testClient(t, nsWithLevel("default", ""), nsWithLevel("hardened", "restricted"))
+	manifest := `apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jEnterpriseStandalone
+metadata: {name: psa, namespace: hardened}
+spec:
+  image: {repo: neo4j, tag: "5.26-enterprise"}
+  storage: {size: 1Gi}
+  securityContext:
+    podSecurityContext: {runAsNonRoot: false}
+`
+	res := preflightObject(context.Background(), c, "default", "f.yaml", []byte(manifest))
+	var found bool
+	for _, s := range res.checks {
+		if s.subject == "spec.securityContext" {
+			found = true
+			assert.Equal(t, markProblem, s.mark)
+			assert.Contains(t, s.what, "namespace hardened enforces the restricted")
+		}
+	}
+	assert.True(t, found, "no spec.securityContext check in %+v", res.checks)
+}

@@ -36,6 +36,10 @@ import (
 type guidance struct {
 	meaning string
 	action  string
+	// problemWhenTrue marks a negative-polarity condition — one whose True
+	// state is the problem (ClusterNotReady, Degraded). Its False state is
+	// healthy and its guidance, which describes the problem, does not apply.
+	problemWhenTrue bool
 }
 
 // conditionGuidance is keyed off the operator's OWN exported constants, not
@@ -61,8 +65,9 @@ var conditionGuidance = map[string]guidance{
 		action:  "Compare with ServersHealthy to see whether every server is contributing.",
 	},
 	controller.ConditionTypeDegraded: {
-		meaning: "the resource is running but something is wrong.",
-		action:  "Read the condition message, then `kubectl neo4j support-bundle` if it is not obvious.",
+		problemWhenTrue: true,
+		meaning:         "the resource is running but something is wrong.",
+		action:          "Read the condition message, then `kubectl neo4j support-bundle` if it is not obvious.",
 	},
 	controller.ConditionTypeServersHealthy: {
 		meaning: "every server reported Enabled and Available by SHOW SERVERS.",
@@ -73,16 +78,19 @@ var conditionGuidance = map[string]guidance{
 		action:  "When false, a database is likely stuck creating or has lost quorum. `kubectl neo4j cypher <name> -c \"SHOW DATABASES\"` shows the detail.",
 	},
 	controller.ConditionTypeServersPendingDrain: {
-		meaning: "a scale-down is waiting for servers to hand off their data before they can be removed.",
-		action:  "Wait. Removing the pods by hand loses the data those servers still hold.",
+		problemWhenTrue: true,
+		meaning:         "a scale-down is waiting for servers to hand off their data before they can be removed.",
+		action:          "Wait. Removing the pods by hand loses the data those servers still hold.",
 	},
 	controller.ConditionTypeClusterNotReady: {
-		meaning: "this resource depends on a Neo4j deployment that is not Ready yet.",
-		action:  "This resolves itself once the deployment is Ready — apply order does not matter. Check the deployment with `kubectl neo4j status`.",
+		problemWhenTrue: true,
+		meaning:         "this resource depends on a Neo4j deployment that is not Ready yet.",
+		action:          "This resolves itself once the deployment is Ready — apply order does not matter. Check the deployment with `kubectl neo4j status`.",
 	},
 	controller.ConditionTypePendingDependencies: {
-		meaning: "something this resource references does not exist yet — commonly a Secret or a custom role.",
-		action:  "Apply the missing dependency. The operator re-reconciles when it appears; you do not need to re-apply this resource.",
+		problemWhenTrue: true,
+		meaning:         "something this resource references does not exist yet — commonly a Secret or a custom role.",
+		action:          "Apply the missing dependency. The operator re-reconciles when it appears; you do not need to re-apply this resource.",
 	},
 	controller.ConditionTypePasswordSynced: {
 		meaning: "the user's password in Neo4j matches the referenced Secret.",
@@ -116,8 +124,9 @@ var conditionGuidance = map[string]guidance{
 			"composite and the graph privileges on each constituent's target.",
 	},
 	controller.ConditionTypeUserNotFound: {
-		meaning: "a referenced Neo4j user does not exist.",
-		action:  "Create the Neo4jUser, or correct the reference.",
+		problemWhenTrue: true,
+		meaning:         "a referenced Neo4j user does not exist.",
+		action:          "Create the Neo4jUser, or correct the reference.",
 	},
 	controller.ConditionTypeOIDCProviderConfigured: {
 		meaning: "the deployment's OIDC provider settings were accepted.",
@@ -133,8 +142,9 @@ var conditionGuidance = map[string]guidance{
 			"crossClusterReplication.loadBalancerInternal=true.",
 	},
 	controller.ConditionTypeAuthRuleVersionTooOld: {
-		meaning: "the Neo4j version running is older than this auth rule requires.",
-		action:  "Upgrade the deployment, or remove the rule. The operator will not apply it to an unsupported version.",
+		problemWhenTrue: true,
+		meaning:         "the Neo4j version running is older than this auth rule requires.",
+		action:          "Upgrade the deployment, or remove the rule. The operator will not apply it to an unsupported version.",
 	},
 }
 
@@ -263,6 +273,18 @@ var reasonGuidance = map[string]guidance{
 			"Neo4jCompositeDatabase owns its constituents precisely so this ordering cannot " +
 			"happen through the operator — a dotted alias here was created out of band, or " +
 			"through Neo4jDatabaseAlias.",
+	},
+	controller.ConditionReasonPrivilegesUnattributed: {
+		meaning: "learn mode holds privilege rows on this role that it cannot attribute to a " +
+			"spec statement, so it will not revoke them.",
+		action: "Expected on every existing Neo4jRole after upgrading to v1.17.0: learn mode (the " +
+			"default) learns a statement's stored form from its own grant, and a row that was already " +
+			"there gives it nothing to learn from. Access is unchanged and nothing was revoked. " +
+			"status.unattributedPrivileges holds the rows the role had when learn mode first met it; " +
+			"the condition's message lists the ones no statement claims. Remove unwanted rows by hand " +
+			"(learn mode re-learns once one goes away), delete and recreate the Neo4jRole, or run the " +
+			"operator with --privilege-normalisation=probe (Helm privilegeNormalisation: probe), which " +
+			"attributes every row exactly.",
 	},
 	controller.ReasonGraphPrivilegeOnComposite: {
 		meaning: "a privilege names a composite database as a GRAPH, which Neo4j accepts and " +
@@ -415,15 +437,23 @@ func explainResource(ctx context.Context, c client.Client, namespace, ref string
 		cmsg, _ := cond["message"].(string)
 		creason, _ := cond["reason"].(string)
 
+		g, known := conditionGuidance[ctype]
+		healthy := cstatus == "True"
+		if known && g.problemWhenTrue {
+			// ClusterNotReady=False means the cluster IS ready. Marking it ✗
+			// and printing "depends on a deployment that is not Ready yet"
+			// told a user with a healthy role that something was wrong.
+			healthy = cstatus == "False"
+		}
 		mark := "✓"
-		if cstatus != "True" {
+		if !healthy {
 			mark = "✗"
 		}
 		fmt.Fprintf(stdout, "%s %s = %s\n", mark, ctype, cstatus)
 		if cmsg != "" {
 			fmt.Fprintf(stdout, "    %s\n", cmsg)
 		}
-		if g, ok := conditionGuidance[ctype]; ok {
+		if known && (!g.problemWhenTrue || !healthy) {
 			fmt.Fprintf(stdout, "    %s\n    → %s\n", g.meaning, g.action)
 		}
 		// The reason is the more specific signal, so it comes after the
