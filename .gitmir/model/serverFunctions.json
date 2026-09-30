@@ -533,7 +533,7 @@
     "name": "Create Alias",
     "serverUnitId": "su-neo4jdatabasealias",
     "operation": "create",
-    "description": "Issues CREATE ALIAS when ShowAlias reports no existing alias with this name.",
+    "description": "Issues CREATE ALIAS when ShowAlias reports no existing alias with this name, pinned to Cypher 5 so the server's default language cannot change how a dotted name is read.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],

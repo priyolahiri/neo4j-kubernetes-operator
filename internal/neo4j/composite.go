@@ -108,24 +108,24 @@ func (c *Client) DropCompositeDatabase(ctx context.Context, name string, cascade
 // Callers must therefore create the composite first. The controller owns both,
 // which is what makes that guaranteed rather than hoped for.
 func (c *Client) CreateCompositeConstituent(ctx context.Context, composite, constituent, targetDatabase string) error {
-	query := fmt.Sprintf("CREATE ALIAS `%s`.`%s` IF NOT EXISTS FOR DATABASE `%s`",
-		escapeBackticks(composite), escapeBackticks(constituent), escapeBackticks(targetDatabase))
+	query := Cypher5(fmt.Sprintf("CREATE ALIAS `%s`.`%s` IF NOT EXISTS FOR DATABASE `%s`",
+		escapeBackticks(composite), escapeBackticks(constituent), escapeBackticks(targetDatabase)))
 	return c.runSystemWrite(ctx, query, "create composite constituent")
 }
 
 // AlterCompositeConstituent re-points an existing constituent at a different
 // target database.
 func (c *Client) AlterCompositeConstituent(ctx context.Context, composite, constituent, targetDatabase string) error {
-	query := fmt.Sprintf("ALTER ALIAS `%s`.`%s` SET DATABASE TARGET `%s`",
-		escapeBackticks(composite), escapeBackticks(constituent), escapeBackticks(targetDatabase))
+	query := Cypher5(fmt.Sprintf("ALTER ALIAS `%s`.`%s` SET DATABASE TARGET `%s`",
+		escapeBackticks(composite), escapeBackticks(constituent), escapeBackticks(targetDatabase)))
 	return c.runSystemWrite(ctx, query, "alter composite constituent")
 }
 
 // DropCompositeConstituent removes one constituent alias, leaving its target
 // database alone.
 func (c *Client) DropCompositeConstituent(ctx context.Context, composite, constituent string) error {
-	query := fmt.Sprintf("DROP ALIAS `%s`.`%s` IF EXISTS FOR DATABASE",
-		escapeBackticks(composite), escapeBackticks(constituent))
+	query := Cypher5(fmt.Sprintf("DROP ALIAS `%s`.`%s` IF EXISTS FOR DATABASE",
+		escapeBackticks(composite), escapeBackticks(constituent)))
 	return c.runSystemWrite(ctx, query, "drop composite constituent")
 }
 
@@ -255,7 +255,7 @@ type RemoteConstituentAuth struct {
 func (c *Client) CreateRemoteConstituent(
 	ctx context.Context, composite, constituent, targetDatabase, url string, auth RemoteConstituentAuth,
 ) error {
-	query, params := buildRemoteAliasStatement("CREATE ALIAS `%s`.`%s` IF NOT EXISTS FOR DATABASE `%s`",
+	query, params := buildRemoteAliasStatement("CREATE ALIAS %s IF NOT EXISTS FOR DATABASE `%s`",
 		composite, constituent, targetDatabase, url, auth)
 	return c.runSystemWriteWithParams(ctx, query, params, "create remote constituent")
 }
@@ -265,7 +265,7 @@ func (c *Client) CreateRemoteConstituent(
 func (c *Client) AlterRemoteConstituent(
 	ctx context.Context, composite, constituent, targetDatabase, url string, auth RemoteConstituentAuth,
 ) error {
-	query, params := buildRemoteAliasStatement("ALTER ALIAS `%s`.`%s` SET DATABASE TARGET `%s`",
+	query, params := buildRemoteAliasStatement("ALTER ALIAS %s SET DATABASE TARGET `%s`",
 		composite, constituent, targetDatabase, url, auth)
 	return c.runSystemWriteWithParams(ctx, query, params, "alter remote constituent")
 }
@@ -277,9 +277,17 @@ func buildRemoteAliasStatement(
 ) (string, map[string]any) {
 	params := map[string]any{}
 
+	// The constituent's name is spelled differently in each language (see
+	// Cypher5): Cypher 5 wants the parts quoted separately, Cypher 25 wants
+	// the qualified name quoted whole. OIDC forwarding is Cypher-25-only, so
+	// it takes the whole form; everything else is pinned to Cypher 5.
+	name := fmt.Sprintf("`%s`.`%s`", escapeBackticks(composite), escapeBackticks(constituent))
+	if auth.OIDCForwarding {
+		name = fmt.Sprintf("`%s.%s`", escapeBackticks(composite), escapeBackticks(constituent))
+	}
+
 	var b strings.Builder
-	fmt.Fprintf(&b, head,
-		escapeBackticks(composite), escapeBackticks(constituent), escapeBackticks(targetDatabase))
+	fmt.Fprintf(&b, head, name, escapeBackticks(targetDatabase))
 
 	// AT takes a string literal, so it parameterises cleanly.
 	b.WriteString(" AT $remoteURL")
@@ -319,7 +327,7 @@ func buildRemoteAliasStatement(
 	if auth.OIDCForwarding {
 		return Cypher25(b.String()), params
 	}
-	return b.String(), params
+	return Cypher5(b.String()), params
 }
 
 // sortedKeys keeps the rendered DRIVER map stable, so an unchanged spec does

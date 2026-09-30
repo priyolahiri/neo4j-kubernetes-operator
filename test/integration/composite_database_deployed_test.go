@@ -178,7 +178,7 @@ var _ = Describe("Composite Database (deployed)", Label("extended"), Serial, fun
 
 		By("Querying through the composite")
 		queried, err := cypherOn(compositeName,
-			fmt.Sprintf("USE `%s`.latest MATCH (n) RETURN count(n) AS n", compositeName))
+			fmt.Sprintf("USE %s.latest MATCH (n) RETURN count(n) AS n", compositeName))
 		Expect(err).ToNot(HaveOccurred(),
 			"a constituent must be queryable from a session on its composite")
 		Expect(queried).To(ContainSubstring("n"))
@@ -189,7 +189,7 @@ var _ = Describe("Composite Database (deployed)", Label("extended"), Serial, fun
 		Expect(names).To(ContainSubstring(compositeName + ".latest"))
 
 		By("Confirming a constituent is NOT reachable from another database's session")
-		_, err = cypher(fmt.Sprintf("USE `%s`.latest MATCH (n) RETURN count(n) AS n", compositeName))
+		_, err = cypher(fmt.Sprintf("USE %s.latest MATCH (n) RETURN count(n) AS n", compositeName))
 		Expect(err).To(HaveOccurred(),
 			"cross-composite access from the default database must be refused (42N04)")
 
@@ -245,7 +245,7 @@ var _ = Describe("Composite Database (deployed)", Label("extended"), Serial, fun
 
 		By("Creating a dotted alias by hand, with no composite behind it")
 		_, err := cypher(fmt.Sprintf(
-			"CREATE ALIAS `%s`.squatter FOR DATABASE `%s`", compositeName, targetOne))
+			"CYPHER 5 CREATE ALIAS `%s`.squatter FOR DATABASE `%s`", compositeName, targetOne))
 		Expect(err).ToNot(HaveOccurred(),
 			"Neo4j accepts this even though no composite of that name exists — that is the trap")
 
@@ -276,7 +276,7 @@ var _ = Describe("Composite Database (deployed)", Label("extended"), Serial, fun
 		Expect(composite.Status.Message).To(ContainSubstring("occupies its namespace"))
 
 		By("Dropping the squatter — the composite then converges on its own")
-		_, err = cypher(fmt.Sprintf("DROP ALIAS `%s`.squatter IF EXISTS FOR DATABASE", compositeName))
+		_, err = cypher(fmt.Sprintf("CYPHER 5 DROP ALIAS `%s`.squatter IF EXISTS FOR DATABASE", compositeName))
 		Expect(err).ToNot(HaveOccurred())
 
 		Eventually(func() string {
