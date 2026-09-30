@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -33,7 +33,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -677,6 +677,17 @@
     <span class="md-ellipsis">
       
         New, no action needed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deprecated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deprecated
       
     </span>
   </a>
@@ -3952,6 +3963,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#deprecated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deprecated
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4132,6 +4154,17 @@ upgrade restarts nothing. See the
 <li>Remote composite constituents with stored credentials now work on the 5.26
   LTS; they failed there in v1.16.0. Their URL must be <code>neo4j+s://</code> or
   <code>neo4j+ssc://</code>, which is now checked at apply time.</li>
+<li><code>spec.graphAnalytics</code> on <code>AuraInstance</code>: <code>unavailable</code>, <code>plugin</code> or
+  <code>serverless</code>. Serverless graph analytics is created through Aura's v2beta1
+  API. See the <a href="../../api_reference/aurainstance/">AuraInstance API reference</a>.</li>
+</ul>
+<h3 id="deprecated">Deprecated<a class="headerlink" href="#deprecated" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><code>AuraInstance.spec.graphAnalyticsPlugin</code> — use <code>spec.graphAnalytics</code>. It keeps
+  working and maps to <code>plugin</code> (true) or <code>unavailable</code> (false). Setting both is
+  refused. An existing instance may switch to the equivalent <code>graphAnalytics</code>
+  value; any other change is refused, because Aura cannot change it after
+  creation.</li>
 </ul>
 <h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
 <p>When a newer version ships:</p>
@@ -4141,7 +4174,7 @@ upgrade restarts nothing. See the
    bundle for the version you are upgrading to (replace the tag):</li>
 </ol>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>--server-side<span class="w"> </span>-f<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.16.0/neo4j-kubernetes-operator.yaml
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.17.0/neo4j-kubernetes-operator.yaml
 </span></code></pre></div>
 <ol>
 <li><strong>Upgrade the operator</strong> via Helm:</li>
@@ -4286,7 +4319,7 @@ converges existing <code>Neo4j*</code> resources to the new behaviour automatica
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "search.share", "search.highlight", "content.code.copy", "content.code.annotate", "content.action.edit", "content.tabs.link", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>
