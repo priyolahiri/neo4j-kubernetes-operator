@@ -235,15 +235,15 @@ func replicaFromBackup(ctx context.Context, c client.Client, ns, outNS, name, ba
 	}
 	if cloud := backup.Spec.Storage.Cloud; cloud != nil && cloud.CredentialsSecretRef != "" {
 		notes = append(notes, fmt.Sprintf(
-			"note: the upstream reads its bucket with Secret %q. The DOWNSTREAM cluster needs its own\n"+
-				"      credentials for the same bucket, and they go on the CLUSTER, not on the replica:\n"+
-				"      the seed and every pull run on the Neo4j server, so they must be in its\n"+
-				"      environment. Add to the downstream Neo4jEnterpriseCluster spec.env:\n"+
-				"        AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY\n"+
-				"        AWS_ENDPOINT_URL_S3   (S3-compatible stores only)\n"+
-				"      or bind a workload identity, in which case only AWS_REGION is needed.\n"+
-				"      source.credentialsSecretRef records which Secret they come from; it does not\n"+
-				"      project them. This command cannot copy a Secret between clusters.",
+			"note: the upstream reads its bucket with Secret %q. The DOWNSTREAM servers need their\n"+
+				"      own credentials for the same bucket: the seed and every pull run on the Neo4j\n"+
+				"      server, so they must be in its environment. Either create a Secret in the\n"+
+				"      replica's namespace with AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY\n"+
+				"      (and AWS_ENDPOINT_URL_S3 for S3-compatible stores) and set\n"+
+				"      source.credentialsSecretRef to it — the operator projects it onto the\n"+
+				"      downstream servers, one rolling restart — or bind a workload identity, in\n"+
+				"      which case only AWS_REGION is needed. This command cannot copy a Secret\n"+
+				"      between clusters.",
 			cloud.CredentialsSecretRef))
 	}
 
