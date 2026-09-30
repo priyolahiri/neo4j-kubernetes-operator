@@ -148,16 +148,13 @@ func TestMultiDatabaseCreateRequest(t *testing.T) {
 		}
 	}
 
-	// Fields v2beta1 silently ignores must be refused, not dropped: dropping them
-	// hands the user an instance that does not match their manifest, with nothing
-	// in the status to say why.
+	// Fields v2beta1 has no equivalent for must be refused, naming the field —
+	// the API now rejects unknown fields itself, but only with a generic
+	// "additional properties" message that does not name the CR field.
 	for _, tc := range []struct {
 		name  string
 		apply func(*neo4jv1beta1.AuraInstance)
 	}{
-		{"storage", func(i *neo4jv1beta1.AuraInstance) { i.Spec.Storage = "8GB" }},
-		{"vectorOptimized", func(i *neo4jv1beta1.AuraInstance) { i.Spec.VectorOptimized = ptrTo(true) }},
-		{"graphAnalyticsPlugin", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalyticsPlugin = ptrTo(true) }},
 		{"secondariesCount", func(i *neo4jv1beta1.AuraInstance) { i.Spec.SecondariesCount = ptrTo(int32(1)) }},
 		{"cdcEnrichmentMode", func(i *neo4jv1beta1.AuraInstance) { i.Spec.CDCEnrichmentMode = "DIFF" }},
 		{"customerManagedKeyId", func(i *neo4jv1beta1.AuraInstance) { i.Spec.CustomerManagedKeyID = "k" }},
@@ -169,11 +166,50 @@ func TestMultiDatabaseCreateRequest(t *testing.T) {
 		tc.apply(inst)
 		_, err := multiDatabaseCreateRequest(inst, "inst")
 		if err == nil {
-			t.Errorf("%s: must be refused — v2beta1 create ignores it silently", tc.name)
+			t.Errorf("%s: must be refused — v2beta1 has no equivalent", tc.name)
 			continue
 		}
 		if !strings.Contains(err.Error(), tc.name) {
 			t.Errorf("%s: the refusal must name the offending field, got %q", tc.name, err.Error())
+		}
+	}
+
+	// vectorOptimized: Aura itself refuses it on a multi-database instance
+	// (verified live 2026-09-30); false is simply the default and not sent.
+	vec := base()
+	vec.Spec.VectorOptimized = ptrTo(true)
+	if _, err := multiDatabaseCreateRequest(vec, "inst"); err == nil ||
+		!strings.Contains(err.Error(), "multi-database-capability-not-supported") {
+		t.Errorf("vectorOptimized=true must be refused with Aura's reason, got %v", err)
+	}
+	vec.Spec.VectorOptimized = ptrTo(false)
+	if _, err := multiDatabaseCreateRequest(vec, "inst"); err != nil {
+		t.Errorf("vectorOptimized=false is the default and must not be refused: %v", err)
+	}
+}
+
+// storage and graph analytics are honoured by the v2beta1 create (verified
+// live 2026-09-30), so they are passed through rather than refused.
+func TestMultiDatabaseCreatePassesStorageAndGraphAnalytics(t *testing.T) {
+	inst := &neo4jv1beta1.AuraInstance{}
+	inst.Spec.Type = "business-critical"
+	inst.Spec.CloudProvider = "gcp"
+	inst.Spec.Region = "europe-west1"
+	inst.Spec.Memory = "2GB"
+	inst.Spec.Storage = "8GB"
+	inst.Spec.MultiDatabase = ptrTo(true)
+
+	for _, tc := range []struct {
+		plugin *bool
+		want   string
+	}{{nil, ""}, {ptrTo(true), "plugin"}, {ptrTo(false), "unavailable"}} {
+		inst.Spec.GraphAnalyticsPlugin = tc.plugin
+		got, err := multiDatabaseCreateRequest(inst, "inst")
+		if err != nil {
+			t.Fatalf("plugin=%v: %v", tc.plugin, err)
+		}
+		if got.Storage != "8GB" || got.GraphAnalytics != tc.want {
+			t.Errorf("plugin=%v: storage=%q graph_analytics=%q, want 8GB/%q", tc.plugin, got.Storage, got.GraphAnalytics, tc.want)
 		}
 	}
 }
@@ -714,4 +750,63 @@ func TestResolveAuraDBCoordsOrgPrecedence(t *testing.T) {
 			t.Error("expected an error when no organization can be resolved at all")
 		}
 	})
+}
+
+// serverless graph analytics can only be expressed on the v2beta1 create, so
+// it routes there even without multiDatabase — and then none of the
+// multi-database-only rules (tier, vectorOptimized) apply.
+func TestServerlessGraphAnalyticsRoutesToV2Create(t *testing.T) {
+	inst := &neo4jv1beta1.AuraInstance{}
+	inst.Spec.Type = "professional-db" // not a multi-database tier
+	inst.Spec.CloudProvider = "gcp"
+	inst.Spec.Region = "europe-west1"
+	inst.Spec.Memory = "2GB"
+	inst.Spec.GraphAnalytics = "serverless"
+	inst.Spec.VectorOptimized = ptrTo(true)
+
+	if !wantsV2Create(inst) || wantsMultiDatabase(inst) {
+		t.Fatalf("serverless must use the v2beta1 create without being a multi-database instance")
+	}
+	got, err := multiDatabaseCreateRequest(inst, "inst")
+	if err != nil {
+		t.Fatalf("serverless on professional-db must not be refused: %v", err)
+	}
+	if got.GraphAnalytics != "serverless" || got.MultiDatabase != nil {
+		t.Errorf("graph_analytics=%q multi_database=%v, want serverless and omitted", got.GraphAnalytics, got.MultiDatabase)
+	}
+	if got.VectorOptimized == nil || !*got.VectorOptimized {
+		t.Errorf("vectorOptimized must be passed on a non-multi-database v2beta1 create")
+	}
+
+	inst.Spec.GraphAnalytics = "plugin"
+	if wantsV2Create(inst) {
+		t.Errorf("plugin is expressible on v1 and must stay on the v1 create")
+	}
+}
+
+func TestGraphAnalyticsResolutionAndV1Mapping(t *testing.T) {
+	for _, tc := range []struct {
+		field  string
+		plugin *bool
+		want   string
+		v1     *bool
+	}{
+		{"", nil, "", nil},
+		{"plugin", nil, "plugin", ptrTo(true)},
+		{"unavailable", nil, "unavailable", ptrTo(false)},
+		{"serverless", nil, "serverless", nil},
+		{"", ptrTo(true), "plugin", ptrTo(true)},
+		{"", ptrTo(false), "unavailable", ptrTo(false)},
+	} {
+		inst := &neo4jv1beta1.AuraInstance{}
+		inst.Spec.GraphAnalytics = tc.field
+		inst.Spec.GraphAnalyticsPlugin = tc.plugin
+		if got := resolvedGraphAnalytics(inst); got != tc.want {
+			t.Errorf("field=%q plugin=%v: resolved %q, want %q", tc.field, tc.plugin, got, tc.want)
+		}
+		got := v1GraphAnalyticsPlugin(inst)
+		if (got == nil) != (tc.v1 == nil) || (got != nil && *got != *tc.v1) {
+			t.Errorf("field=%q plugin=%v: v1 graph_analytics_plugin=%v, want %v", tc.field, tc.plugin, got, tc.v1)
+		}
+	}
 }

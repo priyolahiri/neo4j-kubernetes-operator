@@ -274,7 +274,7 @@ func (r *AuraInstanceReconciler) observeOrCreate(
 	// such field — so that create diverges here. Everything afterwards (this
 	// method's caller included) stays on v1, which does see v2beta1-created
 	// instances.
-	if wantsMultiDatabase(inst) {
+	if wantsV2Create(inst) {
 		return r.createMultiDatabaseInstance(ctx, req, inst, projectID, name)
 	}
 
@@ -295,9 +295,7 @@ func (r *AuraInstanceReconciler) observeOrCreate(
 	if inst.Spec.VectorOptimized != nil {
 		createReq.VectorOptimized = inst.Spec.VectorOptimized
 	}
-	if inst.Spec.GraphAnalyticsPlugin != nil {
-		createReq.GraphAnalyticsPlugin = inst.Spec.GraphAnalyticsPlugin
-	}
+	createReq.GraphAnalyticsPlugin = v1GraphAnalyticsPlugin(inst)
 	if inst.Spec.Source != nil {
 		createReq.SourceSnapshotID = inst.Spec.Source.SnapshotID
 		// instanceRef points at another AuraInstance in this namespace; resolve it

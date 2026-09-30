@@ -32,7 +32,8 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 | `name` | `string` | Aura instance name (max 30 chars). Defaults to `metadata.name`. |
 | `paused` | `bool` | Desired paused state — drives pause / resume. |
 | `vectorOptimized` | `*bool` | Enables vector optimization. |
-| `graphAnalyticsPlugin` | `*bool` | Enables the graph-analytics plugin. |
+| `graphAnalytics` | `string` | How Graph Data Science runs: `unavailable`, `serverless` (on-demand sessions outside the instance) or `plugin` (inside the instance). Applied at creation and immutable afterwards. **`serverless` can only be expressed through the Aura v2beta1 API**, so an instance asking for it is created there — exactly like a `multiDatabase` instance: it needs an organization ID, and `secondariesCount`, `cdcEnrichmentMode`, `customerManagedKeyId` and `source` are rejected with it. It is then managed through v1 as usual. |
+| `graphAnalyticsPlugin` | `*bool` | **Deprecated** — use `graphAnalytics` (`true` is `plugin`, `false` is `unavailable`). Setting both is rejected. An existing CR can switch to the equivalent `graphAnalytics` value; any other change is rejected. |
 | `secondariesCount` | `*int32` | Number of secondaries. `enterprise-db` (VDC) only. |
 | `cdcEnrichmentMode` | `string` | Enum `OFF` / `DIFF` / `FULL`. VDC / `business-critical` only. |
 | `customerManagedKeyId` | `string` | Aura-assigned CMK ID (from an [`AuraCustomerManagedKey`](auracustomermanagedkey.md) status). `enterprise-db` / `enterprise-ds` only. **Immutable once set.** |
@@ -106,7 +107,7 @@ This has consequences worth knowing before you rely on it:
 - **It changes which API creates the instance.** `multi_database` exists only in the Aura **v2beta1** API, so the operator issues the create there and then manages the instance through v1 as usual (observe, resize, pause/resume, upgrade, delete all work against a v2beta1-created instance). v2beta1 is **beta** — see the caveat in [Aura orchestration](../user_guide/aura_orchestration.md).
 - **Only two tiers support it**: `business-critical` and `enterprise-db` (Virtual Dedicated Cloud). `free-db` and `professional-db` are rejected by Aura outright (`multi-database-tier-not-supported`), so the CRD rejects them on write.
 - **It needs an organization ID**, because the v2beta1 paths are organization-scoped. Set `spec.organizationId` or `defaultOrganizationId` on the [`AuraProviderConfig`](auraproviderconfig.md).
-- **A smaller set of fields applies.** The v2beta1 create accepts only name, type, cloudProvider, region and memory, and *silently ignores* anything else. So `storage`, `vectorOptimized`, `graphAnalyticsPlugin`, `secondariesCount`, `cdcEnrichmentMode`, `customerManagedKeyId` and `source` are **rejected** in combination with `multiDatabase` rather than quietly dropped. `version` is not sent either — Aura picks the version — although the CRD still requires it.
+- **A smaller set of fields applies.** The v2beta1 create takes name, type, cloudProvider, region, memory, `storage` and `graphAnalytics` (including `serverless`). `vectorOptimized` is **rejected** with `multiDatabase`, because Aura refuses the combination. `secondariesCount`, `cdcEnrichmentMode`, `customerManagedKeyId` and `source` have no v2beta1 equivalent and are rejected too. `version` is not sent either — Aura picks the version — although the CRD still requires it.
 - **Instances created by earlier operator versions are not multi-database**, and cannot be made so. An `AuraDatabase` against one is refused with `Ready=False`, reason `InstanceNotMultiDatabase`; the fix is a new `AuraInstance` (and a data migration), not a spec edit.
 
 ```yaml

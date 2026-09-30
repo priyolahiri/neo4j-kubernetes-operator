@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -174,4 +175,80 @@ func TestCELValidations(t *testing.T) {
 	accept("cluster tls cert-manager with issuerRef", minimalCluster("cel-cluster-tls-ok", func(cl *neo4jv1beta1.Neo4jEnterpriseCluster) {
 		cl.Spec.TLS = &neo4jv1beta1.TLSSpec{Mode: "cert-manager", IssuerRef: &neo4jv1beta1.IssuerRef{Name: "ca-cluster-issuer"}}
 	}))
+
+	// AuraInstance graph analytics and the v2beta1-create combinations
+	// (verified live against the Aura API on 2026-09-30; knowledge id 87).
+	aura := func(name string, mutate func(*neo4jv1beta1.AuraInstance)) *neo4jv1beta1.AuraInstance {
+		i := &neo4jv1beta1.AuraInstance{ObjectMeta: meta(name)}
+		i.Spec.ProviderConfigRef = &corev1.LocalObjectReference{Name: "aura"}
+		i.Spec.CloudProvider = "gcp"
+		i.Spec.Region = "europe-west1"
+		i.Spec.Type = "business-critical"
+		i.Spec.Version = "5"
+		i.Spec.Memory = "2GB"
+		mutate(i)
+		return i
+	}
+	yes, no := true, false
+	accept("aura graphAnalytics serverless", aura("cel-aura-sl", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalytics = "serverless" }))
+	accept("aura graphAnalytics plugin", aura("cel-aura-pl", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalytics = "plugin" }))
+	reject("aura graphAnalytics bad value", aura("cel-aura-bad", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalytics = "gpu" }))
+	reject("aura graphAnalytics and graphAnalyticsPlugin", aura("cel-aura-both", func(i *neo4jv1beta1.AuraInstance) {
+		i.Spec.GraphAnalytics = "plugin"
+		i.Spec.GraphAnalyticsPlugin = &yes
+	}))
+	reject("aura serverless with a v1-only field", aura("cel-aura-sl-cdc", func(i *neo4jv1beta1.AuraInstance) {
+		i.Spec.GraphAnalytics = "serverless"
+		i.Spec.CDCEnrichmentMode = "DIFF"
+	}))
+	accept("aura multiDatabase with storage and graph analytics", aura("cel-aura-mdb", func(i *neo4jv1beta1.AuraInstance) {
+		i.Spec.MultiDatabase = &yes
+		i.Spec.Storage = "8GB"
+		i.Spec.GraphAnalytics = "serverless"
+	}))
+	reject("aura multiDatabase with vectorOptimized", aura("cel-aura-mdb-vec", func(i *neo4jv1beta1.AuraInstance) {
+		i.Spec.MultiDatabase = &yes
+		i.Spec.VectorOptimized = &yes
+	}))
+	accept("aura multiDatabase with vectorOptimized false", aura("cel-aura-mdb-novec", func(i *neo4jv1beta1.AuraInstance) {
+		i.Spec.MultiDatabase = &yes
+		i.Spec.VectorOptimized = &no
+	}))
+
+	// Transitions: graphAnalytics is fixed at creation, except for replacing the
+	// deprecated boolean with its equivalent.
+	update := func(name string, obj *neo4jv1beta1.AuraInstance, edit func(*neo4jv1beta1.AuraInstance), wantOK bool) {
+		t.Helper()
+		if err := c.Create(ctx, obj); err != nil {
+			t.Errorf("%s: create: %v", name, err)
+			return
+		}
+		defer func() { _ = c.Delete(ctx, obj) }()
+		edit(obj)
+		err := c.Update(ctx, obj)
+		if wantOK && err != nil {
+			t.Errorf("%s: expected the update to be ACCEPTED, got %v", name, err)
+		}
+		if !wantOK && err == nil {
+			t.Errorf("%s: expected the update to be REJECTED (CEL), but it was accepted", name)
+		}
+	}
+	update("aura migrate graphAnalyticsPlugin true to plugin",
+		aura("cel-aura-mig", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalyticsPlugin = &yes }),
+		func(i *neo4jv1beta1.AuraInstance) {
+			i.Spec.GraphAnalyticsPlugin = nil
+			i.Spec.GraphAnalytics = "plugin"
+		}, true)
+	update("aura migrate graphAnalyticsPlugin true to serverless",
+		aura("cel-aura-mig-bad", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalyticsPlugin = &yes }),
+		func(i *neo4jv1beta1.AuraInstance) {
+			i.Spec.GraphAnalyticsPlugin = nil
+			i.Spec.GraphAnalytics = "serverless"
+		}, false)
+	update("aura change graphAnalytics after creation",
+		aura("cel-aura-chg", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalytics = "plugin" }),
+		func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalytics = "serverless" }, false)
+	update("aura set graphAnalytics after creation without a plugin value",
+		aura("cel-aura-late", func(*neo4jv1beta1.AuraInstance) {}),
+		func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalytics = "plugin" }, false)
 }
