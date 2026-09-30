@@ -2050,7 +2050,7 @@
         "id": "f-aurainstance-spec-multi-database",
         "name": "spec.multiDatabase",
         "type": "bool",
-        "note": "Immutable; only kind of instance AuraDatabase/AuraDatabaseBackup/AuraDatabaseRestore can target; switches the CREATE call to the v2beta1 API."
+        "note": "Immutable; only kind of instance AuraDatabase/AuraDatabaseBackup/AuraDatabaseRestore can target; switches the CREATE call to the v2beta1 API, which takes storage and graph analytics but refuses vectorOptimized with it (verified live 2026-09-30)."
       },
       {
         "id": "f-aurainstance-spec-customer-managed-key-id",

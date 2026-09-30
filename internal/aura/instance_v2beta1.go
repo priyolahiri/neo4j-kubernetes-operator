@@ -157,14 +157,20 @@ type InstanceV2Summary struct {
 }
 
 // CreateInstanceV2Request is the v2beta1 create body. Only `name` and `type` are
-// required; `type` must be a v2beta1 tier name (see InstanceTypeV2). Any field
-// not listed here is silently dropped by the API — landmine 3.
+// required; `type` must be a v2beta1 tier name (see InstanceTypeV2). The API
+// now REJECTS fields it does not know (`additional properties … not allowed`,
+// verified live 2026-09-30); on 2026-07-30 it silently dropped them.
 type CreateInstanceV2Request struct {
 	Name          string `json:"name"`
 	Type          string `json:"type"`
 	CloudProvider string `json:"cloud_provider,omitempty"`
 	Region        string `json:"region,omitempty"`
 	Memory        string `json:"memory,omitempty"`
+	// Storage is honoured (asked 8GB, got 8GB — verified live 2026-09-30).
+	Storage string `json:"storage,omitempty"`
+	// GraphAnalytics is one of unavailable, serverless or plugin; honoured
+	// (verified live 2026-09-30 with serverless).
+	GraphAnalytics string `json:"graph_analytics,omitempty"`
 	// MultiDatabase is a pointer so it can be omitted entirely (letting Aura
 	// apply its own default) as distinct from explicitly requesting false.
 	MultiDatabase *bool `json:"multi_database,omitempty"`

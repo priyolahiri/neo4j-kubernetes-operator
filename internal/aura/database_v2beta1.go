@@ -44,14 +44,20 @@ import (
 //     below. Reading a database/backup status from `legacy_status` silently
 //     yields "" forever.
 //
-//  2. The RESTORE body field is `id` — NOT `backup_id`. Unlike create, this body
-//     IS schema'd upstream, with `id` required, so `backup_id` is a hard 400.
+//  2. The RESTORE body field: the operator sends `id`. The spec has since
+//     renamed it `backup_id`, and on 2026-09-30 the live API accepted BOTH —
+//     each reached the snapshot lookup (`snapshot-not-found` for an unknown
+//     ID). `id` was the only accepted name on 2026-07-31; it is kept because it
+//     is the form verified to work on both dates.
 //
-//  3. DatabaseSummary has no `name`. The create body takes a name, but no
-//     response echoes it back, so a database cannot be matched by name.
+//  3. Database responses now carry `name` (list, get and create, verified live
+//     2026-09-30). On 2026-07-31 they carried only `id`, which is why nothing in
+//     the operator matches a database by name yet.
 //
-// Only the database CREATE body is un-schema'd upstream (the POST publishes no
-// requestBody); it mirrors the documented conventions and is BETA/best-effort.
+// The database CREATE body is now published upstream (`name`, `backup_id`,
+// `source_database_id`), but only `name` works: creating from a backup or
+// cloning returned `404 endpoint-not-found` on 2026-09-30. The create also
+// returns HTTP 200, not the documented 201.
 // Everything else here follows a published schema.
 //
 // Walked end-to-end against the LIVE API on 2026-07-31 (create → backup →
@@ -91,11 +97,12 @@ const (
 
 // Database is a v2beta1 database on an Aura instance.
 //
-// This is the full DatabaseSummary shape: the API returns ONLY an ID for a
-// database — no name, no status. Do not add fields here without a schema to
-// point at.
+// This is the DatabaseSummary shape: an ID and, since the spec added it (and
+// the live API returns it, verified 2026-09-30), a name. Still no status —
+// only the restore response shows a database's state (landmine 5).
 type Database struct {
-	ID string `json:"id,omitempty"`
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
 // CreateDatabaseRequest is the create body. The POST publishes no requestBody

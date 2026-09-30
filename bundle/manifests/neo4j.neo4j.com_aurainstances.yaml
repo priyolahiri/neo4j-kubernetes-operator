@@ -341,14 +341,15 @@ spec:
               rule: '!has(self.multiDatabase) || !self.multiDatabase || self.type
                 in [''business-critical'',''enterprise-db'']'
             - message: 'multiDatabase creates the instance through the Aura v2beta1
-                API, which accepts only name/type/cloudProvider/region/memory and
-                SILENTLY IGNORES every other field: unset storage, vectorOptimized,
-                graphAnalyticsPlugin, secondariesCount, cdcEnrichmentMode, customerManagedKeyId
-                and source'
-              rule: '!has(self.multiDatabase) || !self.multiDatabase || (!has(self.storage)
-                && !has(self.vectorOptimized) && !has(self.graphAnalyticsPlugin) &&
-                !has(self.secondariesCount) && !has(self.cdcEnrichmentMode) && !has(self.customerManagedKeyId)
+                API, which has no equivalent of secondariesCount, cdcEnrichmentMode,
+                customerManagedKeyId or source: unset them or drop multiDatabase'
+              rule: '!has(self.multiDatabase) || !self.multiDatabase || (!has(self.secondariesCount)
+                && !has(self.cdcEnrichmentMode) && !has(self.customerManagedKeyId)
                 && !has(self.source))'
+            - message: 'vectorOptimized is not available on a multi-database instance:
+                Aura refuses the combination (multi-database-capability-not-supported)'
+              rule: '!has(self.multiDatabase) || !self.multiDatabase || !has(self.vectorOptimized)
+                || !self.vectorOptimized'
           status:
             description: AuraInstanceStatus is the observed state of an Aura instance.
             properties:

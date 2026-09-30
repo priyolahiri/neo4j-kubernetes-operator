@@ -110,11 +110,14 @@ func wantsMultiDatabase(inst *neo4jv1beta1.AuraInstance) bool {
 // multiDatabaseCreateRequest translates the CR into the v2beta1 create body,
 // refusing rather than guessing when the spec cannot be expressed there.
 //
-// The refusal matters more than it looks: the v2beta1 create SILENTLY IGNORES
-// fields it does not know (verified live), so quietly forwarding a v1-only field
-// would leave the user with an instance that does not match their manifest and
-// no error to explain it. CEL already rejects those combinations on write; this
-// is the belt-and-braces check for CRs that predate the rules.
+// Verified live 2026-09-30: the create honours storage and graph_analytics,
+// refuses vector_optimized on a multi-database instance ("Vector optimized is
+// not available on multi db instances"), and now REJECTS unknown fields where
+// it used to ignore them. So v1-only fields are still refused here — with a
+// message naming them, rather than the API's generic "additional properties" —
+// and vectorOptimized with Aura's own reason. CEL rejects the same
+// combinations on write; this is the belt-and-braces check for CRs that
+// predate the rules.
 func multiDatabaseCreateRequest(inst *neo4jv1beta1.AuraInstance, name string) (aura.CreateInstanceV2Request, error) {
 	v2Type, ok := aura.InstanceTypeV2(inst.Spec.Type)
 	if !ok {
@@ -133,16 +136,13 @@ func multiDatabaseCreateRequest(inst *neo4jv1beta1.AuraInstance, name string) (a
 				"business-critical and enterprise-db (Virtual Dedicated Cloud)", inst.Spec.Type)
 	}
 
+	if inst.Spec.VectorOptimized != nil && *inst.Spec.VectorOptimized {
+		return aura.CreateInstanceV2Request{}, refusef(
+			"vectorOptimized is not available on a multi-database instance — Aura refuses the combination " +
+				"(multi-database-capability-not-supported); drop one of them")
+	}
+
 	var dropped []string
-	if inst.Spec.Storage != "" {
-		dropped = append(dropped, "storage")
-	}
-	if inst.Spec.VectorOptimized != nil {
-		dropped = append(dropped, "vectorOptimized")
-	}
-	if inst.Spec.GraphAnalyticsPlugin != nil {
-		dropped = append(dropped, "graphAnalyticsPlugin")
-	}
 	if inst.Spec.SecondariesCount != nil {
 		dropped = append(dropped, "secondariesCount")
 	}
@@ -157,19 +157,32 @@ func multiDatabaseCreateRequest(inst *neo4jv1beta1.AuraInstance, name string) (a
 	}
 	if len(dropped) > 0 {
 		return aura.CreateInstanceV2Request{}, refusef(
-			"multiDatabase creates the instance through the Aura v2beta1 API, which accepts only "+
-				"name/type/cloudProvider/region/memory and silently ignores everything else; remove %v or drop multiDatabase",
+			"multiDatabase creates the instance through the Aura v2beta1 API, which has no equivalent of %v "+
+				"(it accepts name/type/cloudProvider/region/memory/storage/graphAnalyticsPlugin); remove them or drop multiDatabase",
 			dropped)
+	}
+
+	// graphAnalyticsPlugin is v1's boolean; v2beta1 has a three-way
+	// graph_analytics. true is the plugin; false is "unavailable". The third
+	// value, serverless, has no spelling in this CRD yet.
+	graphAnalytics := ""
+	if inst.Spec.GraphAnalyticsPlugin != nil {
+		graphAnalytics = "unavailable"
+		if *inst.Spec.GraphAnalyticsPlugin {
+			graphAnalytics = "plugin"
+		}
 	}
 
 	multiDB := true
 	return aura.CreateInstanceV2Request{
-		Name:          name,
-		Type:          v2Type,
-		CloudProvider: inst.Spec.CloudProvider,
-		Region:        inst.Spec.Region,
-		Memory:        inst.Spec.Memory,
-		MultiDatabase: &multiDB,
+		Name:           name,
+		Type:           v2Type,
+		CloudProvider:  inst.Spec.CloudProvider,
+		Region:         inst.Spec.Region,
+		Memory:         inst.Spec.Memory,
+		Storage:        inst.Spec.Storage,
+		GraphAnalytics: graphAnalytics,
+		MultiDatabase:  &multiDB,
 		// No `version`: v2beta1 has no such field and picks the Neo4j version
 		// itself. spec.version is still required by the CRD (v1 needs it) and is
 		// simply not expressible here.
