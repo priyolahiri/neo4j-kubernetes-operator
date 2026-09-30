@@ -20,9 +20,12 @@ the upstream; 02–04 go on the downstream.
 - Object storage (S3/GCS/Azure) reachable from **both** Kubernetes clusters.
 
 **No network path between the two Kubernetes clusters is required.** Backup-based
-replication needs no load balancer, no cross-cluster TLS trust, and no
-NetworkPolicy changes. `source.mode: network` is *not* supported by this
-operator — see the guide for why.
+replication — what these examples use — needs no load balancer, no
+cross-cluster TLS trust, and no NetworkPolicy changes. For near-continuous
+replication, `source.mode: network` is also supported: it needs
+`spec.crossClusterReplication` on the upstream and TLS on both clusters across
+Kubernetes clusters, or just `source.upstreamClusterRef` within one. See the
+guide for choosing between them.
 
 ## The three things people get wrong
 

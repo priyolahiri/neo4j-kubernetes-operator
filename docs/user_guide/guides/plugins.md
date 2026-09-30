@@ -55,6 +55,17 @@ Wait for `status.phase: Ready`:
 kubectl get neo4jplugin apoc-plugin -w
 ```
 
+!!! warning "`allowedProcedures` is an allowlist, not a grant"
+
+    It becomes `dbms.security.procedures.allowlist` (and, unless
+    `sandbox: true`, `dbms.security.procedures.unrestricted` too). Neo4j then
+    loads **only** the plugin procedures and functions it matches, server-wide.
+    Everything else is not loaded at all and fails as *Unknown function* —
+    with the example above, that includes `apoc.version()`, so a quick
+    `RETURN apoc.version()` will fail even though APOC is installed. List what
+    you use, or `apoc.*` for all of APOC; omit `security` to keep the operator's
+    defaults.
+
 ### Graph Data Science (GDS)
 
 ```yaml

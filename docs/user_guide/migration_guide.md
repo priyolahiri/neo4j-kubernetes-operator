@@ -118,6 +118,17 @@ upgrade restarts nothing. See the
 - Remote composite constituents with stored credentials now work on the 5.26
   LTS; they failed there in v1.16.0. Their URL must be `neo4j+s://` or
   `neo4j+ssc://`, which is now checked at apply time.
+- `spec.graphAnalytics` on `AuraInstance`: `unavailable`, `plugin` or
+  `serverless`. Serverless graph analytics is created through Aura's v2beta1
+  API. See the [AuraInstance API reference](../api_reference/aurainstance.md).
+
+### Deprecated
+
+- `AuraInstance.spec.graphAnalyticsPlugin` — use `spec.graphAnalytics`. It keeps
+  working and maps to `plugin` (true) or `unavailable` (false). Setting both is
+  refused. An existing instance may switch to the equivalent `graphAnalytics`
+  value; any other change is refused, because Aura cannot change it after
+  creation.
 
 ## Upgrading between future releases
 
@@ -129,7 +140,7 @@ When a newer version ships:
 
    ```bash
    kubectl apply --server-side -f \
-     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.16.0/neo4j-kubernetes-operator.yaml
+     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.17.0/neo4j-kubernetes-operator.yaml
    ```
 
 2. **Upgrade the operator** via Helm:
