@@ -145,15 +145,15 @@ func (v *CompositeDatabaseValidator) validateRemoteConstituents(
 			}
 		}
 
-		// A plaintext scheme carries the credential in the clear when this
-		// alias stores one. Warn rather than refuse: a private network is a
-		// legitimate if unusual choice, and the CRD pattern already rejects
-		// anything that is not a Bolt URL.
-		if c.Remote.CredentialsSecretRef != "" && !strings.Contains(c.Remote.URL, "+s") {
-			warnings = append(warnings, fmt.Sprintf(
-				"constituent %q sends stored credentials to %s over an unencrypted scheme; "+
-					"prefer neo4j+s:// so the credential is not exposed in transit",
-				c.Name, c.Remote.URL))
+		// Neo4j accepts only neo4j+s:// and neo4j+ssc:// for a remote alias
+		// and refuses the rest with 22N04 — on 5.26 and CalVer, whichever the
+		// authentication mode (verified on 5.26.31 and 2026.08.1). The CRD
+		// pattern refuses them too; this catches a CR stored before the
+		// pattern was tightened, which could never have been created.
+		if !strings.HasPrefix(c.Remote.URL, "neo4j+s://") && !strings.HasPrefix(c.Remote.URL, "neo4j+ssc://") {
+			errs = append(errs, field.Invalid(rPath.Child("url"), c.Remote.URL,
+				"a remote constituent's url must use neo4j+s:// or neo4j+ssc:// (self-signed); "+
+					"Neo4j refuses every other scheme for a remote alias, including bolt+s://"))
 		}
 	}
 

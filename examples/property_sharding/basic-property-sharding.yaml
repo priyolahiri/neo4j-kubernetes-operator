@@ -55,8 +55,9 @@ spec:
     enabled: true
     # Default config is applied automatically:
     # - internal.dbms.sharded_property_database.enabled: "true"
-    # - db.query.default_language: "CYPHER_25"
     # - internal.dbms.sharded_property_database.allow_external_shard_access: "false"
+    # Sharding does not set the server's default Cypher language (sharded
+    # databases get CYPHER 25 on their own); use spec.serverDefaultCypherLanguage.
 
 ---
 # Step 2: Create a sharded database targeting the cluster

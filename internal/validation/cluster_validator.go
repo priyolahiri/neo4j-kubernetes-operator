@@ -193,6 +193,13 @@ func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1
 	// addresses, topology) that would collide with the operator's own
 	// startup-appended values. Previously this validator was never wired in.
 	allErrs = append(allErrs, v.configValidator.Validate(cluster)...)
+	legacyLanguage := []ConfigAt{{Path: field.NewPath("spec", "config"), Config: cluster.Spec.Config}}
+	if cluster.Spec.PropertySharding != nil {
+		legacyLanguage = append(legacyLanguage, ConfigAt{
+			Path: field.NewPath("spec", "propertySharding", "config"), Config: cluster.Spec.PropertySharding.Config})
+	}
+	allErrs = append(allErrs, ValidateServerCypherLanguage(
+		cluster.Spec.ServerDefaultCypherLanguage, cluster.Spec.Image.Tag, legacyLanguage...)...)
 
 	// Property sharding validation (version requirements)
 	allErrs = append(allErrs, v.validatePropertySharding(cluster)...)

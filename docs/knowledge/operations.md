@@ -232,12 +232,19 @@
 
 ## Auth / AuthRule / OIDC
 
-### id 30 — AUTH RULE Cypher requires `CYPHER 25` prefix
-- **scope:** `internal/neo4j/auth_rules.go` (`cypher25Prefix = "CYPHER 25 "` L32; prepended to every AUTH RULE statement — SHOW/CREATE/ALTER/DROP ~L62-245)
-- **rule:** Every AUTH RULE statement prepends `cypher25Prefix`. The 2026.x system DB defaults to Cypher 5; without the prefix you get `42I06: Invalid input 'AUTH'`. Keep the prefix even after the default flips.
-- **why:** AUTH RULE syntax is Cypher 25-only; the system DB's default language is not guaranteed to be 25, so the prefix is mandatory.
-- **pinned-by:** auth_rules Cypher-prefix unit tests in `internal/neo4j/`.
-- **enforcement:** unit test + code review.
+### id 30 — Cypher-25-only statements go through `Cypher25()`, and ONLY those
+- **scope:** `internal/neo4j/cypher25.go` (`Cypher25`, `HasCypher25Prefix`); every caller — AUTH RULE (`auth_rules.go`), CREATE REPLICA DATABASE and `dbms.promoteReplicaDatabase` (`replicas.go`), the OIDC remote alias (`composite.go`), the sharded CREATE/DROP (`neo4jshardeddatabase_controller.go`).
+- **rule:** A statement using Cypher-25-only syntax MUST be wrapped in `Cypher25()`; nothing else may spell the `CYPHER 25` directive. A statement that must also run on 5.26 MUST NOT be wrapped. Keep the directive even after the system default flips.
+- **why:** CalVer defaults the system DB to Cypher 5, and a Cypher-25-only statement then fails to PARSE (`42I06`, or `42I67` "parsable in CYPHER 25") — it reads as though the feature did not exist. The hand-prepended constant was missed twice (CREATE REPLICA DATABASE until the v1.15.0 journey). The opposite mistake is just as real: the 5.26 LTS rejects the directive itself (`25 is not a valid option for cypher version`), and prefixing EVERY remote alias made stored-credential remote constituents impossible on 5.26 — shipped broken in v1.16.0; only the OIDC form needs it. Verified on 5.26.31 and 2026.08.1.
+- **pinned-by:** `TestCypher25Guard` (`internal/neo4j/cypher25_guard_test.go`) parses `internal/neo4j` and every controller function that sends Cypher, and fails on Cypher-25-only syntax without a `Cypher25` call or a hand-written directive — extend `cypher25OnlySyntax` when a new construct is found. `TestRemoteAliasStatementPinsCypher25OnlyForOIDC` pins the 5.26 direction.
+- **enforcement:** unit test (AST guard).
+
+### id 96 — The server default Cypher language is resolved once, and sharding does not set it
+- **scope:** `internal/resources/cypher_language.go` (`StampServerCypherLanguage`, `EmitServerCypherLanguage`); `internal/controller/server_cypher_language.go` (stamp before the ConfigMap); `buildNeo4jConfigForEnterprise`, the standalone `createConfigMap`; `buildCreateShardedDatabaseCypher`; `ValidateServerCypherLanguage` (both aggregators).
+- **rule:** An unset `spec.serverDefaultCypherLanguage` is resolved ONCE into `status.effectiveCypherLanguage` — new CalVer → `CYPHER_25`, new LTS → `CYPHER_5`, existing → what its ConfigMap already runs — and never re-derived. Never write `db.query.default_language` on the 5.26 LTS. Sharding must NOT set it; the sharded CREATE always sets `SET DEFAULT LANGUAGE CYPHER 25` instead. On a sharding cluster the line is emitted inside the property-sharding block, where releases up to v1.16.0 wrote it.
+- **why:** Measured on 2026.06.0: shard sub-databases inherit the PARENT's language, a Cypher 5 sharded family works, and Neo4j fixes a database's language at creation and never re-reads the setting. Re-deriving the value, or moving the line, rewrites `neo4j.conf` and ROLLS THE SERVERS on an operator upgrade for a setting whose value did not change — observed live before the placement rule existed. The key does not exist on 5.26, where strict validation stops the server starting.
+- **pinned-by:** `TestStampServerCypherLanguage`, `TestEmitServerCypherLanguage`, `TestPropertyShardingNoLongerForcesTheServerLanguage` (placement), `TestLegacyLanguageKeyIsWrittenOnce`, `TestValidateServerCypherLanguage`, `TestShardedCreateAlwaysSetsTheFamilyLanguage`, and the standalone integration spec's `effectiveCypherLanguage` assertion (both CI anchors).
+- **enforcement:** unit test + integration test.
 
 ### id 31 — `oidc-`-prefixed provider name in ABAC config
 - **scope:** `internal/controller/neo4jauthrule_controller.go` (`abacAuthorizationProvidersKey = "dbms.security.abac.authorization_providers"` ~L54, precondition check ~L518); `internal/validation/auth_validator.go` (`strings.HasPrefix(provider, "oidc-")` ~L87); cluster authz providers emitted in `internal/resources/cluster.go` (`dbms.security.authorization_providers` ~L2818)
@@ -504,6 +511,13 @@
 - **why:** Both collect-logs steps carried `if: failure()`. On a red run nothing *inside* the action had failed yet, so `failure()` was false and **every step was skipped silently** — no `cluster-debug.log`, no uploaded artifact, and no way to see why a pod died. Verified on run 30304634581 (PR #314): the action's log group opened and closed in 0.2 ms *after* a 5-spec failure, and `integration-test-logs-2026.04-enterprise` was absent from the run's artifacts — leaving a crash-looping Neo4j (`rbac-shared-cluster-server-0/1`, 12 restarts) undiagnosable from CI alone. The failure mode is invisible: the action still *appears* in the job log, so the gap only shows up when someone goes looking for the logs.
 - **pinned-by:** no automated guard — GitHub workflow/action YAML is not covered by the `unit-tests` job. Manual check (anchored so it matches real step conditions, not the prose/comments that *document* this rule): `grep -rnE '^[[:space:]]*if:[[:space:]]*failure\(\)' .github/actions/` must return **nothing** (0 today). The caller-side gate lives on the `uses: ./.github/actions/collect-logs` steps in both integration workflows.
 - **enforcement:** convention + code review — **PROSE-ONLY — at risk**. Deliberately not added to `scripts/check-invariants.sh` (that guard is reserved for the 5 constitution invariants; this is CI-harness wiring). Fixed alongside the 2026.04 → 2026.06 CalVer anchor bump.
+
+### id 95 — Never return a requeue Result together with a non-nil error
+- **scope:** every reconciler in `internal/controller/` (all non-test `.go` files).
+- **rule:** A `return` MUST NOT combine `ctrl.Result{RequeueAfter: …}` or `{Requeue: true}` with a non-nil error. Choose `ctrl.Result{}, err` for a transient failure (controller-runtime's error backoff retries it and the error metrics count it), or `ctrl.Result{RequeueAfter: d}, nil` for an expected condition that is already surfaced in status, an event or a log (a spec the user must fix; a server rejection that will repeat). `fail()` helpers route by `isPermanentServerRejection` (`Neo.ClientError.*` → fixed interval, `nil`; anything else → the error).
+- **why:** controller-runtime (v0.25.1) IGNORES the Result whenever the error is non-nil and logs a warning saying so, so every such return meant something other than it said: 99 had accumulated across 15 files, each one a dead delay plus a warning line per occurrence. They were NOT the cause of the Neo4jRole reconcile storm seen with a dropped database (#408) — that rate came from cluster status changes re-enqueuing roles through the dependent watch, which bypasses backoff; #408 fixed it by not attempting the doomed grant. The conversion to `{}, err` is behaviour-neutral for exactly this reason; only the validation returns in the cluster controller and the permanent-rejection branch of the `fail()` helpers changed behaviour, to the fixed interval their authors wrote.
+- **pinned-by:** `TestNoRequeueWithError` (`internal/controller/requeue_with_error_guard_test.go`) parses the package and fails on any such return.
+- **enforcement:** unit test (AST guard).
 
 ## Cross-cutting helpers referenced above
 

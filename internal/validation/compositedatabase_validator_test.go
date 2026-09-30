@@ -315,16 +315,39 @@ func TestCompositeValidator_DriverSettingKeysAreConstrained(t *testing.T) {
 	assert.Contains(t, res.Errors.ToAggregate().Error(), "map keys")
 }
 
-// A plaintext scheme carrying a stored credential is warned about, not refused:
-// a private network is an unusual but legitimate choice.
-func TestCompositeValidator_PlaintextSchemeWithStoredCredentialsWarns(t *testing.T) {
+// Neo4j accepts only neo4j+s and neo4j+ssc for a remote alias, in either
+// authentication mode — measured on 5.26.31 and 2026.08.1. Everything else is
+// refused here, naming the field, rather than by the server with 22N04.
+func TestCompositeValidator_RemoteURLSchemes(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).
 		WithObjects(deploymentWithKeystore("2026.08.1-enterprise", true)).Build()
-	cd := composite("cineasts", remoteConstituent("p", "neo4j://other:7687",
-		func(r *neo4jv1beta1.RemoteConstituent) { r.CredentialsSecretRef = "creds" }))
-
-	res := NewCompositeDatabaseValidator(c).Validate(t.Context(), cd)
-	assert.Empty(t, res.Errors, "an unencrypted scheme is a warning, not a rejection")
-	require.NotEmpty(t, res.Warnings)
-	assert.Contains(t, res.Warnings[0], "neo4j+s://")
+	for _, tc := range []struct {
+		url string
+		ok  bool
+	}{
+		{"neo4j+s://other:7687", true},
+		{"neo4j+ssc://other:7687", true},
+		{"neo4j://other:7687", false},
+		{"bolt://other:7687", false},
+		{"bolt+s://other:7687", false},
+		{"bolt+ssc://other:7687", false},
+	} {
+		for _, oidc := range []bool{false, true} {
+			cd := composite("cineasts", remoteConstituent("p", tc.url, func(r *neo4jv1beta1.RemoteConstituent) {
+				if oidc {
+					r.OIDCCredentialForwarding = true
+				} else {
+					r.CredentialsSecretRef = "creds"
+				}
+			}))
+			res := NewCompositeDatabaseValidator(c).Validate(t.Context(), cd)
+			if tc.ok {
+				assert.Empty(t, res.Errors, "%s (oidc=%v)", tc.url, oidc)
+				continue
+			}
+			require.NotEmpty(t, res.Errors, "%s (oidc=%v)", tc.url, oidc)
+			assert.Contains(t, res.Errors.ToAggregate().Error(), "spec.constituents[0].remote.url")
+			assert.Contains(t, res.Errors.ToAggregate().Error(), "neo4j+ssc://")
+		}
+	}
 }

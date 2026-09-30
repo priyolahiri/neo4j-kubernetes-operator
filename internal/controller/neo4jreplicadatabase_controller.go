@@ -126,7 +126,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	target, err := ResolveClusterRef(ctx, r.Client, replica.Namespace, replica.Spec.ClusterRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve cluster ref")
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if !target.Found {
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(replica.Spec.ClusterRef))
@@ -160,7 +160,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
 			EventReasonConnectionFailed, msg, nil)
 		r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	defer func() {
 		if err := nc.Close(); err != nil {
@@ -358,7 +358,7 @@ func (r *Neo4jReplicaDatabaseReconciler) markPromoted(
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to mark replica promoted")
-		return ctrl.Result{RequeueAfter: r.requeueAfter()}, err
+		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
 }
@@ -394,7 +394,7 @@ func (r *Neo4jReplicaDatabaseReconciler) handleDeletion(ctx context.Context, rep
 
 	target, err := ResolveClusterRef(ctx, r.Client, replica.Namespace, replica.Spec.ClusterRef)
 	if err != nil {
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if !target.Found {
 		return releaseOnly()
@@ -840,7 +840,7 @@ func (r *Neo4jReplicaDatabaseReconciler) fail(ctx context.Context, replica *neo4
 	if isPermanentServerRejection(err) {
 		return ctrl.Result{RequeueAfter: permanentRejectionRequeue}, nil
 	}
-	return ctrl.Result{RequeueAfter: requeue}, err
+	return ctrl.Result{}, err
 }
 
 // permanentRejectionRequeue is how long to wait before re-attempting an

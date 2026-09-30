@@ -79,10 +79,9 @@ func (c *Client) CreateReplicaDatabaseFromBackup(ctx context.Context, databaseNa
 	// not warn — it fails to parse, with "Invalid input 'DATABASE': expected a
 	// graph pattern", which reads as though the statement did not exist.
 	// Found by the v1.15.0 journey, the first run against a real 2026.08
-	// server; see cypher25Prefix in auth_rules.go, where the same rule bit
+	// server; see Cypher25 in cypher25.go, where the same rule bit
 	// AUTH RULE first.
 	var sb strings.Builder
-	sb.WriteString(cypher25Prefix)
 	fmt.Fprintf(&sb, "CREATE REPLICA DATABASE `%s`", escapeBackticks(databaseName))
 	if clause := topologyClause(src.Primaries, src.Secondaries); clause != "" {
 		sb.WriteString(" " + clause)
@@ -100,7 +99,7 @@ func (c *Client) CreateReplicaDatabaseFromBackup(ctx context.Context, databaseNa
 	}
 	sb.WriteString(" WAIT")
 
-	if _, err := session.Run(ctx, sb.String(), params); err != nil {
+	if _, err := session.Run(ctx, Cypher25(sb.String()), params); err != nil {
 		return fmt.Errorf("failed to create replica database %s: %w", databaseName, err)
 	}
 	return nil
@@ -166,7 +165,6 @@ func (c *Client) CreateReplicaDatabaseFromNetwork(ctx context.Context, databaseN
 // testable without a live driver (mirrors buildOptionsClause's split).
 func buildCreateReplicaFromNetworkCypher(databaseName string, src ReplicaNetworkSource) (string, map[string]any) {
 	var sb strings.Builder
-	sb.WriteString(cypher25Prefix)
 	fmt.Fprintf(&sb, "CREATE REPLICA DATABASE `%s`", escapeBackticks(databaseName))
 	if clause := topologyClause(src.Primaries, src.Secondaries); clause != "" {
 		sb.WriteString(" " + clause)
@@ -178,7 +176,7 @@ func buildCreateReplicaFromNetworkCypher(databaseName string, src ReplicaNetwork
 		"remote":    src.UpstreamDatabase,
 		"addresses": src.Addresses,
 	}
-	return sb.String(), params
+	return Cypher25(sb.String()), params
 }
 
 // PromoteReplicaDatabase converts a replica into an ordinary read-write
@@ -216,7 +214,7 @@ func (c *Client) PromoteReplicaDatabase(ctx context.Context, databaseName string
 	// as though the procedure were missing from the build. It is not; it is
 	// simply not visible under Cypher 5, which the server says only when asked
 	// directly: "The procedure or function is available in `CYPHER 25`."
-	if _, err := session.Run(ctx, cypher25Prefix+"CALL dbms.promoteReplicaDatabase($name, $options)", params); err != nil {
+	if _, err := session.Run(ctx, Cypher25("CALL dbms.promoteReplicaDatabase($name, $options)"), params); err != nil {
 		return fmt.Errorf("failed to promote replica database %s: %w", databaseName, err)
 	}
 	return nil

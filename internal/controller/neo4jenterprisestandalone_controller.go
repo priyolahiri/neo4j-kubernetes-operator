@@ -186,7 +186,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	// An empty className is allowed and inherits the cluster default.
 	if exists, scErr := storageClassExists(ctx, r.Client, standalone.Spec.Storage.ClassName); scErr != nil {
 		logger.Error(scErr, "Failed to look up StorageClass", "storageClass", standalone.Spec.Storage.ClassName)
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, scErr
+		return ctrl.Result{}, scErr
 	} else if !exists {
 		msg := fmt.Sprintf("StorageClass %q not found; create it or set spec.storage.className to an existing class (or leave it empty to use the cluster default)", standalone.Spec.Storage.ClassName)
 		logger.Error(fmt.Errorf("storage class not found"), msg)
@@ -204,7 +204,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 
 		// Update status to reflect failure
 		r.setFailedStatus(ctx, standalone, fmt.Sprintf("Reconciliation failed: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	return result, nil
@@ -222,7 +222,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 	// Cleanup resources
 	if err := r.cleanupResources(ctx, standalone); err != nil {
 		logger.Error(err, "Failed to cleanup resources")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	}
 
 	// Remove finalizer
@@ -245,6 +245,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		if err := r.reconcileTLSCertificate(ctx, standalone); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile TLS Certificate: %w", err)
 		}
+	}
+
+	// Resolve the server default Cypher language before the ConfigMap that
+	// renders it (spec.serverDefaultCypherLanguage; server_cypher_language.go).
+	if err := r.stampStandaloneCypherLanguage(ctx, standalone); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to resolve the server default Cypher language: %w", err)
 	}
 
 	// Reconcile ConfigMap (always needed for config). The standalone controller
@@ -277,7 +283,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 	// Check if PVC storage expansion is needed before creating/updating the StatefulSet.
 	if requeue, err := r.reconcileStandaloneStorageExpansion(ctx, standalone); err != nil {
 		logger.Error(err, "Failed to reconcile storage expansion")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, err
+		return ctrl.Result{}, err
 	} else if requeue {
 		logger.Info("Storage expansion completed, requeueing to recreate StatefulSet")
 		// The orphan-delete above triggers an Owns(&appsv1.StatefulSet{}) watch
@@ -1353,6 +1359,18 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv
 				authGeneratedKeys[key] = true
 			}
 		}
+	}
+
+	// Server default Cypher language (spec.serverDefaultCypherLanguage), from
+	// the value stampStandaloneCypherLanguage recorded. Nothing is written when
+	// the user set db.query.default_language in spec.config — that line is.
+	if lang := resources.EmitServerCypherLanguage(standalone.Spec.ServerDefaultCypherLanguage,
+		resources.LegacyServerCypherLanguage(standalone.Spec.Config),
+		standalone.Status.EffectiveCypherLanguage,
+		resources.IsCalverImage(standalone.Spec.Image.Tag)); lang != "" {
+		configLines = append(configLines, "# Server default Cypher language (for databases created without their own)")
+		configLines = append(configLines, resources.ServerCypherLanguageKey+"="+lang)
+		configLines = append(configLines, "")
 	}
 
 	// Add user-provided configuration. SSL policy keys are excluded

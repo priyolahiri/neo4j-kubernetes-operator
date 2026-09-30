@@ -99,6 +99,7 @@ cluster reaches `Ready` — see [`Neo4jRestore`](neo4jrestore.md).
 | `crossClusterReplication` | [`CrossClusterReplicationSpec`](#crossclusterreplicationspec) | Network-mode cross-cluster database replication (CCDR): deploys a self-hosted TCP proxy exposing this cluster's tx-shipping port (6000) externally via one LoadBalancer Service, for use by a `Neo4jReplicaDatabase` with `source.mode: network` in another Kubernetes cluster. Disabled by default. **Requires `tls.mode: cert-manager`** — the proxy is a TCP passthrough that authenticates nothing, so the cluster SSL policy is the only access control on the exposed port; enabling it without TLS is rejected. |
 | `auraFleetManagement` | [`AuraFleetManagementSpec`](#aurafleetmanagementspec) | Aura Fleet Management integration (optional) |
 | `trustedCASecrets` | `[]`[`TrustedCASecret`](#trustedcasecret) | CA bundles to add to Neo4j's JVM truststore (OIDC, LDAPS, plugin downloads, peer-cluster replication) |
+| `serverDefaultCypherLanguage` | `string` | Cypher version a database gets when it is created without one of its own — Neo4j's `db.query.default_language`. `CYPHER_5` or `CYPHER_25`. **Unset**, the operator picks once and records it in `status.effectiveCypherLanguage`: `CYPHER_25` for a deployment it creates on a CalVer image, `CYPHER_5` on the 5.26 LTS, and whatever an existing deployment already runs — an operator upgrade never changes it. Neo4j fixes a database's language at creation, so this applies only to databases created afterwards; change an existing one with `ALTER DATABASE … SET DEFAULT LANGUAGE`. Changing the field restarts the servers. `CYPHER_25` needs a CalVer image, and nothing is ever written on the LTS (the setting does not exist there). Don't also set `db.query.default_language` in `spec.config`; the two are refused when they disagree. |
 | `remoteAliasKeystore` | [`RemoteAliasKeystoreSpec`](#remotealiaskeystorespec) | Keystore used to encrypt the credentials of remote database aliases that store native credentials — including the remote constituents of a [`Neo4jCompositeDatabase`](neo4jcompositedatabase.md). Required for that mode only; aliases using OIDC credential forwarding store no credential and need no keystore. |
 | `extraVolumes` | `[]corev1.Volume` | Arbitrary pod volumes mounted into the Neo4j pod; reference them via `extraVolumeMounts` |
 | `extraVolumeMounts` | `[]corev1.VolumeMount` | Mount points for `extraVolumes` (or, rarely, operator-managed volumes); operator-managed paths are rejected by the validator |
@@ -555,8 +556,11 @@ Configures property sharding for horizontal scaling of large datasets. Property 
 **Required Configuration** (automatically applied when enabled):
 
 - `internal.dbms.sharded_property_database.enabled: "true"`
-- `db.query.default_language: "CYPHER_25"`
 - `internal.dbms.sharded_property_database.allow_external_shard_access: "false"`
+
+Sharding does not set `db.query.default_language`: shard sub-databases inherit
+the parent database's language, which the operator sets to Cypher 25 on every
+sharded database. The server default is `serverDefaultCypherLanguage`'s.
 
 **Performance Tuning Options**:
 
@@ -884,6 +888,7 @@ The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
 | `upgradeStatus` | [`*UpgradeStatus`](#upgradestatus) | Detailed upgrade progress information |
 | `lastUpgradeTime` | `*metav1.Time` | When the last upgrade was performed |
 | `propertyShardingReady` | `bool` | Whether property sharding is configured and ready (Neo4j 2025.12+) |
+| `effectiveCypherLanguage` | `string` | The server default Cypher version the operator resolved (see `spec.serverDefaultCypherLanguage`), recorded once so an unset spec never changes meaning under a running cluster |
 | `auraFleetManagement` | `object` | State of the Aura Fleet Management integration (when `spec.auraFleetManagement.enabled=true`) |
 | `observedGeneration` | `int64` | Last observed generation |
 | `diagnostics` | [`*DiagnosticsStatus`](#diagnosticsstatus) | Live diagnostics collected when `spec.monitoring.enabled=true` and cluster is `Ready`. |

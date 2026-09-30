@@ -221,6 +221,20 @@
         "isNullable": true,
         "refEntityId": "ent-neo4jenterprisecluster",
         "note": "Opt-in list of {name, namespace} downstream Neo4jEnterpriseClusters admitted as a NetworkPolicy peer on port 6000 only (never RAFT/routing) — fixes same-Kubernetes-cluster network-mode CCDR being blocked by the base peer-restriction rule. Nothing admitted unless listed; purely declarative, no controller change."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-server-default-cypher-language",
+        "name": "serverDefaultCypherLanguage",
+        "type": "enum",
+        "isNullable": true,
+        "note": "CYPHER_5 or CYPHER_25: the language a database gets when created without its own (db.query.default_language). Unset resolves once and is recorded in status.effectiveCypherLanguage; never written on the 5.26 LTS; CYPHER_25 refused there."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-effective-cypher-language",
+        "name": "status.effectiveCypherLanguage",
+        "type": "string",
+        "isNullable": true,
+        "note": "The resolved server default Cypher language, recorded once (new CalVer deployment -> CYPHER_25, LTS -> CYPHER_5, existing -> what its ConfigMap already runs) so an operator upgrade never changes it."
       }
     ]
   },
@@ -387,6 +401,20 @@
         "name": "status.databaseStatus.healthStatus",
         "type": "string",
         "isNullable": true
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-server-default-cypher-language",
+        "name": "serverDefaultCypherLanguage",
+        "type": "enum",
+        "isNullable": true,
+        "note": "CYPHER_5 or CYPHER_25: the language a database gets when created without its own (db.query.default_language). Unset resolves once and is recorded in status.effectiveCypherLanguage; never written on the 5.26 LTS; CYPHER_25 refused there."
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-status-effective-cypher-language",
+        "name": "status.effectiveCypherLanguage",
+        "type": "string",
+        "isNullable": true,
+        "note": "The resolved server default Cypher language, recorded once (new CalVer deployment -> CYPHER_25, LTS -> CYPHER_5, existing -> what its ConfigMap already runs) so an operator upgrade never changes it."
       }
     ]
   },

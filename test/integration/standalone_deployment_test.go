@@ -166,6 +166,20 @@ var _ = Describe("Neo4jEnterpriseStandalone Integration Tests", Label("core"), f
 				Name: standaloneName, Namespace: namespaceName,
 			}, updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal("Ready"))
+
+			// spec.serverDefaultCypherLanguage unset: a deployment the operator
+			// creates gets CYPHER_25 on CalVer and is recorded as such; on the
+			// 5.26 LTS it is CYPHER_5 and NOTHING is written, because
+			// db.query.default_language does not exist there and would stop the
+			// server starting (it just reached Ready, which proves that half).
+			By("Verifying the server default Cypher language was resolved and recorded")
+			if strings.HasPrefix(getNeo4jImageTag(), "5.") {
+				Expect(updated.Status.EffectiveCypherLanguage).To(Equal("CYPHER_5"))
+				Expect(neo4jConf).NotTo(ContainSubstring("db.query.default_language"))
+			} else {
+				Expect(updated.Status.EffectiveCypherLanguage).To(Equal("CYPHER_25"))
+				Expect(neo4jConf).To(ContainSubstring("db.query.default_language=CYPHER_25"))
+			}
 		})
 
 		It("should support creating databases in standalone deployment", func() {

@@ -125,7 +125,7 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	target, err := ResolveClusterRef(ctx, r.Client, role.Namespace, role.Spec.ClusterRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve target ref")
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if !target.Found {
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(role.Spec.ClusterRef))
@@ -146,7 +146,7 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, false)
 		r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	defer func() {
 		if err := nc.Close(); err != nil {
@@ -362,7 +362,7 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 
 	target, err := ResolveClusterRef(ctx, r.Client, role.Namespace, role.Spec.ClusterRef)
 	if err != nil {
-		return ctrl.Result{RequeueAfter: requeue}, err
+		return ctrl.Result{}, err
 	}
 	if !target.Found {
 		// Cluster gone — release the finalizer.
