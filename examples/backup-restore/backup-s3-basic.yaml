@@ -32,6 +32,8 @@ spec:
     backupType: FULL
     # tempPath is recommended for cloud uploads to avoid partial writes
     tempPath: /tmp/neo4j-backup-temp
+  # NOTE: for cloud storage (s3/gcs/azure) the operator does NOT prune objects —
+  # retention is advisory here; configure bucket lifecycle rules instead.
   retention:
     maxAge: "30d"
     maxCount: 30
@@ -83,6 +85,7 @@ spec:
     compress: true
     backupType: FULL
     tempPath: /tmp/neo4j-backup-temp
+  # Advisory for cloud storage (see the note above): use bucket lifecycle rules.
   retention:
     maxAge: "30d"
     maxCount: 30

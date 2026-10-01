@@ -72,7 +72,7 @@ spec:
 #   metadata: { name: maindb-pitr-recovery, namespace: neo4j-production }
 #   spec:
 #     clusterRef: production-cluster
-#     name: maindb_pitr_recovery     # recover into a new DB for comparison
+#     name: maindb-pitr-recovery     # recover into a new DB for comparison
 #     seedURI: "s3://neo4j-dr-backups/us-east-1/production/maindb-2025-01-19.backup"
 #     seedConfig: { restoreUntil: "2025-01-19T14:30:00Z" }
 #     seedCredentials: { secretRef: s3-dr-credentials }

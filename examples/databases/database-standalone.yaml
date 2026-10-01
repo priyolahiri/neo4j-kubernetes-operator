@@ -33,7 +33,8 @@ spec:
   # Note: Topology is not applicable for standalone deployments
   # as they only support single-node databases
 
-  # Optional: Set default Cypher language (5 or 25)
+  # Optional (CalVer 2025.x+ targets only — the 5.26 LTS has no DEFAULT LANGUAGE
+  # clause): set the database's default Cypher language, "5" or "25".
   # defaultCypherLanguage: "5"
 
 ---
@@ -48,4 +49,6 @@ spec:
   name: testdb
   ifNotExists: true
   wait: true
-  defaultCypherLanguage: "25"  # Use Cypher 25 for Neo4j 2025.x features
+  # Cypher 25 needs a CalVer (2025.x+) standalone; the default standalone-neo4j
+  # example runs 5.26, so this is commented out. Uncomment on a CalVer image.
+  # defaultCypherLanguage: "25"

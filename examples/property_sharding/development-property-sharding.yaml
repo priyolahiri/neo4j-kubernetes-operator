@@ -9,10 +9,11 @@
 # - Consider using regular Neo4j clusters for basic development
 #
 # ALTERNATIVE: For pure development without property sharding features,
-# use examples/clusters/development-cluster.yaml instead
+# use examples/clusters/minimal-cluster.yaml instead
 
 # Prerequisites: Create admin secret (REQUIRED)
-# kubectl create secret generic neo4j-admin-secret \
+# kubectl create namespace neo4j-dev
+# kubectl create secret generic neo4j-admin-secret --namespace neo4j-dev \
 #   --from-literal=username=neo4j \
 #   --from-literal=password=dev-password
 

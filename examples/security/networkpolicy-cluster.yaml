@@ -1,16 +1,27 @@
 # Example NetworkPolicy for a Neo4jEnterpriseCluster workload namespace.
 #
-# This is *not* deployed by the operator — apply it manually in any
-# namespace that hosts Neo4j cluster pods after you've created the
+# PREFER the operator-managed policy: set `spec.networkPolicy.enabled: true`
+# on the Neo4jEnterpriseCluster and the operator emits an ingress policy
+# (`<cluster>-server-netpol`) that keeps every port the cluster needs open to
+# the right callers. This file is only for when you need something the
+# operator's policy does not do — chiefly default-deny EGRESS — and it is an
+# illustration: extend the egress rules for whatever your cluster calls
+# (object storage for seedURI, LDAP/OIDC providers, ...).
+#
+# It is *not* deployed by the operator — apply it manually in the namespace
+# that hosts the Neo4j cluster pods after you've created the
 # Neo4jEnterpriseCluster CR. It enforces:
 #
-#   * Clients in the same namespace may reach Bolt (7687/7473) and
+#   * Clients in the same namespace may reach Bolt (7687) and
 #     HTTP/HTTPS (7474/7473).
 #   * Server pods within the cluster may reach each other on the
-#     discovery (6000) and RAFT (7000) ports.
-#   * The operator namespace may scrape Neo4j metrics (2004).
-#   * cert-manager (if used) may reach the cluster on Bolt for
-#     ACME-style proofs.
+#     discovery (6000), RAFT (7000), routing (7688) and transaction (7689)
+#     ports. Omitting any of these breaks the cluster on a CNI that enforces
+#     NetworkPolicy (Calico, Cilium, Antrea).
+#   * The operator namespace may reach Bolt (7687) — the operator's
+#     reconcilers connect to every deployment — and scrape metrics (2004).
+#   * Operator-managed backup Jobs (same namespace) may reach the backup
+#     port (6362).
 #   * Egress is allowed to DNS, the K8s API, and pod-to-pod within the
 #     cluster's StatefulSet — everything else is denied.
 #
@@ -57,17 +68,39 @@ spec:
               app.kubernetes.io/instance: MY-CLUSTER
       ports:
         - protocol: TCP
-          port: 6000   # discovery V2
+          port: 6000   # discovery V2 / tx-shipping
         - protocol: TCP
           port: 7000   # RAFT
+        - protocol: TCP
+          port: 7688   # routing
+        - protocol: TCP
+          port: 7689   # transaction streaming / catch-up
 
-    # Prometheus scrape from the operator namespace. Replace the
-    # selector with whatever namespace your Prometheus runs in.
+    # Backup port, operator-managed backup Jobs only (one-shot and CronJob).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/managed-by: neo4j-operator
+              app.kubernetes.io/component: backup
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/managed-by: neo4j-operator
+              app.kubernetes.io/component: backup-cron
+      ports:
+        - protocol: TCP
+          port: 6362
+
+    # The operator namespace: Bolt for the operator's own connections, and the
+    # metrics scrape. The operator runs in `neo4j-operator` (dev install) or
+    # `neo4j-operator-system` (Helm / prod install) — use yours. Point the
+    # scrape at whatever namespace your Prometheus runs in.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: neo4j-operator
       ports:
+        - protocol: TCP
+          port: 7687   # Bolt (operator reconcilers)
         - protocol: TCP
           port: 2004   # Neo4j metrics (when spec.monitoring.enabled=true)
 
@@ -101,6 +134,10 @@ spec:
           port: 6000
         - protocol: TCP
           port: 7000
+        - protocol: TCP
+          port: 7688
+        - protocol: TCP
+          port: 7689
         - protocol: TCP
           port: 7687
         - protocol: TCP

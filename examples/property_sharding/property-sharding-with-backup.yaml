@@ -101,6 +101,8 @@ spec:
     # Sharded backups default remoteAddressResolution=true on Neo4j 2025.09+;
     # set explicitly only to override.
 
+  # NOTE: for cloud storage (s3/gcs/azure) the operator does NOT prune objects —
+  # retention is advisory here; configure bucket lifecycle rules instead.
   retention:
     maxAge: "7d"
     maxCount: 7

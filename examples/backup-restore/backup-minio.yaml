@@ -138,6 +138,8 @@ spec:
     # silently ignore it).
     # preferDiffAsParent: true
 
+  # NOTE: the operator does NOT prune objects in S3-compatible storage —
+  # retention is advisory here; configure bucket lifecycle rules in MinIO instead.
   retention:
     maxAge: "7d"
     maxCount: 168   # 7 days × 24 hours
@@ -182,10 +184,11 @@ spec:
 #      kubectl logs job/<job-name>
 #
 # 2. Verify the backup reached MinIO:
-#      kubectl run minio-client --rm -it --restart=Never \
-#        --image=quay.io/minio/mc --command -- /bin/sh -c "
-#          mc alias set local http://minio.minio.svc:9000 minioadmin minioadmin;
-#          mc ls local/neo4j-backups/cluster/"
+#      kubectl run minio-client --rm -i --restart=Never \
+#        --image=cgr.dev/chainguard/minio-client \
+#        --env=MC_HOST_local=http://minioadmin:minioadmin@minio.minio.svc:9000 \
+#        -- ls local/neo4j-backups/cluster/
+#    (the minio-client image has no shell — the alias comes from MC_HOST_local)
 #
 # 3. Common issues:
 #    - "NoSuchBucket": create the bucket first (mc mb local/neo4j-backups)

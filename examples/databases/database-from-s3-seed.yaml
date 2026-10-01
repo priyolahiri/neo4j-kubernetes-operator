@@ -38,7 +38,9 @@ spec:
     # Point-in-time recovery (Neo4j 2025.x only)
     restoreUntil: "2025-01-15T10:30:00Z"
 
-    # CloudSeedProvider configuration
+    # Seed-provider option map, rendered as key=value pairs into the seedConfig
+    # OPTIONS string. CloudSeedProvider (s3://, gs://, azb://) does not consume it;
+    # the S3SeedProvider's common key is `region`.
     config:
       compression: "gzip"
       validation: "strict"

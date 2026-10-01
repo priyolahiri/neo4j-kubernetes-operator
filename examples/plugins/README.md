@@ -4,7 +4,7 @@ This directory contains examples of how to use the Neo4jPlugin CRD with both Neo
 
 ## Plugin Installation Method
 
-The Neo4jPlugin controller uses Neo4j's recommended `NEO4J_PLUGINS` environment variable approach with plugin-type-aware configuration:
+By default (`spec.installMode: Managed`) the Neo4jPlugin controller uses Neo4j's recommended `NEO4J_PLUGINS` environment variable approach with plugin-type-aware configuration:
 
 - **No External Jobs**: Plugins are configured via environment variables, not download jobs
 - **Automatic Installation**: Neo4j downloads and installs plugins on startup
@@ -170,10 +170,13 @@ Downloads from Maven Central or GitHub releases.
 ```yaml
 source:
   type: custom
-  registry:
-    url: https://my-repo.example.com
-    authSecret: repo-credentials
+  url: https://my-repo.example.com/plugins/my-plugin-1.0.0.jar   # https only
+  checksum: sha256:<64 hex chars>                                   # required
 ```
+`custom` and `url` both require `source.url` (https) and a `source.checksum`
+(`sha256:<64 hex>` or `sha512:<128 hex>`; SHA-1/MD5 are rejected). The CRD schema
+also accepts a `source.registry` block, but the operator does not read it — use
+`url`.
 
 ### Direct URL
 ```yaml
@@ -183,7 +186,20 @@ source:
   checksum: sha256:abcd1234...
 ```
 
+## Install Modes
+
+`spec.installMode` selects how the plugin JAR reaches `/plugins`:
+
+- **`Managed`** (default) — the operator adds the plugin to `NEO4J_PLUGINS` and the Neo4j image entrypoint downloads it at pod start (APOC core is bundled and needs no download).
+- **`PreBaked`** — the operator does not touch `NEO4J_PLUGINS`; you ship the JAR in a custom image and the operator only applies the plugin's configuration.
+- **`VerifiedDownload`** — an init container downloads `source.url`, verifies `source.checksum`, and places the JAR before Neo4j starts (requires `source.type: url` or `custom`; no `dependencies`).
+
 ## Usage Instructions
+
+The example manifests reference `clusterRef: my-cluster` (clusters) or
+`clusterRef: standalone-neo4j` (standalone). Deploy an instance with that name, or
+edit `clusterRef` to match yours (`examples/clusters/minimal-cluster.yaml` creates
+`minimal-cluster`).
 
 1. **Deploy your Neo4j instance** (cluster or standalone)
    ```bash
@@ -194,7 +210,7 @@ source:
 
 2. **Wait for deployment to be ready**
    ```bash
-   kubectl get neo4jenterprisecluster my-cluster
+   kubectl get neo4jenterprisecluster <your-cluster-name>
    # or
    kubectl get neo4jenterprisestandalone standalone-neo4j
    ```

@@ -87,37 +87,38 @@ open http://localhost:7474
 oc get route -n <namespace>
 ```
 
-## Automatic Kubernetes Discovery
+## Automatic Cluster Discovery
 
-**All clusters automatically use Kubernetes Discovery** for cluster member discovery. The operator handles all configuration automatically:
+**All clusters use V2 discovery with the `LIST` resolver and static pod FQDNs on port 6000.** The operator renders the whole discovery configuration for you:
 
-### What the Operator Creates Automatically
+### What the Operator Configures Automatically
 
-1. **RBAC Resources**:
-   - ServiceAccount: `{cluster-name}-discovery`
-   - Role: `{cluster-name}-discovery` (with service list permissions)
-   - RoleBinding: `{cluster-name}-discovery`
+1. **Neo4j configuration** (rendered into `neo4j.conf`; the endpoint list is `<cluster>-server-<i>.<cluster>-headless.<namespace>.svc.cluster.local:6000` for every server):
 
-2. **Discovery Services**:
-   - Discovery service: `{cluster-name}-discovery` (ClusterIP with `neo4j.com/clustering=true` label)
-   - Headless service: `{cluster-name}-headless` (for pod-to-pod communication)
-
-3. **Neo4j Configuration**:
    ```properties
-   dbms.cluster.discovery.resolver_type=K8S
-   dbms.kubernetes.label_selector=neo4j.com/clustering=true
-   dbms.kubernetes.discovery.v2.service_port_name=tcp-discovery
+   # Neo4j 5.26.x
+   dbms.cluster.discovery.resolver_type=LIST
    dbms.cluster.discovery.version=V2_ONLY
+   dbms.cluster.discovery.v2.endpoints=<pod-fqdns>:6000
+
+   # Neo4j 2025.x / 2026.x (CalVer) — V2 is the only protocol, so no version flag
+   dbms.cluster.discovery.resolver_type=LIST
+   dbms.cluster.endpoints=<pod-fqdns>:6000
    ```
+
+2. **Services**:
+   - Headless service: `{cluster-name}-headless` (stable pod DNS names used in the endpoint list)
+   - Discovery service: `{cluster-name}-discovery` (ClusterIP with `neo4j.com/clustering=true` label)
+
+3. **RBAC** (created alongside the cluster): ServiceAccount, Role and RoleBinding named `{cluster-name}-discovery`.
 
 ### Benefits
 
-- ✅ **Dynamic discovery** - automatic adaptation to scaling
-- ✅ **Cloud-native integration** - uses Kubernetes API
+- ✅ **Deterministic membership** - every server is addressed by its stable pod FQDN
 - ✅ **Zero configuration** - no manual setup required
-- ✅ **Automatic RBAC** - proper security permissions
+- ✅ **Automatic scaling** - the endpoint list follows `spec.topology.servers`
 
-**No manual discovery configuration needed or supported!** Simply deploy a cluster and the operator handles everything. Any manual discovery settings in `spec.config` are automatically overridden to ensure consistent Kubernetes discovery.
+**No manual discovery configuration is needed or accepted.** The validator rejects `dbms.cluster.discovery.resolver_type`, `dbms.cluster.discovery.v2.endpoints`, `dbms.cluster.endpoints`, `dbms.kubernetes.label_selector` and `dbms.kubernetes.discovery.service_port_name` in `spec.config` — they are managed by the operator.
 
 ## Example Configurations
 
@@ -162,7 +163,7 @@ oc get route -n <namespace>
 - **Topology**: 5 servers (automatic role organization)
 - **Mode**: Server-based clustering with automatic discovery
 - **TLS**: cert-manager enabled
-- **Resources**: 4Gi RAM, 2 CPU
+- **Resources**: 4Gi RAM, 1 CPU
 - **Features**: LoadBalancer service, automatic RBAC, production config
 
 ### `clusters/topology-placement-cluster.yaml`
@@ -171,7 +172,7 @@ oc get route -n <namespace>
 - **Topology**: 3 servers with topology spread constraints
 - **Mode**: Server-based clustering with anti-affinity rules
 - **TLS**: cert-manager enabled
-- **Resources**: 4Gi RAM, 2 CPU
+- **Resources**: 4Gi RAM, 1 CPU
 - **Features**: Zone distribution, topology constraints, fault tolerance
 
 ## Fault Tolerance Considerations ⚠️
@@ -194,8 +195,7 @@ The operator now allows even numbers of primary nodes but issues warnings about 
 When deploying with even numbers of servers, the operator will emit warnings:
 
 ```
-Warning: Even number of servers (4) may reduce fault tolerance.
-For optimal cluster quorum, consider using an odd number (3, 5, or 7) of servers.
+Even number of servers (4) may reduce fault tolerance when databases specify odd-numbered server allocations. Consider using an odd number of servers for optimal fault tolerance.
 ```
 
 ### Best Practices
@@ -303,7 +303,7 @@ Neo4j clusters use parallel pod startup with coordinated formation:
 ### Common Issues
 
 1. **Pod stuck in Pending**: Check storage class and PVC binding
-2. **License errors**: Verify `NEO4J_ACCEPT_LICENSE_AGREEMENT=yes`
+2. **License errors**: Set `spec.acceptLicenseAgreement` to `"yes"` (you hold a Neo4j Enterprise license) or `"eval"` (30-day evaluation) — the operator refuses to deploy without it
 3. **TLS issues**: Ensure cert-manager and issuer are configured
 4. **Memory issues**: Increase resource limits if pods are OOMKilled
 5. **Cluster formation slow**: All server pods start in parallel - expect 2-3 minutes total formation time

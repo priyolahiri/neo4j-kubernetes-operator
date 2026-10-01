@@ -27,7 +27,9 @@ spec:
     # Use transaction ID for point-in-time recovery
     restoreUntil: "txId:98765"
 
-    # CloudSeedProvider configuration
+    # Seed-provider option map, rendered as key=value pairs into the seedConfig
+    # OPTIONS string. CloudSeedProvider (s3://, gs://, azb://) does not consume it;
+    # the S3SeedProvider's common key is `region`.
     config:
       compression: "lz4"
       validation: "lenient"

@@ -57,7 +57,7 @@ kubectl apply -f development-property-sharding.yaml
 kubectl port-forward -n neo4j-dev svc/dev-sharding-cluster-client 7687:7687
 
 # Connect with cypher-shell
-cypher-shell -a bolt://localhost:7687 -u neo4j -p development123
+cypher-shell -a bolt://localhost:7687 -u neo4j -p dev-password   # the password from the example's admin Secret
 ```
 
 ### 3. Production Configuration (`advanced-property-sharding.yaml`)
@@ -83,12 +83,11 @@ kubectl apply -f advanced-property-sharding.yaml
 **Use Case**: Demonstrating backup strategies for sharded databases
 
 **Features**:
-- Coordinated multi-shard backups using `Neo4jBackup`
-
-Note: `backupConfig` on `Neo4jShardedDatabase` is not orchestrated yet; use explicit backup resources.
+- Coordinated multi-shard backups using `Neo4jBackup` (`spec.shardedDatabase`)
+- There is no `backupConfig` on `Neo4jShardedDatabase`; back up with an explicit `Neo4jBackup` resource
 - S3 storage integration
 - Consistency guarantees across shards
-- Retention policies
+- Retention policy (advisory for S3 — the operator does not prune cloud objects; use bucket lifecycle rules)
 
 **Deploy**:
 ```bash
@@ -239,7 +238,7 @@ kubectl exec <cluster>-server-0 -- \
   cypher-shell -u neo4j -p <password> "SHOW DATABASES"
 
 # Monitor resource usage
-kubectl top pods -l app.kubernetes.io/name=<cluster>
+kubectl top pods -l app.kubernetes.io/instance=<cluster>
 ```
 
 ## Migration from Standard Databases

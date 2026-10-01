@@ -111,6 +111,8 @@ spec:
     backupType: AUTO       # full first, differentials after
     compress: true
 
+  # NOTE: for cloud storage (s3/gcs/azure) the operator does NOT prune objects —
+  # retention is advisory here; configure bucket lifecycle rules instead.
   retention:
     maxCount: 7
     deletePolicy: Delete

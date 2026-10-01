@@ -113,7 +113,7 @@ metadata:
     environment: production
 spec:
   clusterRef: multi-tenant-cluster
-  name: tenant_a_prod
+  name: tenant-a-prod
   wait: true
   ifNotExists: true
 
@@ -146,7 +146,7 @@ metadata:
     environment: staging
 spec:
   clusterRef: multi-tenant-cluster
-  name: tenant_a_staging
+  name: tenant-a-staging
   wait: true
   ifNotExists: true
 
@@ -167,7 +167,7 @@ metadata:
     environment: production
 spec:
   clusterRef: multi-tenant-cluster
-  name: tenant_b_social
+  name: tenant-b-social
   wait: true
   ifNotExists: true
 
@@ -198,12 +198,12 @@ metadata:
     environment: production
 spec:
   clusterRef: multi-tenant-cluster
-  name: tenant_c_analytics
+  name: tenant-c-analytics
   wait: true
   ifNotExists: true
 
-  # Use modern Cypher for analytics
-  defaultCypherLanguage: "25"
+  # defaultCypherLanguage: "25" needs a CalVer (2025.x+) image; this cluster
+  # runs 5.26, which has no Cypher 25, so it is left unset here.
 
   topology:
     primaries: 3  # More primaries for parallel analytics
@@ -218,6 +218,10 @@ spec:
       - "CREATE INDEX tenant_c_metric_type IF NOT EXISTS FOR (m:Metric) ON (m.type)"
 ---
 # Tenant-specific backup configurations
+#
+# NOTE: for cloud storage (s3/gcs/azure) the operator does NOT prune objects, so
+# the retention blocks below are advisory — configure bucket lifecycle rules
+# instead. (retention is applied only for type=pvc storage.)
 ---
 # Tenant A daily backups
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -229,7 +233,7 @@ metadata:
     tenant: tenant-a
 spec:
   instanceRef: multi-tenant-cluster   # the cluster (same namespace) that owns the database
-  database: tenant_a_prod
+  database: tenant-a-prod
 
   schedule: "0 1 * * *"  # Daily at 1 AM
 
@@ -255,7 +259,7 @@ metadata:
     tenant: tenant-b
 spec:
   instanceRef: multi-tenant-cluster
-  database: tenant_b_social
+  database: tenant-b-social
 
   schedule: "0 * * * *"  # Hourly
 
@@ -285,7 +289,7 @@ metadata:
     tenant: tenant-c
 spec:
   instanceRef: multi-tenant-cluster
-  database: tenant_c_analytics
+  database: tenant-c-analytics
 
   schedule: "0 3 * * 0"  # Weekly on Sunday at 3 AM
 
