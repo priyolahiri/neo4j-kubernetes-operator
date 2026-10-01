@@ -25,7 +25,10 @@ spec:
     apoc.load.csv.enabled: "true"
     apoc.uuid.enabled: "true"
 
-  # Security configuration (procedure allowlists still go through neo4j.conf)
+  # Security configuration. allowedProcedures becomes dbms.security.procedures.allowlist
+  # (and, with sandbox: false, ...unrestricted): Neo4j loads ONLY the plugin procedures
+  # and functions listed here, so e.g. RETURN apoc.version() fails as 'Unknown function'
+  # with the list below. Use "apoc.*" to expose all of APOC.
   security:
     allowedProcedures:
       - "apoc.load.*"

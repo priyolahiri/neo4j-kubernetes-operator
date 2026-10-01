@@ -54,7 +54,7 @@ test coverage.
 | Surface | Aura API | Live-verified | Notes |
 |---|---|---|---|
 | `AuraProviderConfig` | OAuth | ✅ 2026-07-30 | A token from the v1 endpoint authenticates v2beta1 calls too. |
-| `AuraInstance` | v1 (+ v2beta1 for `multiDatabase`) | ✅ 2026-08-01 | Full lifecycle walked: create → snapshot → restore → resize → pause → resume → tier upgrade → delete. |
+| `AuraInstance` | v1 (+ v2beta1 for `multiDatabase` and `graphAnalytics: serverless`) | ✅ 2026-08-01; serverless create ✅ 2026-09-30 | Full lifecycle walked: create → snapshot → restore → resize → pause → resume → tier upgrade → delete. A serverless instance was created through the operator, paused, resumed and deleted. |
 | `AuraSnapshot` | v1 | ✅ 2026-08-01 | |
 | `AuraRestore` | v1 | ✅ 2026-08-01 | |
 | `AuraCustomerManagedKey` | v1 | ❌ **UNTESTED** | See the warning below. |
@@ -185,6 +185,14 @@ kubectl -n neo4j wait aurainstance/analytics --for=condition=Ready --timeout=20m
 > `AuraDatabase`. Setting it moves the create call to the Aura **v2beta1** API,
 > which needs an organization ID and accepts fewer fields — see
 > [Multi-database instances](../api_reference/aurainstance.md#multi-database-instances).
+
+> **Serverless graph analytics.** `graphAnalytics: serverless` runs Graph Data
+> Science as on-demand sessions outside the instance rather than as a plugin
+> inside it. Like `multiDatabase`, it can only be requested through the Aura
+> **v2beta1** API, so it needs an organization ID and drops the same fields
+> (`secondariesCount`, `cdcEnrichmentMode`, `customerManagedKeyId`, `source`).
+> It is fixed at creation. `graphAnalyticsPlugin` is deprecated in its favour —
+> see [Upgrading from v1.16.x](migration_guide.md#upgrading-from-v116x).
 
 **4. Create a database** on the instance (multi-database instances only):
 

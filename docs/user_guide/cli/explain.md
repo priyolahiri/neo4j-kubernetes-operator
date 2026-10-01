@@ -32,6 +32,8 @@ phase: Degraded
     → When false, ... Check their pod logs for OOMKilled (exit 137).
 ```
 
+A few conditions are **negative**: `True` is the problem, so `False` is healthy. `ClusterNotReady`, `Degraded`, `ServersPendingDrain`, `UserNotFound`, `PendingDependencies` and `AuthRuleVersionTooOld` are marked `✓` when `False` — a role that shows `✓ ClusterNotReady = False` is on a ready cluster — and their guidance is printed only when they are `True`.
+
 ### Reasons, not just conditions
 
 A condition tells you something is false; its **reason** tells you which of several unrelated causes it was. It is the most specific thing a status carries, and the least guessable from the string itself — so reasons are explained as their own kind of term, and are printed alongside each condition of a live resource.
@@ -45,6 +47,8 @@ CompositeDatabaseNameBlocked (reason)
     error never mentions ordering. The CR's message names the alias to drop ...
 ```
 
+The reason you are most likely to meet right after upgrading to v1.17.0 is `UnattributedPrivileges`: every existing `Neo4jRole` reports it, because learn mode cannot attribute privileges that were on the role before it started. It is not a fault — nothing was revoked and access is unchanged — and `kubectl neo4j explain UnattributedPrivileges` says how to clear it. The full story is in [Learn mode](../user_role_management.md#learn-mode-default).
+
 Only reasons that are *not* guessable get an entry. A reason that restates its condition needs none, and a list padded with those would rot without helping anyone.
 
 ### It admits what it does not know
@@ -52,7 +56,7 @@ Only reasons that are *not* guessable get an entry. A reason that restates its c
 The explanations describe the operator release this CLI was built from. A newer deployment can report conditions, phases or reasons it has never heard of, and in that case it says so — naming its own version — rather than inventing an explanation:
 
 ```
-  (no guidance for this phase — it may be newer than this CLI, which carries v1.15.0 rules)
+  (no guidance for this phase — it may be newer than this CLI, which carries v1.17.0 rules)
 ```
 
 Guessing would be worse than admitting the gap, because a confident wrong answer during an incident costs more than no answer.
