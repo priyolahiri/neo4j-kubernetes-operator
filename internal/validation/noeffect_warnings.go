@@ -86,7 +86,22 @@ func (v *ClusterValidator) NoEffectWarnings(cluster *neo4jv1beta1.Neo4jEnterpris
 // The standalone has no warning channel of its own (ValidateCreate returns only
 // errors), so this is a separate method the reconciler turns into events.
 func (v *StandaloneValidator) NoEffectWarnings(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) []string {
-	return tlsNoEffectWarnings(standalone.Spec.TLS, standalone.Name)
+	warnings := tlsNoEffectWarnings(standalone.Spec.TLS, standalone.Name)
+
+	// strictPeerValidation picks the CLUSTER SSL policy. It is read for
+	// Neo4jEnterpriseCluster only; a standalone has no intra-cluster traffic and
+	// so no such policy, and nothing in its path reads the field. Only an
+	// explicit false is worth saying anything about: the CRD defaults the field
+	// to true wherever spec.tls is present, so true is indistinguishable from
+	// "never mentioned", and warning on it would fire for every TLS standalone.
+	// False is the opt-out a user sets expecting the legacy trust_all posture.
+	if tls := standalone.Spec.TLS; tls != nil && tls.StrictPeerValidation != nil && !*tls.StrictPeerValidation {
+		warnings = append(warnings, NoEffectWarning(field.NewPath("spec", "tls", "strictPeerValidation"),
+			"it selects the cluster SSL policy and only applies to Neo4jEnterpriseCluster; a standalone has "+
+				"no intra-cluster traffic, so remove it. Bolt and HTTPS TLS on a standalone are governed by "+
+				"spec.tls.mode and spec.tls.issuerRef"))
+	}
+	return warnings
 }
 
 // pluginNoEffectWarnings reports Neo4jPlugin spec fields that are set but not

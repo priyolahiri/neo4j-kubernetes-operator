@@ -198,6 +198,55 @@ func TestStandaloneValidator_NoEffectWarnings(t *testing.T) {
 	}
 }
 
+// spec.tls.strictPeerValidation is read only by Neo4jEnterpriseCluster (it picks
+// the cluster SSL policy); a standalone has no intra-cluster traffic and nothing
+// reads it. The API reference said so, but a user who sets it to false on a
+// standalone expecting the legacy trust_all posture got no hint it did nothing.
+func TestStandaloneValidator_NoEffectWarnings_StrictPeerValidation(t *testing.T) {
+	v := NewStandaloneValidator()
+	withStrict := func(b *bool) *neo4jv1beta1.Neo4jEnterpriseStandalone {
+		sa := validStandalone()
+		sa.Spec.TLS = &neo4jv1beta1.TLSSpec{
+			Mode:                 "cert-manager",
+			IssuerRef:            &neo4jv1beta1.IssuerRef{Name: "ca-cluster-issuer", Kind: "ClusterIssuer"},
+			StrictPeerValidation: b,
+		}
+		return sa
+	}
+	no, yes := false, true
+
+	t.Run("an explicit false warns and is still accepted", func(t *testing.T) {
+		sa := withStrict(&no)
+		assert.Empty(t, v.ValidateCreate(sa), "the warning must not become an error")
+		requireNoEffectWarning(t, v.NoEffectWarnings(sa), "spec.tls.strictPeerValidation",
+			"Neo4jEnterpriseCluster")
+	})
+
+	// The CRD defaults the field to true wherever spec.tls is present, so a
+	// standalone that never mentions it arrives here with true. Warning on that
+	// would fire for every TLS standalone, about a value the user never wrote.
+	t.Run("true, the CRD default, does not warn", func(t *testing.T) {
+		assert.Zero(t, noEffectCount(v.NoEffectWarnings(withStrict(&yes))))
+	})
+
+	t.Run("unset does not warn", func(t *testing.T) {
+		assert.Zero(t, noEffectCount(v.NoEffectWarnings(withStrict(nil))))
+	})
+
+	// The field IS read for clusters, so the cluster must not be told it is ignored.
+	t.Run("a cluster is never warned", func(t *testing.T) {
+		cluster := validClusterForWarnings()
+		cluster.Spec.TLS = &neo4jv1beta1.TLSSpec{
+			Mode:                 "cert-manager",
+			IssuerRef:            &neo4jv1beta1.IssuerRef{Name: "ca-cluster-issuer", Kind: "ClusterIssuer"},
+			StrictPeerValidation: &no,
+		}
+		for _, w := range NewClusterValidator(nil).NoEffectWarnings(cluster) {
+			assert.NotContains(t, w, "strictPeerValidation")
+		}
+	})
+}
+
 func validPluginForWarnings() *neo4jv1beta1.Neo4jPlugin {
 	return &neo4jv1beta1.Neo4jPlugin{
 		ObjectMeta: metav1.ObjectMeta{Name: "apoc"},

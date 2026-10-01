@@ -166,7 +166,9 @@ tls:
 > **Note on `strictPeerValidation`:** the field is present on the shared
 > `TLSSpec` but has no effect on `Neo4jEnterpriseStandalone` — single-server
 > deployments have no intra-cluster traffic, so there's no cluster SSL
-> policy to govern. Setting it on a standalone is silently ignored.
+> policy to govern. Setting it to `false` on a standalone raises a
+> `ValidationWarning` event saying so (`true` is the CRD default, so it is
+> not warned about); the standalone is still accepted.
 >
 > **Note on `certificateSecret`:** the field is present on the shared
 > `TLSSpec` but is never read: the operator always uses the cert-manager
