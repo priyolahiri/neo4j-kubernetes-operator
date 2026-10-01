@@ -675,7 +675,7 @@
     "name": "Update Shard Status",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "update",
-    "description": "updateShardStatus() reads SHOW DATABASES to confirm the `{name}-g000` graph shard exists and is online.",
+    "description": "updateShardStatus() reads SHOW DATABASES once per reconcile and records, from those rows only, status.graphShard (`{name}-g000`), status.propertyShards (`{name}-pNNN`, ordered by index), status.virtualDatabase (the logical database) and status.creationTime (set once when the graph shard is first seen; restarted by a destructive recreate). Per-shard state is online only when every copy is online; ready means at least one copy is online and none that should be online is not. The write is skipped when nothing changed and failures are non-fatal. Shard size, servers, lastError, propertyCount, the virtual database's endpoint and metrics, and status.totalSize stay unpopulated because SHOW DATABASES does not carry them.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1720,7 +1720,7 @@
     "name": "Reconcile Neo4jPlugin",
     "serverUnitId": "su-neo4jplugin",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves clusterRef, refuses to install when another CR in the namespace already targets the same clusterRef with the same plugin name (older CR by creationTimestamp wins), then merges the plugin into the target's env/init-containers.",
+    "description": "Main reconcile loop: validates the spec, resolves clusterRef, refuses to install when another CR in the namespace already targets the same clusterRef with the same plugin name (older CR by creationTimestamp wins), then merges the plugin into the target's env/init-containers. On reaching Ready it records status.installedVersion (the spec.version it installed) and status.installationTime (set once per installed version, not touched by later reconciles or same-version Ready/Installing cycles); a plugin already Ready before those fields existed is backfilled on its next reconcile.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [

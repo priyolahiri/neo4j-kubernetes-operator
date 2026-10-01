@@ -201,34 +201,37 @@ type Neo4jShardedDatabaseStatus struct {
 	// ShardingReady indicates whether all shards are created and operational
 	ShardingReady *bool `json:"shardingReady,omitempty"`
 
-	// CreationTime shows when the sharded database was created.
-	//
-	// Reserved: accepted by the schema but not acted on today; no controller
-	// populates it.
+	// CreationTime is when the operator first saw the sharded database's graph
+	// shard in SHOW DATABASES after creating it, i.e. when the database came
+	// into existence as far as the operator can tell. Set once and kept across
+	// reconciles; restarted when a destructive restore (replaceExisting + force)
+	// drops and recreates the database. Not the CR's own creation time (see
+	// metadata.creationTimestamp).
 	CreationTime *metav1.Time `json:"creationTime,omitempty"`
 
-	// Graph shard status.
-	//
-	// Reserved: accepted by the schema but not acted on today; no controller
-	// populates it. Use SHOW DATABASES for per-shard state.
+	// GraphShard is the state of the graph shard database (<name>-g000) as of
+	// the last reconcile, taken from SHOW DATABASES. Absent until the shard is
+	// visible. Populated: name, type, state and ready; size, servers and
+	// lastError are not (SHOW DATABASES does not report them).
 	GraphShard *ShardStatus `json:"graphShard,omitempty"`
 
-	// Property shard statuses.
-	//
-	// Reserved: accepted by the schema but not acted on today; no controller
-	// populates it. Use SHOW DATABASES for per-shard state.
+	// PropertyShards are the states of the property shard databases
+	// (<name>-p000, <name>-p001, ...) as of the last reconcile, ordered by
+	// propertyShardIndex. Populated: name, type, state, ready and
+	// propertyShardIndex; size, servers, lastError and propertyCount are not.
 	PropertyShards []ShardStatus `json:"propertyShards,omitempty"`
 
-	// Virtual database status (logical view combining all shards).
-	//
-	// Reserved: accepted by the schema but not acted on today; no controller
-	// populates it.
+	// VirtualDatabase is the logical database that combines all shards (the
+	// name clients connect to), as of the last reconcile. Absent until it is
+	// visible in SHOW DATABASES. Populated: name and ready; endpoint and metrics
+	// are not.
 	VirtualDatabase *VirtualDatabaseStatus `json:"virtualDatabase,omitempty"`
 
-	// Total size across all shards.
+	// TotalSize is the total size across all shards.
 	//
 	// Reserved: accepted by the schema but not acted on today; no controller
-	// populates it.
+	// populates it. SHOW DATABASES, the only source the controller reads shard
+	// state from, does not report store size.
 	TotalSize string `json:"totalSize,omitempty"`
 
 	// LastBackup records the most recent successful backup that targeted this
@@ -285,24 +288,33 @@ type ShardStatus struct {
 	// +kubebuilder:validation:Enum=graph;property
 	Type string `json:"type,omitempty"`
 
-	// Current state of this shard database
+	// Current state of this shard database: "online" when every copy is online,
+	// otherwise the first non-online state any copy reports (for example
+	// "offline" or "store copying").
 	State string `json:"state,omitempty"`
 
-	// Size of this shard database
+	// Size of this shard database. Not populated: SHOW DATABASES does not
+	// report store size.
 	Size string `json:"size,omitempty"`
 
-	// Servers hosting this shard
+	// Servers hosting this shard. Not populated: the SHOW DATABASES columns the
+	// controller reads do not include the hosting server.
 	Servers []string `json:"servers,omitempty"`
 
-	// Ready indicates if this shard is operational
+	// Ready indicates if this shard is operational: at least one copy is online
+	// and no copy that is meant to be online is not.
 	Ready bool `json:"ready,omitempty"`
 
-	// Last error encountered for this shard
+	// Last error encountered for this shard. Not populated.
 	LastError string `json:"lastError,omitempty"`
 
-	// Property shard specific fields
+	// PropertyShardIndex is the zero-based index of a property shard (the NNN
+	// in <name>-pNNN). Set for property shards only.
 	PropertyShardIndex *int32 `json:"propertyShardIndex,omitempty"`
-	PropertyCount      *int64 `json:"propertyCount,omitempty"`
+
+	// PropertyCount is the number of properties held by a property shard. Not
+	// populated.
+	PropertyCount *int64 `json:"propertyCount,omitempty"`
 }
 
 // VirtualDatabaseStatus tracks the logical view combining all shards
@@ -310,13 +322,14 @@ type VirtualDatabaseStatus struct {
 	// Name of the virtual database (logical view)
 	Name string `json:"name,omitempty"`
 
-	// Ready indicates if the virtual database is operational
+	// Ready indicates if the virtual database is operational: at least one copy
+	// is online and no copy that is meant to be online is not.
 	Ready bool `json:"ready,omitempty"`
 
-	// Connection endpoint for virtual database queries
+	// Connection endpoint for virtual database queries. Not populated.
 	Endpoint string `json:"endpoint,omitempty"`
 
-	// Performance metrics for virtual database
+	// Performance metrics for virtual database. Not populated.
 	Metrics *VirtualDatabaseMetrics `json:"metrics,omitempty"`
 }
 

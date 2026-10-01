@@ -246,11 +246,11 @@ status:
   message: string                        # Status message
   observedGeneration: int64              # Observed generation
   shardingReady: boolean                 # All shards operational
-  creationTime: metav1.Time              # RESERVED: never populated today
-  graphShard: ShardStatus                # RESERVED: never populated today
-  propertyShards: []ShardStatus          # RESERVED: never populated today
-  virtualDatabase: VirtualDatabaseStatus  # RESERVED: never populated today
-  totalSize: string                      # RESERVED: never populated today
+  creationTime: metav1.Time              # When the operator first saw the graph shard after creating the database; set once
+  graphShard: ShardStatus                # Graph shard state from SHOW DATABASES (absent until visible)
+  propertyShards: []ShardStatus          # Property shard states from SHOW DATABASES, ordered by propertyShardIndex
+  virtualDatabase: VirtualDatabaseStatus  # The logical database combining all shards (name, ready)
+  totalSize: string                      # RESERVED: never populated today (SHOW DATABASES has no store size)
   lastBackup: object                     # Reverse-lookup of most recent Succeeded backup
   lastDestructiveRestoreGeneration: int64  # Generation at which the last replaceExisting recreate completed
 ```
@@ -276,19 +276,23 @@ A single standard `Ready` condition, derived from `phase` (`Ready` → `True`; `
 
 ### ShardStatus
 
-> **Reserved — never populated today.** `status.graphShard`, `status.propertyShards`, `status.virtualDatabase` (and its metrics types below), `status.totalSize` and `status.creationTime` are part of the schema but no controller writes them. Use `kubectl exec ... SHOW DATABASES` for per-shard state.
+The controller fills `status.graphShard`, `status.propertyShards`, `status.virtualDatabase` and `status.creationTime` on every reconcile from the `SHOW DATABASES` rows it already reads (one row per hosting server, folded per database). A shard that is not visible yet is simply absent, and the status is only rewritten when something changed.
+
+- **Populated:** `name`, `type`, `state`, `ready`, and `propertyShardIndex` (property shards). `state` is `online` when every copy is online, otherwise the first non-online state any copy reports (for example `offline`, `store copying`). `ready` means at least one copy is online and no copy that is meant to be online is not.
+- **Not populated — Reserved:** `size`, `servers`, `lastError`, `propertyCount`, `virtualDatabase.endpoint`, `virtualDatabase.metrics` (and its metrics types below) and `status.totalSize`. `SHOW DATABASES` reports no store size, hosting server or property count, so there is nothing to fill them from. Use `kubectl exec ... SHOW DATABASES` or `status.diagnostics` for those.
+- **`creationTime`** is when the operator first saw the graph shard after creating the database — set once and kept; restarted when a destructive restore (`replaceExisting` + `force`) recreates the database. It is not the CR's own `metadata.creationTimestamp`.
 
 ```yaml
 shardStatus:
   name: string                  # Shard database name
   type: string                 # "graph" or "property"
-  state: string                # Database state
-  size: string                 # Database size
-  servers: []string            # Hosting servers
+  state: string                # "online", or the first non-online state a copy reports
+  size: string                 # RESERVED: not populated
+  servers: []string            # RESERVED: not populated
   ready: boolean              # Operational status
-  lastError: string           # Last error message
+  lastError: string           # RESERVED: not populated
   propertyShardIndex: int32   # Property shard index (property shards only)
-  propertyCount: int64        # Property count (property shards only)
+  propertyCount: int64        # RESERVED: not populated
 ```
 
 #### Shard Types
@@ -299,6 +303,8 @@ shardStatus:
 | `property` | Properties distributed by hash | `{database}-p{000-999}` |
 
 #### Shard States
+
+`state` carries the `currentStatus` value `SHOW DATABASES` reports, so it can be any Neo4j database state; the common ones:
 
 | State | Description |
 |-------|-------------|
@@ -311,10 +317,12 @@ shardStatus:
 ```yaml
 virtualDatabase:
   name: string                    # Virtual database name
-  ready: boolean                  # Ready for queries
-  endpoint: string               # Connection endpoint
-  metrics: VirtualDatabaseMetrics # Performance metrics
+  ready: boolean                  # Ready for queries (at least one copy online, none meant to be online that is not)
+  endpoint: string               # RESERVED: not populated
+  metrics: VirtualDatabaseMetrics # RESERVED: not populated
 ```
+
+`name` and `ready` are populated from `SHOW DATABASES` once the logical database is visible; until then `virtualDatabase` is absent. `endpoint`, `metrics` and the metrics types below are not populated.
 
 #### VirtualDatabaseMetrics
 

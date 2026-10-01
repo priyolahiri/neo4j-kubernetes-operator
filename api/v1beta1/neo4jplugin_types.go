@@ -213,16 +213,19 @@ type Neo4jPluginStatus struct {
 	// Message provides additional information
 	Message string `json:"message,omitempty"`
 
-	// Installed version.
-	//
-	// Reserved: accepted by the schema but not acted on today; no controller
-	// populates it.
+	// InstalledVersion is the plugin version the operator last installed
+	// successfully: the spec.version it was asked for when the plugin reached
+	// Ready. It is the version requested, not one read back from the running
+	// plugin. Left unchanged while a later attempt is Installing or Failed, so
+	// it always names the last install that worked.
 	InstalledVersion string `json:"installedVersion,omitempty"`
 
-	// Installation time.
-	//
-	// Reserved: accepted by the schema but not acted on today; no controller
-	// populates it.
+	// InstallationTime is when the plugin was first recorded as installed at
+	// installedVersion: set when the plugin reaches Ready, and not touched by
+	// later reconciles or by Ready -> Installing -> Ready cycles at the same
+	// version. A different version is a new installation and restarts it. For a
+	// plugin that was already Ready before this field existed it is the time the
+	// operator first saw it so.
 	InstallationTime *metav1.Time `json:"installationTime,omitempty"`
 
 	// Plugin health status.
