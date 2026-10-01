@@ -1874,7 +1874,7 @@
     "name": "CLI Connect and Cypher",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Resolves how to reach a deployment \u2014 admin Secret, pod and container, bolt:// versus bolt+s:// from spec.tls \u2014 and either prints the connection details or hands over an interactive cypher-shell session via kubectl exec. The password is referenced by env var inside the pod and never passes through this process or the audit log.",
+    "description": "Resolves how to reach a deployment \u2014 admin Secret, pod and container, and the Bolt scheme from the deployment kind and spec.tls (neo4j/neo4j+s routing for a cluster, bolt/bolt+s for a standalone) — and either prints the connection details or hands over an interactive cypher-shell session via kubectl exec. The printed details give the same in-cluster address the session dials; for a port-forward under TLS they say that the certificate never names localhost and offer the +ssc variant for local testing only. The password is referenced by env var inside the pod and never passes through this process or the audit log.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
