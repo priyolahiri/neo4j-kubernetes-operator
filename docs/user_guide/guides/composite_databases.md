@@ -272,6 +272,6 @@ requirement that the keystore be identical across a cluster.
 | Remote constituents need setup | OIDC forwarding needs Cypher 25 (CalVer). Stored credentials need `spec.remoteAliasKeystore` on the deployment. See [Remote constituents](#remote-constituents). |
 | No options | Composites have none. The operator never emits an `OPTIONS` clause. |
 | No topology | There is no store to place. |
-| `defaultCypherLanguage` is CalVer-only | The `DEFAULT LANGUAGE CYPHER` clause does not parse on the 5.26 LTS. It is also the only property of a composite that can be changed after creation. |
+| `defaultCypherLanguage` needs CalVer for `"25"` | The `DEFAULT LANGUAGE CYPHER` clause does not parse on the 5.26 LTS, so `"25"` is rejected there. `"5"` is accepted with a warning and the clause is left out, because every database on the LTS already runs Cypher 5. It is also the only property of a composite that can be changed after creation. |
 | Writes are single-graph | A transaction may read across constituents but write to only one. |
 | No nesting | A composite cannot contain another composite. |
