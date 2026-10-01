@@ -303,6 +303,115 @@ func TestDiagnose_FailedBackupJobIsFoundThroughTheSharedSelector(t *testing.T) {
 	assert.Contains(t, out, "ServiceAccount")
 }
 
+// diagnoseNightlyBackup runs diagnose over a Neo4jBackup "nightly" whose only
+// Job has the given status, and returns what the user would be told.
+func diagnoseNightlyBackup(t *testing.T, status batchv1.JobStatus) diagnosis {
+	t.Helper()
+	jobLabels := map[string]string{}
+	for k, v := range resources.BackupJobSelector("nightly") {
+		jobLabels[k] = v
+	}
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: "nightly", Namespace: "neo4j"},
+			Spec:       neo4jv1beta1.Neo4jBackupSpec{InstanceRef: "prod"},
+		},
+		&batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{Name: "nightly-1", Namespace: "neo4j", Labels: jobLabels},
+			Status:     status,
+		},
+	)
+	results, err := diagnoseNamespace(context.Background(), c, "neo4j", "")
+	require.NoError(t, err)
+	for _, d := range results {
+		if d.kind+"/"+d.name == "Neo4jBackup/nightly" {
+			return d
+		}
+	}
+	t.Fatal("no diagnosis for Neo4jBackup/nightly")
+	return diagnosis{}
+}
+
+// backoffLimit is 3, so a backup pod that hits a transient error (an object
+// store timeout, a slow image pull) is retried and the Job usually finishes.
+// Job.status.failed counts those earlier attempts forever, so reading it as
+// "the Job failed" reported ✗ on a backup that had in fact succeeded — and made
+// diagnose exit 1 over it. The verdict is the Job's own condition.
+func TestDiagnose_BackupJobThatRetriedAndSucceededIsNotAFailure(t *testing.T) {
+	d := diagnoseNightlyBackup(t, batchv1.JobStatus{
+		Failed: 2, Succeeded: 1,
+		Conditions: []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}},
+	})
+
+	assert.False(t, d.problems(), "a completed Job is not a problem:\n%s", joinSymptoms(d.symptoms))
+	assert.Equal(t, "1 job(s): 1 succeeded, 0 failed", d.summary)
+	// The retries are worth a line, but only a line.
+	out := joinSymptoms(d.symptoms)
+	assert.Contains(t, out, markWarning+" job nightly-1")
+	assert.Contains(t, out, "2 failed attempt(s)")
+	assert.Contains(t, out, "succeeded")
+}
+
+// Older Jobs, or ones whose Complete condition has not been written yet.
+func TestDiagnose_BackupJobWithSucceededPodsButNoConditionIsASuccess(t *testing.T) {
+	d := diagnoseNightlyBackup(t, batchv1.JobStatus{Failed: 1, Succeeded: 1})
+	assert.False(t, d.problems(), joinSymptoms(d.symptoms))
+	assert.Equal(t, "1 job(s): 1 succeeded, 0 failed", d.summary)
+}
+
+func TestDiagnose_BackupJobThatSucceededFirstTimeSaysNothing(t *testing.T) {
+	d := diagnoseNightlyBackup(t, batchv1.JobStatus{
+		Succeeded:  1,
+		Conditions: []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}},
+	})
+	assert.Empty(t, d.symptoms)
+	assert.Equal(t, "1 job(s): 1 succeeded, 0 failed", d.summary)
+}
+
+// Still retrying: not failed yet (the backoff limit has not been reached), so it
+// must not be a ✗ or flip the exit code — but the user ran diagnose because
+// something is off, so the failing attempts are shown, with the log pointer.
+func TestDiagnose_BackupJobStillRetryingIsWaitingNotFailed(t *testing.T) {
+	d := diagnoseNightlyBackup(t, batchv1.JobStatus{Failed: 1, Active: 1})
+
+	assert.False(t, d.problems(), joinSymptoms(d.symptoms))
+	out := joinSymptoms(d.symptoms)
+	assert.Contains(t, out, markWaiting+" job nightly-1")
+	assert.Contains(t, out, "retrying")
+	assert.Contains(t, out, "kubectl logs job/nightly-1")
+	assert.Equal(t, "1 job(s): 0 succeeded, 0 failed, 1 in progress", d.summary)
+}
+
+// The Job's own Failed condition is what makes it failed, including the ways it
+// fails without a single pod having failed: an exceeded activeDeadlineSeconds
+// leaves status.failed at 0 and used to be reported as healthy.
+func TestDiagnose_BackupJobFailedConditionIsAFailureEvenWithNoFailedPods(t *testing.T) {
+	d := diagnoseNightlyBackup(t, batchv1.JobStatus{
+		Conditions: []batchv1.JobCondition{{
+			Type: batchv1.JobFailed, Status: corev1.ConditionTrue,
+			Reason: "DeadlineExceeded", Message: "Job was active longer than specified deadline",
+		}},
+	})
+
+	assert.True(t, d.problems())
+	out := joinSymptoms(d.symptoms)
+	assert.Contains(t, out, markProblem+" job nightly-1 failed")
+	assert.Contains(t, out, "DeadlineExceeded")
+	assert.NotContains(t, out, "0 pod failure", "no failed pods to count, so none should be claimed")
+	assert.Equal(t, "1 job(s): 0 succeeded, 1 failed", d.summary)
+}
+
+// A Failed condition that is False (or Unknown) is not a failure.
+func TestDiagnose_BackupJobFailedConditionMustBeTrue(t *testing.T) {
+	d := diagnoseNightlyBackup(t, batchv1.JobStatus{
+		Active: 1,
+		Conditions: []batchv1.JobCondition{{
+			Type: batchv1.JobFailed, Status: corev1.ConditionFalse,
+		}},
+	})
+	assert.False(t, d.problems(), joinSymptoms(d.symptoms))
+}
+
 // Targeting one resource must not diagnose its neighbours.
 func TestDiagnose_TargetSelectsASingleResource(t *testing.T) {
 	c := testClient(t,

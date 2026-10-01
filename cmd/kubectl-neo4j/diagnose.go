@@ -550,28 +550,53 @@ func diagnoseBackup(name string, env namespaceEnv) (string, []symptom) {
 	}
 
 	var symptoms []symptom
-	var succeeded, failed int
+	var succeeded, failed, running int
 	for i := range jobs {
 		j := &jobs[i]
-		switch {
-		case j.Status.Failed > 0:
+		logHint := "Read the Job's pod log for neo4j-admin's own error: " +
+			"kubectl logs job/" + j.Name + ". A permission error names the " +
+			"ServiceAccount; a path error names the bucket."
+
+		// The verdict is the Job's own conditions, never status.failed: that
+		// field counts failed pod ATTEMPTS and never decreases, and a backup
+		// Job retries (backoffLimit 3) — so a Job that failed twice and then
+		// completed has status.failed=2 and is a success.
+		switch outcome, cond := backupJobOutcome(j); outcome {
+		case jobFailed:
 			failed++
 			f := symptom{
 				mark:    markProblem,
 				subject: "job " + j.Name,
-				what:    fmt.Sprintf("failed (%d pod failure(s))", j.Status.Failed),
-				action: "Read the Job's pod log for neo4j-admin's own error: " +
-					"kubectl logs job/" + j.Name + ". A permission error names the " +
-					"ServiceAccount; a path error names the bucket.",
+				what:    "failed",
+				detail:  strings.TrimSpace(cond.Reason + ": " + cond.Message),
+				action:  logHint,
 			}
-			for _, cond := range j.Status.Conditions {
-				if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
-					f.detail = strings.TrimSpace(cond.Reason + ": " + cond.Message)
-				}
+			if j.Status.Failed > 0 {
+				f.what = fmt.Sprintf("failed (%d pod failure(s))", j.Status.Failed)
 			}
 			symptoms = append(symptoms, f)
-		case j.Status.Succeeded > 0:
+		case jobSucceeded:
 			succeeded++
+			if j.Status.Failed > 0 {
+				symptoms = append(symptoms, symptom{
+					mark:    markWarning,
+					subject: "job " + j.Name,
+					what:    fmt.Sprintf("succeeded after %d failed attempt(s)", j.Status.Failed),
+					action: "Not a failure — the backup completed. Repeated retries usually mean " +
+						"a transient error (object-store timeout, slow pull); " + logHint,
+				})
+			}
+		default:
+			running++
+			if j.Status.Failed > 0 {
+				symptoms = append(symptoms, symptom{
+					mark:    markWaiting,
+					subject: "job " + j.Name,
+					what:    fmt.Sprintf("is retrying after %d failed attempt(s)", j.Status.Failed),
+					action: "The Job has not reached its backoff limit, so it has not failed yet. " +
+						logHint,
+				})
+			}
 		}
 	}
 
@@ -585,7 +610,42 @@ func diagnoseBackup(name string, env namespaceEnv) (string, []symptom) {
 		}
 	}
 
-	return fmt.Sprintf("%d job(s): %d succeeded, %d failed", len(jobs), succeeded, failed), symptoms
+	summary := fmt.Sprintf("%d job(s): %d succeeded, %d failed", len(jobs), succeeded, failed)
+	if running > 0 {
+		summary += fmt.Sprintf(", %d in progress", running)
+	}
+	return summary, symptoms
+}
+
+type jobOutcome int
+
+const (
+	jobInProgress jobOutcome = iota
+	jobSucceeded
+	jobFailed
+)
+
+// backupJobOutcome classifies a Job by its conditions, the way Kubernetes
+// itself does: a Failed condition that is True means it failed, a Complete
+// condition that is True means it succeeded. status.succeeded > 0 also counts
+// as success, for a Job whose Complete condition has not been written yet.
+// Anything else is still in progress. The returned condition is the Failed one
+// when the outcome is jobFailed, for its reason and message.
+func backupJobOutcome(j *batchv1.Job) (jobOutcome, batchv1.JobCondition) {
+	for _, cond := range j.Status.Conditions {
+		if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
+			return jobFailed, cond
+		}
+	}
+	for _, cond := range j.Status.Conditions {
+		if cond.Type == batchv1.JobComplete && cond.Status == corev1.ConditionTrue {
+			return jobSucceeded, cond
+		}
+	}
+	if j.Status.Succeeded > 0 {
+		return jobSucceeded, batchv1.JobCondition{}
+	}
+	return jobInProgress, batchv1.JobCondition{}
 }
 
 // warningEvents surfaces Warning events the API server recorded against this
