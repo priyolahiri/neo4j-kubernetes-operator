@@ -149,6 +149,10 @@ func TestResourceStatus_EveryPhaseInTheVocabularyIsClassified(t *testing.T) {
 		neo4jv1beta1.PhaseWaiting:    true,
 		neo4jv1beta1.PhaseUpgrading:  true,
 		neo4jv1beta1.PhaseExpanding:  true,
+		// The resting phase of a CronJob-backed Neo4jBackup. A string key on
+		// purpose: it is only in AllPhases once the shared vocabulary carries
+		// PhaseScheduled, and this must pass whether or not it does yet.
+		"Scheduled": true,
 	}
 	for _, phase := range neo4jv1beta1.AllPhases {
 		require.True(t, problems[phase] != notProblems[phase],
