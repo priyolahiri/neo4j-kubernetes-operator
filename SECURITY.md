@@ -4,14 +4,16 @@
 
 | Version | Supported |
 |---------|-----------|
-| v1.17.x (current release line) | Yes |
-| Earlier release lines | No — upgrade to the latest release |
+| The [latest release](https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/latest) | Yes |
+| Any earlier release | No — upgrade to the latest release |
 
 This is an independent, community-maintained project: security fixes are made
-on a best-effort basis and land in the latest release; there is no commitment
-to backport them to earlier lines, and there is no SLA. Which **Neo4j** versions
-each operator release supports (and which are validated vs. best-effort) is
-described in [Supported Neo4j Versions](docs/user_guide/version_support.md).
+on a best-effort basis and land in the latest release. There is no commitment
+to backport them to earlier releases, and no SLA for when a fix ships; the
+acknowledgement and assessment targets below apply to every report. Which
+**Neo4j** versions each operator release supports (and which are validated vs.
+best-effort) is described in
+[Supported Neo4j Versions](docs/user_guide/version_support.md).
 
 ## Reporting a Vulnerability
 
@@ -31,7 +33,7 @@ Include as much of the following as you can:
 
 - **Acknowledgement** within 3 business days
 - **Initial assessment** within 7 business days
-- **Fix timeline** communicated after assessment — critical vulnerabilities are prioritized for the next patch release
+- **Fix timeline** communicated after assessment — critical vulnerabilities are prioritized for the next release
 - **Credit** in the release notes (unless you prefer to remain anonymous)
 
 ## Scope
