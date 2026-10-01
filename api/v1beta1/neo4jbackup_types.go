@@ -360,10 +360,14 @@ type BackupStats struct {
 	// Duration of the backup
 	Duration string `json:"duration,omitempty"`
 
-	// Throughput of the backup
+	// Throughput of the backup.
+	//
+	// Reserved: accepted by the schema but never populated today.
 	Throughput string `json:"throughput,omitempty"`
 
-	// Number of files in the backup
+	// Number of files in the backup.
+	//
+	// Reserved: accepted by the schema but never populated today.
 	FileCount int32 `json:"fileCount,omitempty"`
 }
 

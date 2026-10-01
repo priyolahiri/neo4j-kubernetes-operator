@@ -724,7 +724,10 @@ spec:
                           description: Duration of the backup
                           type: string
                         fileCount:
-                          description: Number of files in the backup
+                          description: |-
+                            Number of files in the backup.
+
+                            Reserved: accepted by the schema but never populated today.
                           format: int32
                           type: integer
                         size:
@@ -734,7 +737,10 @@ spec:
                             Reserved: accepted by the schema but never populated today.
                           type: string
                         throughput:
-                          description: Throughput of the backup
+                          description: |-
+                            Throughput of the backup.
+
+                            Reserved: accepted by the schema but never populated today.
                           type: string
                       type: object
                     status:
@@ -838,7 +844,10 @@ spec:
                     description: Duration of the backup
                     type: string
                   fileCount:
-                    description: Number of files in the backup
+                    description: |-
+                      Number of files in the backup.
+
+                      Reserved: accepted by the schema but never populated today.
                     format: int32
                     type: integer
                   size:
@@ -848,7 +857,10 @@ spec:
                       Reserved: accepted by the schema but never populated today.
                     type: string
                   throughput:
-                    description: Throughput of the backup
+                    description: |-
+                      Throughput of the backup.
+
+                      Reserved: accepted by the schema but never populated today.
                     type: string
                 type: object
             type: object

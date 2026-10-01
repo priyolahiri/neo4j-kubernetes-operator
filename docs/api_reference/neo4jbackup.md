@@ -282,10 +282,10 @@ The `Neo4jBackupStatus` represents the observed state of the backup.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `size` | `string` | Total backup size (e.g., `"2.5GB"`) |
+| `size` | `string` | **Reserved** — accepted by the schema but never populated today. Total backup size (e.g., `"2.5GB"`) |
 | `duration` | `string` | Backup operation duration (e.g., `"5m30s"`) |
-| `throughput` | `string` | Backup throughput rate (e.g., `"8.3MB/s"`) |
-| `fileCount` | `int32` | Number of files in the backup |
+| `throughput` | `string` | **Reserved** — accepted by the schema but never populated today. Backup throughput rate (e.g., `"8.3MB/s"`) |
+| `fileCount` | `int32` | **Reserved** — accepted by the schema but never populated today. Number of files in the backup |
 
 > **Only `duration` is currently populated.** `size`, `throughput`, and `fileCount` are reserved and not yet emitted by the operator — treat them as a forward-looking schema. To inspect artifact sizes, look at the `.backup` files under `status.history[*].backupsPath` in your storage backend.
 
