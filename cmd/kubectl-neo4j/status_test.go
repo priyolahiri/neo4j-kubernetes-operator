@@ -109,7 +109,7 @@ func TestResourceStatus_UnknownPhaseIsNotAlarming(t *testing.T) {
 		{"SomePhaseThisBinaryPredates", "-", true},
 		{"Failed", "-", false},
 		{"Degraded", "-", false},
-		{"Ready", "false", false},
+		{"Invalid", "-", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.phase+"/"+tc.ready, func(t *testing.T) {
@@ -117,6 +117,97 @@ func TestResourceStatus_UnknownPhaseIsNotAlarming(t *testing.T) {
 			assert.Equal(t, tc.healthy, r.healthy())
 		})
 	}
+}
+
+// Invalid is the operator rejecting the spec: nothing was created and nothing
+// will be until the manifest changes. It is the most actionable phase there is,
+// and --problems used to hide it, because the unhealthy list was written from
+// memory instead of from the phase vocabulary.
+//
+// The expectation is spelled out per phase over the WHOLE shared vocabulary, so
+// adding a phase to api/v1beta1/phases.go without deciding whether it is a
+// problem fails here instead of being silently treated as healthy.
+func TestResourceStatus_EveryPhaseInTheVocabularyIsClassified(t *testing.T) {
+	problems := map[string]bool{
+		neo4jv1beta1.PhaseFailed:   true,
+		neo4jv1beta1.PhaseError:    true,
+		neo4jv1beta1.PhaseInvalid:  true,
+		neo4jv1beta1.PhaseDegraded: true,
+		neo4jv1beta1.PhaseUnknown:  true,
+	}
+	notProblems := map[string]bool{
+		neo4jv1beta1.PhaseReady:      true,
+		neo4jv1beta1.PhaseInstalled:  true,
+		neo4jv1beta1.PhaseCompleted:  true,
+		neo4jv1beta1.PhaseSuspended:  true, // a deliberate pause, not a fault
+		neo4jv1beta1.PhasePending:    true,
+		neo4jv1beta1.PhaseValidating: true,
+		neo4jv1beta1.PhaseCreating:   true,
+		neo4jv1beta1.PhaseForming:    true,
+		neo4jv1beta1.PhaseInstalling: true,
+		neo4jv1beta1.PhaseRunning:    true,
+		neo4jv1beta1.PhaseWaiting:    true,
+		neo4jv1beta1.PhaseUpgrading:  true,
+		neo4jv1beta1.PhaseExpanding:  true,
+	}
+	for _, phase := range neo4jv1beta1.AllPhases {
+		require.True(t, problems[phase] != notProblems[phase],
+			"phase %q is in api/v1beta1.AllPhases but this test does not say whether --problems should show it", phase)
+		r := resourceStatus{phase: phase, ready: "-"}
+		assert.Equal(t, notProblems[phase], r.healthy(), "phase %q", phase)
+	}
+
+	// Kind-specific phases outside the shared set: none of these is a fault.
+	for _, phase := range []string{
+		"Scheduled", "Seeding", "Replicating", "Promoted", "Promoting",
+		"Restoring", "Submitting", "Submitted", "Staging", "Rolling", "Paused",
+	} {
+		assert.True(t, resourceStatus{phase: phase}.healthy(), "phase %q must not be flagged", phase)
+	}
+}
+
+// status.ready is `omitempty`, so the operator never serialises a false: it is
+// "true" or absent (shown as "-"), and most kinds have no such field at all.
+// A test on ready == "false" could therefore never match a real resource, and
+// is gone. Readiness is the phase's job.
+func TestResourceStatus_ReadyColumnDoesNotDecideHealth(t *testing.T) {
+	assert.True(t, resourceStatus{phase: "Ready", ready: "-"}.healthy())
+	assert.True(t, resourceStatus{phase: "Forming", ready: "-"}.healthy())
+	// Were a false ever stored, a cluster that is still forming is "not ready"
+	// by definition and is not a problem: the phase already says so.
+	assert.True(t, resourceStatus{phase: "Forming", ready: "false"}.healthy())
+}
+
+// End to end through the real read path: an Invalid Neo4jBackup (the operator
+// rejected its spec) must appear under --problems with its message, while a
+// Scheduled one and a Completed one must not be listed as problems.
+func TestStatusProblems_ReportsInvalidAndNotScheduledOrCompleted(t *testing.T) {
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: "bad", Namespace: "neo4j"},
+			Status: neo4jv1beta1.Neo4jBackupStatus{
+				Phase: "Invalid", Message: "Invalid backup spec: PVC storage requires spec.storage.pvc.name",
+			},
+		},
+		&neo4jv1beta1.Neo4jBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: "done", Namespace: "neo4j"},
+			Status:     neo4jv1beta1.Neo4jBackupStatus{Phase: "Completed"},
+		},
+		&neo4jv1beta1.Neo4jBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: "sched", Namespace: "neo4j"},
+			Status:     neo4jv1beta1.Neo4jBackupStatus{Phase: "Scheduled"},
+		},
+	)
+	rows, err := collectStatus(context.Background(), c, "neo4j")
+	require.NoError(t, err)
+
+	out := renderTo(t, rows, false, true, "neo4j")
+	assert.Contains(t, out, "bad")
+	assert.Contains(t, out, "Invalid")
+	assert.Contains(t, out, "✗ Neo4jBackup/bad: Invalid backup spec")
+	assert.NotContains(t, out, "done")
+	assert.NotContains(t, out, "sched")
+	assert.NotContains(t, out, "look healthy")
 }
 
 func TestHumanAge(t *testing.T) {

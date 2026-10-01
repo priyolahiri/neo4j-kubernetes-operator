@@ -1835,7 +1835,7 @@
     "name": "CLI Status",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Lists every Neo4j resource in a namespace with phase, readiness and age, taking the kind list from the registered scheme so a new CRD appears without code changes. An unrecognised phase is not treated as a problem, and Pending messages are shown as guidance rather than failure.",
+    "description": "Lists every Neo4j resource in a namespace with phase, readiness and age, taking the kind list from the registered scheme so a new CRD appears without code changes. An unrecognised phase is not treated as a problem, and Pending messages are shown as guidance rather than failure. With --problems it lists the phases Failed, Error, Invalid, Degraded and Unknown, decided from the phase alone (status.ready is omitempty and never stores false).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
