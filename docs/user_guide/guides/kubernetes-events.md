@@ -121,7 +121,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | Reason | Type | Description |
 |---|---|---|
 | `AuraFleetManagementRegistered` | Normal | Successfully registered with Aura Fleet Management |
-| `AuraFleetManagementFailed` | Warning | Aura Fleet Management registration or operation failed |
+| `AuraFleetManagementFailed` | Warning | Aura Fleet Management token registration failed. Raised when a failure first appears or its message changes, not on every retry; the current message is in `status.auraFleetManagement.message` |
 | `AuraFleetManagementPluginPatchFailed` | Warning | Failed to patch the fleet-management plugin onto the StatefulSet |
 | `AuraFleetDeploymentCreated` | Normal | Operator-driven provisioning (`spec.auraFleetManagement.provision`) registered a Fleet Manager deployment in Aura |
 | `AuraFleetDeploymentAdopted` | Normal | Provisioning adopted an existing Aura fleet deployment of the same name instead of creating one |
