@@ -63,6 +63,8 @@ Neo4jEnterpriseStandalone/db (standalone.yaml):
 
 This is the most common manifest error there is, and it used to pass: the document was decoded leniently, so an unrecognised key was dropped in silence and the file reported clean — then `kubectl apply` refused it with a strict-decoding error.
 
+The check descends into lists of objects as well, and reports the index of the offending item — `spec.topology.serverRoles[0].modeContraint`, `spec.env[1].valueFrom.secretKeyRef.kee` — so a typo in `serverRoles`, `env`, a composite's `constituents` or any other list is caught the same way as one in a plain object. Lists of plain values (`[]string`, `[]int`) have no field names to misspell and are left alone.
+
 Open maps are left alone, because every key in them is your data rather than a field name: `spec.config`, a composite constituent's `driverSettings`, labels and annotations. `metadata` and `status` are not walked either — they belong to Kubernetes, not to this operator.
 
 !!! warning "Limitation: typos inside list items are not detected yet"

@@ -34,8 +34,10 @@ package main
 // every unknown field, each with the path a user can actually go and fix.
 
 import (
+	"encoding/json"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -90,22 +92,51 @@ func walkUnknown(node map[string]any, t reflect.Type, prefix string, out *[]stri
 		if skipWalk[key] && prefix == "" {
 			continue
 		}
-		// Recurse only where both sides are still a struct with named keys.
-		child, isMap := val.(map[string]any)
-		if !isMap {
-			continue
+		walkValue(val, ft, path, out)
+	}
+}
+
+var jsonUnmarshalerType = reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()
+
+// walkValue descends into one decoded value against the Go type it decodes
+// into. It recurses only where both sides still have named structure:
+//
+//   - a JSON object against a struct   -> check its keys (walkUnknown)
+//   - a JSON object against a map      -> the KEYS are user data and are never
+//     judged (spec.config, labels, driverSettings), but the VALUES may still be
+//     structs, so they are walked
+//   - a JSON array against a slice     -> every element is walked against the
+//     element type, reported as path[i]. This is what catches a typo inside
+//     spec.topology.serverRoles[0] or spec.env[0] (corev1.EnvVar); []string and
+//     []int elements are scalars and have nothing to walk.
+//
+// Types that decode themselves (resource.Quantity, intstr.IntOrString,
+// metav1.Time, runtime.RawExtension, apiextensions JSON, ...) own their wire
+// shape: reflecting over their Go fields would report perfectly legal keys as
+// unknown, so they are opaque.
+func walkValue(val any, ft reflect.Type, path string, out *[]string) {
+	for ft.Kind() == reflect.Pointer {
+		ft = ft.Elem()
+	}
+	if reflect.PointerTo(ft).Implements(jsonUnmarshalerType) {
+		return
+	}
+	switch v := val.(type) {
+	case map[string]any:
+		switch ft.Kind() {
+		case reflect.Struct:
+			walkUnknown(v, ft, path, out)
+		case reflect.Map:
+			for k, mv := range v {
+				walkValue(mv, ft.Elem(), path+"["+k+"]", out)
+			}
 		}
-		et := ft
-		for et.Kind() == reflect.Pointer {
-			et = et.Elem()
+	case []any:
+		if ft.Kind() == reflect.Slice || ft.Kind() == reflect.Array {
+			for i, item := range v {
+				walkValue(item, ft.Elem(), path+"["+strconv.Itoa(i)+"]", out)
+			}
 		}
-		if et.Kind() != reflect.Struct {
-			// A map[string]X (spec.config, driverSettings, labels) accepts any
-			// key by design — walking into it would report user data as an
-			// unknown field.
-			continue
-		}
-		walkUnknown(child, et, path, out)
 	}
 }
 
