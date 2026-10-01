@@ -159,7 +159,9 @@ spec:
                 description: |-
                   GraphAnalyticsPlugin enables the graph-analytics plugin. DEPRECATED — use
                   graphAnalytics (true is plugin, false is unavailable), which can also
-                  express serverless.
+                  express serverless. It is read only when the instance is created: editing
+                  or removing it afterwards is accepted but has no effect on the Aura
+                  instance. An existing CR may switch to the equivalent graphAnalytics value.
                 type: boolean
               instanceId:
                 description: |-
@@ -367,9 +369,9 @@ spec:
                 not both
               rule: '!has(self.graphAnalytics) || !has(self.graphAnalyticsPlugin)'
             - message: graphAnalytics is applied when the instance is created and
-                cannot change afterwards; the only allowed edit is replacing the deprecated
-                graphAnalyticsPlugin with its equivalent (true is plugin, false is
-                unavailable)
+                cannot be changed afterwards; the only way to set it on an existing
+                instance is to replace the deprecated graphAnalyticsPlugin with its
+                equivalent (true is plugin, false is unavailable)
               rule: 'has(oldSelf.graphAnalytics) ? (has(self.graphAnalytics) && self.graphAnalytics
                 == oldSelf.graphAnalytics) : (!has(self.graphAnalytics) || (has(oldSelf.graphAnalyticsPlugin)
                 && self.graphAnalytics == (oldSelf.graphAnalyticsPlugin ? ''plugin''

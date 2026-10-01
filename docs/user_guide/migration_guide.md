@@ -127,8 +127,9 @@ upgrade restarts nothing. See the
 - `AuraInstance.spec.graphAnalyticsPlugin` — use `spec.graphAnalytics`. It keeps
   working and maps to `plugin` (true) or `unavailable` (false). Setting both is
   refused. An existing instance may switch to the equivalent `graphAnalytics`
-  value; any other change is refused, because Aura cannot change it after
-  creation.
+  value; setting any other `graphAnalytics` value is refused, because Aura cannot
+  change it after creation. Editing or removing the boolean itself is accepted
+  but has no effect on an existing instance, which only reads it at creation.
 
 ## Upgrading between future releases
 

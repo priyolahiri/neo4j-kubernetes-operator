@@ -95,7 +95,7 @@ The following fields are immutable and enforced declaratively by the apiserver v
 - `type` — **except** the one in-place `professional-db` → `business-critical` upgrade
 - `projectId`, `organizationId`, `customerManagedKeyId`, `instanceId` — immutable once set
 - `source`, `multiDatabase`
-- `graphAnalytics` — applied at creation; the only allowed edit is replacing the deprecated `graphAnalyticsPlugin` with its equivalent value
+- `graphAnalytics` — applied at creation; the only way to set it on an existing instance is to replace the deprecated `graphAnalyticsPlugin` with its equivalent value (the boolean itself is not locked, but it is only read at creation, so editing or removing it changes nothing)
 
 The `type` / `region` / `cloudProvider` combination is additionally validated before create against the live per-project `instance_configurations` inline in the reconciler (the one check CEL cannot express). `memory` and `version` are not checked locally.
 
