@@ -1900,7 +1900,7 @@
     "name": "CLI Support Bundle",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Collects custom resources, workloads, events and pod logs into one redacted archive. Secret values, last-applied-configuration annotations and sensitive-looking literal environment variables are never included; valueFrom references are kept because they explain failures and hold no secret. Every redaction is enumerated in REDACTIONS.txt.",
+    "description": "Collects custom resources, workloads, events and pod logs into one redacted archive. Secret values, last-applied-configuration annotations and sensitive-looking literal environment variables are never included; valueFrom references are kept because they explain failures and hold no secret. Every redaction is enumerated in REDACTIONS.txt. Collection is best-effort: every read that fails (a CR-kind, events, pods, secrets-listing, container-log or operator read) is skipped without aborting and listed, as the read plus its error text only, in errors.txt, and the command prints how many reads failed.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
