@@ -194,6 +194,19 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyTLSSecretHasCA(ctx context.Cont
 	return nil
 }
 
+// recordValidationWarnings turns the validator's advisory output into Warning
+// events. Topology warnings keep their TopologyWarning reason; warnings about
+// spec fields the schema accepts but nothing reads are ValidationWarning, the
+// reason every other kind uses for the same thing. Neither blocks the reconcile.
+func (r *Neo4jEnterpriseClusterReconciler) recordValidationWarnings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, result validation.ClusterValidationResult) {
+	for _, warning := range result.Warnings {
+		r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonTopologyWarning, warning)
+	}
+	for _, warning := range result.NoEffectWarnings {
+		r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
+	}
+}
+
 func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -246,9 +259,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 				result := r.Validator.ValidateUpdateWithWarnings(ctx, currentCluster, cluster)
 
 				// Emit warnings as events
-				for _, warning := range result.Warnings {
-					r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonTopologyWarning, warning)
-				}
+				r.recordValidationWarnings(cluster, result)
 
 				// Check for validation errors
 				if len(result.Errors) > 0 {
@@ -271,9 +282,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			result := r.Validator.ValidateCreateWithWarnings(ctx, cluster)
 
 			// Emit warnings as events
-			for _, warning := range result.Warnings {
-				r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonTopologyWarning, warning)
-			}
+			r.recordValidationWarnings(cluster, result)
 
 			// Check for validation errors
 			if len(result.Errors) > 0 {

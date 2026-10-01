@@ -29,8 +29,12 @@ import (
 
 // ClusterValidationResult holds validation results including warnings
 type ClusterValidationResult struct {
-	Errors   field.ErrorList
+	Errors field.ErrorList
+	// Warnings are topology warnings (reason TopologyWarning).
 	Warnings []string
+	// NoEffectWarnings name spec fields that are set but not read by any code
+	// (reason ValidationWarning). Advisory only: never added to Errors.
+	NoEffectWarnings []string
 }
 
 // ClusterValidator provides validation for Neo4jEnterpriseCluster resources
@@ -301,6 +305,7 @@ func (v *ClusterValidator) ValidateCreateWithWarnings(ctx context.Context, clust
 	// Get topology warnings
 	topologyResult := v.topologyValidator.ValidateWithWarnings(cluster)
 	result.Warnings = append(result.Warnings, topologyResult.Warnings...)
+	result.NoEffectWarnings = v.NoEffectWarnings(cluster)
 
 	return result
 }
@@ -315,6 +320,7 @@ func (v *ClusterValidator) ValidateUpdateWithWarnings(ctx context.Context, oldCl
 	// Get topology warnings
 	topologyResult := v.topologyValidator.ValidateWithWarnings(newCluster)
 	result.Warnings = append(result.Warnings, topologyResult.Warnings...)
+	result.NoEffectWarnings = v.NoEffectWarnings(newCluster)
 
 	return result
 }

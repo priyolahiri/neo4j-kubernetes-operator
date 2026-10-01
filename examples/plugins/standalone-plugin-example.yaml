@@ -35,11 +35,9 @@ spec:
     allowedProcedures:
       - "gds.*"
       - "apoc.load.*"
-    securityPolicy: "strict"
     sandbox: true
 
-  # Resource requirements for the plugin
-  resources:
-    memoryLimit: "1Gi"
-    cpuLimit: "500m"
-    threadPoolSize: 4
+  # Plugins run inside the Neo4j JVM, so there is no per-plugin resources block
+  # (spec.resources is accepted but has no effect): size the pod through the
+  # standalone's own spec.resources. Likewise spec.security.securityPolicy has
+  # no effect; restrict procedures with allowedProcedures / deniedProcedures.

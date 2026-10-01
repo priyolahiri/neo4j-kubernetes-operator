@@ -148,7 +148,13 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// spec re-triggers reconcile; unlike the terminal one-time "Failed" guard)
 	// and don't requeue. Catching it here gives a clear, aggregated message
 	// instead of an opaque apiserver failure when a resource is later created.
-	errs := validation.NewBackupValidator().Validate(backup)
+	backupValidator := validation.NewBackupValidator()
+	errs := backupValidator.Validate(backup)
+
+	// Spec fields the schema accepts but nothing reads: advisory, never blocking.
+	for _, warning := range backupValidator.NoEffectWarnings(backup) {
+		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
+	}
 
 	// mode=replication-source carries extra constraints (design §4.4): the
 	// differential chain feeding a cross-cluster replica must stay unbroken

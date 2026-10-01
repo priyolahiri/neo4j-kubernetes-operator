@@ -94,21 +94,23 @@ var validators = map[string]kindValidator{
 			return nil, nil, nil, err
 		}
 		out := validation.NewClusterValidator(c).ValidateCreateWithWarnings(context.Background(), &obj)
-		return out.Errors, out.Warnings, nil, nil
+		return out.Errors, append(out.Warnings, out.NoEffectWarnings...), nil, nil
 	}},
 	"Neo4jEnterpriseStandalone": {fn: func(doc []byte, _ client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jEnterpriseStandalone
 		if err := yaml.Unmarshal(doc, &obj); err != nil {
 			return nil, nil, nil, err
 		}
-		return validation.NewStandaloneValidator().ValidateCreate(&obj), nil, nil, nil
+		v := validation.NewStandaloneValidator()
+		return v.ValidateCreate(&obj), v.NoEffectWarnings(&obj), nil, nil
 	}},
 	"Neo4jBackup": {fn: func(doc []byte, _ client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jBackup
 		if err := yaml.Unmarshal(doc, &obj); err != nil {
 			return nil, nil, nil, err
 		}
-		return validation.NewBackupValidator().Validate(&obj), nil, nil, nil
+		v := validation.NewBackupValidator()
+		return v.Validate(&obj), v.NoEffectWarnings(&obj), nil, nil
 	}},
 	"Neo4jPlugin": {fn: func(doc []byte, _ client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jPlugin

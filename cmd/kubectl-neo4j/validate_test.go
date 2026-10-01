@@ -168,6 +168,54 @@ func TestValidate_CleanManifestExitsZero(t *testing.T) {
 	assert.Equal(t, 0, results[0].errorCount())
 }
 
+// A field the schema accepts but nothing reads must come back as a WARNING —
+// never an error — so `validate` agrees with the ValidationWarning event the
+// operator will raise for the same manifest (docs/knowledge/operations.md,
+// "A schema field that no code reads must warn when set").
+func TestValidate_WarnsOnFieldsNothingReads(t *testing.T) {
+	cases := []struct {
+		name     string
+		manifest string
+		path     string
+	}{
+		{"cluster", validCluster + "  tls: {mode: disabled, certificateSecret: my-cert}\n", "spec.tls.certificateSecret"},
+		{"standalone", `
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jEnterpriseStandalone
+metadata: {name: s}
+spec:
+  acceptLicenseAgreement: "yes"
+  image: {repo: neo4j, tag: "5.26-enterprise"}
+  storage: {size: 10Gi}
+  tls: {mode: disabled, certificateSecret: my-cert}
+`, "spec.tls.certificateSecret"},
+		{"backup", `
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jBackup
+metadata: {name: b}
+spec:
+  instanceRef: c
+  allDatabases: true
+  storage:
+    type: s3
+    bucket: b
+    cloud:
+      provider: aws
+      identity: {provider: aws, serviceAccount: my-sa}
+`, "spec.storage.cloud.identity.serviceAccount"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			results, err := validateSource(writeManifest(t, tc.manifest), nil, "")
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			assert.Equal(t, 0, results[0].errorCount(), "the manifest must still be accepted: %+v", results[0].findings)
+			require.Equal(t, 1, results[0].warningCount(), "findings: %+v", results[0].findings)
+			assert.Contains(t, results[0].findings[0].detail, tc.path+" is accepted but has no effect today: ")
+		})
+	}
+}
+
 func TestValidate_ReportsErrorsWithFieldPaths(t *testing.T) {
 	path := writeManifest(t, `
 apiVersion: neo4j.neo4j.com/v1beta1
