@@ -1,7 +1,10 @@
 # Design: database references in `Neo4jRole` privileges
 
-> **Status:** proposed, not built. No PM roadmap governs this repo, so this is
-> a maintainer decision.
+> **Status:** built in v1.17.0 as `Neo4jRole.spec.privilegeRules` (see the
+> [user guide](../user_guide/user_role_management.md)). Kept as the design
+> record; where the shipped feature differs from the proposal, see
+> [Shipped differently](#shipped-differently) at the end. No PM roadmap governs
+> this repo, so this was a maintainer decision.
 
 ## 1. The problem
 
@@ -104,9 +107,9 @@ spec:
     - grant: ACCESS
       onDatabase: analytics         # a structured field, not a substring
     - grant: MATCH
-      properties: "*"
+      properties: ["*"]             # lists, not scalars (see "Shipped differently")
       onGraph: analytics
-      nodes: "*"
+      nodes: ["*"]
 ```
 
 ### 4.1 It is a structured field, not a Kubernetes object reference
@@ -169,7 +172,7 @@ to be complete.
 |---|---|
 | Two ways to express one privilege | Reject a CR where a `privilegeRules` entry renders to a statement already present in `privileges` — same canonical form, caught by the canonicaliser we already have |
 | Rendered Cypher must match what Neo4j stores | No longer a risk: since #409/#410 every statement, rendered or hand-written, is compared by Neo4j's own stored form. The renderer only has to emit Cypher Neo4j accepts; the fixture-replay tests cover the stored forms |
-| Scope creep toward "model everything" | The table in §4.1 is the contract; new verbs need a decision, not a reflex |
+| Scope creep toward "model everything" | The list in §4.2 is the contract; new verbs need a decision, not a reflex |
 | Users assume a name field means cascade-delete | It does not. Neo4j drops a dropped database's privileges, but the role's spec keeps asking for them, and the role reports the database missing — document explicitly |
 
 ## 6. What this does not fix
@@ -196,3 +199,27 @@ convention and works for databases it does not manage.
    only has to emit Cypher the server accepts.
 
 **Still open:** nothing blocking. The field list in §4.2 is the build scope.
+
+## Shipped differently
+
+The feature shipped in v1.17.0 (`api/v1beta1/neo4jrole_types.go` `PrivilegeRule`,
+`internal/neo4j/privilege_rules.go`, `internal/controller/neo4jrole_rules.go`,
+`internal/validation/role_validator.go`). It differs from the proposal above in
+these ways:
+
+- **A missing database is reported, not refused.** §4.1 promised refusal "before
+  any grant" of a privilege naming a database that does not exist, and refusal of
+  `onGraph` naming a composite, as validation errors. Neither was built. The
+  validator checks only a rule's shape and duplicates. A rule naming a missing
+  database is skipped and reported as `PrivilegesResolve=False/DatabaseNotFound`,
+  and a GRAPH privilege on a composite as `GraphPrivilegeOnComposite`; both
+  messages name the field (for example `spec.privilegeRules[1].onGraph`). The
+  controller's reasoning is that the operator cannot know the database is not
+  about to be created, and refusing would break applying a role and its
+  `Neo4jDatabase` together.
+- **Built as proposed:** the field-path report, the watch (a role re-reconciles
+  when a `Neo4jDatabase` it names appears), refusal of a rule that renders to a
+  statement already in `privileges` (§5), and the §4.2 scope (with `deny` as the
+  counterpart of `grant`).
+- **Lists, not scalars.** `properties`, `nodes`, `relationships` and `elements`
+  are `[]string` (`["*"]`), not the `"*"` strings drafted in §4.

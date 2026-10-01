@@ -1,9 +1,10 @@
 # Design: Cypher language defaulting on CalVer
 
 > **Status:** built — §3 (the `Cypher25()` helper and guard) in #414; §5 and
-> the §5.9 sharding change in the `serverDefaultCypherLanguage` PR. No PM roadmap governs this repo
-> ([wiki: `project-k8s-operator` closed 2026-06-18](#)), so this is a
-> maintainer decision.
+> the §5.9 sharding change in the `serverDefaultCypherLanguage` PR. No PM roadmap
+> governs this repo, so this was a maintainer decision. Kept as the design
+> record; a few details shipped differently — see
+> [Shipped differently](#shipped-differently) at the end.
 
 ## 1. The problem
 
@@ -277,3 +278,29 @@ is (e.g. OIDC forwarding is refused on 5.26 at apply time) — not something the
 prefix helper should decide by silently dropping the directive.
 `TestCypher25Guard` pins the first half, and
 `TestRemoteAliasStatementPinsCypher25OnlyForOIDC` the second.
+
+## Shipped differently
+
+- **§3.1 helper.** The helper is the package-level `Cypher25(stmt)` in
+  `internal/neo4j/cypher25.go` (with `HasCypher25Prefix`), not a `systemDDL25`
+  method on the client. `TestCypher25Guard` (`cypher25_guard_test.go`) is the §3.2
+  guard; its construct list is `AUTH RULE(S)`, `CREATE REPLICA DATABASE`,
+  `dbms.promoteReplicaDatabase`, `SET GRAPH SHARD` / `SET PROPERTY SHARDS` and
+  `OIDC CREDENTIAL FORWARDING` — not `COMPOSITE … DEFAULT LANGUAGE`.
+- **Composite-constituent and alias DDL is pinned to Cypher 5.** §1 and §3.2 treat
+  `composite.go` as a Cypher-25 user. It is not: since v1.17.0 a new CalVer
+  deployment defaults to Cypher 25, where the dotted `` `comp`.`name` `` alias
+  syntax fails (`42NAA`), so the constituent and alias statements are wrapped with
+  `Cypher5()` (`cypher25.go`; `aliases.go`, `composite.go`). Only the
+  OIDC-forwarding remote alias uses `Cypher25()`.
+- **§4 "does not change any user-facing default" is superseded by §5.4.** From
+  v1.17.0 a *new* CalVer deployment gets `CYPHER_25` (stamped at creation);
+  existing deployments keep what they run.
+- **§5.4, "unset, pre-existing" row.** The stamp reuses the value already in the
+  operator's ConfigMap when there is one, and falls back to `CYPHER_5` otherwise
+  (`StampServerCypherLanguage`, `internal/resources/cypher_language.go`). A sharding
+  cluster that predates the field therefore keeps the `CYPHER_25` it already ran,
+  and §5.9's "Cypher 5 on CalVer" holds only for a deployment stamped or set to
+  `CYPHER_5`. `db.query.default_language` set directly in `spec.config` (or
+  `propertySharding.config`) is treated as the user's explicit choice and is
+  emitted by that config path.

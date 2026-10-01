@@ -9,7 +9,7 @@
 > differently-shaped controllers. §8's order is revised accordingly.**
 > **Source:** this repository, read at commit `33a3204`; the CCDR design
 > (`cross-cluster-replication.md`), whose B1 recurs here in a worse form;
-> controller-runtime v0.24.1 (`go.mod:22`).
+> controller-runtime v0.24.1 (`go.mod:22` at the time; `go.mod` now pins v0.25.1).
 > **Scope of this document:** what it would take for **one operator instance to
 > manage Neo4j across N Kubernetes clusters**. It covers the Kubernetes API
 > plane, the Bolt data plane, the CRD-surface consequences, and four delivery
@@ -18,7 +18,7 @@
 > **Headline:** the Kubernetes API half is cheap and mechanically supported —
 > the operator has no `remotecommand`/exec dependency, and controller-runtime
 > ships per-cluster caches. The **Bolt half is the blocker**, and it is
-> [B1 from the CCDR design](cross-cluster-replication.md#b1--advertised-addresses-are-hardcoded-to-in-cluster-dns-network-only-the-real-blocker)
+> [B1 from the CCDR design](cross-cluster-replication.md) ("Advertised addresses are hardcoded to in-cluster DNS")
 > again: the operator is a Neo4j client as well as a Kubernetes client, its
 > connection URIs are hardcoded to in-cluster DNS, and the `neo4j://` routing
 > scheme means exposing a Service does not fix it — the server hands back
