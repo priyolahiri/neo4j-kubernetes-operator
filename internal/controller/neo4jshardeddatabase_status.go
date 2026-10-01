@@ -102,10 +102,10 @@ func observeShardFamily(logical string, databases []neo4j.DatabaseInfo) shardSta
 	var parent, graph []neo4j.DatabaseInfo
 	property := map[int][]neo4j.DatabaseInfo{}
 	for _, db := range databases {
-		switch {
-		case db.Name == logical:
+		switch db.Name {
+		case logical:
 			parent = append(parent, db)
-		case db.Name == graphName:
+		case graphName:
 			graph = append(graph, db)
 		default:
 			if m := propertyPattern.FindStringSubmatch(db.Name); m != nil {
