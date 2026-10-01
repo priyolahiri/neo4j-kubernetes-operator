@@ -661,7 +661,17 @@ func checkBackupPVC(ctx context.Context, c client.Client, ns string, backup *neo
 	}
 
 	var existing corev1.PersistentVolumeClaim
-	if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: pvc.Name}, &existing); apierrors.IsNotFound(err) {
+	err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: pvc.Name}, &existing)
+	if err != nil && !apierrors.IsNotFound(err) {
+		// Not "absent": the read itself failed (RBAC, an unhealthy API server),
+		// which says nothing about the claim. Returning nothing here would print
+		// as a pass; claiming it is missing would be a false failure.
+		return []symptom{{
+			mark: markWarning, subject: "pvc " + pvc.Name, what: "could not be read, so its existence was not checked",
+			detail: err.Error(),
+		}}
+	}
+	if apierrors.IsNotFound(err) {
 		// Mirrors ensureBackupPVC in internal/controller/neo4jbackup_controller.go:
 		// when the claim is absent the operator creates it if — and only if —
 		// spec.storage.pvc.size is set. Without a size the claim is assumed to be

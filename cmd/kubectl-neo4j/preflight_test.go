@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -28,6 +29,11 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
@@ -338,6 +344,42 @@ func TestPreflight_ExistingPVCPasses(t *testing.T) {
 			res := preflightObject(context.Background(), c, "neo4j", "f.yaml", pvcBackup(fields))
 			assert.False(t, res.problems())
 			assert.Empty(t, res.checks)
+		})
+	}
+}
+
+// Only NotFound means "the claim is absent". Any other error from the read
+// (RBAC, a struggling API server) says nothing about the claim, so preflight
+// must neither claim it is missing nor report a clean pass: it says the check
+// could not be made. It used to return nothing at all, which printed as a pass.
+func TestPreflight_UnreadablePVCIsAWarningNotASilentPass(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, neo4jv1beta1.AddToScheme(scheme))
+	c := clientfake.NewClientBuilder().WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*corev1.PersistentVolumeClaim); ok {
+					return errors.New(`persistentvolumeclaims "backups" is forbidden: User "dev" cannot get resource`)
+				}
+				return cl.Get(ctx, key, obj, opts...)
+			},
+		}).Build()
+
+	for name, fields := range map[string]string{
+		"with size":    "      name: backups\n      size: 50Gi",
+		"without size": "      name: backups",
+	} {
+		t.Run(name, func(t *testing.T) {
+			res := preflightObject(context.Background(), c, "neo4j", "f.yaml", pvcBackup(fields))
+
+			assert.False(t, res.problems(), "an unreadable claim is not a failed one")
+			require.Len(t, res.checks, 1, "the check must say it could not be made, not stay silent")
+			out := joinChecks(res.checks)
+			assert.Contains(t, out, markWarning+" pvc backups could not be read")
+			assert.Contains(t, out, "is forbidden", "the underlying error is shown")
+			assert.NotContains(t, out, "does not exist", "it must not claim the claim is missing")
+			assert.NotContains(t, out, "creates this claim")
 		})
 	}
 }
