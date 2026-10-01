@@ -243,14 +243,14 @@ Storage backend configuration (shared with `Neo4jBackup`).
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `provider` | `string` | ✅ | Identity provider: `"aws"`, `"gcp"`, `"azure"` |
-| `serviceAccount` | `string` | ❌ | **RESERVED — currently a no-op.** Restore Jobs always run as the operator-managed `neo4j-restore-sa`. Bind your cloud IAM role via `autoCreate.annotations`. |
+| `serviceAccount` | `string` | ❌ | **RESERVED — currently a no-op.** Restore Jobs always run as the operator-managed `neo4j-restore-sa`. Bind your cloud IAM role via `autoCreate.annotations`. A `ValidationWarning` event is raised when it is set. |
 | `autoCreate` | [`*AutoCreateSpec`](#autocreatespec) | ❌ | Workload-identity annotations for the operator-managed ServiceAccount |
 
 ### AutoCreateSpec
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enabled` | `bool` | ❌ | **RESERVED — currently a no-op.** The operator always ensures the ServiceAccount exists; only `annotations` is honored. |
+| `enabled` | `bool` | ❌ | **RESERVED — currently a no-op.** The operator always ensures the ServiceAccount exists; only `annotations` is honored. A `ValidationWarning` event is raised when it is set to `false` (the schema default is `true`, so only `false` is detectable). |
 | `annotations` | `map[string]string` | ❌ | Annotations applied to the operator-managed ServiceAccount on every reconcile |
 
 ## Neo4jRestore Status

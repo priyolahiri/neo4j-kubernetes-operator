@@ -255,7 +255,7 @@ A spec that fails structural validation lands in `Invalid` with a `ValidationFai
 | `VerifiedDownload requires source.type=url or source.type=custom` | `official`/`community` with VerifiedDownload | Point at a downloadable URL, or switch mode |
 | `VerifiedDownload does not support spec.dependencies` | Dependencies on a VerifiedDownload CR | Create each dependency as its own `Neo4jPlugin` CR |
 
-Compatibility-matrix notes (unknown plugin name, version below the recorded minimum) are **advisory only** — they surface as `ValidationWarning` events and never block installation.
+Compatibility-matrix notes (unknown plugin name, version below the recorded minimum) are **advisory only** — they surface as `ValidationWarning` events and never block installation. So does a field the schema accepts but nothing reads (`spec.resources`, `spec.source.registry` and its `tls`, `spec.security.securityPolicy`): the event reads `spec.<path> is accepted but has no effect today: <what to do instead>`.
 
 ```bash
 kubectl describe neo4jplugin <name>          # status.message + events
@@ -294,7 +294,7 @@ kubectl exec <pod-name> -c neo4j -- \
 | `PluginInstallFailed` | Warning | Installation failed — see the event message |
 | `PluginDuplicate` | Warning | Another CR already owns this `(clusterRef, name)` pair — delete one |
 | `ValidationFailed` | Warning | Spec rejected by the validator (hard error, no requeue) |
-| `ValidationWarning` | Warning | Advisory compatibility note — does not block install |
+| `ValidationWarning` | Warning | Advisory compatibility note, or a set field that nothing reads — does not block install |
 
 ### Other common issues
 

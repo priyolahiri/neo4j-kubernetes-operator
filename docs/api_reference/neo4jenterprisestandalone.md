@@ -167,6 +167,11 @@ tls:
 > `TLSSpec` but has no effect on `Neo4jEnterpriseStandalone` — single-server
 > deployments have no intra-cluster traffic, so there's no cluster SSL
 > policy to govern. Setting it on a standalone is silently ignored.
+>
+> **Note on `certificateSecret`:** the field is present on the shared
+> `TLSSpec` but is never read: the operator always uses the cert-manager
+> Secret `{name}-tls-secret`. A `ValidationWarning` event is raised whenever
+> it is set, whatever `mode` is.
 
 #### `auth` (AuthSpec)
 Authentication configuration.

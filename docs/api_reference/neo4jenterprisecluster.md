@@ -343,7 +343,7 @@ not parse policy config to wire up filesystem mounts automatically.
 |---|---|---|
 | `mode` | `string` | TLS mode: `"cert-manager"` (default) or `"disabled"`. The validator rejects any other value. |
 | `issuerRef` | [`*IssuerRef`](#issuerref) | cert-manager issuer reference. **Required when `mode: cert-manager`.** Validator rejects a `cert-manager` mode with no `issuerRef`. |
-| `certificateSecret` | `string` | **Reserved — no effect today.** Intended for manual certificates, but no builder or controller reads it: the operator always uses the cert-manager-issued Secret `{name}-tls-secret`. |
+| `certificateSecret` | `string` | **Reserved — no effect today.** Intended for manual certificates, but no builder or controller reads it: the operator always uses the cert-manager-issued Secret `{name}-tls-secret`. A `ValidationWarning` event is raised whenever it is set, whatever `mode` is. |
 | `trustedCASecret` | `string` | Secret containing a trusted CA certificate (key: `ca.crt`) for verifying Neo4j TLS connections. When omitted, the operator auto-discovers the CA from the cert-manager-generated Secret. |
 | `externalSecrets` | [`*ExternalSecretsConfig`](#externalsecretsconfig) | External Secrets configuration |
 | `duration` | `*string` | Certificate duration (e.g., `"2160h"`) |
@@ -689,8 +689,8 @@ Advanced placement and scheduling configuration.
 |---|---|---|
 | `topologySpread` | [`*TopologySpreadConfig`](#topologyspreadconfig) | Topology spread constraints |
 | `antiAffinity` | [`*PodAntiAffinityConfig`](#podantiaffinityconfig) | Pod anti-affinity rules |
-| `nodeSelector` | `map[string]string` | **Reserved — no effect today.** Never read by the topology scheduler; use the top-level `spec.nodeSelector`. |
-| `requiredDuringScheduling` | `bool` | **Reserved — no effect today.** Never read; use `antiAffinity.type: required` or `topology.enforceDistribution` for hard placement. |
+| `nodeSelector` | `map[string]string` | **Reserved — no effect today.** Never read by the topology scheduler; use the top-level `spec.nodeSelector`. A `ValidationWarning` event is raised when it is set. |
+| `requiredDuringScheduling` | `bool` | **Reserved — no effect today.** Never read; use `antiAffinity.type: required` or `topology.enforceDistribution` for hard placement. A `ValidationWarning` event is raised when it is `true`. |
 
 ### TopologySpreadConfig
 

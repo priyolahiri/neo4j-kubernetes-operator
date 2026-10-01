@@ -1074,7 +1074,7 @@ If the plugin auto-renews the token (auto-rotation enabled in the Aura wizard), 
 kubectl rollout restart statefulset <cluster>-server -n <namespace>
 ```
 
-The operator has no bring-your-own-certificate mode: `spec.tls.mode` is `cert-manager` or `disabled`, and `spec.tls.certificateSecret` is accepted by the schema but not used.
+The operator has no bring-your-own-certificate mode: `spec.tls.mode` is `cert-manager` or `disabled`, and `spec.tls.certificateSecret` is accepted by the schema but not used (a `ValidationWarning` event is raised when it is set).
 
 ### Neo4jPlugin `source.authSecret` (VerifiedDownload mode)
 

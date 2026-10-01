@@ -152,7 +152,7 @@ Cloud identity configuration for workload identity scenarios (no static credenti
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `provider` | `string` | ✅ | Identity provider: `"aws"`, `"gcp"`, `"azure"` |
-| `serviceAccount` | `string` | ❌ | **RESERVED — currently a no-op.** Backup Jobs always run as the operator-managed `neo4j-backup-sa` (restore Jobs: `neo4j-restore-sa`); this field is accepted for backward compatibility but not read. Bind your cloud IAM role via `autoCreate.annotations` instead. |
+| `serviceAccount` | `string` | ❌ | **RESERVED — currently a no-op.** Backup Jobs always run as the operator-managed `neo4j-backup-sa` (restore Jobs: `neo4j-restore-sa`); this field is accepted for backward compatibility but not read. Bind your cloud IAM role via `autoCreate.annotations` instead. A `ValidationWarning` event is raised when it is set. |
 | `autoCreate` | [`*AutoCreateSpec`](#autocreatespec) | ❌ | Workload-identity annotations for the operator-managed ServiceAccount |
 
 ### AutoCreateSpec
@@ -161,7 +161,7 @@ Carries workload-identity annotations for the operator-managed ServiceAccount.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enabled` | `bool` | ❌ | **RESERVED — currently a no-op.** The operator always ensures the backup/restore ServiceAccount exists; only `annotations` is honored. |
+| `enabled` | `bool` | ❌ | **RESERVED — currently a no-op.** The operator always ensures the backup/restore ServiceAccount exists; only `annotations` is honored. A `ValidationWarning` event is raised when it is set to `false` (the schema default is `true`, so only `false` is detectable). |
 | `annotations` | `map[string]string` | ❌ | Annotations applied to the `neo4j-backup-sa` ServiceAccount on every reconcile. Use this to attach workload-identity annotations. |
 
 The annotations in `autoCreate.annotations` are applied to the `neo4j-backup-sa` ServiceAccount on **every reconcile**, so they stay in sync with the desired state.

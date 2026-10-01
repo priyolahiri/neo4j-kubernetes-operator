@@ -67,11 +67,11 @@ The `Neo4jDatabase` Custom Resource Definition (CRD) provides declarative databa
 
 | Field | Type | Description |
 |---|---|---|
-| `source` | `string` | Source type for initial data: `"cypher"`, `"dump"`, `"csv"`. **Accepted but not acted on** — the controller does not read it |
+| `source` | `string` | Source type for initial data: `"cypher"`, `"dump"`, `"csv"`. **Accepted but not acted on** — the controller does not read it. A `ValidationWarning` event is raised when it is set to `"dump"` or `"csv"`; `"cypher"` (what `cypherStatements` does) is not warned about |
 | `cypherStatements` | `[]string` | Cypher statements to execute, in order, against the new database. **The only field that is executed.** Runs once; `status.dataImported` records that it has run |
-| `configMapRef` | `string` | **Accepted but not acted on** — the ConfigMap is never read, so put statements in `cypherStatements` |
-| `secretRef` | `string` | **Accepted but not acted on** |
-| `storage` | [`*StorageLocation`](#storagelocation) | **Accepted but not acted on** (the `StorageLocation` tables below describe the schema only) |
+| `configMapRef` | `string` | **Accepted but not acted on** — the ConfigMap is never read, so put statements in `cypherStatements`. A `ValidationWarning` event is raised when it is set. |
+| `secretRef` | `string` | **Accepted but not acted on.** A `ValidationWarning` event is raised when it is set. |
+| `storage` | [`*StorageLocation`](#storagelocation) | **Accepted but not acted on** (the `StorageLocation` tables below describe the schema only). A `ValidationWarning` event is raised when it is set. |
 
 ### SeedConfiguration
 
