@@ -48,7 +48,8 @@ func (t *fleetFailureTracker) shouldAnnounce(key client.ObjectKey, msg string) b
 	if !loaded {
 		return true
 	}
-	return prev.(string) != msg
+	prevMsg, ok := prev.(string)
+	return !ok || prevMsg != msg
 }
 
 // clear forgets key's last failure, so a recurrence after a successful
