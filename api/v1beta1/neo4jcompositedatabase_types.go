@@ -52,14 +52,16 @@ type Neo4jCompositeDatabaseSpec struct {
 	// Name is the composite database name in Neo4j. Defaults to metadata.name
 	// when empty.
 	//
-	// Neo4j database names accept only ASCII letters, digits, dots and dashes —
-	// underscores are rejected by the server, so they are rejected here.
-	// A dot is legal in a name but reserved in practice: `a.b` is how a
-	// constituent of composite `a` is addressed, so a composite whose own name
-	// contains a dot cannot have constituents.
+	// Must be 3 to 63 characters, start with an ASCII letter, and contain only
+	// ASCII letters, digits and dashes. Neo4j database names would also allow
+	// dots, but underscores are rejected by the server, and a dot is reserved
+	// in practice: `a.b` is how a constituent of composite `a` is addressed, so
+	// a composite whose own name contains a dot could never have constituents.
+	// The schema therefore refuses both at apply time, matching the inline
+	// validator, instead of accepting the CR and failing at reconcile.
 	// +kubebuilder:validation:MinLength=3
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-zA-Z][a-zA-Z0-9.\-]*$`
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z][a-zA-Z0-9\-]*$`
 	// +optional
 	Name string `json:"name,omitempty"`
 
