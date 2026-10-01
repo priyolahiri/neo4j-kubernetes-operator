@@ -3903,6 +3903,7 @@
 </span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>Shape only: no bucket, registry or endpoint was contacted.
 </span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>1 of 1 resource(s) would fail on a precondition.
 </span></code></pre></div>
+<p>A manifest that names its own <code>metadata.namespace</code> is checked <strong>there</strong> — that is where <code>kubectl apply</code> will put it, and it decides the pod-security level and where Secrets are looked up. <code>-n</code> (or your kubeconfig's namespace) applies only to manifests that omit one. Before v1.17.0 the flag won even over a namespace written in the file, so a standalone bound for a <code>restricted</code> namespace could pass a check it would fail on apply.</p>
 <h2 id="what-it-checks">What it checks<a class="headerlink" href="#what-it-checks" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Clusters and standalones</strong></p>
 <table>
