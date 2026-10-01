@@ -171,8 +171,8 @@ var (
 		prometheus.HistogramOpts{
 			Subsystem: subsystem,
 			Name:      "upgrade_duration_seconds",
-			Help:      "Time spent on upgrade operations",
-			Buckets:   []float64{60.0, 300.0, 600.0, 1200.0, 1800.0, 3600.0},
+			Help:      "Time a rolling upgrade spent in each phase (Staging, Rolling, Stabilizing, Verifying), observed once when the phase ends",
+			Buckets:   []float64{5.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1200.0, 1800.0, 3600.0},
 		},
 		[]string{LabelClusterName, LabelNamespace, LabelPhase},
 	)
@@ -429,7 +429,10 @@ func (m *UpgradeMetrics) RecordUpgrade(ctx context.Context, success bool, totalD
 	}
 }
 
-// RecordUpgradePhase records duration for a specific upgrade phase
+// RecordUpgradePhase records how long a rolling-upgrade phase lasted. Call it
+// once per phase, when the phase ends; the controller derives the duration from
+// the persisted status.upgradeStatus.phaseStartTime so a repeated or restarted
+// reconcile cannot observe the same phase twice.
 func (m *UpgradeMetrics) RecordUpgradePhase(phase string, duration time.Duration) {
 	upgradeDuration.WithLabelValues(m.clusterName, m.namespace, phase).Observe(duration.Seconds())
 }

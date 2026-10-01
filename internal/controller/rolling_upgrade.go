@@ -115,7 +115,14 @@ func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 	// which could leave even a SUCCESSFUL upgrade stuck in "InProgress" (its
 	// final "Completed" write lost), permanently disabling further orchestrated
 	// upgrades for the CR. Mirrors updateClusterStatus.
+	//
+	// A phase change also ends the previous phase: its duration is observed
+	// (upgrade_duration_seconds) after the write succeeds — see
+	// rolling_upgrade_phase_metrics.go. Reset per attempt: the closure re-runs
+	// on conflict.
+	var ended *endedUpgradePhase
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		ended = nil
 		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		if getErr := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); getErr != nil {
 			return getErr
@@ -123,6 +130,8 @@ func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 		if latest.Status.UpgradeStatus == nil {
 			return nil
 		}
+		prevPhase := latest.Status.UpgradeStatus.Phase
+		prevPhaseStart := snapshotPhaseStart(latest.Status.UpgradeStatus.PhaseStartTime)
 		latest.Status.UpgradeStatus.Phase = phase
 		latest.Status.UpgradeStatus.CurrentStep = currentStep
 		latest.Status.UpgradeStatus.Message = currentStep
@@ -135,14 +144,17 @@ func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 			latest.Status.LastUpgradeTime = &now
 			latest.Status.Version = cluster.Spec.Image.Tag
 		}
+		ended = stampUpgradePhaseTransition(latest.Status.UpgradeStatus, prevPhase, prevPhaseStart, metav1.Now())
 		// Keep the in-memory object consistent for callers that read it after.
 		cluster.Status.UpgradeStatus = latest.Status.UpgradeStatus
 		return r.Status().Update(ctx, latest)
 	})
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update cluster status in updateUpgradeStatus")
+		return err
 	}
-	return err
+	recordEndedUpgradePhase(r.upgradeMetrics, ended)
+	return nil
 }
 
 func (r *RollingUpgradeOrchestrator) validateVersionCompatibility(currentVersion, targetVersion string) error {

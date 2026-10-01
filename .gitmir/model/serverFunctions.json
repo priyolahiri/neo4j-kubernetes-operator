@@ -132,12 +132,14 @@
     "name": "Advance Rolling Upgrade",
     "serverUnitId": "su-rolling-upgrade",
     "operation": "business_action",
-    "description": "Dispatches exactly one non-blocking state-machine step per reconcile (Staging, Rolling, Stabilizing, Verifying) and re-stages from any active phase if the target image tag changes mid-flight, so an in-flight upgrade never blocks reconciliation of other clusters.",
+    "description": "Dispatches exactly one non-blocking state-machine step per reconcile (Staging, Rolling, Stabilizing, Verifying) and re-stages from any active phase if the target image tag changes mid-flight, so an in-flight upgrade never blocks reconciliation of other clusters. Each phase transition restarts status.upgradeStatus.phaseStartTime and records the ended phase's duration in neo4j_operator_upgrade_duration_seconds exactly once, derived from the persisted phaseStartTime.",
     "readsFieldIds": [
-      "status.upgradeStatus.phase"
+      "status.upgradeStatus.phase",
+      "status.upgradeStatus.phaseStartTime"
     ],
     "writesFieldIds": [
-      "status.upgradeStatus.phase"
+      "status.upgradeStatus.phase",
+      "status.upgradeStatus.phaseStartTime"
     ],
     "callsFunctionIds": [
       "sf-verify-version-upgrade",
@@ -156,10 +158,11 @@
     "name": "Pause Or Fail Rolling Upgrade",
     "serverUnitId": "su-rolling-upgrade",
     "operation": "business_action",
-    "description": "Routes a failed upgrade step to a terminal Paused state (manual intervention required, never auto-resumed) when upgradeStrategy.autoPauseOnFailure is set, or to Failed so image drift can retry the upgrade automatically once the underlying problem is resolved.",
+    "description": "Routes a failed upgrade step to a terminal Paused state (manual intervention required, never auto-resumed) when upgradeStrategy.autoPauseOnFailure is set, or to Failed so image drift can retry the upgrade automatically once the underlying problem is resolved. The phase that was active when the step failed is recorded in neo4j_operator_upgrade_duration_seconds.",
     "readsFieldIds": [],
     "writesFieldIds": [
-      "status.upgradeStatus.phase"
+      "status.upgradeStatus.phase",
+      "status.upgradeStatus.phaseStartTime"
     ],
     "callsFunctionIds": [],
     "emitsEventIds": [

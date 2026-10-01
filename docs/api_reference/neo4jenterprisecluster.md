@@ -981,6 +981,7 @@ Detailed upgrade progress tracking.
 | `phase` | `string` | Upgrade state-machine phase (schema enum `Pending`, `Staging`, `InProgress`, `Rolling`, `Stabilizing`, `Verifying`, `Paused`, `Completed`, `Failed`): `Staging` (target pod template applied, pod restarts frozen) → `Rolling` (servers restarted one at a time, highest ordinal first) → `Stabilizing` (health, consensus and replication gate) → `Verifying` (per-server version check) → `Completed`. `Paused` and `Failed` are terminal until operator/user action. `InProgress` is a legacy value from older operator versions, resumed as `Staging`; `Pending` is reserved |
 | `startTime` | `*metav1.Time` | When the upgrade started |
 | `stepStartTime` | `*metav1.Time` | Anchor for the per-step timeout (`upgradeTimeout` per Rolling step, `stabilizationTimeout`, `healthCheckTimeout`); reset on every phase transition and partition advance |
+| `phaseStartTime` | `*metav1.Time` | When the current phase began; reset only when the phase changes (unlike `stepStartTime`, which also restarts on every partition advance inside `Rolling`). It is the anchor `neo4j_operator_upgrade_duration_seconds` is measured from. Absent on an upgrade that began under an older operator version |
 | `currentPartition` | `*int32` | StatefulSet `RollingUpdate` partition most recently applied; servers with ordinal >= partition have been rolled to the target version. Used to resume after an operator restart |
 | `completionTime` | `*metav1.Time` | When the upgrade completed |
 | `currentStep` | `string` | Current upgrade step description |
