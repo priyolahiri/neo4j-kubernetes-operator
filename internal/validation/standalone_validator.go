@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -188,6 +189,23 @@ func (v *StandaloneValidator) validateStorage(standalone *neo4jv1beta1.Neo4jEnte
 		allErrs = append(allErrs, field.Required(
 			storagePath.Child("size"),
 			"storage size is required",
+		))
+	} else if q, err := resource.ParseQuantity(standalone.Spec.Storage.Size); err != nil {
+		// Unlike a cluster, a standalone's size was never format-checked, so a
+		// malformed value reached resource.MustParse in the StatefulSet
+		// builder and panicked the manager. Accept anything Kubernetes accepts
+		// as a quantity (1.5Gi and the like stay valid): this refuses only what
+		// could never have worked.
+		allErrs = append(allErrs, field.Invalid(
+			storagePath.Child("size"),
+			standalone.Spec.Storage.Size,
+			"storage size must be a valid Kubernetes quantity, e.g. '100Gi' or '1Ti'",
+		))
+	} else if q.Sign() <= 0 {
+		allErrs = append(allErrs, field.Invalid(
+			storagePath.Child("size"),
+			standalone.Spec.Storage.Size,
+			"storage size must be greater than zero",
 		))
 	}
 

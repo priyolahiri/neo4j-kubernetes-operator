@@ -88,7 +88,7 @@ Defines storage configuration for the Neo4j data volume.
 | Field | Type | Description |
 |---|---|---|
 | `className` | `string` | Storage class for the data PVC. **Optional** — if omitted, the PVC inherits the cluster's default StorageClass. When set, the named class must exist: the operator reports an explicit error (a `StorageClassNotFound` event and `Failed` status) rather than leaving the pod `Pending`. Immutable after creation. |
-| `size` | `string` | **Required**. Storage size (e.g., `"10Gi"`). Can be increased after creation — the operator automatically expands the PVC and recreates the StatefulSet with zero downtime. **Cannot be decreased.** Requires `allowVolumeExpansion: true` on the StorageClass. |
+| `size` | `string` | **Required**. Storage size (e.g., `"10Gi"`). Must be a valid Kubernetes quantity greater than zero (`"1.5Gi"` is fine; `"fifty"` or `"10 Gi"` is refused by validation). Can be increased after creation — the operator automatically expands the PVC and recreates the StatefulSet with zero downtime. **Cannot be decreased.** Requires `allowVolumeExpansion: true` on the StorageClass. |
 | `retentionPolicy` | `string` | PVC retention policy: `"Delete"` (default) permanently removes PVCs on deletion; `"Retain"` preserves them. **Use `Retain` for production to prevent data loss.** See [Storage and PVC Retention](../user_guide/configuration.md#storage-and-pvc-retention). |
 
 ```yaml

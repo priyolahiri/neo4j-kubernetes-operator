@@ -193,7 +193,7 @@ PVC configuration for local storage.
 |-------|------|----------|-------------|
 | `storageClassName` | `string` | ❌ | Storage class name for dynamic provisioning (used only when the operator creates the PVC, i.e. `size` is set and the PVC does not exist) |
 | `name` | `string` | ✅ (for `type: pvc`) | Name of the PVC to use. Always required: the validator rejects a PVC backup without it. If the PVC does not exist and `size` is set, the operator creates it under this name (without an owner reference, so it survives deletion of the CR) |
-| `size` | `string` | ❌ | Size for a new PVC (e.g., `"100Gi"`); omit to reference an externally provisioned PVC |
+| `size` | `string` | ❌ | Size for a new PVC (e.g., `"100Gi"`); omit to reference an externally provisioned PVC. Must be a valid Kubernetes quantity greater than zero — validation refuses anything else, and the controller reports phase `Invalid` (naming this field) rather than relying on that check |
 
 ### RetentionPolicy
 

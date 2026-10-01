@@ -205,9 +205,13 @@ func TestStorageValidator_isValidStorageSize(t *testing.T) {
 			valid: true,
 		},
 		{
-			name:  "valid size in K",
+			// Capital K is NOT a Kubernetes quantity suffix (decimal kilo is a
+			// lowercase "k"; binary is "Ki"). The format regex alone admitted it,
+			// and the StatefulSet builder's resource.MustParse then panicked the
+			// manager. The validator must refuse what Kubernetes cannot parse.
+			name:  "capital K is not a Kubernetes quantity suffix",
 			size:  "1048576K",
-			valid: true,
+			valid: false,
 		},
 		{
 			name:  "valid size without unit",

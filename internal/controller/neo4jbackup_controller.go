@@ -295,6 +295,17 @@ func (r *Neo4jBackupReconciler) handleDeletion(ctx context.Context, backup *neo4
 	return ctrl.Result{}, r.Update(ctx, backup)
 }
 
+// reportInvalidBackupSpec records phase Invalid for a spec problem found while
+// building the backup's objects (as opposed to by the up-front validator), and
+// returns without an error: the CR is waiting for an edit, not for a retry.
+func (r *Neo4jBackupReconciler) reportInvalidBackupSpec(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cause error) (ctrl.Result, error) {
+	msg := "Invalid backup spec: " + cause.Error()
+	log.FromContext(ctx).Info("Invalid Neo4jBackup spec", "error", cause.Error())
+	r.updateBackupStatus(ctx, backup, "Invalid", msg)
+	r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
+	return ctrl.Result{}, nil
+}
+
 func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -316,6 +327,9 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 			logger.Info("Scheduled backup precondition not met yet; waiting", "error", err.Error())
 			r.updateBackupStatus(ctx, backup, "Pending", err.Error())
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
+		if isInvalidQuantity(err) {
+			return r.reportInvalidBackupSpec(ctx, backup, err)
 		}
 		logger.Error(err, "Failed to create backup CronJob")
 		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to create CronJob: %v", err))
@@ -616,6 +630,12 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 			r.updateBackupStatus(ctx, backup, "Pending", err.Error())
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
+		// A malformed user-supplied quantity is a spec error: retrying cannot
+		// fix it. Report it the way the inline validator does (phase Invalid,
+		// no error return, so no backoff loop) and wait for the spec edit.
+		if isInvalidQuantity(err) {
+			return r.reportInvalidBackupSpec(ctx, backup, err)
+		}
 		logger.Error(err, "Failed to create backup job")
 		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to create backup job: %v", err))
 		return ctrl.Result{}, err
@@ -843,6 +863,13 @@ func (r *Neo4jBackupReconciler) ensureTempStagingPVC(ctx context.Context, backup
 		return fmt.Errorf("failed to get temp staging PVC %s/%s: %w", backup.Namespace, pvcName, err)
 	}
 
+	// User input: ParseQuantity, never MustParse (a malformed value would panic
+	// the manager). The CRD pattern and validator are not relied on.
+	size, err := parseUserQuantity("spec.options.tempStorage.size", backup.Spec.Options.TempStorage.Size)
+	if err != nil {
+		return err
+	}
+
 	pvc = &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pvcName,
@@ -852,7 +879,7 @@ func (r *Neo4jBackupReconciler) ensureTempStagingPVC(ctx context.Context, backup
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse(backup.Spec.Options.TempStorage.Size),
+					corev1.ResourceStorage: size,
 				},
 			},
 		},
@@ -909,6 +936,14 @@ func (r *Neo4jBackupReconciler) ensureBackupPVC(ctx context.Context, backup *neo
 		return nil
 	}
 
+	// User input: ParseQuantity, never MustParse (a malformed value would panic
+	// the manager). The inline validator rejects a bad size first, but this
+	// function does not depend on it.
+	size, err := parseUserQuantity("spec.storage.pvc.size", backup.Spec.Storage.PVC.Size)
+	if err != nil {
+		return err
+	}
+
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pvcName,
@@ -918,7 +953,7 @@ func (r *Neo4jBackupReconciler) ensureBackupPVC(ctx context.Context, backup *neo
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse(backup.Spec.Storage.PVC.Size),
+					corev1.ResourceStorage: size,
 				},
 			},
 		},

@@ -29,7 +29,6 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -1015,6 +1014,13 @@ func (r *Neo4jRestoreReconciler) ensureRestoreTempStagingPVC(ctx context.Context
 		return nil // already exists
 	}
 
+	// User input: ParseQuantity, never MustParse (a malformed value would panic
+	// the manager). The CRD pattern is not relied on.
+	size, err := parseUserQuantity("spec.options.tempStorage.size", restore.Spec.Options.TempStorage.Size)
+	if err != nil {
+		return err
+	}
+
 	pvc = &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pvcName,
@@ -1024,7 +1030,7 @@ func (r *Neo4jRestoreReconciler) ensureRestoreTempStagingPVC(ctx context.Context
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse(restore.Spec.Options.TempStorage.Size),
+					corev1.ResourceStorage: size,
 				},
 			},
 		},

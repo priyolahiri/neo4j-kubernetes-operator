@@ -1726,6 +1726,23 @@ func StorageClassNamePtr(className string) *string {
 	return &className
 }
 
+// StorageRequest returns the PVC storage request for a user-supplied size.
+//
+// The size is user input, and resource.MustParse PANICS on a malformed one — a
+// panic in a reconciler takes the whole manager down. The builders that call this
+// return no error, so a size that does not parse yields a ZERO quantity instead:
+// the apiserver refuses a zero storage request ("must be greater than zero"), so
+// the failure surfaces as an ordinary reconcile error rather than a crash. The
+// inline validators reject a malformed size long before it gets here; this is the
+// backstop for a value that reaches a builder anyway.
+func StorageRequest(size string) resource.Quantity {
+	q, err := resource.ParseQuantity(size)
+	if err != nil {
+		return resource.Quantity{}
+	}
+	return q
+}
+
 func buildVolumeClaimTemplatesForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []corev1.PersistentVolumeClaim {
 	return []corev1.PersistentVolumeClaim{
 		{
@@ -1740,7 +1757,7 @@ func buildVolumeClaimTemplatesForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpris
 				StorageClassName: StorageClassNamePtr(cluster.Spec.Storage.ClassName),
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: resource.MustParse(cluster.Spec.Storage.Size),
+						corev1.ResourceStorage: StorageRequest(cluster.Spec.Storage.Size),
 					},
 				},
 			},
