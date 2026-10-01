@@ -688,7 +688,7 @@
     "name": "Reconcile Neo4jReplicaDatabase",
     "serverUnitId": "su-neo4jreplicadatabase",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves clusterRef, checks the version gate for cross-cluster replicas, then OBSERVES the live database's type before dispatching on source.mode to create (backup or network), reporting, or terminally marking it promoted. While the database is still a replica it publishes the lag SHOW DATABASES reports (a transaction count) as neo4j_operator_replica_lag_transactions{namespace,cluster_name,replica,database}, and removes that series when the CR is deleted, found gone, or promoted.",
+    "description": "Main reconcile loop: validates the spec, resolves clusterRef, checks the version gate for cross-cluster replicas, then OBSERVES the live database's type before dispatching on source.mode to create (backup or network), reporting, or terminally marking it promoted. While the database is still a replica it publishes the lag SHOW DATABASES reports (a transaction count) as neo4j_operator_replica_lag_transactions{namespace,cluster_name,replica,database,k8s_cluster}, and removes that series when the CR is deleted, found gone, or promoted.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -762,7 +762,7 @@
     "name": "Promote Replica Database",
     "serverUnitId": "su-neo4jreplicapromotion",
     "operation": "business_action",
-    "description": "Reconcile() runs CHECK (live type=replica) -> PROMOTE (PromoteReplicaDatabase) -> CHECK (type no longer replica) -> RECORD, so a crash between the call and the status write is recovered as an idempotent success rather than a repeat promote. The terminal Completed/Failed phase latches: the first write that persists it increments neo4j_operator_replica_promotions_total{namespace,cluster_name,result} exactly once (result=success or failure) and later or stale reconciles count nothing; a successful promotion also removes the replica's lag series.",
+    "description": "Reconcile() runs CHECK (live type=replica) -> PROMOTE (PromoteReplicaDatabase) -> CHECK (type no longer replica) -> RECORD, so a crash between the call and the status write is recovered as an idempotent success rather than a repeat promote. The terminal Completed/Failed phase latches: the first write that persists it increments neo4j_operator_replica_promotions_total{namespace,cluster_name,result,k8s_cluster} exactly once (result=success or failure) and later or stale reconciles count nothing; a successful promotion also removes the replica's lag series.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [

@@ -51,10 +51,67 @@ func TestReplicaMetrics_RegisteredWithDocumentedLabels(t *testing.T) {
 			}
 		}
 	}
-	assert.ElementsMatch(t, []string{"namespace", "cluster_name", "replica", "database"},
+	assert.ElementsMatch(t, []string{"namespace", "cluster_name", "replica", "database", "k8s_cluster"},
 		labelsOf["neo4j_operator_replica_lag_transactions"])
-	assert.ElementsMatch(t, []string{"namespace", "cluster_name", "result"},
+	assert.ElementsMatch(t, []string{"namespace", "cluster_name", "result", "k8s_cluster"},
 		labelsOf["neo4j_operator_replica_promotions_total"])
+}
+
+// TestReplicaMetrics_CarryKubernetesClusterName: the replica families are
+// labelled with the Kubernetes cluster exactly as neo4j_operator_server_health
+// is, from the same --kubernetes-cluster-name value read at record time. The
+// point is federation: two Kubernetes clusters each running a downstream
+// cluster of the same name, scraped into one Prometheus, must not collapse into
+// one series.
+func TestReplicaMetrics_CarryKubernetesClusterName(t *testing.T) {
+	t.Cleanup(func() { SetKubernetesClusterName("") })
+	replicaLagTransactions.Reset()
+	replicaPromotionsTotal.Reset()
+
+	SetKubernetesClusterName("eu-west")
+	SetReplicaLagTransactions("dr", "downstream", "orders-replica", "orders", 10)
+	RecordReplicaPromotion("dr", "downstream", true)
+
+	SetKubernetesClusterName("us-east")
+	SetReplicaLagTransactions("dr", "downstream", "orders-replica", "orders", 99)
+	RecordReplicaPromotion("dr", "downstream", true)
+	RecordReplicaPromotion("dr", "downstream", true)
+
+	require.Equal(t, 2, testutil.CollectAndCount(replicaLagTransactions),
+		"two Kubernetes clusters must produce two distinct lag series, not one overwritten one")
+	assert.Equal(t, 10.0, testutil.ToFloat64(
+		replicaLagTransactions.WithLabelValues("dr", "downstream", "orders-replica", "orders", "eu-west")))
+	assert.Equal(t, 99.0, testutil.ToFloat64(
+		replicaLagTransactions.WithLabelValues("dr", "downstream", "orders-replica", "orders", "us-east")))
+
+	require.Equal(t, 2, testutil.CollectAndCount(replicaPromotionsTotal))
+	assert.Equal(t, 1.0, testutil.ToFloat64(
+		replicaPromotionsTotal.WithLabelValues("dr", "downstream", "success", "eu-west")))
+	assert.Equal(t, 2.0, testutil.ToFloat64(
+		replicaPromotionsTotal.WithLabelValues("dr", "downstream", "success", "us-east")))
+
+	// Removal is by (namespace, replica) and so clears the series of every
+	// Kubernetes cluster: the caller of a delete does not know the label.
+	assert.Equal(t, 2, DeleteReplicaLagTransactions("dr", "orders-replica"))
+	assert.Equal(t, 0, testutil.CollectAndCount(replicaLagTransactions))
+}
+
+// An unset --kubernetes-cluster-name is an empty label, not a placeholder, so
+// existing queries and dashboards are unaffected (the same contract as
+// server_health).
+func TestReplicaMetrics_KubernetesClusterNameDefaultsToEmpty(t *testing.T) {
+	t.Cleanup(func() { SetKubernetesClusterName("") })
+	replicaLagTransactions.Reset()
+	replicaPromotionsTotal.Reset()
+	SetKubernetesClusterName("")
+
+	SetReplicaLagTransactions("dr", "downstream", "orders-replica", "orders", 4)
+	RecordReplicaPromotion("dr", "downstream", false)
+
+	assert.Equal(t, 4.0, testutil.ToFloat64(
+		replicaLagTransactions.WithLabelValues("dr", "downstream", "orders-replica", "orders", "")))
+	assert.Equal(t, 1.0, testutil.ToFloat64(
+		replicaPromotionsTotal.WithLabelValues("dr", "downstream", "failure", "")))
 }
 
 func TestReplicaLagTransactions_SetAndRemove(t *testing.T) {
@@ -65,13 +122,13 @@ func TestReplicaLagTransactions_SetAndRemove(t *testing.T) {
 	SetReplicaLagTransactions("other-ns", "downstream", "orders-replica", "orders", 9)
 
 	assert.Equal(t, 42.0, testutil.ToFloat64(
-		replicaLagTransactions.WithLabelValues("dr", "downstream", "orders-replica", "orders")))
+		replicaLagTransactions.WithLabelValues("dr", "downstream", "orders-replica", "orders", "")))
 	assert.Equal(t, 3, testutil.CollectAndCount(replicaLagTransactions))
 
 	// A later reading overwrites; it does not add a series.
 	SetReplicaLagTransactions("dr", "downstream", "orders-replica", "orders", 0)
 	assert.Equal(t, 0.0, testutil.ToFloat64(
-		replicaLagTransactions.WithLabelValues("dr", "downstream", "orders-replica", "orders")))
+		replicaLagTransactions.WithLabelValues("dr", "downstream", "orders-replica", "orders", "")))
 	assert.Equal(t, 3, testutil.CollectAndCount(replicaLagTransactions))
 
 	// Removal is by (namespace, replica) alone, because a deleted CR no longer
@@ -94,7 +151,7 @@ func TestRecordReplicaPromotion_CountsByResult(t *testing.T) {
 	RecordReplicaPromotion("dr", "downstream", false)
 	RecordReplicaPromotion("dr", "elsewhere", true)
 
-	assert.Equal(t, 2.0, testutil.ToFloat64(replicaPromotionsTotal.WithLabelValues("dr", "downstream", "success")))
-	assert.Equal(t, 1.0, testutil.ToFloat64(replicaPromotionsTotal.WithLabelValues("dr", "downstream", "failure")))
-	assert.Equal(t, 1.0, testutil.ToFloat64(replicaPromotionsTotal.WithLabelValues("dr", "elsewhere", "success")))
+	assert.Equal(t, 2.0, testutil.ToFloat64(replicaPromotionsTotal.WithLabelValues("dr", "downstream", "success", "")))
+	assert.Equal(t, 1.0, testutil.ToFloat64(replicaPromotionsTotal.WithLabelValues("dr", "downstream", "failure", "")))
+	assert.Equal(t, 1.0, testutil.ToFloat64(replicaPromotionsTotal.WithLabelValues("dr", "elsewhere", "success", "")))
 }

@@ -51,31 +51,43 @@ var (
 	// cannot re-attach to its upstream to catch up), so it is the number to
 	// alert on before failing over.
 	//
-	// The series exists only while the replica is replicating: it is removed when
-	// the Neo4jReplicaDatabase is deleted or promoted, so a dashboard never shows
-	// the last value frozen after replication has ended.
+	// The series exists only while the lag can be trusted: it is removed when the
+	// Neo4jReplicaDatabase is deleted or promoted, when the database has vanished
+	// from the server, and while the downstream cluster is not Ready or the lag
+	// cannot be read. A dashboard therefore never shows a last value frozen after
+	// the reading stopped being true.
+	//
+	// k8s_cluster is the Kubernetes cluster the operator runs in
+	// (--kubernetes-cluster-name, empty when unset), the same label and the same
+	// source as neo4j_operator_server_health. It is last in the label order by
+	// the same convention.
 	replicaLagTransactions = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Subsystem: subsystem,
 			Name:      "replica_lag_transactions",
 			Help: "Transactions a cross-cluster replica database is behind its upstream " +
-				"(a transaction count, not seconds). Removed when the replica is deleted or promoted.",
+				"(a transaction count, not seconds). Removed when the replica is deleted or promoted, " +
+				"its database is gone, or the lag cannot be read. " +
+				"The k8s_cluster label is empty unless --kubernetes-cluster-name is set.",
 		},
-		[]string{LabelNamespace, LabelClusterName, LabelReplica, LabelDatabase},
+		[]string{LabelNamespace, LabelClusterName, LabelReplica, LabelDatabase, LabelK8sCluster},
 	)
 
 	// replicaPromotionsTotal counts Neo4jReplicaPromotion outcomes, incremented
 	// once per promotion at its terminal phase: result=success when it reaches
 	// Completed, result=failure when it reaches Failed. A promotion that is still
 	// retrying is neither.
+	//
+	// k8s_cluster is populated as on replicaLagTransactions.
 	replicaPromotionsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Subsystem: subsystem,
 			Name:      "replica_promotions_total",
 			Help: "Cross-cluster replica promotions by terminal outcome " +
-				"(one increment per Neo4jReplicaPromotion).",
+				"(one increment per Neo4jReplicaPromotion). " +
+				"The k8s_cluster label is empty unless --kubernetes-cluster-name is set.",
 		},
-		[]string{LabelNamespace, LabelClusterName, LabelResult},
+		[]string{LabelNamespace, LabelClusterName, LabelResult, LabelK8sCluster},
 	)
 )
 
@@ -88,14 +100,19 @@ func init() {
 
 // SetReplicaLagTransactions publishes a replica database's lag, in
 // transactions. clusterName is the DOWNSTREAM cluster that hosts the replica.
+// The k8s_cluster label is read from KubernetesClusterName() here, as
+// RecordServerHealth does, so a caller cannot forget it.
 func SetReplicaLagTransactions(namespace, clusterName, replica, database string, lag int64) {
-	replicaLagTransactions.WithLabelValues(namespace, clusterName, replica, database).Set(float64(lag))
+	replicaLagTransactions.WithLabelValues(
+		namespace, clusterName, replica, database, KubernetesClusterName()).Set(float64(lag))
 }
 
 // DeleteReplicaLagTransactions removes every lag series of one
-// Neo4jReplicaDatabase, whichever cluster/database labels it carried: a
-// caller handling a deleted CR no longer knows them. It reports how many series
-// were removed. Safe to call repeatedly and for a replica that never published.
+// Neo4jReplicaDatabase, whichever cluster/database/k8s_cluster labels it
+// carried: a caller handling a deleted CR no longer knows them. It reports how
+// many series were removed. Safe to call repeatedly and for a replica that never
+// published, which is what lets a reconcile call it on every path that cannot
+// vouch for the lag without first checking whether a series exists.
 func DeleteReplicaLagTransactions(namespace, replica string) int {
 	return replicaLagTransactions.DeletePartialMatch(prometheus.Labels{
 		LabelNamespace: namespace,
@@ -105,11 +122,12 @@ func DeleteReplicaLagTransactions(namespace, replica string) int {
 
 // RecordReplicaPromotion counts one terminal promotion outcome against the
 // downstream cluster that hosts the replica. Call it once per
-// Neo4jReplicaPromotion, after the terminal phase has been persisted.
+// Neo4jReplicaPromotion, after the terminal phase has been persisted. The
+// k8s_cluster label is read from KubernetesClusterName(), as for the lag gauge.
 func RecordReplicaPromotion(namespace, clusterName string, success bool) {
 	result := MetricResultSuccess
 	if !success {
 		result = MetricResultFailure
 	}
-	replicaPromotionsTotal.WithLabelValues(namespace, clusterName, result).Inc()
+	replicaPromotionsTotal.WithLabelValues(namespace, clusterName, result, KubernetesClusterName()).Inc()
 }
