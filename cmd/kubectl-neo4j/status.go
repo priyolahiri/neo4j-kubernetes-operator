@@ -286,8 +286,11 @@ func renderStatus(rows []resourceStatus, stdout *os.File, allNamespaces, problem
 	// hiding it because the resource is not technically broken would withhold
 	// the one line that says what to do next. It is marked "…" rather than "✗",
 	// matching how `validate` distinguishes "not yet" from "wrong".
+	//
+	// Built from the rows actually shown: under --problems that is the flagged
+	// ones only, so a message never appears without the row it belongs to.
 	var notes []string
-	for _, r := range rows {
+	for _, r := range shown {
 		if r.message == "" {
 			continue
 		}

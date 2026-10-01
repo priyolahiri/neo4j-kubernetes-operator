@@ -210,6 +210,43 @@ func TestStatusProblems_ReportsInvalidAndNotScheduledOrCompleted(t *testing.T) {
 	assert.NotContains(t, out, "look healthy")
 }
 
+// --problems asks for "only what needs attention". The message block under the
+// table used to be built from ALL rows, so a Pending resource's "…" line
+// appeared under --problems with no row above it to explain what it belonged
+// to — and a run where one resource failed also advertised an unrelated
+// Pending one.
+func TestRenderStatus_ProblemsOnlyMessageBlockFollowsTheFilter(t *testing.T) {
+	rows := []resourceStatus{
+		{kind: "Neo4jDatabase", name: "analytics", phase: "Failed", ready: "-", age: "5m",
+			message: "topology requires 3 primaries, cluster has 2 servers"},
+		{kind: "Neo4jUser", name: "reporting", phase: "Pending", ready: "-", age: "2m",
+			message: `waiting for password Secret "reporting-pw"`},
+		{kind: "Neo4jEnterpriseCluster", name: "prod", phase: "Ready", ready: "true", age: "3h",
+			message: "cluster is ready"},
+	}
+
+	problems := renderTo(t, rows, false, true, "neo4j")
+	assert.Contains(t, problems, "✗ Neo4jDatabase/analytics: topology requires 3 primaries")
+	assert.NotContains(t, problems, "reporting", "a Pending resource is not shown under --problems, nor is its message")
+	assert.NotContains(t, problems, "cluster is ready")
+
+	// Without the filter the Pending line is still shown, as before.
+	all := renderTo(t, rows, false, false, "neo4j")
+	assert.Contains(t, all, `… Neo4jUser/reporting: waiting for password Secret "reporting-pw"`)
+}
+
+// With nothing flagged, --problems says so and prints no message block at all,
+// even though a Pending resource has a message.
+func TestRenderStatus_ProblemsOnlyWithOnlyPendingSaysHealthy(t *testing.T) {
+	rows := []resourceStatus{
+		{kind: "Neo4jUser", name: "reporting", phase: "Pending", ready: "-",
+			message: `waiting for password Secret "reporting-pw"`},
+	}
+	out := renderTo(t, rows, false, true, "neo4j")
+	assert.Contains(t, out, "all 1 Neo4j resource(s) look healthy")
+	assert.NotContains(t, out, "reporting-pw")
+}
+
 func TestHumanAge(t *testing.T) {
 	now := time.Now()
 	assert.Equal(t, "30s", humanAge(now.Add(-30*time.Second)))
