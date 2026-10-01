@@ -273,7 +273,9 @@ Three things to know:
   database's language when the database is created and never re-reads the
   setting. Change an existing database with
   `ALTER DATABASE <name> SET DEFAULT LANGUAGE CYPHER 5|25`, or set
-  `defaultCypherLanguage` on a `Neo4jDatabase` before it is created.
+  `defaultCypherLanguage` on a `Neo4jDatabase` before it is created (CalVer
+  only: the 5.26 LTS has no such clause, so `"25"` is rejected there and `"5"`
+  is accepted but has no effect).
 - **Changing the field restarts the servers**, because Neo4j reads the setting
   at startup.
 - **`CYPHER_25` needs a CalVer image**, and is refused on the 5.26 LTS.
