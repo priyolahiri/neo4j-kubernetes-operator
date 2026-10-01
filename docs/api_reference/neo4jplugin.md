@@ -91,7 +91,7 @@ kind: Neo4jPlugin
 | `dependencies` | [`[]PluginDependency`](#plugindependency) | ❌ | Plugin dependencies (automatically resolved) |
 | `config` | `map[string]string` | ❌ | Plugin-specific configuration (becomes `NEO4J_*` env vars) |
 | `security` | [`PluginSecurity`](#pluginsecurity) | ❌ | Security settings and procedure restrictions |
-| `resources` | `PluginResourceRequirements` | ❌ | Resource requirements for plugin operations (CPU/memory limits, thread pool size) |
+| `resources` | `PluginResourceRequirements` | ❌ | **Reserved — no effect today.** Declared (`memoryLimit`, `cpuLimit`, `threadPoolSize`) and syntax-checked by the validator, but no controller or builder reads it: nothing is allocated or limited. Size the Neo4j pods through the cluster/standalone `spec.resources` instead. |
 
 ### PluginSource
 
@@ -99,11 +99,13 @@ kind: Neo4jPlugin
 |-------|------|-------------|
 | `type` | `string` | Source type: "official", "community", "custom", "url" (default: `official`) |
 | `url` | `string` | Direct URL for "url" and "custom" source types. **Must be `https://`** — the controller-side validator rejects `http://`, `file://`, and every other scheme (plugin JARs are downloaded over the network and a non-https scheme has no transport integrity). Host internal plugins on an https mirror, e.g. with a cert-manager certificate. |
-| `checksum` | `string` | Checksum for verification. **Required** by the controller-side validator for `type: url` and `type: custom`. Must match `^(sha256:[a-f0-9]{64}\|sha512:[a-f0-9]{128})$`. SHA1 and MD5 are rejected. See [Supply-chain](#supply-chain). |
-| `authSecret` | `string` | Secret containing auth for private repositories/URLs |
-| `registry` | [`PluginRegistry`](#pluginregistry) | Registry configuration for custom sources |
+| `checksum` | `string` | Checksum for verification. **Required** by the controller-side validator for `type: url` and `type: custom`. Must match `^(sha256:[a-fA-F0-9]{64}\|sha512:[a-fA-F0-9]{128})$` (hex digits of either case). SHA1 and MD5 are rejected. See [Supply-chain](#supply-chain). |
+| `authSecret` | `string` | Secret containing auth for private repositories/URLs. Consumed only by `installMode: VerifiedDownload` (keys `token` or `header` — see [Supply-chain](#supply-chain)). |
+| `registry` | [`PluginRegistry`](#pluginregistry) | **Reserved — no effect today.** Never read by any controller; a `custom` source is fetched from `source.url`, which (with `checksum`) is required for `type: url` and `type: custom` regardless of `registry`. |
 
 ### PluginRegistry
+
+> **Reserved — no effect today.** `source.registry` and everything under it (including `tls`) is accepted by the schema but never read; see the `registry` row above.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -132,23 +134,25 @@ kind: Neo4jPlugin
 |-------|------|-------------|
 | `allowedProcedures` | `[]string` | Becomes `dbms.security.procedures.allowlist` (and `…unrestricted` unless `sandbox: true`). An **allowlist**: plugin procedures and functions it does not match are not loaded at all, server-wide, and fail as *Unknown function*. |
 | `deniedProcedures` | `[]string` | List of denied procedures/functions |
-| `securityPolicy` | `string` | Security policy: "open", "restricted" |
-| `sandbox` | `boolean` | Enable sandbox mode |
+| `securityPolicy` | `string` | Security policy: one of `"strict"`, `"moderate"`, `"permissive"` (any other value fails validation and the plugin goes to phase `Invalid`). **Reserved — no effect today:** the value is validated but not used to change any Neo4j setting. |
+| `sandbox` | `boolean` | Enable sandbox mode: with `allowedProcedures` set, the list is applied as an allowlist only; when `false` (default) the same list is also written to `dbms.security.procedures.unrestricted`. |
 
 ## Status Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `conditions` | `[]metav1.Condition` | Current plugin conditions |
-| `phase` | `string` | Current phase: `"Pending"`, `"Installing"`, `"Ready"`, `"Failed"`, `"Waiting"` |
+| `conditions` | `[]metav1.Condition` | A single `Ready` condition derived from `phase` (`Ready` → `True`; `Failed`/`Invalid` → `False`; `Pending`/`Waiting`/`Installing` → `Unknown`) |
+| `phase` | `string` | Current phase: `"Pending"`, `"Installing"`, `"Ready"`, `"Failed"`, `"Waiting"`, `"Invalid"` (spec failed validation; not retried until the CR is edited) |
 | `message` | `string` | Human-readable status message |
-| `installedVersion` | `string` | Actually installed plugin version |
-| `installationTime` | `*metav1.Time` | When the plugin was successfully installed |
-| `health` | [`*PluginHealth`](#pluginhealth) | Plugin health and performance information |
-| `usage` | [`*PluginUsage`](#pluginusage) | Plugin usage statistics |
+| `installedVersion` | `string` | **Reserved — never populated today.** Intended: actually installed plugin version |
+| `installationTime` | `*metav1.Time` | **Reserved — never populated today.** Intended: when the plugin was successfully installed |
+| `health` | [`*PluginHealth`](#pluginhealth) | **Reserved — never populated today.** Intended: plugin health and performance information |
+| `usage` | [`*PluginUsage`](#pluginusage) | **Reserved — never populated today.** Intended: plugin usage statistics |
 | `observedGeneration` | `int64` | Generation of the most recently observed spec |
 
 ### PluginHealth
+
+> **Reserved — never populated today** (also applies to `PluginPerformance` and `PluginUsage` below).
 
 Plugin health and performance metrics.
 
@@ -219,8 +223,8 @@ When the JAR must be fetched at runtime, the validator requires a
 `source.checksum` for any `source.type: url` or `source.type: custom`.
 The checksum format is enforced:
 
-- `sha256:` followed by exactly 64 lowercase hex characters, **or**
-- `sha512:` followed by exactly 128 lowercase hex characters.
+- `sha256:` followed by exactly 64 hex characters, **or**
+- `sha512:` followed by exactly 128 hex characters.
 
 SHA1, MD5, and unprefixed hex are rejected. SHA1/MD5 because they are
 not collision-resistant; unprefixed hex because verification tooling
@@ -348,7 +352,7 @@ spec:
   security:
     allowedProcedures:
       - "apoc.*"
-    securityPolicy: "open"
+    securityPolicy: "permissive"   # strict | moderate | permissive (validated only; no runtime effect today)
 ```
 
 **Result**: Updates `my-cluster-server` StatefulSet with:
@@ -401,14 +405,15 @@ spec:
     allowedProcedures:
       - "gds.*"
       - "apoc.load.*"  # APOC dependency procedures
-    securityPolicy: "restricted"
+    securityPolicy: "strict"   # strict | moderate | permissive (validated only; no runtime effect today)
     sandbox: false  # GDS requires full access
 
-  # Resource requirements for GDS operations
+  # Reserved — validated but not applied today. Size GDS memory/CPU via the
+  # standalone's own spec.resources and spec.config instead.
   resources:
-    memoryLimit: "2Gi"    # GDS needs substantial memory
-    cpuLimit: "1"         # CPU for graph algorithms
-    threadPoolSize: 8     # Parallel processing
+    memoryLimit: "2Gi"
+    cpuLimit: "1"
+    threadPoolSize: 8
 ```
 
 **Result**: Updates `my-standalone` StatefulSet with:
@@ -416,11 +421,12 @@ spec:
 - `NEO4J_PLUGINS=["apoc", "graph-data-science"]` (dependencies included)
 - GDS-specific environment variables
 - Security settings for both APOC and GDS procedures
-- Enhanced resource allocation
+
+(`spec.resources` on the `Neo4jPlugin` does not allocate anything — see the field table.)
 
 ### Custom Plugin Example
 
-Install a plugin from a custom registry:
+Install a plugin from a custom (private) location. `type: custom` needs an https `url` and a `checksum`; `authSecret` (keys `token` or `header`) is used by `installMode: VerifiedDownload`:
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -431,13 +437,14 @@ spec:
   clusterRef: my-cluster
   name: my-custom-plugin
   version: "1.0.0"
+  installMode: VerifiedDownload
 
-  # Custom registry source
+  # Custom source (url + checksum are required)
   source:
     type: custom
-    registry:
-      url: "https://my-registry.example.com"
-      authSecret: registry-credentials
+    url: "https://my-registry.example.com/plugins/my-custom-plugin-1.0.0.jar"
+    checksum: "sha256:abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234"
+    authSecret: registry-credentials
 
   # Security settings
   security:
@@ -599,7 +606,8 @@ config:
 - **Waiting**: Waiting for deployment to be ready
 - **Installing**: Plugin installation in progress
 - **Ready**: Plugin successfully installed and active
-- **Failed**: Plugin installation failed
+- **Failed**: Plugin installation failed (also set on the newer of two duplicate `Neo4jPlugin` CRs)
+- **Invalid**: The spec failed validation (for example an unsupported `securityPolicy`, a missing `source.url`/`checksum`, or a non-https URL); the controller does not requeue until the CR is edited
 
 ## Supported Plugin Sources
 
@@ -650,7 +658,7 @@ The `Neo4jPlugin` controller follows this comprehensive workflow:
 ### Phase 4: Status and Monitoring
 
 1. **Status Update**: Sets plugin phase to "Ready" and records installation time
-2. **Health Tracking**: Monitors plugin performance and usage
+2. **Health Tracking**: Reports the phase and message (the `health`/`usage` status blocks are reserved and not populated today)
 3. **Error Handling**: Captures and reports installation failures
 4. **Dependency Tracking**: Maintains dependency relationships
 
@@ -744,7 +752,7 @@ spec:
     type: url
     url: "https://my-registry.example.com/plugins/my-plugin-1.0.0.jar"
     checksum: "sha256:abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234"
-    authSecret: custom-registry-credentials
+    authSecret: custom-registry-credentials   # only used with installMode: VerifiedDownload
 
   # Custom configuration
   config:
@@ -755,11 +763,13 @@ spec:
   security:
     allowedProcedures:
       - "custom.*"
-    securityPolicy: "restricted"
+    securityPolicy: "strict"   # strict | moderate | permissive (validated only)
     sandbox: true
 ```
 
-### Plugin with Private Registry
+### Plugin from a Private Mirror (VerifiedDownload)
+
+Authenticated mirrors use `source.authSecret` with `installMode: VerifiedDownload`; the Secret carries a `token` key (sent as `Authorization: Bearer <token>`) or a `header` key. Trust for an internal CA comes from the cluster's `spec.trustedCASecrets`.
 
 ```yaml
 apiVersion: v1
@@ -767,9 +777,8 @@ kind: Secret
 metadata:
   name: private-registry-auth
 type: Opaque
-data:
-  username: <base64-encoded-username>
-  password: <base64-encoded-password>
+stringData:
+  token: <registry-access-token>
 ---
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
@@ -779,15 +788,13 @@ spec:
   clusterRef: enterprise-cluster
   name: enterprise-plugin
   version: "2.0.0"
+  installMode: VerifiedDownload
 
   source:
     type: custom
-    registry:
-      url: "https://private-registry.company.com"
-      authSecret: private-registry-auth
-      tls:
-        insecureSkipVerify: false
-        caSecret: private-registry-ca
+    url: "https://private-registry.company.com/plugins/enterprise-plugin-2.0.0.jar"
+    checksum: "sha256:abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234"
+    authSecret: private-registry-auth
 ```
 
 ### Production Plugin Setup with Monitoring
@@ -820,10 +827,11 @@ spec:
       - "apoc.trigger.*"
       - "apoc.periodic.*"
       - "apoc.meta.*"
-    securityPolicy: "restricted"
+    securityPolicy: "strict"   # strict | moderate | permissive (validated only)
     sandbox: false
 
-  # Resource allocation
+  # Reserved — validated but not applied today (size the Neo4j pods via the
+  # cluster's spec.resources instead)
   resources:
     memoryLimit: "512Mi"
     cpuLimit: "200m"
@@ -868,7 +876,7 @@ spec:
     "gds.enterprise.license_file": "/licenses/gds.license"
     "gds.graph.store.max_size": "16GB"
     "gds.procedure.allowlist": "gds.*"
-  resources:
+  resources:            # reserved — validated but not applied today
     memoryLimit: "8Gi"
     cpuLimit: "4"
     threadPoolSize: 16
@@ -956,8 +964,10 @@ kubectl get secret <registry-auth-secret> -o yaml
 
 ### Performance Monitoring
 
+> **Note:** `status.health` and `status.usage` are reserved and never populated today, so the commands below return nothing. Use `kubectl get neo4jplugin <name> -o jsonpath='{.status.phase}'` and the pod logs instead.
+
 ```bash
-# Monitor plugin performance
+# Monitor plugin performance (reserved — empty today)
 kubectl get neo4jplugin <plugin-name> -o jsonpath='{.status.health.performance}'
 
 # Check plugin usage statistics
@@ -975,7 +985,7 @@ kubectl describe neo4jplugin <plugin-name> | grep -A 10 "Health:"
 4. **Security Configuration**: Use appropriate procedure allowlists and security policies
 5. **License Management**: Store commercial plugin licenses in secure secrets
 6. **Installation Order**: Install base plugins (APOC) before dependent plugins (GDS)
-7. **Monitoring**: Regularly check plugin health and performance metrics
+7. **Monitoring**: Regularly check the plugin `phase` and the Neo4j pod logs (the `status.health` metrics are reserved and not populated today)
 8. **Updates**: Test plugin updates in development before production deployment
 9. **Configuration**: Use environment variables for APOC, neo4j.conf for other plugins
 10. **Troubleshooting**: Enable debug logging for plugin installation issues

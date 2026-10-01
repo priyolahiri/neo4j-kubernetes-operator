@@ -15,7 +15,7 @@ The `Neo4jUser` Custom Resource Definition (CRD) provides declarative management
 ## Design rules
 
 1. **Privileges live on `Neo4jRole`, not on `Neo4jUser`.** Bind users to roles; never inline grants on a user.
-2. **Passwords come from `Secret`, never from the spec.** The Secret value is hashed (SHA-256) and stored on `status.passwordSecretHash` to detect rotation; the password itself is never echoed back.
+2. **Passwords come from `Secret`, never from the spec.** Rotation is detected with an opaque change token stored on `status.passwordSecretHash`; the token is derived from the Secret's namespace, name, key and `resourceVersion` — **not** from the password value — so neither the password nor a hash of it is ever written to the CR.
 3. **Same-namespace `clusterRef` only.** Cross-namespace references are rejected.
 4. **`PUBLIC` is implicit.** It is auto-assigned by Neo4j and never granted/revoked by the controller. Listing it in `spec.roles` produces a warning.
 
@@ -64,7 +64,7 @@ Configures a single non-native authentication provider for the user. The provide
 | `message` | `string` | Short human-readable summary of the current phase. |
 | `observedGeneration` | `int64` | `metadata.generation` observed during the last reconcile. |
 | `currentRoles` | `[]string` | Roles currently granted to the user, as observed via `SHOW USERS YIELD roles`. |
-| `passwordSecretHash` | `string` | SHA-256 hex digest of the password value last applied (used to detect Secret rotation; never the password itself). |
+| `passwordSecretHash` | `string` | Opaque change-detection token for the password Secret last applied: a SHA-256 of the Secret's namespace, name, key and `resourceVersion` (never of the password). Any write to the Secret changes it, so a cosmetic edit triggers one harmless no-op password re-apply. The field name is kept for API compatibility. |
 | `passwordLastRotated` | `time` | Last time `ALTER USER ... SET PASSWORD` was executed. |
 | `conditions` | `[]Condition` | See [Conditions](#conditions). |
 
@@ -72,9 +72,9 @@ Configures a single non-native authentication provider for the user. The provide
 
 | Type | Reasons | Meaning |
 |---|---|---|
-| `Ready` | `UserReady`, `RolesPending`, `ClusterNotReady`, `ConnectionFailed`, `UserSyncFailed`, `ValidationFailed` | True when user exists, password and roles are in sync. |
+| `Ready` | `UserReady`, `RolesPending`, `SecretPending`, `ClusterNotFound`, `ClusterNotReady`, `ConnectionFailed`, `UserSyncFailed`, `ValidationFailed` | True when user exists, password and roles are in sync. `SecretPending` (phase `Pending`) means the password Secret does not exist yet. |
 | `RolesSynced` | `RolesMatch`, `RolesPending` | True when granted roles equal `spec.roles` (PUBLIC excluded). |
-| `PasswordSynced` | `PasswordMatchesSecret` | True when last-applied hash matches the current Secret. |
+| `PasswordSynced` | `PasswordMatchesSecret` | True when the last-applied change token matches the current Secret. |
 | `PendingDependencies` | `RolesPending`, `AllDependenciesPresent` | True when one or more `spec.roles` reference a custom role that does not yet exist. |
 | `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced cluster. |
 
@@ -82,9 +82,9 @@ Configures a single non-native authentication provider for the user. The provide
 
 - `clusterRef` must resolve to a `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace.
 - `username` (or `metadata.name` fallback) matches `^[a-zA-Z][a-zA-Z0-9_.@\-]*$` (the at-sign supports email-style SSO/LDAP usernames), max 65 characters.
-- The reserved name `system` is rejected.
+- The reserved name `system` is rejected. The default bootstrap admin name `neo4j` is allowed with a warning: the operator authenticates as it, so managing it rewrites the credential in the cluster's admin Secret and can lock the operator out.
 - At least one of `passwordSecretRef` or `externalAuth` must be set (Neo4j requires ≥1 auth provider per user).
-- `passwordSecretRef`: the Secret must exist and contain a non-empty value at the named key. Values shorter than 8 characters produce a warning (Neo4j's default minimum is 8).
+- `passwordSecretRef`: the Secret must contain a non-empty value at the named key. A Secret that does not exist yet is not an error — the user waits in phase `Pending` (reason `SecretPending`) and retries. Values shorter than 8 characters produce a warning (Neo4j's default minimum is 8).
 - `externalAuth[].provider` cannot be `native`.
 - `homeDatabase`, when set, must be a valid Neo4j database name.
 - `accountStatus` must be one of `active` or `suspended` (enforced by kubebuilder enum).

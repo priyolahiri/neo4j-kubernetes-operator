@@ -10,6 +10,7 @@ The `Neo4jEnterpriseCluster` Custom Resource Definition (CRD) manages Neo4j Ente
 - **Architecture**: Server-based deployment with unified StatefulSet
 - **Minimum Servers**: 2 (required for clustering)
 - **Maximum Servers**: 100 (validated limit)
+- **Name Limit**: `metadata.name` is at most 56 characters (generated resources append suffixes; validated)
 
 ## Architecture
 
@@ -342,13 +343,13 @@ not parse policy config to wire up filesystem mounts automatically.
 |---|---|---|
 | `mode` | `string` | TLS mode: `"cert-manager"` (default) or `"disabled"`. The validator rejects any other value. |
 | `issuerRef` | [`*IssuerRef`](#issuerref) | cert-manager issuer reference. **Required when `mode: cert-manager`.** Validator rejects a `cert-manager` mode with no `issuerRef`. |
-| `certificateSecret` | `string` | TLS secret name (manual certificates) |
+| `certificateSecret` | `string` | **Reserved — no effect today.** Intended for manual certificates, but no builder or controller reads it: the operator always uses the cert-manager-issued Secret `{name}-tls-secret`. |
 | `trustedCASecret` | `string` | Secret containing a trusted CA certificate (key: `ca.crt`) for verifying Neo4j TLS connections. When omitted, the operator auto-discovers the CA from the cert-manager-generated Secret. |
 | `externalSecrets` | [`*ExternalSecretsConfig`](#externalsecretsconfig) | External Secrets configuration |
 | `duration` | `*string` | Certificate duration (e.g., `"2160h"`) |
 | `renewBefore` | `*string` | Renewal window before expiry (e.g., `"360h"`) |
 | `subject` | [`*CertificateSubject`](#certificatesubject) | Certificate subject fields |
-| `usages` | `[]string` | Certificate usages |
+| `usages` | `[]string` | Certificate usages (max 32 entries, each from the cert-manager key-usage list, e.g. `digital signature`, `key encipherment`, `server auth`, `client auth`). When set it **replaces** the operator defaults and must include both `server auth` and `client auth` (CEL rule and validator) — Neo4j needs both EKUs for its mutual-TLS posture. Omit to use the defaults. |
 | `strictPeerValidation` | `*bool` | Intra-cluster TLS posture. **Default: `true`** (Neo4j's canonical production posture). When `true`, the operator emits `dbms.ssl.policy.cluster.trust_all=false`, `client_auth=REQUIRE` (mutual TLS), and `verify_hostname=true`, and projects the cert-manager Secret's `ca.crt` to `/ssl/trusted/ca.crt` as the trust anchor. When `false`, reverts to the legacy `trust_all=true` + `client_auth=NONE` posture — Neo4j's own docs flag this as *"debugging only, since it does not offer security."* The opt-out exists for external issuers that do not populate `ca.crt` in their Secret output. See the [TLS Configuration Guide](../user_guide/tls_configuration.md) for details. |
 | `additionalClusterTrustCAs` | `[]`[`TrustedCASecret`](#trustedcasecret) | Peer clusters' CA certificates, each projected as its own file directly into `/ssl/trusted/` (the cluster SSL policy's trust directory — Neo4j scans every file present there, not one fixed filename) alongside this cluster's own CA. Required for mutual TLS when replicating across clusters with different CAs — the normal case for [`crossClusterReplication`](#crossclusterreplicationspec) — since `trustedCASecrets` above is a JVM-wide truststore that `dbms.ssl.policy.cluster.*` never reads. Must be set on **both** clusters, each trusting the other's CA. **This list is the access-control list for the exposed port**, so removing a decommissioned peer's CA is a revocation step, not housekeeping. Read only when `mode` is `cert-manager` — setting it without the mode is rejected rather than silently ignored. Only relevant when `strictPeerValidation` is `true`. |
 
@@ -447,7 +448,25 @@ Enables integration with [Neo4j Aura Fleet Management](https://neo4j.com/docs/au
 | Field | Type | Description |
 |---|---|---|
 | `enabled` | `bool` | Enable Aura Fleet Management integration (default: `false`) |
-| `tokenSecretRef` | [`*SecretKeyRef`](#secretkeyref-token) | Reference to the Kubernetes Secret holding the Aura registration token (optional; registration deferred if omitted) |
+| `tokenSecretRef` | [`*SecretKeyRef`](#secretkeyref-token) | Reference to the Kubernetes Secret holding the Aura registration token (optional; registration deferred if omitted). **Mutually exclusive with `provision`** (enforced by a CEL rule: *set at most one of provision or tokenSecretRef*). |
+| `provision` | [`*AuraFleetProvisionSpec`](#aurafleetprovisionspec) | Let the operator register the deployment with Aura Fleet Manager and mint the registration token itself via the Aura API, instead of the console-wizard step. **Beta / best-effort** (the Fleet Manager request bodies are not published in the Aura OpenAPI spec). Mutually exclusive with `tokenSecretRef`. |
+
+#### AuraFleetProvisionSpec
+
+Exactly one of `providerConfigRef` or `credentialsSecretRef` must be set (CEL rule: *set exactly one of providerConfigRef or credentialsSecretRef*).
+
+| Field | Type | Description |
+|---|---|---|
+| `providerConfigRef` | `corev1.LocalObjectReference` | `AuraProviderConfig` (credentials plus default organization/project) in the same namespace. Mutually exclusive with `credentialsSecretRef`. |
+| `credentialsSecretRef` | `AuraCredentialsSecretRef` | Single-account shortcut when no `AuraProviderConfig` is used: `name` (**required**), `clientIdKey` (default `clientId`), `clientSecretKey` (default `clientSecret`). Mutually exclusive with `providerConfigRef`. |
+| `organizationId` | `string` | Aura organization owning the fleet deployment; defaults to the `AuraProviderConfig`'s `defaultOrganizationId`. |
+| `projectId` | `string` | Aura project (API `tenant_id`); defaults to the `AuraProviderConfig`'s `defaultProjectId`. |
+| `deploymentName` | `string` | Name registered in Fleet Manager, max 30 characters. Default `<namespace>-<name>` truncated to 30 characters. |
+| `tokenSecretName` | `string` | Secret the minted token is written to (key `token`), created in the CR's namespace and owned by the CR. Default `<name>-aura-fleet-token`. |
+| `tokenPolicy` | `string` | `CreateIfMissing` (default) mints a token only when the Aura deployment has none — a token already registered successfully is never rotated, and the operator reports the problem instead. `Rotate` mints a fresh token whenever the Secret is missing or empty, **invalidating any existing registration** (the DBMS must re-register). |
+| `deletionPolicy` | `string` | Aura-side behaviour on CR deletion: `Orphan` (default; leave it registered) or `Delete` (revoke the token and unregister the deployment). |
+| `managementPolicies` | `[]string` | Restricts which actions the operator may take against the Fleet Manager API; items are `Observe`, `Create`, `Delete` or `*` (default `["*"]`). |
+| `collectTelemetry` | `bool` | Mirror Aura's own view of the deployment's servers and databases into `status.auraFleetManagement` (default `false`). Kept separate from `status.diagnostics`, which is the operator's Bolt-derived view; telemetry failures never fail a reconcile. |
 
 **Status fields** (read-only, set by the operator):
 
@@ -456,6 +475,15 @@ Enables integration with [Neo4j Aura Fleet Management](https://neo4j.com/docs/au
 | `status.auraFleetManagement.registered` | `true` once `fleetManagement.registerToken` succeeded |
 | `status.auraFleetManagement.lastRegistrationTime` | Timestamp of last successful registration |
 | `status.auraFleetManagement.message` | Human-readable status or error detail |
+| `status.auraFleetManagement.provisioned` | `true` once the operator has registered a Fleet Manager deployment and stored a token for it (only meaningful with `spec.provision`) |
+| `status.auraFleetManagement.deploymentId` | Aura-assigned Fleet Manager deployment ID (also mirrored to the `neo4j.com/external-fleet-deployment-id` annotation, the authoritative idempotency guard) |
+| `status.auraFleetManagement.deploymentName` | Name the deployment is registered under in Aura |
+| `status.auraFleetManagement.tokenSecretName` | Secret the minted token was written to |
+| `status.auraFleetManagement.tokenCreationTime` / `tokenExpiryTime` | When Aura created / will expire the current deployment token (surfaced so an impending expiry is visible before it breaks registration) |
+| `status.auraFleetManagement.tokenAutoRotate` | Whether Aura will auto-renew the token on expiry |
+| `status.auraFleetManagement.servers[]` / `serverCount` | Aura's view of the servers reporting to this deployment (`name`, `address`, `status`, `version`, `modeConstraint`, `lastPing`, `pluginVersion`, `licenseState`, `licenseType`); a bounded summary — `serverCount` is the true total. Populated when `provision.collectTelemetry` is `true` |
+| `status.auraFleetManagement.databases[]` / `databaseCount` | Aura's view of the databases (`name`, `serverId`, `currentStatus`, `role`, `writer`, `lastCommittedTxn`, `replicationLag`, `graphShards`, `propertyShards`); one row per reporting server. Populated when `provision.collectTelemetry` is `true` |
+| `status.auraFleetManagement.telemetryError` | Why the last telemetry collection failed |
 
 **Example**:
 
@@ -640,7 +668,7 @@ Query sampling configuration for performance monitoring.
 
 | Field | Type | Description |
 |---|---|---|
-| `rate` | `string` | Sampling rate (0.0 to 1.0) |
+| `rate` | `string` | Sampling rate as a decimal from 0 to 1 inclusive, pattern `^(0(\.\d+)?\|1(\.0+)?)$` (e.g. `"0.5"`, `"1.0"`, `"0"`) |
 | `maxQueriesPerSecond` | `int32` | Maximum queries to sample per second |
 
 ### QueryMetricsExportConfig
@@ -661,8 +689,8 @@ Advanced placement and scheduling configuration.
 |---|---|---|
 | `topologySpread` | [`*TopologySpreadConfig`](#topologyspreadconfig) | Topology spread constraints |
 | `antiAffinity` | [`*PodAntiAffinityConfig`](#podantiaffinityconfig) | Pod anti-affinity rules |
-| `nodeSelector` | `map[string]string` | Node selection constraints |
-| `requiredDuringScheduling` | `bool` | Hard placement requirements |
+| `nodeSelector` | `map[string]string` | **Reserved — no effect today.** Never read by the topology scheduler; use the top-level `spec.nodeSelector`. |
+| `requiredDuringScheduling` | `bool` | **Reserved — no effect today.** Never read; use `antiAffinity.type: required` or `topology.enforceDistribution` for hard placement. |
 
 ### TopologySpreadConfig
 
@@ -878,11 +906,11 @@ The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
 
 | Field | Type | Description |
 |---|---|---|
-| `phase` | `string` | Cluster phase: `"Initializing"`, `"Forming"`, `"Ready"`, `"Paused"`, `"Failed"` |
+| `phase` | `string` | Cluster phase: `"Initializing"`, `"Forming"`, `"Ready"`, `"Expanding"` (storage expansion in progress), `"Paused"` (upgrade paused after a failure), `"Failed"` |
 | `ready` | `bool` | Whether the cluster is ready for connections |
 | `message` | `string` | Human-readable status message |
-| `conditions` | `[]metav1.Condition` | Cluster conditions (e.g. `Ready`, `ServersHealthy`, `DatabasesHealthy`) |
-| `replicas` | `map[string]ReplicaStatus` | Status of each replica (servers / ready counts) |
+| `conditions` | `[]metav1.Condition` | Cluster conditions (e.g. `Ready`, `ServersHealthy`, `DatabasesHealthy`, `ServersPendingDrain`) — see [Conditions](#conditions) |
+| `replicas` | [`*ReplicaStatus`](#replicastatus) | Server counts: `servers` (desired) and `ready` |
 | `endpoints` | [`EndpointStatus`](#endpointstatus) | Service endpoints |
 | `version` | `string` | Current Neo4j version |
 | `upgradeStatus` | [`*UpgradeStatus`](#upgradestatus) | Detailed upgrade progress information |
@@ -910,6 +938,13 @@ as a deprecated alias for one release).
 | `https` | `string` | HTTPS endpoint for Neo4j Browser |
 | `internal` | [`InternalEndpoints`](#internalendpoints) | In-cluster service FQDNs (headless + client; cluster only) |
 | `connectionExamples` | [`ConnectionExamples`](#connectionexamples) | Ready-to-paste connection strings driven by `spec.service.type` (ClusterIP / NodePort / LoadBalancer) |
+
+### ReplicaStatus
+
+| Field | Type | Description |
+|---|---|---|
+| `servers` | `int32` | Number of servers |
+| `ready` | `int32` | Number of ready servers |
 
 ### InternalEndpoints
 
@@ -943,8 +978,10 @@ Detailed upgrade progress tracking.
 
 | Field | Type | Description |
 |---|---|---|
-| `phase` | `string` | Upgrade phase: `"Pending"`, `"InProgress"`, `"Paused"`, `"Completed"`, `"Failed"` |
+| `phase` | `string` | Upgrade state-machine phase (schema enum `Pending`, `Staging`, `InProgress`, `Rolling`, `Stabilizing`, `Verifying`, `Paused`, `Completed`, `Failed`): `Staging` (target pod template applied, pod restarts frozen) → `Rolling` (servers restarted one at a time, highest ordinal first) → `Stabilizing` (health, consensus and replication gate) → `Verifying` (per-server version check) → `Completed`. `Paused` and `Failed` are terminal until operator/user action. `InProgress` is a legacy value from older operator versions, resumed as `Staging`; `Pending` is reserved |
 | `startTime` | `*metav1.Time` | When the upgrade started |
+| `stepStartTime` | `*metav1.Time` | Anchor for the per-step timeout (`upgradeTimeout` per Rolling step, `stabilizationTimeout`, `healthCheckTimeout`); reset on every phase transition and partition advance |
+| `currentPartition` | `*int32` | StatefulSet `RollingUpdate` partition most recently applied; servers with ordinal >= partition have been rolled to the target version. Used to resume after an operator restart |
 | `completionTime` | `*metav1.Time` | When the upgrade completed |
 | `currentStep` | `string` | Current upgrade step description |
 | `previousVersion` | `string` | Version before upgrade |
@@ -983,13 +1020,17 @@ Live diagnostics collected from `SHOW SERVERS` and `SHOW DATABASES` when `spec.m
 
 | Field | Type | Description |
 |---|---|---|
+| `users` | `[]UserDiagnosticInfo` | Users currently in the `system` database (`SHOW USERS`): `user`, `roles`, `suspended`, `homeDatabase`. A bounded summary — see `userCount`. |
+| `userCount` | `int` | Total number of users observed, even when `users` is truncated. |
+| `roles` | `[]RoleDiagnosticInfo` | Roles currently in the `system` database (`SHOW ROLES`): `role`, `immutable`. A bounded summary — see `roleCount`. |
+| `roleCount` | `int` | Total number of roles observed, even when `roles` is truncated. |
 | `servers` | `[]ServerDiagnostic` | SHOW SERVERS results. Each entry has `name`, `address`, `state`, `health`, `hostingDatabases`. |
 | `servers[].name` | `string` | Server display name. |
 | `servers[].address` | `string` | Bolt address of the server. |
 | `servers[].state` | `string` | Lifecycle state: `Enabled`, `Cordoned`, `Deallocating`. |
 | `servers[].health` | `string` | Health status: `Available` or `Unavailable`. |
 | `servers[].hostingDatabases` | `int` | Number of databases currently hosted on this server. |
-| `databases` | `[]DatabaseDiagnostic` | SHOW DATABASES results. Each entry has `name`, `status`, `requestedStatus`, `role`, `default`. |
+| `databases` | `[]DatabaseDiagnostic` | SHOW DATABASES results. Each entry has `name`, `status`, `requestedStatus`, `role`, `default`, plus `type` (`system`, `standard`, `composite`, `graph shard`/`property shard` on 2025.12+, `replica` on 2026.08+), `access` (`read-write`/`read-only`), `writer`, `lastCommittedTxn` and `replicationLag` (for a cross-cluster replica, the data loss that promoting now would make permanent). |
 | `databases[].name` | `string` | Database name. |
 | `databases[].status` | `string` | Current status: `online`, `offline`, `quarantined`. |
 | `databases[].requestedStatus` | `string` | Desired status as requested by the operator. |
@@ -1006,6 +1047,7 @@ The operator maintains the following condition types on `status.conditions` (sta
 |---|---|---|---|
 | `ServersHealthy` | All servers are `state=Enabled` **and** `health=Available` | Any server is Cordoned, Deallocating, or Unavailable | Diagnostics cannot be collected (cluster not Ready or Bolt unreachable) |
 | `DatabasesHealthy` | All user databases have `status=online` | Any database has `requestedStatus=online` but `status≠online` | Diagnostics cannot be collected (cluster not Ready or Bolt unreachable) |
+| `ServersPendingDrain` | Set during a scale-down: the cluster still has Neo4j servers registered beyond `spec.topology.servers` (removed servers not yet deallocated and dropped), so databases may be under-replicated on them | The removed servers have been drained and dropped | n/a |
 | `CrossClusterProxySecure` | The cluster SSL policy requires a peer certificate on the port the CCDR proxy publishes | `strictPeerValidation` is `false`, so `trust_all=true` accepts **any** peer certificate — the exposed port is encrypted but not authenticated. (A cluster with no TLS at all cannot reach this state: the proxy is rejected at validation.) | n/a — the condition is removed entirely when the proxy is disabled |
 
 > **Note:** The `system` database is excluded from the `DatabasesHealthy` check because it has special internal lifecycle behavior.
@@ -1135,9 +1177,8 @@ kind: Neo4jBackup
 metadata:
   name: daily-cluster-backup
 spec:
-  target:
-    kind: Cluster
-    name: monitored-cluster
+  instanceRef: monitored-cluster   # the Neo4jEnterpriseCluster (or Standalone) to back up
+  allDatabases: true               # or `database: <name>` for a single database
   storage:
     type: s3
     bucket: neo4j-backups
@@ -1314,6 +1355,8 @@ spec:
 ```
 
 ### Development vs Production
+
+> The `dev-cluster` and `prod-cluster` manifests below omit the required `spec.image` (and `auth`, where unset) for brevity — add them as in the examples above.
 
 ```yaml
 # Development cluster (minimal resources)

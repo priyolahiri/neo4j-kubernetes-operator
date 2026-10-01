@@ -28,7 +28,7 @@ The operator picks the restore method based on the deployment referenced by `ins
 **`Neo4jEnterpriseStandalone` target** — Kubernetes Job:
 
 1. Spawns a restore Job that runs `neo4j-admin database restore --from-path=$(ls <dir>/<dbname>-*.backup | tail -1) <dbname>`. The shell substitution picks the latest run in the chain by default.
-2. If `stopCluster: true`, the operator scales down the StatefulSet first and mounts `data-{name}-server-0` directly into the Job container for offline access. With `stopCluster: false` the operator **refuses to start the Job while any server pod is running** (it never writes into a live data volume) — so in practice standalone restores need `stopCluster: true` unless you have already scaled the instance down yourself.
+2. If `stopCluster: true`, the operator scales down the StatefulSet first and mounts the standalone's data PVC (`neo4j-data-{name}-0`) directly into the Job container for offline access. With `stopCluster: false` the operator **refuses to start the Job while any server pod is running** (it never writes into a live data volume) — so in practice standalone restores need `stopCluster: true` unless you have already scaled the instance down yourself.
 3. After the Job succeeds, automatically runs `CREATE DATABASE <dbname>` (new) or `START DATABASE <dbname>` (existed but stopped) via Bolt.
 4. `spec.options.preRestore` / `postRestore` hooks run **only on this path** (never for cluster targets): pre-restore hooks run **before** the instance is stopped (so Cypher like `CALL db.checkpoint()` hits a live Bolt endpoint); post-restore hooks run **after** the restored database is registered and started.
 
@@ -37,7 +37,8 @@ The operator picks the restore method based on the deployment referenced by `ins
 **No manual post-restore Cypher is required** for either path — with one exception: if the backup was taken with `includeMetadata` (users/roles), `neo4j-admin database restore` writes a `restore_metadata.cypher` script next to the restored store, and the operator does **not** run it. Re-creating the database's users/roles is a manual step — run it against the `system` database, e.g.:
 
 ```bash
-kubectl exec <instance>-server-0 -c neo4j -- bash -c \
+# Standalone pod; the script exists only after a neo4j-admin (Job-path) restore
+kubectl exec <instance>-0 -c neo4j -- bash -c \
   'cypher-shell -u neo4j -p "$NEO4J_PASSWORD" -d system \
      -f /data/scripts/<dbname>/restore_metadata.cypher'
 ```
@@ -57,7 +58,7 @@ kubectl exec <instance>-server-0 -c neo4j -- bash -c \
 | `database` | `string` | ✅ (or `allDatabases`) | Name of the database to restore. |
 | `allDatabases` | `bool` | ❌ | Restore **every** user database recorded in the source backup (the `system` database is excluded) — the restore counterpart of an all-databases backup ([#222](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222)). Requires `source.type=backup`; mutually exclusive with `database`; per-database progress in `status.databaseResults`. **Cluster** targets restore one database per reconcile pass via the in-place Cypher path (cloud and PVC-backed backups). **Standalone** targets ([#288](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/288)) take the offline Job path — a single multi-database `neo4j-admin database restore` (needs `stopCluster: true`, plus `options.replaceExisting: true` to overwrite existing databases), after which each database is brought online. |
 | `options` | [`RestoreOptionsSpec`](#restoreoptionsspec) | ❌ | Additional restore configuration options — including `replaceExisting` (the confirmation required to overwrite an existing database). |
-| `stopCluster` | `bool` | ❌ | **Standalone targets only** (cluster targets restore via Cypher and ignore it). `true` scales the instance down before the restore Job (mounting `data-{name}-server-0` directly) and scales it back up after. With `false`, the operator **refuses** to run the Job while any server pod is running — it never writes into a live data volume. |
+| `stopCluster` | `bool` | ❌ | **Standalone targets only** (cluster targets restore via Cypher and ignore it). `true` scales the instance down before the restore Job (mounting the data PVC `neo4j-data-{name}-0` directly) and scales it back up after. With `false`, the operator **refuses** to run the Job while any server pod is running — it never writes into a live data volume. |
 | `timeout` | `string` | ❌ | Go duration (e.g. `"30m"`, `"2h"`). For **cluster** targets this bounds the online-convergence wait after `dbms.recreateDatabase` is issued (default **5m** when unset) — raise it for multi-GB stores seeded from object storage. For **PVC-backed cluster restores** it also bounds the wait for the backup-seed-proxy Deployment to become Ready (default **3m** when unset); on expiry the restore fails with the proxy pod's condition (e.g. an RWO backup PVC still attached elsewhere). |
 
 > The pre-v1.13 top-level `clusterRef`, `databaseName`, and `force` fields were deprecated in v1.13 and **removed in v1.14**. Use `instanceRef`, `database`, and `options.replaceExisting` respectively.
@@ -76,9 +77,9 @@ Defines the source of the backup to restore from.
 | `type` | `string` | ✅ | Type of restore source. Valid values: `"backup"`, `"storage"`, `"pitr"`. |
 | `backupRef` | `string` | ❌ | Name of a `Neo4jBackup` resource to restore from (used when `type="backup"`) |
 | `storage` | [`StorageLocation`](#storagelocation) | ❌ | Direct storage location (used when `type="storage"`). The cloud backend — `s3`, `gcs`, `azure`, or `pvc` — is selected on `storage.type` inside this struct, *not* on the outer `source.type`. |
-| `backupPath` | `string` | ❌ | Specific backup path within the storage location |
-| `pointInTime` | `*metav1.Time` | ❌ | Recovery point in RFC3339 format; maps to `--restore-until` |
-| `pitr` | [`PITRConfig`](#pitrconfig) | ❌ | Full PITR configuration (used when `type="pitr"`) |
+| `backupPath` | `string` | conditional | Specific backup path within the storage location. **Required (non-empty) when `type="storage"`** — the controller fails the restore otherwise; for cluster targets it must be the exact `.backup` file. Not used for `type="backup"` (resolved from the `Neo4jBackup`). |
+| `pointInTime` | `*metav1.Time` | ❌ | Recovery point in RFC3339 format; maps to `--restore-until`. **Standalone targets only** — a cluster target rejects it (use a `Neo4jDatabase` with `spec.seedConfig.restoreUntil`). |
+| `pitr` | [`PITRConfig`](#pitrconfig) | conditional | Full PITR configuration. **Required when `type="pitr"`**, together with `pitr.baseBackup` and/or `pointInTime`. |
 
 **Valid `type` values:**
 
@@ -335,7 +336,7 @@ Cluster targets don't have a separate bring-up step: the Cypher restore (`CREATE
 When `spec.stopCluster: true`:
 
 1. The operator scales the target StatefulSet down to 0 replicas (recording the original replica count so re-entries don't lose it).
-2. The restore Job is created with the actual server data PVC (`data-{name}-server-0`) mounted into the container, enabling direct offline file-level restore.
+2. The restore Job is created with the standalone's actual data PVC (`neo4j-data-{name}-0`) mounted into the container, enabling direct offline file-level restore.
 3. After the restore Job succeeds, the StatefulSet is scaled back up. If the restore fails after the scale-down (hook failure, Job-create failure), the operator scales the instance back up rather than leaving it stranded at 0 replicas.
 4. The operator then issues `CREATE DATABASE` or `START DATABASE` as described above.
 
@@ -498,7 +499,7 @@ spec:
 
 ### Offline Restore via stopCluster (Standalone)
 
-`stopCluster` applies to **standalone** targets only — cluster targets restore online via Cypher and ignore it. When `stopCluster: true`, the operator scales the standalone to 0 and mounts its data PVC (`data-{name}-server-0`) directly into the restore Job for a cold/offline restore.
+`stopCluster` applies to **standalone** targets only — cluster targets restore online via Cypher and ignore it. When `stopCluster: true`, the operator scales the standalone to 0 and mounts its data PVC (`neo4j-data-{name}-0`) directly into the restore Job for a cold/offline restore.
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -521,7 +522,7 @@ spec:
     backupPath: nightly-backup/large-graph-2026-06-01T02-00-00.backup
   options:
     replaceExisting: true   # confirms overwriting the existing database
-  stopCluster: true   # Scales the standalone to 0; mounts data-reporting-standalone-server-0
+  stopCluster: true   # Scales the standalone to 0; mounts neo4j-data-reporting-standalone-0
   timeout: "8h"
 ```
 

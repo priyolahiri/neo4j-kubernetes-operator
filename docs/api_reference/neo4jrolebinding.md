@@ -51,7 +51,7 @@ The validator rejects a `Neo4jRoleBinding` whose `spec.username` overlaps with a
 
 | Type | Reasons | Meaning |
 |---|---|---|
-| `Ready` | `BindingReady`, `RolesPending`, `UserNotFound`, `ClusterNotReady`, `ConnectionFailed`, `BindingFailed`, `ValidationFailed` | True when the user exists and all desired roles are granted. |
+| `Ready` | `BindingReady`, `RolesPending`, `UserNotFound`, `ClusterNotFound`, `ClusterNotReady`, `ConnectionFailed`, `BindingFailed`, `ValidationFailed` | True when the user exists and all desired roles are granted. |
 | `RolesSynced` | `RolesMatch`, `RolesPending` | True when `grantedRoles` covers `.spec.roles`. |
 | `PendingDependencies` | `RolesPending`, `AllDependenciesPresent` | True when one or more `.spec.roles` correspond to a Neo4jRole CR that does not yet exist. |
 | `UserNotFound` | `UserNotFound`, `UserPresent` | True when the user named by `.spec.username` is absent from Neo4j. |
@@ -60,7 +60,7 @@ The validator rejects a `Neo4jRoleBinding` whose `spec.username` overlaps with a
 ## Validation rules
 
 - `clusterRef` must resolve to a cluster or standalone in the same namespace.
-- `username` matches `^[a-zA-Z][a-zA-Z0-9_.@\-]*$`, max 65 characters; reserved names rejected.
+- `username` matches `^[a-zA-Z][a-zA-Z0-9_.@\-]*$`, max 65 characters. (Unlike `Neo4jUser`, the binding validator does not reject the reserved name `system`.)
 - `roles` must be non-empty (kubebuilder MinItems=1) and contain no empty strings.
 - A `Neo4jUser` in the same namespace targeting the same `clusterRef` and `username` is rejected at validate-time. (Manage role grants there instead.)
 
@@ -123,9 +123,10 @@ metadata:
   namespace: prod
 spec:
   clusterRef: prod-cluster
+  name: analytics_reader        # role names allow letters, digits and underscores only (no hyphens)
   privileges:
-    - "GRANT ACCESS ON DATABASE analytics TO analytics-reader"
-    - "GRANT MATCH {*} ON GRAPH analytics NODES * TO analytics-reader"
+    - "GRANT ACCESS ON DATABASE analytics TO analytics_reader"
+    - "GRANT MATCH {*} ON GRAPH analytics NODES * TO analytics_reader"
 ---
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRoleBinding
@@ -136,7 +137,7 @@ spec:
   clusterRef: prod-cluster
   username: alice@example.com
   roles:
-    - analytics-reader
+    - analytics_reader
 ```
 
 Apply order doesn't matter — the binding waits in `PendingDependencies` until the role lands.
