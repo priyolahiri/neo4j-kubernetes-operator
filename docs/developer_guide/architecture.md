@@ -10,7 +10,7 @@ The Neo4j Enterprise Operator follows cloud-native best practices with a focus o
 - **Performance**: Intelligent rate limiting and status update optimization
 - **Server-Based Architecture**: Unified server deployments with self-organizing roles
 - **Resource Efficiency**: On-demand backup Jobs (no long-running backup pod or sidecar)
-- **Observability**: Comprehensive monitoring and operational insights
+- **Observability**: Prometheus metrics, Kubernetes events and conditions, and live `SHOW SERVERS` / `SHOW DATABASES` diagnostics in `status`
 - **Validation**: Proactive resource validation and recommendations
 
 ## Current Architecture
@@ -691,10 +691,10 @@ references a per-policy `truststore_path`.
 
 ## Monitoring & Observability
 
-### Resource Monitoring (`internal/monitoring/`):
-- **ResourceMonitor** (`resource_monitor.go`): Real-time utilization tracking
-- **Performance Metrics**: Controller performance and reconciliation efficiency
-- **Operational Insights**: ConfigMap update patterns and debounce effectiveness
+### Resource utilization and operator metrics:
+- **The operator does not track CPU, memory or storage utilization.** An earlier `internal/monitoring/` package (a `ResourceMonitor`) was never wired into any controller and has been removed. Observe utilization with Prometheus: cAdvisor / kubelet metrics and kube-state-metrics for the pods, and Neo4j's own metrics endpoint on port 2004 for the database.
+- **Operator metrics** (`internal/metrics/`): reconcile counts and durations, upgrade and backup outcomes, resource-version conflicts, per-server health and Aura API traffic. The authoritative list, including which families are populated, is in [Monitoring](../user_guide/guides/monitoring.md).
+- **Capacity before apply**: `kubectl neo4j preflight` checks that a Ready node can fit the requested memory before you apply a manifest (see [`preflight`](../user_guide/cli/preflight.md)).
 
 ### Status Management:
 - **Enhanced Status Updates**: Detailed cluster state tracking
