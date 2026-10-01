@@ -177,7 +177,7 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if len(errs) > 0 {
 		msg := errs.ToAggregate().Error()
 		logger.Info("Invalid Neo4jBackup spec", "errors", msg)
-		r.updateBackupStatus(ctx, backup, "Invalid", "Invalid backup spec: "+msg)
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseInvalid, "Invalid backup spec: "+msg)
 		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
 		return ctrl.Result{}, nil
 	}
@@ -216,24 +216,24 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// review: a substring match on "not found" misclassified those).
 		if errors.IsNotFound(err) {
 			logger.Info("Backup target not found yet; waiting", "error", err.Error())
-			r.updateBackupStatus(ctx, backup, "Waiting", fmt.Sprintf("Waiting for target to appear: %v", err))
+			r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseWaiting, fmt.Sprintf("Waiting for target to appear: %v", err))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		logger.Error(err, "Failed to get target cluster")
-		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to get target cluster: %v", err))
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, fmt.Sprintf("Failed to get target cluster: %v", err))
 		return ctrl.Result{}, err
 	}
 
 	// Validate Neo4j version compatibility (5.26+ or 2025.01+)
 	if err := r.validateNeo4jVersion(targetCluster); err != nil {
 		logger.Error(err, "Neo4j version validation failed")
-		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Neo4j version not supported: %v", err))
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, fmt.Sprintf("Neo4j version not supported: %v", err))
 		return ctrl.Result{}, err
 	}
 
 	// Check if cluster is ready
 	if !r.isClusterReady(targetCluster) {
-		r.updateBackupStatus(ctx, backup, "Waiting", "Target cluster is not ready")
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseWaiting, "Target cluster is not ready")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
@@ -250,7 +250,7 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			logger.Error(err, "Failed to suspend backup CronJob")
 			return ctrl.Result{}, err
 		}
-		r.updateBackupStatus(ctx, backup, "Suspended", "Backup is suspended")
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseSuspended, "Backup is suspended")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
@@ -301,7 +301,7 @@ func (r *Neo4jBackupReconciler) handleDeletion(ctx context.Context, backup *neo4
 func (r *Neo4jBackupReconciler) reportInvalidBackupSpec(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cause error) (ctrl.Result, error) {
 	msg := "Invalid backup spec: " + cause.Error()
 	log.FromContext(ctx).Info("Invalid Neo4jBackup spec", "error", cause.Error())
-	r.updateBackupStatus(ctx, backup, "Invalid", msg)
+	r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseInvalid, msg)
 	r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
 	return ctrl.Result{}, nil
 }
@@ -325,14 +325,14 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 	if err != nil {
 		if stderrors.Is(err, errBackupTransient) {
 			logger.Info("Scheduled backup precondition not met yet; waiting", "error", err.Error())
-			r.updateBackupStatus(ctx, backup, "Pending", err.Error())
+			r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhasePending, err.Error())
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		if isInvalidQuantity(err) {
 			return r.reportInvalidBackupSpec(ctx, backup, err)
 		}
 		logger.Error(err, "Failed to create backup CronJob")
-		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to create CronJob: %v", err))
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, fmt.Sprintf("Failed to create CronJob: %v", err))
 		return ctrl.Result{}, err
 	}
 
@@ -589,7 +589,7 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 	// below returns NotFound, and the controller assumes "no Job yet, create
 	// one"). To retry a Failed one-time backup, delete and recreate the CR.
 	// Issue #116.
-	if backup.Status.Phase == "Completed" || backup.Status.Phase == "Failed" {
+	if backup.Status.Phase == neo4jv1beta1.PhaseCompleted || backup.Status.Phase == neo4jv1beta1.PhaseFailed {
 		return ctrl.Result{}, nil
 	}
 
@@ -622,12 +622,12 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 		// Pending and requeue rather than terminal Failed.
 		if stderrors.Is(err, errChainBusy) {
 			logger.Info("Backup waiting for chained CR to finish", "error", err.Error())
-			r.updateBackupStatus(ctx, backup, "Pending", err.Error())
+			r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhasePending, err.Error())
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		if stderrors.Is(err, errBackupTransient) {
 			logger.Info("Backup precondition not met yet; waiting", "error", err.Error())
-			r.updateBackupStatus(ctx, backup, "Pending", err.Error())
+			r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhasePending, err.Error())
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		// A malformed user-supplied quantity is a spec error: retrying cannot
@@ -637,12 +637,12 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 			return r.reportInvalidBackupSpec(ctx, backup, err)
 		}
 		logger.Error(err, "Failed to create backup job")
-		r.updateBackupStatus(ctx, backup, "Failed", fmt.Sprintf("Failed to create backup job: %v", err))
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, fmt.Sprintf("Failed to create backup job: %v", err))
 		return ctrl.Result{}, err
 	}
 
 	// Update status
-	r.updateBackupStatus(ctx, backup, "Running", fmt.Sprintf("Backup job %s created", job.Name))
+	r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseRunning, fmt.Sprintf("Backup job %s created", job.Name))
 	r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupStarted, fmt.Sprintf("Backup job %s started", job.Name))
 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -670,10 +670,10 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 		// log before the Job TTL GCs the Pod. Recording+finalizing now would
 		// pin an empty filename permanently (silently un-restorable via the CR).
 		if !r.recordOneShotBackupRun(ctx, backup, job) {
-			r.updateBackupStatus(ctx, backup, "Running", "Backup completed; capturing artifact metadata from the backup Pod")
+			r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseRunning, "Backup completed; capturing artifact metadata from the backup Pod")
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
-		r.updateBackupStatus(ctx, backup, "Completed", "Backup completed successfully")
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseCompleted, "Backup completed successfully")
 		r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupCompleted, "Backup completed successfully")
 		backupM.RecordBackup(ctx, true, jobDuration(job))
 		return ctrl.Result{}, nil
@@ -686,7 +686,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 		// in history, so the only signal of past failures was the metrics
 		// counter and the transient Job object (which TTL'd out after 5
 		// minutes).
-		r.updateBackupStatus(ctx, backup, "Failed", "Backup job failed")
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, "Backup job failed")
 		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, "Backup job failed")
 		backupM.RecordBackup(ctx, false, jobDuration(job))
 		r.recordOneShotBackupRun(ctx, backup, job)
@@ -702,7 +702,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 	// fails with its reason instead of waiting forever.
 	running, diag := r.backupJobStartupState(ctx, backup.Namespace, job.Name)
 	if running {
-		r.updateBackupStatus(ctx, backup, "Running", "Backup job is running")
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseRunning, "Backup job is running")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
@@ -716,7 +716,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 		// CR stays Failed; the terminal guard prevents re-entry, so nothing
 		// recreates it). Best-effort.
 		_ = r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
-		r.updateBackupStatus(ctx, backup, "Failed", msg)
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, msg)
 		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
 		metrics.NewBackupMetrics(backup.Name, backup.Namespace).RecordBackup(ctx, false, elapsed)
 		return ctrl.Result{}, nil
@@ -728,7 +728,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 	if diag != "" {
 		msg = fmt.Sprintf("Waiting for backup pod to start: %s", diag)
 	}
-	r.updateBackupStatus(ctx, backup, "Running", msg)
+	r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseRunning, msg)
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
@@ -1931,7 +1931,7 @@ func (r *Neo4jBackupReconciler) isStandaloneTarget(ctx context.Context, backup *
 }
 
 func (r *Neo4jBackupReconciler) isClusterReady(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
-	return cluster.Status.Phase == "Ready"
+	return cluster.Status.Phase == neo4jv1beta1.PhaseReady
 }
 
 func (r *Neo4jBackupReconciler) cleanupBackupJobs(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {
@@ -2196,9 +2196,9 @@ func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
 		now := metav1.Now()
 		switch phase {
-		case "Running":
+		case neo4jv1beta1.PhaseRunning:
 			latest.Status.LastRunTime = &now
-		case "Completed":
+		case neo4jv1beta1.PhaseCompleted:
 			latest.Status.LastSuccessTime = &now
 		}
 		return r.Status().Update(ctx, latest)
