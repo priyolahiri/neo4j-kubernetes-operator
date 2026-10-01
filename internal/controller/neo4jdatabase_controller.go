@@ -223,7 +223,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Ensure database exists (with seed URI support)
 	logger.Info("Starting database creation/verification", "database", database.Spec.Name, "wait", database.Spec.Wait, "topology", database.Spec.Topology)
 	dbCreateStart := time.Now()
-	if err := r.ensureDatabase(ctx, neo4jClient, database); err != nil {
+	if err := r.ensureDatabase(ctx, neo4jClient, database, databaseHostImageTag(cluster, standalone, isStandalone), isStandalone); err != nil {
 		duration := time.Since(dbCreateStart)
 		logger.Error(err, "Failed to ensure database", "database", database.Spec.Name, "duration", duration)
 		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonCreationFailed,
@@ -385,7 +385,43 @@ func (r *Neo4jDatabaseReconciler) resolveDatabaseHost(ctx context.Context, datab
 	return nil, nil, false, false, sErr
 }
 
-func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *neo4j.Client, database *neo4jv1beta1.Neo4jDatabase) error {
+// databaseHostImageTag returns the image tag of the deployment a database is
+// created on — the cluster, or the standalone when the reference resolved to
+// one. It is what the version-gated CREATE DATABASE fields are decided by.
+func databaseHostImageTag(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, isStandalone bool) string {
+	if isStandalone {
+		if standalone != nil {
+			return standalone.Spec.Image.Tag
+		}
+		return ""
+	}
+	if cluster != nil {
+		return cluster.Spec.Image.Tag
+	}
+	return ""
+}
+
+// resolveDatabaseCreateInputs decides the two spec fields whose effect on
+// CREATE DATABASE depends on the host, so every create path below shares one
+// answer:
+//
+//   - spec.defaultCypherLanguage is returned only when the host's server has the
+//     DEFAULT LANGUAGE CYPHER clause (CalVer). The 5.26 LTS does not parse it,
+//     and every database there runs Cypher 5, so the clause is left out. A
+//     requested "25" on the LTS never gets this far: the DatabaseValidator
+//     refuses it first.
+//   - spec.topology is returned as nil for a standalone. It is documented, and
+//     warned about by the validator, as ignored there; a single-server DBMS has
+//     nothing to distribute.
+func resolveDatabaseCreateInputs(database *neo4jv1beta1.Neo4jDatabase, imageTag string, isStandalone bool) (*neo4jv1beta1.DatabaseTopology, string) {
+	topology := database.Spec.Topology
+	if isStandalone {
+		topology = nil
+	}
+	return topology, neo4j.DefaultLanguageForImage(imageTag, database.Spec.DefaultCypherLanguage)
+}
+
+func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *neo4j.Client, database *neo4jv1beta1.Neo4jDatabase, imageTag string, isStandalone bool) error {
 	logger := log.FromContext(ctx)
 
 	// Check if database exists
@@ -395,6 +431,16 @@ func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *ne
 	}
 
 	if !exists {
+		topology, cypherLanguage := resolveDatabaseCreateInputs(database, imageTag, isStandalone)
+		if database.Spec.DefaultCypherLanguage != "" && cypherLanguage == "" {
+			logger.Info("Omitting DEFAULT LANGUAGE CYPHER: the target server (5.26 LTS) has no such clause and runs Cypher 5",
+				"database", database.Spec.Name, "defaultCypherLanguage", database.Spec.DefaultCypherLanguage, "imageTag", imageTag)
+		}
+		if isStandalone && database.Spec.Topology != nil {
+			logger.Info("Ignoring spec.topology: the target is a standalone deployment",
+				"database", database.Spec.Name)
+		}
+
 		// Prepare cloud credentials if using seed URI with explicit credentials
 		if database.Spec.SeedURI != "" && database.Spec.SeedCredentials != nil {
 			if err := client.PrepareCloudCredentials(ctx, r.Client, database); err != nil {
@@ -405,24 +451,24 @@ func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *ne
 		// Determine which creation method to use based on seed URI
 		if database.Spec.SeedURI != "" {
 			// Create database from seed URI
-			if database.Spec.Topology != nil {
+			if topology != nil {
 				logger.Info("Creating database from seed URI with topology",
 					"database", database.Spec.Name,
 					"seedURI", database.Spec.SeedURI,
-					"primaries", database.Spec.Topology.Primaries,
-					"secondaries", database.Spec.Topology.Secondaries)
+					"primaries", topology.Primaries,
+					"secondaries", topology.Secondaries)
 
 				err = client.CreateDatabaseFromSeedURIWithTopology(
 					ctx,
 					database.Spec.Name,
 					database.Spec.SeedURI,
-					database.Spec.Topology.Primaries,
-					database.Spec.Topology.Secondaries,
+					topology.Primaries,
+					topology.Secondaries,
 					database.Spec.SeedConfig,
 					database.Spec.Options,
 					database.Spec.Wait,
 					database.Spec.IfNotExists,
-					database.Spec.DefaultCypherLanguage,
+					cypherLanguage,
 				)
 			} else {
 				logger.Info("Creating database from seed URI",
@@ -437,42 +483,46 @@ func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *ne
 					database.Spec.Options,
 					database.Spec.Wait,
 					database.Spec.IfNotExists,
-					database.Spec.DefaultCypherLanguage,
+					cypherLanguage,
 				)
 			}
 		} else {
 			// Standard database creation without seed URI
-			if database.Spec.Topology != nil {
+			if topology != nil {
 				logger.Info("Creating database with topology",
 					"database", database.Spec.Name,
-					"primaries", database.Spec.Topology.Primaries,
-					"secondaries", database.Spec.Topology.Secondaries,
+					"primaries", topology.Primaries,
+					"secondaries", topology.Secondaries,
 					"wait", database.Spec.Wait,
 					"timeout", "300s")
 
 				err = client.CreateDatabaseWithTopology(
 					ctx,
 					database.Spec.Name,
-					database.Spec.Topology.Primaries,
-					database.Spec.Topology.Secondaries,
+					topology.Primaries,
+					topology.Secondaries,
 					database.Spec.Options,
 					database.Spec.Wait,
 					database.Spec.IfNotExists,
-					database.Spec.DefaultCypherLanguage,
+					cypherLanguage,
 				)
 			} else {
-				// Create database without topology
+				// Create database without topology. The language still applies:
+				// this path used to call CreateDatabase, which takes no Cypher
+				// version, so spec.defaultCypherLanguage was silently dropped
+				// for any database with neither topology nor seedURI.
 				logger.Info("Creating database",
 					"database", database.Spec.Name,
 					"wait", database.Spec.Wait,
 					"ifNotExists", database.Spec.IfNotExists)
 
-				err = client.CreateDatabase(
+				err = client.CreateDatabaseWithLanguage(
 					ctx,
 					database.Spec.Name,
 					database.Spec.Options,
 					database.Spec.Wait,
 					database.Spec.IfNotExists,
+					cypherLanguage,
 				)
 			}
 		}

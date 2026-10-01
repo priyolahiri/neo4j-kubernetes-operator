@@ -68,11 +68,19 @@ spec:
                 type: string
               defaultCypherLanguage:
                 description: |-
-                  Default Cypher language version (Neo4j 2025.x only)
+                  Default Cypher language version for this database, set at creation with
+                  `DEFAULT LANGUAGE CYPHER <n>`.
 
-                  Specifies the default Cypher language version for this database.
-                  - "5": Cypher 5 (backward compatibility)
-                  - "25": Cypher 25 (recommended for new databases)
+                  - "5": Cypher 5
+                  - "25": Cypher 25
+
+                  Applies on every create path (plain, with topology, from a seedURI, and
+                  both). The clause exists only on CalVer, so the value is checked against
+                  the target deployment's image: on the 5.26 LTS "25" is rejected by
+                  validation, and "5" is accepted but has no effect, because every database
+                  there already runs Cypher 5 and the clause is omitted from CREATE
+                  DATABASE. Left empty, the database takes the server default
+                  (spec.serverDefaultCypherLanguage on the deployment).
                 enum:
                 - "5"
                 - "25"
@@ -85,25 +93,39 @@ spec:
                 description: Initial data import configuration
                 properties:
                   configMapRef:
-                    description: Configuration map reference containing data
+                    description: |-
+                      Configuration map reference containing data.
+
+                      Reserved: accepted but not acted on today; only cypherStatements is executed.
                     type: string
                   cypherStatements:
-                    description: Cypher statements for initial data
+                    description: |-
+                      Cypher statements for initial data. They run in order, once, against the
+                      database after it is created (skipped when seedURI is set).
                     items:
                       type: string
                     type: array
                   secretRef:
-                    description: Secret reference containing sensitive data
+                    description: |-
+                      Secret reference containing sensitive data.
+
+                      Reserved: accepted but not acted on today; only cypherStatements is executed.
                     type: string
                   source:
-                    description: Source type for initial data
+                    description: |-
+                      Source type for initial data.
+
+                      Reserved: accepted but not acted on today; only cypherStatements is executed.
                     enum:
                     - cypher
                     - dump
                     - csv
                     type: string
                   storage:
-                    description: Storage location for data files
+                    description: |-
+                      Storage location for data files.
+
+                      Reserved: accepted but not acted on today; only cypherStatements is executed.
                     properties:
                       bucket:
                         type: string
@@ -310,6 +332,9 @@ spec:
                   - Database B: 2 primaries, 0 secondaries (uses 2 servers)
 
                   Servers self-organize into primary/secondary roles at the database level.
+
+                  Ignored when clusterRef is a Neo4jEnterpriseStandalone: a single server has
+                  nothing to distribute, so validation only warns.
                 properties:
                   primaries:
                     description: |-

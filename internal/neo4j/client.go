@@ -949,31 +949,51 @@ func (c *Client) GetConnectionPoolMetrics() *ConnectionPoolMetrics {
 	return &metrics
 }
 
-// CreateDatabase creates a new database with proper Neo4j 5.26+ syntax
+// CreateDatabase creates a new database with proper Neo4j 5.26+ syntax.
+//
+// It sets no default Cypher language; use CreateDatabaseWithLanguage for that.
 func (c *Client) CreateDatabase(ctx context.Context, databaseName string, options map[string]string, wait bool, ifNotExists bool) error {
+	return c.CreateDatabaseWithLanguage(ctx, databaseName, options, wait, ifNotExists, "")
+}
+
+// CreateDatabaseWithLanguage creates a database with no topology clause and,
+// when cypherVersion is "5" or "25", a DEFAULT LANGUAGE CYPHER clause. The
+// caller gates cypherVersion for the target server (DefaultLanguageForImage):
+// the clause does not parse on the 5.26 LTS.
+func (c *Client) CreateDatabaseWithLanguage(ctx context.Context, databaseName string, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error {
+	query, params := c.buildCreateDatabaseQuery(createDatabaseStatement{
+		name:          databaseName,
+		ifNotExists:   ifNotExists,
+		cypherVersion: cypherVersion,
+		options:       options,
+		wait:          wait,
+	})
+	return c.runCreateDatabase(ctx, databaseName, query, params, wait, "")
+}
+
+// CreateDatabaseWithTopology creates a database with specific topology constraints
+func (c *Client) CreateDatabaseWithTopology(ctx context.Context, databaseName string, primaries, secondaries int32, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error {
+	query, params := c.buildCreateDatabaseQuery(createDatabaseStatement{
+		name:          databaseName,
+		ifNotExists:   ifNotExists,
+		cypherVersion: cypherVersion,
+		primaries:     primaries,
+		secondaries:   secondaries,
+		options:       options,
+		wait:          wait,
+	})
+	return c.runCreateDatabase(ctx, databaseName, query, params, wait, " with topology")
+}
+
+// runCreateDatabase sends a CREATE DATABASE statement with timeout protection
+// for WAIT, and treats a connection that drops mid-WAIT as success when the
+// database is in fact there. what qualifies the error message.
+func (c *Client) runCreateDatabase(ctx context.Context, databaseName, query string, params map[string]any, wait bool, what string) error {
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
 		AccessMode:   neo4j.AccessModeWrite,
 		DatabaseName: "system",
 	})
 	defer session.Close(ctx)
-
-	// Build CREATE DATABASE query with IF NOT EXISTS
-	query := fmt.Sprintf("CREATE DATABASE `%s`", databaseName)
-
-	if ifNotExists {
-		query = fmt.Sprintf("CREATE DATABASE `%s` IF NOT EXISTS", databaseName)
-	}
-
-	// Add options (values are driver parameters — never interpolated)
-	optClause, params := c.buildOptionsClause(options, "", nil)
-	query += optClause
-
-	// Add WAIT or NOWAIT
-	if wait {
-		query += " WAIT"
-	} else {
-		query += " NOWAIT"
-	}
 
 	// Use timeout protection for WAIT operations
 	err := c.executeWithWaitTimeout(ctx, session, query, params, wait, 300)
@@ -987,74 +1007,7 @@ func (c *Client) CreateDatabase(ctx context.Context, databaseName string, option
 				return nil // Database created, connection dropped before WAIT completed
 			}
 		}
-		return fmt.Errorf("failed to create database %s: %w", databaseName, err)
-	}
-
-	return nil
-}
-
-// CreateDatabaseWithTopology creates a database with specific topology constraints
-func (c *Client) CreateDatabaseWithTopology(ctx context.Context, databaseName string, primaries, secondaries int32, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error {
-	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
-		AccessMode:   neo4j.AccessModeWrite,
-		DatabaseName: "system",
-	})
-	defer session.Close(ctx)
-
-	// Build CREATE DATABASE query
-	query := fmt.Sprintf("CREATE DATABASE `%s`", databaseName)
-
-	if ifNotExists {
-		query = fmt.Sprintf("CREATE DATABASE `%s` IF NOT EXISTS", databaseName)
-	}
-
-	// Add Cypher language version for Neo4j 2025.x (only "5"/"25" are emitted)
-	query += cypherLanguageClause(cypherVersion)
-
-	// Add topology if specified
-	if primaries > 0 || secondaries > 0 {
-		topologyParts := []string{}
-		if primaries > 0 {
-			if primaries == 1 {
-				topologyParts = append(topologyParts, "1 PRIMARY")
-			} else {
-				topologyParts = append(topologyParts, fmt.Sprintf("%d PRIMARIES", primaries))
-			}
-		}
-		if secondaries > 0 {
-			if secondaries == 1 {
-				topologyParts = append(topologyParts, "1 SECONDARY")
-			} else {
-				topologyParts = append(topologyParts, fmt.Sprintf("%d SECONDARIES", secondaries))
-			}
-		}
-		if len(topologyParts) > 0 {
-			query += " TOPOLOGY " + strings.Join(topologyParts, " ")
-		}
-	}
-
-	// Add options (values are driver parameters — never interpolated)
-	optClause, params := c.buildOptionsClause(options, "", nil)
-	query += optClause
-
-	// Add WAIT or NOWAIT
-	if wait {
-		query += " WAIT"
-	} else {
-		query += " NOWAIT"
-	}
-
-	// Use timeout protection for WAIT operations
-	err := c.executeWithWaitTimeout(ctx, session, query, params, wait, 300)
-	if err != nil {
-		// Check if database was created despite connection drop or timeout.
-		if wait && (errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "ConnectivityError")) {
-			exists, checkErr := c.DatabaseExists(ctx, databaseName)
-			if checkErr == nil && exists {
-				return nil // Database created, connection dropped before WAIT completed
-			}
-		}
-		return fmt.Errorf("failed to create database %s with topology: %w", databaseName, err)
+		return fmt.Errorf("failed to create database %s%s: %w", databaseName, what, err)
 	}
 
 	return nil
@@ -2809,103 +2762,45 @@ func buildConnectionURIForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluste
 
 // CreateDatabaseFromSeedURI creates a database from a seed URI using Neo4j CloudSeedProvider
 func (c *Client) CreateDatabaseFromSeedURI(ctx context.Context, databaseName, seedURI string, seedConfig *neo4jv1beta1.SeedConfiguration, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error {
-	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
-		AccessMode:   neo4j.AccessModeWrite,
-		DatabaseName: "system",
+	query, params := c.buildCreateDatabaseQuery(createDatabaseStatement{
+		name:          databaseName,
+		ifNotExists:   ifNotExists,
+		cypherVersion: cypherVersion,
+		options:       options,
+		seedURI:       seedURI,
+		seedConfig:    seedConfig,
+		wait:          wait,
 	})
-	defer session.Close(ctx)
-
-	// Build CREATE DATABASE query with seed URI
-	query := fmt.Sprintf("CREATE DATABASE `%s`", databaseName)
-
-	if ifNotExists {
-		query = fmt.Sprintf("CREATE DATABASE `%s` IF NOT EXISTS", databaseName)
-	}
-
-	// Add Cypher language version for Neo4j 2025.x (only "5"/"25" are emitted)
-	query += cypherLanguageClause(cypherVersion)
-
-	// seedURI, seedConfig (provider-config string), seedRestoreUntil
-	// (point-in-time) and any general options are emitted as one documented
-	// OPTIONS map; every value is a driver parameter. This replaces the
-	// non-grammar `FROM '<uri>'` and `SEED CONFIG {…}` clauses (issue #169).
-	optClause, params := c.buildOptionsClause(options, seedURI, seedConfig)
-	query += optClause
-
-	// Add WAIT or NOWAIT
-	if wait {
-		query += " WAIT"
-	} else {
-		query += " NOWAIT"
-	}
-
-	_, err := session.Run(ctx, query, params)
-	if err != nil {
-		return fmt.Errorf("failed to create database %s from seed URI: %w", databaseName, err)
-	}
-
-	return nil
+	return c.runSeedCreateDatabase(ctx, query, params, fmt.Sprintf("failed to create database %s from seed URI", databaseName))
 }
 
 // CreateDatabaseFromSeedURIWithTopology creates a database with topology from a seed URI
 func (c *Client) CreateDatabaseFromSeedURIWithTopology(ctx context.Context, databaseName, seedURI string, primaries, secondaries int32, seedConfig *neo4jv1beta1.SeedConfiguration, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error {
+	query, params := c.buildCreateDatabaseQuery(createDatabaseStatement{
+		name:          databaseName,
+		ifNotExists:   ifNotExists,
+		cypherVersion: cypherVersion,
+		primaries:     primaries,
+		secondaries:   secondaries,
+		options:       options,
+		seedURI:       seedURI,
+		seedConfig:    seedConfig,
+		wait:          wait,
+	})
+	return c.runSeedCreateDatabase(ctx, query, params, fmt.Sprintf("failed to create database %s with topology from seed URI", databaseName))
+}
+
+// runSeedCreateDatabase sends a seed-based CREATE DATABASE statement.
+func (c *Client) runSeedCreateDatabase(ctx context.Context, query string, params map[string]any, failure string) error {
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
 		AccessMode:   neo4j.AccessModeWrite,
 		DatabaseName: "system",
 	})
 	defer session.Close(ctx)
 
-	// Build CREATE DATABASE query
-	query := fmt.Sprintf("CREATE DATABASE `%s`", databaseName)
-
-	if ifNotExists {
-		query = fmt.Sprintf("CREATE DATABASE `%s` IF NOT EXISTS", databaseName)
+	if _, err := session.Run(ctx, query, params); err != nil {
+		return fmt.Errorf("%s: %w", failure, err)
 	}
-
-	// Add Cypher language version for Neo4j 2025.x (only "5"/"25" are emitted)
-	query += cypherLanguageClause(cypherVersion)
-
-	// Add topology if specified
-	if primaries > 0 || secondaries > 0 {
-		topologyParts := []string{}
-		if primaries > 0 {
-			if primaries == 1 {
-				topologyParts = append(topologyParts, "1 PRIMARY")
-			} else {
-				topologyParts = append(topologyParts, fmt.Sprintf("%d PRIMARIES", primaries))
-			}
-		}
-		if secondaries > 0 {
-			if secondaries == 1 {
-				topologyParts = append(topologyParts, "1 SECONDARY")
-			} else {
-				topologyParts = append(topologyParts, fmt.Sprintf("%d SECONDARIES", secondaries))
-			}
-		}
-		if len(topologyParts) > 0 {
-			query += " TOPOLOGY " + strings.Join(topologyParts, " ")
-		}
-	}
-
-	// seedURI, seedConfig (provider-config string), seedRestoreUntil
-	// (point-in-time) and any general options are emitted as one documented
-	// OPTIONS map; every value is a driver parameter. This replaces the
-	// non-grammar `FROM '<uri>'` and `SEED CONFIG {…}` clauses (issue #169).
-	optClause, params := c.buildOptionsClause(options, seedURI, seedConfig)
-	query += optClause
-
-	// Add WAIT or NOWAIT
-	if wait {
-		query += " WAIT"
-	} else {
-		query += " NOWAIT"
-	}
-
-	_, err := session.Run(ctx, query, params)
-	if err != nil {
-		return fmt.Errorf("failed to create database %s with topology from seed URI: %w", databaseName, err)
-	}
-
 	return nil
 }
 
