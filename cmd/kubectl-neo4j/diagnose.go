@@ -447,23 +447,48 @@ func diagnosePod(p *corev1.Pod) []symptom {
 		// because it is the single most common Neo4j Enterprise failure on an
 		// under-provisioned cluster, and neither signal is an API constant we
 		// can lean on alone.
+		previousReported := false
 		if t := cs.LastTerminationState.Terminated; t != nil {
-			if t.Reason == "OOMKilled" || t.ExitCode == 137 {
-				symptoms = append(symptoms, symptom{
-					mark:    markProblem,
-					subject: "container " + cs.Name + " in " + p.Name,
-					what:    fmt.Sprintf("was OOMKilled (exit %d)", t.ExitCode),
-					action: "Raise spec.resources.limits.memory. Neo4j Enterprise needs at least " +
-						"1.5Gi to start at all, and the JVM heap plus page cache must fit " +
-						"inside the limit — see docs/user_guide/guides/resource_sizing.md.",
-				})
+			if isOOMKilled(t) {
+				previousReported = true
+				symptoms = append(symptoms, oomKilledSymptom(p, cs.Name, t, ""))
 			} else if t.ExitCode != 0 {
+				previousReported = true
 				symptoms = append(symptoms, symptom{
 					mark:    markWarning,
 					subject: "container " + cs.Name + " in " + p.Name,
 					what:    fmt.Sprintf("previously exited %d (%s)", t.ExitCode, t.Reason),
 					detail:  strings.TrimSpace(t.Message),
 					action:  "kubectl logs " + p.Name + " -c " + cs.Name + " --previous",
+				})
+			}
+		}
+
+		// The container's CURRENT state, when it has already finished. Under
+		// RestartPolicyNever — every backup and restore Job pod — nothing is
+		// restarted, so a killed attempt never reaches LastTerminationState: it
+		// stays in State.Terminated for good, and the check above sees an empty
+		// pod. Exit 0 is a container that did its job (Completed) and is not a
+		// finding.
+		//
+		// Not reported again when the previous run already was: a container
+		// that keeps dying is a crash-loop, told about once through its waiting
+		// reason (CrashLoopBackOff — which, State being a union, cannot be set
+		// together with Terminated) and its previous log. A restarting pod is
+		// briefly Terminated AND carrying a LastTerminationState, and
+		// previousReported is what stops that being two findings. The log here
+		// is plain `kubectl logs` — this run is the one that died, so there is
+		// no --previous to ask for.
+		if t := cs.State.Terminated; t != nil && !previousReported {
+			if isOOMKilled(t) {
+				symptoms = append(symptoms, oomKilledSymptom(p, cs.Name, t, "kubectl logs "+p.Name+" -c "+cs.Name))
+			} else if t.ExitCode != 0 {
+				symptoms = append(symptoms, symptom{
+					mark:    markProblem,
+					subject: "container " + cs.Name + " in " + p.Name,
+					what:    fmt.Sprintf("exited %d (%s)", t.ExitCode, t.Reason),
+					detail:  strings.TrimSpace(t.Message),
+					action:  "kubectl logs " + p.Name + " -c " + cs.Name,
 				})
 			}
 		}
@@ -482,6 +507,45 @@ func diagnosePod(p *corev1.Pod) []symptom {
 		}
 	}
 	return symptoms
+}
+
+// isOOMKilled matches the kubelet's reason string OR exit code 137 (SIGKILL):
+// either alone can be absent.
+func isOOMKilled(t *corev1.ContainerStateTerminated) bool {
+	return t.Reason == "OOMKilled" || t.ExitCode == 137
+}
+
+// isBackupPod reports whether a pod belongs to a Neo4jBackup Job, by the same
+// label the operator's own selector uses.
+func isBackupPod(p *corev1.Pod) bool {
+	const nameKey = "app.kubernetes.io/name"
+	return p.Labels[nameKey] == resources.BackupJobSelector("")[nameKey]
+}
+
+// oomKilledSymptom names an OOM-killed container and the field that sizes it.
+// A backup Job's container is sized by the Neo4jBackup's own
+// spec.options.resources — not by the server's spec.resources, and not subject
+// to the Enterprise 1.5Gi start-up floor — so sending the user to the server's
+// limits would have them edit a cluster to fix a backup. logs, when set, is
+// appended: it is the command that reads the log of the run that died.
+func oomKilledSymptom(p *corev1.Pod, container string, t *corev1.ContainerStateTerminated, logs string) symptom {
+	action := "Raise spec.resources.limits.memory. Neo4j Enterprise needs at least " +
+		"1.5Gi to start at all, and the JVM heap plus page cache must fit " +
+		"inside the limit — see docs/user_guide/guides/resource_sizing.md."
+	if isBackupPod(p) {
+		action = "Raise spec.options.resources.limits.memory on the Neo4jBackup (unset, the " +
+			"limit is 2Gi). neo4j-admin needs headroom above the largest store file " +
+			"during compaction."
+	}
+	if logs != "" {
+		action += " The log of the run that was killed: " + logs
+	}
+	return symptom{
+		mark:    markProblem,
+		subject: "container " + container + " in " + p.Name,
+		what:    fmt.Sprintf("was OOMKilled (exit %d)", t.ExitCode),
+		action:  action,
+	}
 }
 
 // podIsUnschedulable reports the scheduler's own verdict, which decides whether
@@ -551,6 +615,7 @@ func diagnoseBackup(name string, env namespaceEnv) (string, []symptom) {
 
 	var symptoms []symptom
 	var succeeded, failed, running int
+	outcomes := make(map[string]jobOutcome, len(jobs))
 	for i := range jobs {
 		j := &jobs[i]
 		logHint := "Read the Job's pod log for neo4j-admin's own error: " +
@@ -561,7 +626,9 @@ func diagnoseBackup(name string, env namespaceEnv) (string, []symptom) {
 		// field counts failed pod ATTEMPTS and never decreases, and a backup
 		// Job retries (backoffLimit 3) — so a Job that failed twice and then
 		// completed has status.failed=2 and is a success.
-		switch outcome, cond := backupJobOutcome(j); outcome {
+		outcome, cond := backupJobOutcome(j)
+		outcomes[j.Name] = outcome
+		switch outcome {
 		case jobFailed:
 			failed++
 			f := symptom{
@@ -606,7 +673,7 @@ func diagnoseBackup(name string, env namespaceEnv) (string, []symptom) {
 	for i := range env.pods {
 		p := &env.pods[i]
 		if matchesLabels(p.Labels, resources.BackupJobSelector(name)) {
-			symptoms = append(symptoms, diagnosePod(p)...)
+			symptoms = append(symptoms, capFinishedAttempt(p, diagnosePod(p), outcomes)...)
 		}
 	}
 
@@ -615,6 +682,54 @@ func diagnoseBackup(name string, env namespaceEnv) (string, []symptom) {
 		summary += fmt.Sprintf(", %d in progress", running)
 	}
 	return summary, symptoms
+}
+
+// capFinishedAttempt keeps a finished attempt's findings from outvoting the
+// Job's own verdict.
+//
+// A Job keeps the pods of its failed attempts, so a backup that was OOMKilled
+// once and then completed on retry still has a Failed pod whose container is,
+// correctly, a finding. As a ✗ it would make diagnose exit 1 over a backup that
+// succeeded — the same mistake as reading Job.status.failed as the verdict. So
+// when the owning Job did not fail, the pod's ✗ findings are softened: ⚠ if the
+// Job went on to succeed, … if it is still retrying. Only Failed pods are
+// touched. A Pending pod that cannot be scheduled is the live cause of an
+// in-progress Job and stays a problem; a pod whose Job cannot be identified
+// is left alone rather than guessed at.
+func capFinishedAttempt(p *corev1.Pod, symptoms []symptom, outcomes map[string]jobOutcome) []symptom {
+	if p.Status.Phase != corev1.PodFailed {
+		return symptoms
+	}
+	outcome, known := outcomes[jobNameOf(p)]
+	if !known || outcome == jobFailed {
+		return symptoms
+	}
+	softened := markWaiting
+	if outcome == jobSucceeded {
+		softened = markWarning
+	}
+	out := make([]symptom, len(symptoms))
+	for i, s := range symptoms {
+		if s.mark == markProblem {
+			s.mark = softened
+		}
+		out[i] = s
+	}
+	return out
+}
+
+// jobNameOf is the Job a pod belongs to: the label the Job controller stamps on
+// every pod it creates, else the pod's controlling owner reference.
+func jobNameOf(p *corev1.Pod) string {
+	if n := p.Labels[batchv1.JobNameLabel]; n != "" {
+		return n
+	}
+	for _, ref := range p.OwnerReferences {
+		if ref.Kind == "Job" && ref.Controller != nil && *ref.Controller {
+			return ref.Name
+		}
+	}
+	return ""
 }
 
 type jobOutcome int
