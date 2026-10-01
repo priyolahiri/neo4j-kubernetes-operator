@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -64,6 +65,30 @@ const (
 	RepairActionWaitForming RepairAction = "wait_forming" // Wait for cluster to form naturally
 	RepairActionInvestigate RepairAction = "investigate"  // Manual investigation required
 )
+
+// splitBrainMessagePrefix leads every human-readable split-brain description.
+// The detector writes it into SplitBrainAnalysis.ErrorMessage itself, so
+// callers must go through splitBrainMessage rather than prefixing it again.
+const splitBrainMessagePrefix = "Split-brain detected"
+
+// splitBrainMessage returns the text for a detected split-brain, used for both
+// the SplitBrainDetected event and the cluster's status message.
+//
+// The detector's ErrorMessage already leads with splitBrainMessagePrefix;
+// prefixing it again at the call sites produced
+// "Split-brain detected: Split-brain detected: 2 cluster groups found, …".
+// A message without the prefix (or an empty one) still reads as a split-brain.
+func splitBrainMessage(analysis *SplitBrainAnalysis) string {
+	msg := strings.TrimSpace(analysis.ErrorMessage)
+	switch {
+	case msg == "":
+		return splitBrainMessagePrefix
+	case strings.HasPrefix(msg, splitBrainMessagePrefix):
+		return msg
+	default:
+		return splitBrainMessagePrefix + ": " + msg
+	}
+}
 
 // NewSplitBrainDetector creates a new split-brain detector
 func NewSplitBrainDetector(client client.Client) *SplitBrainDetector {
@@ -344,7 +369,7 @@ func (d *SplitBrainDetector) analyzeClusterViews(views []ClusterView, expectedSe
 			analysis.IsSplitBrain = true
 			analysis.OrphanedPods = orphanedPods
 			analysis.RepairAction = RepairActionRestartPods
-			analysis.ErrorMessage = fmt.Sprintf("Split-brain detected: %d cluster groups found, %d orphaned pods",
+			analysis.ErrorMessage = fmt.Sprintf(splitBrainMessagePrefix+": %d cluster groups found, %d orphaned pods",
 				len(clusterGroups), len(orphanedPods))
 		}
 	} else {

@@ -2051,9 +2051,7 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 			"repairAction", analysis.RepairAction)
 
 		// Record event about split-brain detection
-		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonSplitBrainDetected,
-			"Split-brain detected: %s", analysis.ErrorMessage)
-		metrics.RecordSplitBrainDetected(cluster.Name, cluster.Namespace)
+		splitBrainMsg := r.reportSplitBrainDetected(cluster, analysis)
 
 		// Attempt automatic repair if configured
 		if analysis.RepairAction == RepairActionRestartPods {
@@ -2076,7 +2074,7 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 		}
 
 		// For other repair actions, report but don't auto-repair
-		return false, fmt.Sprintf("Split-brain detected: %s", analysis.ErrorMessage), nil
+		return false, splitBrainMsg, nil
 	}
 
 	// If no split-brain, check if cluster formation is complete
@@ -2106,6 +2104,17 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 	logger.Info("Final legacy cluster formation check result",
 		"isFormed", isFormed, "message", message, "error", legacyErr)
 	return isFormed, message, legacyErr
+}
+
+// reportSplitBrainDetected emits the SplitBrainDetected Warning event, counts
+// the detection in metrics, and returns the text to use as the cluster's status
+// message. The text comes from splitBrainMessage so the "Split-brain detected"
+// prefix the detector already wrote is not repeated.
+func (r *Neo4jEnterpriseClusterReconciler) reportSplitBrainDetected(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, analysis *SplitBrainAnalysis) string {
+	msg := splitBrainMessage(analysis)
+	r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonSplitBrainDetected, msg)
+	metrics.RecordSplitBrainDetected(cluster.Name, cluster.Namespace)
+	return msg
 }
 
 // legacyClusterFormationCheck performs the original cluster formation verification
