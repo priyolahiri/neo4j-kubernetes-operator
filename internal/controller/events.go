@@ -15,7 +15,6 @@ const (
 	EventReasonRouteAPINotFound              = "RouteAPINotFound"
 	EventReasonMCPApocMissing                = "MCPApocMissing"
 	EventReasonReconcileFailed               = "ReconcileFailed"
-	EventReasonScaleDownPendingDrain         = "ScaleDownPendingDrain"
 	EventReasonScaleDownDraining             = "ScaleDownDraining"
 	EventReasonScaleDownBlocked              = "ScaleDownBlocked"
 	// EventReasonConnectivityDegraded — the operator has failed to reach the
@@ -25,11 +24,10 @@ const (
 
 // Rolling upgrade events
 const (
-	EventReasonUpgradeStarted    = "UpgradeStarted"
-	EventReasonUpgradeCompleted  = "UpgradeCompleted"
-	EventReasonUpgradePaused     = "UpgradePaused"
-	EventReasonUpgradeFailed     = "UpgradeFailed"
-	EventReasonUpgradeRolledBack = "UpgradeRolledBack"
+	EventReasonUpgradeStarted   = "UpgradeStarted"
+	EventReasonUpgradeCompleted = "UpgradeCompleted"
+	EventReasonUpgradePaused    = "UpgradePaused"
+	EventReasonUpgradeFailed    = "UpgradeFailed"
 	// EventReasonUpgradeDeferred — an image upgrade was requested while a
 	// scale-down drain is in progress; the upgrade starts once the drain
 	// completes (#173/#174 mutual exclusion).
@@ -282,12 +280,11 @@ const (
 	EventReasonAuraDatabaseFailed   = "AuraDatabaseFailed"
 
 	// Aura per-database backup/restore (v2beta1, beta) event reasons.
-	EventReasonAuraDatabaseBackupCreated   = "AuraDatabaseBackupCreated"
-	EventReasonAuraDatabaseBackupCompleted = "AuraDatabaseBackupCompleted"
-	EventReasonAuraDatabaseBackupFailed    = "AuraDatabaseBackupFailed"
-	EventReasonAuraDatabaseRestoreStarted  = "AuraDatabaseRestoreStarted"
-	EventReasonAuraDatabaseRestoreDone     = "AuraDatabaseRestoreCompleted"
-	EventReasonAuraDatabaseRestoreFailed   = "AuraDatabaseRestoreFailed"
+	EventReasonAuraDatabaseBackupCreated  = "AuraDatabaseBackupCreated"
+	EventReasonAuraDatabaseBackupFailed   = "AuraDatabaseBackupFailed"
+	EventReasonAuraDatabaseRestoreStarted = "AuraDatabaseRestoreStarted"
+	EventReasonAuraDatabaseRestoreDone    = "AuraDatabaseRestoreCompleted"
+	EventReasonAuraDatabaseRestoreFailed  = "AuraDatabaseRestoreFailed"
 
 	// Aura console-RBAC (v2beta1, beta) event reasons.
 	EventReasonAuraMemberUpdated  = "AuraMemberRoleUpdated"
