@@ -117,14 +117,14 @@ spec:
 ```yaml
 spec:
   config:
-    # GC optimization for Neo4j (JDK 17/21 — these flags are merged with the
-    # operator's built-in G1GC tuning, not replaced)
-    server.jvm.additional: >
-      -XX:+UseG1GC
-      -XX:MaxGCPauseMillis=200
-      -XX:G1HeapRegionSize=32m
-      -XX:+ParallelRefProcEnabled
-      -XX:+UseStringDeduplication
+    # GC optimization for Neo4j (JDK 17/21). One line, flags separated by
+    # spaces — a multi-line value (YAML `|` or `>`) is rejected because it
+    # ends in a newline.
+    #
+    # On a cluster this REPLACES the operator's built-in JVM flags (G1GC with a
+    # 200ms pause target, compressed oops, ExitOnOutOfMemoryError, …) rather
+    # than adding to them, so repeat any you want to keep.
+    server.jvm.additional: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:G1HeapRegionSize=32m -XX:+ParallelRefProcEnabled -XX:+UseStringDeduplication -XX:+ExitOnOutOfMemoryError"
 ```
 
 ## Network and Discovery Performance
@@ -135,7 +135,6 @@ spec:
 spec:
   config:
     # Cluster communication timeouts (Neo4j 5.26+)
-    dbms.cluster.raft.leader_failure_detection_window: "7s"
     dbms.cluster.raft.leader_failure_detection_window: "30s"
 ```
 

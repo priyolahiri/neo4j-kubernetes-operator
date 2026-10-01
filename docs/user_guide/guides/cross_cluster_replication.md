@@ -522,6 +522,14 @@ DR cluster.
     ones DR depends on are missing — the exact failure DR exists to prevent.
     Watch that condition, not `Ready`.
 
+    The one exception is a name that is an **alias** on the DR cluster: the
+    operator treats an existing alias as resolving, and Neo4j stores a grant
+    on an alias against the alias's *target* database. So once the failover
+    alias from [step 3](#3-downstream-pre-stage-the-failover-alias) exists, a
+    verbatim `ON DATABASE foo` is not skipped. Do not lean on that: the stored
+    privilege is bound to whatever the alias pointed at when it was granted,
+    so writing the replica's real name is the explicit, durable form.
+
     Rewrite every database name in `spec.privileges` (or `onDatabase` /
     `onGraph` in `spec.privilegeRules`) to the replica's name.
 
@@ -531,7 +539,7 @@ What copies, and what does not:
 |---|---|---|
 | `Neo4jRoleBinding` | ✅ Yes | names only users and roles — no database names |
 | `Neo4jUser` | ✅ Yes | `spec.roles` are role names. `spec.homeDatabase` accepts a database **or an alias**, so the failover alias from [step 3](#3-downstream-pre-stage-the-failover-alias) resolves it correctly — provided you created it |
-| `Neo4jRole` | ❌ **No** | `spec.privileges` are complete Cypher statements with the database name embedded. The alias does **not** help here |
+| `Neo4jRole` | ❌ **No** | `spec.privileges` are complete Cypher statements with the database name embedded. Rewrite them to the replica's name rather than relying on the failover alias resolving at grant time |
 
 Rewriting a role for the DR cluster:
 
@@ -837,10 +845,10 @@ alert on it the same way as the proxy condition above.
 | Network mode TLS handshake fails | `spec.tls.additionalClusterTrustCAs` missing on one or both clusters — it must be set on **both**, each trusting the other's CA. Confirm the CA actually reached the pods: `kubectl exec <cluster>-server-0 -c neo4j -- ls /ssl/trusted/` should show `peer-ca-0.crt` alongside `ca.crt` |
 | Cluster goes `Failed` with *"requires spec.tls.mode=cert-manager"* | `crossClusterReplication.enabled: true` on a cluster with no TLS. The proxy authenticates nothing itself, so it is refused without a cluster SSL policy — see [Security](#security) |
 | Network mode connection times out, both clusters on one Kubernetes cluster | the upstream has `spec.networkPolicy.enabled: true` — its port-6000 rule only admits pods carrying its own `neo4j.com/cluster` label; add the downstream to `spec.networkPolicy.allowReplicasFrom` (step 1, Network mode), or disable NetworkPolicy on the upstream, or use the proxy path instead |
-| `Pending`, event `UpstreamClusterNotFound` | `source.upstreamClusterRef` names a `Neo4jEnterpriseCluster` that doesn't exist (yet) in the given namespace — check the name/namespace, or wait if it's still being created |
-| `Pending`, event `UpstreamClusterNotReady` | the referenced upstream exists but hasn't published `status.internalAddresses` yet — normal briefly after the upstream is first created; check `kubectl get neo4jenterprisecluster <name> -n <ns> -o jsonpath='{.status.internalAddresses}'` if it persists |
-| `Pending`, event `UpstreamBackupNotFound` | `source.upstreamBackupRef` names a `Neo4jBackup` that doesn't exist (yet) in the given namespace — check the name/namespace |
-| `Pending`, event `UpstreamBackupNotReady` | the referenced `Neo4jBackup` exists but hasn't run its first backup yet (empty `status.replicationPullURI`) — check `kubectl get neo4jbackup <name> -n <ns>` for its own phase/schedule |
+| `Pending`, `Ready` condition reason `UpstreamClusterNotFound` (in `status.message`, not an event) | `source.upstreamClusterRef` names a `Neo4jEnterpriseCluster` that doesn't exist (yet) in the given namespace — check the name/namespace, or wait if it's still being created |
+| `Pending`, `Ready` condition reason `UpstreamClusterNotReady` | the referenced upstream exists but hasn't published `status.internalAddresses` yet — normal briefly after the upstream is first created; check `kubectl get neo4jenterprisecluster <name> -n <ns> -o jsonpath='{.status.internalAddresses}'` if it persists |
+| `Pending`, `Ready` condition reason `UpstreamBackupNotFound` | `source.upstreamBackupRef` names a `Neo4jBackup` that doesn't exist (yet) in the given namespace — check the name/namespace |
+| `Pending`, `Ready` condition reason `UpstreamBackupNotReady` | the referenced `Neo4jBackup` exists but hasn't run its first backup yet (empty `status.replicationPullURI`) — check `kubectl get neo4jbackup <name> -n <ns>` for its own phase/schedule |
 | `Pending`, cluster not Ready | downstream cluster still bootstrapping |
 | Lag grows without bound | upstream backup CR not running — check its schedule and `status` |
 | `Promoted` unexpectedly | someone promoted out of band; the CR is now inert by design |

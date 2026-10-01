@@ -45,6 +45,7 @@ metadata:
   namespace: prod
 spec:
   clusterRef: prod-cluster
+  name: analytics_reader   # Neo4j role name: letters, digits, underscores only (metadata.name has a hyphen)
   privileges:
     - "GRANT ACCESS ON DATABASE analytics TO analytics_reader"
     - "GRANT MATCH {*} ON GRAPH analytics NODES * TO analytics_reader"

@@ -284,17 +284,21 @@ kubectl exec my-cluster-server-0 -- cypher-shell -u neo4j -p <password> \
   "SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'fleetManagement' RETURN name"
 ```
 
-**`AuraFleetManagementFailed` event**
+**Registration failing (`registered: false` with a message)**
+
+Registration failures are reported in `status.auraFleetManagement.message`, not as events:
 
 ```bash
-kubectl get events --field-selector reason=AuraFleetManagementFailed
+kubectl get neo4jenterprisecluster my-cluster -o jsonpath='{.status.auraFleetManagement.message}'
 ```
 
 Common causes:
 
-- Token Secret not found in the correct namespace
-- Incorrect key name in the Secret (default is `token`)
-- Token has expired — generate a new one in the Aura console and update the Secret
+- Token Secret not found in the correct namespace (`cannot read token secret …`)
+- Incorrect key name in the Secret (default is `token`) (`key "token" not found in secret …`)
+- Token has expired — generate a new one in the Aura console, update the Secret, and reset `registered` as described under [Token rotation](#token-rotation)
+
+An `AuraFleetManagementFailed` warning event is only recorded when the reconcile step itself errors (for example the status write fails); check `kubectl get events --field-selector reason=AuraFleetManagementFailed` as well.
 
 **Other plugins disappear after enabling Fleet Management**
 

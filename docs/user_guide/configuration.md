@@ -61,7 +61,7 @@ The `pullSecrets` field accepts a list of secret names. Secrets must exist in th
 
     > **Warning**: Do not set `NEO4J_AUTH` via `spec.env`. The operator builds it from the admin Secret's `username` / `password` keys (referenced via `spec.auth.adminSecret`); overriding via `spec.env` bypasses the Secret-managed flow and the two paths can desync on Secret rotation. Override the Secret itself, not the env var.
 *   `spec.service`: Configure service type (ClusterIP, NodePort, LoadBalancer), annotations, and external access settings (Ingress; OpenShift Route).
-*   `spec.propertySharding`: (Neo4j 2025.12+) Enable property sharding for horizontal scaling of large datasets. See the [Property Sharding Guide](property_sharding.md) for detailed configuration options.
+*   `spec.propertySharding`: (Cluster only; Neo4j 2025.12+) Enable property sharding for horizontal scaling of large datasets. See the [Property Sharding Guide](property_sharding.md) for detailed configuration options.
 
 ## Storage and PVC Retention
 
@@ -111,7 +111,7 @@ This applies identically to both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseSt
 kubectl get neo4jenterprisecluster my-cluster -o jsonpath='{.spec.storage.retentionPolicy}'
 
 # List PVCs that would be affected
-kubectl get pvc -l app=my-cluster
+kubectl get pvc -l app.kubernetes.io/instance=my-cluster
 ```
 
 ### Recovering retained PVCs
@@ -226,7 +226,7 @@ spec:
 
 ### Memory
 
-Use the `server.memory.*` namespace. The pre-5.x `dbms.memory.*` keys still appear in many older tutorials but are deprecated:
+Use the `server.memory.*` namespace. The pre-5.x `dbms.memory.heap.*` and `dbms.memory.pagecache.*` keys still appear in many older tutorials but were renamed in Neo4j 5.0:
 
 ```yaml
 config:
@@ -235,7 +235,7 @@ config:
   server.memory.pagecache.size: "2G"
 ```
 
-Don't use `dbms.memory.*` — those keys have been deprecated since Neo4j 5.0.
+Don't use `dbms.memory.heap.*` or `dbms.memory.pagecache.*`. (`dbms.memory.transaction.total.max`, as used in the [Performance guide](performance.md), is still a valid current setting.)
 
 ### Query log
 
@@ -309,7 +309,7 @@ See the [Clustering guide](clustering.md) for what the operator writes for each 
 | Key | Status | Use instead |
 |---|---|---|
 | `dbms.mode=SINGLE` | Removed in 5.x | (no replacement — standalone is just `Neo4jEnterpriseStandalone`) |
-| `dbms.memory.*` | Deprecated | `server.memory.*` |
+| `dbms.memory.heap.*`, `dbms.memory.pagecache.*` | Renamed in 5.0 | `server.memory.heap.*`, `server.memory.pagecache.*` |
 | `dbms.connector.*` | Deprecated | `server.bolt.*` / `server.http.*` / `server.https.*` (or `spec.tls`) |
 | `causal_clustering.*` | Removed in 5.x | `dbms.cluster.*` |
 | `db.format` (any value) | Operator-managed | Don't set in `spec.config` — the operator already emits `db.format=block` and the validator rejects a user-set `db.format` (a duplicate key fails startup under strict validation). `standard`/`high_limit` are also deprecated since 5.23. |
@@ -327,6 +327,7 @@ metadata:
   name: production-cluster
 spec:
   acceptLicenseAgreement: "eval"
+  # image and storage omitted for brevity (both are required in a real manifest)
   topology:
     servers: 5   # self-organise into primary/secondary
   config:
@@ -358,6 +359,7 @@ metadata:
   name: dev-instance
 spec:
   acceptLicenseAgreement: "eval"
+  # image and storage omitted for brevity (both are required in a real manifest)
   config:
     server.memory.heap.initial_size: "1G"
     server.memory.heap.max_size: "2G"
@@ -377,21 +379,22 @@ You don't need to set these yourself — the operator injects them at pod startu
 - LIST discovery with static pod FQDNs (`{cluster}-server-{n}.{cluster}-headless.{ns}.svc.cluster.local:6000`)
 - Version-specific endpoint key (`dbms.cluster.discovery.v2.endpoints` for 5.26.x, `dbms.cluster.endpoints` for 2025.x+)
 - `dbms.cluster.discovery.version=V2_ONLY` (5.26.x only — V2 is the only protocol in CalVer)
-- ME/OTHER bootstrap strategy (server-0 is the preferred bootstrapper)
+- ME/OTHER bootstrap strategy (5.26.x only; server-0 is the preferred bootstrapper)
 - RAFT and routing port advertisement
 - `db.query.default_language`, from `spec.serverDefaultCypherLanguage` (CalVer only; see above)
 
 **Standalone deployments**
 
-- Unified clustering infrastructure (no `dbms.mode=SINGLE`)
-- Single-member cluster configuration
-- Listen-address bindings
+- No cluster or discovery settings at all (and no `dbms.mode=SINGLE`)
+- Listen-address bindings, the backup listener (6362) and, with `spec.tls`, the SSL policies
+- Metrics hardening (JMX and CSV off) and the seed-from-URI providers
+- `db.query.default_language`, from `spec.serverDefaultCypherLanguage` (CalVer only; see above)
 
 ## Migrating from older Neo4j versions
 
 If you're moving from Neo4j 4.x or an early 5.x release:
 
-1. `dbms.memory.*` → `server.memory.*`
+1. `dbms.memory.heap.*` / `dbms.memory.pagecache.*` → `server.memory.heap.*` / `server.memory.pagecache.*`
 2. `dbms.connector.*` → `server.bolt.*` / `server.http.*` / `server.https.*` (and TLS via `spec.tls`)
 3. Remove any `dbms.mode=SINGLE` — there is no replacement; use `Neo4jEnterpriseStandalone` instead
 4. `causal_clustering.*` → `dbms.cluster.*` (most discovery keys are now operator-managed anyway)

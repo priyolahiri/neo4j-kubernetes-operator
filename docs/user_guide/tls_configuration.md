@@ -29,6 +29,7 @@ metadata:
   name: secure-cluster
 spec:
   acceptLicenseAgreement: "eval"
+  # image and storage omitted for brevity (both are required in a real manifest)
   topology:
     servers: 3
   tls:
@@ -461,11 +462,12 @@ Bolt/HTTPS. Neo4j also makes **outbound** TLS calls (OIDC providers, LDAPS,
 plugin downloads, cross-cluster replication peers, Aura Fleet Management).
 For those, Neo4j needs to *trust* the remote endpoint's CA.
 
-The operator exposes two fields for this:
+The operator exposes three fields for this:
 
 | Field | When to use |
 |---|---|
-| `spec.trustedCASecrets` (list of `{name, key}`) | Most cases. Adds each Secret's CA to Neo4j's JVM-default truststore. Works for OIDC, LDAPS, generic outbound HTTPS. Cert-manager-issued Secrets reference directly — default key `ca.crt` matches. |
+| `spec.trustedCASecrets` (list of `{name, key}`) | Most cases. Adds each Secret's CA to Neo4j's JVM-default truststore. Works for OIDC, LDAPS, generic outbound HTTPS. Cert-manager-issued Secrets reference directly — default key `ca.crt` matches. Does **not** cover cross-cluster replication. |
+| `spec.tls.additionalClusterTrustCAs` (list of `{name, key}`) | A peer cluster's CA for the operator-managed `cluster` SSL policy — needed for network-mode cross-cluster replication, set on **both** clusters. Each CA is projected as its own file into `/ssl/trusted/` next to this cluster's `ca.crt`. Only relevant with `strictPeerValidation: true`. |
 | `spec.extraVolumes` + `spec.extraVolumeMounts` | When a **custom** Neo4j SSL policy needs a CA at a specific filesystem path via `dbms.ssl.policy.<name>.truststore_path`. Mount it at a path of your own — see the limitation below. |
 
 !!! warning "`strictPeerValidation: false` also changes how the operator verifies the server"
@@ -523,11 +525,12 @@ The operator exposes two fields for this:
     `spec.extraVolumes` covers SSL policies **you** define at paths you choose.
     Neither can add a peer CA to the operator-managed `cluster` policy.
 
-    **Consequence for cross-cluster replication:** mutual CA trust between two
-    Neo4j clusters — which CCDR's network-replication mode requires — is *not*
-    currently expressible through this operator. Backup-based replication needs
-    no cross-cluster TLS trust at all and is unaffected. See
-    `docs/design/cross-cluster-replication.md` (B3).
+    **For cross-cluster replication,** use `spec.tls.additionalClusterTrustCAs`
+    instead: the operator projects each listed CA into `/ssl/trusted/` itself,
+    alongside its own `trusted/ca.crt`. Network-mode replication needs mutual
+    trust, so list the other cluster's CA on both. Backup-based replication needs
+    no cross-cluster TLS trust at all. See
+    [Cross-cluster replication](guides/cross_cluster_replication.md).
 
 The legacy singular `spec.auth.trustStore` continues to work and is folded
 into the same JKS at reconcile time.

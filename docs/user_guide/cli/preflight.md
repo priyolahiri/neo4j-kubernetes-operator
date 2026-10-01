@@ -50,13 +50,13 @@ Capacity is compared against a **single node's** allocatable memory, never the c
 | `credentialsSecretRef` exists | Named but absent means the Job cannot start |
 | It carries every key the Job mounts | A missing key gives `CreateContainerConfigError`, which never mentions backups |
 | Or: the backup ServiceAccount has a cloud-identity annotation | With no Secret and no IRSA / Workload Identity binding, the Job runs with no credentials at all |
-| A PVC-backed backup's claim or class exists | Same failure as a cluster's storage |
+| A PVC-backed backup names its claim (`spec.storage.pvc.name`) and that claim exists | A nameless PVC is refused by the operator outright (artifacts would land in an EmptyDir and be discarded); a named claim that does not exist leaves the Job unschedulable. **Known limitation:** the existence check does not yet account for `spec.storage.pvc.size`, which makes the operator create the claim itself — so on the first apply of an auto-provisioned backup, expect a `✗ pvc … does not exist` (and exit code 1) that the operator will resolve on its own. No StorageClass check is made for backup claims |
 
 **Cross-cluster replicas (backup mode)**
 
 | Check | Why it matters |
 |---|---|
-| The downstream cluster has `AWS_REGION` in `spec.env` | The seed and every pull run **on the Neo4j server**, through the AWS SDK's default credential chain — so the object-store settings must be in the server's environment, not on the replica CR. Without it the replica fails inside the SDK with *"Unable to load region from any of the providers"*, which mentions neither replicas nor buckets |
+| The downstream cluster or standalone has `AWS_REGION` (or `AWS_DEFAULT_REGION`) in its `spec.env` or in the environment the operator has already rendered onto its StatefulSet — checked for `s3://` URIs only | The seed and every pull run **on the Neo4j server**, through the AWS SDK's default credential chain — so the object-store settings must be in the server's environment, not on the replica CR. Without it the replica fails inside the SDK with *"Unable to load region from any of the providers"*, which mentions neither replicas nor buckets. A downstream bound to a cloud role through `spec.podServiceAccountAnnotations` gets a warning instead, because its credentials are injected by the platform and cannot be read here |
 | `source.credentialsSecretRef` names a Secret that exists | The operator projects that Secret onto the downstream servers before it seeds (one rolling restart), so a name with nothing behind it leaves the replica waiting indefinitely |
 | Network mode | Says so and checks nothing — reading over the wire needs no bucket credentials |
 

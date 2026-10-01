@@ -134,16 +134,18 @@ are supported by Neo4j at once for ~1.5 years. The operator mirrors that:
 
 ## Release quality: the gates every release passes
 
-"Validated" isn't a claim, it's a pipeline. A release of this operator cannot
-be published unless all of the following pass — they are wired as blocking
-gates, not conventions:
+"Validated" isn't a claim, it's a pipeline. The unit/drift, install-confidence
+and supply-chain steps below are wired into the release workflow itself — a
+release cannot be published unless they pass. The integration suites run
+separately (per PR, or on demand during release preparation); they are not
+release-workflow gates:
 
 | Gate | What it proves | When it runs |
 |---|---|---|
-| Unit suite + drift gate | Code behavior pinned by ~thousands of unit tests; CRDs, RBAC, Helm chart, and OLM bundle are regenerated and diffed — published manifests always match the code | Every PR, and again on the release tag |
+| Unit suite + drift gate | Code behavior pinned by ~thousands of unit tests; CRDs, RBAC, Helm chart, and OLM bundle are regenerated and diffed — published manifests always match the code | Every PR, and again on the release tag (**blocking**) |
 | Core integration suite | Reconcile contracts (cluster formation, standalone lifecycle, databases, backups) against real Neo4j on Kubernetes — on **both** supported lines (5.26 LTS *and* the pinned CalVer) | Every runtime-affecting PR |
-| Extended integration suite | The full matrix: scaling with drain, split-brain recovery, the complete backup/restore matrix (PVC, cloud, chains, hooks), sharding | On demand (manual dispatch), and on the exact commit being tagged |
-| Install-confidence gate | Five legs on a fresh cluster: Helm install in cluster **and** namespace-scoped RBAC modes (with a live smoke deployment), Helm upgrade **from the previous published release** including the mandatory CRD refresh, documented-order uninstall with live resources, and the kubectl server-side-apply path | Inside the release pipeline — `build-and-push` is blocked until it passes |
+| Extended integration suite | The full matrix: scaling with drain, split-brain recovery, the complete backup/restore matrix (PVC, cloud, chains, hooks), sharding | On demand (manual dispatch) — not triggered by the tag |
+| Install-confidence gate | Five legs on a fresh cluster: Helm install in cluster **and** namespace-scoped RBAC modes (with a live smoke deployment), Helm upgrade **from the previous published release** including the mandatory CRD refresh, documented-order uninstall with live resources, and the kubectl server-side-apply path | Inside the release pipeline — `build-and-push` is blocked until it passes (**blocking**) |
 | Signed supply chain | Multi-arch (`amd64`/`arm64`) images signed with Sigstore Cosign keyless signing; OLM bundle validated with operator-sdk | Every release |
 
 Verify an image signature yourself:

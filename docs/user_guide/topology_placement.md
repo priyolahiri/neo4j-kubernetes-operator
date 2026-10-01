@@ -112,6 +112,8 @@ spec:
         topologyKey: "topology.kubernetes.io/zone"
 ```
 
+`enforceDistribution: true` is strict: it needs **at least as many zones as servers** (here 3 and 3). With more servers than zones the cluster goes `Failed` with `cannot enforce distribution: N servers require at least N availability zones, but only M are available`. It also turns any pod anti-affinity you configure into a hard (`required`) rule, whatever `type` says. To spread more servers than zones, use `topologySpread` (with `maxSkew`) instead.
+
 ### Minimum Domain Requirements
 
 Ensure scheduling only when sufficient domains are available:
@@ -196,7 +198,8 @@ For production clusters requiring maximum availability:
 spec:
   topology:
     servers: 5       # 5 servers for high availability (odd number recommended)
-    enforceDistribution: true
+    # No enforceDistribution here: it would need >= 5 zones for 5 servers (see above).
+    # The spread constraint + required hostname anti-affinity give the HA guarantee.
     placement:
       topologySpread:
         enabled: true
@@ -293,7 +296,7 @@ kubectl describe neo4jenterprisecluster <cluster-name>
 
 1. **Use Odd Numbers of Servers**: 3, 5, or 7 servers provide optimal fault tolerance for database quorum behavior
 2. **Plan for Zone Distribution**: Ensure you have enough zones to satisfy your topology spread constraints
-3. **Enable enforceDistribution**: Ensures servers are distributed across zones for maximum availability
+3. **Use enforceDistribution only when servers ≤ zones**: it fails the cluster if there are fewer zones than servers, and it makes any anti-affinity hard (`required`)
 4. **Start with Soft Constraints**: Use `preferred` anti-affinity and `ScheduleAnyway` during initial deployment
 5. **Monitor Zone Capacity**: Ensure each zone has sufficient resources for your server topology
 6. **Test Failure Scenarios**: Verify cluster behavior and database availability when zones become unavailable
@@ -322,7 +325,8 @@ spec:
       - us-east-1a
       - us-east-1b
       - us-east-1c
-    enforceDistribution: true
+    # enforceDistribution omitted: with 5 servers and 3 zones it would fail
+    # ("cannot enforce distribution"); minDomains + maxSkew spread the pods instead.
     placement:
       topologySpread:
         enabled: true

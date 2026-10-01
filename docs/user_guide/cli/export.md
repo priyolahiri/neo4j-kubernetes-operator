@@ -33,24 +33,33 @@ $ kubectl neo4j export replica-database dr-copy --from-backup nightly \
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jReplicaDatabase
 metadata:
+  creationTimestamp: null
   name: dr-copy
   namespace: neo4j
 spec:
   clusterRef: dr
-  upstreamDatabase: neo4j
   source:
     mode: backup
     pullURI: s3://prod-backups/nightly-chain/
+  upstreamDatabase: neo4j
+status: {}
 ```
+
+`metadata.namespace` defaults to the upstream resource's namespace (`-n`); pass `--downstream-namespace` to write a different one into the manifest. The `creationTimestamp: null` and `status: {}` lines are harmless and are ignored on apply.
 
 with, on stderr:
 
 ```
 source.pullURI taken from Neo4jBackup neo4j/nightly status.replicationPullURI
-note: the upstream reads its bucket with Secret "cloud-creds". The DOWNSTREAM cluster
-      needs its own credentials for the same bucket — set source.credentialsSecretRef
-      there, or bind a workload identity. This command cannot copy a Secret between
-      clusters.
+note: the upstream reads its bucket with Secret "cloud-creds". The DOWNSTREAM servers need their
+      own credentials for the same bucket: the seed and every pull run on the Neo4j
+      server, so they must be in its environment. Either create a Secret in the
+      replica's namespace with AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+      (and AWS_ENDPOINT_URL_S3 for S3-compatible stores) and set
+      source.credentialsSecretRef to it — the operator projects it onto the
+      downstream servers, one rolling restart — or bind a workload identity, in
+      which case only AWS_REGION is needed. This command cannot copy a Secret
+      between clusters.
 ```
 
 ### `--seed-from-latest`

@@ -15,6 +15,7 @@ metadata:
   name: secure-cluster
 spec:
   acceptLicenseAgreement: "eval"
+  # image, topology and storage omitted for brevity (required in a real manifest)
   # TLS configuration with cert-manager
   tls:
     mode: cert-manager
@@ -53,6 +54,7 @@ metadata:
   name: production-cluster
 spec:
   acceptLicenseAgreement: "eval"
+  # image, topology and storage omitted for brevity (required in a real manifest)
   tls:
     mode: cert-manager
     issuerRef:
@@ -136,6 +138,7 @@ metadata:
   name: secure-cluster
 spec:
   acceptLicenseAgreement: "eval"
+  # image, topology and storage omitted for brevity (required in a real manifest)
   auth:
     # When authenticationProviders is omitted, defaults to ["native"]
     adminSecret: neo4j-admin-secret
@@ -373,8 +376,11 @@ If your IdP does not support OIDC Discovery, specify endpoints manually:
 
 When Neo4j needs to make outgoing TLS connections to systems whose certificates
 are signed by an internal CA — LDAPS servers, OIDC providers behind a corporate
-CA, Aura Fleet Management endpoints, plugin download mirrors, cross-cluster
-replication peers — you need to add those CAs to Neo4j's JVM truststore.
+CA, Aura Fleet Management endpoints, plugin download mirrors — you need to add
+those CAs to Neo4j's JVM truststore. (Cross-cluster replication peers are
+different: the cluster SSL policy never reads this truststore, so a peer
+cluster's CA goes in `spec.tls.additionalClusterTrustCAs` instead — see
+[Cross-cluster replication: the transaction-shipping port](#cross-cluster-replication-the-transaction-shipping-port).)
 
 The operator supports this via two fields, in increasing order of flexibility:
 
@@ -394,7 +400,6 @@ spec:
     - name: oidc-corporate-ca       # Secret with ca.crt (default key)
     - name: ldap-internal-ca
       key:  ldap.pem                # override the default key
-    - name: replica-cluster-ca      # CA of another Neo4j cluster we replicate to
 ```
 
 For each entry, the operator:
@@ -538,7 +543,7 @@ spec:
 
 |  | Group-to-role mapping | ABAC (`Neo4jAuthRule`) |
 |---|---|---|
-| **Where it's defined** | `spec.auth.authorizationProviders[].groupToRoleMapping` on the cluster | Stand-alone `Neo4jAuthRule` resource |
+| **Where it's defined** | `spec.auth.ldap.authorization.groupToRoleMapping` / `spec.auth.oidc.<name>.groupToRoleMapping` on the cluster | Stand-alone `Neo4jAuthRule` resource |
 | **Input** | Group claim values | Any OIDC token claim, multiple at once |
 | **Logic** | Static key-value lookup | Arbitrary Cypher expression (operators, list functions, time, …) |
 | **Min Neo4j version** | All supported versions | 2026.03+ |
@@ -606,6 +611,7 @@ metadata:
   name: my-cluster
 spec:
   acceptLicenseAgreement: "eval"
+  # image and storage omitted for brevity (both are required in a real manifest)
   topology:
     servers: 3
   audit:
@@ -651,6 +657,7 @@ metadata:
   name: my-cluster
 spec:
   acceptLicenseAgreement: "eval"
+  # image and storage omitted for brevity (both are required in a real manifest)
   topology:
     servers: 3
   networkPolicy:
@@ -1036,7 +1043,7 @@ The correct flow is two-step, in this order:
 3. **Verify** by checking the operator's logs — the next reconcile should succeed against the new password:
 
    ```bash
-   kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager --tail=20 | grep -i auth
+   kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator --tail=20 | grep -i auth
    ```
 
    If the operator logs `Neo.ClientError.Security.Unauthorized` after the rotation, the Secret was updated but `ALTER USER` didn't take — repeat step 1.
@@ -1052,23 +1059,22 @@ The correct flow is two-step, in this order:
 **Rotation flow**:
 
 1. Update the Secret with the new token.
-2. The operator's next reconcile detects the change via the SHA-256 fingerprint in `status.auraFleetManagement.tokenSecretHash` (analogous to `status.passwordSecretHash` on `Neo4jUser`).
-3. It calls `fleetManagement.registerToken($newToken)` against the cluster, replacing the old token.
-4. The fingerprint in `status` is updated; subsequent reconciles see no change and stay quiet.
+2. The operator does **not** watch the token: once `status.auraFleetManagement.registered` is `true` it skips registration, so a changed Secret is ignored. Patch the status to `registered: false` to force re-registration (command in [Aura Fleet Management → Token rotation](aura_fleet_management.md#token-rotation)).
+3. On the next reconcile it calls `fleetManagement.registerToken($newToken)` against the cluster, replacing the old token and setting `registered` back to `true`.
 
-No `ALTER USER`-equivalent is needed — the registration is a single procedure call.
+If the plugin auto-renews the token (auto-rotation enabled in the Aura wizard), no action is needed. No `ALTER USER`-equivalent is needed — the registration is a single procedure call.
 
 ### TLS certificate rotation
 
-**What it is**: the Secret named `{cluster}-tls-secret` (or the configured `spec.tls.certificateSecret`) that holds `tls.crt`, `tls.key`, and optionally `ca.crt`.
+**What it is**: the cert-manager-issued Secret named `{cluster}-tls-secret` that holds `tls.crt`, `tls.key`, and `ca.crt`.
 
-**When using `spec.tls.mode: cert-manager`** (recommended): rotation is fully automatic. cert-manager issues a new Certificate when the existing one approaches expiry (`spec.duration` and `spec.renewBefore` on the `Certificate` resource). The new Secret content is picked up on the next pod restart — schedule a rolling restart yourself if your certificate renewal cadence is shorter than your pod lifetime:
+**With `spec.tls.mode: cert-manager`** (the only mode that issues certificates): rotation is fully automatic. cert-manager issues a new Certificate when the existing one approaches expiry (`spec.duration` and `spec.renewBefore` on the `Certificate` resource). The new Secret content is picked up on the next pod restart — schedule a rolling restart yourself if your certificate renewal cadence is shorter than your pod lifetime:
 
 ```bash
 kubectl rollout restart statefulset <cluster>-server -n <namespace>
 ```
 
-**When using a manually-provisioned Secret**: replace the Secret contents and trigger a rolling restart. The operator does not watch arbitrary TLS Secrets for change.
+The operator has no bring-your-own-certificate mode: `spec.tls.mode` is `cert-manager` or `disabled`, and `spec.tls.certificateSecret` is accepted by the schema but not used.
 
 ### Neo4jPlugin `source.authSecret` (VerifiedDownload mode)
 
@@ -1081,14 +1087,14 @@ kubectl rollout restart statefulset <cluster>-server -n <namespace>
 | Secret | Trigger pod restart? | Run Cypher? | Operator auto-detects? |
 |---|---|---|---|
 | `spec.auth.adminSecret` (cluster + standalone) | not required if you've run `ALTER USER`, but recommended for hygiene | **Yes** (`ALTER USER neo4j SET PASSWORD ...`) | No — needs explicit `ALTER USER` |
-| `spec.auraFleetManagement.tokenSecretRef` | No | No | **Yes** (token hash in status) |
-| `Neo4jUser.spec.passwordSecret` | No | No | **Yes** (`status.passwordSecretHash`) |
+| `spec.auraFleetManagement.tokenSecretRef` | No | No | No — set `status.auraFleetManagement.registered: false` to re-register |
+| `Neo4jUser.spec.passwordSecretRef` | No | No | **Yes** (`status.passwordSecretHash`) |
 | TLS Secret (cert-manager) | Yes (rolling restart on renewal) | No | cert-manager auto-renews |
 | `Neo4jPlugin.spec.source.authSecret` | Yes | No | No — picked up on next pod start |
 
 ## Operator-labelled Secrets
 
-User-supplied Secrets (the admin Secret, Aura token Secret, plugin `authSecret`, manually-provisioned TLS Secrets) are **not** modified by the operator. The operator reads from them; it does not mutate their labels or annotations. If you want consistent inventory metadata across user-supplied Secrets, apply your own labels at creation time.
+User-supplied Secrets (the admin Secret, Aura token Secret, plugin `authSecret`, the CA Secrets named in `trustedCASecrets`) are **not** modified by the operator. The operator reads from them; it does not mutate their labels or annotations. If you want consistent inventory metadata across user-supplied Secrets, apply your own labels at creation time.
 
 The operator does propagate ownership metadata onto the Secrets it produces indirectly:
 
@@ -1127,8 +1133,11 @@ operator-emitted defaults.
 > scraping, but the endpoint is unauthenticated. Keep it behind:
 >
 > - The cluster's ClusterIP Service (not exposed externally by default).
-> - `spec.networkPolicy.enabled: true` — this opens 2004 to any pod in
->   the cluster's namespace but blocks external traffic.
+> - Not `spec.networkPolicy.enabled: true` on its own — the operator's policy
+>   allows 2004 from **any** source (no `from` restriction), like the other
+>   public ports, so it does not protect the metrics port. Restrict reachability
+>   at the Service/Ingress layer, or add a CNI-level deny (see "External access
+>   and the additive-policy trade-off" above).
 > - For tighter scoping (e.g. only allow Prometheus operator's scraper
 >   pod), write a custom NetworkPolicy alongside the operator's; the
 >   operator uses a unique `app.kubernetes.io/component: network-policy`

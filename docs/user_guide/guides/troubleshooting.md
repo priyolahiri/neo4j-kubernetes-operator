@@ -55,7 +55,7 @@ kubectl logs -l app=<standalone-name>
 kubectl get events --sort-by=.metadata.creationTimestamp
 
 # Check operator logs
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
 ```
 
 ### Common Port Forwarding Commands
@@ -95,8 +95,10 @@ kubectl delete pod <cluster>-server-1 <cluster>-server-2
 
 #### Problem: Single-Node Cluster Not Allowed
 ```
-Error: Neo4jEnterpriseCluster requires minimum 2 servers for clustering. For single-node deployments, use Neo4jEnterpriseStandalone instead
+servers must be at least 2 for clustering. For single-node deployments, use Neo4jEnterpriseStandalone instead
 ```
+
+(The CRD schema also enforces `spec.topology.servers >= 2`, so `kubectl apply` itself may reject a smaller value with the apiserver's own "should be greater than or equal to 2" message.)
 
 **Solution**: Use the correct CRD for your deployment type:
 
@@ -473,7 +475,7 @@ kubectl exec -it <pod-name> -- neo4j-admin database check neo4j
 ### 8. Backup and Restore Issues
 
 #### Problem: Backup Job fails to start (ServiceAccount / permission errors)
-Backups run as Kubernetes Jobs that execute `neo4j-admin` directly against a database — they do NOT exec into the Neo4j pods. Each Job runs under the `neo4j-backup-sa` ServiceAccount, which the operator creates automatically in the backup's namespace (and stamps with any workload-identity annotations from `spec.cloud.identity`).
+Backups run as Kubernetes Jobs that execute `neo4j-admin` directly against a database — they do NOT exec into the Neo4j pods. Each Job runs under the `neo4j-backup-sa` ServiceAccount, which the operator creates automatically in the backup's namespace (and stamps with any workload-identity annotations from `spec.storage.cloud.identity.autoCreate.annotations`).
 
 **Solution**: `kubectl neo4j preflight Neo4jBackup/<name> -n <ns>` checks this before the
 first run — that the ServiceAccount carries a cloud-identity annotation, or that the
@@ -497,7 +499,8 @@ Neo4j 5.26+ requires backup destination path to exist. The operator's backup Job
 
 ```bash
 # The Job is named "<neo4jbackup-name>-backup" (one-shot) or
-# "<neo4jbackup-name>-<unix-seconds>" (CronJob child).
+# "<neo4jbackup-name>-backup-cron-<timestamp>" (CronJob child; the
+# runID in status.history is this Job name).
 kubectl logs -n <ns> job/<job-name>
 ```
 
@@ -625,7 +628,7 @@ kubectl get events --field-selector involvedObject.name=<database-name>
 kubectl describe neo4jdatabase <database-name>
 
 # Check operator logs for seed URI specific errors
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i seed
+kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator | grep -i seed
 ```
 
 **Common seed URI issues:**
@@ -677,12 +680,9 @@ kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manag
    # Solution: Use .backup format for large datasets
    seedURI: "s3://my-backups/database.backup"  # Instead of .dump
 
-   # Optimize seed configuration for better performance
-   seedConfig:
-     config:
-       compression: "lz4"      # Faster than gzip
-       bufferSize: "256MB"     # Larger buffer for big files
-       validation: "lenient"   # Skip intensive validation
+   # `seedConfig.config` is not a tuning surface for CloudSeedProvider (it only
+   # carries S3SeedProvider options such as `region`); for large seeds, give the
+   # server pods enough memory/CPU and a reliable path to the bucket.
    ```
 
 #### Problem: Database Stuck in Creating State
@@ -699,7 +699,7 @@ kubectl get events -w --field-selector involvedObject.name=<database-name>
 1. **Check Cluster Connectivity:**
    ```bash
    # Ensure operator can connect to Neo4j cluster
-   kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i "connection failed"
+   kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator | grep -i "connection failed"
    ```
 
 2. **Large Backup Restoration:**
@@ -731,7 +731,7 @@ kubectl exec -it <cluster-pod> -- cypher-shell -u neo4j -p <password> -d <databa
    kubectl get neo4jdatabase <database-name> -o jsonpath='{.status.dataImported}'
 
    # Check for import errors in operator logs
-   kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i "initial data\|import"
+   kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator | grep -i "initial data\|import"
    ```
 
 2. **Seed URI Data Not Restored:**
@@ -746,12 +746,15 @@ kubectl exec -it <cluster-pod> -- cypher-shell -u neo4j -p <password> -d <databa
 
 ### Debug Mode
 
-Enable debug logging in the operator:
+Enable debug logging in the operator by appending a flag to the manager's existing arguments (a plain strategic-merge patch of `args` would replace them all). The Deployment is named `neo4j-operator` for a Helm release called `neo4j-operator`, and `neo4j-operator-controller-manager` for kustomize installs:
 ```bash
-kubectl patch deployment neo4j-operator-controller-manager \
-  -n neo4j-operator-system \
-  -p '{"spec":{"template":{"spec":{"containers":[{"name":"manager","args":["--zap-log-level=debug"]}]}}}}'
+kubectl get deployment -n neo4j-operator-system   # find the operator Deployment name
+kubectl patch deployment <operator-deployment> \
+  -n neo4j-operator-system --type=json \
+  -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--zap-log-level=debug"}]'
 ```
+
+For Helm installs, `helm upgrade neo4j-operator ... --set logLevel=debug` is the durable way (the chart renders `--zap-log-level` from `logLevel`).
 
 ### Resource Monitoring
 
@@ -788,7 +791,7 @@ When filing an issue, include the output of:
 kubectl get neo4jenterprisecluster,neo4jenterprisestandalone -A
 kubectl get pods,svc,pvc -l app.kubernetes.io/name=neo4j
 kubectl get events --sort-by=.metadata.creationTimestamp | tail -30
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager --tail=200
+kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator --tail=200
 kubectl describe nodes | grep -A 5 "Allocated resources:"
 ```
 

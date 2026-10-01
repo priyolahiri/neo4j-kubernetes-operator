@@ -21,17 +21,17 @@ and standalone.
 | Service | `Neo4jEnterpriseCluster` | `Neo4jEnterpriseStandalone` | Ports |
 |---|---|---|---|
 | Client-facing (your apps connect here) | `{name}-client` | `{name}-client` | `bolt 7687`, `http 7474`, `https 7473` (TLS); standalone also exposes `metrics 2004` here when monitoring is on |
-| Deprecated alias (standalone only, removed next release) | — | `{name}-service` | same client ports, ClusterIP only |
-| Headless (stable per-pod DNS) | `{name}-headless` | `{name}-headless` | `bolt 7687`, `http 7474`, `backup 6362`, `https 7473` (TLS) |
-| Discovery / internals (cluster only) | `{name}-discovery`, `{name}-internals` | — | clustering ports (`6000/7000/7688/7689`) |
+| Deprecated alias (standalone only, to be removed) | — | `{name}-service` | same client ports, ClusterIP only |
+| Headless (stable per-pod DNS) | `{name}-headless` | `{name}-headless` | `bolt 7687`, `http 7474`, `backup 6362`, `https 7473` (TLS); the cluster one also carries the clustering ports (`6000/7000/7688/7689`) |
+| Discovery / internals (cluster only) | `{name}-discovery` (legacy, unused: port `5000` only), `{name}-internals` | — | `-internals`: `bolt`, `http`, `backup` and the clustering ports (`6000/7000/7688/7689`) |
 | Metrics (cluster only; standalone folds metrics into its client service) | `{name}-metrics` (`2004`) | — | `2004` |
 
 Notes:
 
 - **The client-facing Service is `{name}-client` for both kinds.** Standalone
-  deployments previously used `{name}-service`; that name still resolves for
-  **one more release** as a deprecated ClusterIP-only alias (annotated
-  `neo4j.com/deprecated-alias-of`) and will then be removed — update any saved
+  deployments previously used `{name}-service`; that name still resolves as a
+  deprecated ClusterIP-only alias (annotated `neo4j.com/deprecated-alias-of`;
+  still created as of v1.17.0) and will be removed in a future release — update any saved
   connection strings, NetworkPolicies, and dashboards to `{name}-client` now.
   A pod's stable address is always
   `{name}-0.{name}-headless.<namespace>.svc.cluster.local`.
@@ -92,6 +92,7 @@ metadata:
   name: production-cluster
 spec:
   acceptLicenseAgreement: "eval"
+  # image, topology and storage omitted for brevity (required in a real manifest)
   service:
     type: LoadBalancer
     annotations:
@@ -267,6 +268,7 @@ metadata:
   name: aws-cluster
 spec:
   acceptLicenseAgreement: "eval"
+  # image, topology and storage omitted for brevity (required in a real manifest)
   service:
     type: LoadBalancer
     annotations:

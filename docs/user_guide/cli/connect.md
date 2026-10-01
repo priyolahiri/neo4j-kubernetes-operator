@@ -25,6 +25,9 @@ From your machine:
 TLS is enabled: plain bolt:// is rejected by this deployment — use bolt+s://.
 ```
 
+!!! note "What `connect` prints is not what `cypher` dials"
+    `connect` always prints the `bolt` / `bolt+s` scheme and a `localhost` port-forward address, for clusters as well as standalones. That has two limits today. On a **cluster**, a pinned `bolt://` session can answer `Database neo4j not found` — use a routing scheme (`neo4j://`, or `neo4j+s://` with TLS) in your own driver. On a **TLS** deployment, the certificates carry no `localhost` SAN, so a client dialled at `localhost` fails hostname verification; either connect from inside the cluster through the client Service name, or use the `+ssc` schemes (which encrypt but verify nothing) for local debugging only. `kubectl neo4j cypher` avoids both (see below).
+
 ### Your password is never read, moved, or logged
 
 This is worth stating precisely, because the obvious implementation gets it wrong.
@@ -32,8 +35,10 @@ This is worth stating precisely, because the obvious implementation gets it wron
 The admin credentials are **already inside the pod** — the operator injects them via `secretKeyRef` as `DB_USERNAME` and `DB_PASSWORD`. So the command references them *by variable name* and lets the shell expand them in the container:
 
 ```bash
-kubectl exec -n neo4j prod-server-0 -c neo4j -it --   sh -c 'cypher-shell -a bolt+s://localhost:7687 -u "$DB_USERNAME" -p "$DB_PASSWORD"'
+kubectl exec -n neo4j prod-server-0 -c neo4j -it -- sh -c 'cypher-shell -a neo4j+s://prod-client.neo4j.svc.cluster.local:7687 -u "$DB_USERNAME" -p "$DB_PASSWORD"'
 ```
+
+(`prod-server-0` stands for whichever server pod is Ready. On a TLS deployment the real command is wrapped to first build a throwaway truststore from the pod's `/ssl/ca.crt`, so the server certificate is verified rather than skipped; a standalone dials `bolt://` / `bolt+s://` instead of `neo4j://` / `neo4j+s://`.)
 
 The secret never leaves the pod. It is not in your shell history, not in `ps` output on either side, and — the one people forget — **not in the Kubernetes API audit log**, which records an exec request's command array verbatim. A version that read the Secret and passed `-p <value>` would leak it into all three.
 

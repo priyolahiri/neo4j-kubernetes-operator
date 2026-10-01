@@ -13,9 +13,9 @@ A companion CLI for this operator, distributed as a `kubectl` plugin. It exists 
 edit YAML → apply → wait for reconcile → read status → find the mistake → repeat
 ```
 
-Across 26 resource kinds and 234 top-level spec fields, that loop is slow. [`validate`](validate.md) closes it by running **the operator's own validators** against your files, locally.
+Across 27 resource kinds and 247 top-level spec fields, that loop is slow. [`validate`](validate.md) closes it by running **the operator's own validators** against your files, locally.
 
-The second reason is volume. The troubleshooting guide documents 98 separate `kubectl` invocations, nearly all of them generic commands with placeholders you have to resolve from knowledge of the operator's naming scheme — `<cluster>-server-0`, `<cluster>-client`, which namespace the operator itself lives in, which container, which Bolt scheme. The CLI knows all of that.
+The second reason is volume. The troubleshooting guide documents roughly a hundred separate `kubectl` invocations, nearly all of them generic commands with placeholders you have to resolve from knowledge of the operator's naming scheme — `<cluster>-server-0`, `<cluster>-client`, which namespace the operator itself lives in, which container, which Bolt scheme. The CLI knows all of that.
 
 ## The commands
 
@@ -34,7 +34,7 @@ Start with [Installing the CLI](install.md).
 
 ## What it will not do
 
-Three boundaries, held deliberately:
+Four boundaries, held deliberately:
 
 - **It never executes Cypher for a mutating operation on your behalf.** It may author and read custom resources, and read Kubernetes state. Creating a database or promoting a replica belongs in a CR, where it is declarative, auditable and reversible. `cypher -c "..."` passes *your* query through — a different thing from the CLI deciding to change your database.
 - **It never restates the operator's rules.** Validation comes from the operator's own packages, and `explain` is keyed off the operator's own condition constants, so a rename breaks the build rather than leaving the CLI confidently wrong. A second source of truth would rot.
@@ -51,6 +51,10 @@ kubectl neo4j diagnose Neo4jEnterpriseCluster/prod -n neo4j   # same
 kubectl neo4j diagnose -n neo4j Neo4jEnterpriseCluster/prod   # thing
 ```
 
+## Common flags
+
+Every command that talks to a cluster accepts `--context` and `--kubeconfig` (the same resolution `kubectl` uses) and `-n` / `--namespace` (default: the kubeconfig context's namespace). `validate` is offline unless you pass `--connect`, `--context` or `--kubeconfig`. `status` also takes `--all-namespaces`.
+
 ## Version matching
 
-The CLI carries the validation rules and status vocabulary of the release it was built from. **Keep it on the same version as the operator you deploy.** Its output always names the ruleset it used, and when connected to a cluster it warns if the two disagree.
+The CLI carries the validation rules and status vocabulary of the release it was built from. **Keep it on the same version as the operator you deploy.** `validate` always names the ruleset it used, `explain` names the release its explanations describe, and `validate --connect` also warns when the operator running in the cluster is a different version.

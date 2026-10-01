@@ -62,11 +62,11 @@ Ref: [5.26.x discovery docs](https://neo4j.com/docs/operations-manual/5/clusteri
 
 ## Cluster Formation
 
-The operator uses a **ME/OTHER bootstrap strategy** with `Parallel` pod management for fast, split-brain-free cluster formation.
+The operator uses `Parallel` pod management and a minimum-primaries floor for fast, split-brain-free cluster formation. On Neo4j 5.26 it also steers bootstrap with a **ME/OTHER** hint.
 
 ### Key Configuration
 
-- **Bootstrap strategy**: server-0 uses `me` (preferred bootstrapper); all other servers use `other` (join when ready)
+- **Bootstrap strategy** (5.26 only): server-0 uses `me` (preferred bootstrapper); all other servers use `other` (join when ready). On CalVer no hint is emitted — V2 discovery elects a bootstrapper from the endpoint list
 - **Minimum primaries**: Set to `min(3, servers)` on initial formation (override with `spec.topology.minSystemPrimaries`) — that many servers must mutually discover each other before RAFT elects a leader, preventing premature solo bootstrap. Note it's a bootstrap **floor**, not a cap: all initially-joined servers become system primaries
 - **On restart** (data already exists): minimum primaries check is skipped so servers rejoin immediately without blocking StatefulSet rolling updates
 - **Pod Management**: `Parallel` — all pods start simultaneously
@@ -75,9 +75,9 @@ The operator uses a **ME/OTHER bootstrap strategy** with `Parallel` pod manageme
 
 1. **All server pods start in parallel** — Single StatefulSet with `Parallel` pod management
 2. **Servers discover each other** — Via static pod FQDNs in the LIST endpoint list (port 6000)
-3. **RAFT coordination** — server-0's `me` hint makes it the preferred bootstrapper; others wait with `other` hint
+3. **RAFT coordination** — on 5.26, server-0's `me` hint makes it the preferred bootstrapper and others wait with the `other` hint; on CalVer the bootstrapper is elected without a hint
 4. **A quorum of servers must see each other** — `dbms.cluster.minimum_initial_system_primaries_count` (default `min(3, servers)`, override via `spec.topology.minSystemPrimaries`) prevents any single node from forming a solo cluster (split-brain)
-5. **Cluster forms once quorum reached** — RAFT elects server-0 as bootstrap leader; others join
+5. **Cluster forms once quorum reached** — RAFT elects a bootstrap leader (server-0 on 5.26); others join
 6. **Servers self-organize** — Neo4j automatically assigns primary and secondary roles per database
 
 ### Benefits
@@ -101,7 +101,7 @@ For detailed TLS configuration, see the [TLS Configuration Guide](tls_configurat
 The operator uses a unified clustering approach for all deployments:
 
 #### Unified Cluster Formation
-- All deployments use Neo4j's clustering infrastructure (even single-node)
+- Every `Neo4jEnterpriseCluster` (minimum 2 servers) uses Neo4j's clustering infrastructure; single-node deployments are `Neo4jEnterpriseStandalone`, which has no cluster configuration
 - Automatic handling of discovery configuration based on Neo4j version
 - Coordinated startup ensures data consistency
 
@@ -112,29 +112,29 @@ The operator uses a unified clustering approach for all deployments:
 
 #### Formation Requirements
 
-All primaries must be present for initial cluster formation:
+Initial formation waits for `dbms.cluster.minimum_initial_system_primaries_count` servers (default `min(3, servers)`, or `spec.topology.minSystemPrimaries`) to see each other:
 
-| Cluster Size | Formation Requirement | Rationale |
+| Cluster Size | Servers needed to form | Rationale |
 |--------------|----------------------|-----------|
-| 2 servers | 2 servers required | Minimum cluster size |
-| 3 servers | 3 servers required | Odd number for optimal fault tolerance |
-| 4+ servers | All servers required | Ensures consistent initial state |
+| 2 servers | 2 | Minimum cluster size |
+| 3 servers | 3 | Odd number for optimal fault tolerance |
+| 4+ servers | 3 (default) | The floor is a minimum, not a cap: servers that have joined by then all become system primaries |
 
-This approach ensures that clusters form with a complete and consistent initial membership.
+This keeps any single server from bootstrapping a solo cluster.
 
 ### Cluster Formation Process
 
 1. **Resource Creation**: The operator creates all Kubernetes resources (StatefulSets, Services, RBAC)
 2. **Parallel Pod Startup**: All pods start simultaneously (not sequentially)
 3. **Discovery Phase**: Pods discover each other via Kubernetes service discovery
-4. **Coordination Phase**: All pods wait for complete membership before forming cluster
+4. **Coordination Phase**: Pods wait until the minimum number of system primaries can see each other before the cluster forms
 5. **Service Ready**: Cluster accepts connections after successful formation
 
 ### Important Considerations
 
-- **Complete Membership**: All configured server nodes must be available for initial cluster formation
+- **Minimum Membership**: At least `min(3, servers)` servers (or `spec.topology.minSystemPrimaries`) must be available for initial cluster formation
 - **Startup Time**: Cluster formation typically completes within 2-3 minutes
-- **Pod Readiness**: Pods are marked ready only after successful cluster formation
+- **Pod Readiness**: The readiness probe is lenient while the cluster forms (it passes once the HTTP port answers or the log shows cluster-formation activity), so a pod can be `Ready` before formation finishes; check the cluster's `status.phase` for the real state
 - **Scaling**: After initial formation, clusters can be scaled following Neo4j's online scaling procedures
 
 ## Basic Cluster Configuration
@@ -274,7 +274,7 @@ spec:
       antiAffinity:
         enabled: true
         topologyKey: topology.kubernetes.io/zone
-        type: preferredDuringSchedulingIgnoredDuringExecution
+        type: preferred   # or "required"; any other value is treated as preferred
       topologySpread:
         enabled: true
         topologyKey: topology.kubernetes.io/zone

@@ -11,7 +11,7 @@ kubectl neo4j diagnose --quiet                            # only what has someth
 `status` reads custom resources, so it can tell you a cluster is `Pending`. But most deployments fail one layer below the CR — a pod that will not schedule, a container OOMKilled at 1Gi, an image that will not pull, a PVC that never bound. `diagnose` follows the operator's own selectors from the resource down to its StatefulSet, pods, PVCs, Jobs and events, and names the Kubernetes-level cause.
 
 ```
-$ kubectl neo4j diagnose -n neo4j
+$ kubectl neo4j diagnose --quiet -n neo4j
 Neo4jEnterpriseCluster/prod — Pending · 2/3 pods ready
   ✗ pod prod-server-2 — cannot be scheduled
       0/3 nodes are available: 3 Insufficient memory.
@@ -35,11 +35,13 @@ For an archive to attach to an issue: kubectl neo4j support-bundle
 | Config not resolvable | waiting reason `CreateContainerConfigError` — usually a missing Secret key |
 | PVC never bound | `pvc.status.phase != Bound`, naming the StorageClass |
 | No pods at all | a StatefulSet that wants replicas but has none |
-| Backup Job failed | the Job's `Failed` condition, plus its pods |
+| Backup Job failed | the Job reporting failed pods (`status.failed > 0`; the `Failed` condition's reason and message are shown when present), plus the Job's pods |
 | Nothing ever reconciled | a CR with no status at all after two minutes |
 | Operator warnings | the three most recent `Warning` events on the resource |
 
 That last-but-one row is worth calling out. A resource with **no status at all** has no other signal — nothing is broken, the CR simply sits there. That is what you see when the operator is not running, has no RBAC for the kind, or is namespace-scoped and not watching this namespace.
+
+The pod and PVC checks apply to `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone`; the Job checks apply to `Neo4jBackup`. Every other kind gets only the Warning-events and no-status checks.
 
 ## Exit codes
 

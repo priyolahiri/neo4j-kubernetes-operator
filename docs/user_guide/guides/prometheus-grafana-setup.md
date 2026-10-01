@@ -8,7 +8,7 @@ The Neo4j Operator exposes two independent metric streams:
 
 | Source | Port | Description |
 |---|---|---|
-| **Operator metrics** | 8080 | Reconciliation, backup, upgrade, cluster health, scaling, and security metrics (prefix: `neo4j_operator_`) |
+| **Operator metrics** | 8080 | Reconciliation, backup, upgrade, and cluster health metrics (prefix: `neo4j_operator_`) — see [Complete Metrics Reference](monitoring.md#complete-metrics-reference) for which are currently populated |
 | **Neo4j native metrics** | 2004 | Database engine metrics — transactions, queries, page cache, store size, Bolt connections (prefix: `neo4j_`) |
 
 Both streams are standard Prometheus `/metrics` endpoints. This guide shows how to scrape them, visualise them in Grafana, and set up alerts.
@@ -29,7 +29,7 @@ Before Prometheus can scrape Neo4j, you must enable the built-in Prometheus endp
 ### Cluster deployments
 
 ```yaml
-apiVersion: neo4j.com/v1beta1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
 metadata:
   name: my-cluster
@@ -52,7 +52,7 @@ When `monitoring.enabled: true`, the operator automatically:
 ### Standalone deployments
 
 ```yaml
-apiVersion: neo4j.com/v1beta1
+apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseStandalone
 metadata:
   name: my-standalone
@@ -73,7 +73,7 @@ kubectl port-forward pod/my-cluster-server-0 2004:2004 &
 curl -s http://localhost:2004/metrics | head -20
 ```
 
-You should see lines like `neo4j_bolt_connections_opened_total`, `neo4j_db_query_execution_latency_millis`, etc.
+You should see lines like `neo4j_dbms_bolt_connections_running`, `neo4j_db_query_execution_latency_millis`, etc. (global DBMS metrics carry the `neo4j_dbms_` prefix).
 
 ---
 
@@ -168,11 +168,14 @@ If you installed the operator via Helm, enable the ServiceMonitor:
 
 ```bash
 helm upgrade neo4j-operator ./charts/neo4j-operator \
-  --namespace neo4j-operator \
+  --namespace neo4j-operator-system \
   --set metrics.enabled=true \
   --set metrics.serviceMonitor.enabled=true \
-  --set metrics.serviceMonitor.interval=30s
+  --set metrics.serviceMonitor.interval=30s \
+  --set metrics.serviceMonitor.bearerTokenSecret.name=prometheus-metrics-token
 ```
+
+With the default `metrics.secure=true`, `metrics.serviceMonitor.bearerTokenSecret.name` is **required** when the ServiceMonitor is enabled — the chart fails the render without it. It names a `kubernetes.io/service-account-token` Secret for a ServiceAccount bound to the `metrics-reader` ClusterRole; see [Operator's own metrics](monitoring.md#operators-own-metrics-tokenreview-authenticated) for how to create it. (Alternatively set `metrics.secure=false` for plain-HTTP scraping.)
 
 Or set it in your `values.yaml`:
 
@@ -189,9 +192,12 @@ metrics:
     interval: 30s
     scrapeTimeout: 10s
     labels: {}  # Add labels if your Prometheus uses label selectors
+    bearerTokenSecret:        # required when secure: true
+      name: prometheus-metrics-token
+      key: token
 ```
 
-This creates a `ServiceMonitor` that tells Prometheus to scrape the operator's `/metrics` endpoint on port 8080. When `secure: true` (the default), the template automatically sets `scheme: https`, `tlsConfig.insecureSkipVerify: true`, and wires the bearer-token path.
+This creates a `ServiceMonitor` that tells Prometheus to scrape the operator's `/metrics` endpoint on port 8080. When `secure: true` (the default), the template sets `scheme: https` and `tlsConfig.insecureSkipVerify: true`, and references the `bearerTokenSecret` you supplied.
 
 The Neo4j cluster/standalone `ServiceMonitor` is created automatically when `monitoring.enabled: true` — no extra Helm config needed.
 
@@ -210,7 +216,7 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets:
-          - neo4j-operator-metrics.neo4j-operator.svc.cluster.local:8080
+          - neo4j-operator-metrics.neo4j-operator-system.svc.cluster.local:8080
 
   # Scrape Neo4j cluster metrics (one target per cluster)
   - job_name: neo4j-cluster
@@ -229,11 +235,11 @@ scrape_configs:
       - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
         action: keep
         regex: true
-      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
         action: replace
         target_label: __address__
-        regex: (.+)
-        replacement: ${1}
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
       - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
         action: replace
         target_label: __metrics_path__
@@ -257,7 +263,7 @@ Test a query in the Prometheus expression browser:
 neo4j_operator_cluster_healthy
 
 # Neo4j native metric
-neo4j_bolt_connections_opened_total
+neo4j_dbms_bolt_connections_running
 ```
 
 ---
@@ -365,18 +371,9 @@ data:
           ]
         },
         {
-          "title": "Backup Size",
-          "type": "stat",
-          "gridPos": { "h": 6, "w": 6, "x": 12, "y": 16 },
-          "targets": [
-            { "expr": "neo4j_operator_backup_size_bytes", "legendFormat": "{{ cluster_name }}" }
-          ],
-          "fieldConfig": { "defaults": { "unit": "bytes" } }
-        },
-        {
           "title": "Backup Duration (p95)",
           "type": "timeseries",
-          "gridPos": { "h": 6, "w": 6, "x": 18, "y": 16 },
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 16 },
           "targets": [
             { "expr": "histogram_quantile(0.95, rate(neo4j_operator_backup_duration_seconds_bucket[1h]))", "legendFormat": "{{ cluster_name }} p95" }
           ],
@@ -666,15 +663,19 @@ spec:
             summary: "High reconciliation failure rate for {{ $labels.cluster_name }}"
             description: "Cluster {{ $labels.cluster_name }} is experiencing >0.1 failures/sec over the last 10 minutes."
 
-        # Backup hasn't succeeded recently
-        - alert: Neo4jBackupStale
-          expr: time() - (neo4j_operator_backup_duration_seconds_count > 0) > 86400
-          for: 1h
+        # A one-shot Neo4jBackup failed.
+        # NOTE: neo4j_operator_backup_total is recorded for one-shot Neo4jBackup
+        # Jobs only (its cluster_name label holds the Neo4jBackup name), not for
+        # scheduled (CronJob) runs, and there is no "last successful backup"
+        # timestamp metric. For scheduled backups, alert on the CronJob's Jobs
+        # (e.g. kube-state-metrics) or on the BackupFailed event instead.
+        - alert: Neo4jBackupFailed
+          expr: increase(neo4j_operator_backup_total{result="failure"}[1h]) > 0
           labels:
             severity: warning
           annotations:
-            summary: "No recent backup for cluster {{ $labels.cluster_name }}"
-            description: "No successful backup recorded for {{ $labels.cluster_name }} in over 24 hours."
+            summary: "Neo4jBackup {{ $labels.cluster_name }} failed"
+            description: "A one-shot backup recorded as {{ $labels.cluster_name }} failed in the last hour."
 
         # Slow reconciliation
         - alert: Neo4jSlowReconciliation
@@ -761,13 +762,13 @@ stringData:
 ```bash
 # 1. Neo4j metrics endpoint is live
 kubectl port-forward pod/my-cluster-server-0 2004:2004 &
-curl -s http://localhost:2004/metrics | grep neo4j_bolt
+curl -s http://localhost:2004/metrics | grep neo4j_dbms_bolt
 
 # 2. Operator metrics endpoint is live
 # (with the default metrics.secure=true the endpoint is HTTPS and needs a
 #  Bearer token; use -k https://... and an Authorization header, or set
 #  metrics.secure=false for the plain-HTTP form shown here)
-kubectl port-forward -n neo4j-operator svc/neo4j-operator-metrics 8080:8080 &
+kubectl port-forward -n neo4j-operator-system svc/neo4j-operator-metrics 8080:8080 &
 curl -s http://localhost:8080/metrics | grep neo4j_operator
 
 # 3. ServiceMonitors exist
@@ -796,11 +797,8 @@ neo4j_operator_cluster_phase == 1
 # Reconciliation error rate by cluster
 sum by (cluster_name) (rate(neo4j_operator_reconcile_total{result="failure"}[5m]))
 
-# Backup success/failure ratio
+# One-shot backup success/failure counts (scheduled CronJob runs are not recorded)
 sum by (cluster_name, result) (rate(neo4j_operator_backup_total[1h]))
-
-# Cypher execution p95 latency
-histogram_quantile(0.95, rate(neo4j_operator_cypher_execution_duration_seconds_bucket[5m]))
 
 # Resource conflicts (indicates contention)
 rate(neo4j_operator_resource_version_conflicts_total[5m])
@@ -833,8 +831,8 @@ neo4j_dbms_bolt_connections_idle
 ### Operator metrics not appearing
 
 1. Verify the ServiceMonitor is enabled: `kubectl get servicemonitor -A | grep neo4j-operator`
-2. Check the operator metrics Service exists: `kubectl get svc -n neo4j-operator | grep metrics`
-3. Port-forward and test directly: `kubectl port-forward -n neo4j-operator svc/<operator-svc> 8080:8080`
+2. Check the operator metrics Service exists: `kubectl get svc -n neo4j-operator-system | grep metrics`
+3. Port-forward and test directly: `kubectl port-forward -n neo4j-operator-system svc/<operator-svc> 8080:8080`
 
 ### Grafana dashboards not appearing
 
@@ -846,7 +844,7 @@ neo4j_dbms_bolt_connections_idle
 
 - The operator records metrics on every reconcile cycle (~30s default)
 - If the cluster is not in `Ready` phase, diagnostics metrics like `server_health` are not updated
-- Check reconcile logs: `kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager | grep -i reconcile`
+- Check reconcile logs: `kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator | grep -i reconcile`
 
 ---
 

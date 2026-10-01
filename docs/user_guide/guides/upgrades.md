@@ -30,7 +30,7 @@ kubectl rollout status statefulset/<cluster>-server -n <namespace>
 kubectl get neo4jenterprisecluster <name> -o jsonpath='{.status.upgradeStatus}'
 
 # Operator logs
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager -f | grep -i upgrade
+kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator -f | grep -i upgrade
 ```
 
 ### Upgrade phases and resumability

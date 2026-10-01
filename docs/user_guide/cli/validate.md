@@ -20,7 +20,7 @@ Neo4jEnterpriseCluster/prod (cluster.yaml):
   ⚠ 2 servers provide limited fault tolerance. If one server fails, databases may lose quorum. Consider using 3 or more servers for production deployments.
 
 1 validated, 0 skipped — 2 error(s), 2 warning(s)
-validated against operator rules v1.15.0
+validated against operator rules v1.17.0
 ```
 
 Errors are listed before warnings, each sorted by field path.
@@ -29,11 +29,11 @@ Errors are listed before warnings, each sorted by field path.
 
 | Flag | Meaning |
 |---|---|
-| `-f` | File, directory, or `-` for stdin. Repeatable. |
+| `-f` | File, directory, or `-` for stdin. Repeatable. A directory is read one level deep (`.yaml`, `.yml`, `.json`), not recursively. |
 | `--connect` | Connect to the current kubeconfig context to check cross-references. |
 | `--context` | Kubeconfig context to use (implies `--connect`). |
 | `--kubeconfig` | Path to the kubeconfig file (implies `--connect`). |
-| `--namespace` | Namespace for manifests that omit one. |
+| `--namespace`, `-n` | Namespace for manifests that omit one. |
 | `--strict` | Treat warnings as errors (exit non-zero on warnings). Pending is unaffected. |
 | `--quiet` | Print findings only — no per-file "ok" lines, no summary. |
 
@@ -45,7 +45,7 @@ These are a stable contract, so you can rely on them in CI:
 |---|---|
 | `0` | No errors. Warnings alone do not fail unless `--strict`. |
 | `1` | At least one validation error (or a warning under `--strict`). |
-| `2` | Usage problem: bad flags, unreadable file, undecodable YAML. |
+| `2` | Usage problem: bad flags, unreadable file, undecodable YAML, or (with `--connect`) a cluster that could not be reached. |
 
 ## What it checks — and what it doesn't
 
@@ -64,6 +64,9 @@ Neo4jEnterpriseStandalone/db (standalone.yaml):
 This is the most common manifest error there is, and it used to pass: the document was decoded leniently, so an unrecognised key was dropped in silence and the file reported clean — then `kubectl apply` refused it with a strict-decoding error.
 
 Open maps are left alone, because every key in them is your data rather than a field name: `spec.config`, a composite constituent's `driverSettings`, labels and annotations. `metadata` and `status` are not walked either — they belong to Kubernetes, not to this operator.
+
+!!! warning "Limitation: typos inside list items are not detected yet"
+    Only keys under objects are checked. A misspelled key inside an item of a list — for example `spec.topology.serverRoles[0].…`, `spec.privileges[0].…` or `spec.env[0].…` — passes this check, and the API server will reject it at apply time. Use `kubectl apply --dry-run=server` to catch those.
 
 This check is **offline**, so it runs on **every one of the 27 kinds** — including the ones whose cross-reference rules need `--connect`, and the ones with no operator-side validator at all. "No validator" is not "no spelling": the kinds governed only by their CRD schema can still be misspelled, and the API server is a slower place to find out. The types come from the API scheme, so a CRD added later is covered the day it lands. Such a document reports the typo *and* says what is still unchecked:
 
@@ -130,7 +133,7 @@ Neo4jUser/analytics (users.yaml):
 The connection is also what makes version-skew detection possible. When connected, the CLI compares itself against the operator running in the cluster:
 
 ```
-⚠ version skew: this CLI carries v1.15.0 rules, but the operator in neo4j-operator/neo4j-operator-controller-manager is v1.14.0.
+⚠ version skew: this CLI carries v1.17.0 rules, but the operator in neo4j-operator/neo4j-operator-controller-manager is v1.16.0.
   Rules added or removed between those releases are checked incorrectly here.
 ```
 
@@ -138,7 +141,7 @@ It is advisory and silent when it cannot tell — the operator may be in a names
 
 ### Required permissions
 
-`--connect` reads only. It needs `get` on `Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`, `Neo4jRole` and `Secret` in the namespaces you are validating, plus `list` on `Deployment` for the version check (which degrades silently without it). It never writes anything.
+`--connect` reads only. It needs `get` on `Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`, `Neo4jRole` and `Secret` in the namespaces you are validating (plus `list` on `Neo4jUser` when validating a `Neo4jRoleBinding`, and `get` on `Neo4jShardedDatabase` when validating a `Neo4jRole`), plus `list` on `Deployment` for the version check (which degrades silently without it). It never writes anything.
 
 ### A clean run may not be the last word
 
@@ -153,7 +156,7 @@ A clean run means nothing further is reachable, not that nothing was ever wrong.
 The output always names the ruleset it used:
 
 ```
-validated against operator rules v1.15.0
+validated against operator rules v1.17.0
 ```
 
 The CLI carries the validation rules of the release it was built from. If your cluster runs a different operator version, a rule added later will not be checked and a rule since removed may still be enforced. **Keep the CLI on the same version as the operator you deploy.**
@@ -176,10 +179,13 @@ Or as a pre-commit hook:
   hooks:
     - id: neo4j-validate
       name: Validate Neo4j manifests
-      entry: kubectl-neo4j validate -f
+      entry: kubectl-neo4j validate -f manifests/
       language: system
       files: '^manifests/.*\.ya?ml$'
+      pass_filenames: false
 ```
+
+`pass_filenames: false` matters: `validate` reads only the paths given with `-f`, and silently ignores any extra positional arguments, so a hook that let pre-commit append the staged filenames would validate just the first one.
 
 `--strict` is the usual choice for CI: it makes advisory warnings — such as a two-server cluster that will lose quorum if one server fails — block the pipeline rather than scroll past.
 

@@ -200,19 +200,14 @@ seedConfig:
   restoreUntil: "txId:12345"
 ```
 
-### CloudSeedProvider Options
+### Seed provider configuration
+
+`spec.seedConfig.config` is a string map rendered into the `seedConfig` option of `CREATE DATABASE` as comma-separated `key=value` pairs. It is consumed by the (deprecated) `S3SeedProvider`, e.g. `region`. `CloudSeedProvider` — which the operator uses for `s3://`, `gs://` and `azb://` — resolves credentials and region from the environment / SDK default chain instead (see `spec.extraEnvFrom` above), so most deployments leave it empty. Keys and values must be simple: no `,`, `=`, quotes, backticks or newlines.
 
 ```yaml
 seedConfig:
   config:
-    # Compression: gzip, lz4, none
-    compression: "gzip"
-
-    # Validation: strict, lenient
-    validation: "strict"
-
-    # Buffer size for processing
-    bufferSize: "128MB"
+    region: "eu-west-1"
 ```
 
 ## File Format Considerations
@@ -258,7 +253,7 @@ spec:
       - "CREATE (:Person {name: 'Alice'})"
 ```
 
-When `seedURI` is specified, `initialData` is ignored since the seed provides the initial data.
+The validator rejects this combination ("seedURI and initialData cannot be specified together"): the seed provides the initial data, so remove `initialData` — the resource does not reconcile while both are set.
 
 ## Status and Events
 
@@ -269,12 +264,13 @@ The operator provides detailed status and events during seed restoration:
 - `DatabaseCreatedFromSeed`: Database successfully created from seed URI
 - `DataSeeded`: Database seeded from URI successfully
 - `ValidationWarning`: Validation warnings (e.g., suboptimal topology)
+- `ValidationFailed`: Configuration validation failed (the database is not created)
+- `CreationFailed`: Database creation failed
+- `SeedCredsMissing` / `SeedCredsAutoInherited`: seed credentials Secret not projected onto the hosting cluster / auto-projected under `neo4j.com/auto-inherit-seed-creds` (see [Kubernetes Events](kubernetes-events.md))
 
 **Status Conditions:**
 
-- `Ready`: Database is ready and available
-- `ValidationFailed`: Configuration validation failed
-- `CreationFailed`: Database creation failed
+- `Ready`: `True` when the database is ready and available; when `False`, its reason names the cause (for example `ValidationFailed`, `SeedCredsMissing`)
 
 ## Troubleshooting
 
@@ -297,7 +293,6 @@ The operator provides detailed status and events during seed restoration:
 
 4. **Performance Issues**
    - Consider using .backup format instead of .dump
-   - Adjust bufferSize in seedConfig
    - Ensure adequate resources for restoration
 
 ### Debugging Commands
@@ -307,7 +302,7 @@ The operator provides detailed status and events during seed restoration:
 kubectl get neo4jdatabase my-database -o yaml
 
 # View operator logs
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
 
 # Check events
 kubectl describe neo4jdatabase my-database
