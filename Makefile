@@ -281,7 +281,7 @@ test-ci-local: ## Emulate CI workflow locally with debug logging (for troublesho
 	@echo "Setting up test cluster..." | tee logs/ci-local-integration.log
 	@{ \
 		echo "Creating test cluster with CI-appropriate resources..."; \
-		echo "Memory constraints: CI=true enables 512Mi memory limits"; \
+		echo "Memory constraints: CI=true selects the CI-sized pods (1Gi request / 1.5Gi limit)"; \
 		echo ""; \
 		$(MAKE) test-cluster 2>&1; \
 	} | tee -a logs/ci-local-integration.log
@@ -302,7 +302,7 @@ test-ci-local: ## Emulate CI workflow locally with debug logging (for troublesho
 	@{ \
 		echo "Environment: CI=true GITHUB_ACTIONS=true"; \
 		echo "Resource requirements: Using getCIAppropriateResourceRequirements()"; \
-		echo "Memory limits: 512Mi (CI) vs 1.5Gi (local)"; \
+		echo "Memory limits: 1.5Gi (CI) vs 2Gi (local)"; \
 		echo "Timeout: 60 minutes"; \
 		echo ""; \
 		CI=true GITHUB_ACTIONS=true kind export kubeconfig --name neo4j-operator-test 2>&1; \
@@ -938,14 +938,19 @@ smoke-test: ## Deploy a standalone Neo4j instance and verify it reaches Ready st
 	@echo "Deploying minimal standalone instance..."
 	@kubectl apply -f hack/smoke-test-standalone.yaml
 	@echo "Waiting for standalone to reach Ready (up to 5 minutes)..."
-	@kubectl wait neo4jenterprisestandalone/smoke-test --for=condition=Ready --timeout=300s && \
+	@# One shell so the result survives the cleanup: a failed wait used to be
+	@# swallowed by the `||` group and the target exited 0 after printing FAILED.
+	@rc=0; \
+	kubectl wait neo4jenterprisestandalone/smoke-test --for=condition=Ready --timeout=300s && \
 		echo "Smoke test PASSED - standalone reached Ready state" || \
 		{ echo "Smoke test FAILED - standalone did not reach Ready in time"; \
 		  echo "Debug: kubectl describe neo4jenterprisestandalone smoke-test"; \
-		  echo "Debug: kubectl get pods -l app.kubernetes.io/instance=smoke-test"; }
-	@echo "Cleaning up smoke test resources..."
-	@kubectl delete neo4jenterprisestandalone smoke-test --ignore-not-found=true --timeout=60s
-	@kubectl delete secret neo4j-smoke-secret --ignore-not-found=true
+		  echo "Debug: kubectl get pods -l app.kubernetes.io/instance=smoke-test"; \
+		  rc=1; }; \
+	echo "Cleaning up smoke test resources..."; \
+	kubectl delete neo4jenterprisestandalone smoke-test --ignore-not-found=true --timeout=60s; \
+	kubectl delete secret neo4j-smoke-secret --ignore-not-found=true; \
+	exit $$rc
 
 .PHONY: dev-watch
 dev-watch: ## Auto-rebuild and redeploy on code changes (requires watchexec or fswatch).
