@@ -468,6 +468,11 @@ kubectl get neo4jreplicadatabase -n dr
 # foo-replica   dr-cluster   foo        Replicating   3     12m
 ```
 
+`LAG` is a count of **transactions** behind the upstream, not a duration. The
+operator also exports it as `neo4j_operator_replica_lag_transactions`, and counts
+promotions in `neo4j_operator_replica_promotions_total` — see the
+[replication metrics](monitoring.md#cross-cluster-replication-metrics).
+
 **Replicas are read-only.** Both primaries and secondaries refuse writes.
 Clients must use `AccessMode.READ` / `executeRead`, or
 `cypher-shell --access-mode=read`.

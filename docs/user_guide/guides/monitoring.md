@@ -224,7 +224,16 @@ Two uses worth wiring up:
 | Metric | Type | Labels | Description |
 |---|---|---|---|
 | `neo4j_operator_upgrade_total` | Counter | `cluster_name`, `namespace`, `result` (`success`/`failure`) | Total upgrade attempts |
-| `neo4j_operator_upgrade_duration_seconds` | Histogram | `cluster_name`, `namespace`, `phase` | Duration per upgrade phase — *registered, not currently populated* |
+| `neo4j_operator_upgrade_duration_seconds` | Histogram | `cluster_name`, `namespace`, `phase` (`Staging`/`Rolling`/`Stabilizing`/`Verifying`) | Time a rolling upgrade spent in each phase, observed once when the phase ends. `Rolling` is the whole walk across all servers, not one server. The step that leaves the chain is observed too: `Verifying` when the upgrade completes, or whichever phase was active when it failed or paused (a `Rolling` timeout appears as a `Rolling` observation of about `upgradeTimeout`). `Completed`, `Failed` and `Paused` are terminal and not timed. Measured from the persisted `status.upgradeStatus.phaseStartTime`, so an operator restart mid-phase is included in that phase's wall-clock time and no phase is observed twice. Resolution is one second; buckets run from 5s to 1h |
+
+### Cross-cluster replication metrics
+
+Recorded by the `Neo4jReplicaDatabase` and `Neo4jReplicaPromotion` controllers (see [Cross-cluster replication](cross_cluster_replication.md)). `cluster_name` is the *downstream* cluster that hosts the replica.
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `neo4j_operator_replica_lag_transactions` | Gauge | `namespace`, `cluster_name`, `replica`, `database` | How many **transactions** (not seconds) the replica is behind its upstream, as `SHOW DATABASES` reports it. `replica` is the `Neo4jReplicaDatabase` name and `database` the Neo4j database name (`spec.name`, defaulting to the CR name). Set while the replica is observed replicating; the series is **removed** when the CR is deleted or the replica is promoted, so a dashboard never shows a frozen last value. This is the data loss a promotion right now would make permanent |
+| `neo4j_operator_replica_promotions_total` | Counter | `namespace`, `cluster_name`, `result` (`success`/`failure`) | Replica promotions by terminal outcome, one increment per `Neo4jReplicaPromotion` when it reaches `Completed` (`success`) or `Failed` (`failure`). A promotion that is still retrying counts as neither, and reconciles after the terminal phase do not count again |
 
 ### Backup metrics
 
