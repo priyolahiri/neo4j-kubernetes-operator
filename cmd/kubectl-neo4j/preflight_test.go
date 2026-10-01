@@ -279,6 +279,77 @@ func TestPreflight_AbsentServiceAccountBeforeFirstBackupIsNotAFailure(t *testing
 	assert.Contains(t, out, "creates it on the first backup")
 }
 
+const pvcBackupManifestTmpl = `
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jBackup
+metadata: {name: nightly, namespace: neo4j}
+spec:
+  instanceRef: prod
+  storage:
+    type: pvc
+    pvc:
+%s
+`
+
+func pvcBackup(pvcFields string) []byte {
+	return []byte(strings.Replace(pvcBackupManifestTmpl, "%s", pvcFields, 1))
+}
+
+// The operator provisions the destination claim itself when spec.storage.pvc.size
+// is set (ensureBackupPVC in internal/controller/neo4jbackup_controller.go), so
+// an absent claim is the EXPECTED state before the first reconcile. Reporting it
+// as a failure made preflight exit 1 on the very manifest the operator is built
+// to accept — and told the user "the operator does not provision one".
+func TestPreflight_AbsentPVCWithSizeIsNotAFailure(t *testing.T) {
+	res := preflightObject(context.Background(), testClient(t), "neo4j", "f.yaml",
+		pvcBackup("      name: backups\n      size: 50Gi\n      storageClassName: standard"))
+
+	assert.False(t, res.problems(), "the operator creates this claim; got:\n%s", joinChecks(res.checks))
+	out := joinChecks(res.checks)
+	assert.Contains(t, out, markWaiting+" pvc backups")
+	assert.Contains(t, out, "creates this claim")
+	assert.Contains(t, out, "50Gi")
+	assert.NotContains(t, out, "does not provision")
+}
+
+// Without a size the operator has nothing to provision from: a missing claim
+// surfaces only as a Job that never starts, which is exactly what preflight
+// exists to catch first.
+func TestPreflight_AbsentPVCWithoutSizeIsAProblem(t *testing.T) {
+	res := preflightObject(context.Background(), testClient(t), "neo4j", "f.yaml",
+		pvcBackup("      name: backups"))
+
+	assert.True(t, res.problems())
+	out := joinChecks(res.checks)
+	assert.Contains(t, out, "pvc backups")
+	assert.Contains(t, out, "does not exist")
+	assert.Contains(t, out, "spec.storage.pvc.size", "the fix is to set a size or create the claim")
+}
+
+func TestPreflight_ExistingPVCPasses(t *testing.T) {
+	c := testClient(t, &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "backups", Namespace: "neo4j"},
+	})
+	for name, fields := range map[string]string{
+		"with size":    "      name: backups\n      size: 50Gi",
+		"without size": "      name: backups",
+	} {
+		t.Run(name, func(t *testing.T) {
+			res := preflightObject(context.Background(), c, "neo4j", "f.yaml", pvcBackup(fields))
+			assert.False(t, res.problems())
+			assert.Empty(t, res.checks)
+		})
+	}
+}
+
+func TestPreflight_NamelessPVCIsAProblem(t *testing.T) {
+	res := preflightObject(context.Background(), testClient(t), "neo4j", "f.yaml",
+		pvcBackup("      size: 50Gi"))
+
+	assert.True(t, res.problems(), "the operator refuses a PVC backup without a name even when a size is set")
+	assert.Contains(t, joinChecks(res.checks), "spec.storage.pvc.name")
+}
+
 // A kind with no cluster-side preconditions must say so. A silent pass would
 // imply a check that was never made.
 func TestPreflight_UncheckedKindIsReportedAsSkipped(t *testing.T) {

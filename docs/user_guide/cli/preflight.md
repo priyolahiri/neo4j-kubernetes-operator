@@ -50,7 +50,7 @@ Capacity is compared against a **single node's** allocatable memory, never the c
 | `credentialsSecretRef` exists | Named but absent means the Job cannot start |
 | It carries every key the Job mounts | A missing key gives `CreateContainerConfigError`, which never mentions backups |
 | Or: the backup ServiceAccount has a cloud-identity annotation | With no Secret and no IRSA / Workload Identity binding, the Job runs with no credentials at all |
-| A PVC-backed backup names its claim (`spec.storage.pvc.name`) and that claim exists | A nameless PVC is refused by the operator outright (artifacts would land in an EmptyDir and be discarded); a named claim that does not exist leaves the Job unschedulable. **Known limitation:** the existence check does not yet account for `spec.storage.pvc.size`, which makes the operator create the claim itself — so on the first apply of an auto-provisioned backup, expect a `✗ pvc … does not exist` (and exit code 1) that the operator will resolve on its own. No StorageClass check is made for backup claims |
+| A PVC-backed backup names its claim (`spec.storage.pvc.name`) and that claim exists, or the operator will create it | A nameless PVC is refused by the operator outright (artifacts would land in an EmptyDir and be discarded). When `spec.storage.pvc.size` is set the operator provisions an absent claim itself, so that is reported as waiting (`…`) and does not fail the run. With no size nothing is ever created: a missing claim is a failure, because the Job would wait on a volume that does not exist. No StorageClass check is made for backup claims |
 
 **Cross-cluster replicas (backup mode)**
 

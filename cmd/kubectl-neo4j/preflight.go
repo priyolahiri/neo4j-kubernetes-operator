@@ -662,12 +662,31 @@ func checkBackupPVC(ctx context.Context, c client.Client, ns string, backup *neo
 
 	var existing corev1.PersistentVolumeClaim
 	if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: pvc.Name}, &existing); apierrors.IsNotFound(err) {
+		// Mirrors ensureBackupPVC in internal/controller/neo4jbackup_controller.go:
+		// when the claim is absent the operator creates it if — and only if —
+		// spec.storage.pvc.size is set. Without a size the claim is assumed to be
+		// externally provisioned and nothing is created, so a missing one only
+		// shows up later as a Job that never starts.
+		if pvc.Size != "" {
+			class := "the cluster default StorageClass"
+			if pvc.StorageClassName != "" {
+				class = "StorageClass " + pvc.StorageClassName
+			}
+			return []symptom{{
+				mark: markWaiting, subject: "pvc " + pvc.Name, what: "does not exist yet",
+				action: "spec.storage.pvc.size is set (" + pvc.Size + "), so the operator creates " +
+					"this claim (ReadWriteOnce, " + class + ") when it first reconciles the " +
+					"backup. It is deliberately not owned by the Neo4jBackup, so deleting the " +
+					"CR leaves the claim and the backups in it. Whether that class can bind a " +
+					"volume is not checked here.",
+			}}
+		}
 		return []symptom{{
 			mark: markProblem, subject: "pvc " + pvc.Name, what: "does not exist in " + ns,
-			action: "spec.storage.pvc.name must reference a claim that already exists — the " +
-				"operator does not provision one, and refuses the CR if the name is " +
-				"blank. Create the PVC first (any StorageClass that can bind), or point " +
-				"the name at an existing claim.",
+			action: "spec.storage.pvc.size is not set, so the operator will not create this " +
+				"claim — it assumes an existing one. Either set spec.storage.pvc.size (and " +
+				"optionally storageClassName) to have the operator provision it, or create " +
+				"the PVC first (any StorageClass that can bind).",
 		}}
 	}
 	return nil
