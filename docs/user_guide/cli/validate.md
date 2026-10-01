@@ -67,9 +67,6 @@ The check descends into lists of objects as well, and reports the index of the o
 
 Open maps are left alone, because every key in them is your data rather than a field name: `spec.config`, a composite constituent's `driverSettings`, labels and annotations. `metadata` and `status` are not walked either — they belong to Kubernetes, not to this operator.
 
-!!! warning "Limitation: typos inside list items are not detected yet"
-    Only keys under objects are checked. A misspelled key inside an item of a list — for example `spec.topology.serverRoles[0].…`, `spec.privileges[0].…` or `spec.env[0].…` — passes this check, and the API server will reject it at apply time. Use `kubectl apply --dry-run=server` to catch those.
-
 This check is **offline**, so it runs on **every one of the 27 kinds** — including the ones whose cross-reference rules need `--connect`, and the ones with no operator-side validator at all. "No validator" is not "no spelling": the kinds governed only by their CRD schema can still be misspelled, and the API server is a slower place to find out. The types come from the API scheme, so a CRD added later is covered the day it lands. Such a document reports the typo *and* says what is still unchecked:
 
 ```
