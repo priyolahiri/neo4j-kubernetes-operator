@@ -109,6 +109,20 @@ adds.
     the name and the two are otherwise indistinguishable. To see which is
     which: `SHOW ALIASES FOR DATABASE YIELD name, composite`.
 
+!!! note "Quoting a constituent by hand depends on the server's Cypher language"
+
+    The operator pins its own composite and alias statements to a language, so
+    you never see this unless you run DDL yourself. If you do, the backticked
+    forms mean different things. In Cypher 5, ``CREATE ALIAS `cineasts`.`latest` ...``
+    makes a constituent and ``CREATE ALIAS `cineasts.latest` ...`` makes a plain
+    alias whose name contains a dot. In Cypher 25 the first is refused (`42NAA`,
+    *separate name parts should not be quoted individually*) and the second is
+    the constituent. An unquoted `cineasts.latest` is a constituent in both. A
+    new CalVer deployment defaults to Cypher 25 (`spec.serverDefaultCypherLanguage`),
+    so statements written against Cypher 5 can fail there; prefix a statement
+    with `CYPHER 5` to get the Cypher 5 meaning on any supported version. The
+    dotted-alias trap below exists in both languages.
+
 !!! info "Do not use `Neo4jDatabaseAlias` for a constituent"
 
     [`Neo4jDatabaseAlias`](database_aliases.md) manages ordinary aliases, and

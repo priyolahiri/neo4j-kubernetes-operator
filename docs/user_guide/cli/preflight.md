@@ -27,6 +27,8 @@ Shape only: no bucket, registry or endpoint was contacted.
 1 of 1 resource(s) would fail on a precondition.
 ```
 
+A manifest that names its own `metadata.namespace` is checked **there** — that is where `kubectl apply` will put it, and it decides the pod-security level and where Secrets are looked up. `-n` (or your kubeconfig's namespace) applies only to manifests that omit one. Before v1.17.0 the flag won even over a namespace written in the file, so a standalone bound for a `restricted` namespace could pass a check it would fail on apply.
+
 ## What it checks
 
 **Clusters and standalones**
