@@ -4088,6 +4088,20 @@ would be worse than leaving it.</p>
 the name and the two are otherwise indistinguishable. To see which is
 which: <code>SHOW ALIASES FOR DATABASE YIELD name, composite</code>.</p>
 </div>
+<div class="admonition note">
+<p class="admonition-title">Quoting a constituent by hand depends on the server's Cypher language</p>
+<p>The operator pins its own composite and alias statements to a language, so
+you never see this unless you run DDL yourself. If you do, the backticked
+forms mean different things. In Cypher 5, <code>CREATE ALIAS `cineasts`.`latest` ...</code>
+makes a constituent and <code>CREATE ALIAS `cineasts.latest` ...</code> makes a plain
+alias whose name contains a dot. In Cypher 25 the first is refused (<code>42NAA</code>,
+<em>separate name parts should not be quoted individually</em>) and the second is
+the constituent. An unquoted <code>cineasts.latest</code> is a constituent in both. A
+new CalVer deployment defaults to Cypher 25 (<code>spec.serverDefaultCypherLanguage</code>),
+so statements written against Cypher 5 can fail there; prefix a statement
+with <code>CYPHER 5</code> to get the Cypher 5 meaning on any supported version. The
+dotted-alias trap below exists in both languages.</p>
+</div>
 <div class="admonition info">
 <p class="admonition-title">Do not use <code>Neo4jDatabaseAlias</code> for a constituent</p>
 <p><a href="../database_aliases/"><code>Neo4jDatabaseAlias</code></a> manages ordinary aliases, and

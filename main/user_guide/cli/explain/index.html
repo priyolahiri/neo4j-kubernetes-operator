@@ -3883,6 +3883,7 @@
 </span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    every server reported Enabled and Available by SHOW SERVERS.
 </span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    → When false, ... Check their pod logs for OOMKilled (exit 137).
 </span></code></pre></div>
+<p>A few conditions are <strong>negative</strong>: <code>True</code> is the problem, so <code>False</code> is healthy. <code>ClusterNotReady</code>, <code>Degraded</code>, <code>ServersPendingDrain</code>, <code>UserNotFound</code>, <code>PendingDependencies</code> and <code>AuthRuleVersionTooOld</code> are marked <code>✓</code> when <code>False</code> — a role that shows <code>✓ ClusterNotReady = False</code> is on a ready cluster — and their guidance is printed only when they are <code>True</code>.</p>
 <h3 id="reasons-not-just-conditions">Reasons, not just conditions<a class="headerlink" href="#reasons-not-just-conditions" title="Anchor link to this section">&para;</a></h3>
 <p>A condition tells you something is false; its <strong>reason</strong> tells you which of several unrelated causes it was. It is the most specific thing a status carries, and the least guessable from the string itself — so reasons are explained as their own kind of term, and are printed alongside each condition of a live resource.</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>$ kubectl neo4j explain CompositeDatabaseNameBlocked
@@ -3892,10 +3893,11 @@
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    exists ... it permanently blocks the composite with 42N87. The server's own
 </span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    error never mentions ordering. The CR's message names the alias to drop ...
 </span></code></pre></div>
+<p>The reason you are most likely to meet right after upgrading to v1.17.0 is <code>UnattributedPrivileges</code>: every existing <code>Neo4jRole</code> reports it, because learn mode cannot attribute privileges that were on the role before it started. It is not a fault — nothing was revoked and access is unchanged — and <code>kubectl neo4j explain UnattributedPrivileges</code> says how to clear it. The full story is in <a href="../../user_role_management/#learn-mode-default">Learn mode</a>.</p>
 <p>Only reasons that are <em>not</em> guessable get an entry. A reason that restates its condition needs none, and a list padded with those would rot without helping anyone.</p>
 <h3 id="it-admits-what-it-does-not-know">It admits what it does not know<a class="headerlink" href="#it-admits-what-it-does-not-know" title="Anchor link to this section">&para;</a></h3>
 <p>The explanations describe the operator release this CLI was built from. A newer deployment can report conditions, phases or reasons it has never heard of, and in that case it says so — naming its own version — rather than inventing an explanation:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>  (no guidance for this phase — it may be newer than this CLI, which carries v1.15.0 rules)
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>  (no guidance for this phase — it may be newer than this CLI, which carries v1.17.0 rules)
 </span></code></pre></div>
 <p>Guessing would be worse than admitting the gap, because a confident wrong answer during an incident costs more than no answer.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>

@@ -4336,9 +4336,9 @@ test coverage.</p>
 </tr>
 <tr>
 <td><code>AuraInstance</code></td>
-<td>v1 (+ v2beta1 for <code>multiDatabase</code>)</td>
-<td>✅ 2026-08-01</td>
-<td>Full lifecycle walked: create → snapshot → restore → resize → pause → resume → tier upgrade → delete.</td>
+<td>v1 (+ v2beta1 for <code>multiDatabase</code> and <code>graphAnalytics: serverless</code>)</td>
+<td>✅ 2026-08-01; serverless create ✅ 2026-09-30</td>
+<td>Full lifecycle walked: create → snapshot → restore → resize → pause → resume → tier upgrade → delete. A serverless instance was created through the operator, paused, resumed and deleted.</td>
 </tr>
 <tr>
 <td><code>AuraSnapshot</code></td>
@@ -4515,6 +4515,13 @@ instance created by earlier operator versions) can never host an
 <code>AuraDatabase</code>. Setting it moves the create call to the Aura <strong>v2beta1</strong> API,
 which needs an organization ID and accepts fewer fields — see
 <a href="../../api_reference/aurainstance/#multi-database-instances">Multi-database instances</a>.</p>
+<p><strong>Serverless graph analytics.</strong> <code>graphAnalytics: serverless</code> runs Graph Data
+Science as on-demand sessions outside the instance rather than as a plugin
+inside it. Like <code>multiDatabase</code>, it can only be requested through the Aura
+<strong>v2beta1</strong> API, so it needs an organization ID and drops the same fields
+(<code>secondariesCount</code>, <code>cdcEnrichmentMode</code>, <code>customerManagedKeyId</code>, <code>source</code>).
+It is fixed at creation. <code>graphAnalyticsPlugin</code> is deprecated in its favour —
+see <a href="../migration_guide/#upgrading-from-v116x">Upgrading from v1.16.x</a>.</p>
 </blockquote>
 <p><strong>4. Create a database</strong> on the instance (multi-database instances only):</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
