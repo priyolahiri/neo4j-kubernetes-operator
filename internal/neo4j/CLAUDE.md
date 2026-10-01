@@ -15,6 +15,10 @@ management, and error classification.
 | `privileges.go` | Pure string helpers: `CanonicalisePrivilegeStatement`, `DerivePrivilegeRevoke`, `PrivilegeStatementMatchesRole`, `PrivilegeStatementVerb`. No I/O. |
 | `auth_rules.go` | ABAC `Neo4jAuthRule` DDL: `ShowAuthRule`, `ListAuthRules`, `CreateOrReplaceAuthRule`, `AlterAuthRule`, `DropAuthRuleIfExists`, `Grant/RevokeRolesFromAuthRule`. |
 | `server_management.go` | Cluster scale-down: `CordonServer`, `DeallocateServers` (supports `DRYRUN`), `DropServer`, `MinimumSystemPrimaries`. |
+| `cypher25.go` | `Cypher25()` / `Cypher5()` / `HasCypher25Prefix` — the ONLY places a `CYPHER 25` / `CYPHER 5` directive is spelled (knowledge `operations.md` ids 30, 97; `TestCypher25Guard`). |
+| `composite.go` / `aliases.go` | `Neo4jCompositeDatabase` constituent and `Neo4jDatabaseAlias` DDL, pinned to Cypher 5 (the OIDC remote form to Cypher 25). |
+| `replicas.go` | Cross-cluster replica DDL: `CreateReplicaDatabaseFromBackup/FromNetwork`, `PromoteReplicaDatabase`. |
+| `privilege_rules.go` | `RenderPrivilegeRule` / `PrivilegeRuleProblems` — render `spec.privilegeRules` to GRANT/DENY statements (render, never parse). |
 | `error_classify.go` | `IsTransientError`, `IsHostUnresolvableError`, `IsConnectivityError`, `IsNotFoundError` — drive finalizer/retry decisions in controllers. |
 | `*_test.go` | Unit tests (see below). |
 

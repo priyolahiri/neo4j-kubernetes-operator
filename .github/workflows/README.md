@@ -10,9 +10,12 @@ detailed descriptions in the docs page to avoid drift.
 | **CI** | `ci.yml` | push/PR to `main`/`develop`, manual dispatch |
 | **Integration Tests** | `integration.yml` | PR + push to `main` on runtime paths (core subset, 5.26 + CalVer) |
 | **Extended Integration Tests** | `integration-tests.yml` | manual dispatch only (full) |
+| **Install Confidence** | `install-confidence.yml` | manual dispatch only (the same matrix also runs inside `release.yml`) |
 | **Release** | `release.yml` | push of a `vX.Y.Z` tag; manual dispatch |
-| **Pages — Docs** | `pages-docs.yml` | push to `main`; push of a `v*` tag; manual dispatch |
-| **Pages — Helm Repo** | `pages-helm.yml` | push of a `v*` tag; manual dispatch |
+| **Release Retract** | `release-retract.yml` | manual dispatch only |
+| **Pages — Docs** | `pages-docs.yml` | push to `main`; manual dispatch; `workflow_call` from `release.yml` (no tag trigger of its own) |
+| **Pages — Helm Repo** | `pages-helm.yml` | manual dispatch; `workflow_call` from `release.yml` (no tag trigger of its own) |
+| **CodeQL** | `codeql.yml` | push/PR to `main`; weekly schedule |
 
 Shared steps live in composite actions under `.github/actions/`
 (`setup-go`, `setup-k8s`, `collect-logs`).

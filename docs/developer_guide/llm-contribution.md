@@ -38,12 +38,14 @@ of the invariants:
 
 ## Guards vs gates (what will actually stop you)
 
-Be precise about enforcement — only two CI gates block merge:
+Be precise about enforcement — three CI jobs block merge; the guards marked
+ADVISORY do not:
 
 | Mechanism | Type | Blocks merge? |
 |---|---|---|
-| `make check-drift` (CI job *Generated Artifacts In Sync*) | BLOCKING CI gate | Yes |
+| `make check-drift` (CI job *Generated Artifacts In Sync*, which also runs the hand-written-docs checks: `check-apiref-drift`, `check-crd-catalog`, `check-docs-release-pins`, … and gitleaks) | BLOCKING CI gate | Yes |
 | `make test-unit` (CI job *Unit Tests*) | BLOCKING CI gate | Yes |
+| `golangci-lint` (CI job *Go Lint*; `ci.yml` calls it a merge gate) | BLOCKING CI gate | Yes |
 | `make check-invariants` (CI job *Invariant Guards (advisory)*) | ADVISORY guard | No |
 | `make check-knowledge-drift` (same advisory job) | ADVISORY guard | No |
 | Runtime validators in `internal/validation/` | Reject a bad CR at apply | n/a (runtime) |

@@ -48,7 +48,7 @@ All co-located here as `_test.go`. Run the package:
 go test ./internal/resources/...
 ```
 
-Pinned contracts to respect when editing: `cluster_startup_test.go` (`TestBuildConfigMapForEnterprise_ClusterFormation`, `TestListDiscoveryConfiguration` — assert FQDNs, `V2_ONLY` presence/absence, server-0 `me` bootstrap) and `cluster_test.go` (`TestBuildServerStatefulSetForEnterprise_EmptyStorageClassUsesDefault`, `TestBuildStatefulSetForEnterprise_*`, `TestBuildCertificateForEnterprise_DNSNames`).
+Pinned contracts to respect when editing: `cluster_startup_test.go` (`TestBuildConfigMapForEnterprise_ClusterFormation`, `TestListDiscoveryConfiguration` — assert FQDNs, `V2_ONLY` presence/absence, server-0 `me` bootstrap) and `cluster_test.go` (`TestBuildServerStatefulSetForEnterprise_EmptyStorageClassUsesDefault`, `TestBuildCertificateForEnterprise_DNSNames`). Caution: `TestBuildStatefulSetForEnterprise_WithFeatures` / `_ParallelManagement` drive the **Deprecated** plural builder, so they do NOT pin the single `{cluster}-server` StatefulSet shape — no unit test does yet (`docs/knowledge/invariants.md` INV-5).
 
 ## See also
 
