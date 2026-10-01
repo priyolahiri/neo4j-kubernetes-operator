@@ -40,11 +40,13 @@ type AuraInstanceSource struct {
 // AuraInstanceSpec is the desired state of an Aura-hosted instance.
 //
 // Immutable fields (cloudProvider, region, type, version, projectId,
-// customerManagedKeyId, source, instanceId) are enforced declaratively by the
-// apiserver via CEL transition rules below — there is no admission webhook
-// (project Invariant 1). Combinations of type/region/memory/version are further
-// validated against the live per-project instance_configurations inline in the
-// reconciler (the one check CEL cannot express).
+// organizationId, customerManagedKeyId, source, instanceId, multiDatabase,
+// graphAnalytics) are enforced declaratively by the apiserver via CEL
+// transition rules below — there is no admission webhook (project Invariant 1).
+// The type/region/cloudProvider combination is further checked, before a
+// create, against the project's live instance_configurations inline in the
+// reconciler (the one check CEL cannot express). memory and version are not
+// checked locally; Aura rejects a bad value at create.
 //
 // +kubebuilder:validation:XValidation:rule="has(self.providerConfigRef) != has(self.credentialsSecretRef)",message="set exactly one of providerConfigRef or credentialsSecretRef"
 // +kubebuilder:validation:XValidation:rule="self.type != 'free-db' || !has(self.storage)",message="storage is not configurable for free-db"
@@ -199,6 +201,10 @@ type AuraInstanceSpec struct {
 	ConnectionSecretName string `json:"connectionSecretName,omitempty"`
 
 	// ConnectionSecretFormat selects the key layout of the connection Secret.
+	//
+	// Reserved: the "custom" value is accepted by the schema but not acted on
+	// today. It has no key template of its own and writes the same keys as
+	// neo4j-driver.
 	// +kubebuilder:validation:Enum=neo4j-driver;aura-dotenv;jdbc;servicebinding;custom
 	// +kubebuilder:default=neo4j-driver
 	// +optional

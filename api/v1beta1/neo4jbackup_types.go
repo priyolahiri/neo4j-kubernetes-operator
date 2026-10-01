@@ -21,9 +21,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // Neo4jBackupSpec defines the desired state of Neo4jBackup
 type Neo4jBackupSpec struct {
 	// InstanceRef names the Neo4j deployment to back up — a
@@ -298,8 +295,10 @@ func (o *BackupOptions) CompressEffective() bool {
 
 // TempStorageSpec provisions temporary staging storage for cloud backup/restore.
 // The operator creates a PVC, mounts it at /tmp/neo4j-staging in the Job pod,
-// and passes --temp-path=/tmp/neo4j-staging to neo4j-admin. The PVC is owned
-// by the Job and garbage-collected when the Job's TTL expires.
+// and passes --temp-path=/tmp/neo4j-staging to neo4j-admin. The PVC is named
+// <cr-name>-temp-staging and is owned by the Neo4jBackup (or Neo4jRestore) CR,
+// not by the Job: it outlives the Job's TTL and is garbage-collected only when
+// that CR is deleted.
 type TempStorageSpec struct {
 	// Size of the temporary PVC (e.g., "50Gi"). Should be at least as large
 	// as the expected backup/restore artifact.

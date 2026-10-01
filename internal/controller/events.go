@@ -316,13 +316,17 @@ const (
 	EventReasonUpstreamBackupNotFound  = "UpstreamBackupNotFound"
 	EventReasonUpstreamBackupNotReady  = "UpstreamBackupNotReady"
 	// EventReasonCCDRProxyUnauthenticated — the CCDR proxy is exposing the
-	// tx-shipping port through a load balancer on a cluster with no cluster
-	// SSL policy. The proxy is a TCP passthrough that authenticates nothing,
-	// so the SSL policy's client_auth=REQUIRE is the ONLY access control on
-	// that port; without spec.tls there is none, and anyone who can reach the
-	// load balancer can stream the database. Warned rather than refused: a
-	// user may be terminating elsewhere or deliberately on a private network,
-	// and refusing would break clusters that already run this way.
+	// tx-shipping port through a load balancer while spec.tls.strictPeerValidation
+	// is false. The proxy is a TCP passthrough that authenticates nothing, so the
+	// cluster SSL policy's client_auth=REQUIRE is the ONLY access control on that
+	// port; with strictPeerValidation=false the policy is trust_all=true, so the
+	// port is encrypted but any peer certificate is accepted and anyone who can
+	// reach the load balancer can stream the database. A cluster with no spec.tls
+	// at all never reaches this event: validateCrossClusterReplication refuses it
+	// (phase Failed) before any proxy resource is built. Warned rather than
+	// refused: strictPeerValidation=false is a deliberate (if debugging-only)
+	// opt-out, and refusing would break clusters that already run this way. The
+	// same state is reported on the CrossClusterProxySecure condition.
 	EventReasonCCDRProxyUnauthenticated = "CrossClusterProxyUnauthenticated"
 
 	// Composite database event reasons.

@@ -163,8 +163,10 @@ spec:
                 format: int64
                 type: integer
               phase:
-                description: Phase mirrors the reconcile outcome (Pending, Completed,
-                  Error).
+                description: |-
+                  Phase mirrors the reconcile outcome: Pending (Aura's Pending or
+                  InProgress, or no status read yet), Completed, Failed (Aura reported the
+                  backup failed) or Error (the operator could not reconcile it).
                 type: string
               timestamp:
                 description: Timestamp is the backup's timestamp as reported by Aura.

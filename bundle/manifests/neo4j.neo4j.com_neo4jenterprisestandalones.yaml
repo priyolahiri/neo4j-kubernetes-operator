@@ -5604,7 +5604,13 @@ spec:
                       type: object
                     type: array
                   certificateSecret:
-                    description: Manual certificate configuration
+                    description: |-
+                      Manual certificate configuration.
+
+                      Reserved: accepted by the schema but not acted on today. No builder or
+                      controller reads it — the operator always uses the cert-manager-issued
+                      Secret "<name>-tls-secret". The only code that looks at it is the security
+                      validator, which rejects it when tls.mode is "disabled".
                     type: string
                   duration:
                     description: Certificate duration and renewal settings
@@ -5726,8 +5732,10 @@ spec:
 
                       Strict validation requires the cert-manager-issued Secret to
                       contain a ca.crt key. The controller refuses to apply strict
-                      config if it is missing — your status will report
-                      `TLSStrictValidationUnready` with a message naming the issuer.
+                      config if it is missing — the cluster goes to phase Failed with a status
+                      message naming the Secret and the issuer. (While cert-manager has not yet
+                      issued the Secret at all, the reconcile just requeues: Initializing on a
+                      new cluster, the existing phase otherwise.)
 
                       No effect on Neo4jEnterpriseStandalone (single-server deployments
                       have no intra-cluster traffic).
@@ -5771,8 +5779,13 @@ spec:
                   trustedCASecret:
                     description: |-
                       TrustedCASecret references a Secret containing a trusted CA certificate (key: "ca.crt")
-                      for verifying Neo4j TLS connections. When omitted with cert-manager mode, TLS verification
-                      is skipped (suitable for self-signed development certificates).
+                      that the OPERATOR uses to verify the Neo4j server's certificate on its own
+                      Bolt connection. It is consulted before the cert-manager-generated Secret
+                      ("<name>-tls-secret"). When omitted, the operator verifies against that
+                      generated Secret: its ca.crt when populated, otherwise by pinning the
+                      server certificate from its tls.crt. TLS verification is never skipped.
+                      It does not change what the Neo4j server itself trusts; use
+                      spec.trustedCASecrets for that.
                     type: string
                   usages:
                     description: |-
@@ -6122,7 +6135,11 @@ spec:
                   type: object
                 type: array
               databaseStatus:
-                description: DatabaseStatus provides information about the Neo4j database
+                description: |-
+                  DatabaseStatus provides information about the Neo4j database.
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it. Use status.diagnostics.databases instead.
                 properties:
                   connectionCount:
                     description: ConnectionCount shows the number of active connections
@@ -6342,8 +6359,11 @@ spec:
                     type: object
                 type: object
               lastStartTime:
-                description: LastStartTime shows when the standalone deployment was
-                  last started
+                description: |-
+                  LastStartTime shows when the standalone deployment was last started.
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it.
                 format: date-time
                 type: string
               message:
@@ -6360,7 +6380,11 @@ spec:
                   deployment
                 type: string
               podStatus:
-                description: PodStatus provides information about the Neo4j pod
+                description: |-
+                  PodStatus provides information about the Neo4j pod.
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it. Use kubectl get pod <name>-0 for pod state.
                 properties:
                   conditions:
                     description: Conditions represent the current conditions of the

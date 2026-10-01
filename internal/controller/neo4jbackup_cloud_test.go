@@ -242,13 +242,8 @@ func TestBuildCloudEnvVars_NilCredentialsSecretRef(t *testing.T) {
 
 // ─── Per-run subfolder (issue #129) ─────────────────────────────────────────
 
-// TestBuildToPath_NoTrailingRunSubfolder verifies that buildToPath returns
-// the storage BASE — no trailing slash, no per-run component. The per-run
-// "${BACKUP_RUN_ID}" subfolder is appended by buildBackupCommand at
-// command-construction time and expanded by the shell at runtime via the
-// downward-API env var.
 // TestBuildToPath_SharedDirectoryPerCR pins the shared-directory layout
-// (CLAUDE.md rule 40): all runs of one Neo4jBackup CR write to the SAME
+// (docs/knowledge/backup-restore.md Rule 40): all runs of one Neo4jBackup CR write to the SAME
 // `<base>/<cr-name>` directory so neo4j-admin can chain `--type=DIFF`
 // backups off the prior FULL. The CR name acts as the per-CR isolation
 // segment — multiple CRs pointed at the same storage location stay

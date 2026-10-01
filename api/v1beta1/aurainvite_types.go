@@ -101,7 +101,12 @@ type AuraInviteStatus struct {
 	// +optional
 	InviteID string `json:"inviteId,omitempty"`
 
-	// Phase mirrors the reconcile outcome (Pending, Sent, Accepted, Error).
+	// Phase mirrors the reconcile outcome. While the invite is listed it is
+	// Aura's own status: Sent (active, awaiting acceptance), Accepted, Revoked,
+	// Expired or Declined. Gone means the invite is no longer listed at all
+	// (accepted, declined, revoked or expired — Aura does not say which).
+	// Pending means no matching invite exists and managementPolicies does not
+	// permit creating one. Error means the last reconcile failed.
 	// +optional
 	Phase string `json:"phase,omitempty"`
 

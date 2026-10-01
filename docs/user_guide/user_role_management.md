@@ -353,7 +353,7 @@ spec:
   enforcePrivileges: false
 ```
 
-With `enforcePrivileges: false`, the controller still creates the role and applies the initial `.privileges` list, but never revokes anything added out-of-band. Useful when you intend to layer manual privilege overrides on top.
+With `enforcePrivileges: false`, the controller still creates the role and applies every privilege in `.privileges` on each reconcile (including ones you add later, and re-granting one that was revoked out-of-band), but never revokes anything added out-of-band. Useful when you intend to layer manual privilege overrides on top.
 
 ### Immutable privileges
 

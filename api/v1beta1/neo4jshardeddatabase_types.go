@@ -71,9 +71,10 @@ type Neo4jShardedDatabaseSpec struct {
 	// become unrecoverable (e.g. all replicas of a property shard severed),
 	// and the only restore mechanism is drop-and-recreate from backup.
 	//
-	// REQUIRES `force: true` as a separate confirmation field, mirroring
-	// the safety pattern used by `Neo4jRestore.spec.force`. The validator
-	// rejects `replaceExisting: true` without `force: true`.
+	// REQUIRES `force: true` as a separate confirmation field, the same
+	// two-key safety pattern Neo4jRestore uses for an overwrite
+	// (spec.options.replaceExisting). The validator rejects
+	// `replaceExisting: true` without `force: true`.
 	//
 	// Mutually exclusive with `ifNotExists: true` — those two settings
 	// contradict each other (one says "no-op if it exists", the other says
@@ -104,15 +105,18 @@ type Neo4jShardedDatabaseSpec struct {
 	// concrete seedURI (computed from the backup's storage type + per-run
 	// subdirectory). Mutually exclusive with SeedURI and SeedURIs.
 	//
-	// Currently restricted to backups stored in cloud locations (S3, GCS,
-	// Azure Blob): PVC-stored backups would require mounting the backup PVC
-	// on cluster pods, which is out of scope for this field. The validator
-	// rejects PVC-backed seedBackupRef at reconcile time with an explanatory
-	// status message.
+	// Supports backups stored in cloud locations (S3, GCS, Azure Blob) and on
+	// a PVC. A PVC-backed backup is served to the cluster by an operator-managed
+	// seed proxy (an in-cluster HTTP server that mounts the backup PVC and is
+	// torn down once the sharded database is Ready), so the backup PVC is never
+	// mounted on the cluster pods. Any other storage type, or a backup with no
+	// per-shard artifact metadata, is rejected at reconcile time with an
+	// explanatory status message.
 	//
 	// If the referenced Neo4jBackup has no Succeeded run yet, the sharded
 	// database stays in Pending phase and the reconciler requeues — it does
-	// NOT route to Failed (mirrors CLAUDE.md rule 72's restore-side semantics).
+	// NOT route to Failed (the same semantics as the restore side, see
+	// docs/knowledge/backup-restore.md Rule 43).
 	SeedBackupRef string `json:"seedBackupRef,omitempty"`
 
 	// Seed URIs keyed by shard name for dump-based seeding or multi-location backups.
@@ -197,19 +201,34 @@ type Neo4jShardedDatabaseStatus struct {
 	// ShardingReady indicates whether all shards are created and operational
 	ShardingReady *bool `json:"shardingReady,omitempty"`
 
-	// CreationTime shows when the sharded database was created
+	// CreationTime shows when the sharded database was created.
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it.
 	CreationTime *metav1.Time `json:"creationTime,omitempty"`
 
-	// Graph shard status
+	// Graph shard status.
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it. Use SHOW DATABASES for per-shard state.
 	GraphShard *ShardStatus `json:"graphShard,omitempty"`
 
-	// Property shard statuses
+	// Property shard statuses.
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it. Use SHOW DATABASES for per-shard state.
 	PropertyShards []ShardStatus `json:"propertyShards,omitempty"`
 
-	// Virtual database status (logical view combining all shards)
+	// Virtual database status (logical view combining all shards).
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it.
 	VirtualDatabase *VirtualDatabaseStatus `json:"virtualDatabase,omitempty"`
 
-	// Total size across all shards
+	// Total size across all shards.
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it.
 	TotalSize string `json:"totalSize,omitempty"`
 
 	// LastBackup records the most recent successful backup that targeted this

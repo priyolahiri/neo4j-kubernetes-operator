@@ -239,7 +239,7 @@ Fine-grained backup execution options.
 
 ### TempStorageSpec
 
-Provisions temporary staging storage for cloud backup/restore. The operator creates a PVC, mounts it at `/tmp/neo4j-staging` in the Job pod, and passes `--temp-path=/tmp/neo4j-staging` to `neo4j-admin`. The PVC is owned by the Job and garbage-collected when the Job's TTL expires.
+Provisions temporary staging storage for cloud backup/restore. The operator creates a PVC, mounts it at `/tmp/neo4j-staging` in the Job pod, and passes `--temp-path=/tmp/neo4j-staging` to `neo4j-admin`. The PVC (named `<cr-name>-temp-staging`) is owned by the `Neo4jBackup` (or `Neo4jRestore`) CR, not by the Job: it outlives the Job's TTL and is garbage-collected only when that CR is deleted.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|

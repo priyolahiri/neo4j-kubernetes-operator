@@ -76,11 +76,12 @@ type Neo4jRoleSpec struct {
 	// +optional
 	PrivilegeRules []PrivilegeRule `json:"privilegeRules,omitempty"`
 
-	// EnforcePrivileges controls drift reconciliation for privileges.
-	// When true (default) the controller reverts manual privilege changes
-	// to match .privileges. When false the controller only applies
-	// statements at creation time and never revokes privileges added
-	// out-of-band.
+	// EnforcePrivileges controls whether privileges on the role that the spec
+	// does not list are revoked. When true (default) the controller reverts
+	// manual privilege changes to match .privileges. When false it still
+	// applies every statement in the spec on every reconcile (so a listed
+	// privilege revoked out-of-band is granted again) but never revokes
+	// privileges added out-of-band.
 	// +kubebuilder:default=true
 	// +optional
 	EnforcePrivileges bool `json:"enforcePrivileges,omitempty"`
@@ -109,6 +110,8 @@ type Neo4jRoleStatus struct {
 	// Conditions reflects the latest reconcile state. Conditions used:
 	//   Ready             — role exists and privileges in sync
 	//   PrivilegesSynced  — desired privileges match Neo4j
+	//   PrivilegesResolve — every database a privilege names exists on the cluster
+	//                       (a privilege naming a missing database is skipped, not failed)
 	//   ClusterNotReady   — referenced cluster is not Ready
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

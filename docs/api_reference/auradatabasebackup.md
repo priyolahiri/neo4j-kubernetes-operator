@@ -27,7 +27,7 @@ The `AuraDatabaseBackup` CRD takes an **on-demand** per-database backup on a man
 | Field | Type | Description |
 |---|---|---|
 | `backupId` | `string` | Aura-assigned backup ID. |
-| `phase` | `string` | `Pending`, `Completed`, `Failed`, `Error`. Mirrors Aura's own `status` enum (`Pending`/`InProgress`/`Completed`/`Failed`). A freshly-scheduled backup reports `Pending` — the create response carries only an ID, so no status is known until the next read. |
+| `phase` | `string` | `Pending`, `Completed`, `Failed`, `Error`. Mirrors Aura's own `status` enum (`Pending`/`InProgress`/`Completed`/`Failed`) — `Pending` covers both Aura's `Pending` and `InProgress`; `Error` means the operator could not reconcile the backup. A freshly-scheduled backup reports `Pending` — the create response carries only an ID, so no status is known until the next read. |
 | `timestamp` | `string` | Backup timestamp as reported by Aura. |
 | `exportable` | `bool` | Whether Aura can export/download this backup. Only populated once the backup has been read back. |
 | `conditions` | `[]metav1.Condition` | Standard readiness conditions. |

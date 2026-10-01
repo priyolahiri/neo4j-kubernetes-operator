@@ -141,8 +141,9 @@ spec:
                 format: int64
                 type: integer
               phase:
-                description: 'Phase maps the Aura snapshot status: Pending, InProgress,
-                  Completed, Failed.'
+                description: |-
+                  Phase maps the Aura snapshot status: Pending, InProgress, Completed,
+                  Failed or Cancelled. Completed, Failed and Cancelled are terminal.
                 type: string
               profile:
                 description: Profile is AdHoc or Scheduled.

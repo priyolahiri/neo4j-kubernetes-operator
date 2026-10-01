@@ -304,12 +304,22 @@ type TLSSpec struct {
 
 	IssuerRef *IssuerRef `json:"issuerRef,omitempty"`
 
-	// Manual certificate configuration
+	// Manual certificate configuration.
+	//
+	// Reserved: accepted by the schema but not acted on today. No builder or
+	// controller reads it — the operator always uses the cert-manager-issued
+	// Secret "<name>-tls-secret". The only code that looks at it is the security
+	// validator, which rejects it when tls.mode is "disabled".
 	CertificateSecret string `json:"certificateSecret,omitempty"`
 
 	// TrustedCASecret references a Secret containing a trusted CA certificate (key: "ca.crt")
-	// for verifying Neo4j TLS connections. When omitted with cert-manager mode, TLS verification
-	// is skipped (suitable for self-signed development certificates).
+	// that the OPERATOR uses to verify the Neo4j server's certificate on its own
+	// Bolt connection. It is consulted before the cert-manager-generated Secret
+	// ("<name>-tls-secret"). When omitted, the operator verifies against that
+	// generated Secret: its ca.crt when populated, otherwise by pinning the
+	// server certificate from its tls.crt. TLS verification is never skipped.
+	// It does not change what the Neo4j server itself trusts; use
+	// spec.trustedCASecrets for that.
 	// +optional
 	TrustedCASecret string `json:"trustedCASecret,omitempty"`
 
@@ -357,8 +367,10 @@ type TLSSpec struct {
 	//
 	// Strict validation requires the cert-manager-issued Secret to
 	// contain a ca.crt key. The controller refuses to apply strict
-	// config if it is missing — your status will report
-	// `TLSStrictValidationUnready` with a message naming the issuer.
+	// config if it is missing — the cluster goes to phase Failed with a status
+	// message naming the Secret and the issuer. (While cert-manager has not yet
+	// issued the Secret at all, the reconcile just requeues: Initializing on a
+	// new cluster, the existing phase otherwise.)
 	//
 	// No effect on Neo4jEnterpriseStandalone (single-server deployments
 	// have no intra-cluster traffic).
@@ -1510,11 +1522,18 @@ type PlacementConfig struct {
 	// +optional
 	AntiAffinity *PodAntiAffinityConfig `json:"antiAffinity,omitempty"`
 
-	// NodeSelector specifies node selection constraints
+	// NodeSelector specifies node selection constraints.
+	//
+	// Reserved: accepted by the schema but not acted on today. The topology
+	// scheduler never reads it; use the top-level spec.nodeSelector.
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
-	// RequiredDuringScheduling indicates hard placement requirements
+	// RequiredDuringScheduling indicates hard placement requirements.
+	//
+	// Reserved: accepted by the schema but not acted on today. Nothing reads it;
+	// use antiAffinity.type: required or topology.enforceDistribution for hard
+	// placement.
 	// +optional
 	RequiredDuringScheduling bool `json:"requiredDuringScheduling,omitempty"`
 }
