@@ -4,7 +4,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/priyolahiri/neo4j-kubernetes-operator)](https://goreportcard.com/report/github.com/priyolahiri/neo4j-kubernetes-operator)
 [![GitHub Release](https://img.shields.io/github/release/priyolahiri/neo4j-kubernetes-operator.svg)](https://github.com/priyolahiri/neo4j-kubernetes-operator/releases)
 
-A Kubernetes operator for Neo4j Enterprise — declarative clusters, databases, users, roles, backups, and plugins. Supports Neo4j Enterprise 5.26 LTS and any CalVer release (2025.x, 2026.x, …).
+A Kubernetes operator for Neo4j Enterprise — declarative clusters, databases, users, roles, backups, and plugins. Supports Neo4j Enterprise 5.26 LTS and CalVer releases from 2025.01 on (2025.x, 2026.x, …) — 5.26 and one anchor CalVer are validated per operator release; newer CalVers are allowed but best-effort ([details](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/version_support/)).
 
 > [!IMPORTANT]
 > **Independent project — not affiliated with Neo4j, Inc.** This is a personally
@@ -25,7 +25,7 @@ A Kubernetes operator for Neo4j Enterprise — declarative clusters, databases, 
 
 ## Requirements
 
-- **Neo4j**: Enterprise 5.26 LTS or any CalVer release (2025.x+)
+- **Neo4j**: Enterprise 5.26 LTS or CalVer 2025.01+ (validated: 5.26 and one anchor CalVer per release; newer CalVers best-effort — see [Supported Neo4j Versions](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/version_support/))
 - **Kubernetes**: 1.32+
 - **cert-manager** 1.20+ — optional, only for TLS-enabled deployments
 

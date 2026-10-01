@@ -16,9 +16,13 @@
 
 - [ ] `make test-unit` passes locally
 - [ ] `make lint` passes locally
-- [ ] Extended Integration Tests run (add the `run-integration-tests` label or
-      `[run-integration]` in a commit) — required if you changed the cluster,
-      standalone, backup, or restore controllers
+- [ ] Core Integration Tests are green (they run automatically when a PR touches
+      runtime paths such as `internal/`, `api/`, `cmd/`, `config/`)
+- [ ] Extended Integration Tests dispatched against this branch (Actions →
+      "Extended Integration Tests" → Run workflow, or
+      `gh workflow run integration-tests.yml --ref <branch>`) — required if you
+      changed the cluster, standalone, backup, restore, or sharding controllers.
+      There is no PR-label or commit-message trigger for it.
 
 ## Checklist
 
