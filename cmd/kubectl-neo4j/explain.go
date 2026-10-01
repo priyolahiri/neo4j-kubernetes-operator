@@ -171,6 +171,10 @@ var phaseGuidance = map[string]guidance{
 		meaning: "a one-shot operation — a backup, a restore, or a promotion — finished successfully.",
 		action:  "Nothing to do. status.history records what was written and where; for a promotion, status.observedLagTxIds records the RPO actually taken, which is worth keeping if you are writing up the incident.",
 	},
+	neo4jv1beta1.PhaseScheduled: {
+		meaning: "a Neo4jBackup with spec.schedule has its CronJob armed and is waiting for the next firing. This is the healthy resting phase of a scheduled backup — it never reaches Completed.",
+		action:  "Nothing to do. Per-run outcomes accumulate in status.history[]; read that (not the phase) to see whether the last run succeeded, and kubectl get cronjob <name>-backup-cron for the schedule itself.",
+	},
 	neo4jv1beta1.PhaseFailed: {
 		meaning: "the operation will not be retried without a change: the operator judged the cause permanent.",
 		action:  "status.message names the cause. Fix the spec or the cluster-side precondition it names, then re-apply — `kubectl neo4j preflight` checks the cluster-side ones before you do. On a Neo4jReplicaDatabase the usual cause is a broken differential chain (a bucket lifecycle rule expiring an old backup will do it), which requires recreating the replica.",
