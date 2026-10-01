@@ -325,7 +325,7 @@
       {
         "key": "Suspended",
         "name": "Suspended",
-        "description": "spec.suspend=true; any existing CronJob is also suspended and no new backup runs are started."
+        "description": "spec.suspend=true; any existing CronJob is also suspended and no new backup runs are started. The Ready condition is False with reason Suspended (a deliberate pause, not a failure)."
       },
       {
         "key": "Scheduled",

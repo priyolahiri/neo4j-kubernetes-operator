@@ -75,6 +75,24 @@ func TestPhaseToConditionStatus_ScheduledIsHealthyAndWaiting(t *testing.T) {
 	assert.Equal(t, "BackupScheduled", reason, "the reason is user-visible in `kubectl describe`")
 }
 
+// spec.suspend is declared state, not a fault. The Ready condition used to
+// report it as False with reason ReconciliationFailed — the same reason as a
+// genuine failure — so `kubectl describe` and any alert keyed on that reason
+// read a deliberate pause as an error. The status stays False (the backup is
+// not Ready to run) and the phase stays Suspended; only the reason is accurate.
+func TestPhaseToConditionStatus_SuspendedIsFalseButNotAFailure(t *testing.T) {
+	status, reason := PhaseToConditionStatus(neo4jv1beta1.PhaseSuspended)
+	assert.Equal(t, metav1.ConditionFalse, status, "Ready stays False while suspended")
+	assert.Equal(t, "Suspended", reason, "the reason is user-visible in `kubectl describe`")
+	assert.NotEqual(t, ConditionReasonFailed, reason)
+
+	// The genuine failures keep their reason.
+	for _, p := range []string{neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseError, neo4jv1beta1.PhaseDegraded} {
+		_, r := PhaseToConditionStatus(p)
+		assert.Equal(t, ConditionReasonFailed, r, "phase %q", p)
+	}
+}
+
 // The shared phase vocabulary must stay the single source for what the
 // controllers set. If a controller starts setting a phase that AllPhases does
 // not list, `kubectl neo4j explain` answers "may be newer than this CLI" and
@@ -97,7 +115,9 @@ func TestPhaseToConditionStatus_Table(t *testing.T) {
 		{neo4jv1beta1.PhaseCompleted, metav1.ConditionTrue, ConditionReasonBackupSucceeded},
 		{neo4jv1beta1.PhaseFailed, metav1.ConditionFalse, ConditionReasonFailed},
 		{neo4jv1beta1.PhaseDegraded, metav1.ConditionFalse, ConditionReasonFailed},
-		{neo4jv1beta1.PhaseSuspended, metav1.ConditionFalse, ConditionReasonFailed},
+		// Suspension is deliberate, so the reason must not say "ReconciliationFailed"
+		// — but the status stays False: a suspended backup is not Ready to run.
+		{neo4jv1beta1.PhaseSuspended, metav1.ConditionFalse, ConditionReasonSuspended},
 		{neo4jv1beta1.PhaseInvalid, metav1.ConditionFalse, ConditionReasonFailed},
 		{neo4jv1beta1.PhaseError, metav1.ConditionFalse, ConditionReasonFailed},
 		{neo4jv1beta1.PhaseUpgrading, metav1.ConditionUnknown, ConditionReasonUpgrading},
