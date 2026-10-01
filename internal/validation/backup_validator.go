@@ -346,7 +346,7 @@ func (v *BackupValidator) validateStorageProvider(storage *neo4jv1beta1.StorageL
 		if size := strings.TrimSpace(storage.PVC.Size); size != "" {
 			q, err := resource.ParseQuantity(size)
 			if err != nil {
-				return fmt.Errorf("spec.storage.pvc.size %q is not a valid Kubernetes quantity (e.g. \"50Gi\"): %v", storage.PVC.Size, err)
+				return fmt.Errorf("spec.storage.pvc.size %q is not a valid Kubernetes quantity (e.g. \"50Gi\"): %w", storage.PVC.Size, err)
 			}
 			if q.Sign() <= 0 {
 				return fmt.Errorf("spec.storage.pvc.size %q must be greater than zero", storage.PVC.Size)
