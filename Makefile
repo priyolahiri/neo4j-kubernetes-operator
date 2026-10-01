@@ -185,8 +185,19 @@ test-unit: manifests generate fmt vet envtest ## Run unit tests (no cluster requ
 
 
 # Integration Tests
+#
+# LABEL narrows the run to a Ginkgo label expression (--label-filter), so the
+# tiers CI runs can be reproduced locally in one command:
+#   make test-integration LABEL=core                 # the per-PR tier
+#   make test-integration LABEL=extended             # the heavy / release tier
+#   make test-integration LABEL='core || extended'   # everything, spelled out
+# Empty (the default) passes no --label-filter and runs every spec, as before.
+# INTEGRATION_TIMEOUT is the whole-suite deadline handed to `ginkgo --timeout`
+# (not the per-spec 300s); raise it for a long tier, e.g. INTEGRATION_TIMEOUT=120m.
+LABEL ?=
+INTEGRATION_TIMEOUT ?= 60m
 .PHONY: test-integration
-test-integration: manifests generate test-cluster ginkgo kustomize ## Run integration tests (production mode, neo4j-operator-system)
+test-integration: manifests generate test-cluster ginkgo kustomize ## Run integration tests (production mode, neo4j-operator-system); LABEL=core|extended selects a tier
 	@echo "🔗 Running integration tests..."
 	@kind export kubeconfig --name neo4j-operator-test
 	@echo "📦 Building and loading operator image..."
@@ -196,36 +207,8 @@ test-integration: manifests generate test-cluster ginkgo kustomize ## Run integr
 	@$(KUSTOMIZE) build config/overlays/integration-test | kubectl apply -f -
 	@kubectl rollout status deployment/neo4j-operator-controller-manager -n neo4j-operator-system --timeout=120s
 	@echo "✅ Operator deployed in production mode (neo4j-operator-system)!"
-	@echo "🔗 Running integration tests..."
-	@$(GINKGO) run --timeout=60m --procs=1 -v ./test/integration/...
-
-.PHONY: test-integration-ci
-test-integration-ci: ginkgo ## Run integration tests in CI (assumes cluster already exists)
-	@echo "🔗 Running integration tests in CI with Ginkgo..."
-	@if [ -z "$$KUBECONFIG" ]; then \
-		echo "KUBECONFIG not set, trying to export from kind cluster..."; \
-		export KUBECONFIG="$(HOME)/.kube/config"; \
-		kind export kubeconfig --name neo4j-operator-test --kubeconfig="$$KUBECONFIG"; \
-	fi
-	@echo "Using KUBECONFIG: $$KUBECONFIG"
-	@echo "📊 Running essential tests only in CI to prevent resource exhaustion..."
-	@echo "⚠️  Skipping resource-intensive tests (plugins, clusters, split-brain)"
-	@KUBECONFIG="$$KUBECONFIG" $(GINKGO) run --timeout=30m --procs=1 --fail-on-pending \
-		--focus="(standalone|backup.*api|restore.*api|database.*api|version detection|rbac)" \
-		--skip="(plugin|split-brain|cluster|enterprise features|seed.*uri)" \
-		-v ./test/integration/...
-
-.PHONY: test-integration-ci-full
-test-integration-ci-full: ginkgo ## Run ALL integration tests in CI (use with caution)
-	@echo "🔗 Running FULL integration test suite in CI with Ginkgo..."
-	@if [ -z "$$KUBECONFIG" ]; then \
-		echo "KUBECONFIG not set, trying to export from kind cluster..."; \
-		export KUBECONFIG="$(HOME)/.kube/config"; \
-		kind export kubeconfig --name neo4j-operator-test --kubeconfig="$$KUBECONFIG"; \
-	fi
-	@echo "Using KUBECONFIG: $$KUBECONFIG"
-	@echo "⚠️  WARNING: Running full test suite - may cause resource exhaustion in CI"
-	@KUBECONFIG="$$KUBECONFIG" $(GINKGO) run --timeout=60m --procs=1 --fail-on-pending --keep-going=false -v ./test/integration/...
+	@echo '🔗 Running integration tests$(if $(LABEL), (label-filter: $(LABEL)))...'
+	@$(GINKGO) run --timeout=$(INTEGRATION_TIMEOUT) --procs=1$(if $(LABEL), --label-filter='$(LABEL)') -v ./test/integration/...
 
 # E2E Tests - Removed to simplify test structure
 

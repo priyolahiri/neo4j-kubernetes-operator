@@ -161,6 +161,12 @@ make test-integration
 # spec (core + extended, --timeout=60m) and leaves the cluster running afterwards.
 make test-cluster-delete  # Clean up the cluster when you are done
 
+# The same, narrowed to a tier with LABEL (passed to ginkgo --label-filter):
+make test-integration LABEL=core       # the per-PR tier, as CI runs it
+make test-integration LABEL=extended   # the heavy / release tier
+make test-integration LABEL='core || extended'   # everything, spelled out
+make test-integration LABEL=extended INTEGRATION_TIMEOUT=120m   # longer suite deadline (default 60m)
+
 # To iterate against a cluster you already set up, skip make and call ginkgo:
 make test-cluster && make operator-setup     # once
 ginkgo run --label-filter='core' ./test/integration/...
@@ -174,10 +180,6 @@ ginkgo run --label-filter='core || extended' ./test/integration/...  # everythin
 ginkgo run -focus "Neo4jEnterpriseCluster" ./test/integration
 ginkgo run -focus "should create backup" ./test/integration
 ginkgo run -focus "Plugin Installation" ./test/integration
-
-# CI-optimized test commands (for advanced use)
-make test-integration-ci     # Assumes cluster and operator already deployed
-make test-integration-ci-full # Full suite in CI environment
 ```
 
 ### Tier labels (`core` / `extended`)
