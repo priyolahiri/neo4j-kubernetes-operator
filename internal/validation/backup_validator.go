@@ -395,7 +395,9 @@ func (v *BackupValidator) validateSchedule(schedule string) (err error) {
 // validateCloudConfiguration validates cloud-specific backup configuration
 func (v *BackupValidator) validateCloudConfiguration(cloud *neo4jv1beta1.CloudBlock) field.ErrorList {
 	var allErrs field.ErrorList
-	cloudPath := field.NewPath("spec", "cloud")
+	// The block lives at spec.storage.cloud; the top-level spec.cloud alias was
+	// removed in v1.14, so reporting under it pointed users at a missing field.
+	cloudPath := field.NewPath("spec", "storage", "cloud")
 
 	// Validate cloud provider if specified
 	if cloud.Provider != "" {

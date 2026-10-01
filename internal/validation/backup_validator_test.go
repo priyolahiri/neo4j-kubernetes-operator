@@ -602,6 +602,63 @@ func TestBackupValidator_CloudAtStorageLevel(t *testing.T) {
 	}
 }
 
+// TestBackupValidator_CloudErrorPathsAreUnderStorage pins that cloud-config
+// errors are reported at the real field path (spec.storage.cloud.*). They used to
+// say spec.cloud.* — a path that has not existed since v1.14 — so a user fixing
+// the error went looking for a field that is not in the schema.
+func TestBackupValidator_CloudErrorPathsAreUnderStorage(t *testing.T) {
+	v := NewBackupValidator()
+	base := func(cloud *neo4jv1beta1.CloudBlock) *neo4jv1beta1.Neo4jBackup {
+		return &neo4jv1beta1.Neo4jBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: "b"},
+			Spec: neo4jv1beta1.Neo4jBackupSpec{
+				InstanceRef:  "c",
+				AllDatabases: true,
+				Storage: neo4jv1beta1.StorageLocation{
+					Type: "s3", Bucket: "bkt", Cloud: cloud,
+				},
+			},
+		}
+	}
+
+	cases := []struct {
+		name      string
+		cloud     *neo4jv1beta1.CloudBlock
+		wantField string
+	}{
+		{
+			name:      "unsupported provider",
+			cloud:     &neo4jv1beta1.CloudBlock{Provider: "ibm"},
+			wantField: "spec.storage.cloud.provider",
+		},
+		{
+			name: "identity without provider",
+			cloud: &neo4jv1beta1.CloudBlock{
+				Provider: "aws",
+				Identity: &neo4jv1beta1.CloudIdentity{},
+			},
+			wantField: "spec.storage.cloud.identity.provider",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			errs := v.Validate(base(tc.cloud))
+			found := false
+			for _, e := range errs {
+				if strings.HasPrefix(e.Field, "spec.cloud") {
+					t.Errorf("error reported at the removed path %q: %v", e.Field, e)
+				}
+				if e.Field == tc.wantField {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("expected an error at %q, got: %v", tc.wantField, errs)
+			}
+		})
+	}
+}
+
 // TestBackupValidator_ShellSafetyCharsets pins #219: fields that reach the
 // backup Job's /bin/sh -c command are rejected up front when they carry shell
 // metacharacters (the command builder also quotes them — defense-in-depth).

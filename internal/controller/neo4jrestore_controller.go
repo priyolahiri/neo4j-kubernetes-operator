@@ -894,7 +894,7 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 		// Reject it up front with an actionable pointer to the cluster-native
 		// path (Neo4jDatabase.spec.seedConfig.restoreUntil).
 		if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && isCluster {
-			return fmt.Errorf("source.type=pitr is not supported for cluster targets (clusterRef %q resolves to a Neo4jEnterpriseCluster); Neo4jRestore PITR applies to Neo4jEnterpriseStandalone targets only. For cluster point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead", restore.Spec.InstanceRef)
+			return fmt.Errorf("source.type=pitr is not supported for cluster targets (instanceRef %q resolves to a Neo4jEnterpriseCluster); Neo4jRestore PITR applies to Neo4jEnterpriseStandalone targets only. For cluster point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead", restore.Spec.InstanceRef)
 		}
 
 	default:
@@ -943,7 +943,7 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 	// asked for a point in time is worse than failing: reject up front.
 	if restore.Spec.Source.PointInTime != nil {
 		if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && isCluster {
-			return fmt.Errorf("source.pointInTime is not supported for cluster targets (clusterRef %q resolves to a Neo4jEnterpriseCluster) — the cluster restore path seeds from a backup artifact and cannot replay to a point in time. For cluster point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead", restore.Spec.InstanceRef)
+			return fmt.Errorf("source.pointInTime is not supported for cluster targets (instanceRef %q resolves to a Neo4jEnterpriseCluster) — the cluster restore path seeds from a backup artifact and cannot replay to a point in time. For cluster point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead", restore.Spec.InstanceRef)
 		}
 	}
 
@@ -3699,7 +3699,7 @@ func ternaryString(cond bool, ifTrue, ifFalse string) string {
 	return ifFalse
 }
 
-// isRestoreTargetTrueCluster returns true when spec.clusterRef points at an
+// isRestoreTargetTrueCluster returns true when spec.instanceRef points at an
 // actual Neo4jEnterpriseCluster (not a Neo4jEnterpriseStandalone). The
 // cluster restore path uses Cypher (`dbms.recreateDatabase` or
 // `CREATE DATABASE OPTIONS{seedURI}`) per the Neo4j cluster restore docs;
