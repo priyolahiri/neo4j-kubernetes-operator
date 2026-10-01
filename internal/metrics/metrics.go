@@ -58,8 +58,6 @@ const (
 
 	// LabelCluster is the label key for cluster name
 	LabelCluster = "cluster"
-	// LabelNodeType is the label key for node type (primary/secondary)
-	LabelNodeType = "node_type"
 	// LabelStatus is the label key for operation status
 	LabelStatus = "status"
 
@@ -199,45 +197,6 @@ var (
 		[]string{LabelClusterName, LabelNamespace},
 	)
 
-	backupSize = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: subsystem,
-			Name:      "backup_size_bytes",
-			Help:      "Size of the latest backup in bytes",
-		},
-		[]string{LabelClusterName, LabelNamespace},
-	)
-
-	// Cypher execution metrics
-	cypherTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Subsystem: subsystem,
-			Name:      "cypher_executions_total",
-			Help:      "Total number of Cypher statement executions",
-		},
-		[]string{LabelClusterName, LabelNamespace, LabelOperation, LabelResult},
-	)
-
-	cypherDuration = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Subsystem: subsystem,
-			Name:      "cypher_execution_duration_seconds",
-			Help:      "Time spent executing Cypher statements",
-			Buckets:   []float64{0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0},
-		},
-		[]string{LabelClusterName, LabelNamespace, LabelOperation},
-	)
-
-	// Security metrics
-	securityOperationTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Subsystem: subsystem,
-			Name:      "security_operations_total",
-			Help:      "Total number of security operations (user, role, grant)",
-		},
-		[]string{LabelClusterName, LabelNamespace, LabelOperation, LabelResult},
-	)
-
 	// Resource version conflict metrics
 	resourceVersionConflicts = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -310,23 +269,10 @@ func init() {
 		upgradeDuration,
 		backupTotal,
 		backupDuration,
-		backupSize,
-		cypherTotal,
-		cypherDuration,
-		securityOperationTotal,
 		// Resource version conflict metrics
 		resourceVersionConflicts,
 		conflictRetryAttempts,
 		conflictRetryDuration,
-		// New feature metrics
-		disasterRecoveryStatus,
-		failoverTotal,
-		replicationLag,
-		manualScalerEnabled,
-		scaleEventsTotal,
-		primaryCount,
-		secondaryCount,
-		scalingValidationTotal,
 		serverHealth,
 		// Aura orchestration metrics
 		auraAPIRequestsTotal,
@@ -515,7 +461,7 @@ func NewBackupMetrics(clusterName, namespace string) *BackupMetrics {
 }
 
 // RecordBackup records a backup operation
-func (m *BackupMetrics) RecordBackup(ctx context.Context, success bool, duration time.Duration, sizeBytes int64) {
+func (m *BackupMetrics) RecordBackup(ctx context.Context, success bool, duration time.Duration) {
 	result := MetricResultSuccess
 	if !success {
 		result = MetricResultFailure
@@ -523,10 +469,6 @@ func (m *BackupMetrics) RecordBackup(ctx context.Context, success bool, duration
 
 	backupTotal.WithLabelValues(m.clusterName, m.namespace, result).Inc()
 	backupDuration.WithLabelValues(m.clusterName, m.namespace).Observe(duration.Seconds())
-
-	if success && sizeBytes > 0 {
-		backupSize.WithLabelValues(m.clusterName, m.namespace).Set(float64(sizeBytes))
-	}
 
 	// Add span attributes
 	span := trace.SpanFromContext(ctx)
@@ -536,7 +478,6 @@ func (m *BackupMetrics) RecordBackup(ctx context.Context, success bool, duration
 			attribute.String("namespace", m.namespace),
 			attribute.String("result", result),
 			attribute.Float64("duration.seconds", duration.Seconds()),
-			attribute.Int64("size.bytes", sizeBytes),
 		)
 		span.End()
 	}
@@ -552,179 +493,9 @@ func (m *BackupMetrics) StartBackupSpan(ctx context.Context) (context.Context, t
 	return ctx, span
 }
 
-// CypherMetrics provides methods for recording Cypher execution metrics
-type CypherMetrics struct {
-	clusterName string
-	namespace   string
-}
-
-// NewCypherMetrics creates a new CypherMetrics instance
-func NewCypherMetrics(clusterName, namespace string) *CypherMetrics {
-	return &CypherMetrics{
-		clusterName: clusterName,
-		namespace:   namespace,
-	}
-}
-
-// RecordCypherExecution records a Cypher statement execution
-func (m *CypherMetrics) RecordCypherExecution(ctx context.Context, operation string, duration time.Duration, success bool) {
-	result := MetricResultSuccess
-	if !success {
-		result = MetricResultFailure
-	}
-
-	cypherTotal.WithLabelValues(m.clusterName, m.namespace, operation, result).Inc()
-	cypherDuration.WithLabelValues(m.clusterName, m.namespace, operation).Observe(duration.Seconds())
-
-	// Add span attributes
-	span := trace.SpanFromContext(ctx)
-	if span.IsRecording() {
-		span.SetAttributes(
-			attribute.String("cluster.name", m.clusterName),
-			attribute.String("namespace", m.namespace),
-			attribute.String("operation", operation),
-			attribute.String("result", result),
-			attribute.Float64("duration.seconds", duration.Seconds()),
-		)
-		span.End()
-	}
-}
-
-// StartCypherSpan starts a new tracing span for Cypher execution
-func (m *CypherMetrics) StartCypherSpan(ctx context.Context, operation string) (context.Context, trace.Span) {
-	ctx, span := tracer.Start(ctx, "cypher."+operation,
-		trace.WithAttributes(
-			attribute.String("cluster.name", m.clusterName),
-			attribute.String("namespace", m.namespace),
-			attribute.String("operation", operation),
-		))
-	return ctx, span
-}
-
-// SecurityMetrics provides methods for recording security operation metrics
-type SecurityMetrics struct {
-	clusterName string
-	namespace   string
-}
-
-// NewSecurityMetrics creates a new SecurityMetrics instance
-func NewSecurityMetrics(clusterName, namespace string) *SecurityMetrics {
-	return &SecurityMetrics{
-		clusterName: clusterName,
-		namespace:   namespace,
-	}
-}
-
-// RecordSecurityOperation records a security operation (user, role, grant)
-func (m *SecurityMetrics) RecordSecurityOperation(ctx context.Context, operation string, success bool) {
-	result := "success"
-	if !success {
-		result = "failure"
-	}
-
-	securityOperationTotal.WithLabelValues(m.clusterName, m.namespace, operation, result).Inc()
-
-	// Add span attributes
-	span := trace.SpanFromContext(ctx)
-	if span.IsRecording() {
-		span.SetAttributes(
-			attribute.String("cluster.name", m.clusterName),
-			attribute.String("namespace", m.namespace),
-			attribute.String("operation", operation),
-			attribute.String("result", result),
-		)
-		span.End()
-	}
-}
-
-// StartSecuritySpan starts a new tracing span for security operations
-func (m *SecurityMetrics) StartSecuritySpan(ctx context.Context, operation string) (context.Context, trace.Span) {
-	ctx, span := tracer.Start(ctx, "security."+operation,
-		trace.WithAttributes(
-			attribute.String("cluster.name", m.clusterName),
-			attribute.String("namespace", m.namespace),
-			attribute.String("operation", operation),
-		))
-	return ctx, span
-}
-
-// Enhanced metrics for new features
+// Server health and Aura control-plane metrics.
 
 var (
-	// Disaster Recovery metrics
-	disasterRecoveryStatus = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: subsystem,
-			Name:      "disaster_recovery_status",
-			Help:      "Status of disaster recovery setup (1=ready, 0=not ready)",
-		},
-		[]string{LabelClusterName, LabelNamespace, "primary_region", "secondary_region"},
-	)
-
-	failoverTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Subsystem: subsystem,
-			Name:      "failover_total",
-			Help:      "Total number of failovers performed",
-		},
-		[]string{LabelClusterName, LabelNamespace, LabelResult},
-	)
-
-	replicationLag = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: subsystem,
-			Name:      "replication_lag_seconds",
-			Help:      "Replication lag in seconds",
-		},
-		[]string{LabelClusterName, LabelNamespace, "primary_region", "secondary_region"},
-	)
-
-	// Manual scaling metrics
-	manualScalerEnabled = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: subsystem,
-			Name:      "manual_scaler_enabled",
-			Help:      "Status of manual scaling (1=enabled, 0=disabled)",
-		},
-		[]string{LabelClusterName, LabelNamespace},
-	)
-
-	scaleEventsTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Subsystem: subsystem,
-			Name:      "scale_events_total",
-			Help:      "Total number of manual scale events",
-		},
-		[]string{LabelClusterName, LabelNamespace, "node_type", "direction"},
-	)
-
-	primaryCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: subsystem,
-			Name:      "primary_count",
-			Help:      "Current number of primary nodes",
-		},
-		[]string{LabelClusterName, LabelNamespace},
-	)
-
-	secondaryCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: subsystem,
-			Name:      "secondary_count",
-			Help:      "Current number of secondary nodes",
-		},
-		[]string{LabelClusterName, LabelNamespace},
-	)
-
-	scalingValidationTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Subsystem: subsystem,
-			Name:      "scaling_validation_total",
-			Help:      "Total number of scaling validation attempts",
-		},
-		[]string{LabelClusterName, LabelNamespace, "validation_type", LabelResult},
-	)
-
 	serverHealth = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Subsystem: subsystem,
@@ -757,83 +528,6 @@ var (
 		[]string{LabelOperation},
 	)
 )
-
-// DisasterRecoveryMetrics provides methods for recording disaster recovery metrics
-type DisasterRecoveryMetrics struct {
-	clusterName string
-	namespace   string
-}
-
-// NewDisasterRecoveryMetrics creates a new DisasterRecoveryMetrics instance
-func NewDisasterRecoveryMetrics(clusterName, namespace string) *DisasterRecoveryMetrics {
-	return &DisasterRecoveryMetrics{
-		clusterName: clusterName,
-		namespace:   namespace,
-	}
-}
-
-// RecordFailover records a failover event
-func (m *DisasterRecoveryMetrics) RecordFailover(_ context.Context, success bool) {
-	result := "failure"
-	if success {
-		result = "success"
-	}
-	failoverTotal.WithLabelValues(m.clusterName, m.namespace, result).Inc()
-}
-
-// ManualScalingMetrics provides methods for recording manual scaling metrics
-type ManualScalingMetrics struct {
-	clusterName string
-	namespace   string
-}
-
-// NewManualScalingMetrics creates a new ManualScalingMetrics instance
-func NewManualScalingMetrics(clusterName, namespace string) *ManualScalingMetrics {
-	return &ManualScalingMetrics{
-		clusterName: clusterName,
-		namespace:   namespace,
-	}
-}
-
-// RecordPrimaryScaling records a primary node scaling event
-func (m *ManualScalingMetrics) RecordPrimaryScaling(_ context.Context, currentReplicas, desiredReplicas int32) {
-	primaryCount.WithLabelValues(m.clusterName, m.namespace).Set(float64(desiredReplicas))
-
-	if desiredReplicas > currentReplicas {
-		scaleEventsTotal.WithLabelValues(m.clusterName, m.namespace, "primary", "up").Inc()
-	} else if desiredReplicas < currentReplicas {
-		scaleEventsTotal.WithLabelValues(m.clusterName, m.namespace, "primary", "down").Inc()
-	}
-}
-
-// RecordSecondaryScaling records a secondary node scaling event
-func (m *ManualScalingMetrics) RecordSecondaryScaling(_ context.Context, currentReplicas, desiredReplicas int32) {
-	secondaryCount.WithLabelValues(m.clusterName, m.namespace).Set(float64(desiredReplicas))
-
-	if desiredReplicas > currentReplicas {
-		scaleEventsTotal.WithLabelValues(m.clusterName, m.namespace, "secondary", "up").Inc()
-	} else if desiredReplicas < currentReplicas {
-		scaleEventsTotal.WithLabelValues(m.clusterName, m.namespace, "secondary", "down").Inc()
-	}
-}
-
-// RecordValidation records a scaling validation attempt
-func (m *ManualScalingMetrics) RecordValidation(ctx context.Context, validationType string, success bool) {
-	result := "failure"
-	if success {
-		result = "success"
-	}
-	scalingValidationTotal.WithLabelValues(m.clusterName, m.namespace, validationType, result).Inc()
-}
-
-// SetManualScalingEnabled sets the manual scaling enabled status
-func (m *ManualScalingMetrics) SetManualScalingEnabled(enabled bool) {
-	value := float64(0)
-	if enabled {
-		value = 1
-	}
-	manualScalerEnabled.WithLabelValues(m.clusterName, m.namespace).Set(value)
-}
 
 // ConflictMetrics provides methods for recording resource version conflict metrics
 type ConflictMetrics struct{}

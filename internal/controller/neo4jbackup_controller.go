@@ -649,7 +649,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 		}
 		r.updateBackupStatus(ctx, backup, "Completed", "Backup completed successfully")
 		r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupCompleted, "Backup completed successfully")
-		backupM.RecordBackup(ctx, true, jobDuration(job), 0)
+		backupM.RecordBackup(ctx, true, jobDuration(job))
 		return ctrl.Result{}, nil
 	}
 
@@ -662,7 +662,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 		// minutes).
 		r.updateBackupStatus(ctx, backup, "Failed", "Backup job failed")
 		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, "Backup job failed")
-		backupM.RecordBackup(ctx, false, jobDuration(job), 0)
+		backupM.RecordBackup(ctx, false, jobDuration(job))
 		r.recordOneShotBackupRun(ctx, backup, job)
 		return ctrl.Result{}, nil
 	}
@@ -692,7 +692,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 		_ = r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
 		r.updateBackupStatus(ctx, backup, "Failed", msg)
 		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
-		metrics.NewBackupMetrics(backup.Name, backup.Namespace).RecordBackup(ctx, false, elapsed, 0)
+		metrics.NewBackupMetrics(backup.Name, backup.Namespace).RecordBackup(ctx, false, elapsed)
 		return ctrl.Result{}, nil
 	}
 

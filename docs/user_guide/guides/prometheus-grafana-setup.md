@@ -850,4 +850,4 @@ neo4j_dbms_bolt_connections_idle
 
 ## Operator Metrics Reference
 
-For the full list of `neo4j_operator_*` metrics (cluster health, reconcile counters, backup/upgrade/scale events, etc.), see [monitoring.md § Complete Metrics Reference](../guides/monitoring.md#complete-metrics-reference).
+For the full list of `neo4j_operator_*` metrics (cluster health, reconcile counters, backup/upgrade outcomes, conflicts, Aura API traffic, etc.), see [monitoring.md § Complete Metrics Reference](../guides/monitoring.md#complete-metrics-reference).

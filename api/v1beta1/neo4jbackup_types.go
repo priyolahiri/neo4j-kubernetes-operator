@@ -352,7 +352,9 @@ type Neo4jBackupStatus struct {
 
 // BackupStats provides backup statistics
 type BackupStats struct {
-	// Size of the backup
+	// Size of the backup.
+	//
+	// Reserved: accepted by the schema but never populated today.
 	Size string `json:"size,omitempty"`
 
 	// Duration of the backup
