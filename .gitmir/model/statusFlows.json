@@ -330,7 +330,7 @@
       {
         "key": "Scheduled",
         "name": "Scheduled",
-        "description": "A CronJob exists for spec.schedule and will spawn a child Job on each firing."
+        "description": "A CronJob exists for spec.schedule and will spawn a child Job on each firing. This is the resting phase of a scheduled backup (it never reaches Completed); the Ready condition is True with reason BackupScheduled."
       },
       {
         "key": "Running",
