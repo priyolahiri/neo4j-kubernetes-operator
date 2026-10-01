@@ -1050,14 +1050,16 @@ func TestPVCSeedProxyLifecycle(t *testing.T) {
 // skipped — re-resolving would re-create the PVC seed proxy that the Ready
 // transition tears down, oscillating Ready→Pending forever.
 func TestShardedSeedConsumableGate(t *testing.T) {
+	// Calls the controller's own predicate. This test used to restate the
+	// expression in a local closure, so it could never fail however the
+	// controller changed.
 	mk := func(ready *bool, replace bool, lastGen, gen int64) bool {
 		sd := &neo4jv1beta1.Neo4jShardedDatabase{}
 		sd.Generation = gen
 		sd.Spec.ReplaceExisting = replace
 		sd.Status.ShardingReady = ready
 		sd.Status.LastDestructiveRestoreGeneration = lastGen
-		return sd.Status.ShardingReady == nil || !*sd.Status.ShardingReady ||
-			(sd.Spec.ReplaceExisting && sd.Status.LastDestructiveRestoreGeneration < sd.Generation)
+		return shardedSeedConsumable(sd)
 	}
 	assert.True(t, mk(nil, false, 0, 1), "never seeded: consumable")
 	assert.True(t, mk(ptr.To(false), false, 0, 1), "not ready yet: consumable")
