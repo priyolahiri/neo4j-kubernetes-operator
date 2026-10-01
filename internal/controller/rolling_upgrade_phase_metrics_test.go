@@ -26,14 +26,12 @@ import (
 	"testing"
 	"time"
 
-	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -41,40 +39,15 @@ import (
 const upgradeDurationMetric = "neo4j_operator_upgrade_duration_seconds"
 
 // upgradePhaseObservations reads the number of observations and their sum for
-// one (cluster, namespace, phase) series of the upgrade-duration histogram
-// from the controller-runtime registry the operator actually serves. Each test
-// uses its own cluster name, so the process-global registry never leaks
-// between tests.
+// one (cluster, namespace, phase) series of the upgrade-duration histogram.
+// Each test uses its own cluster name, so the process-global registry never
+// leaks between tests.
 func upgradePhaseObservations(t *testing.T, cluster, namespace, phase string) (count uint64, sum float64) {
 	t.Helper()
-	families, err := ctrlmetrics.Registry.Gather()
-	require.NoError(t, err)
-	for _, fam := range families {
-		if fam.GetName() != upgradeDurationMetric {
-			continue
-		}
-		for _, m := range fam.GetMetric() {
-			if matchesLabels(m, map[string]string{
-				"cluster_name": cluster, "namespace": namespace, "phase": phase,
-			}) {
-				return m.GetHistogram().GetSampleCount(), m.GetHistogram().GetSampleSum()
-			}
-		}
-	}
-	return 0, 0
-}
-
-func matchesLabels(m *dto.Metric, want map[string]string) bool {
-	got := map[string]string{}
-	for _, lp := range m.GetLabel() {
-		got[lp.GetName()] = lp.GetValue()
-	}
-	for k, v := range want {
-		if got[k] != v {
-			return false
-		}
-	}
-	return true
+	s := gatherSeries(t, upgradeDurationMetric, map[string]string{
+		"cluster_name": cluster, "namespace": namespace, "phase": phase,
+	})
+	return s.count, s.sum
 }
 
 func clusterInPhase(name, phase string, phaseAge time.Duration) *neo4jv1beta1.Neo4jEnterpriseCluster {
