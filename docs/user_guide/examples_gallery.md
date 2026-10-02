@@ -100,6 +100,7 @@ Exposing a cluster outside Kubernetes via the four supported Service exposure mo
 | [`development-property-sharding.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/property_sharding/development-property-sharding.yaml) | Property sharding at minimum viable resources for dev/learning | `propertySharding`, dedicated namespace |
 | [`advanced-property-sharding.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/property_sharding/advanced-property-sharding.yaml) | Production-grade sharding — high-performance sizing, TLS, monitoring | `propertySharding`, `tls`, `monitoring` |
 | [`property-sharding-with-backup.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/property_sharding/property-sharding-with-backup.yaml) | Backing up a sharded database with a `Neo4jBackup` CR | `Neo4jShardedDatabase` + `Neo4jBackup` target |
+| [`all-databases-backup-sharded-dr.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/property_sharding/all-databases-backup-sharded-dr.yaml) | One all-databases backup as the DR source for a cluster mixing standard and sharded databases; sharded families restore via their own CR | `allDatabases: true`, `Neo4jShardedDatabase.spec.seedBackupRef`, `seedSourceDatabase` |
 
 ## Backup & Restore
 
@@ -197,6 +198,7 @@ Registering self-managed deployments with [Aura Fleet Management](aura_fleet_man
 |---|---|---|
 | [`cluster-with-fleet-management.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/fleet-management/cluster-with-fleet-management.yaml) | 3-server cluster registered with Aura Fleet Management | `auraFleetManagement.enabled`, `tokenSecretRef.name/key` |
 | [`standalone-with-fleet-management.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/fleet-management/standalone-with-fleet-management.yaml) | Single-node deployment registered with Aura Fleet Management | `auraFleetManagement.enabled`, `tokenSecretRef.name` |
+| [`cluster-with-fleet-provisioning.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/fleet-management/cluster-with-fleet-provisioning.yaml) | Operator-managed onboarding — the operator registers the deployment and mints the token itself from Aura API credentials | `auraFleetManagement.provision` (mutually exclusive with `tokenSecretRef`) |
 
 ## End-to-End
 

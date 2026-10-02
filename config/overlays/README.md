@@ -7,8 +7,12 @@ This directory contains Kustomize overlays for different deployment environments
 ```
 config/
 ├── overlays/
-│   ├── dev/           # Development environment
-│   └── prod/          # Production environment
+│   ├── dev/               # Development environment (local image, neo4j-operator-dev)
+│   ├── prod/              # Production-like, local image (neo4j-operator-system)
+│   ├── prod-registry/     # Production with the published ghcr.io image (neo4j-operator-system)
+│   ├── ha/                # Two operator replicas with anti-affinity (neo4j-operator-system)
+│   ├── integration-test/  # What `make test-integration` and CI deploy (neo4j-operator-system)
+│   └── namespace-scoped/  # Namespace-scoped RBAC, no ClusterRole (neo4j-operator-dev)
 ├── default/           # Base configuration
 └── manager/           # Core deployment manifests
 ```
@@ -29,13 +33,13 @@ make undeploy-dev
 
 ### Production Deployment
 ```bash
-# Deploy to production environment (uses VERSION from Makefile)
+# Build a local image, load it into the Kind cluster, and deploy the prod overlay
 make deploy-prod
 
-# Deploy specific version
-make deploy-prod VERSION=v0.0.3
+# Deploy the published image from ghcr.io instead (prod-registry overlay)
+make deploy-prod-registry
 
-# Undeploy from production
+# Undeploy from production (keeps CRDs and the namespace)
 make undeploy-prod
 
 # Preview configuration
@@ -62,9 +66,8 @@ make undeploy-prod
 ### Production Environment (`config/overlays/prod/`)
 
 **Image Configuration:**
-- Image: `ghcr.io/priyolahiri/neo4j-kubernetes-operator:$(VERSION)`
-- Version determined by Makefile VERSION variable or command line
-- Published production image from GitHub Container Registry
+- Image: `neo4j-operator:latest`, built locally by `make deploy-prod` and loaded into Kind
+- `VERSION` (Makefile variable) is only passed to the image build as a build-arg; it does not select a published version
 
 **Production Configuration:**
 - Single replica (leader election provides HA)
@@ -74,8 +77,22 @@ make undeploy-prod
 - `neo4j-operator-system`
 
 **Resource Configuration:**
-- CPU: 100m requests, 500m limits
-- Memory: 64Mi requests, 128Mi limits
+- CPU: 100m requests, 1000m limits
+- Memory: 256Mi requests, 1Gi limits
+
+### Production, published image (`config/overlays/prod-registry/`)
+
+Deployed with `make deploy-prod-registry`.
+
+- Image: `ghcr.io/priyolahiri/neo4j-kubernetes-operator:latest`
+- Namespace: `neo4j-operator-system`
+- CPU: 100m requests, 500m limits; Memory: 64Mi requests, 128Mi limits
+
+### Other overlays
+
+- `ha/` — two operator replicas with preferred pod anti-affinity (200m/256Mi requests, 1 CPU/1Gi limits), published image.
+- `integration-test/` — production mode with the `neo4j-operator:integration-test` image; used by `make test-integration` and the CI integration lanes.
+- `namespace-scoped/` — namespace-scoped Role/RoleBinding instead of cluster-wide RBAC, `WATCH_NAMESPACE=neo4j-operator-dev`; deployed with `make deploy-namespace-scoped`.
 
 ## Benefits
 

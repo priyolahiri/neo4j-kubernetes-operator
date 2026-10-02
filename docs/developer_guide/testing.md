@@ -8,9 +8,8 @@ The operator uses a multi-layered testing approach:
 
 - **Unit Tests**: Fast tests for individual functions and components (envtest for the controller suite, no cluster otherwise)
 - **Integration Tests**: Full workflow testing against a real Kind cluster with the operator deployed
-- **Performance Tests**: Reconciliation efficiency and resource usage validation
 
-(There is no separate end-to-end suite — the dedicated E2E targets were removed; integration tests against Kind cover real-cluster behavior.)
+(There is no separate performance suite — the "Performance Testing" examples below are illustrative sketches, not tests in the repo — and no separate end-to-end suite: the dedicated E2E targets were removed; integration tests against Kind cover real-cluster behavior.)
 
 ## Test Infrastructure
 
@@ -74,7 +73,7 @@ worth knowing in the same spirit:
   driver's real retry windows (`ConnectionAcquisitionTimeout` 10s /
   `MaxTransactionRetryTime` 15s). That mistake once made `TestClient` ~160s and
   gated the whole suite; a 2s deadline cut it to ~13s. The production timeouts in
-  `client.go` are load-bearing (pinned by `uri_test.go`) — never relax those to
+  `client.go` are load-bearing (no test pins them — see `docs/knowledge/operations.md` id 12) — never relax those to
   speed a test; bound the **test's** context instead.
 - **Config-assembly invariants.** `TestStandaloneCreateConfigMap_NoDuplicateKeys`
   and `TestBuildConfigMapForEnterprise_NoDuplicateKeys` render the real conf
@@ -157,10 +156,14 @@ make test-destroy
 # Full integration test suite (automatically creates cluster and deploys operator)
 make test-integration
 
-# Alternative: step-by-step approach
-make test-cluster         # Create test cluster
-make test-integration     # Run tests (uses existing cluster)
-make test-cluster-delete  # Clean up cluster
+# Note: `make test-integration` always RECREATES the neo4j-operator-test cluster
+# (it depends on `test-cluster`, which deletes an existing one first), runs every
+# spec (core + extended, --timeout=60m) and leaves the cluster running afterwards.
+make test-cluster-delete  # Clean up the cluster when you are done
+
+# To iterate against a cluster you already set up, skip make and call ginkgo:
+make test-cluster && make operator-setup     # once
+ginkgo run --label-filter='core' ./test/integration/...
 
 # Run by tier label (matches what CI selects — see below)
 ginkgo run --label-filter='core'     ./test/integration/...  # fast contributor subset
@@ -217,8 +220,8 @@ means "the Extended lane is the only lane that will *consider* it" — a runtime
 
 | Suite(s) | Verifies | Tier | Where it actually runs |
 |---|---|---|---|
-| `standalone_deployment`, `cluster_lifecycle`, `neo4j{user,role,rolebinding}`, `database_neo4j_verification`, `enterprise_features`, `plugin`, `tls_cluster_lifecycle` | Core reconcile contracts: Ready, formation, RBAC/DB CRUD, config rendering, plugin install, TLS | `core` | **Integration Tests** lane — both 5.26 + CalVer, every runtime-path PR |
-| `multi_node_cluster`, `splitbrain_detection`, `rolling_upgrade`, `backup_*`, `restore_*`, `standard_database_*_restore`, `database_seed_uri`, `mcp_integration` | Multi-node, coordination, backup/restore matrix, MCP | `extended` | **Extended** lane — CalVer, **manual dispatch only** |
+| `standalone_deployment`, `cluster_lifecycle`, `neo4j{user,role,rolebinding}`, `database_neo4j_verification`, `enterprise_features`, `plugin`, `tls_cluster_lifecycle`, `composite_database`, `ccdr_proxy`, `ccdr_replica` | Core reconcile contracts: Ready, formation, RBAC/DB CRUD, config rendering, plugin install, TLS, composite databases, the CCDR proxy toggle and replica-API validation | `core` | **Integration Tests** lane — both 5.26 + CalVer, every runtime-path PR |
+| `multi_node_cluster`, `splitbrain_detection`, `rolling_upgrade`, `backup_*`, `restore_*`, `all_databases_restore_*`, `standard_database_*_restore`, `database_seed_uri`, `composite_database_deployed`, `ccdr_same_cluster_network_mode`, `mcp_integration` | Multi-node, coordination, backup/restore matrix, composite DBs on a live deployment, same-cluster CCDR network mode, MCP | `extended` | **Extended** lane — CalVer, **manual dispatch only** |
 | `neo4jauthrule` | ABAC / OIDC | `extended` | Extended lane, **CalVer only** (self-skips < 2026.03) |
 | `property_sharding_ci_smoke` | One minimal sharded DB (1 graph + 1 property shard) | `extended` | Extended lane on CalVer, **via `NEO4J_SHARDING_RELAX_MEMORY_MIN`** (the integration-test overlay relaxes the 4Gi floor to fit a runner) |
 | `property_sharding`, `property_sharding_backup`, `property_sharding_minio_restore`, `property_sharding_pvc_seed` | Full sharding: F3/F4/F5, multi-property-shard topology, sharded backup/restore | `extended` | **Local only** — `Skip` in CI (`isRunningInCI()`). They need the production **4Gi/server** floor a hosted runner can't provide |
@@ -549,8 +552,9 @@ The integration test suite provides cleanup utilities:
 // Clean up all custom resources in namespace
 cleanupCustomResourcesInNamespace(namespace)
 
-// Force remove finalizers if needed
-forceRemoveFinalizers(resource)
+// Remove a resource's finalizers by hand (as in the AfterEach pattern above)
+resource.SetFinalizers([]string{})
+_ = k8sClient.Update(ctx, resource)
 ```
 
 ## Testing Best Practices
@@ -636,6 +640,9 @@ Eventually(func() error {
 ```
 
 ## Performance Testing
+
+> **Illustrative only.** No performance suite exists in the repo; these are
+> sketches of what such a spec would assert, not specs you can run.
 
 ### Reconciliation Efficiency Tests
 
@@ -752,10 +759,10 @@ kubectl top pod <pod-name> --containers
 **Solutions**:
 ```bash
 # Check operator status
-kubectl get pods -n neo4j-operator
+kubectl get pods -n neo4j-operator-system
 
 # Check operator logs
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
 
 # Verify cert-manager (required for TLS tests)
 kubectl get pods -n cert-manager
@@ -834,7 +841,7 @@ The `test-ci-local` target provides a complete emulation of the GitHub Actions C
 3. **Integration Test Phase**
    - Creates test cluster with CI-appropriate resource constraints
    - Deploys Neo4j operator
-   - Runs integration tests with 512Mi memory limits (same as CI)
+   - Runs integration tests with the CI resource profile (1.5Gi memory limit, same as CI)
    - Saves output to `logs/ci-local-integration.log`
 
 4. **Cleanup Phase**
@@ -845,7 +852,7 @@ The `test-ci-local` target provides a complete emulation of the GitHub Actions C
 
 | Aspect | Local Development | CI Environment | CI Emulation |
 |--------|------------------|----------------|--------------|
-| Memory Limits | 1.5Gi | 512Mi | 512Mi ✅ |
+| Memory request / limit | 1.5Gi / 2Gi | 1Gi / 1.5Gi | 1Gi / 1.5Gi ✅ |
 | Environment Variables | Local defaults | CI=true, GITHUB_ACTIONS=true | CI=true, GITHUB_ACTIONS=true ✅ |
 | Resource Constraints | Generous | Limited (~7GB total) | Limited ✅ |
 | Debug Logging | Console only | Limited | Comprehensive files ✅ |

@@ -9,7 +9,7 @@ This guide explains how to set up your development environment and get started w
 
 ### Required Tools
 
-- **Go**: Version 1.24+ (for development and testing)
+- **Go**: Version 1.27+ (`go.mod` declares `go 1.27.0`)
 - **Docker**: Container runtime for building images
 - **kubectl**: Kubernetes CLI tool
 - **Kind**: **MANDATORY** - Kubernetes in Docker for local clusters v0.27+ (see installation below)
@@ -128,7 +128,10 @@ This creates a Kind cluster with:
 
 - **Cert-Manager**: v1.20.0 with `ca-cluster-issuer`
 - **Development-Optimized**: Fast cluster creation for development
-- **Neo4j CRDs**: Automatically installed
+
+`make dev-cluster` does **not** install the Neo4j CRDs or the operator — run
+`make install` (CRDs) and `make deploy-dev-local` yourself, or use `make dev-up`,
+which chains all of it.
 
 ### 4. Local Development with Built Images
 
@@ -286,7 +289,7 @@ make test-unit
 # `./internal/controller` needs envtest binaries — `make test-unit` sets
 # KUBEBUILDER_ASSETS automatically; direct `go test` requires:
 #   export KUBEBUILDER_ASSETS=$(bin/setup-envtest use 1.34.0 --bin-dir bin -p path)
-go test ./internal/controller -run TestClusterReconciler -v
+go test ./internal/controller -run TestControllers -v   # the envtest/Ginkgo suite entry point
 
 # Run validation tests (no envtest needed)
 go test ./internal/validation -v
@@ -327,7 +330,7 @@ make test-ci-local
 
 1. **Environment Setup**: Sets `CI=true GITHUB_ACTIONS=true` environment variables
 2. **Unit Tests**: Runs unit tests with CI constraints and logging
-3. **Integration Tests**: Creates test cluster with 512Mi memory limits (same as CI)
+3. **Integration Tests**: Creates the test cluster and runs the specs with the CI resource profile (1.5Gi memory limit, same as CI)
 4. **Debug Logging**: Saves comprehensive logs for troubleshooting
 5. **Cleanup**: Complete environment cleanup
 
@@ -339,7 +342,7 @@ make test-ci-local
 
 **Key Benefits:**
 
-- **Identical CI Environment**: Same memory constraints (512Mi vs 1.5Gi local)
+- **Identical CI Environment**: Same resource profile as CI (1.5Gi memory limit vs the local 2Gi)
 - **Resource Constraint Testing**: Tests memory limits that cause CI failures
 - **Debug Information**: Comprehensive logging for troubleshooting
 - **Complete Workflow**: Unit → Integration → Cleanup (like CI)
@@ -438,6 +441,13 @@ make fmt vet
 
 ### Local Debugging with VS Code
 
+> **Caveat.** This runs the operator process on your machine, which the project
+> otherwise forbids (see the in-cluster warning above): cluster DNS names do not
+> resolve outside the cluster, so Neo4j cluster formation and every Bolt call will
+> fail. It is only useful for stepping through code that does not touch a Neo4j
+> deployment (validators, builders) — prefer unit tests for those. For anything
+> else deploy in-cluster with `make deploy-dev-local` and read the logs.
+
 1. **Set up launch configuration** (`.vscode/launch.json`):
    ```json
    {
@@ -466,7 +476,7 @@ make fmt vet
 #### Cluster Formation Problems
 ```bash
 # Check operator logs
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-dev deployment/neo4j-operator-controller-manager   # or neo4j-operator-system
 
 # Examine cluster events
 kubectl describe neo4jenterprisecluster <cluster-name>

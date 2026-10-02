@@ -19,7 +19,7 @@ The `AuraProviderConfig` Custom Resource Definition (CRD) holds Neo4j Aura API c
 |---|---|---|
 | `credentialsSecretRef` | `object` | **Required.** References the Kubernetes Secret holding the OAuth client credentials (client-credentials grant), in the same namespace. See [AuraCredentialsSecretRef](#auracredentialssecretref). |
 | `defaultProjectId` | `string` | Default Aura project (the API `tenant_id`) used by resources that reference this config without their own `projectId`. |
-| `defaultOrganizationId` | `string` | Default Aura organization ID. Only needed by v2beta1 resources such as [`AuraIPFilter`](auraipfilter.md) that use the hierarchical org/project API. |
+| `defaultOrganizationId` | `string` | Default Aura organization ID. Only needed by v2beta1 resources — [`AuraIPFilter`](auraipfilter.md), [`AuraDatabase`](auradatabase.md), [`AuraInvite`](aurainvite.md), the member CRDs, and an [`AuraInstance`](aurainstance.md) created with `multiDatabase` or `graphAnalytics: serverless` — that use the hierarchical org/project API. |
 | `baseUrl` | `string` | Overrides the Aura API base URL (default `https://api.neo4j.io/v1`). Intended for testing against a fake API server only; leave empty in production. |
 
 ### AuraCredentialsSecretRef

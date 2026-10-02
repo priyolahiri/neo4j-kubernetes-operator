@@ -114,7 +114,6 @@ kubectl plugin list | grep kubectl-neo4j
 | `explain` a term | `kubectl neo4j explain ServersHealthy` → meaning plus guidance; `explain --list` enumerates everything it knows |
 | `explain` a condition REASON | `kubectl neo4j explain CompositeDatabaseNameBlocked` → `(reason)`, the ordering trap and how to clear it; `explain --list` has a **Reasons:** section. Reasons are the most specific thing a status carries and were unreachable before v1.16.0 |
 | `explain` admits a gap | an invented term (`explain NotARealCondition`) prints *no explanation for …*, points at `--list`, and exits `2` — it never guesses. The other half of this, an unrecognised phase on a live resource naming the CLI's own version, is only reachable against an operator newer than the CLI; note it as unreachable rather than recording it as passed |
-
 | `preflight` on the cloud substrate | on Kind, a cluster with `spec.crossClusterReplication.enabled` reports the **Kind** case (`…` — no load-balancer controller), not a false exposure problem. A cluster with a hard zone constraint (`topologySpread.enabled`, default `DoNotSchedule`) on a single unlabelled-node Kind reports `✗ zones`. A `spec.securityContext` override that drops `runAsNonRoot` in a namespace labelled `pod-security.kubernetes.io/enforce=restricted` reports `✗ spec.securityContext` naming each missing field. All three are new in v1.16.0 and need no running database |
 
 **Part B — the failure paths (operator up, no Neo4j running):**
@@ -158,6 +157,7 @@ back to 1 replica.
 | Backup → restore | `neo4j-admin` path with `stopCluster: true`: add a marker node → back up → delete the marker → restore → confirm the marker returns |
 | All-databases restore (standalone) | two user DBs → `Neo4jBackup` `allDatabases: true` → mutate both → `Neo4jRestore` `allDatabases: true` (`stopCluster: true`, `options.replaceExisting: true`); confirm both round-trip via the single offline Job and `status.databaseResults` are all `Completed` (`system` excluded) (#288) |
 | Standalone recommended labels | `kubectl get pods -l app.kubernetes.io/name=neo4j` returns the standalone pod (it carries `app.kubernetes.io/{name,instance,managed-by}`) |
+| Operator build metadata | scrape the operator's `/metrics` (`kubectl port-forward -n <operator-ns> deploy/<operator-deploy> 8082:8082` on the dev overlay, which serves plain HTTP in `--mode=dev`; production mode serves `:8080`, over HTTPS with a bearer token when `metrics.secure` is on) and find `neo4j_operator_build_info`: exactly one series, value `1`, with `version`, `vcs_ref`, `build_date` and `go_version` labels. `vcs_ref` must equal `git rev-parse --short HEAD` of the tree you built (a `make deploy-dev-local` build stamps `version` with the Makefile placeholder `0.0.1`; only a release image carries a release version). A `vcs_ref` of `unknown` or a stale SHA means you are running an image that is not the tree under test |
 | `system` is not restorable | a `Neo4jRestore` with `database: system` → `Failed` with an actionable message |
 | Database alias | `Neo4jDatabaseAlias` → Ready; connect via the alias name and reach the target; `SHOW ALIASES FOR DATABASE` lists it. Then re-point `spec.targetDatabase` at a second database and confirm the same connection string now reaches the new one |
 | Alias drift is corrected | `ALTER ALIAS` it elsewhere by hand → next reconcile restores `spec.targetDatabase` |
@@ -225,7 +225,7 @@ cluster (~2Gi each):
 
 | Scenario | Verify |
 |---|---|
-| Sharding cluster | `CALL dbms.components()` → `2026.06.x` enterprise; `status.propertyShardingReady=true` |
+| Sharding cluster | `CALL dbms.components()` → the CI anchor you deployed (`2026.08.1` enterprise as of v1.17.0); `status.propertyShardingReady=true` |
 | Sharded database | `Neo4jShardedDatabase` whose **`metadata.name` differs from `spec.name`** (e.g. CR `products-sharded` / `spec.name: products`) → Ready; `SHOW DATABASES WHERE name STARTS WITH '<logical>'` lists the graph + property shards `online` |
 | Sharded backup **by CR name** | `Neo4jBackup` with **`spec.shardedDatabase`** = the `Neo4jShardedDatabase` **CR metadata name** → `Succeeded`; `status.history[].shardArtifacts` lists every shard, and the filenames carry the LOGICAL names (`<spec.name>-g000`, `-p000`, `-p001`). Using the *logical* name instead fails with `Neo4jShardedDatabase "<name>" not found`. (This row said `kind=ShardedDatabase` with `target.name` until 2026-09-03; `spec.target` does not exist on `Neo4jBackup` and the row was unfollowable as written.) |
 | Shard language follows the parent | `SHOW DATABASES YIELD name, defaultLanguage WHERE name STARTS WITH '<logical>'` → the parent, `-g000` and every `-p00n` report the **same** language as the parent (measured 2026-09-29 on 2026.06.0: a parent created with `SET DEFAULT LANGUAGE CYPHER 5` on a `CYPHER_25` server gave a `CYPHER 5` family). Neo4j fixes a database's language at creation, so also confirm the default `neo4j` database's `defaultLanguage` is what the design expects for this operator version — see [cypher-language-defaulting.md](../design/cypher-language-defaulting.md) §5.8–5.9 |
@@ -357,9 +357,9 @@ tests.
 **Part C — network mode core mechanism, same Kind cluster, no proxy (two concurrent deployments):**
 
 **Automated** — `test/integration/ccdr_same_cluster_network_mode_test.go`,
-`Label("extended")`, gated by `isCCDRReplicaCompatible()` (dormant on the
-default CI anchor; runs when dispatched with `neo4j-version:
-2026.08-enterprise+`). Uses `source.upstreamClusterRef` rather than a
+`Label("extended")`, gated by `isCCDRReplicaCompatible()` (it needs a
+`2026.08+` image: it runs on the default CI anchor, `2026.08.1`, in the dispatched
+Extended suite, and skips if you dispatch `5.26-enterprise` or an older CalVer). Uses `source.upstreamClusterRef` rather than a
 hand-typed `source.addresses` FQDN — exercises the same underlying mechanism
 via the newer, higher-level API. Re-run manually only if you want the
 hand-typed-address path specifically, or a version this repo's CI cannot yet
@@ -478,11 +478,11 @@ the first walk. The scripted steps already do.
 | The stream is live, not just the seed | rows written upstream *after* the replica exists appear downstream; a write against the replica is refused |
 | The cluster says what guards the exposed port | `status.conditions[CrossClusterProxySecure]` is `True`/`MutualTLSRequired` with TLS on. It reads `False`/`NoClusterTLS` when the proxy is enabled without `spec.tls` — nothing authenticates the tx-shipping port then, and the proxy authenticates nothing itself |
 
-→ **Tear down both**: `kind delete cluster --name neo4j-operator-dev --name neo4j-dr`.
+→ **Tear down both**: `make ccdr-e2e-down`.
 
 ## Coverage at a glance
 
-| | CLI (Phase 0) | Standalone | Cluster (3) | Sharding (2026.06) | Aura (Phase 4) | CCDR (Phase 5, 2026.08+) |
+| | CLI (Phase 0) | Standalone | Cluster (3) | Sharding (CI anchor) | Aura (Phase 4) | CCDR (Phase 5, 2026.08+) |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
 | Reconcile → Ready | | ✅ | ✅ | ✅ | ✅ (instance) | ✅ |
 | Database lifecycle | | ✅ | | | ✅ (`AuraDatabase`) | |

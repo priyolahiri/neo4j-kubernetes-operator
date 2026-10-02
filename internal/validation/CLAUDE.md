@@ -21,6 +21,8 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 | `auth_validator.go`, `user_validator.go`, `role_validator.go`, `rolebinding_validator.go`, `authrule_validator.go` | Auth providers and the user/role/binding/authrule CRDs. |
 | `backup_validator.go` | `BackupValidator` + standalone helper `ValidateNeo4jVersion`. |
 | `upgrade_validator.go`, `plugin_validator.go`, `fleet_validator.go`, `mcp_validator.go`, `shardeddatabase_validator.go`, `sharding.go` | Version-upgrade rules, plugins, Aura fleet, MCP, sharded DB, `IsClusterShardingReady`. |
+| `alias_validator.go`, `compositedatabase_validator.go`, `replica_validator.go`, `ccdr_proxy_validator.go`, `backup_replication_source.go` | `Neo4jDatabaseAlias`, `Neo4jCompositeDatabase`, `Neo4jReplicaDatabase`; `spec.crossClusterReplication` (refused without `spec.tls`); replication-source `Neo4jBackup` rules. |
+| `admin_password_validator.go`, `license_validator.go`, `networkpolicy_validator.go` | Admin password shape (no leading `-`), `acceptLicenseAgreement` (`yes`/`eval`), `spec.networkPolicy`. |
 | `*_validator_test.go`, `sharding_test.go` | Table-driven unit tests (one per validator). |
 
 ## Key types & functions

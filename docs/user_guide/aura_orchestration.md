@@ -122,6 +122,8 @@ selects the key layout:
 | `jdbc` | above + `NEO4J_JDBC_URL` | JVM / BI tools |
 | `servicebinding` | lowercase SB-spec keys | Service Binding projection |
 
+(`custom` is also accepted by the schema, but currently writes the same keys as `neo4j-driver`.)
+
 Every format also carries `type=neo4j`/`provider=aura` and sets
 `status.binding.name`, so the instance is a compliant **Service Binding**
 Provisioned Service. Non-secret endpoint details can additionally be mirrored to
@@ -226,7 +228,8 @@ spec:
   providerConfigRef: { name: aura }
   projectId: "<project-id>"
   email: bob@example.com
-  role: project-metrics-integration-reader
+  role: namespace-metrics-integration-reader   # invite vocabulary: namespace-*, not project-*
+  organizationRole: organization-member        # required on every project-scoped invite
 ```
 
 Once Bob accepts, manage his role going forward with an `AuraProjectMember`

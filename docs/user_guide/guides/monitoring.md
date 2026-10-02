@@ -92,7 +92,7 @@ The Neo4j *operator* exposes its own Prometheus metrics on port 8080 of the oper
      annotations:
        kubernetes.io/service-account.name: prometheus
    ```
-3. Tell the operator's `ServiceMonitor` to use that token by setting `--set metrics.serviceMonitor.bearerTokenSecret.name=prometheus-metrics-token` at install time.
+3. Enable the operator's `ServiceMonitor` (off by default) and tell it to use that token by setting `--set metrics.serviceMonitor.enabled=true --set metrics.serviceMonitor.bearerTokenSecret.name=prometheus-metrics-token` at install time. With `metrics.secure=true` the chart refuses to render the ServiceMonitor without `bearerTokenSecret.name`.
 
 The `ServiceMonitor` template wires `scheme: https`, `tlsConfig.insecureSkipVerify: true` (controller-runtime serves a self-signed cert by default; swap for a cert-manager bundle in production), and the bearer token reference automatically when `metrics.secure=true`.
 
@@ -202,34 +202,43 @@ Two uses worth wiring up:
 | Metric | Type | Labels | Description |
 |---|---|---|---|
 | `neo4j_operator_cluster_healthy` | Gauge | `cluster_name`, `namespace` | `1` when cluster is healthy, `0` otherwise |
-| `neo4j_operator_cluster_replicas_total` | Gauge | `cluster_name`, `namespace`, `role` (`primary`/`secondary`) | Current replica counts by role |
+| `neo4j_operator_cluster_replicas_total` | Gauge | `cluster_name`, `namespace`, `role` (`desired`/`ready`) | Server counts: `desired` = `spec.topology.servers`, `ready` = StatefulSet ready replicas (set when the cluster reaches `Ready`) |
 | `neo4j_operator_cluster_phase` | Gauge | `cluster_name`, `namespace`, `phase` | `1` for the current phase, `0` for all others (phases: `Pending`, `Forming`, `Ready`, `Failed`, `Degraded`, `Upgrading`) |
 | `neo4j_operator_split_brain_detected_total` | Counter | `cluster_name`, `namespace` | Total split-brain detection events |
-| `neo4j_operator_server_health` | Gauge | `cluster_name`, `namespace`, `server_name`, `server_address` | `1` = Enabled+Available; `0` = degraded |
+| `neo4j_operator_server_health` | Gauge | `cluster_name`, `namespace`, `server_name`, `server_address`, `k8s_cluster` | `1` = Enabled+Available; `0` = degraded. `k8s_cluster` is empty unless the operator runs with `--kubernetes-cluster-name` (Helm `kubernetesClusterName`) — see [Multi-cluster](multi_cluster.md) |
+
+> **Which metrics are populated.** Every metric below is registered, so it is listed
+> here, but a metric family that no controller records yet exports no series at all.
+> Rows marked *registered, not currently populated* are in that state today; do not
+> build dashboards or alerts on them.
 
 ### Reconcile metrics
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
-| `neo4j_operator_reconcile_total` | Counter | `cluster_name`, `namespace`, `operation`, `result` (`success`/`failure`) | Total reconciliation attempts |
-| `neo4j_operator_reconcile_duration_seconds` | Histogram | `cluster_name`, `namespace`, `operation` | Reconciliation loop duration |
+| `neo4j_operator_reconcile_total` | Counter | `cluster_name`, `namespace`, `operation`, `result` (`success`/`failure`) | Total reconciliation attempts. Recorded by the `Neo4jEnterpriseCluster` controller only (`operation="cluster"`) |
+| `neo4j_operator_reconcile_duration_seconds` | Histogram | `cluster_name`, `namespace`, `operation` | Reconciliation loop duration (same scope as above) |
 
 ### Upgrade metrics
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
 | `neo4j_operator_upgrade_total` | Counter | `cluster_name`, `namespace`, `result` (`success`/`failure`) | Total upgrade attempts |
-| `neo4j_operator_upgrade_duration_seconds` | Histogram | `cluster_name`, `namespace`, `phase` | Duration per upgrade phase |
+| `neo4j_operator_upgrade_duration_seconds` | Histogram | `cluster_name`, `namespace`, `phase` | Duration per upgrade phase — *registered, not currently populated* |
 
 ### Backup metrics
 
+Recorded for **one-shot** `Neo4jBackup` Jobs only (when the Job reaches a terminal state); scheduled (CronJob) runs are not counted. The `cluster_name` label carries the `Neo4jBackup` name, not the Neo4j cluster name.
+
 | Metric | Type | Labels | Description |
 |---|---|---|---|
-| `neo4j_operator_backup_total` | Counter | `cluster_name`, `namespace`, `result` (`success`/`failure`) | Total backup attempts |
+| `neo4j_operator_backup_total` | Counter | `cluster_name`, `namespace`, `result` (`success`/`failure`) | Total one-shot backup attempts |
 | `neo4j_operator_backup_duration_seconds` | Histogram | `cluster_name`, `namespace` | Backup job duration |
-| `neo4j_operator_backup_size_bytes` | Gauge | `cluster_name`, `namespace` | Size of the last successful backup in bytes |
+| `neo4j_operator_backup_size_bytes` | Gauge | `cluster_name`, `namespace` | Size of the last successful backup in bytes — *registered, not currently populated* (the size is never supplied) |
 
 ### Cypher execution metrics
+
+*Registered, not currently populated.*
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
@@ -237,6 +246,8 @@ Two uses worth wiring up:
 | `neo4j_operator_cypher_execution_duration_seconds` | Histogram | `cluster_name`, `namespace`, `operation` | Duration of operator-issued Cypher statements |
 
 ### Security operation metrics
+
+*Registered, not currently populated.*
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
@@ -252,6 +263,8 @@ Two uses worth wiring up:
 
 ### Disaster recovery metrics
 
+*Registered, not currently populated.*
+
 | Metric | Type | Labels | Description |
 |---|---|---|---|
 | `neo4j_operator_disaster_recovery_status` | Gauge | `cluster_name`, `namespace`, `primary_region`, `secondary_region` | `1` = DR ready, `0` = not ready |
@@ -259,6 +272,8 @@ Two uses worth wiring up:
 | `neo4j_operator_replication_lag_seconds` | Gauge | `cluster_name`, `namespace`, `primary_region`, `secondary_region` | Replication lag in seconds |
 
 ### Scaling metrics
+
+*Registered, not currently populated.*
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
@@ -279,12 +294,17 @@ Emitted by the [Aura orchestration](../aura_orchestration.md) controllers for ev
 
 ## Live Cluster Diagnostics
 
-When `spec.monitoring.enabled: true` and the cluster is in `Ready` phase, the
-operator automatically collects live diagnostics by running `SHOW SERVERS` and
-`SHOW DATABASES` against the cluster. Results are written to `status.diagnostics`
-and two new Kubernetes conditions without requiring `kubectl exec` into pods.
+When the cluster is in `Ready` phase, the operator automatically collects live
+diagnostics by running `SHOW SERVERS` and `SHOW DATABASES` against the cluster.
+Collection is on by default — it runs when `spec.monitoring` is omitted or
+`spec.monitoring.enabled: true`, and is skipped only when you set
+`spec.monitoring.enabled: false`. Results are written to `status.diagnostics`
+and two Kubernetes conditions without requiring `kubectl exec` into pods.
 
 ### Prerequisites
+
+None. Setting `spec.monitoring.enabled: true` is only needed for the Prometheus
+metrics endpoint and the other monitoring resources described above.
 
 ```yaml
 spec:
@@ -374,7 +394,7 @@ The operator exposes a per-server health gauge when diagnostics are enabled:
 
 | Metric | Labels | Value |
 |---|---|---|
-| `neo4j_operator_server_health` | `cluster_name`, `namespace`, `server_name`, `server_address` | `1` = Enabled+Available; `0` = degraded |
+| `neo4j_operator_server_health` | `cluster_name`, `namespace`, `server_name`, `server_address`, `k8s_cluster` | `1` = Enabled+Available; `0` = degraded |
 
 **Example PrometheusRule alert:**
 
@@ -432,5 +452,7 @@ kubectl exec <cluster-name>-server-0 -c neo4j -- \
 
 ### Disabling Diagnostics
 
-Set `spec.monitoring.enabled: false` (or omit the `monitoring` section entirely).
-The `status.diagnostics` field will remain at its last-known value but will not be updated.
+Set `spec.monitoring.enabled: false` explicitly. Omitting the `monitoring` section
+does **not** disable diagnostics — it leaves them on (and also leaves the Prometheus
+endpoint off). The `status.diagnostics` field will remain at its last-known value but
+will not be updated.

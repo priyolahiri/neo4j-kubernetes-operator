@@ -37,10 +37,14 @@ The seed URI feature allows creating databases from existing backups stored in c
    - HTTP basic authentication
 
 ### Advanced Seed Configuration
-- Point-in-time recovery (Neo4j 2025.x)
-- Compression options (gzip, lz4, none)
-- Validation modes (strict, lenient)
-- Custom buffer sizes
+- Point-in-time recovery (Neo4j 2025.x): `seedConfig.restoreUntil`
+- Seed-provider options: `seedConfig.config` is a key/value map rendered into the
+  `seedConfig` OPTIONS string. It is consumed by the S3SeedProvider (common key:
+  `region`); the CloudSeedProvider that handles `s3://`, `gs://` and `azb://`
+  resolves credentials and region from the environment instead, so most
+  deployments leave it empty. The other keys shown in these examples
+  (`compression`, `validation`, `bufferSize`) are passed through as-is and are not
+  interpreted by the operator.
 
 ### Database Topology
 - Primary/secondary server distribution
@@ -54,12 +58,18 @@ The seed URI feature allows creating databases from existing backups stored in c
 kubectl apply -f ../clusters/minimal-cluster.yaml
 ```
 
+The seed examples reference a cluster named `production-cluster` (`spec.clusterRef`).
+Either deploy a cluster with that name or change `clusterRef` to yours (the command
+above creates `minimal-cluster`).
+
 ### 2. Create Database from S3 Backup
 ```bash
-# Create credentials secret (replace with your values)
-kubectl create secret generic s3-credentials \
+# Create credentials secret (replace with your values) — the name and keys must
+# match spec.seedCredentials.secretRef in database-from-s3-seed.yaml
+kubectl create secret generic s3-backup-credentials \
   --from-literal=AWS_ACCESS_KEY_ID=your-access-key \
-  --from-literal=AWS_SECRET_ACCESS_KEY=your-secret-key
+  --from-literal=AWS_SECRET_ACCESS_KEY=your-secret-key \
+  --from-literal=AWS_REGION=us-west-2
 
 # Create database from seed
 kubectl apply -f database-from-s3-seed.yaml
@@ -74,7 +84,7 @@ kubectl get neo4jdatabase sales-database-from-s3
 kubectl describe neo4jdatabase sales-database-from-s3
 
 # Connect to Neo4j and verify
-kubectl port-forward svc/production-cluster-client 7474:7474 &
+kubectl port-forward svc/<your-cluster-name>-client 7474:7474 &
 # Open http://localhost:7474 and run: SHOW DATABASES
 ```
 
@@ -113,14 +123,10 @@ kubectl port-forward svc/production-cluster-client 7474:7474 &
 
 ## Performance Tips
 
-1. **Optimize Seed Configuration**
-   ```yaml
-   seedConfig:
-     config:
-       compression: "lz4"        # Fast compression
-       bufferSize: "256MB"       # Large buffer for big files
-       validation: "lenient"     # Skip intensive validation
-   ```
+1. **Prefer `.backup` artifacts for large databases**
+   See [File Format Guidelines](#file-format-guidelines). `seedConfig.config` is
+   only a pass-through to the seed provider (see above); most deployments do not
+   need it.
 
 2. **Choose Appropriate Topology**
    ```yaml
@@ -129,12 +135,12 @@ kubectl port-forward svc/production-cluster-client 7474:7474 &
      secondaries: 2    # Read replicas for query scale
    ```
 
-3. **Monitor Resource Usage**
-   ```yaml
-   options:
-     "server.memory.heap.max_size": "4g"
-     "server.memory.pagecache.size": "2g"
-   ```
+3. **Size memory on the deployment, not the database**
+   Heap and page cache are server settings: put `server.memory.heap.max_size` and
+   `server.memory.pagecache.size` in the `Neo4jEnterpriseCluster` /
+   `Neo4jEnterpriseStandalone` `spec.config`. `Neo4jDatabase.spec.options` only
+   accepts CREATE DATABASE options (`txLogEnrichment`, `storeFormat`, ...) and
+   rejects anything else.
 
 ## Troubleshooting
 

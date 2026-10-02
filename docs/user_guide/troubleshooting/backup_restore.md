@@ -43,12 +43,15 @@ kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manag
 
 1. **Missing ServiceAccount**:
    ```bash
-# The operator automatically creates the backup ServiceAccount — check it exists.
+# The Neo4jBackup controller creates the backup ServiceAccount when it reconciles a backup
+# (the cluster controller does not) — check it exists.
 # (No Role/RoleBinding is created: the backup Job needs no Kubernetes API access.)
 kubectl get serviceaccount neo4j-backup-sa
 
-# If missing, trigger operator reconciliation with a no-op annotation change
-kubectl annotate neo4jenterprisecluster production-cluster troubleshooting.neo4j.com/reconcile="$(date +%s)" --overwrite
+# If missing, the Neo4jBackup has not been reconciled yet (or already reached
+# Completed/Failed, which are terminal). For a pending or scheduled backup, trigger
+# reconciliation with a no-op annotation change on the Neo4jBackup itself:
+kubectl annotate neo4jbackup production-backup troubleshooting.neo4j.com/reconcile="$(date +%s)" --overwrite
    ```
 
 2. **Storage Configuration Issues**:
@@ -78,7 +81,8 @@ kubectl annotate neo4jenterprisecluster production-cluster troubleshooting.neo4j
 **Diagnosis:**
 ```bash
 # Check backup Job's Pod log (one-shot: <neo4jbackup-name>-backup;
-# CronJob child: <neo4jbackup-name>-backup-cron-<unix-seconds>).
+# CronJob child: named by Kubernetes after the CronJob, <neo4jbackup-name>-backup-cron-<suffix>
+# — find it with `kubectl get jobs`).
 kubectl logs -n <ns> job/<job-name>
 
 # Check Neo4j server logs for backup-related errors (which server
@@ -99,7 +103,7 @@ kubectl logs <cluster>-server-0 -c neo4j | grep -i backup
    ```bash
    # Check for long-running transactions
    kubectl exec production-cluster-server-0 -- cypher-shell -u neo4j -p password \
-     "CALL db.listTransactions() YIELD transactionId, elapsedTimeMillis WHERE elapsedTimeMillis > 30000"
+     "SHOW TRANSACTIONS YIELD transactionId, currentQuery, elapsedTime WHERE elapsedTime > duration({seconds: 30})"
 
    # Solution: Wait for transactions to complete or schedule backups off-peak
    ```
@@ -224,7 +228,7 @@ kubectl run backup-auth-check --rm -it --image=mcr.microsoft.com/azure-cli --ser
 ```bash
 # Check CronJob status
 kubectl get cronjob
-kubectl describe cronjob production-backup-schedule
+kubectl describe cronjob production-backup-backup-cron   # the operator names it <neo4jbackup-name>-backup-cron
 
 # Check backup schedule configuration
 kubectl get neo4jbackup production-backup -o yaml | grep -A 10 schedule
@@ -335,7 +339,9 @@ kubectl logs target-cluster-server-0 | grep -i restore
    kubectl exec target-cluster-server-0 -- neo4j version
    ```
 
-#### Symptom: Cluster restore reports `Failed` with "Cluster missing seed credentials projection"
+#### Symptom: Cluster restore reports `Failed` with "server pods can't reach the seed source"
+
+The `Neo4jRestore` message reads `cluster "<name>"'s server pods can't reach the seed source: missing <credentials and/or endpoint settings>. The server JVM fetches the seed itself. Provide these on the cluster CR, or set annotation neo4j.com/auto-inherit-seed-creds="true" …`, and a `SeedEndpointNotProjected` Warning event carries the same text.
 
 **Cause:** the cluster pods need the cloud credentials Secret projected via `spec.extraEnvFrom` so the JVM's AWS/GCP/Azure SDK can authenticate the `seedURI` fetch from `CloudSeedProvider`.
 

@@ -67,6 +67,6 @@ spec:
 
 ```console
 $ kubectl get neo4jreplicapromotion -n dr
-NAME                  REPLICA       PHASE       LAGTAKEN   COMPLETED
-failover-2026-08-07   foo-replica   Completed   3          2026-08-07T09:14:22Z
+NAME                  REPLICA       PHASE       LAGTAKEN   COMPLETED              AGE
+failover-2026-08-07   foo-replica   Completed   3          2026-08-07T09:14:22Z   2d
 ```

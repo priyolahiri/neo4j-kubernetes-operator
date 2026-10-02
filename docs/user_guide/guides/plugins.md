@@ -124,7 +124,7 @@ More examples (GenAI, standalone targets, multi-plugin setups): [examples/plugin
 
 ## Custom and URL plugins
 
-For plugins not in Neo4j's official/community catalogs, use `source.type: url` (direct download) or `source.type: custom` (private registry). Two rules are **enforced by the controller-side validator** — a CR that violates them goes to `status.phase: Invalid` and stops reconciling until you fix the spec:
+For plugins not in Neo4j's official/community catalogs, use `source.type: url` (direct download) or `source.type: custom` (private registry). Two rules are enforced — the https rule (and the `VerifiedDownload` gates below) also as CRD CEL validation, so `kubectl apply` of a violating CR is usually rejected by the apiserver before the operator sees it; the controller-side validator enforces them again (and the checksum rule), and a CR that reaches it goes to `status.phase: Invalid` and stops reconciling until you fix the spec:
 
 ### 1. The URL must be `https://`
 
@@ -244,7 +244,7 @@ Some plugins also receive **automatic security configuration** even with no `sec
 
 ### Validator rejections (`status.phase: Invalid`)
 
-A spec that fails structural validation lands in `Invalid` with a `ValidationFailed` Warning event, and is **not requeued** — edit the CR to retry. Common causes:
+A spec that fails structural validation lands in `Invalid` with a `ValidationFailed` Warning event, and is **not requeued** — edit the CR to retry. (The https and `VerifiedDownload` rules below are also CEL rules on the CRD, so on a current cluster you will normally see them as an apply-time error from `kubectl` instead, with the same intent but different wording.) Common causes:
 
 | Symptom in `status.message` / event | Cause | Fix |
 |---|---|---|

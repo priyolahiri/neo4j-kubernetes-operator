@@ -208,6 +208,27 @@ Chains: `manifests` → `generate` → `sync-kustomize` → `sync-editor-viewer-
 
 It also checks **box diagrams**: every line of a rectangle must be the same width with its right border in the same column. Only true rectangles (a block with a `┌───┐` top edge) are checked — tree listings and state-machine flows use the same characters with deliberately ragged edges, and 6 of the 8 diagrams under `docs/` are one of those. That split was measured before the rule was written, so it starts with no false positives.
 
+### `make check-apiref-drift`
+**Description**: Verify `docs/api_reference/` has a page for every CRD and that each page documents every top-level `spec` field (`go run ./scripts/check-apiref-drift`). The hand-written reference has no generator.
+**Usage**: `make check-apiref-drift`
+
+### `make check-crd-catalog`
+**Description**: Verify every CRD is listed on the docs landing page (`docs/index.md`), the README, the `mkdocs.yml` nav and `docs/gitops/argocd-health-checks.yaml` (`go run ./scripts/check-crd-catalog`).
+**Usage**: `make check-crd-catalog`
+
+### `make check-cli-docs`
+**Description**: Verify every `kubectl-neo4j` command in `cmd/kubectl-neo4j/main.go` has a page under `docs/user_guide/cli/` and every CLI page is in the `mkdocs.yml` nav.
+**Usage**: `make check-cli-docs`
+
+### `make check-cli-asset-names`
+**Description**: Verify the `kubectl-neo4j` release-asset naming convention agrees everywhere it is pinned (`scripts/check-cli-asset-names.sh`).
+**Usage**: `make check-cli-asset-names`
+
+### `make check-invariants`, `make check-knowledge-drift`, `make check-knowledge`
+**Description**: The advisory LLM-readiness guards. `check-invariants` runs `scripts/check-invariants.sh` (the five hard invariants — webhooks, Kind-only, Enterprise images, V2_ONLY, server-based architecture); `check-knowledge-drift` runs `scripts/check-knowledge-drift.sh` (every test, path and `Neo4j*` identifier cited in `docs/knowledge/` must still exist); `check-knowledge` runs both.
+**Usage**: `make check-knowledge`
+**Notes**: advisory — the `Invariant Guards (advisory)` CI job runs them with `continue-on-error`, so they never block merge. See [Agent guardrails](AGENT-GUARDRAILS.md).
+
 ### `make helm-lint`, `make helm-template`, `make helm-package`
 Standard helm chart targets. `helm-package` depends on `helm-sync-crds`, `helm-sync-rbac`, and `helm-sync-artifacthub-crds`, so packaging never ships stale rules or annotations. `helm-template` renders the chart into the `neo4j-operator-system` namespace.
 
@@ -307,29 +328,28 @@ make test-coverage
 **Description**: Run comprehensive integration tests with real Kubernetes API
 **Usage**: `make test-integration`
 **Dependencies**: `manifests generate test-cluster ginkgo kustomize` — the `manifests`/`generate` prereqs guarantee CRDs and RBAC deployed to the test cluster match the current controller source. Skipping `manifests` (e.g., by calling kustomize directly) silently deploys stale schemas.
-**Duration**: ~10-15 minutes
+**Duration**: long — it runs *every* spec (no `--label-filter`, so `core` **and** `extended`) with `--procs=1 --timeout=60m`. For a quick pass use `make test-one TEST="…"` or `ginkgo run --label-filter='core' ./test/integration/...` against an existing cluster (see [Testing](testing.md)).
 **Features**:
 
-- Auto-creates test cluster if needed
-- Deploys operator automatically
+- **Always recreates** the `neo4j-operator-test` cluster (`test-cluster` deletes an existing one first)
+- Builds and deploys the operator in production mode (`neo4j-operator-system`)
 - Tests real Neo4j deployments
-- Includes plugin testing
-- Cleanup handled automatically
+- **Leaves the cluster running afterwards** for inspection — clean up with `make test-cluster-delete`
 
 **Example**:
 ```bash
 make test-integration
-# 🔄 Creates neo4j-operator-test cluster
+# 🔄 Recreates the neo4j-operator-test cluster
 # 📦 Builds and deploys operator
-# 🧪 Runs full test suite
-# 🧹 Automatic cleanup
+# 🧪 Runs the full spec suite (core + extended)
+# (cluster is left running — make test-cluster-delete to remove it)
 ```
 
 #### `make test-integration-ci`
-**Description**: Run essential integration tests optimized for CI environments
+**Description**: Run a name-focused subset of the integration tests (a `--focus` regex predating the `core`/`extended` labels). **Not used by any CI workflow** — the CI lanes call `ginkgo` with `--label-filter` directly (see [CI/CD & Workflows](ci_and_workflows.md)).
 **Usage**: `make test-integration-ci`
 **Dependencies**: Existing test cluster and deployed operator
-**Duration**: ~5-8 minutes
+**Duration**: minutes (a small `--focus` subset)
 **Features**:
 
 - Assumes cluster and operator already deployed
@@ -346,10 +366,10 @@ make test-integration-ci
 ```
 
 #### `make test-integration-ci-full`
-**Description**: Run complete integration test suite in CI environment
+**Description**: Run complete integration test suite against an existing cluster (all specs, `--timeout=60m`). Not used by any CI workflow.
 **Usage**: `make test-integration-ci-full`
 **Dependencies**: Existing test cluster and deployed operator
-**Duration**: ~15-20 minutes
+**Duration**: long — the whole suite (CI needs ~90–150 min for `core` + `extended` on CalVer)
 **⚠️ **Warning**: May cause resource exhaustion in CI
 
 **Example**:
@@ -473,7 +493,7 @@ make test-destroy
 **Description**: Run complete test suite (unit + integration)
 **Usage**: `make test`
 **Dependencies**: `test-unit`, `test-integration`
-**Duration**: ~15-20 minutes
+**Duration**: long — the unit tests plus every integration spec (see `test-integration`)
 **Example**:
 ```bash
 make test
@@ -485,11 +505,11 @@ make test
 #### `make test-ci-local` 🆕
 **Description**: Emulate GitHub Actions CI workflow locally with comprehensive debug logging
 **Usage**: `make test-ci-local`
-**Duration**: ~20-25 minutes
+**Duration**: long — unit tests, then every integration spec under a 60-minute timeout
 **Features**:
 
 - **Complete CI emulation**: Uses `CI=true GITHUB_ACTIONS=true` environment
-- **Resource constraints**: Tests with 512Mi memory limits (same as CI)
+- **Resource constraints**: `CI=true` makes the specs use the CI resource profile (1.5Gi memory limit, small CPU requests) instead of the local profile (2Gi limit)
 - **Debug logging**: Comprehensive logs saved to `logs/` directory
 - **Automatic troubleshooting**: Provides debugging commands on failure
 - **Self-contained**: Creates, tests, and destroys environment
@@ -529,6 +549,11 @@ make build
 # Builds bin/manager executable
 # Includes all code generation
 ```
+
+### `make build-cli`
+**Description**: Build the `kubectl-neo4j` plugin into `bin/kubectl-neo4j`, stamping `main.version` from `git describe`. Put `bin/` on your `PATH` to run it as `kubectl neo4j …`.
+**Usage**: `make build-cli`
+**Output**: `bin/kubectl-neo4j`
 
 ### `make docker-build`
 **Description**: Build Docker image with operator
@@ -887,6 +912,10 @@ The demo deploys a TLS-enabled standalone instance and a 3-node TLS-enabled clus
 **Usage**: `make demo-fast`
 **Includes**: Environment setup (auto-confirmed)
 
+#### `make demo-release`
+**Description**: Fast automated demo against the **published** operator chart instead of a local build.
+**Usage**: `make demo-release` (pin a version with `DEMO_VERSION=1.12.1 make demo-release`)
+
 #### `make demo-only`
 **Description**: Run fast demo without environment setup (assumes cluster and operator exist)
 **Usage**: `make demo-only`
@@ -911,6 +940,18 @@ The demo script (`scripts/demo.sh`) accepts these flags:
 | `--speed fast\|normal\|slow` | Control demo pacing |
 | `--namespace NAMESPACE` | Kubernetes namespace (default: `default`) |
 | `--password PASSWORD` | Admin password (default: `demo123456`) |
+
+### Cross-cluster replication (CCDR) test rig
+
+Used by [Release Verification](release_verification.md) Phase 5 (Parts D and E).
+
+#### `make ccdr-lb`
+**Description**: Give a Kind cluster a working `LoadBalancer` (MetalLB L2 pool carved from the top of the shared `kind` Docker network) so the CCDR proxy Service gets a real address. Runs `hack/metallb-setup.sh`.
+**Usage**: `make ccdr-lb` (defaults to the `neo4j-operator-dev` cluster; `CLUSTER=<name>` targets another, `POOL_OFFSET` shifts the address pool)
+
+#### `make ccdr-e2e-up`, `ccdr-e2e-trust`, `ccdr-e2e-status`, `ccdr-e2e-down`
+**Description**: Stand up and drive the two-Kind-cluster rig (`neo4j-operator-dev` upstream with MetalLB, `neo4j-dr` downstream; TLS, cert-manager and the operator built from this tree on both). `up` builds the rig; once both `Neo4jEnterpriseCluster`s are `Ready`, `trust` exchanges the clusters' CAs; `status` shows both sides' CCDR state; `down` deletes both Kind clusters. All call `hack/ccdr-two-cluster.sh`.
+**Usage**: `make ccdr-e2e-up` … `make ccdr-e2e-down`
 
 ## Dependencies
 
@@ -998,12 +1039,12 @@ make catalog-push CATALOG_IMG=ghcr.io/my-org/catalog:v1.0
 
 #### `make golangci-lint`
 **Description**: Download golangci-lint for code quality
-**Version**: v1.64.8
+**Version**: v2.13.1 (`GOLANGCI_LINT_VERSION`; the Makefile builds it against the current Go toolchain)
 **Location**: `bin/golangci-lint`
 
 #### `make ginkgo`
 **Description**: Download Ginkgo BDD testing framework
-**Version**: v2.29.0
+**Version**: v2.32.1 (`GINKGO_VERSION`)
 **Location**: `bin/ginkgo`
 
 #### `make operator-sdk`
@@ -1144,10 +1185,9 @@ CI=true GITHUB_ACTIONS=true make test-unit
 # Quick development testing
 make test-unit            # ~30 seconds
 
-# Comprehensive validation
-make test-cluster         # Create test environment
-make test-integration     # ~15 minutes
-make test-cluster-clean   # Clean resources
+# Comprehensive validation (recreates the test cluster, runs every spec)
+make test-integration     # long: core + extended, leaves the cluster running
+make test-cluster-delete  # Remove the cluster when done
 
 # CI preparation
 make test-ci-local        # Full CI emulation

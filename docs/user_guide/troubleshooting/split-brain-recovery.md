@@ -263,26 +263,39 @@ spec:
 
 ### Prometheus Metrics
 
-Monitor these key metrics for early split-brain detection:
+Monitor these operator metrics for early split-brain detection:
 
 ```yaml
-# Cluster health metrics
-neo4j_cluster_servers_total
-neo4j_cluster_servers_online
-neo4j_database_allocation_inconsistency
+# Incremented each time the operator's split-brain detection fires
+neo4j_operator_split_brain_detected_total{cluster_name, namespace}
+# 1 = healthy, 0 = unhealthy
+neo4j_operator_cluster_healthy{cluster_name, namespace}
+# Server counts: role="desired" (spec.topology.servers) and role="ready" (StatefulSet readyReplicas)
+neo4j_operator_cluster_replicas_total{cluster_name, namespace, role}
+# Per server: 1 = Enabled + Available, 0 = degraded (needs spec.monitoring.enabled and a Ready cluster)
+neo4j_operator_server_health{cluster_name, namespace, server_name, server_address, k8s_cluster}
 
 # Alert rules
 groups:
 - name: neo4j.split-brain
   rules:
   - alert: Neo4jSplitBrainDetected
-    expr: neo4j_cluster_servers_online < neo4j_cluster_servers_total
-    for: 2m
+    expr: increase(neo4j_operator_split_brain_detected_total[15m]) > 0
     labels:
       severity: critical
     annotations:
-      summary: "Neo4j cluster split-brain detected"
-      description: "Cluster {{ $labels.cluster }} has {{ $value }} online servers out of {{ neo4j_cluster_servers_total }} total servers"
+      summary: "Neo4j split-brain detected"
+      description: "The operator detected a split-brain in cluster {{ $labels.cluster_name }} ({{ $labels.namespace }}); check SplitBrainDetected / SplitBrainRepaired events"
+  - alert: Neo4jServersNotReady
+    expr: |
+      neo4j_operator_cluster_replicas_total{role="ready"}
+        < neo4j_operator_cluster_replicas_total{role="desired"}
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Neo4j servers not ready"
+      description: "Cluster {{ $labels.cluster_name }} has fewer ready servers than desired"
 ```
 
 ### Log Monitoring
@@ -315,7 +328,7 @@ check_cluster_health() {
   for i in $(seq 0 $((expected_servers-1))); do
     local server_count=$(kubectl exec ${CLUSTER_NAME}-server-$i -n $NAMESPACE -- \
       cypher-shell -u neo4j -p password \
-      "SHOW SERVERS YIELD name" 2>/dev/null | wc -l)
+      "SHOW SERVERS YIELD name" 2>/dev/null | tail -n +2 | wc -l)   # tail skips the header row
 
     if [ "$server_count" -eq "$expected_servers" ]; then
       ((consistent_views++))
@@ -351,8 +364,9 @@ fi
 2. **Verify RBAC Permissions**:
    ```bash
    kubectl auth can-i get pods --as=system:serviceaccount:neo4j-operator-system:neo4j-operator-controller-manager
-   kubectl auth can-i exec pods --as=system:serviceaccount:neo4j-operator-system:neo4j-operator-controller-manager
+   kubectl auth can-i list pods --as=system:serviceaccount:neo4j-operator-system:neo4j-operator-controller-manager
    ```
+   The detector reaches each server over Bolt, so the operator does not need (and does not have) `pods/exec`.
 
 3. **Check Neo4j Connectivity**:
    ```bash
@@ -410,9 +424,12 @@ If automatic recovery fails:
 ⚠️ **Use only as a last resort - may cause data loss**
 
 ```bash
-# 1. Scale down the cluster
-kubectl patch neo4jenterprisecluster production-cluster --type='json' \
-  -p='[{"op": "replace", "path": "/spec/topology/servers", "value": 0}]'
+# spec.topology.servers has a minimum of 2, so a cluster cannot be scaled to 0 —
+# the API server rejects it. To rebuild from scratch, delete the cluster resource
+# and recreate it, restoring data from a backup (see "Data Recovery from Backups").
+
+# 1. Delete the cluster (PVCs are retained when the CR is deleted)
+kubectl delete neo4jenterprisecluster production-cluster
 
 # 2. Wait for pods to terminate
 kubectl wait --for=delete pod -l neo4j.com/cluster=production-cluster --timeout=300s
@@ -421,9 +438,8 @@ kubectl wait --for=delete pod -l neo4j.com/cluster=production-cluster --timeout=
 # Note: This may cause data loss - only do if cluster is completely corrupted
 # kubectl delete pvc -l neo4j.com/cluster=production-cluster,neo4j.com/role=server
 
-# 4. Scale back up
-kubectl patch neo4jenterprisecluster production-cluster --type='json' \
-  -p='[{"op": "replace", "path": "/spec/topology/servers", "value": 3}]'
+# 4. Re-apply the cluster manifest
+kubectl apply -f production-cluster.yaml
 
 # 5. Monitor recovery
 kubectl get pods -l neo4j.com/cluster=production-cluster -w

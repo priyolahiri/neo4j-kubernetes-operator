@@ -36,13 +36,13 @@ The `Neo4jDatabase` Custom Resource Definition (CRD) provides declarative databa
 | Field | Type | Description |
 |---|---|---|
 | `clusterRef` | `string` | **Required.** Name of the target `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace. For databases on a Neo4j Aura instance, use the `AuraDatabase` CRD instead. |
-| `name` | `string` | **Required**. Database name to create |
+| `name` | `string` | **Required**. Database name to create. Must start with a letter and contain only letters, digits, dots and dashes (max 65 characters). `system` is reserved; `neo4j` is allowed with a warning (it shadows the default database) |
 | `wait` | `boolean` | Wait for database creation to complete (default: `true`) |
 | `ifNotExists` | `boolean` | Create only if database doesn't exist - prevents reconciliation errors (default: `true`) |
-| `topology` | [`DatabaseTopology`](#databasetopology) | Database distribution topology (cluster only) |
-| `defaultCypherLanguage` | `string` (enum: `"5"`, `"25"`) | Default Cypher version for Neo4j 2025.x |
-| `options` | `map[string]string` | Additional database options (e.g., `txLogEnrichment`) |
-| `initialData` | [`InitialDataSpec`](#initialdataspec) | Initial data import (**mutually exclusive with `seedURI`**) |
+| `topology` | [`DatabaseTopology`](#databasetopology) | Database distribution topology (cluster only). Applied at `CREATE DATABASE` only — an existing database is observed, not altered |
+| `defaultCypherLanguage` | `string` (enum: `"5"`, `"25"`) | Default Cypher version for Neo4j 2025.x. **Currently only emitted when `topology` or `seedURI` is also set**; on a plain create (neither set) it is accepted but not acted on |
+| `options` | `map[string]string` | Additional `CREATE DATABASE` options. The validator accepts only these keys: `txLogEnrichment` (`OFF` or `DIFF`), `storeFormat` (`standard`, `high_limit` or `block`), `existingData` (`use` or `fail`), `existingDataSeedServer`, `existingDataSeedInstance`, `existingMetadata`, `seedCredentials`, and `seedURI` / `seedConfig` (the last two are deprecated as options — use the dedicated spec fields). Any other key is rejected, and values may not be empty |
+| `initialData` | [`InitialDataSpec`](#initialdataspec) | Cypher statements run once after creation (**mutually exclusive with `seedURI`**). Only `cypherStatements` is executed |
 | `seedURI` | `string` | Backup URI for database creation (**mutually exclusive with `initialData`**) |
 | `seedConfig` | [`SeedConfiguration`](#seedconfiguration) | Advanced seed URI configuration |
 | `seedCredentials` | [`SeedCredentials`](#seedcredentials) | Seed URI access credentials |
@@ -61,16 +61,17 @@ The `Neo4jDatabase` Custom Resource Definition (CRD) provides declarative databa
 - `primaries + secondaries` must not exceed cluster's `spec.topology.servers`
 - Servers are selected based on role constraints (if configured)
 - For standalone deployments, topology is automatically managed
+- Topology is applied when the database is created. Editing it on an existing database has no effect — the operator does not issue `ALTER DATABASE … SET TOPOLOGY`
 
 ### InitialDataSpec
 
 | Field | Type | Description |
 |---|---|---|
-| `source` | `string` | Source type for initial data: `"cypher"`, `"dump"`, `"csv"` |
-| `cypherStatements` | `[]string` | Cypher statements to execute on database creation |
-| `configMapRef` | `string` | ConfigMap containing data or statements |
-| `secretRef` | `string` | Secret containing data or statements |
-| `storage` | [`*StorageLocation`](#storagelocation) | Storage location for data files |
+| `source` | `string` | Source type for initial data: `"cypher"`, `"dump"`, `"csv"`. **Accepted but not acted on** — the controller does not read it |
+| `cypherStatements` | `[]string` | Cypher statements to execute, in order, against the new database. **The only field that is executed.** Runs once; `status.dataImported` records that it has run |
+| `configMapRef` | `string` | **Accepted but not acted on** — the ConfigMap is never read, so put statements in `cypherStatements` |
+| `secretRef` | `string` | **Accepted but not acted on** |
+| `storage` | [`*StorageLocation`](#storagelocation) | **Accepted but not acted on** (the `StorageLocation` tables below describe the schema only) |
 
 ### SeedConfiguration
 
@@ -78,28 +79,15 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 
 | Field | Type | Description |
 |---|---|---|
-| `restoreUntil` | `string` | Point-in-time recovery timestamp (Neo4j 2025.x only) |
-| `config` | `map[string]string` | CloudSeedProvider configuration options |
+| `restoreUntil` | `string` | Point-in-time recovery timestamp (Neo4j 2025.x only; rejected on 5.26) |
+| `config` | `map[string]string` | Seed-provider configuration, rendered into the `seedConfig` `OPTIONS` string as comma-separated `key=value` pairs (for example `region=eu-west-1`). Consumed by the S3SeedProvider; the CloudSeedProvider (the default for `s3://`, `gs://` and `azb://`) takes region and credentials from the environment, so most deployments leave this empty |
 
 **Point-in-Time Recovery Formats** (Neo4j 2025.x only):
 
 - **RFC3339 Timestamp**: `"2025-01-15T10:30:00Z"`
-- **Transaction ID**: `"txId:12345"`
+- **Transaction ID**: `"txId:12345"` (a positive integer that fits in int64)
 
-**Configuration Options**:
-
-- `compression`: `"gzip"`, `"lz4"`, `"none"`
-- `validation`: `"strict"`, `"lenient"`
-- `bufferSize`: Buffer size (e.g., `"64MB"`, `"128MB"`)
-- Cloud-specific options for S3, GCS, Azure
-
-#### SeedConfiguration Options
-
-| Option | Values | Description |
-|---|---|---|
-| `compression` | `"gzip"`, `"lz4"`, `"none"` | Compression format for backup processing. |
-| `validation` | `"strict"`, `"lenient"` | Validation mode during restoration. |
-| `bufferSize` | size string | Buffer size for processing (e.g., `"64MB"`, `"128MB"`). |
+**`config` rules**: keys may contain only letters, digits, `.`, `_` and `-`; values may not contain `,`, `=`, quotes, backticks or newlines. The operator forwards the pairs to Neo4j unchanged and does not define any keys of its own — see the Neo4j documentation for the keys your seed provider understands.
 
 ### SeedCredentials
 
@@ -107,7 +95,11 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 |---|---|---|
 | `secretRef` | `string` | Name of Kubernetes secret containing credentials for seed URI access |
 
+**The Secret must be projected onto the server pods.** The Neo4j JVM reads the credentials from its environment, so the Secret has to appear in the target `Neo4jEnterpriseCluster`/`Neo4jEnterpriseStandalone` `spec.extraEnvFrom`. If it does not, the database stays blocked with reason `SeedCredsMissing` and a message showing what to add. If the target carries the annotation `neo4j.com/auto-inherit-seed-creds: "true"`, the operator appends the entry to `spec.extraEnvFrom` itself (reason `SeedCredsAutoInherited`) — **this triggers a rolling restart** of the target. Omit `seedCredentials` entirely when you rely on IAM roles / workload identity.
+
 ### StorageLocation
+
+> `StorageLocation` and the tables below are only reachable through `initialData.storage`, which is currently accepted but not acted on.
 
 | Field | Type | Description |
 |---|---|---|
@@ -140,15 +132,15 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 | Field | Type | Description |
 |---|---|---|
 | `provider` | `string` (enum: `"aws"`, `"gcp"`, `"azure"`) | **Required**. Identity provider |
-| `serviceAccount` | `string` | Service account name for cloud identity |
-| `autoCreate` | [`*AutoCreateSpec`](#autocreatespec) | Auto-create service account and annotations |
+| `serviceAccount` | `string` | **Reserved — accepted but not acted on.** Backup/restore Jobs always run as the operator-managed ServiceAccounts |
+| `autoCreate` | [`*AutoCreateSpec`](#autocreatespec) | Workload-identity annotations (see below) |
 
 ### AutoCreateSpec
 
 | Field | Type | Description |
 |---|---|---|
-| `enabled` | `bool` | Enable auto-creation of service account (default: `true`) |
-| `annotations` | `map[string]string` | Annotations to apply to auto-created service account |
+| `enabled` | `bool` | **Reserved — accepted but not acted on** (the operator always ensures its backup/restore ServiceAccount exists). Schema default: `true` |
+| `annotations` | `map[string]string` | Annotations applied to the operator-managed backup/restore ServiceAccount (used by `Neo4jBackup`/`Neo4jRestore`; `Neo4jDatabase` itself does not read `initialData.storage`) |
 
 #### Required Secret Keys by URI Scheme
 
@@ -180,7 +172,7 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 | Field | Type | Description |
 |---|---|---|
 | `conditions` | `[]metav1.Condition` | Current status conditions |
-| `phase` | `string` | Current phase of the database |
+| `phase` | `string` | Current phase of the database: `Ready`, `Pending` (target not found / not ready), `Failed` (connection, creation or data-import failure), `ValidationFailed`, or `Unknown` (any other blocked state, e.g. `SeedCredsMissing`) |
 | `message` | `string` | Human-readable status message |
 | `observedGeneration` | `int64` | Generation observed by the controller |
 | `dataImported` | `*bool` | Whether initial data has been imported |
@@ -260,7 +252,7 @@ spec:
   initialData:
     source: cypher
     cypherStatements:
-      - "CREATE CONSTRAINT user_email IF NOT EXISTS ON (u:User) ASSERT u.email IS UNIQUE"
+      - "CREATE CONSTRAINT user_email IF NOT EXISTS FOR (u:User) REQUIRE u.email IS UNIQUE"
       - "CREATE INDEX user_name IF NOT EXISTS FOR (u:User) ON (u.name)"
 
 ---
@@ -295,7 +287,7 @@ spec:
     source: cypher
     cypherStatements:
       # Schema creation
-      - "CREATE CONSTRAINT user_email IF NOT EXISTS ON (u:User) ASSERT u.email IS UNIQUE"
+      - "CREATE CONSTRAINT user_email IF NOT EXISTS FOR (u:User) REQUIRE u.email IS UNIQUE"
       - "CREATE INDEX user_name IF NOT EXISTS FOR (u:User) ON (u.name)"
       - "CREATE INDEX product_category IF NOT EXISTS FOR (p:Product) ON (p.category)"
       # Sample data
@@ -324,9 +316,7 @@ spec:
     primaries: 2
     secondaries: 1
   options:
-    # Neo4j 2025.x specific options
-    queryRouting: "ENABLED"
-    vectorIndexing: "AUTO"
+    txLogEnrichment: "DIFF"  # One of the few keys the validator accepts (see `options` above)
   initialData:
     source: cypher
     cypherStatements:
@@ -358,10 +348,7 @@ spec:
   seedConfig:
     restoreUntil: "2025-01-15T10:30:00Z"  # Specific point in time
     config:
-      compression: "lz4"        # Faster decompression
-      validation: "strict"      # Ensure data integrity
-      bufferSize: "256MB"       # Large buffer for performance
-      region: "us-east-1"       # S3 region optimization
+      region: "us-east-1"       # S3SeedProvider key (rendered as seedConfig "region=us-east-1")
 
   wait: true
   ifNotExists: true
@@ -384,16 +371,10 @@ spec:
   # Copy from Google Cloud Storage backup
   seedURI: "gs://dev-backups/prod-snapshot-2025-01-15.backup"
 
-  # Explicit credentials for dev environment
+  # Explicit credentials for dev environment (the Secret must be in the target's
+  # spec.extraEnvFrom, or the target needs the neo4j.com/auto-inherit-seed-creds annotation)
   seedCredentials:
     secretRef: gcs-dev-credentials
-
-  # Simplified configuration for development
-  seedConfig:
-    config:
-      compression: "gzip"
-      validation: "lenient"  # Allow minor inconsistencies
-      bufferSize: "64MB"     # Smaller buffer for dev
 
   wait: true
   ifNotExists: true
@@ -513,30 +494,9 @@ spec:
     secondaries: 0
 
 ---
-# Database with complex initial data from ConfigMap
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: complex-schema
-data:
-  schema.cypher: |
-    // Create constraints
-    CREATE CONSTRAINT user_id IF NOT EXISTS ON (u:User) ASSERT u.id IS UNIQUE;
-    CREATE CONSTRAINT product_sku IF NOT EXISTS ON (p:Product) ASSERT p.sku IS UNIQUE;
-
-    // Create indexes
-    CREATE INDEX user_email IF NOT EXISTS FOR (u:User) ON (u.email);
-    CREATE INDEX product_name IF NOT EXISTS FOR (p:Product) ON (p.name);
-
-    // Create sample data
-    CREATE (u1:User {id: 1, name: 'Alice', email: 'alice@example.com'});
-    CREATE (u2:User {id: 2, name: 'Bob', email: 'bob@example.com'});
-    CREATE (p1:Product {sku: 'NEO4J-ENT', name: 'Neo4j Enterprise'});
-
-    // Create relationships
-    MATCH (u:User {id: 1}), (p:Product {sku: 'NEO4J-ENT'})
-    CREATE (u)-[:PURCHASED {date: date('2025-01-15')}]->(p);
----
+# Initial data: only initialData.cypherStatements is executed (configMapRef,
+# secretRef, source and storage are accepted but not acted on), so put every
+# statement inline, one per list item
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
@@ -545,8 +505,11 @@ spec:
   clusterRef: my-cluster
   name: complex-app
   initialData:
-    source: cypher
-    configMapRef: complex-schema  # Reference to ConfigMap
+    cypherStatements:
+      - "CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE"
+      - "CREATE CONSTRAINT product_sku IF NOT EXISTS FOR (p:Product) REQUIRE p.sku IS UNIQUE"
+      - "CREATE (u:User {id: 1, name: 'Alice', email: 'alice@example.com'})"
+      - "CREATE (p:Product {sku: 'NEO4J-ENT', name: 'Neo4j Enterprise'})"
   topology:
     primaries: 2
     secondaries: 1
@@ -571,7 +534,7 @@ If you create a `Neo4jDatabase` resource with `name: neo4j`, the operator will:
 
 1. **Emit a validation warning**: `'neo4j' is the default database name; creating a database with this name will shadow the default database`
 2. **Skip creation**: Since `ifNotExists: true` is the default and the database already exists, `CREATE DATABASE` is a no-op
-3. **Apply topology changes**: If you specify a `topology`, the operator will issue an `ALTER DATABASE` to update it
+3. **Not alter topology**: `topology` is applied at `CREATE DATABASE` only. Because `neo4j` already exists, a `topology` on the CR is **not** applied; change it yourself with `ALTER DATABASE neo4j SET TOPOLOGY …`
 4. **Drop on deletion**: If you delete the `Neo4jDatabase` resource, the operator will drop the `neo4j` database — use caution
 
 To control the default database topology at cluster creation time without using this CRD, set `initial.dbms.default_primaries_count` and `initial.dbms.default_secondaries_count` in the cluster's `spec.config` (bootstrap-only, see [Clustering Guide](../user_guide/clustering.md#default-database-topology)).
@@ -633,12 +596,12 @@ To control the default database topology at cluster creation time without using 
 
 ### Reconciliation
 
-The operator continuously reconciles the database state:
+The operator creates the database if it is missing, then observes it:
 
-- If database doesn't exist and `ifNotExists: true`, creates it
-- If database exists and state differs, updates it (start/stop)
-- If topology changes, redistributes database (Neo4j 5.20+)
-- Updates status with current database information
+- If the database doesn't exist, it is created (with `topology`, `defaultCypherLanguage`, seed and `options` applied at that moment)
+- If the database already exists, nothing about it is altered: later edits to `topology`, `options`, `defaultCypherLanguage` or the seed fields are **not** applied, and the operator never starts or stops the database. Use `ALTER DATABASE …` for those changes
+- `initialData.cypherStatements` run once after creation (recorded in `status.dataImported`)
+- Status (`state`, `servers`, `phase`) is refreshed from the live database on every reconcile
 
 ## Best Practices
 
@@ -656,7 +619,7 @@ The operator continuously reconciles the database state:
 9. **Use point-in-time recovery** (`restoreUntil`) when available for precise restoration
 10. **Test seed URI access** from Neo4j pods before creating databases
 11. **Monitor restoration progress** - large backups may take significant time
-12. **Use appropriate compression** (`gzip` or `lz4`) for faster transfer and processing
+12. **Use `seedConfig.config` only for seed-provider keys** the provider documents (for example `region` for the S3SeedProvider); the operator passes them through unchanged
 
 ## Troubleshooting
 
@@ -733,8 +696,6 @@ kubectl run test-pod --rm -it --image=amazon/aws-cli \
 **Performance Issues:**
 
 - Use `.backup` format instead of `.dump` for large datasets
-- Increase `bufferSize` in `seedConfig.config`
-- Use `compression: "lz4"` for faster processing
 - Monitor pod resources during restoration
 
 **Validation Errors:**
@@ -795,7 +756,8 @@ kubectl run test-uri --rm -it --image=curlimages/curl -- \
 - `DataSeeded`: Database seeding completed
 - `ValidationWarning`: Configuration or URI format warnings
 - `CreationFailed`: Seed restoration failed
-- `AuthenticationError`: Credential issues with seed URI
+- `SeedCredsMissing`: `seedCredentials.secretRef` is not in the target's `spec.extraEnvFrom` (and the target lacks the `neo4j.com/auto-inherit-seed-creds` annotation)
+- `SeedCredsAutoInherited`: the operator added the Secret to the target's `spec.extraEnvFrom`; waiting for the rolling restart
 
 **Authentication Debugging**:
 ```bash
@@ -810,6 +772,4 @@ kubectl run aws-test --rm -it --image=amazon/aws-cli -- \
 **Performance Issues**:
 
 - Use `.backup` format instead of `.dump` for large datasets
-- Increase `bufferSize` in seed configuration
-- Use faster compression (`lz4` instead of `gzip`)
 - Monitor pod resource usage during restoration

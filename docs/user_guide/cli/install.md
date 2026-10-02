@@ -43,7 +43,7 @@
 
     ```bash
     VERSION=1.17.0     # the release you want
-    OS=darwin          # darwin | linux | windows
+    OS=darwin          # darwin | linux (Windows: see below)
     ARCH=arm64         # arm64 | amd64
 
     curl -sSLO "https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v${VERSION}/kubectl-neo4j_${VERSION}_${OS}_${ARCH}.tar.gz"
@@ -55,7 +55,7 @@
     sudo mv kubectl-neo4j /usr/local/bin/
     ```
 
-    Windows builds are published as `.zip` rather than `.tar.gz`.
+    Windows is published for amd64 only, as `kubectl-neo4j_${VERSION}_windows_amd64.zip` rather than a `.tar.gz` (same checksums file).
 
 === "Build from source"
 

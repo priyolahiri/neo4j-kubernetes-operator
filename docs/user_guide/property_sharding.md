@@ -39,7 +39,7 @@ Property Sharding decouples data into:
 
 - **Authentication**: Admin secret required (property sharding requires authenticated cluster access)
 - **Storage Class**: Persistent storage class must be specified (e.g., `standard`, `fast-ssd`)
-- **Kubernetes Version**: 1.24+ for full operator compatibility
+- **Kubernetes Version**: 1.32+ (the operator's minimum; see [Installation](installation.md#installation-requirements))
 - **Network Policy**: Allow inter-pod communication on discovery and bolt ports
 - **Cypher Version**: sharded databases are created with Cypher 25 as their default language (the operator sets it on the whole sharded family); the rest of the server is governed by `spec.serverDefaultCypherLanguage`
 
@@ -166,9 +166,9 @@ spec:
   # Virtual database name (what users connect to)
   name: products
 
-  # The sharded family's default Cypher language. "25" is the only value, and
-  # the operator sets it even when this is omitted: the graph shard and every
-  # property shard inherit it from this, the parent database.
+  # The sharded family's default Cypher language. Required, and "25" is the only
+  # accepted value: the graph shard and every property shard inherit it from
+  # this, the parent database, whatever spec.serverDefaultCypherLanguage says.
   defaultCypherLanguage: "25"
 
   # Property sharding configuration
@@ -456,7 +456,7 @@ kubectl describe neo4jenterprisecluster property-sharding-cluster
 kubectl describe neo4jshardeddatabase products-sharded-db
 
 # View operator logs
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
 
 # Check individual database status
 kubectl exec property-sharding-cluster-server-0 -- \

@@ -55,7 +55,7 @@ The `Neo4jRole` Custom Resource Definition (CRD) provides declarative management
 
 | Type | Reasons | Meaning |
 |---|---|---|
-| `Ready` | `RoleReady`, `RoleSyncFailed`, `ClusterNotReady`, `ConnectionFailed`, `ValidationFailed` | True when role exists and privileges are reconciled. |
+| `Ready` | `RoleReady`, `RoleSyncFailed`, `ClusterNotFound`, `ClusterNotReady`, `ConnectionFailed`, `ValidationFailed` | True when role exists and privileges are reconciled. |
 | `PrivilegesSynced` | `PrivilegesMatch`, `PrivilegesDrifted`, `UnattributedPrivileges` | True when live privileges match `spec.privileges`. `Unknown`/`UnattributedPrivileges` (learn mode, the default) means the role holds rows the operator cannot attribute to a spec statement and so will not revoke; the message lists them. |
 | `PrivilegesResolve` | `AllDatabasesResolve`, `NoDatabaseScopedPrivileges`, `DatabaseNotFound`, `GraphPrivilegeOnComposite` | True when every database named by a privilege exists on this cluster (or is an alias for one). **False means those privileges are not on the role**: Neo4j refuses a grant on a database that does not exist, and drops a role's privileges along with a dropped database, so the operator skips them — the rest of the role is applied. The usual cause on a DR cluster is the replica's name: a replica of `foo` is called `foo-replica`, and privileges attach to the database, not to an alias. Reported, never enforced: the database may simply not be created yet, and the condition clears on its own when it is. `GraphPrivilegeOnComposite` is the same class of silent failure on a [composite database](neo4jcompositedatabase.md): a GRAPH privilege on a composite is accepted and shown back by `SHOW ROLE PRIVILEGES`, but graph privileges attach to the constituents' target databases, so it does nothing. (`ACCESS ON DATABASE <composite>` is correct and is not flagged.) |
 | `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced cluster. |
@@ -146,6 +146,7 @@ metadata:
   namespace: prod
 spec:
   clusterRef: prod-cluster
+  name: analytics_reader        # Neo4j role name; defaults to metadata.name, which must then be underscore-only (no hyphens)
   privileges:
     - "GRANT ACCESS ON DATABASE analytics TO analytics_reader"
     - "GRANT MATCH {*} ON GRAPH analytics NODES * TO analytics_reader"
@@ -162,6 +163,7 @@ metadata:
   namespace: prod
 spec:
   clusterRef: prod-cluster
+  name: junior_editor
   copyOf: editor                # honoured at create time only
   privileges:
     - "DENY DELETE ON GRAPH * NODES Customer TO junior_editor"
@@ -199,6 +201,7 @@ metadata:
   namespace: prod
 spec:
   clusterRef: prod-cluster
+  name: legacy_role
   enforcePrivileges: false
   privileges:
     - "GRANT ACCESS ON DATABASE legacy TO legacy_role"

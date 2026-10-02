@@ -25,8 +25,8 @@ See the [Cross-Cluster Replication guide](../user_guide/guides/cross_cluster_rep
 | Field | Type | Description |
 |---|---|---|
 | `clusterRef` | `string` | **Required.** Downstream `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace that hosts the replica. |
-| `name` | `string` | Replica database name. Defaults to `metadata.name`. **Permanent** — Cypher has no `RENAME DATABASE`, so this name survives promotion. Pair with a `Neo4jDatabaseAlias` if applications should address it under the upstream's name after failover. |
-| `upstreamDatabase` | `string` | **Required.** Name of the database being replicated, as known on the upstream cluster. Becomes `replicaConfig.remote`. |
+| `name` | `string` | Replica database name. Defaults to `metadata.name`. 3-63 characters, pattern `^[a-zA-Z][a-zA-Z0-9_.\-]*$`; no backticks. **Permanent** — Cypher has no `RENAME DATABASE`, so this name survives promotion. Pair with a `Neo4jDatabaseAlias` if applications should address it under the upstream's name after failover. |
+| `upstreamDatabase` | `string` | **Required.** Name of the database being replicated, as known on the upstream cluster (1-63 characters). Becomes `replicaConfig.remote`. |
 | `topology` | `object` | Distribution across downstream servers (`primaries`, `secondaries`). Both are read-only. |
 | `source` | `object` | **Required.** Where the replica pulls from — see below. **Immutable**: Neo4j offers no way to re-point an existing replica, so a change would mean drop-and-reseed. Delete and recreate the CR instead. |
 | `pullInterval` | `string` | How often the replica checks `pullURI` for new differentials (`db.cluster.backup.pull_interval`, default `1m`). Bounds the recovery point objective. Pattern `^[0-9]+(ms|s|m|h)$`. |
@@ -42,7 +42,7 @@ See the [Cross-Cluster Replication guide](../user_guide/guides/cross_cluster_rep
 | `seedURI` | `string` | **Backup mode.** Full backup artifact the replica is seeded from. Must belong to the same chain as `pullURI`. Independent of `upstreamBackupRef` — set either alongside it. Ignored (warned) in network mode. |
 | `addresses` | `[]string` | **Network mode.** Upstream cluster endpoints (`host:port`, the upstream's port 6000 — or, when the upstream has `spec.crossClusterReplication` enabled, its proxy's external port). One reachable address is sufficient: the upstream hands back the addresses the downstream actually uses. Mutually exclusive with `upstreamClusterRef` — set exactly one. Ignored in backup mode. |
 | `upstreamClusterRef` | [`object`](#upstreamclusterref) | **Network mode.** Resolves `addresses` automatically from an upstream `Neo4jEnterpriseCluster`'s `status.internalAddresses`, instead of listing them by hand. Only works when the upstream is on this **same Kubernetes cluster** — see [`UpstreamClusterRef`](#upstreamclusterref). Mutually exclusive with `addresses`. |
-| `credentialsSecretRef` | `string` | **Backup mode.** Secret holding object-storage credentials, when workload identity is unavailable. Independent of `upstreamBackupRef`. Ignored (warned) in network mode. |
+| `credentialsSecretRef` | `string` | **Backup mode.** Secret holding object-storage credentials, when workload identity is unavailable. Independent of `upstreamBackupRef`. Ignored (warned) in network mode. The operator projects the Secret's keys (`AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_ENDPOINT_URL_S3`, `AWS_ENDPOINT_URL`) onto the **downstream** servers as `secretKeyRef` env vars, because Neo4j itself performs the seed and every pull. **This restarts the downstream servers** (the replica waits for the rollout), so set it when the downstream is built, not mid-failover. The projection is add-only (clearing the field does not remove it), and two replicas of one cluster naming different Secrets is refused. |
 
 ### `upstreamClusterRef`
 

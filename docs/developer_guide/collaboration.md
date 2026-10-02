@@ -45,19 +45,23 @@ Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`,
 `!` (`feat!:`) and a `BREAKING CHANGE:` footer. The commit-msg hook installed by
 `make install-hooks` enforces this.
 
-### Required checks before merge
+### Checks on a PR
 
-These run automatically on every PR (see [CI/CD & Workflows](ci_and_workflows.md)):
+The first three run automatically on every PR (see [CI/CD & Workflows](ci_and_workflows.md));
+the integration lanes are deliberately **not** branch-protection requirements
+(see [Branch protection](ci_and_workflows.md#branch-protection)), so reviewers
+look at them by hand for code changes.
 
 | Check | What it verifies |
 |---|---|
-| **Generated Artifacts In Sync** (`check-drift`) | CRDs, RBAC, deepcopy, Helm CRDs, and the OLM bundle match the source. |
+| **Generated Artifacts In Sync** (`check-drift`) | CRDs, RBAC, deepcopy, Helm CRDs, and the OLM bundle match the source; plus the static docs/chart/CSV/secret-scan checks that have no generator. |
+| **Go Lint** | The full `.golangci.yml` (`golangci-lint`), and `kubectl-neo4j` cross-compiles for the released platforms. |
 | **Unit Tests** | `make test-unit` (race-enabled) passes. |
-| **Integration Tests** | The `core` subset on 5.26 + CalVer (parallel). Runs automatically when the PR touches runtime paths (`internal/**`, `api/**`, `cmd/**`, `test/integration/**`, `Makefile`, `go.{mod,sum}`). |
+| **Integration Tests** | The `core` subset on 5.26 + CalVer (parallel). Runs automatically when the PR touches runtime paths (`internal/**`, `api/**`, `cmd/**`, `test/integration/**`, `config/**`, `Dockerfile`, `Makefile`, `go.{mod,sum}`). Not a required check. |
 | **Extended Integration Tests** | The full suite on CalVer. **Manual dispatch only** — it never auto-runs (no nightly schedule, no PR-label trigger); run it on demand (see below). |
 
-Lint (`golangci-lint`, `staticcheck`) runs via the pre-commit hooks locally; run
-`make lint` before pushing.
+Run `make lint` before pushing (the pre-commit hooks from `make install-hooks`
+also run `golangci-lint` and `staticcheck` locally).
 
 See [CI/CD & Workflows → Test tiers](ci_and_workflows.md#test-tiers-core-vs-extended)
 for the `core` vs `extended` label convention and how to run each tier locally.

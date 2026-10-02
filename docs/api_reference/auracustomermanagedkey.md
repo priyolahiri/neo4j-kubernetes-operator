@@ -56,7 +56,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 
 ## Deletion note
 
-A key still bound to an instance **cannot be deleted** — Aura returns `encryption-key-is-active`. The CR then reports a `KeyInUse` condition and keeps its finalizer until the key is no longer referenced by any instance.
+A key still bound to an instance **cannot be deleted** — Aura returns `encryption-key-is-active`. The CR then sets `Synced=False` with reason `KeyInUse` and keeps its finalizer until the key is no longer referenced by any instance.
 
 ## Example
 

@@ -48,7 +48,7 @@ kubectl get neo4jbackup simple-backup -w
 
 ### 🟢 Simple Restores (Start Here)
 - [`restore-from-backup.yaml`](restore-from-backup.yaml) - **Beginner**: Restore from backup reference
-- [`restore-overwrite.yaml`](restore-overwrite.yaml) - **Intermediate**: Destructive overwrite of an existing database (`force` + `replaceExisting`)
+- [`restore-overwrite.yaml`](restore-overwrite.yaml) - **Intermediate**: Destructive overwrite of an existing database (`options.replaceExisting`)
 
 ### 🔴 Point-in-Time Recovery (PITR) - Enterprise
 - [`restore-pitr-basic.yaml`](restore-pitr-basic.yaml) - **Advanced**: Basic PITR restore
@@ -97,7 +97,12 @@ kubectl get neo4jbackup daily-backup -o jsonpath='{.status.history}'
 
 ### 4. PITR Example
 ```bash
-# Set up complete PITR environment
+# Set up the PITR environment. The file bundles three documents: the base
+# backup (Neo4jBackup `pitr-base-backup`, scheduled), a conceptual
+# transaction-log ConfigMap, and a PITR Neo4jRestore (`pitr-example-restore`)
+# against a standalone `recovery-standalone`. The restore needs a finished
+# base backup, so remove (or comment out) the Neo4jRestore document before this
+# first apply, and apply it once the backup below has succeeded.
 kubectl apply -f pitr-setup-complete.yaml
 
 # Wait for the first scheduled run to succeed. Do NOT use
@@ -109,7 +114,11 @@ until kubectl get neo4jbackup pitr-base-backup \
   sleep 10
 done
 
-# Perform PITR restore
+# Perform the PITR restore with restore-pitr-basic.yaml (or apply the
+# `pitr-example-restore` document you held back from pitr-setup-complete.yaml
+# and watch that name instead). restore-pitr-basic.yaml takes its base backup
+# from `daily-backup` (backup-scheduled-daily.yaml) — change
+# `baseBackup.backupRef` to `pitr-base-backup` if you are following this setup.
 kubectl apply -f restore-pitr-basic.yaml
 
 # Monitor restore progress
@@ -231,9 +240,9 @@ az storage blob delete-batch --source your-container --pattern "neo4j-backups/*"
 
 1. **Test Regularly**: Test backup and restore procedures in non-production environments
 2. **Monitor Storage**: Set up monitoring for storage usage and backup completion
-3. **Validate Backups**: Set `spec.options.validate: true` to run `neo4j-admin backup validate` after each backup (result recorded on `status.history[].validation`)
+3. **Validate Backups**: On a CalVer (2025.x+) image, set `spec.options.validate: true` to run `neo4j-admin backup validate` after each backup (result recorded on `status.history[].validation`). On 5.26 the subcommand does not exist, so it is skipped with a `BackupValidateUnsupported` warning event
 4. **Secure Credentials**: Use proper secret management for cloud credentials
-5. **Plan Retention**: Implement appropriate retention policies for your use case
+5. **Plan Retention**: `spec.retention` prunes only PVC storage; for cloud storage (s3/gcs/azure) the operator does not prune objects, so configure bucket lifecycle rules
 6. **Document Procedures**: Document your backup and restore procedures
 7. **Automate Monitoring**: Set up alerts for backup failures
 

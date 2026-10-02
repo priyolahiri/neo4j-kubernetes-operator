@@ -13,11 +13,16 @@
 | `neo4jenterprisestandalone_types.go` | Single-node CRD (dev/test). |
 | `neo4jdatabase_types.go` | `Neo4jDatabase` — name, topology, Cypher version, CREATE options only. |
 | `neo4jshardeddatabase_types.go` | `Neo4jShardedDatabase` (property sharding). |
-| `neo4jbackup_types.go` | `Neo4jBackup` — Job-per-CR backup (`Target`, `Storage`, `Schedule`, chaining). |
+| `neo4jbackup_types.go` | `Neo4jBackup` — Job-per-CR backup (`InstanceRef` scope, `Storage`, `Schedule`, chaining). |
 | `neo4jrestore_types.go` | `Neo4jRestore`. |
 | `neo4juser_types.go` / `neo4jrole_types.go` / `neo4jrolebinding_types.go` | Auth CRDs (privileges live on `Neo4jRole`). |
 | `neo4jauthrule_types.go` | `Neo4jAuthRule`. |
 | `neo4jplugin_types.go` | `Neo4jPlugin`. |
+| `neo4jcompositedatabase_types.go` / `neo4jdatabasealias_types.go` | `Neo4jCompositeDatabase` / `Neo4jDatabaseAlias`. |
+| `neo4jreplicadatabase_types.go` / `neo4jreplicapromotion_types.go` | Cross-cluster replication: `Neo4jReplicaDatabase`, `Neo4jReplicaPromotion` (their phase constants live in these files). |
+| `aura*_types.go` (12 files) | The Aura (cloud) CRDs: `AuraProviderConfig`, `AuraInstance`, `AuraSnapshot`, `AuraRestore`, `AuraCustomerManagedKey`, `AuraIPFilter`, `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore`, `AuraOrganizationMember`, `AuraProjectMember`, `AuraInvite`. |
+| `phases.go` | The shared phase vocabulary (`PhaseReady`, `PhaseFailed`, …, `AllPhases`) that controllers set, `PhaseToConditionStatus` classifies and `kubectl neo4j explain` documents. |
+| `fleet_target.go` | Methods making Cluster and Standalone interchangeable to the Aura Fleet Manager provisioning helper. |
 | `mcp_types.go` | Shared MCP config types (e.g. `MCPHTTPConfig`); no standalone CRD/Kind. |
 | `seed_creds_target.go` | `SeedCredsTarget` interface methods on Cluster/Standalone (`GetExtraEnvFrom`, `SetExtraEnvFrom`, `TargetKindLabel`) — kept here so the api pkg need not import the controller pkg. |
 | `types_test.go` | Plain `testing` unit tests for spec validation, defaults, deepcopy. |
@@ -25,10 +30,13 @@
 
 ## Key types & functions
 
-- Eleven root Kinds, each with a `+kubebuilder:object:root=true` `<Kind>` + `<Kind>List` pair and an
-  `init()` calling `SchemeBuilder.Register`: `Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`,
-  `Neo4jDatabase`, `Neo4jShardedDatabase`, `Neo4jBackup`, `Neo4jRestore`, `Neo4jUser`, `Neo4jRole`,
-  `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jPlugin`. Each has matching `<Kind>Spec` / `<Kind>Status`.
+- 27 root Kinds, each with a `+kubebuilder:object:root=true` `<Kind>` + `<Kind>List` pair and an
+  `init()` calling `SchemeBuilder.Register` — `ls api/v1beta1/*_types.go` (all but `mcp_types.go`) is the
+  current list. Self-managed (15): `Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`, `Neo4jDatabase`,
+  `Neo4jShardedDatabase`, `Neo4jBackup`, `Neo4jRestore`, `Neo4jPlugin`, `Neo4jUser`, `Neo4jRole`,
+  `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias`,
+  `Neo4jReplicaDatabase`, `Neo4jReplicaPromotion`. Aura (12): see the table above. Each has matching
+  `<Kind>Spec` / `<Kind>Status`.
 - `GroupVersion`, `SchemeBuilder`, `AddToScheme` (in `groupversion_info.go`).
 
 ## Conventions & gotchas

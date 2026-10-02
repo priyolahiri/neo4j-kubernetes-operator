@@ -113,7 +113,8 @@ unset; production deployments should set `spec.monitoring.enabled: true`.
 - They do not check `Neo4jBackup`, `Neo4jRestore`, `Neo4jDatabase`,
   `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jPlugin`, or
   `Neo4jAuthRule` CRs. The validation those CRs need is already inline
-  in the controllers (see CLAUDE.md rule 26).
+  in the controllers (`internal/validation/`; the project has no admission
+  webhooks — see `docs/knowledge/invariants.md`).
 - Pattern matching uses Kyverno v1 syntax. If you are on an older
   Kyverno version (<1.10) the `=(field)` conditional anchor and the
   multi-kind `match.any.resources.kinds` form may need adjustment.

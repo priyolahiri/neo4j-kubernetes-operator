@@ -61,7 +61,7 @@ The operator can automatically create Kubernetes `NetworkPolicy` resources to re
 
 ## RBAC
 
-The operator itself runs with a specific `ServiceAccount` that is bound to a `ClusterRole` with the minimum necessary permissions to do its job. For end-users, the operator also provides a set of `ClusterRoles` (`neo4j-viewer`, `neo4j-editor`) that administrators can bind to users or groups to grant them appropriate levels of access to the Neo4j custom resources.
+The operator itself runs with a specific `ServiceAccount` that is bound to a `ClusterRole` with the minimum necessary permissions to do its job. For end-users, the kustomize/OLM manifests (`config/rbac/`, the OperatorHub bundle) also ship a read-only `<kind>-viewer-role` and a read-write `<kind>-editor-role` ClusterRole for each custom resource (for example `neo4jbackup-viewer-role`, `neo4jbackup-editor-role`; the bundle prefixes them with `neo4j-operator-`) that administrators can bind to users or groups. The Helm chart does not install them.
 
 ## Pod Security Defaults
 

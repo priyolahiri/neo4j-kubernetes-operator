@@ -18,14 +18,21 @@ Health state mapping:
 
 | ArgoCD Status  | Neo4j Phase(s)                        |
 |----------------|---------------------------------------|
-| Healthy        | Ready, Completed, Succeeded, Installed |
-| Degraded       | Failed, Degraded                       |
-| Progressing    | Forming, Pending, Creating, or empty   |
+| Healthy        | Ready, Completed, Succeeded, Installed; `Neo4jBackup` also `Scheduled` and `Suspended` |
+| Degraded       | Failed, Degraded; `Neo4jBackup` and `Neo4jPlugin` also `Invalid` |
+| Progressing    | Forming, Pending, Creating, Waiting, Running, or empty |
 
-Health checks are configured for **all 26 CRDs** in the `neo4j.neo4j.com`
-group — the 14 self-managed CRDs (7 workload, 4 identity, 3 replication) and
-all 12 Aura CRDs. `make check-crd-catalog` fails the build if a CRD is added
-without one.
+A `Neo4jBackup` with `spec.schedule` stays in `Scheduled` for its whole life (it
+never reaches `Completed`), and `spec.suspend: true` is declared state rather
+than a fault, so both map to Healthy — otherwise an Application containing a
+scheduled backup would show Progressing forever and hold up any later sync wave.
+`Invalid` (a spec the validator rejected) is terminal until the spec is edited,
+so it maps to Degraded rather than Progressing.
+
+Health checks are configured for **all 27 CRDs** in the `neo4j.neo4j.com`
+group — the 15 self-managed CRDs (7 workload, 4 identity, 4 composite / alias /
+replication) and all 12 Aura CRDs. `make check-crd-catalog` fails the build if a
+CRD is added without one.
 
 **Self-managed CRDs** key off `status.phase`, per the table above.
 
@@ -53,13 +60,18 @@ Flux configuration is needed once the operator surfaces that condition.
 
 ## Prometheus ServiceMonitor
 
-The Helm chart includes a `ServiceMonitor` for the Prometheus Operator. Enable it
-at install or upgrade time:
+The Helm chart includes a `ServiceMonitor` for the Prometheus Operator. By default
+(`metrics.secure: true`) the operator serves `/metrics` over **HTTPS** with
+bearer-token authentication (TokenReview + SubjectAccessReview against the
+`metrics-reader` ClusterRole), so the ServiceMonitor needs a token Secret for a
+ServiceAccount bound to that ClusterRole — the chart refuses to render
+otherwise. Enable it at install or upgrade time:
 
 ```bash
 helm upgrade --install neo4j-operator charts/neo4j-operator \
   --set metrics.enabled=true \
-  --set metrics.serviceMonitor.enabled=true
+  --set metrics.serviceMonitor.enabled=true \
+  --set metrics.serviceMonitor.bearerTokenSecret.name=<token-secret>
 ```
 
 Or set in `values.yaml`:
@@ -72,6 +84,11 @@ metrics:
     interval: "30s"
     scrapeTimeout: "10s"
     labels: {}        # add Prometheus instance selector labels here if needed
+    bearerTokenSecret:
+      name: <token-secret>   # kubernetes.io/service-account-token Secret, key "token"
 ```
 
-The operator exposes metrics on port `8080` at `/metrics` (Prometheus text format).
+For a legacy scraper that cannot present a bearer token, set `metrics.secure: false`
+instead (plain HTTP, no authn/authz — only behind a NetworkPolicy you trust).
+
+The metrics Service listens on port `8080` at `/metrics` (Prometheus text format).

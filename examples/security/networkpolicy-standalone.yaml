@@ -3,6 +3,12 @@
 # Same shape as networkpolicy-cluster.yaml but for the single-pod
 # standalone case (no intra-cluster discovery / RAFT to allow).
 #
+# PREFER the operator-managed policy: set `spec.networkPolicy.enabled: true` on
+# the Neo4jEnterpriseStandalone and the operator emits an ingress policy
+# (`<name>-standalone-netpol`). This file is only for when you also want
+# default-deny EGRESS, and it is an illustration — extend the egress rules for
+# whatever your deployment calls (object storage, LDAP/OIDC, ...).
+#
 # Replace MY-STANDALONE with the value of spec.metadata.name on your
 # Neo4jEnterpriseStandalone, and MY-NAMESPACE with the namespace it
 # lives in. Standalone pods are labelled app=<standalone-name>.
@@ -33,12 +39,30 @@ spec:
         - protocol: TCP
           port: 7474
 
-    # Prometheus scrape from the operator namespace.
+    # Backup port, operator-managed backup Jobs only (one-shot and CronJob).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/managed-by: neo4j-operator
+              app.kubernetes.io/component: backup
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/managed-by: neo4j-operator
+              app.kubernetes.io/component: backup-cron
+      ports:
+        - protocol: TCP
+          port: 6362
+
+    # The operator namespace: Bolt for the operator's own connections, and the
+    # metrics scrape. The operator runs in `neo4j-operator` (dev install) or
+    # `neo4j-operator-system` (Helm / prod install) — use yours.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: neo4j-operator
       ports:
+        - protocol: TCP
+          port: 7687
         - protocol: TCP
           port: 2004
 

@@ -45,7 +45,7 @@ A `composite: true` flag would leave most of that spec silently inert.
 | Field | Type | Description |
 |---|---|---|
 | `clusterRef` | `string` | **Required.** The `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace that hosts this composite and its constituents. |
-| `name` | `string` | The composite database name in Neo4j. Defaults to `metadata.name`. Neo4j database names accept only ASCII letters, digits, dots and dashes — **underscores are rejected by the server**. A dot is rejected here: `<composite>.<constituent>` is how constituents are addressed, so a dotted composite name could never have any. |
+| `name` | `string` | The composite database name in Neo4j. Defaults to `metadata.name`. 3–63 characters, `^[a-zA-Z][a-zA-Z0-9.\-]*$`; `system` is reserved. Neo4j database names accept only ASCII letters, digits, dots and dashes — **underscores are rejected by the server**. A dot is rejected by the validator (the CRD pattern alone would allow it): `<composite>.<constituent>` is how constituents are addressed, so a dotted composite name could never have any. |
 | `constituents` | [`[]CompositeConstituent`](#compositeconstituent) | **Required, at least one.** The databases this composite exposes. Each becomes an alias `<composite>.<name>`. |
 | `enforceConstituents` | `bool` | Default `true`. Makes `constituents` authoritative: a **constituent** of this composite that is absent from spec is dropped. Set `false` to leave out-of-band constituents alone, in which case this CR only ever adds. Same posture as `Neo4jRole.enforcePrivileges`. An ordinary alias that merely *looks* like a constituent (`<composite>.<x>` with no composite behind it — Neo4j's `composite` column is `NULL`) is never dropped: it is not a constituent, and it is reported in `status.message` instead. |
 | `defaultCypherLanguage` | `string` | `"5"` or `"25"`. **CalVer only** — the `DEFAULT LANGUAGE CYPHER` clause does not parse on the 5.26 LTS, and the validator rejects it there rather than letting the server emit a raw syntax error. This is the **only** property of a composite that can be altered after creation. |
@@ -56,8 +56,8 @@ A `composite: true` flag would leave most of that spec silently inert.
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | `string` | **Required.** The constituent's name within the composite. The resulting alias is `<composite>.<name>`, which is also how queries address it. May not contain a dot — it is already namespaced. |
-| `targetDatabase` | `string` | **Required.** The database the constituent resolves to — in this DBMS when `remote` is unset, or on the remote DBMS when it is set. A local target need not exist yet: the controller skips that constituent and retries. A remote target is never checked, because the operator cannot see the other DBMS. |
+| `name` | `string` | **Required.** The constituent's name within the composite. The resulting alias is `<composite>.<name>`, which is also how queries address it. 1–63 characters, `^[a-zA-Z][a-zA-Z0-9\-]*$` (no dots or underscores — it is already namespaced). Must be unique within the composite. |
+| `targetDatabase` | `string` | **Required.** 1–63 characters. The database the constituent resolves to — in this DBMS when `remote` is unset, or on the remote DBMS when it is set. A local target need not exist yet: the controller skips that constituent and retries. A remote target is never checked, because the operator cannot see the other DBMS. May not be `system`, nor the composite itself. |
 | `remote` | [`RemoteConstituent`](#remoteconstituent) | Points the constituent at a database in **another** Neo4j DBMS. Omit for a local constituent. |
 
 ### RemoteConstituent
@@ -65,9 +65,9 @@ A `composite: true` flag would leave most of that spec silently inert.
 | Field | Type | Description |
 |---|---|---|
 | `url` | `string` | **Required.** The remote DBMS's Bolt endpoint, e.g. `neo4j+s://other.example.com:7687`. Must be `neo4j+s://` or `neo4j+ssc://` (self-signed certificate): Neo4j refuses every other scheme for a remote alias — `neo4j://`, `bolt://` and even `bolt+s://` — on the 5.26 LTS and CalVer alike, so the CRD refuses them at apply time. |
-| `oidcCredentialForwarding` | `bool` | Forwards the querying user's own OIDC token instead of storing any credential. **Requires Cypher 25**, so CalVer only. Mutually exclusive with `credentialsSecretRef`. |
-| `credentialsSecretRef` | `string` | A Secret in this namespace with `username` and `password` keys. **Requires `spec.remoteAliasKeystore` on the deployment.** Mutually exclusive with `oidcCredentialForwarding`. |
-| `driverSettings` | `map[string]string` | Passed through to the alias's `DRIVER` clause (e.g. `connection_timeout`). Emitted verbatim as Cypher map values. |
+| `oidcCredentialForwarding` | `bool` | Forwards the querying user's own OIDC token instead of storing any credential. **Requires Cypher 25**, so CalVer only. Mutually exclusive with `credentialsSecretRef`; **exactly one of the two must be set** — a remote constituent with neither is rejected. |
+| `credentialsSecretRef` | `string` | A Secret in this namespace with `username` and `password` keys. **Requires `spec.remoteAliasKeystore` on the deployment.** Mutually exclusive with `oidcCredentialForwarding`; exactly one of the two must be set. |
+| `driverSettings` | `map[string]string` | Passed through to the alias's `DRIVER` clause (e.g. `connection_timeout`). Emitted verbatim as Cypher map values. Keys must match `[a-zA-Z][a-zA-Z0-9_]*` (they are Cypher map keys and cannot be parameterised). |
 
 #### Choosing a mode
 
@@ -83,9 +83,11 @@ interpolated into the statement text, so it does not reach the query log.
 `SHOW ALIASES` never returns a password on any alias.
 
 A composite with a `credentialsSecretRef` constituent on a deployment that has
-no keystore is rejected at apply time, naming the field to set — rather than
-failing later inside the server with an internal `50N09`/`50N00` error that
-mentions neither the CR nor the constituent.
+no keystore is rejected by the operator's inline validation before any Cypher
+runs (the CR reports `Failed` / `Ready=False`, reason `ValidationFailed`), naming
+the field to set — rather than failing later inside the server with an internal
+`50N09`/`50N00` error that mentions neither the CR nor the constituent. There is
+no admission webhook, so `kubectl apply` itself succeeds.
 
 ## Ordering: the composite always comes first
 
@@ -146,7 +148,7 @@ name a composite reports `PrivilegesResolve=False`.
 
 | Type | Reasons | Meaning |
 |---|---|---|
-| `Ready` | `CompositeDatabaseReady`, `CompositeDatabaseFailed`, `CompositeDatabaseNameBlocked`, `ClusterNotReady`, `ConnectionFailed`, `ValidationFailed` | True when the composite exists and its constituents match spec. |
+| `Ready` | `CompositeDatabaseReady`, `CompositeDatabaseFailed`, `CompositeDatabaseNameBlocked`, `ClusterNotFound` (phase `Pending`), `ClusterNotReady` (phase `Pending`), `Creating` (phase `Creating`), `ConnectionFailed`, `ValidationFailed` | True when the composite exists and its constituents match spec. |
 | `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced deployment. |
 
 ## Limitations

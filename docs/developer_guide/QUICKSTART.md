@@ -23,12 +23,13 @@ work but is unsupported.
 | kubectl | 1.36.x | talks to the Kind cluster | [kubernetes.io/docs/tasks/tools](https://kubernetes.io/docs/tasks/tools/install-kubectl/) |
 | make + git | any | drives every workflow | pre-installed on macOS/Linux |
 
-Exact CI-pinned versions live in `.tool-versions` (Go 1.27.0, Kind 0.27.0,
-kubectl 1.36.0, kustomize 5.4.3, helm 3.16.0, golangci-lint 1.64.8, ginkgo
-2.29.0). If you use [mise](https://mise.jdx.dev/) or asdf, `mise install`
-pins all of them. Go toolchains (kustomize, controller-gen, envtest, ginkgo,
-etc.) are auto-downloaded into `bin/` by the Makefile — you don't install them
-by hand.
+`.tool-versions` lists the tool versions for [mise](https://mise.jdx.dev/) / asdf
+(`mise install` pins them): Go 1.27.0, Kind 0.27.0, kubectl 1.36.0, kustomize
+5.4.3, helm 3.16.0, golangci-lint 2.13.1. The Go-based tools (kustomize,
+controller-gen, envtest, ginkgo, golangci-lint, etc.) are auto-downloaded into
+`bin/` by the Makefile at the versions pinned **there** (e.g. `GINKGO_VERSION`,
+`GOLANGCI_LINT_VERSION`) — those are what CI uses, and you don't install them by
+hand. Where the two disagree, the Makefile wins.
 
 ## 1. Clone
 
@@ -146,8 +147,8 @@ Deletes the `neo4j-operator-dev` Kind cluster and cleans up dev artifacts.
 ## Before you push
 
 1. `make test-unit` passes (also runs fmt + vet).
-2. `make lint` passes locally — **golangci-lint is *not* run in CI**, so this
-   is on you.
+2. `make lint` passes locally — CI runs the same golangci-lint config in its
+   `Go Lint` job, so a failure there is a failed PR check.
 3. If you touched API types or RBAC markers, `make sync-all` (or `ship-prep`)
    and commit the regenerated files — CI's `check-drift` job blocks the PR
    otherwise.

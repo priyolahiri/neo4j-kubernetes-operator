@@ -332,15 +332,18 @@ spec:
 
 ### Alert Conditions
 ```yaml
-# Example alert rules
-- alert: Neo4jClusterQuorumLost
-  expr: neo4j_cluster_available_primaries < (neo4j_cluster_total_primaries / 2) + 1
+# Example alert rules, using the operator's own metrics (see the Monitoring guide)
+- alert: Neo4jClusterUnhealthy
+  expr: neo4j_operator_cluster_healthy == 0
+
+- alert: Neo4jServerDegraded
+  expr: neo4j_operator_server_health == 0
 
 - alert: Neo4jClusterLowFaultTolerance
-  expr: neo4j_cluster_total_primaries == 2
+  expr: neo4j_operator_cluster_replicas_total{role="desired"} == 2
 
 - alert: Neo4jNodeDown
-  expr: up{job="neo4j"} == 0
+  expr: up{job="neo4j"} == 0   # adjust the job name to your scrape config
 ```
 
 ## Operator Warnings
@@ -391,7 +394,7 @@ kubectl get events --field-selector reason=SplitBrainDetected -A
 kubectl logs my-cluster-server-0
 
 # Verify database consistency
-kubectl exec -it my-cluster-server-0 -- neo4j-admin check-consistency
+kubectl exec -it my-cluster-server-0 -c neo4j -- neo4j-admin database check neo4j
 ```
 
 ### Recovery Procedures

@@ -133,8 +133,8 @@ spec:
 #
 #   kubectl create secret generic s3-credentials \
 #     --namespace default \
-#     --from-literal=access-key-id='<your-access-key>' \
-#     --from-literal=secret-access-key='<your-secret-key>'
+#     --from-literal=AWS_ACCESS_KEY_ID='<your-access-key>' \
+#     --from-literal=AWS_SECRET_ACCESS_KEY='<your-secret-key>'
 #
 # Referenced via spec.seedCredentials.secretRef: s3-credentials
 

@@ -61,7 +61,7 @@ spec:
 
 ### How the Operator Uses Resources
 
-1. **Validation**: Ensures minimum 1Gi memory for Neo4j Enterprise (clusters over 3 servers require at least 2Gi/server)
+1. **Validation**: Ensures minimum 1Gi memory for Neo4j Enterprise (clusters over 3 servers require at least 2Gi/server). When you set heap, page cache or transaction memory in `spec.config`, `heap + page cache + max(25% of the memory limit, 512Mi)` must fit inside the memory limit — the last term is the reserve the operator keeps for the OS and native memory, so in practice heap + page cache can use at most 75% of the limit (for limits of 2Gi and up)
 2. **Auto-calculation**: Divides memory between heap, page cache, and OS
 3. **Recommendations**: Suggests optimal settings based on cluster size
 4. **Prevention**: Blocks configurations that would cause OOM errors
@@ -155,9 +155,10 @@ spec:
       cpu: "4"
 
   # Explicit Neo4j configuration
+  # 3G heap + 3G page cache + 2Gi reserve (25% of 8Gi) = 8Gi, which fits the limit
   config:
-    server.memory.heap.max_size: "4G"
-    server.memory.heap.initial_size: "4G"
+    server.memory.heap.max_size: "3G"
+    server.memory.heap.initial_size: "3G"
     server.memory.pagecache.size: "3G"
 ```
 
@@ -185,8 +186,9 @@ spec:
 
   config:
     # Fine-tuned memory settings
-    server.memory.heap.max_size: "8G"
-    server.memory.heap.initial_size: "8G"
+    # 6G heap + 6G page cache + 4Gi reserve (25% of 16Gi) = 16Gi, which fits the limit
+    server.memory.heap.max_size: "6G"
+    server.memory.heap.initial_size: "6G"
     server.memory.pagecache.size: "6G"
 
     # Performance tuning (Neo4j 5.26+ settings)
@@ -221,9 +223,10 @@ spec:
   config:
     # Manual memory configuration
     server.memory.heap.initial_size: "4G"
-    server.memory.heap.max_size: "6G"      # 50% for heap
-    server.memory.pagecache.size: "5G"     # 42% for cache
-    # Leaves 1GB (8%) for OS
+    server.memory.heap.max_size: "5G"      # ~42% for heap
+    server.memory.pagecache.size: "4G"     # ~33% for cache
+    # Leaves 3GB (25%) for OS — the operator requires at least
+    # max(25% of the limit, 512Mi): 5G + 4G + 3Gi = 12Gi fits the 12Gi limit
 
     # Transaction memory limits (Neo4j recommended)
     dbms.memory.transaction.total.max: "1G"        # Global transaction memory limit
@@ -253,24 +256,15 @@ spec:
       memory: "16Gi"
 
   config:
-    # Memory configuration
-    server.memory.heap.initial_size: "8G"
-    server.memory.heap.max_size: "8G"
+    # Memory configuration (6G + 6G + 4Gi reserve = 16Gi, the limit)
+    server.memory.heap.initial_size: "6G"
+    server.memory.heap.max_size: "6G"
     server.memory.pagecache.size: "6G"
 
-    # JVM tuning (Neo4j 5.26+ and 2025.x)
-    server.jvm.additional: |
-      -XX:+UseG1GC
-      -XX:MaxGCPauseMillis=200
-      -XX:+ParallelRefProcEnabled
-      -XX:+UnlockExperimentalVMOptions
-      -XX:+UnlockDiagnosticVMOptions
-      -XX:G1NewSizePercent=2
-      -XX:G1MaxNewSizePercent=10
-      -XX:+G1UseAdaptiveIHOP
-      -XX:InitiatingHeapOccupancyPercent=45
-      -XX:+UseCompressedOops
-      -XX:+UseCompressedClassPointers
+    # JVM tuning (Neo4j 5.26+ and 2025.x). One line, space-separated: a
+    # multi-line value is rejected. On a cluster this REPLACES the operator's
+    # default JVM flags, so it repeats the ones worth keeping.
+    server.jvm.additional: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+ParallelRefProcEnabled -XX:+UnlockExperimentalVMOptions -XX:+UnlockDiagnosticVMOptions -XX:G1NewSizePercent=2 -XX:G1MaxNewSizePercent=10 -XX:+G1UseAdaptiveIHOP -XX:InitiatingHeapOccupancyPercent=45 -XX:+UseCompressedOops -XX:+UseCompressedClassPointers -XX:+ExitOnOutOfMemoryError"
 
     # Bolt thread pool tuning (Neo4j 5.26+ format)
     server.bolt.thread_pool_min_size: "10"
@@ -308,9 +302,9 @@ spec:
       cpu: "8"
 
   config:
-    # Favor heap for query processing
-    server.memory.heap.max_size: "20G"     # 62% for complex queries
-    server.memory.pagecache.size: "10G"    # 31% for data access
+    # Favor heap for query processing (14G + 10G + 8Gi reserve = 32Gi, the limit)
+    server.memory.heap.max_size: "14G"     # ~44% for complex queries
+    server.memory.pagecache.size: "10G"    # ~31% for data access
 
     # Query optimization
     dbms.cypher.planner: "cost"
@@ -343,9 +337,9 @@ spec:
       cpu: "4"
 
   config:
-    # Favor page cache for write buffers
-    server.memory.heap.max_size: "6G"      # 37% for processing
-    server.memory.pagecache.size: "9G"     # 56% for write caching
+    # Favor page cache for write buffers (4G + 8G + 4Gi reserve = 16Gi, the limit)
+    server.memory.heap.max_size: "4G"      # 25% for processing
+    server.memory.pagecache.size: "8G"     # 50% for write caching
 
     # Write optimization (Neo4j 5.x+ uses the db.* namespace)
     db.checkpoint.interval.time: "30m"
@@ -428,8 +422,8 @@ spec:
       cpu: "2"
 
   config:
-    # Balanced configuration
-    server.memory.heap.max_size: "4G"
+    # Balanced configuration (3G + 3G + 2Gi reserve = 8Gi, the limit)
+    server.memory.heap.max_size: "3G"
     server.memory.pagecache.size: "3G"
 
     # Read routing
@@ -454,7 +448,7 @@ spec:
 
 ```
 Container Memory Limit (e.g., 8Gi)
-├── JVM Heap (e.g., 4Gi)
+├── JVM Heap (e.g., 3Gi)
 │   ├── Query Processing
 │   ├── Transaction State
 │   └── Cypher Runtime
@@ -462,7 +456,7 @@ Container Memory Limit (e.g., 8Gi)
 │   ├── Database Pages
 │   ├── Index Caching
 │   └── Write Buffers
-└── System/OS (e.g., 1Gi)
+└── System/OS reserve (at least max(25% of the limit, 512Mi) — 2Gi here)
     ├── Native Memory
     ├── Network Buffers
     └── File System Cache
@@ -489,19 +483,23 @@ Page Cache Size = Database Size × 1.2 (20% growth buffer)
 
 **Examples:**
 
-| Database Size | Recommended Page Cache | Container Memory |
-|--------------|------------------------|------------------|
-| 10GB | 12GB | 16GB+ |
-| 50GB | 60GB | 80GB+ |
-| 100GB | 120GB | 160GB+ |
-| 500GB | 600GB | 640GB+ |
+The container memory limit must cover heap + page cache plus the operator's reserve
+of `max(25% of the limit, 512Mi)`, i.e. limit ≥ (heap + page cache) ÷ 0.75:
+
+| Database Size | Recommended Page Cache | Example Heap | Container Memory limit |
+|--------------|------------------------|--------------|------------------------|
+| 10GB | 12GB | 4GB | 22Gi+ (16 ÷ 0.75 ≈ 21.3) |
+| 50GB | 60GB | 16GB | 102Gi+ (76 ÷ 0.75 ≈ 101.3) |
+| 100GB | 120GB | 24GB | 192Gi+ (144 ÷ 0.75) |
+| 500GB | 600GB | 31GB | 842Gi+ (631 ÷ 0.75 ≈ 841.3) |
 
 ```yaml
 # Example for 50GB database
 config:
   server.memory.heap.max_size: "16G"      # For operations
   server.memory.pagecache.size: "60G"     # 1.2 × 50GB
-  # Total: 76GB Neo4j + 4GB OS = 80GB container
+  # 76G heap + page cache needs a limit of at least 76 ÷ 0.75 ≈ 101.3Gi,
+  # so set resources.limits.memory to 102Gi or more
 ```
 
 ### Calculation Examples
@@ -515,31 +513,40 @@ System Reserved: 512MB
 
 # Manual override:
 config:
-  server.memory.heap.max_size: "4G"     # 50%
+  server.memory.heap.max_size: "3G"     # 37.5%
   server.memory.pagecache.size: "3G"    # 37.5%
-  # System: 1Gi (12.5%)
+  # System: 2Gi (25%) — the minimum reserve the operator accepts for an 8Gi limit
 ```
 
 ### Memory Validation
 
-The operator validates memory to prevent issues:
+The operator validates memory to prevent issues. The rule is
+`heap + page cache + max(25% of the limit, 512Mi) ≤ limit`:
 
 ```yaml
-# ❌ WILL FAIL: Neo4j memory exceeds container
+# ❌ WILL FAIL: Neo4j memory plus reserve exceeds container
 resources:
   limits:
     memory: "4Gi"
 config:
   server.memory.heap.max_size: "3G"
-  server.memory.pagecache.size: "2G"  # Total 5G > 4Gi limit!
+  server.memory.pagecache.size: "2G"  # 5G + 1Gi reserve = 6Gi > 4Gi limit!
 
-# ✅ VALID: Fits within container
+# ❌ ALSO FAILS: the sum alone fits, the reserve does not
 resources:
   limits:
     memory: "6Gi"
 config:
   server.memory.heap.max_size: "3G"
-  server.memory.pagecache.size: "2G"  # Total 5G < 6Gi limit
+  server.memory.pagecache.size: "2G"  # 5G + 1.5Gi reserve = 6.5Gi > 6Gi limit!
+
+# ✅ VALID: Fits within container
+resources:
+  limits:
+    memory: "8Gi"
+config:
+  server.memory.heap.max_size: "3G"
+  server.memory.pagecache.size: "2G"  # 5G + 2Gi reserve = 7Gi <= 8Gi limit
 ```
 
 ## CPU Configuration
@@ -790,10 +797,10 @@ The operator enforces these rules:
 
 | Rule | Minimum | Recommended | Maximum |
 |------|---------|-------------|---------|
-| Container Memory | 1Gi | 4Gi+ | Node capacity |
-| Heap Size | 256MB | 2Gi+ | 31Gi (JVM limit) |
-| Page Cache | 128MB | 1Gi+ | Container - heap - 1Gi |
-| CPU | 100m | 1 core+ | Node capacity |
+| Container Memory | 1Gi (2Gi/server when the cluster has more than 3 servers) | 4Gi+ | Node capacity |
+| Heap Size | 256MB | 2Gi+ | Container − page cache − reserve (31Gi is the cap for the operator's automatic sizing, not a validated limit) |
+| Page Cache | 128MB | 1Gi+ | Container − heap − max(25% of container, 512Mi) |
+| CPU | — (not validated) | 1 core+ | Node capacity |
 | Servers (cluster) | 2 | 3+ | 100 |
 
 ## Advanced Topics

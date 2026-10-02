@@ -217,7 +217,7 @@ commonLabels:
   team: database
 images:
 - name: ghcr.io/priyolahiri/neo4j-kubernetes-operator
-  newTag: v1.0.0
+  newTag: v1.17.0
 ```
 
 ```bash
@@ -249,7 +249,7 @@ kubectl apply -k .
               - name: manager
                 env:
                 - name: OPERATOR_VERSION
-                  value: v1.0.0
+                  value: v1.17.0
     ```
 
     This is a strategic merge patch, matched on the container and variable
@@ -301,13 +301,29 @@ Expected output:
 NAME                              READY   STATUS    RESTARTS   AGE
 neo4j-operator-xxx                1/1     Running   0          1m
 
-# CRDs should be present (11 total)
+# CRDs should be present (27 total)
+auracustomermanagedkeys.neo4j.neo4j.com
+auradatabasebackups.neo4j.neo4j.com
+auradatabaserestores.neo4j.neo4j.com
+auradatabases.neo4j.neo4j.com
+aurainstances.neo4j.neo4j.com
+aurainvites.neo4j.neo4j.com
+auraipfilters.neo4j.neo4j.com
+auraorganizationmembers.neo4j.neo4j.com
+auraprojectmembers.neo4j.neo4j.com
+auraproviderconfigs.neo4j.neo4j.com
+aurarestores.neo4j.neo4j.com
+aurasnapshots.neo4j.neo4j.com
 neo4jauthrules.neo4j.neo4j.com
 neo4jbackups.neo4j.neo4j.com
+neo4jcompositedatabases.neo4j.neo4j.com
+neo4jdatabasealiases.neo4j.neo4j.com
 neo4jdatabases.neo4j.neo4j.com
 neo4jenterpriseclusters.neo4j.neo4j.com
 neo4jenterprisestandalones.neo4j.neo4j.com
 neo4jplugins.neo4j.neo4j.com
+neo4jreplicadatabases.neo4j.neo4j.com
+neo4jreplicapromotions.neo4j.neo4j.com
 neo4jrestores.neo4j.neo4j.com
 neo4jrolebindings.neo4j.neo4j.com
 neo4jroles.neo4j.neo4j.com
@@ -414,10 +430,13 @@ wedges in `Terminating` forever.
 
 ```bash
 # List everything the operator manages — this must come back EMPTY before step 2
-kubectl get neo4jenterpriseclusters,neo4jenterprisestandalones,neo4jdatabases,neo4jshardeddatabases,neo4jbackups,neo4jrestores,neo4jusers,neo4jroles,neo4jrolebindings,neo4jauthrules,neo4jplugins -A
+kubectl get neo4jenterpriseclusters,neo4jenterprisestandalones,neo4jdatabases,neo4jshardeddatabases,neo4jcompositedatabases,neo4jdatabasealiases,neo4jreplicadatabases,neo4jreplicapromotions,neo4jbackups,neo4jrestores,neo4jusers,neo4jroles,neo4jrolebindings,neo4jauthrules,neo4jplugins -A
+# Also any Aura resources you created (they hold finalizers too; check each CR's
+# deletionPolicy before deleting — Delete removes the resource in Aura as well):
+kubectl get auraproviderconfigs,aurainstances,aurasnapshots,aurarestores,auracustomermanagedkeys,auraipfilters,auradatabases,auradatabasebackups,auradatabaserestores,auraorganizationmembers,auraprojectmembers,aurainvites -A
 
 # Delete them (repeat per namespace, or script over the list above), e.g.:
-kubectl delete neo4jenterpriseclusters,neo4jenterprisestandalones,neo4jdatabases,neo4jshardeddatabases,neo4jbackups,neo4jrestores,neo4jusers,neo4jroles,neo4jrolebindings,neo4jauthrules,neo4jplugins --all -n <namespace>
+kubectl delete neo4jenterpriseclusters,neo4jenterprisestandalones,neo4jdatabases,neo4jshardeddatabases,neo4jcompositedatabases,neo4jdatabasealiases,neo4jreplicadatabases,neo4jreplicapromotions,neo4jbackups,neo4jrestores,neo4jusers,neo4jroles,neo4jrolebindings,neo4jauthrules,neo4jplugins --all -n <namespace>
 
 # Re-run the `kubectl get ... -A` above and wait until no resources are listed
 ```
@@ -512,7 +531,8 @@ kubectl create secret docker-registry ghcr-secret \
   --docker-password=<github-token> \
   --namespace=neo4j-operator-system
 
-# Add imagePullSecrets to deployment
+# Add imagePullSecrets to the deployment (named neo4j-operator-controller-manager for
+# Methods 3/5; for a Helm install it is `neo4j-operator`, or set `imagePullSecrets` in the chart values)
 kubectl patch deployment neo4j-operator-controller-manager \
   -n neo4j-operator-system \
   --type='json' \
@@ -532,8 +552,8 @@ gh release list --repo priyolahiri/neo4j-kubernetes-operator
 # Or visit: https://github.com/priyolahiri/neo4j-kubernetes-operator/releases
 
 # Ensure you're using the correct version format (with 'v' prefix)
-# Correct: v1.0.0
-# Incorrect: 1.0.0
+# Correct: v1.17.0
+# Incorrect: 1.17.0
 ```
 
 ### Installation Requirements
@@ -545,7 +565,7 @@ gh release list --repo priyolahiri/neo4j-kubernetes-operator
 
 > **cert-manager install order**: The operator installs and runs fine without cert-manager. It only watches cert-manager `Certificate` resources when the cert-manager CRDs are present *at operator startup*. If you install cert-manager **after** the operator, restart the operator so the watch becomes active:
 > ```
-> kubectl rollout restart deployment/neo4j-operator-controller-manager -n neo4j-operator-system
+> kubectl rollout restart deployment -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
 > ```
 > If you know you'll use cert-manager TLS, install cert-manager **before** the operator to avoid the restart.
 

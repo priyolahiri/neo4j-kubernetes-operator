@@ -34,7 +34,9 @@ CLI flags and Helm values always override these defaults.
 --cache-strategy=standard|lazy|selective|on-demand|none
 --ultra-fast
 --skip-cache-wait
---controllers=cluster,standalone,database,backup,restore,plugin,shardeddatabase,user,role,rolebinding,authrule
+--controllers=cluster,standalone,database       # dev mode only; valid keys under "Controller Selection"
+--privilege-normalisation=learn|probe          # how Neo4jRole privileges are matched (default learn)
+--kubernetes-cluster-name=<name>               # adds a k8s_cluster label to neo4j_operator_server_health
 --zap-log-level=debug|info|warn|error|dpanic|panic|fatal
 ```
 
@@ -42,6 +44,8 @@ CLI flags and Helm values always override these defaults.
 
 - `developmentMode: true` adds `--mode=dev` and `--zap-devel=true`.
 - `metrics.enabled` controls `--metrics-bind-address` (`0` disables). Port comes from `metrics.service.port`.
+- `metrics.secure` (default `true`) adds `--metrics-secure=true`, so the metrics endpoint is served over **HTTPS** on that port — the plain `curl http://…:8080/metrics` below only works with `metrics.secure: false` or the binary's own defaults.
+- `privilegeNormalisation: learn|probe` passes `--privilege-normalisation` (see [Privilege drift reconciliation](user_role_management.md#privilege-drift-reconciliation)); `kubernetesClusterName` passes `--kubernetes-cluster-name`.
 - `--health-probe-bind-address=:8081` is always set by the chart.
 - `leaderElection.enabled: true` passes `--leader-elect=true`.
 - `rbac.perNamespaceRoles: true` (with `operatorMode=namespaces` + a static `watchNamespaces` list) replaces the manager ClusterRole with one Role per namespace — see [Multi-Namespace Scope](#multi-namespace-scope).
@@ -128,7 +132,7 @@ Explicit flags and Helm values always override the mode defaults.
 - **Health bind**: `:8081` (unless overridden)
 - **Cache strategy**: `on-demand` (unless overridden)
 - **Leader election**: off by default (recommended for HA)
-- **Controllers loaded**: all controllers — cluster, standalone, database, backup, restore, plugin, shardeddatabase, user, role, rolebinding, authrule
+- **Controllers loaded**: all of them — one per CRD (the Neo4j kinds and the Aura kinds; full list under [Controller Selection](#controller-selection-dev-mode))
 
 **Helm defaults that matter:**
 
@@ -153,7 +157,7 @@ Development mode is optimized for faster iteration, but it **must run in-cluster
 - **Cache strategy**: `on-demand` (or `none` if `--ultra-fast`)
 - **skip-cache-wait**: auto-enabled if not explicitly set
 - **API rate limits**: QPS 100, Burst 200
-- **Controllers loaded**: defaults to all controllers (cluster, standalone, database, backup, restore, plugin, shardeddatabase, user, role, rolebinding, authrule); narrow with `--controllers`
+- **Controllers loaded**: defaults to all controllers (one per CRD; see [Controller Selection](#controller-selection-dev-mode)); narrow with `--controllers`
 
 Helm always sets `--metrics-bind-address` and `--health-probe-bind-address`, so the dev-mode defaults above only apply when you run the binary directly or override those values.
 
@@ -375,6 +379,22 @@ Valid controller names:
 - `role`
 - `rolebinding`
 - `authrule`
+- `databasealias`
+- `compositedatabase`
+- `replicadatabase`
+- `replicapromotion`
+- `auraproviderconfig`
+- `aurainstance`
+- `aurasnapshot`
+- `aurarestore`
+- `auracustomermanagedkey`
+- `auraipfilter`
+- `auradatabase`
+- `auradatabasebackup`
+- `auradatabaserestore`
+- `auraorganizationmember`
+- `auraprojectmember`
+- `aurainvite`
 
 The default dev `--controllers` value is the full list above; override with `--controllers` to narrow scope.
 

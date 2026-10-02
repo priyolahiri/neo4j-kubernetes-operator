@@ -344,7 +344,7 @@ storage:
     credentialsSecretRef: aws-backup-creds
 ```
 
-The operator mounts all keys from the Secret as environment variables in the backup Job pod, which `neo4j-admin` picks up automatically.
+The operator injects `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_REGION` from the Secret (each as a `secretKeyRef`) as environment variables in the backup Job pod, which `neo4j-admin` picks up automatically. Other keys in the Secret — including `AWS_SESSION_TOKEN` — are not passed to the Job.
 
 #### Path 2: AWS IRSA (IAM Roles for Service Accounts)
 
@@ -861,7 +861,7 @@ spec:
   retention:       { maxCount: 168 }
 ```
 
-**Constraints** (validator-enforced; mismatches → `status.phase=Failed`):
+**Constraints** (validator-enforced; a target or storage mismatch → `status.phase=Failed`, while a parent that does not exist yet just leaves the backup `Pending` until it appears):
 
 - The parent CR (`inventory-daily`) must exist in the same namespace.
 - Both CRs must reference the same database (same `instanceRef` + `database`).
@@ -928,11 +928,11 @@ options:
     size: "50Gi"
 ```
 
-This option is ignored on Neo4j 5.26.x (semver) and CalVer versions before 2025.04.
+On Neo4j 5.26.x (semver) and CalVer versions before 2025.04 the operator refuses to build the backup command (`--prefer-diff-as-parent requires CalVer 2025.04+`), so the backup fails rather than silently ignoring the option. The same applies to the other version-gated options: `parallelDownload` and `skipRecovery` (CalVer 2025.11+) and `remoteAddressResolution` (CalVer 2025.09+).
 
 ### The `tempPath` Option
 
-For cloud storage destinations, `neo4j-admin` may use local disk space during streaming. Set `tempPath` to a dedicated temporary directory to avoid filling the pod's working filesystem:
+For cloud storage destinations, `neo4j-admin` may use local disk space during streaming. Give it a dedicated staging volume to avoid filling the pod's working filesystem. The operator-managed way is `options.tempStorage`, which provisions a PVC and passes `--temp-path` for you:
 
 ```yaml
 options:
@@ -940,7 +940,9 @@ options:
     size: "50Gi"
 ```
 
-**Strongly recommended for all cloud storage backups.** The directory is created automatically if it does not exist.
+If you mount your own volume instead, set `options.tempPath` to its absolute path (see [Temporary Storage for Cloud Operations](#temporary-storage-for-cloud-operations)); the directory is created automatically if it does not exist.
+
+**Strongly recommended for all cloud storage backups.**
 
 ---
 
@@ -1233,7 +1235,7 @@ spec:
 
 ### Point-in-Time Recovery (PITR)
 
-PITR restores your database to a specific point in time using a base backup combined with transaction logs.
+PITR restores your database to a specific point in time from a base backup. The operator runs `neo4j-admin database restore --restore-until="<pointInTime>"` against the base backup (`source.pitr.baseBackup`); the transaction logs it replays come from that backup chain. `source.pitr.logStorage` is accepted by the CRD but the restore command does not read it (a `pvc` log storage is only mounted at `/transaction-logs`), so the examples below omit it.
 
 > **Note:** `source.type: pitr` (the `--restore-until` path) applies only to a `Neo4jEnterpriseStandalone` target. For cluster point-in-time recovery, create a `Neo4jDatabase` with `spec.seedConfig.restoreUntil`. The operator rejects `source.type: pitr` against a cluster target with an actionable error.
 
@@ -1254,17 +1256,9 @@ spec:
       baseBackup:
         type: backup
         backupRef: daily-backup
-      logStorage:
-        type: s3
-        bucket: transaction-logs
-        path: neo4j-logs/production
-        cloud:
-          provider: aws
-          credentialsSecretRef: aws-backup-creds
   options:
     replaceExisting: true
   stopCluster: true
-  timeout: "2h"
 ```
 
 **Best for:** Compliance requirements, precise recovery to a moment before a bad event.
@@ -1292,14 +1286,9 @@ spec:
           cloud:
             provider: gcp
             credentialsSecretRef: gcs-backup-creds
-        backupPath: /backup/base-backup-20250104
-      logStorage:
-        type: gcs
-        bucket: transaction-logs
-        path: production/logs
-        cloud:
-          provider: gcp
-          credentialsSecretRef: gcs-backup-creds
+        # Relative to storage.path: the operator reads
+        # gs://base-backups/production/base-backup-20250104/critical-app-2025-01-04T02-00-00.backup
+        backupPath: critical-app-2025-01-04T02-00-00.backup
   options:
     replaceExisting: true
   stopCluster: true
@@ -1568,7 +1557,7 @@ spec:
 
 ### Namespace scoping
 
-A `Neo4jBackup` backs up a deployment **in its own namespace**. Both `instanceRef` and the legacy `target` resolve within the backup CR's namespace; a cross-namespace `target.namespace` is **rejected** by the validator. This keeps each backup's blast radius inside a single namespace — the same boundary the operator enforces for users and roles. To back up a cluster that lives in another namespace, create the `Neo4jBackup` in **that** namespace.
+A `Neo4jBackup` backs up a deployment **in its own namespace**. `instanceRef` (and `shardedDatabase`) resolve within the backup CR's namespace, and the API has no namespace field to point elsewhere (the legacy `target` block, including `target.namespace`, was removed in v1.14). This keeps each backup's blast radius inside a single namespace — the same boundary the operator enforces for users and roles. To back up a cluster that lives in another namespace, create the `Neo4jBackup` in **that** namespace.
 
 ---
 
@@ -1583,7 +1572,7 @@ A `Neo4jBackup` backs up a deployment **in its own namespace**. Both `instanceRe
 | **Version Error** | Check cluster Neo4j version | Ensure 5.26.0+ or 2025.01.0+ |
 | **Pod filesystem full** | Check `df -h` in backup pod | Set `tempPath` to a larger volume or use a PVC |
 | **Backup job fails with `path does not exist`** | Check `tempPath` | Set a valid `tempPath` or ensure the path is auto-created |
-| **`preferDiffAsParent` has no effect** | Check Neo4j version | Requires CalVer 2025.04+ |
+| **Backup fails with `--prefer-diff-as-parent requires CalVer 2025.04+`** | Check Neo4j version | Remove `preferDiffAsParent`, or run CalVer 2025.04+ |
 | **Database not online after restore** | Check restore status | Should be automatic — check operator logs for Bolt errors |
 
 ### Detailed Troubleshooting

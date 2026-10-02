@@ -10,6 +10,7 @@ The `Neo4jEnterpriseStandalone` custom resource manages single-node Neo4j Enterp
 - **Architecture**: Single StatefulSet with unified clustering infrastructure
 - **Database Support**: Compatible with Neo4jDatabase CRD for automated database creation
 - **Plugin Support**: Full compatibility with Neo4jPlugin CRD
+- **Name Limit**: `metadata.name` is at most 63 characters (validated)
 
 ## Architecture
 
@@ -244,7 +245,7 @@ auraFleetManagement:
 ```
 
 For full setup instructions see [Aura Fleet Management Guide](../user_guide/aura_fleet_management.md).
-For the full type definition see [`AuraFleetManagementSpec`](neo4jenterprisecluster.md#aurafleetmanagementspec).
+For the full type definition — including the optional `provision` block, by which the operator registers the deployment and mints the token itself — see [`AuraFleetManagementSpec`](neo4jenterprisecluster.md#aurafleetmanagementspec). The `status.auraFleetManagement` fields are the same as on the cluster.
 
 #### `upgradeStrategy` (UpgradeStrategySpec)
 
@@ -452,8 +453,7 @@ Current deployment phase:
 
 - `Pending`: Deployment is being created
 - `Ready`: Deployment is running and ready for connections
-- `Failed`: Deployment has failed
-- `ValidationFailed`: Spec validation failed
+- `Failed`: Deployment has failed — including spec validation errors and a missing StorageClass (the reason is in `status.message`; there is no separate `ValidationFailed` phase)
 
 #### `effectiveCypherLanguage` (string)
 The server default Cypher version the operator resolved (see
@@ -464,7 +464,7 @@ changes meaning under a running deployment.
 Indicates if the standalone deployment is ready for connections.
 
 #### `lastStartTime` (*metav1.Time)
-Timestamp of when the standalone deployment was last started.
+**Reserved — never populated today.** Intended: timestamp of when the standalone deployment was last started.
 
 #### `conditions` ([]Condition)
 Detailed conditions about the deployment state.
@@ -509,7 +509,7 @@ endpoints:
 Current Neo4j version running.
 
 #### `podStatus` (StandalonePodStatus)
-Information about the Neo4j pod.
+**Reserved — never populated today** (the schema is shown for reference; use `kubectl get pod <name>-0` for pod state). Intended: information about the Neo4j pod.
 
 ```yaml
 podStatus:
@@ -521,7 +521,7 @@ podStatus:
 ```
 
 #### `databaseStatus` (StandaloneDatabaseStatus)
-Information about the Neo4j database.
+**Reserved — never populated today** (use `status.diagnostics.databases` instead). Intended: information about the Neo4j database.
 
 | Field | Type | Description |
 |---|---|---|
@@ -544,11 +544,15 @@ databaseStatus:
 
 #### `diagnostics` (StandaloneDiagnosticsStatus)
 
-Live diagnostics collected from `SHOW DATABASES` when `spec.monitoring.enabled=true` and the standalone is in `Ready` phase. Updated on every reconcile cycle. Collection errors are stored in `diagnostics.collectionError` and never block reconciliation.
+Live diagnostics collected from `SHOW DATABASES`, `SHOW USERS` and `SHOW ROLES` when `spec.monitoring.enabled=true` and the standalone is in `Ready` phase. Updated on every reconcile cycle. Collection errors are stored in `diagnostics.collectionError` and never block reconciliation.
 
 | Field | Type | Description |
 |---|---|---|
-| `databases` | `[]DatabaseDiagnosticInfo` | Database status from `SHOW DATABASES` |
+| `databases` | `[]DatabaseDiagnosticInfo` | Database status from `SHOW DATABASES`: `name`, `status`, `requestedStatus`, `role`, `default`, `type` (`standard`, `composite`, `replica`, …), `access`, `writer`, `lastCommittedTxn`, `replicationLag` (always 0 on a standalone) |
+| `users` | `[]UserDiagnosticInfo` | Users from `SHOW USERS` (`user`, `roles`, `suspended`, `homeDatabase`); a bounded summary — see `userCount` |
+| `userCount` | `int` | Total number of users observed, even when `users` is truncated |
+| `roles` | `[]RoleDiagnosticInfo` | Roles from `SHOW ROLES` (`role`, `immutable`); a bounded summary — see `roleCount` |
+| `roleCount` | `int` | Total number of roles observed, even when `roles` is truncated |
 | `lastCollected` | `*metav1.Time` | Timestamp of last successful collection |
 | `collectionError` | `string` | Error message if collection failed (empty on success) |
 
@@ -641,8 +645,8 @@ spec:
 
   # Production configuration
   config:
-    server.memory.heap.initial_size: "3G"
-    server.memory.heap.max_size: "6G"
+    server.memory.heap.initial_size: "2G"
+    server.memory.heap.max_size: "4G"
     server.memory.pagecache.size: "2G"
     db.logs.query.enabled: "INFO"   # enum: OFF | INFO | VERBOSE (not a boolean)
     db.logs.query.threshold: "1s"
@@ -740,8 +744,8 @@ spec:
     obfuscateLiterals: true
 
   config:
-    server.memory.heap.initial_size: "3G"
-    server.memory.heap.max_size: "6G"
+    server.memory.heap.initial_size: "2G"
+    server.memory.heap.max_size: "4G"
     server.memory.pagecache.size: "2G"
     db.logs.query.enabled: "INFO"   # enum: OFF | INFO | VERBOSE (not a boolean)
     db.logs.query.threshold: "500ms"
@@ -778,7 +782,7 @@ spec:
   initialData:
     source: cypher
     cypherStatements:
-      - "CREATE CONSTRAINT user_email IF NOT EXISTS ON (u:User) ASSERT u.email IS UNIQUE"
+      - "CREATE CONSTRAINT user_email IF NOT EXISTS FOR (u:User) REQUIRE u.email IS UNIQUE"
       - "CREATE INDEX user_name IF NOT EXISTS FOR (u:User) ON (u.name)"
 ```
 
@@ -832,7 +836,7 @@ spec:
   initialData:
     source: cypher
     cypherStatements:
-      - "CREATE CONSTRAINT user_email IF NOT EXISTS ON (u:User) ASSERT u.email IS UNIQUE"
+      - "CREATE CONSTRAINT user_email IF NOT EXISTS FOR (u:User) REQUIRE u.email IS UNIQUE"
 EOF
 
 # Install APOC plugin
@@ -860,9 +864,8 @@ kind: Neo4jBackup
 metadata:
   name: dev-neo4j-backup
 spec:
-  target:
-    kind: Neo4jEnterpriseStandalone  # Note: correct target kind
-    name: dev-neo4j
+  instanceRef: dev-neo4j           # Neo4jEnterpriseStandalone (or Cluster) in this namespace
+  database: neo4j                  # or `allDatabases: true`
   storage:
     type: s3
     bucket: my-backup-bucket
@@ -876,13 +879,14 @@ kind: Neo4jRestore
 metadata:
   name: restore-dev-neo4j
 spec:
-  clusterRef: dev-neo4j            # Target standalone instance
-  databaseName: neo4j
+  instanceRef: dev-neo4j           # Target standalone instance
+  database: neo4j
   source:
     type: backup
     backupRef: dev-neo4j-backup
   options:
     replaceExisting: true
+  stopCluster: true                # standalone restores run offline (see the Neo4jRestore reference)
 EOF
 ```
 
@@ -1101,9 +1105,8 @@ kind: Neo4jBackup
 metadata:
   name: cluster-migration-backup
 spec:
-  target:
-    kind: Neo4jEnterpriseCluster
-    name: old-cluster
+  instanceRef: old-cluster         # the source Neo4jEnterpriseCluster
+  database: neo4j
   storage:
     type: s3
     bucket: migration-backups
@@ -1133,13 +1136,14 @@ kind: Neo4jRestore
 metadata:
   name: migrated-standalone-restore
 spec:
-  acceptLicenseAgreement: "eval"
-  target:
-    kind: Neo4jEnterpriseStandalone
-    name: migrated-standalone
+  instanceRef: migrated-standalone   # Neo4jEnterpriseStandalone
+  database: neo4j
   source:
-    backupRef:
-      name: cluster-migration-backup
+    type: backup
+    backupRef: cluster-migration-backup
+  options:
+    replaceExisting: true            # the new standalone already has a default `neo4j` database
+  stopCluster: true
 EOF
 ```
 

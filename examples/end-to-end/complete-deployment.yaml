@@ -140,7 +140,7 @@ spec:
       - "CREATE INDEX user_created_index IF NOT EXISTS FOR (u:User) ON (u.createdAt)"
       - "CREATE INDEX product_name_index IF NOT EXISTS FOR (p:Product) ON (p.name)"
 ---
-# Analytics database (Neo4j 2025.x with Cypher 25)
+# Analytics database
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jDatabase
 metadata:
@@ -152,8 +152,8 @@ spec:
   wait: true
   ifNotExists: true
 
-  # For Neo4j 2025.x - use modern Cypher
-  defaultCypherLanguage: "25"
+  # defaultCypherLanguage: "25" needs a CalVer (2025.x+) image. This cluster
+  # runs 5.26, which has no Cypher 25, so it is left unset.
 
   topology:
     primaries: 2
@@ -187,7 +187,8 @@ spec:
     compress: true
     pageCache: "2G"     # Dedicated page cache for backup
 
-  # Retention policy
+  # Retention policy. NOTE: for cloud storage (s3/gcs/azure) the operator does NOT
+  # prune objects — this is advisory; configure bucket lifecycle rules instead.
   retention:
     maxAge: "30d"
     maxCount: 30
@@ -218,6 +219,7 @@ spec:
     backupType: "FULL"  # Force full backup
     compress: true
 
+  # Advisory for cloud storage (see the daily backup above): use bucket lifecycle rules.
   retention:
     maxAge: "90d"
     maxCount: 12

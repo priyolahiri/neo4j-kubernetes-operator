@@ -9,9 +9,12 @@ in-repo `.github/workflows/README.md` is a short pointer back here.
 | [CI](#ci) | `ci.yml` | push/PR to `main`/`develop`, manual dispatch |
 | [Integration Tests](#integration-tests) | `integration.yml` | PR + push to `main` on runtime paths |
 | [Extended Integration Tests](#extended-integration-tests) | `integration-tests.yml` | manual dispatch only (full) |
+| [Install Confidence](#install-confidence) | `install-confidence.yml` | manual dispatch only (the same matrix also runs inside `release.yml`) |
 | [Release](#release) | `release.yml` | push of a `vX.Y.Z` tag, manual dispatch |
-| [Pages — Docs](#pages-docs) | `pages-docs.yml` | push to `main`, push of a `v*` tag, manual dispatch |
-| [Pages — Helm Repo](#pages-helm-repo) | `pages-helm.yml` | push of a `v*` tag, manual dispatch |
+| [Retracting a release](#retracting-a-release) | `release-retract.yml` | manual dispatch only |
+| [Pages — Docs](#pages-docs) | `pages-docs.yml` | push to `main`, manual dispatch, and `workflow_call` from `release.yml` (no tag trigger of its own) |
+| [Pages — Helm Repo](#pages-helm-repo) | `pages-helm.yml` | manual dispatch and `workflow_call` from `release.yml` (no tag trigger of its own) |
+| CodeQL | `codeql.yml` | push/PR to `main`, weekly schedule |
 
 Shared Go setup/caching lives in the composite action `.github/actions/setup-go`.
 
@@ -24,17 +27,27 @@ gate that blocks merge. Jobs:
    (`sync-all` + `bundle`, then `git diff --exit-code`). Fails if any committed
    CRD, RBAC, deepcopy, Helm CRD, or OLM bundle file is stale (untracked
    generated files fail it too). Fix locally with `make sync-all` and commit
-   the result. The same job then runs `make helm-lint` and
-   `make check-csv-coverage` — both used to be ship-prep-only, which let a
-   chart template error or a CSV missing a new CRD hide until release time.
-   Static and seconds-fast; the failure summary distinguishes drift failures
-   from lint/coverage failures.
-2. **Unit Tests** — `make test-unit` (race-enabled, envtest-backed controller
-   suite + plain unit tests). No external cluster required. The job runs the
+   the result. The same job then runs the static checks that have no generator
+   to catch them: `make helm-lint`, `make check-csv-coverage`,
+   `make check-apiref-drift`, `make check-cli-asset-names`,
+   `make check-cli-docs`, `make check-docs-release-pins`,
+   `make check-examples-catalog`, `make check-docs-tables`,
+   `make check-crd-catalog`, and a gitleaks secret scan. All are static and
+   seconds-fast; the failure summary distinguishes drift failures from the rest.
+2. **Go Lint (`go-lint`)** — builds golangci-lint against the current toolchain
+   and runs the whole `.golangci.yml` (`ci.yml` calls it a merge gate), then
+   cross-compiles `kubectl-neo4j` for every released platform (darwin, linux,
+   windows) so a unix-only import fails here rather than at release time.
+3. **Unit Tests (`unit-tests`)** — `make test-unit` (race-enabled, envtest-backed
+   controller suite + plain unit tests). No external cluster required. The job runs the
    suite through [gotestsum](makefile_reference.md#make-gotestsum)
    (`make test-unit GO_TEST_CMD="./bin/gotestsum …"`), which emits a JUnit XML +
    test2json report; a summary step (`scripts/gotest-summary.sh`) writes the
    failed and slowest tests to the GitHub step summary.
+4. **Invariant Guards (advisory)** — runs `scripts/check-invariants.sh` and
+   `scripts/check-knowledge-drift.sh` with `continue-on-error`, so a violation is
+   reported in the run summary but never fails the job or blocks merge. See
+   [Agent guardrails](AGENT-GUARDRAILS.md).
 
 Integration coverage lives in its own workflows, not in `ci.yml`: the fast
 contributor lane is [Integration Tests](#integration-tests); the full matrix is
@@ -121,8 +134,8 @@ against **both supported Neo4j tracks in parallel**:
 Because it's the core subset and the two cells run in parallel, wall-clock ≈ the
 slower (CalVer) cell, not the sum. Triggers on `pull_request` + `push` to `main`
 when **runtime paths** change (`internal/**`, `api/**`, `cmd/**`,
-`test/integration/**`, `Makefile`, `go.{mod,sum}`, the workflow itself) — never
-on docs-only changes.
+`test/integration/**`, `config/**`, `Dockerfile`, `Makefile`, `go.{mod,sum}`, the
+workflow itself) — never on docs-only changes.
 
 This is the lane that should give a contributor a fast, legible yes/no on the
 contracts they touched, on the versions users actually run.
@@ -152,9 +165,10 @@ the fast core lane, keeping the dev cycle short. The extended suite is
 ("Run workflow") or with `gh workflow run integration-tests.yml --ref <branch>`,
 **full suite**, with inputs:
 
-- `neo4j-version` — image tag (default the pinned CalVer; pass `5.26-enterprise`
-  to verify the LTS floor, or `2025.12-enterprise+` for the property-sharding
-  paths). Dispatch against your branch to run the full suite before merging.
+- `neo4j-version` — the exact image tag, used verbatim as `neo4j:<tag>` (default
+  the pinned CalVer, which already satisfies the CalVer-gated specs, property
+  sharding included; pass `5.26-enterprise` to verify the LTS floor). Dispatch
+  against your branch to run the full suite before merging.
 - `timeout-minutes` — default `150` (CalVer is ~2× slower per spec).
 
 Dispatch it explicitly for backup/restore/sharding/coordination changes that the
@@ -244,8 +258,10 @@ with a tag input). Jobs:
    `createdAt:` is still the dev placeholder), renders the release body from
    `.github/release-notes-template.md`, and publishes the GitHub release.
 
-Pushing the tag also fires **Pages — Docs** and **Pages — Helm Repo** (below),
-so a single tag publishes images, the release, the docs version, and the chart.
+The release workflow's final jobs (`publish-docs`, `publish-helm`) then call
+**Pages — Docs** and **Pages — Helm Repo** (below) once every gate and artifact
+exists, so a single tag publishes images, the release, the docs version, and the
+chart.
 
 ### Cutting a release (runbook)
 
@@ -270,6 +286,12 @@ from the tag.
 3. If there are breaking changes or notable upgrade steps, add/extend the
    `Upgrading between future releases` section in
    [`migration_guide.md`](../user_guide/migration_guide.md) (the Upgrade Guide).
+3b. Bump the documented install pins (Helm `--version`, the `RELEASE_VERSION`
+   examples, the ArgoCD `targetRevision`, `go install`) to the new version on
+   `main` **before** pushing the tag — `make check-docs-release-pins` (run in the
+   `check-drift` job) lets docs run ahead of the newest tag but fails once the tag
+   exists and the docs still name the previous release. `make ship-prep` does not
+   run it; run it yourself.
 4. Draft the **What's Changed** notes — `git log <last-tag>..HEAD --pretty=oneline`
    is a good starting point. (The release workflow renders only the
    boilerplate from `.github/release-notes-template.md`; the changelog is
@@ -336,8 +358,11 @@ What gets published where:
 
 - **Push to `main`** → the `/main/` alias, a rolling preview of unreleased docs.
   Does not touch `latest`.
-- **Push of a `vX.Y.Z` tag** → published as `/vX.Y/` (the patch is dropped, so a
-  later `vX.Y.Z+1` overwrites the same `/vX.Y/`), and `/latest/` is moved to it.
+- **Called from `release.yml`** (the `publish-docs` job, after `create-release`;
+  the workflow has **no tag trigger of its own** — publishing on tag push ran in
+  parallel with the release gates and could advertise a version that never
+  shipped, #245) → published as `/vX.Y/` (the patch is dropped, so a later
+  `vX.Y.Z+1` overwrites the same `/vX.Y/`), and `/latest/` is moved to it.
   `mike set-default latest` also points the site **root** at `/latest/`.
 - **Manual dispatch** → publish under an arbitrary `version-alias`, optionally
   updating `latest`.
@@ -360,7 +385,8 @@ helm repo add neo4j-operator https://priyolahiri.github.io/neo4j-kubernetes-oper
 helm repo update
 ```
 
-- **Push of a `v*` tag** → packages and publishes that version.
+- **Called from `release.yml`** (the `publish-helm` job, after `create-release`;
+  no tag trigger of its own) → packages and publishes that version.
 - **Manual dispatch** → package a specific existing tag.
 
 ## OpenShift / OLM

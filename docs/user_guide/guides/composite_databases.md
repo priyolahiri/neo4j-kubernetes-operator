@@ -259,9 +259,11 @@ requirement that the keystore be identical across a cluster.
     stores it encrypted, and `SHOW ALIASES` never returns a password on any
     alias — so alias output is safe to include in a support bundle.
 
-    Forget the keystore and the CR is rejected at apply time naming the field
-    to set, instead of failing inside the server with an internal error that
-    mentions neither the CR nor the constituent.
+    Forget the keystore and the CR goes to `Failed` on its first reconcile
+    (the operator has no admission webhook, so `kubectl apply` itself succeeds)
+    with a message naming the field to set, instead of failing inside the
+    server with an internal error that mentions neither the CR nor the
+    constituent.
 
 ## Limits
 

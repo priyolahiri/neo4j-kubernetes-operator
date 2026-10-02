@@ -18,7 +18,9 @@
 Each rule is a numbered entry. **Rule IDs are preserved from the original
 CLAUDE.md checklist for traceability** — they are intentionally non-contiguous
 (some original numbers were merged or retired upstream; 54, 62, 68, 69, 73 do
-not appear). Each entry carries:
+not appear). Numbers are **per file**: `operations.md` also has an `id 80` and an
+`id 81` (unrelated to Rules 80/81 here), so always cite the file with the number
+(`backup-restore.md Rule 80`). Each entry carries:
 
 - **Scope** — the file(s) the rule governs.
 - **Rule** — the invariant, stated imperatively.
@@ -52,7 +54,7 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 - **Scope:** `internal/controller/neo4jbackup_controller.go` (`buildToPath`, `chainRoot`, `backupRunIDEnvVar`, `jobToBackupRun`)
 - **Rule:** All runs of one `Neo4jBackup` CR share a single `--to-path = <base>/<chain-root>/` (NOT per-run subfolders). Per-run identity is the ISO-8601 timestamp neo4j-admin embeds in each `.backup` filename, captured to `BackupRun.ArtifactFilename` (standard) / `ShardArtifacts.Filename` (sharded). The `BACKUP_RUN_ID` env var stays on the Pod (downward API → Job name) for log correlation only. One-shot Job name = `<backup>-backup`; CronJob child = `<cronjob>-<unix-seconds>`. Never re-introduce a `${BACKUP_RUN_ID}` subfolder under `--to-path`.
 - **Why:** `neo4j-admin database backup --type=DIFF` reads the prior FULL artifact from the *same* directory to compute the delta. Per-run subfolders break chaining — every DIFF would fail to find its parent.
-- **Pinned-by:** `internal/controller/neo4jbackup_cloud_test.go:TestBackupRunIDEnvVar` + `internal/controller/neo4jbackup_history_test.go:TestJobToBackupRun`
+- **Pinned-by:** `internal/controller/neo4jbackup_cloud_test.go:TestBuildToPath_SharedDirectoryPerCR` (the shared, no-run-subfolder `--to-path`); the per-run-identity half by `:TestBackupRunIDEnvVar` + `internal/controller/neo4jbackup_history_test.go:TestJobToBackupRun`
 - **Status:** Enforced
 
 ### Rule 41 — CronJob backup defaults are load-bearing
@@ -103,7 +105,7 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 - **Rule:** `resolveLocalPVCFromPath(backupPath, databaseName)` emits `$(ls '<backupPath>'/'<dbname>'-*.backup | tail -1)`. **BOTH the path AND the database name MUST go through `shellQuote()`.** `tail -1` (not `head -1`) selects the latest run in the shared chain dir (rule 40), because neo4j-admin's ISO-8601 timestamp sorts lexicographically into chronological order. Cloud URIs skip this (neo4j-admin's native readers handle file selection). Never pass the directory; never substitute the timestamp in Go; never drop quoting; never revert to `head -1`.
 - **Why:** `spec.source.backupPath` and `spec.databaseName` are user-controlled and land in a `/bin/sh -c` command in a Pod that mounts `/data` RW and carries `NEO4J_ADMIN_PASSWORD`. An unquoted value like `foo; rm -rf /data #` would escape the `ls` and run arbitrary commands.
 - **Pinned-by:** `internal/controller/neo4jrestore_cloud_test.go:TestResolveLocalPVCFromPath_BackupPathShellInjectionGuard` + `:TestResolveLocalPVCFromPath_NestedCommandSubstitutionGuard` + `:TestResolveLocalPVCFromPath_EmbeddedSingleQuoteGuard`
-- **Status:** Enforced — **NOTE:** the checklist named the helper `buildLocalRestoreFilePath`. That function exists but is a thin wrapper; the function that actually emits the `$(ls … | tail -1)` form (and that the three guard tests target) is `resolveLocalPVCFromPath`. One stale doc-comment at `neo4jrestore_controller.go:1774` still says `head -1`; the *emitted command* correctly uses `tail -1` (`:1736`). Treat the comment as a doc nit, not a behavior bug.
+- **Status:** Enforced — **NOTE:** the checklist named the helper `buildLocalRestoreFilePath`. That function exists but is a thin wrapper; the function that actually emits the `$(ls … | tail -1)` form (and that the three guard tests target) is `resolveLocalPVCFromPath`. Two stale doc-comments in `neo4jrestore_controller.go` (above `buildLocalRestoreFilePath` and inside `buildRestoreCommand`) still say `head -1`; the *emitted command* correctly uses `tail -1`. Treat the comments as a doc nit, not a behavior bug.
 
 ### Rule 45 — Restore `--temp-path=/tmp/restore-tmp` default for PVC sources
 - **Scope:** `internal/controller/neo4jrestore_controller.go` (`buildRestoreCommand` PVC branch)
@@ -208,8 +210,8 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 - **Scope:** `api/v1beta1/neo4jshardeddatabase_types.go` (`Status.LastDestructiveRestoreGeneration`), `internal/controller/neo4jshardeddatabase_controller.go`
 - **Rule:** The destructive branch fires only when `LastDestructiveRestoreGeneration < Generation`; it stamps `= Generation` on success. Re-trigger by mutating the spec (which bumps generation) — typically editing `seedBackupRef`.
 - **Why:** Without the generation gate, every reconcile of a `replaceExisting=true` CR would re-drop and re-seed the database in a loop.
-- **Pinned-by:** `internal/controller/neo4jrestore_cloud_test.go` (`LastDestructiveRestoreGeneration < sd.Generation` gating logic, ~line 1057); integration in `property_sharding_minio_restore_test.go` (`LastDestructiveRestoreGeneration` stamped, ~line 432)
-- **Status:** Enforced
+- **Pinned-by:** integration only — `test/integration/property_sharding_minio_restore_test.go` (`LastDestructiveRestoreGeneration` stamped after the destructive restore). That spec is local-only (it skips in CI). Do NOT count `TestShardedSeedConsumableGate` (`internal/controller/neo4jrestore_cloud_test.go`): it restates the predicate in a local closure and never calls the controller, so it passes whatever the controller does.
+- **Status:** Documented (integration, local-only) — no unit test exercises the controller's generation gate
 
 ### Rule 65 — Sharded DDL requires `CYPHER 25` prefix
 - **Scope:** `internal/controller/neo4jshardeddatabase_controller.go` (CREATE / DROP statements)
@@ -327,8 +329,8 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 - **Rule:** There is no `spec.backups` / `spec.storage.backupStorage` field, no `BackupsSpec` / `BackupStorageSpec` type, no `BuildBackupStatefulSet` / `buildCentralizedBackup*` builder, no standalone `buildBackupSidecarContainer`, and no `cloud_validator.go`. The `Neo4jBackup` CRD (Job-per-CR) is the only backup path. `StorageLocation` / `CloudBlock` / `CloudIdentity` / `AutoCreateSpec` types survive because `Neo4jBackup` / `Neo4jRestore` use them. **Never reintroduce a `spec.backups` field or a long-running backup pod/sidecar.**
 - **Why:** The centralized backup StatefulSet / sidecar architecture was deliberately removed in the backup-restore overhaul; reintroducing it resurrects a banned architecture and a long-running pod that holds cloud credentials indefinitely.
 - **Verified (this audit):** `grep` confirmed `BuildBackupStatefulSet`, `BackupsSpec`, `BackupStorageSpec`, `buildBackupSidecarContainer`, and `cloud_validator.go` are ALL absent from the tree (worktrees excluded); the four surviving types are present in `api/v1beta1/neo4jenterprisecluster_types.go`.
-- **Pinned-by:** (enforced by absence — a CI guard script that greps for these banned symbols is the recommended machine check; none exists in the current tree)
-- **Status:** Enforced (by absence) — candidate for a dedicated CI guard script
+- **Pinned-by:** guard-checked, advisory — `scripts/check-invariants.sh` (`make check-invariants`) fails on a reintroduced `Build*BackupStatefulSet` builder or a `backups:` / `json:"backups"` field in `config/` + `api/`. The other removed symbols (`BackupsSpec`, `BackupStorageSpec`, `buildBackupSidecarContainer`, `cloud_validator.go`) are kept gone by absence only. No unit test.
+- **Status:** Enforced (advisory guard + absence) — the guard runs in the non-blocking `Invariant Guards (advisory)` CI job, not as a merge gate
 
 ---
 
@@ -341,7 +343,7 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 - **How it is actually enforced:** **structurally.** There is no namespace field on the scope API, so there is nothing for a validator to reject. Adding one would silently remove the only enforcement — such a change MUST ship a consent mechanism in the same PR (see rule 18).
 - **Status:** Enforced by API shape. Deliberately not a validator.
 
-> **Correction (2026-08-28).** This rule previously described a function named **validateBackupTarget** (deliberately not backticked — backticks assert a real symbol) rejecting a cross-namespace `spec.target.namespace` "for every kind", pinned to two named tests, with Status "Enforced". **None of it exists.** That function is not defined anywhere; `spec.target` was removed when `instanceRef` replaced it in v1.13 (confirmed absent from the generated CRD schema); and neither pinned test exists in `backup_validator_test.go`. The rule was describing the pre-`instanceRef` API — and even contradicted itself mid-sentence, noting "The `instanceRef` scope API has no namespace field" while claiming a check against `target.namespace`. `scripts/check-knowledge-drift.sh` passed it green because its pin was a real file path plus quoted test-case *names*, neither of which the guard validated (now fixed — see rule 82).
+> **Correction (2026-08-28).** This rule previously described a function named **validateBackupTarget** (deliberately not backticked — backticks assert a real symbol) rejecting a cross-namespace `spec.target.namespace` "for every kind", pinned to two named tests, with Status "Enforced". **None of it exists.** That function is not defined anywhere; `spec.target` was removed when `instanceRef` replaced it in v1.13 (confirmed absent from the generated CRD schema); and neither pinned test exists in `backup_validator_test.go`. The rule was describing the pre-`instanceRef` API — and even contradicted itself mid-sentence, noting "The `instanceRef` scope API has no namespace field" while claiming a check against `target.namespace`. `scripts/check-knowledge-drift.sh` passed it green because its pin was a real file path plus quoted test-case *names*, neither of which the guard validated (now fixed — pass 4 of that script now checks quoted test-case names on `Pinned-by` lines against the test files).
 
 ### Rule 81 — `shardedDatabase` scope; all-databases CATALOGUES sharded families (restorable, not just surfaced)
 - **Scope:** `api/v1beta1/neo4jbackup_types.go` (`ShardedDatabase`, `ResolvedTarget`, `ShardedFamilyArtifacts`, `BackupRun.ShardedFamilies`), `internal/validation/backup_validator.go` (`validateScopeSelection`), `internal/controller/neo4jbackup_log_parser.go` (`parseShardedFamiliesExcludedFromLog`, `groupShardedFamiliesFromLog`), `internal/controller/neo4jbackup_controller.go` (`recordShardedExclusion`), `internal/controller/neo4jshardeddatabase_seed.go` (`resolveShardedSeed`, `findFamilyArtifacts`, `buildPerShardCloudURIs`), `internal/controller/neo4jrestore_alldatabases.go`

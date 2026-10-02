@@ -1,11 +1,12 @@
 # `support-bundle`
 
 
-Collects the diagnostic material for a Neo4j deployment into one archive — the 98 documented `kubectl` invocations in the troubleshooting guide, in a single command.
+Collects the diagnostic material for a Neo4j deployment into one archive — the roughly hundred documented `kubectl` invocations in the troubleshooting guide, in a single command.
 
 ```bash
 kubectl neo4j support-bundle -n neo4j
 kubectl neo4j support-bundle -n neo4j -o incident-4821.tar.gz
+kubectl neo4j support-bundle -n neo4j --log-lines 5000   # default: tail 2000 lines per container log
 ```
 
 What it gathers: every Neo4j custom resource, namespace events, per-pod status (including **last termination reason and exit code** — exit 137 is OOMKilled, the most common Enterprise failure on an under-provisioned cluster), container logs current and previous, and the operator's own logs — found by label wherever the operator runs, which is usually a different namespace from the one being diagnosed, and filed under `operator/<namespace>/<pod>/`. If no operator pod is visible, the archive says so rather than omitting it silently: that absence is itself worth reporting.
@@ -31,7 +32,9 @@ Deliberately *not* redacted: `valueFrom` / `secretKeyRef` references. They conta
 
 ### Collection is best-effort by design
 
-A bundle is most wanted when a cluster is unhealthy, so one unreadable resource must not abort the whole collection. Individual failures are recorded rather than fatal — which also tells the recipient what could not be read, and by extension what permissions the collector had.
+A bundle is most wanted when a cluster is unhealthy, so one unreadable resource must not abort the whole collection. Individual failures are non-fatal.
+
+Not every failure is recorded yet, though. An unreadable events list and an operator whose logs cannot be found are noted (in `REDACTIONS.txt`), but a Neo4j kind, the pod list, the Secret list or a single container log that cannot be read is skipped silently. A file missing from the archive therefore does not always come with an explanation — check your RBAC (`kubectl auth can-i list pods -n <ns>` and so on) before concluding the thing did not exist.
 
 ## See also
 

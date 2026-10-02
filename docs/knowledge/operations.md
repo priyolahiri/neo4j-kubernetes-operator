@@ -7,10 +7,15 @@
 >
 > **`id`** keeps the original CLAUDE.md rule number (stable cross-reference — do
 > not renumber). **`scope`** is the verified file(s) the invariant lives in.
-> **`pinned-by`** names a test that fails if the invariant regresses; every test
-> named below was grep-verified to exist in the current tree on branch
-> `fix/wire-plugin-validator-164`. **`enforcement`** says how a violation is
-> caught (unit test / integration test / validator / code review).
+> **`pinned-by`** names the test that fails if the invariant regresses; every test
+> symbol named below is checked to exist by `scripts/check-knowledge-drift.sh`
+> (which cannot tell whether the test asserts the claim — entries where it does
+> not say so, and PROSE-ONLY entries have no pin). **`enforcement`** says how a
+> violation is caught (unit test / integration test / validator / code review).
+>
+> **Numbers are per file.** `backup-restore.md` also has a Rule 80 and a Rule 81,
+> which are unrelated to `id 80` / `id 81` here — always cite the file with the
+> number (`operations.md id 80`, `backup-restore.md Rule 80`).
 >
 > The 5 project-wide hard invariants (NO webhooks, KIND only, ENTERPRISE images
 > only, V2_ONLY discovery, server-based architecture with Job-per-CR backups)
@@ -26,10 +31,10 @@
 - **enforcement:** integration test + code review.
 
 ### id 2 — Backup uses `--to-path` (5.26+ syntax)
-- **scope:** `internal/controller/neo4jbackup_controller.go` (`buildToPath`, lines ~1334/1501/1585) — NOTE: this is the unified Neo4jBackup (Job-per-CR) path, not standalone-controller-local logic. See FLAG in notes.
+- **scope:** `internal/controller/neo4jbackup_controller.go` (`buildToPath`, `chainRoot`) — NOTE: this is the unified Neo4jBackup (Job-per-CR) path, not standalone-controller-local logic.
 - **rule:** `neo4j-admin database backup` uses `--to-path=<base>/<chain-root>/`; never the deprecated 4.x `--backup-dir`. All runs of one Neo4jBackup CR share a single `--to-path` directory (DIFF chaining) — never per-run subfolders.
 - **why:** 5.26+ neo4j-admin dropped the old backup flags; DIFF chaining requires the prior FULL to sit in the same directory.
-- **pinned-by:** `TestBackupRunIDEnvVar`, `TestJobToBackupRun` (backup reconciler unit tests).
+- **pinned-by:** `TestBuildToPath_SharedDirectoryPerCR` (shared `--to-path`, no per-run subfolder); `TestBackupRunIDEnvVar` and `TestJobToBackupRun` cover the per-run identity half.
 - **enforcement:** unit test.
 
 ### id 3 — Always stamp `ObservedGeneration`
@@ -61,10 +66,10 @@
 - **enforcement:** unit test + integration test.
 
 ### id 7 — Validator REJECTS deprecated `spec.config` keys
-- **scope:** `internal/validation/config_validator.go` (`ConfigValidator`) — wired into the **cluster** validator only (`cluster_validator.go`); the **standalone** validator has its OWN independent `validateConfig` (`standalone_validator.go`). The two are NOT shared.
-- **rule:** On the **cluster** path, `ConfigValidator` rejects deprecated keys as `field.Invalid`: `dbms.logs.query.enabled` (use `db.logs.query.enabled`), `dbms.default_database` (use the `dbms.setDefaultDatabase()` procedure), and `dbms.integrations.cloud_storage.s3.region`; `db.format` is rejected as `field.Forbidden` (NOT `field.Invalid`). The **standalone** `validateConfig` independently rejects `db.format` (Forbidden), `dbms.mode`, clustering keys, SSL keys, and control chars — but does **not** reject those three deprecated cluster keys. Always use the `db.*` namespace for 5.x+.
+- **scope:** `internal/validation/config_validator.go` (`ConfigValidator.ValidateConfigMap`) — the ONE implementation, called by BOTH the cluster validator (`cluster_validator.go`) and the standalone validator (`standalone_validator.go`: `NewConfigValidator().ValidateConfigMap(standalone.Spec.Config)`). The standalone validator keeps a small `validateConfig` of its own for the clustering keys that make no sense on a single node (`dbms.cluster.*`, `internal.dbms.single_raft_enabled`, …) and for SSL keys.
+- **rule:** `ConfigValidator` rejects, on both Kinds: the deprecated keys `dbms.logs.query.enabled` (use `db.logs.query.enabled`), `dbms.default_database` (use the `dbms.setDefaultDatabase()` procedure), `dbms.integrations.cloud_storage.s3.region` and the 4.x leftovers `dbms.mode`, `dbms.cluster.role`, `server.groups`, `causal_clustering.*`, `metrics.bolt.*` (all `field.Invalid`); and `db.format` as `field.Forbidden` (NOT `field.Invalid`) — it is operator-managed and a user value, `block` included, is a duplicate key that stops Neo4j starting. Rules that belong to Neo4j rather than to a Kind go in the shared entry point so the two Kinds cannot drift (they did: `dbms.mode` was rejected on a standalone and accepted on a cluster). Always use the `db.*` namespace for 5.x+.
 - **why:** These keys silently no-op or fail in 5.26+; rejecting at admission time surfaces the mistake before the pod crash-loops.
-- **pinned-by:** validator unit tests for deprecated-key rejection.
+- **pinned-by:** `internal/validation/config_validator_test.go`; `TestStandaloneAndClusterAgreeOnNeo4jRules` (`internal/validation/standalone_validator_test.go`) pins the parity.
 - **enforcement:** validator (inline) + unit test.
 
 ### id 8 — Storage expansion is orphan-delete + PVC patch
@@ -77,32 +82,32 @@
 ## TLS & Bolt client
 
 ### id 9 — TLS CA auto-discovery from cert-manager Secret
-- **scope:** `internal/neo4j/client.go` (`buildTLSConfig`, ~L208; secret name `fmt.Sprintf("%s-tls-secret", resourceName)` ~L220)
-- **rule:** `buildTLSConfig()` auto-loads the CA from the cert-manager-generated Secret named `{resourceName}-tls-secret`. `TrustedCASecret` is an explicit override; `InsecureSkipVerify` is a last-resort fallback only.
+- **scope:** `internal/neo4j/client.go` (`buildTLSConfig`; secret name `fmt.Sprintf("%s-tls-secret", resourceName)`)
+- **rule:** `buildTLSConfig()` auto-loads the CA from the cert-manager-generated Secret named `{resourceName}-tls-secret`. `TrustedCASecret` is an explicit override. With no usable `ca.crt` it VERIFIES BY PINNING that Secret's `tls.crt` (a one-certificate `RootCAs`); with neither key it fails closed. There is deliberately NO `InsecureSkipVerify` path — the Bolt driver resets that field from the URI scheme, so the old fallback never worked (see the long comment on the function).
 - **why:** Cluster SSL defaults to strict; the operator's own Bolt client must trust the same CA the pods present, or every reconcile connection fails handshake.
-- **pinned-by:** TLS client tests in `internal/neo4j/client_test.go`.
+- **pinned-by:** `TestBuildTLSConfig` (`internal/neo4j/client_tls_test.go`) and the `TestPinning_*` cases in `internal/neo4j/tls_pinning_test.go`.
 - **enforcement:** unit test + code review.
 
 ### id 10 — Every client constructor handles TLS
-- **scope:** `internal/neo4j/client.go` — `NewClientForEnterprise` (~L326), `NewClientForEnterpriseStandalone` (~L254), `NewClientForPod` (~L160) all call `buildTLSConfig()`; split-brain detector uses dynamic `bolt+s://`
+- **scope:** `internal/neo4j/client.go` — `NewClientForEnterprise`, `NewClientForEnterpriseStandalone` and `NewClientForPod` all call `buildTLSConfig()`; split-brain detector uses dynamic `bolt+s://`
 - **rule:** All three client constructors MUST call `buildTLSConfig()`. The split-brain detector switches scheme to `bolt+s://` when TLS is on.
 - **why:** A constructor that skips TLS config silently downgrades to plaintext or fails handshake against a strict cluster; the bug only shows under TLS.
-- **pinned-by:** `internal/neo4j/client_test.go` (per-constructor TLS coverage).
-- **enforcement:** unit test + code review.
+- **pinned-by:** none for the per-constructor wiring — the tests above exercise `buildTLSConfig` itself, not that each constructor calls it.
+- **enforcement:** code review — **PROSE-ONLY — at risk** for a new constructor that forgets the call.
 
 ### id 11 — Outbound Bolt URI uses the ROUTING scheme
 - **scope:** `internal/neo4j/client.go` (URI builders); only legitimate plain `bolt://` user is `internal/controller/splitbrain_detector.go`
 - **rule:** The operator's outbound URI is `neo4j://` / `neo4j+s://` (routing), never `bolt://`. The Go driver only honors `AccessModeWrite` under routing; plain `bolt://` lands wherever the ClusterIP steers it → `Neo.ClientError.Cluster.NotALeader`. The split-brain detector is the ONLY component allowed to use `bolt://` (it must target a specific pod).
 - **why:** Writes (CREATE DATABASE, ALTER USER, GRANT …) must reach the leader; routing fetches the leader address, ClusterIP `bolt://` does not.
 - **pinned-by:** `internal/neo4j/uri_test.go` — `TestBuildConnectionURIForEnterprise`, `TestBuildConnectionURIForStandalone`.
-- **enforcement:** unit test + code review. (See FLAG in notes — CLAUDE.md cites the file, not these exact test names.)
+- **enforcement:** unit test + code review.
 
 ### id 12 — Tight Bolt driver timeouts on the cluster path
 - **scope:** `internal/neo4j/client.go` — `NewClientForEnterprise` (cluster): `ConnectionAcquisitionTimeout=10s`, `SocketConnectTimeout=5s`, `MaxTransactionRetryTime=15s` (~L349-355). `NewClientForPod` also uses 10s/5s (~L173-174). NOTE: `NewClientForEnterpriseStandalone` deliberately uses larger 30s/15s/30s (~L271-277) for startup tolerance.
 - **rule:** Keep the cluster/pod client at 10s/5s/15s. Under routing these gate routing-table-fetch retries against an unreachable cluster; bumping to 30s+ stalls the reconcile work queue.
 - **why:** A slow timeout multiplied by routing retries blocks the controller worker for minutes, starving every other CR.
-- **pinned-by:** client timeout assertions in `internal/neo4j/client_test.go`.
-- **enforcement:** unit test + code review. (See FLAG in notes — the 10s/5s/15s figures are the CLUSTER path; standalone is intentionally different.)
+- **pinned-by:** none — no test asserts these values (`internal/neo4j/client_test.go` only mentions them in a comment about bounding its own contexts). Do not cite `uri_test.go` either: it pins the URI scheme, not the timeouts.
+- **enforcement:** code review — **PROSE-ONLY — at risk**. NOTE: the 10s/5s/15s figures are the CLUSTER path; standalone is intentionally different.
 
 ### id 13 — TLS Secret volume `DefaultMode=0440`
 - **scope:** `internal/resources/cluster.go` (TLS volume `DefaultMode: 0o440` ~L1399)
@@ -117,7 +122,7 @@
 - **scope:** `internal/neo4j/client.go` (`GetUserRoles` ~L2139 — buggy); use `internal/neo4j/users.go` `ListUserRoles` (~L612) or `ShowUser` (~L80)
 - **rule:** `GetUserRoles` queries `SHOW USER PRIVILEGES YIELD role` and returns one row per privilege (duplicated/wrong). Use `Client.ListUserRoles` or `Client.ShowUser` instead.
 - **why:** Privilege-row count ≠ role count; using `GetUserRoles` over-reports roles and breaks drift reconciliation.
-- **pinned-by:** `test/integration/neo4juser_test.go` (user controller role-sync specs exercise `ListUserRoles`/`ShowUser` indirectly). NOTE: the `internal/neo4j` user helpers have **no direct unit test** — known gap; do not cite a non-existent `users_test.go`.
+- **pinned-by:** `test/integration/neo4juser_test.go` (user controller role-sync specs exercise `ListUserRoles`/`ShowUser` indirectly). NOTE: the `internal/neo4j` user helpers have **no direct unit test** — known gap; do not cite a non-existent users_test.go.
 - **enforcement:** integration test (indirect) + code review (the buggy `GetUserRoles` is retained but must not gain callers).
 
 ### id 15 — Password rotation via Secret hash
@@ -139,7 +144,7 @@
 - **rule:** A referenced custom role that doesn't exist yet must NOT fail the user reconcile. Set the `PendingDependencies` condition and requeue; the user controller watches `Neo4jRole` so the user re-reconciles when the role lands.
 - **why:** CRs are applied in arbitrary order; failing hard on a not-yet-created role would wedge legitimate apply-everything-at-once workflows.
 - **pinned-by:** user controller integration specs (pending-dependency + watch re-reconcile).
-- **enforcement:** integration test + code review. Condition constants in `internal/controller/events.go` (`ConditionTypePendingDependencies` L170, `ConditionReasonRolesPending` L178).
+- **enforcement:** integration test + code review. Condition constants in `internal/controller/events.go` (`ConditionTypePendingDependencies`, `ConditionReasonRolesPending`).
 
 ### id 18 — Same-namespace `clusterRef` only (enforced by API shape, NOT by a validator)
 - **scope:** `internal/controller/cluster_resolver.go` (`ResolveClusterRef`); the auth CRD types in `api/v1beta1/`
@@ -149,10 +154,10 @@
 - **if this is ever revisited:** the researched answer is a target-namespace grant object shaped like Gateway API's `ReferenceGrant` — deny-by-default, and checked **before** resolving the target, or the CR becomes a cross-namespace existence oracle (Gateway API makes that a MUST). Note the repo has declined this scope in writing: `docs/user_guide/user_role_management.md` ("not by sharing a single CR", plus an explicit non-goal) and `docs/design/aura-orchestration.md` ("Cross-namespace fan-out is out of scope").
 - **enforcement:** API shape only. Deliberately not a validator — there is nothing for one to check.
 
-> **Correction (2026-08-28).** This rule previously claimed enforcement by "validator (inline) + unit test" and routed multi-tenant access through an opt-in CR named **Neo4jClusterAccessGrant** (deliberately not backticked — backticks assert a real symbol, and this one never existed). **Neither exists.** That name appeared exactly once in the repo — in this rule's own text — and no cross-namespace validator or test was ever written. The boundary was real but the stated mechanism was fictional, which is the more dangerous failure: an implementer consulting this rule before adding a namespace field would have been told a guard existed that did not. `scripts/check-knowledge-drift.sh` passed it green because the pin was unbackticked prose (now fixed — see rule 82).
+> **Correction (2026-08-28).** This rule previously claimed enforcement by "validator (inline) + unit test" and routed multi-tenant access through an opt-in CR named **Neo4jClusterAccessGrant** (deliberately not backticked — backticks assert a real symbol, and this one never existed). **Neither exists.** That name appeared exactly once in the repo — in this rule's own text — and no cross-namespace validator or test was ever written. The boundary was real but the stated mechanism was fictional, which is the more dangerous failure: an implementer consulting this rule before adding a namespace field would have been told a guard existed that did not. `scripts/check-knowledge-drift.sh` passed it green because the pin was unbackticked prose (now fixed — pass 3 of that script asserts every backticked `Neo4j*` identifier exists in the Go tree, which is why correction notes like this one do not backtick the name).
 
 ### id 19 — Identifier quoting in Cypher
-- **scope:** `internal/neo4j/auth_rules.go` (`escapeBackticks` ~L144), `internal/neo4j/users.go`, `internal/neo4j/privileges.go`
+- **scope:** `internal/neo4j/users.go` (`escapeBackticks` / exported `EscapeBackticks`), `internal/neo4j/auth_rules.go`, `internal/neo4j/privileges.go`
 - **rule:** Role/user names go through `escapeBackticks()` before interpolation into Cypher identifiers. NEVER `fmt.Sprintf` user-controlled names into Cypher unescaped. Passwords and provider IDs go through driver parameters (`$param`), never string interpolation.
 - **why:** Cypher identifier injection — a name with a backtick can escape the identifier and execute arbitrary Cypher with admin privileges.
 - **pinned-by:** Cypher-escaping unit tests in `internal/neo4j/` (e.g. privileges/users/auth_rules tests).
@@ -251,7 +256,7 @@
 - **rule:** `dbms.security.abac.authorization_providers` values must use the same form as `dbms.security.authorization_providers` — `oidc-<name>` for OIDC providers. The authrule controller checks the cluster has `dbms.security.abac.authorization_providers` set (a precondition it reads, not one it writes).
 - **why:** Mismatched provider naming between the two keys means ABAC rules never match the configured authorization provider, silently denying access.
 - **pinned-by:** `internal/validation/auth_validator_test.go` (oidc-prefix); `internal/resources/auth_config_test.go` (`oidc-okta`, `oidc-azure` provider strings).
-- **enforcement:** validator + unit test + code review. NOTE: scope file is the AUTHRULE controller, not an `auth_config.go` (that file does not exist — `BuildAuthConfig` lives in `internal/resources/cluster.go`). See FLAG in notes.
+- **enforcement:** validator + unit test + code review. NOTE: scope file is the AUTHRULE controller, not an auth_config.go (no such file — `BuildAuthConfig` lives in `internal/resources/cluster.go`).
 
 ### id 32 — Authrule controller in the `--controllers` default list
 - **scope:** `cmd/main.go` (dev-mode `controllersToLoad` default includes `authrule` ~L136; production `setupProductionControllers` wires it unconditionally ~L307/550)
@@ -313,7 +318,7 @@
 
 ## Testing / CI harness
 
-> ids ≥ 80 are post-checklist additions (the original CLAUDE.md checklist was 1–79; ids 40–79 are the backup/restore/sharding rules in `docs/knowledge/backup-restore.md`).
+> ids ≥ 80 are post-checklist additions (the original CLAUDE.md checklist was 1–79; ids 40–79 are the backup/restore/sharding rules in `docs/knowledge/backup-restore.md`, which also carries its own Rules 80 and 81 — numbers are per file; the ids in this file run 80–100, each used once).
 
 ### id 80 — Integration in-pod exec must be bounded (never raw shared-context `kubectl exec`)
 - **scope:** `test/integration/integration_suite_test.go` (`boundedExec`, `execOut`, `podExecTimeout`); every in-pod exec call site across the `test/integration/*_test.go` specs.
@@ -432,21 +437,21 @@
 - **pinned-by:** `TestAuraInstance_MultiDatabaseCreatesViaV2beta1` pins that v1 create is NOT used, the tier translation, the org-scoped path, the annotation/status write, and that the next reconcile's wholesale `atProvider` rebuild does not erase the facts; `TestAuraInstance_ProbeFailureRecordsUnknownAndStopsAsking` pins one-shot probing, `unknown` (not false) on a 500, and that Ready survives; `TestAuraDatabase_RefusesKnownSingleDatabaseInstanceWithoutCallingTheAPI` and `TestAuraDatabase_TranslatesTheLiveMultiDBOnly409` pin both refusal routes, the `InstanceNotMultiDatabase` reason, `RequeueAfter == 0`, and that the message names `spec.multiDatabase` instead of echoing the API's; `TestAuraDatabase_UnknownVerdictStillAttemptsTheCreate` pins the three-valued rule from the other side (all in `internal/controller/aura_multidatabase_test.go`); `TestMultiDatabaseCreateRequest` pins acceptance of both capable tiers and the refusals for free/professional, the AuraDS tiers and silently-dropped fields; `TestSupportsMultiDatabaseMatchesWhatAuraAccepts` and `TestMultiDatabaseTierUnsupportedIsRecognised` pin the two-tier gate and its reason code; `TestAuraInstance_DoesNotAdoptANonMultiDatabaseInstance` pins landmine 6 for both the definite-no and unconfirmed cases (no adoption, no duplicate create, requeue, reason `AdoptionBlocked`) and `TestAuraInstance_AdoptsAConfirmedMultiDatabaseInstance` pins that a confirmed instance is STILL adoptable — without which a crash between create and the annotation write would leak a paid instance; `TestResolveAuraDBCoordsOrgPrecedence` pins landmine 7 including that the resource's own override still wins; `TestCreateInstanceV2RejectsASuccessWithNoID` pins that an empty create ID is an error, not an annotation; `TestMultiDatabaseOnlyIsTerminalNotAConflict` (`internal/aura/errors_v2beta1_shape_test.go`) pins the 409 reclassification while keeping `ongoing-database-operation` retryable; `TestInstanceTypeV2MapsTheVocabularies`, `TestCreateInstanceV2LiveContract` and `TestGetInstanceV2ReadsMultiDatabase` (`internal/aura/instance_v2beta1_test.go`) pin the client against verbatim live payloads.
 - **enforcement:** unit test + CEL (`multiDatabase` immutable, tier restricted to `business-critical`/`enterprise-db`, incompatible-field combinations rejected) + runtime refusal in the reconcilers. **PROSE-ONLY — at risk** for the claim that a v2beta1-created instance stays fully manageable through v1: verified live for GET/DELETE and by v1 recognising the instance in its 409 operation guard, but resize and pause/resume on such an instance were not exercised to completion.
 
-### id 92 — Dev mode's `-controllers` default must cover the whole dev registry, or CRs are accepted and silently ignored
+### id 98 — Dev mode's `-controllers` default must cover the whole dev registry, or CRs are accepted and silently ignored
 - **scope:** `cmd/main.go` — `devControllerKeys` / `defaultDevControllers` and `devControllerRegistry`; `config/overlays/dev/kustomization.yaml` (which sets `--mode=dev`, so `make dev-up` and Tilt take this path).
 - **rule:** Every key registered in `devControllerRegistry` MUST appear in `devControllerKeys`. Production mode (`setupProductionControllers`) loads all controllers unconditionally; dev mode loads only what the `-controllers` flag names. A registered-but-unlisted controller means dev mode **accepts the CR and then ignores it forever**. When a controller is deliberately excluded, the startup log now names it (`NOT loading controllers - their CRs will be accepted and then ignored`).
 - **why:** The failure has no symptom to search for. All 12 `aura*` controllers were missing from the default for the whole of the Aura work: `kubectl apply` succeeded, and then `status` stayed **completely empty** — not a phase, not a condition — with no events and not one operator log line. It is indistinguishable from a hung reconcile, and it cost ~10 minutes of a release verification journey before the operator itself became the suspect. Helm/production installs were never affected, which is exactly why it survived: the CRDs worked for users and were inert for developers, so Aura could not be exercised locally at all.
 - **pinned-by:** `TestDevControllerDefaultCoversRegistry` (`cmd/main_test.go`) asserts the default and the registry cover each other in both directions, and fails loudly if the registry is empty rather than passing vacuously. Verified to fire by removing `aurainvite` from the default.
 - **enforcement:** test-pinned (`TestDevControllerDefaultCoversRegistry`, blocking `unit-tests` job).
 
-### id 91 — Uninstalling a Managed plugin means editing `NEO4J_PLUGINS`; a Job cannot touch another pod's `/plugins`
+### id 99 — Uninstalling a Managed plugin means editing `NEO4J_PLUGINS`; a Job cannot touch another pod's `/plugins`
 - **scope:** `internal/controller/plugin_controller.go` — `removePluginFromDeployment`, `RemoveFromNeo4jPluginList`, `MergeNeo4jPluginList`; the `plugins` EmptyDir volume in `internal/resources/cluster.go`.
 - **rule:** Uninstall a Managed plugin by removing its name from the target StatefulSet's `NEO4J_PLUGINS` env var via `RemoveFromNeo4jPluginList` — the exact inverse of the install path's `MergeNeo4jPluginList`, and preserving every entry another controller owns. **Never** launch a Job to delete JAR files from `/plugins`: it is a per-pod `EmptyDir`, so a separate Job pod cannot address it, and the Neo4j Docker entrypoint repopulates it from `NEO4J_PLUGINS` on every container start. `RemoveFromNeo4jPluginList` returns its input unchanged when the plugin is absent, so callers must treat `result == input` as "skip the Update" and avoid a pointless rolling restart.
 - **why:** Two bugs in one construction. The removal Job declared its **own** fresh `EmptyDir` named `plugins` and ran `rm -f /plugins/<name>*.jar` against it — deleting files in a directory it had just created, never touching Neo4j — so a Managed plugin was never actually uninstalled and came back on the next restart. Worse, the Job outlived the reconcile that created it: every later reconcile re-issued the same `Create` and failed `jobs.batch "<sts>-remove-plugin-<plugin>" already exists`, so the finalizer was **never released** and the CR stayed `Terminating` indefinitely, which also blocks namespace deletion. The integration suite missed it because those specs delete whole namespaces instead of deleting a `Neo4jPlugin` against a live deployment. Found by hand during the v1.14.0 verification journey.
 - **pinned-by:** `TestRemoveFromNeo4jPluginList` and `TestRemoveFromNeo4jPluginListRoundTripsWithMerge` (`internal/controller/plugin_controller_unit_test.go`) pin removal, the untouched-foreign-plugin case, the unchanged-input signal, malformed-JSON erroring rather than wiping the list, and install/uninstall round-tripping. **No test asserts the absence of the Job — known gap:** the Job type is gone from the file, so there is nothing left to assert against.
 - **enforcement:** unit test (list helper) + convention for the "no removal Job" half — **PROSE-ONLY — at risk** if someone reintroduces a Job-based uninstall.
 
-### id 90 — Operator-managed conf keys must be excluded from EVERY user config map, not just `spec.config`
+### id 100 — Operator-managed conf keys must be excluded from EVERY user config map, not just `spec.config`
 - **scope:** `internal/resources/cluster.go` — `operatorManagedConfKeys`, `buildNeo4jConfigForEnterprise`, `buildPropertyShardingConfig`; `internal/resources/memory_config.go` — `UserMemorySetting`, `GetMemoryConfigForCluster`.
 - **rule:** A user-supplied conf key that the operator also derives must be dropped from **every** map a user can write it into — today `spec.config` and `spec.propertySharding.config` — using the single `operatorManagedConfKeys` set. Memory keys are then read back through `UserMemorySetting`, which consults both maps and is the only place that keeps `heap.initial_size` coherent with `heap.max_size`. Adding a new user-writable conf map means wiring it into **both** functions. Never let a user value reach the rendered conf by being appended after the operator's own block.
 - **why:** `spec.config` had excluded the memory keys all along; `spec.propertySharding.config` merged everything verbatim, and its lines land **after** the operator's memory block where `DedupeNeo4jConf` keeps the last occurrence. A user `heap.max_size` therefore won while the derived `heap.initial_size` (60% of the memory **limit**) stayed — and the JVM refuses to start on `Initial heap size set to a larger value than the maximum heap size`. This shipped: `examples/property_sharding/development-property-sharding.yaml` set a 4G max against an 8Gi limit (derived initial 5G) and **CrashLoopBackOffed all three servers** when applied verbatim. `advanced-property-sharding.yaml` sat on the same path and survived only because its 12G happened to equal the derived value. The same hole let `server.bolt.tls_level` and `server.directories.certificates` be overridden through `propertySharding.config`, silently downgrading the operator-managed TLS posture.
@@ -536,5 +541,5 @@
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.
-- **Structured events** (`internal/controller/events.go`): event reasons (`EventReason*`) and condition type/reason constants (`ConditionType*`, `ConditionReason*`) are defined here. Use `corev1.EventTypeNormal` / `corev1.EventTypeWarning`, never raw reason strings.
+- **Structured events** (`internal/controller/events.go`): event reasons (`EventReason*`) are defined here, together with some condition type/reason constants (`ConditionType*`, `ConditionReason*`, e.g. `ConditionTypePendingDependencies`); the rest of the condition constants (`ConditionTypeReady`, `ConditionTypeServersHealthy`, …) live in `conditions.go`. Use `corev1.EventTypeNormal` / `corev1.EventTypeWarning`, never raw reason strings.
 - **Env-var ownership annotation** `neo4j.com/cluster-controller-env-vars` (`internal/controller/neo4jenterprisecluster_controller.go` `ownedEnvVarsAnnotation` ~L1156; see also `internal/controller/owned_keys.go`): the cluster controller records the env-var names it owns each reconcile so the next loop can enforce removals (`previously-owned ∖ desired`) via `mergeEnvVars` (~L1221) / `envVarsEqual` (~L1258) without disturbing foreign vars set by plugin/fleet/Aura controllers.

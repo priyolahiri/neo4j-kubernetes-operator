@@ -1,9 +1,10 @@
 # internal/controller
 
-> controller-runtime reconcilers for every Neo4j CRD (cluster, standalone, database,
-> sharded database, backup, restore, user, role, rolebinding, authrule, plugin), plus
-> the shared helpers (events, conditions, clusterRef resolution, env-var/owned-key
-> merging, split-brain detection, topology scheduling, rolling upgrade) they lean on.
+> controller-runtime reconcilers for every operator CRD (27 controllers, one per Kind: cluster, standalone,
+> database, sharded database, composite database, alias, replica database, replica promotion, backup,
+> restore, user, role, rolebinding, authrule, plugin, plus the 12 `aura*_controller.go` for the Aura CRDs),
+> plus the shared helpers (events, conditions, clusterRef resolution, env-var/owned-key merging,
+> split-brain detection, topology scheduling, rolling upgrade) they lean on.
 
 ## Key files
 
@@ -15,9 +16,11 @@
 | `neo4jrestore_controller.go` | Restore reconciler (heaviest user of `RetryOnConflict` status writes). |
 | `neo4jdatabase_controller.go` / `neo4jshardeddatabase_controller.go` | `Neo4jDatabase` / `Neo4jShardedDatabase` reconcilers. |
 | `neo4juser_controller.go` / `neo4jrole_controller.go` / `neo4jrolebinding_controller.go` / `neo4jauthrule_controller.go` | Auth-model reconcilers. |
+| `neo4jcompositedatabase_controller.go` / `neo4jdatabasealias_controller.go` / `neo4jreplicadatabase_controller.go` / `neo4jreplicapromotion_controller.go` | Composite DB, alias and cross-cluster replication reconcilers. |
+| `aura*_controller.go`, `aura_fleet_provision.go` | Aura (cloud) reconcilers on the Aura REST API (`internal/aura/`); no Bolt. Refusals must not reach an `aura.IsTransient` branch unmarked (knowledge `operations.md` id 88). |
 | `plugin_controller.go` | `Neo4jPlugin` reconciler; home of `MergeNeo4jPluginList`. |
 | `events.go` | All `EventReason*` string constants — emit these, never raw strings. |
-| `conditions.go` | `Condition{Type,Reason}*` constants + `SetReadyCondition` / `SetNamedCondition`. |
+| `conditions.go` | Most `Condition{Type,Reason}*` constants (the rest are in `events.go`) + `SetReadyCondition` / `SetNamedCondition` / `PhaseToConditionStatus`. |
 | `cluster_resolver.go` | `ResolveClusterRef`, `ResolvedTarget`, `EnqueueDependentsForClusterChange`. |
 | `owned_keys.go` | Owned env-var/annotation tracking (`neo4j.com/cluster-controller-env-vars`). |
 | `splitbrain_detector.go` | `SplitBrainDetector` — compares per-pod cluster views, restarts orphans. |
@@ -38,8 +41,8 @@
 ## Conventions & gotchas
 
 - **Validation is INLINE, never a webhook (invariant 1).** Reconcilers hold a `*validation.*Validator` (e.g. cluster controller's `Validator *validation.ClusterValidator`) and call it from `Reconcile` — there is no `_webhook.go`.
-- **Status writes wrap `retry.RetryOnConflict(retry.DefaultRetry, ...)`** (or `DefaultBackoff`) — required for 2025.01.0 cluster formation. See `neo4jenterprisecluster_controller.go:784`. Re-fetch the object inside the closure.
-- **StatefulSet existence check is `sts.UID != ""`, NOT `ResourceVersion`** (ResourceVersion is set even on never-created objects). See `neo4jenterprisecluster_controller.go:869`.
+- **Status writes wrap `retry.RetryOnConflict(retry.DefaultRetry, ...)`** (or `DefaultBackoff`) — required for 2025.01.0 cluster formation. See `neo4jenterprisecluster_controller.go` (`grep -n RetryOnConflict`). Re-fetch the object inside the closure.
+- **StatefulSet existence check is `sts.UID != ""`, NOT `ResourceVersion`** (ResourceVersion is set even on never-created objects). See `createOrUpdateResourceInternal` in `neo4jenterprisecluster_controller.go`.
 - **Emit events via `EventReason*` constants from `events.go`** with `corev1.EventTypeNormal` / `corev1.EventTypeWarning` — never raw strings.
 - **Env vars: subset-merge, never wholesale-replace.** `envVarsEqual` checks desired vars exist with the right value but tolerates foreign extras; `mergeEnvVars` merges and enforces removals via the owned-keys annotation (`owned_keys.go`). Do not bake `NEO4J_PLUGINS` into the static StatefulSet template; use `MergeNeo4jPluginList`. (CLAUDE.md "Key Implementation Patterns".)
 - **`CollectDiagnostics` is non-fatal** — surface errors to `status.diagnostics.collectionError`, never `return err`.

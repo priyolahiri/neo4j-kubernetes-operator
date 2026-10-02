@@ -31,10 +31,14 @@ The contributor-readiness system has four parts; this directory is leg (b).
    from real workflows (releasing, regenerating artifacts, debugging
    reconciliation, etc.). Skills *do*; the knowledge base *explains and
    constrains*.
-4. **Enforced guardrails — CI guard scripts.** `scripts/check-invariants.sh`
-   (added with this knowledge base) machine-checks the invariants in CI so they
-   are not merely documented. `make check-drift` separately guarantees generated
-   artifacts are never hand-edited out of sync.
+4. **Enforced guardrails — guard scripts.** `scripts/check-invariants.sh`
+   (added with this knowledge base) machine-checks the invariants and
+   `scripts/check-knowledge-drift.sh` checks that this directory still cites real
+   tests and paths, so they are not merely documented. Both run in the
+   **advisory, non-blocking** `Invariant Guards (advisory)` CI job (and locally via
+   `make check-knowledge`); they surface a violation but do not gate merge.
+   `make check-drift` separately guarantees generated artifacts are never
+   hand-edited out of sync, and — with `unit-tests` — is a blocking gate.
 
 ## How it's organized
 
@@ -48,21 +52,26 @@ The contributor-readiness system has four parts; this directory is leg (b).
   invariant an `id`, a `rule`, a `WHY`, an explicit **enforcement status**, and a
   **violation symptom** (what an agent actually observes when they break it). The
   enforcement status uses a fixed vocabulary so the *strength* of each rule is
-  unambiguous:
-  - **CI-enforced (`scripts/check-invariants.sh`)** — machine-checked; the build
-    fails on violation.
-  - **test-pinned (`<test>`)** — a Go test asserts it; `make test-unit` fails.
-  - **startup-checked** — the running operator refuses to start on violation.
+  unambiguous (the same words `invariants.md` defines):
+  - **guard-checked (`scripts/check-invariants.sh`)** — the guard script greps the
+    tree and flags a violation. **Advisory**: it runs in a non-blocking CI job, the
+    agent skills and `make check-invariants`; it does not fail the build.
+  - **test-pinned (`<test>`)** — a Go test asserts it; `make test-unit` fails
+    (blocking). A pin is only as good as the assertion — if the named test does not
+    actually assert the rule, the entry must say so.
+  - **runtime-enforced** — a validator in `internal/validation/` rejects the bad CR
+    inline, and/or the running operator refuses to start on violation.
   - **PROSE-ONLY — at risk** — convention/file-absence only; nothing actively
     rejects a violation. These are flagged honestly as the highest-risk rules.
 - **`CLAUDE.md` is the constitution + index, not the encyclopedia.** The former
-  79-rule checklist that lived in `CLAUDE.md` is being re-homed here. `CLAUDE.md`
+  79-rule checklist that lived in `CLAUDE.md` has been re-homed here. `CLAUDE.md`
   keeps the mission, the essential commands, and an *index that points into*
   `docs/knowledge/` — it does not also keep the full checklist. Single home, no
   duplication.
 - **Per-package `CLAUDE.md` files load by locality.** Claude Code automatically
   loads the nearest `CLAUDE.md` for the files you're editing. Package-local
-  guidance (e.g. a future `internal/controller/CLAUDE.md`) lives next to the code
+  guidance (`api/v1beta1/`, `internal/controller/`, `internal/neo4j/`,
+  `internal/resources/`, `internal/validation/`) lives next to the code
   it governs so it surfaces exactly when relevant, instead of bloating the
   root-level document. The root `CLAUDE.md` carries only cross-cutting rules and
   the index into this knowledge base.
@@ -77,10 +86,14 @@ the rule rather than copying stale guidance forward. The drift between
 
 The guardrails enforce this contract two ways:
 
-- **`scripts/check-invariants.sh`** (CI) machine-checks the invariants in
-  `invariants.md` against the code — failing the build if a forbidden file,
-  symbol, or pattern reappears, so the docs and the code cannot silently
-  disagree.
+- **`scripts/check-invariants.sh`** (advisory CI job + `make check-invariants`)
+  machine-checks the invariants in `invariants.md` against the code — reporting a
+  violation if a forbidden file, symbol, or pattern reappears, so the docs and the
+  code cannot silently disagree. It is not a merge gate.
+- **`scripts/check-knowledge-drift.sh`** (same advisory job) fails if a test name,
+  file path or `Neo4j*` identifier cited in backticks here no longer exists.
+  Rule and id numbers are per file (`backup-restore.md` and `operations.md` both
+  have an 80 and an 81); cite file + number.
 - **`make check-drift`** (CI gate) regenerates every generated artifact
   (`sync-all` + `bundle`) and fails on any diff, ensuring nobody hand-edits a
   `# This file is GENERATED` file.

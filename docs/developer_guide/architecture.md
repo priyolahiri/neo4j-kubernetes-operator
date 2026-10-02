@@ -42,11 +42,13 @@ topology:
 
 Backups are owned by the dedicated **`Neo4jBackup` CRD**: each CR (one-shot or scheduled via `spec.schedule`) spawns a Kubernetes `Job` (or `CronJob` → child Jobs) that runs `neo4j-admin database backup` from the same Neo4j Enterprise image as the cluster. No sidecar containers, no persistent backup pod. The Job connects to each `{cluster}-server-N` Pod on port 6362 (`server.backup.listen_address=0.0.0.0:6362`, configured automatically) and streams artifacts to the destination (PVC, S3, GCS, or Azure).
 
-All runs of a single Neo4jBackup CR share a `<base>/<cr-name>/` directory so `neo4j-admin` can chain `--type=DIFF` backups off the prior `FULL`. Per-run identity is preserved via the timestamp `neo4j-admin` embeds in each `.backup` filename.
+All runs of a single Neo4jBackup CR share a `<base>/<chain-root>/` directory (the chain root is the CR name unless `spec.chainFromBackup` names another backup) so `neo4j-admin` can chain `--type=DIFF` backups off the prior `FULL`. Per-run identity is preserved via the timestamp `neo4j-admin` embeds in each `.backup` filename.
 
 ## Custom Resource Definitions (CRDs)
 
-The operator defines eleven CRDs located in `api/v1beta1/`:
+The operator defines 27 CRDs in `api/v1beta1/` (`ls api/v1beta1/*_types.go`; `mcp_types.go` holds shared types only). This page details the core workload, database, backup/restore and identity CRDs. `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias`, `Neo4jReplicaDatabase` / `Neo4jReplicaPromotion` (cross-cluster replication) and the 12 `Aura*` CRDs are covered by their user guides and `docs/api_reference/` (and `internal/controller/CLAUDE.md` lists every controller). The cluster-targeted ones follow the same patterns described below (`clusterRef`, inline validation, `Cypher25()`/`Cypher5()` for version-sensitive DDL); the Aura ones talk to the Aura REST API instead of Bolt.
+
+The CRDs detailed here:
 
 ### Core Deployment CRDs
 
@@ -120,13 +122,13 @@ type Neo4jDatabaseSpec struct {
 - **Job-per-CR architecture**: Each `Neo4jBackup` (one-shot or scheduled) spawns a Kubernetes Job (or CronJob → child Jobs). No sidecar containers, no persistent backup pod.
 - **Target Support**: Cluster OR standalone (the controller probes the `spec.instanceRef` deployment to resolve the type and routes to `BuildStandaloneBackupFromAddress` for standalones, `BuildBackupFromAddresses` for clusters)
 - **Neo4j 5.26+ Support**: Modern backup syntax with `--to-path` parameter
-- **Shared-directory layout**: All runs of a single CR write into `<base>/<cr-name>/` so `neo4j-admin` can chain differential backups off the prior full. Per-run identity is preserved via the ISO-8601 timestamp `neo4j-admin` embeds in each `.backup` filename (also captured into `status.history[].artifactFilename` / `shardArtifacts[].filename` via Pod-log parsing).
+- **Shared-directory layout**: All runs of a single CR write into `<base>/<chain-root>/` (the CR name unless `spec.chainFromBackup` says otherwise) so `neo4j-admin` can chain differential backups off the prior full. Per-run identity is preserved via the ISO-8601 timestamp `neo4j-admin` embeds in each `.backup` filename (also captured into `status.history[].artifactFilename` / `shardArtifacts[].filename` via Pod-log parsing).
 
 #### Neo4jRestore (`neo4jrestore_types.go`)
 - **Purpose**: Manages database restoration from backups
 - **Point-in-Time Recovery**: Supports `--restore-until` for precise recovery
 - **Cross-Deployment Support**: Works with both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone` (auto-detected via `clusterRef`)
-- **Source types**: `backup` (reference a `Neo4jBackup` CR), `storage` (local PVC), `s3`/`gcs`/`azure` (cloud URIs), `pitr` (point-in-time)
+- **Source types**: `backup` (reference a `Neo4jBackup` CR), `storage` (a PVC or cloud location), `pitr` (point-in-time). `spec.source.type` is one of `backup`, `storage`, `pitr`; the S3/GCS/Azure/PVC choice is `spec.source.storage.type`, not a separate source type
 
 ### Identity, Access & Sharding CRDs
 
@@ -152,7 +154,7 @@ type Neo4jDatabaseSpec struct {
 
 #### Neo4jShardedDatabase (`neo4jshardeddatabase_types.go`)
 - **Purpose**: Sharded database management (property sharding via `db.shard.*`)
-- **Version-gated**: requires Neo4j 2025.12+ images and 5+ servers with 4-8Gi/server, 2+ CPU/server
+- **Version-gated**: requires Neo4j 2025.12+ images. The cluster must have enough servers to host the declared shard topology (graph shard + property shards), ideally 3+ for HA; per server the operator hard-rejects below 4GB memory / 1 CPU (8GB / 2 CPU recommended) — `NEO4J_SHARDING_RELAX_MEMORY_MIN=true` downgrades that to a warning for dev/test
 
 ## Controllers Architecture
 
@@ -296,7 +298,7 @@ Standalone targets are auto-detected: `getClusterRef` accepts a standalone name 
 
 **Standalone backup**: `neo4jbackup_controller.go::isStandaloneTarget` detects when `spec.instanceRef` references a `Neo4jEnterpriseStandalone`. The `--from` address resolution switches from `BuildBackupFromAddresses` (cluster: comma-separated FQDNs) to `BuildStandaloneBackupFromAddress` (single FQDN). The rest of the backup flow — Job spec, PVC/cloud storage, shared `<base>/<chain-root>/` directory, history population — is identical.
 
-**Integration test coverage caveat**: the `test/integration` suite covers backup and restore of clusters only. Standalone backup/restore is exercised by unit tests in `internal/controller/*_test.go` and manual smoke tests. End-to-end Ginkgo coverage for the standalone path is a known follow-up — the code paths are the same so failures would surface in the cluster specs, but a dedicated standalone round-trip would harden the contract.
+**Integration test coverage**: the `test/integration` suite covers cluster backup/restore (`backup_*`, `restore_*`, `standard_database_*_restore`) and the standalone Job-path all-databases round trip (`all_databases_restore_standalone_test.go`, `extended`). Single-database standalone backup/restore beyond that is exercised by unit tests in `internal/controller/*_test.go` and by the manual [release verification](release_verification.md) walk (Phase 1).
 
 **Race-tolerance**: AlreadyExists on Job creation is treated as "another reconcile got there first" rather than terminal-failure. Concurrent reconciles during the stopCluster cycle (10s scale-down delay queues a fresh reconcile before the original finishes) are common; without this tolerance the loser would flip the restore to `Failed` and the "Restore previously failed" guard would pin it permanently.
 
@@ -319,7 +321,7 @@ Standalone targets are auto-detected: `getClusterRef` accepts a standalone name 
 **Property-sharding management:**
 
 - **Version-gated**: requires Neo4j 2025.12+ images
-- **Resource requirements**: 5+ servers, 4-8Gi memory per server, 2+ CPU per server
+- **Resource requirements**: hard floor 4GB memory and 1 CPU per server (8GB / 2 CPU recommended), enforced in `validatePropertyShardingConfiguration` (relaxable with `NEO4J_SHARDING_RELAX_MEMORY_MIN=true`, DEV/TEST only); 3+ servers recommended for HA
 
 ## Validation Framework (`internal/validation/`)
 
@@ -438,7 +440,7 @@ These are free `Build*ForEnterprise` / `Build*ForStandalone` functions, not stat
 
 #### Startup Optimization:
 - **Parallel Pod Management**: All server pods start simultaneously
-- **`minimum_initial_system_primaries_count = TOTAL_SERVERS`**: Set only on initial cluster formation (when `/data/databases/system` doesn't exist). Forces RAFT to wait until every configured server is visible before electing a bootstrap leader — eliminates the split-brain window when multiple pods come up in parallel. Skipped on restart so a single server can rejoin without waiting on its peers.
+- **`minimum_initial_system_primaries_count = min(3, servers)`** (`EffectiveMinSystemPrimaries()`; overridable via `spec.topology.minSystemPrimaries`, clamped to `[2, servers]`): Set only on initial cluster formation (when `/data/databases/system` doesn't exist). Makes RAFT wait for that many system-database primaries to be visible before electing a bootstrap leader — narrows the split-brain window when multiple pods come up in parallel. Skipped on restart so a single server can rejoin without waiting on its peers. It is also the floor a cluster can later be scaled down to (see Scale-Down Drain).
 - **PublishNotReadyAddresses**: Discovery includes pending pods
 - **Resource Version Conflict Retry**: Handles concurrent updates gracefully
 
@@ -489,10 +491,9 @@ reconciliation — no admission webhooks are used (CLAUDE.md "NO WEBHOOKS" hard 
 `cert-manager.io/v1` `Certificate` whose `dnsNames` cover every endpoint clients
 or peers may connect to:
 
-- The headless discovery service (`{cluster}-discovery`)
-- The client service (`{cluster}-client`)
-- Each individual server pod FQDN (`{cluster}-server-0.{cluster}-discovery.{ns}.svc.cluster.local`, …)
-- LoadBalancer hostnames where applicable
+- The client service (`{cluster}-client`), the internals service (`{cluster}-internals`) and the headless service (`{cluster}-headless`), each at the short, `.{ns}`, `.svc` and `.svc.cluster.local` forms
+- Each individual server pod under the internals and headless services (`{cluster}-server-0.{cluster}-headless.{ns}.svc.cluster.local`, …)
+- `spec.service.dnsName` and the CCDR proxy / LoadBalancer hostname where applicable (a proxy IP goes in `ipAddresses`, never `dnsNames`)
 
 The `Certificate` references the user-supplied `issuerRef` and writes its
 material into a Secret named `{resource-name}-tls-secret` (`tls.crt`, `tls.key`,
@@ -528,7 +529,7 @@ The cluster SSL policy posture is governed by `spec.tls.strictPeerValidation`
   configuration.
 
 When TLS is enabled, `server.bolt.tls_level=REQUIRED` is also set — plain
-`bolt://` connections are rejected (regression checklist items #9–#13, TLS / Bolt client).
+`bolt://` connections are rejected (`docs/knowledge/operations.md` ids 9–13, TLS / Bolt client).
 
 #### 4. Operator-side Bolt connection (outgoing)
 
@@ -553,7 +554,7 @@ wherever K8s steered them via the `{cluster}-client` ClusterIP. The
 operator's Bolt clients used to use `bolt://`, which produced
 `Neo.ClientError.Cluster.NotALeader` on N-1 of every N reconciles and
 visible Ready ↔ Failed status flicker on the role/user/auth-rule
-controllers. See checklist item #11.
+controllers. See `docs/knowledge/operations.md` id 11.
 
 The **single legitimate `bolt://` consumer** is
 `internal/controller/splitbrain_detector.go:createPodSpecificNeo4jClient`,
@@ -564,8 +565,9 @@ routing scheme too, for symmetry; on a single-member topology
 `getRoutingTable` reports the lone member as both reader and writer, so
 behavior is equivalent to direct connection.
 
-**Driver timeouts.** `NewClientForEnterprise` /
-`NewClientForEnterpriseStandalone` configure:
+**Driver timeouts.** `NewClientForEnterprise` and `NewClientForPod` configure
+(the standalone client deliberately uses larger 30s / 15s / 30s values for
+startup tolerance — `NewClientForEnterpriseStandalone`):
 
 - `ConnectionAcquisitionTimeout = 10s` — full budget for getting a
   connection (includes routing-table fetch retries under `neo4j://`)
@@ -575,25 +577,26 @@ behavior is equivalent to direct connection.
 These values are deliberately tight: an unreachable cluster fails fast
 instead of stalling the controller's reconcile queue behind hung Bolt
 calls. Healthy clusters complete the routing handshake in well under one
-second. See checklist item #12.
+second. See `docs/knowledge/operations.md` id 12.
 
 **TLS.** `buildTLSConfig` (`internal/neo4j/client.go`) governs which CA the
 client trusts:
 
 1. **Auto-discovery**: load `ca.crt` from the `{resource-name}-tls-secret`
-   Secret and pin it as the trusted CA for outgoing connections. This is
+   Secret and trust it as the CA for outgoing connections. This is
    the default path — no user configuration required.
 2. **Override**: `spec.tls.trustedCASecret` lets users point at a different
    Secret (e.g. when bringing their own CA outside cert-manager).
-3. **Fallback**: `InsecureSkipVerify` is used only during the brief window
-   before the Secret has been populated by cert-manager (regression
-   checklist item #9).
+3. **Fallback**: with no usable `ca.crt` the client verifies by **pinning** the
+   server certificate from `tls.crt` (a one-certificate trust store, hostname
+   still checked). With neither key it fails closed. There is no
+   `InsecureSkipVerify` path (`docs/knowledge/operations.md` id 9).
 
 All three Bolt entry points — `NewClientForEnterprise`,
 `NewClientForEnterpriseStandalone`, and `NewClientForPod` (split-brain
 detector) — go through `buildTLSConfig`, so the scheme switches
 dynamically between TLS-enabled and plain variants based on `spec.tls.mode`
-(checklist item #10).
+(`docs/knowledge/operations.md` id 10).
 
 #### 5. Standalone differences
 
@@ -603,7 +606,7 @@ differences:
 - A single pod, so `dnsNames` is shorter (one server FQDN + the client service).
 - Neo4j configuration is delivered via a ConfigMap rather than StatefulSet env
   vars; the `health.sh` probe (mounted alongside `neo4j.conf` with mode `0755`)
-  also lives in this ConfigMap (checklist item #6).
+  also lives in this ConfigMap (`docs/knowledge/operations.md` id 6).
 
 #### 6. Outbound trust — `spec.trustedCASecrets` & `spec.extraVolumes`
 
@@ -684,7 +687,7 @@ references a per-policy `truststore_path`.
 | Neo4j-server outgoing TLS truststore | `internal/resources/cluster.go:BuildTrustStoreInitContainer` (init container) + `NEO4J_server_jvm_additional` env var |
 | `spec.trustedCASecrets` API | `api/v1beta1/neo4jenterprisecluster_types.go:TrustedCASecret` |
 | `spec.extraVolumes` / `spec.extraVolumeMounts` API | same file, on the cluster + standalone specs |
-| Regression invariants | CLAUDE.md checklist items #6, #9, #10, #11, #12, #13 |
+| Regression invariants | `docs/knowledge/operations.md` ids 6, 9, 10, 11, 12, 13 |
 
 ## Monitoring & Observability
 
@@ -752,14 +755,13 @@ never shares state with the cluster formation or upgrade clients.
 ## Testing Architecture
 
 ### Test Strategy:
-- **Unit Tests**: Controller logic and helper functions
-- **Integration Tests**: Full workflow testing with envtest
-- **End-to-End Tests**: Real cluster testing with Kind
-- **Performance Tests**: Reconciliation efficiency validation
+- **Unit Tests**: Controller logic and helper functions (the `internal/controller` suite runs against envtest)
+- **Integration Tests**: Full workflow testing against a real Kind cluster with the operator deployed (`core` / `extended` tiers — see [Testing](testing.md)); there is no separate end-to-end or performance suite
+- **Release verification**: a manual + LLM walk on a clean cluster ([Release Verification](release_verification.md))
 
 ### Test Infrastructure:
 - **Ginkgo/Gomega**: BDD-style testing framework
-- **Envtest**: Kubernetes API server for integration testing
+- **Envtest**: Kubernetes API server for the unit-level controller suite (not used by the integration suite)
 - **Kind Clusters**: Development and test cluster automation
 - **Test Cleanup**: Automatic finalizer removal and namespace cleanup
 

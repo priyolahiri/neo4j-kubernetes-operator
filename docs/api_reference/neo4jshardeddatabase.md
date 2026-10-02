@@ -50,8 +50,10 @@ operator always emits on the sharded `CREATE`.
 |-----|------|---------|-------------|
 | `internal.dbms.sharded_property_database.enabled` | string | "true" | Enable property sharding database feature |
 | `internal.dbms.sharded_property_database.allow_external_shard_access` | string | "false" | Allow external access to individual shards |
-| `db.tx_log.rotation.retention_policy` | string | "7 days" | Transaction log retention policy |
-| `internal.dbms.sharded_property_database.property_pull_interval` | string | "10ms" | Property synchronization interval |
+| `db.tx_log.rotation.retention_policy` | string | _(not set by the operator)_ | Transaction log retention policy; Neo4j's own default applies unless you set it here |
+| `internal.dbms.sharded_property_database.property_pull_interval` | string | _(not set by the operator)_ | Property synchronization interval; Neo4j's own default applies unless you set it here |
+
+Only the first two keys are defaulted by the operator; any other key you list is passed through to `neo4j.conf`.
 
 ### Status Fields
 
@@ -244,11 +246,11 @@ status:
   message: string                        # Status message
   observedGeneration: int64              # Observed generation
   shardingReady: boolean                 # All shards operational
-  creationTime: metav1.Time              # Creation timestamp
-  graphShard: ShardStatus                # Graph shard status
-  propertyShards: []ShardStatus          # Property shard statuses
-  virtualDatabase: VirtualDatabaseStatus  # Virtual database status
-  totalSize: string                      # Total size across shards
+  creationTime: metav1.Time              # RESERVED: never populated today
+  graphShard: ShardStatus                # RESERVED: never populated today
+  propertyShards: []ShardStatus          # RESERVED: never populated today
+  virtualDatabase: VirtualDatabaseStatus  # RESERVED: never populated today
+  totalSize: string                      # RESERVED: never populated today
   lastBackup: object                     # Reverse-lookup of most recent Succeeded backup
   lastDestructiveRestoreGeneration: int64  # Generation at which the last replaceExisting recreate completed
 ```
@@ -259,24 +261,22 @@ status:
 
 | Phase | Description |
 |-------|-------------|
-| `Initializing` | Creating and configuring shards |
-| `Pending` | Waiting on a `seedBackupRef` whose backup has no Succeeded run yet (reconciler requeues) |
-| `Ready` | All shards operational |
-| `Failed` | Error in shard creation or operation |
-| `Mixed` | Some shards operational, others not |
+| `Validating` | Initial phase while the spec is validated |
+| `Creating` | Spec validated; the sharded database is being created |
+| `Waiting` | The target cluster is not yet `Ready` with property sharding operational (reconciler requeues) |
+| `Pending` | Waiting on a `seedBackupRef` whose backup has no Succeeded run yet, on the PVC seed proxy, or on seed credentials being projected onto the cluster (reconciler requeues) |
+| `Ready` | Sharded database created and operational |
+| `Failed` | Validation, seed resolution, client creation or database creation failed |
+
+The controller sets no other phases (for example there is no `Initializing` or `Mixed` phase).
 
 #### Conditions
 
-Standard Kubernetes conditions with these types:
-
-| Type | Description |
-|------|-------------|
-| `Ready` | Sharded database is ready for use |
-| `GraphShardReady` | Graph shard is operational |
-| `PropertyShardsReady` | All property shards are operational |
-| `VirtualDatabaseReady` | Virtual database is accessible |
+A single standard `Ready` condition, derived from `phase` (`Ready` → `True`; `Failed` → `False`; every other phase → `Unknown`). There are no per-shard or virtual-database condition types.
 
 ### ShardStatus
+
+> **Reserved — never populated today.** `status.graphShard`, `status.propertyShards`, `status.virtualDatabase` (and its metrics types below), `status.totalSize` and `status.creationTime` are part of the schema but no controller writes them. Use `kubectl exec ... SHOW DATABASES` for per-shard state.
 
 ```yaml
 shardStatus:
@@ -350,16 +350,19 @@ queryMetrics:
 ### Neo4jShardedDatabase Validation
 
 - `clusterRef` must reference existing Neo4jEnterpriseCluster with property sharding enabled
+- `name` is at most 63 characters, contains only letters, digits, `_` and `-`, and must not be `system` or `neo4j`
 - `defaultCypherLanguage` must be "25"
 - `propertyShards` must be 1-1000
-- `propertyShardTopology.replicas` must be >= 1
+- `graphShard.primaries` must be >= 1 (and `graphShard.primaries + graphShard.secondaries` must not exceed the cluster's `spec.topology.servers`)
+- `propertyShardTopology.replicas` must be >= 1 and must not exceed the cluster's `spec.topology.servers`
 - `seedURI` and `seedURIs` cannot both be set
 - `seedBackupRef` is mutually exclusive with `seedURI` and `seedURIs`
-- `seedSourceDatabase`, `seedConfig`, and `seedCredentials` require `seedURI` or `seedURIs`
+- `seedSourceDatabase`, `seedConfig`, and `seedCredentials` require a seed source: `seedURI`, `seedURIs`, or `seedBackupRef`
+- `seedConfig.restoreUntil`, when set, is an RFC3339 timestamp or `txId:<positive integer>`; `seedConfig.config` and `seedURIs` keys may contain only letters, digits, `.`, `_` and `-`, and `seedConfig.config` values may not contain `,`, `=`, quotes, backticks or newlines
 - `replaceExisting: true` requires `force: true` (destructive `DROP ... DESTROY DATA`)
 - `replaceExisting: true` is mutually exclusive with `ifNotExists: true` and requires a seed source (`seedURI`, `seedURIs`, or `seedBackupRef`)
-- Target cluster must be in "Ready" phase with `propertyShardingReady: true`
-- `graphShard.primaries` should be >= 3 for high availability
+- The target cluster must be `Ready` with property sharding operational (`propertyShardingReady: true`). This is not a validation error: until then the sharded database waits in phase `Waiting` and retries
+- `graphShard.primaries` should be >= 3 for high availability (advice only)
 
 ## Error Conditions
 

@@ -10,7 +10,7 @@ Welcome to the Neo4j Enterprise Operator project! This guide covers everything y
 
 | Tool | Version | Install |
 |------|---------|---------|
-| Go | 1.25+ | [golang.org/doc/install](https://golang.org/doc/install) |
+| Go | 1.27+ | [golang.org/doc/install](https://golang.org/doc/install) |
 | Docker | Latest | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
 | kubectl | Latest | [kubernetes.io/docs/tasks/tools](https://kubernetes.io/docs/tasks/tools/install-kubectl/) |
 | Kind | 0.27.0+ | `brew install kind` (macOS) or [kind.sigs.k8s.io](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) |
@@ -234,7 +234,7 @@ Key rules:
 - Use 300-second timeouts for all integration tests
 - Memory requests must be >= 1.5Gi (Neo4j Enterprise minimum)
 
-See `CLAUDE.md` for the full regression prevention checklist.
+See `docs/knowledge/` for the full regression rules (enforcement-tagged), and `CLAUDE.md` for the invariants and domain reference.
 
 ### CI Workflow Emulation
 
@@ -252,22 +252,25 @@ This runs unit tests and integration tests with CI environment variables (`CI=tr
 ## CI/CD
 
 ### Automatic (Every Push/PR)
-- **Unit tests** run on every push and pull request
+- **Unit tests + generated-artifact drift gate** (`ci.yml`) run on every push and pull request.
+- **Core integration tests** (`integration.yml`) run automatically on PRs and pushes to `main` that touch runtime paths (`internal/`, `api/`, `cmd/`, `config/`, `test/integration/`, `Dockerfile`, `Makefile`, `go.mod`/`go.sum`) — never on docs-only changes. They run the `core`-labelled specs on both Neo4j tracks (`5.26-enterprise` and the pinned CalVer) in parallel.
+- A new push to a PR **cancels** that PR's in-flight integration run; let it finish before pushing again if you are waiting on a green result.
 
-### On-Demand (Integration Tests)
+### On-Demand (Extended Integration Tests)
 
-Integration tests are opt-in to save CI resources (~7GB RAM, 10+ minutes):
+The full suite (`core` + `extended`: scaling, split-brain, backup/restore matrix, sharding, MinIO/cloud) is **manual-dispatch only** (`integration-tests.yml`). There is no nightly schedule, no PR-label trigger and no commit-message trigger.
 
 | Trigger | How |
 |---------|-----|
-| PR label | Add `run-integration-tests` label |
-| Commit message | Include `[run-integration]` in message |
-| Manual | Actions > CI > Run workflow > Check "Run integration tests" |
+| Actions tab | Actions > Extended Integration Tests > Run workflow (pick your branch) |
+| CLI | `gh workflow run integration-tests.yml --ref <branch>` |
 
-**When to trigger integration tests:**
-- Changes to controllers, resources, or cluster logic
-- New or modified integration tests
+**When to dispatch the extended suite:**
+- Changes to backup/restore, sharding, scaling, or other cluster-coordination logic the `core` subset does not exercise
+- New or modified `extended` integration tests
 - Before important releases
+
+See `docs/developer_guide/ci_and_workflows.md` for the details.
 
 ## Make Target Reference
 
@@ -424,7 +427,7 @@ Hooks run on each commit: go fmt, goimports, go mod tidy, golangci-lint (lenient
    - Clear title and description
    - Reference to related issues
    - Test results or CI confirmation
-4. **Trigger integration tests** if your change touches controllers or cluster logic (add the `run-integration-tests` label)
+4. **Check the integration lanes**: core integration tests run automatically for runtime-path changes; if your change touches backup/restore, sharding, or cluster logic, dispatch the extended suite against your branch (see [CI/CD](#cicd))
 
 ## Debugging
 

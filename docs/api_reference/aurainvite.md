@@ -24,7 +24,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef`.
 | `organizationId` | `string` | The Aura organization to invite into. Falls back to the provider config's `defaultOrganizationId`. |
 | `projectId` | `string` | Optionally scopes the invite to a project (a project-member invite). Omit for an org-level invite. |
 | `email` | `string` | **Required.** The invitee's email address. |
-| `role` | `string` | **Required.** An `organization-*` role for an org invite, or a `namespace-*` role for a project-scoped invite (`projectId` set). The Aura invite body spells project roles `namespace-*` even though the project-members endpoint spells the same concepts `project-*`. |
+| `role` | `string` | **Required.** Enum `organization-owner` / `organization-admin` / `organization-member` for an org invite (`projectId` must be unset), or `namespace-admin` / `namespace-member` / `namespace-viewer` / `namespace-metrics-integration-reader` for a project-scoped invite (`projectId` required). Enforced by CEL. The Aura invite body spells project roles `namespace-*` even though the project-members endpoint spells the same concepts `project-*`. |
 | `organizationRole` | `string` | Enum `organization-owner` / `organization-admin` / `organization-member`. Grants the organization-level role on acceptance. **Required when `role` is a `namespace-*` role** — Aura demands an organization role on *every* invite (an empty role list is rejected), so a project-only invite is impossible. Enforced by CEL. |
 | `deletionPolicy` | `string` | Enum `Delete` (default; revoke a still-pending invite) / `Orphan` (leave it). |
 | `managementPolicies` | `[]string` | Items enum `Observe`/`Create`/`Delete`/`*`. Default `["*"]`. |
@@ -34,7 +34,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef`.
 | Field | Type | Description |
 |---|---|---|
 | `inviteId` | `string` | Aura-assigned invite ID. |
-| `phase` | `string` | `Pending`, `Sent`, `Accepted`, `Error`. |
+| `phase` | `string` | `Sent` (invite active, awaiting acceptance), `Accepted`, `Revoked`, `Expired`, `Declined` (mirroring the Aura invite status), or `Error`. |
 | `conditions` | `[]metav1.Condition` | Standard readiness conditions. |
 | `observedGeneration` | `int64` | The `.metadata.generation` last reconciled. |
 | `lastSyncedTime` | `*metav1.Time` | When the invite was last observed from the Aura API. |

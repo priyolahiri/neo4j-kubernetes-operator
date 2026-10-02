@@ -22,7 +22,7 @@ Key implementation details:
 - For PVC storage, `--to-path` uses the local path within the mounted PVC.
 - RBAC: Only a `neo4j-backup-sa` ServiceAccount is created. No Role or RoleBinding is created because the backup Job requires no Kubernetes API access.
 - Retention: cloud storage (S3/GCS/Azure) is pruned by **your bucket's lifecycle rules**, not the operator. For PVC storage, the operator runs a cleanup Job **only when the Neo4jBackup CR is deleted** — see [RetentionPolicy](#retentionpolicy).
-- **Scope:** set `spec.instanceRef` (the deployment — a cluster **or** a standalone) plus exactly one scope field: `spec.database` (a single database), `spec.shardedDatabase` (a logical property-sharded database), or `spec.allDatabases: true` (every user database; the `system` database is excluded). The operator resolves cluster-vs-standalone itself — topology is not part of the API. `spec.allDatabases` produces one `.backup` artifact per database (recorded in `status.history[].databaseArtifacts`) and is restorable cluster-wide via `Neo4jRestore.spec.allDatabases` (closes [#222](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222)).
+- **Scope:** set `spec.instanceRef` (the deployment — a cluster **or** a standalone) plus exactly one scope field: `spec.database` (a single database), `spec.shardedDatabase` (the name of a `Neo4jShardedDatabase` CR), or `spec.allDatabases: true` (every user database; the `system` database is excluded). The operator resolves cluster-vs-standalone itself — topology is not part of the API. `spec.allDatabases` produces one `.backup` artifact per database (recorded in `status.history[].databaseArtifacts`) and is restorable cluster-wide via `Neo4jRestore.spec.allDatabases` (closes [#222](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222)).
 - The legacy `spec.target` block (`kind`/`name`/`clusterRef`) was deprecated in v1.13 and **removed in v1.14**. Use `spec.instanceRef` + a scope field instead.
 
 ## Spec
@@ -32,8 +32,8 @@ The `Neo4jBackupSpec` defines the desired state of a Neo4j backup configuration.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `instanceRef` | `string` | ✅ | The Neo4j deployment to back up — a `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone`. Topology-agnostic. Pair with exactly one of `database` / `shardedDatabase` / `allDatabases`. |
-| `database` | `string` | ❌ | Single-database scope: back up exactly this database. Mutually exclusive with `shardedDatabase` / `allDatabases`. |
-| `shardedDatabase` | `string` | ❌ | Sharded-database scope: back up all shards of this logical property-sharded database (`<name>-g000`, `<name>-p000`, …) in one `neo4j-admin` invocation. Mutually exclusive with `database` / `allDatabases`. |
+| `database` | `string` | ❌ | Single-database scope: back up exactly this database. Must match `^[a-zA-Z][a-zA-Z0-9.\-]*$` (max 65 characters). Mutually exclusive with `shardedDatabase` / `allDatabases`. |
+| `shardedDatabase` | `string` | ❌ | Sharded-database scope: the **name of the `Neo4jShardedDatabase` CR** (same namespace; `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`, max 253), not the logical database name — the operator reads the logical name from that CR's `spec.name`, and the two often differ. Backs up all its shards (`<name>-g000`, `<name>-p000`, …) in one `neo4j-admin` invocation. Mutually exclusive with `database` / `allDatabases`. |
 | `allDatabases` | `bool` | ❌ | Instance-wide scope: back up every user database (the `system` database is excluded). Mutually exclusive with `database` / `shardedDatabase`. |
 | `storage` | [`StorageLocation`](#storagelocation) | ✅ | Where to store the backup. Cloud provider configuration (including workload identity) lives under `storage.cloud`. |
 | `schedule` | `string` | ❌ | Cron expression for automated backups (e.g., `"0 2 * * *"`). Plain 5-field UTC syntax only — `TZ=`/`CRON_TZ=` prefixes are **rejected** (Kubernetes refuses timezone-embedded CronJob schedules). Scheduled backup names are limited to **40 characters** (the generated `<name>-backup-cron` CronJob must fit Kubernetes' 52-char CronJob-name limit). Removing `schedule` from an existing CR **deletes the CronJob** (the CR becomes a one-shot backup). |
@@ -52,7 +52,7 @@ There is no separate `target` type. Set `spec.instanceRef` to the deployment (a 
 | Scope field | Type | Meaning |
 |-------------|------|---------|
 | `database` | `string` | Back up a single database (e.g. `"neo4j"`, `"mydb"`). |
-| `shardedDatabase` | `string` | Back up all shards of a logical property-sharded database (e.g. `"products"` → `products-g000`, `products-p000`, …) in one `neo4j-admin` invocation via a glob. |
+| `shardedDatabase` | `string` | The name of a `Neo4jShardedDatabase` CR; backs up all shards of that logical property-sharded database (e.g. a CR whose `spec.name` is `products` → `products-g000`, `products-p000`, …) in one `neo4j-admin` invocation via a glob. |
 | `allDatabases` | `bool` | Back up every user database on the instance (`neo4j-admin` is invoked with the `"*"` glob, producing one artifact per database; the `system` database is excluded). |
 
 The scope fields are mutually exclusive — set exactly one.
@@ -80,8 +80,8 @@ Defines where to store backups.
 | `type` | `string` | ✅ | Storage type: `"s3"`, `"gcs"`, `"azure"`, `"pvc"` |
 | `bucket` | `string` | ❌ | Bucket or container name (required for cloud storage types). Restricted to `A-Z a-z 0-9 . _ / -` — the validator rejects other characters (the value is interpolated into the Job's shell command). |
 | `path` | `string` | ❌ | Path within the bucket or PVC. Same `A-Z a-z 0-9 . _ / -` charset restriction as `bucket`. Defaults to `backups` for cloud storage when empty. |
-| `pvc` | [`*PVCSpec`](#pvcspec) | ❌ | PVC configuration (required when `type=pvc`) |
-| `cloud` | [`*CloudBlock`](#cloudblock) | ❌ | Cloud provider configuration including optional credentials secret |
+| `pvc` | [`*PVCSpec`](#pvcspec) | ❌ | PVC configuration (required when `type=pvc`, with `pvc.name` set) |
+| `cloud` | [`*CloudBlock`](#cloudblock) | ❌ | Cloud provider configuration including optional credentials secret. **Required for `s3` / `gcs` / `azure`**, with `cloud.provider` set to `aws` / `gcp` / `azure` respectively |
 
 ### CloudBlock
 
@@ -89,7 +89,7 @@ Cloud provider configuration. This type lives on `StorageLocation` as `storage.c
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `provider` | `string` | ❌ | Cloud provider: `"aws"`, `"gcp"`, `"azure"` |
+| `provider` | `string` | ❌ | Cloud provider: `"aws"`, `"gcp"`, `"azure"`. **Required when `storage.type` is `s3` (`aws`), `gcs` (`gcp`) or `azure` (`azure`)** — the validator rejects a missing or mismatched provider |
 | `credentialsSecretRef` | `string` | ❌ | Name of a Kubernetes Secret containing cloud provider credentials as environment variables. When absent, ambient workload identity (IRSA / GKE WI / Azure WI) is used instead. |
 | `identity` | [`*CloudIdentity`](#cloudidentity) | ❌ | Cloud identity configuration (for workload identity ServiceAccount annotations) |
 | `endpointURL` | `string` | ❌ | Override the S3 API endpoint. Use for S3-compatible stores such as **MinIO**, Ceph RGW, or Cloudflare R2 (e.g. `"http://minio.minio.svc:9000"`). Only applies when `provider: aws`. |
@@ -191,9 +191,9 @@ PVC configuration for local storage.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `storageClassName` | `string` | ❌ | Storage class name for dynamic provisioning |
-| `name` | `string` | ❌ | Name of an existing PVC to use |
-| `size` | `string` | ❌ | Size for a new PVC (e.g., `"100Gi"`) |
+| `storageClassName` | `string` | ❌ | Storage class name for dynamic provisioning (used only when the operator creates the PVC, i.e. `size` is set and the PVC does not exist) |
+| `name` | `string` | ✅ (for `type: pvc`) | Name of the PVC to use. Always required: the validator rejects a PVC backup without it. If the PVC does not exist and `size` is set, the operator creates it under this name (without an owner reference, so it survives deletion of the CR) |
+| `size` | `string` | ❌ | Size for a new PVC (e.g., `"100Gi"`); omit to reference an externally provisioned PVC |
 
 ### RetentionPolicy
 
@@ -204,6 +204,8 @@ Backup retention configuration.
 | `maxAge` | `string` | ❌ | Maximum age of artifacts to retain. A **single** unit of `d` (days), `h` (hours), `m` (minutes), or `s` (seconds) — e.g. `"30d"`, `"168h"`, `"90m"`. Compound values (`"1h30m"`) and `"4w"` are **rejected** by the validator (the runtime applies exactly what validates). |
 | `maxCount` | `int32` | ❌ | Maximum number of `.backup` artifacts to retain |
 | `deletePolicy` | `string` | ❌ | `"Delete"` (default, and the only accepted value). Expired PVC-stored artifacts are pruned by the delete-time cleanup Job; for cloud storage, retention is delegated to bucket lifecycle rules. (The `"Archive"` value was removed in v1.14.) |
+
+When `retention` is set it must contain `maxAge` and/or `maxCount` — an empty `retention: {}` is rejected (`phase: Invalid`) — and `maxCount` may not be negative.
 
 **How retention actually works** (read this before relying on it):
 
@@ -231,7 +233,7 @@ Fine-grained backup execution options.
 | `includeMetadata` | `string` | ❌ | Controls which metadata is included in the backup. Values: `"all"` (default), `"none"`, `"users"`, `"roles"`. Requires Neo4j 5.26+. |
 | `parallelRecovery` | `bool` | ❌ | Enable multi-threaded transaction application during backup |
 | `keepFailed` | `bool` | ❌ | Preserve failed backup artifacts for debugging instead of deleting them |
-| `additionalArgs` | `[]string` | ❌ | Additional arguments passed verbatim to `neo4j-admin database backup` |
+| `additionalArgs` | `[]string` | ❌ | Additional arguments passed verbatim to `neo4j-admin database backup`. Each must start with `-`; the removed `--cc-graph`, `--cc-indexes`, `--cc-label-scan-store` and `--legacy-format` are rejected by the validator |
 
 > **`preferDiffAsParent` version requirement**: This flag was introduced in Neo4j CalVer 2025.04. Using it against Neo4j 5.26.x or CalVer 2025.01–2025.03 will cause the backup Job to fail with an unsupported argument error. The operator validates this at runtime and returns an error before creating the Job.
 
@@ -259,6 +261,7 @@ The `Neo4jBackupStatus` represents the observed state of the backup.
 | `nextRunTime` | `*metav1.Time` | **Reserved — not currently populated by the operator.** For scheduled backups the CronJob's own schedule is authoritative (`kubectl get cronjob <name>-backup-cron`); read `status.history[]` for actual run times. |
 | `stats` | [`*BackupStats`](#backupstats) | Statistics from the most recent backup run (only `duration` is populated — see [BackupStats](#backupstats)). |
 | `history` | [`[]BackupRun`](#backuprun) | History of recent backup runs. For scheduled backups this is the **authoritative record** of run outcomes. |
+| `replicationPullURI` | `string` | Populated only when `spec.mode` is `replication-source` and the storage is cloud (`s3://`, `gs://` or `azb://`; empty for `pvc`). The exact object-storage directory a downstream cross-cluster replica pulls this chain from — paste it into `Neo4jReplicaDatabase.spec.source.pullURI` instead of assembling bucket + path + chain directory by hand. |
 
 ### Backup Phases
 
