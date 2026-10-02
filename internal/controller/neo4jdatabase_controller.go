@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -713,15 +714,26 @@ func (r *Neo4jDatabaseReconciler) warnRolesStillGranting(ctx context.Context, da
 				"database and they are applied again.", database.Spec.Name)
 	}
 	if len(affected) > 0 {
-		names := make([]string, 0, len(affected))
-		for _, role := range affected {
-			names = append(names, role.Name)
-		}
+		names := sortedRoleNames(affected)
 		r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonPrivilegeTargetDropped,
 			"Dropped database %q while %d role(s) still grant on it in spec: %s. Neo4j removed "+
 				"those privileges with the database; the roles now ask for grants that cannot "+
 				"exist until it is recreated.", database.Spec.Name, len(names), strings.Join(names, ", "))
 	}
+}
+
+// sortedRoleNames returns the roles' names sorted, so a repeat of the
+// database's PrivilegeTargetDropped event is identical and the event recorder
+// folds it into one with a count. In list order the same drop produced two
+// distinct events, "sf-probe, sf-role" and "sf-role, sf-probe" (v1.18.0
+// journey).
+func sortedRoleNames(roles []*neo4jv1beta1.Neo4jRole) []string {
+	names := make([]string, 0, len(roles))
+	for _, role := range roles {
+		names = append(names, role.Name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // rolesGrantingOn returns the roles on clusterRef whose privileges name

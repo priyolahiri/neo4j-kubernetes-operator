@@ -212,3 +212,16 @@ func TestUnresolvedDatabaseNames_CaseInsensitive(t *testing.T) {
 	assert.Equal(t, []string{"sales"}, unresolvedDatabaseNames([]string{"sales", "Orders"}, known),
 		"a genuinely missing database is still reported")
 }
+
+// The same drop was announced twice on the database, once as "sf-probe,
+// sf-role" and once as "sf-role, sf-probe", so the event recorder could not
+// fold them (v1.18.0 journey). The names are sorted whatever order the roles
+// were listed in (a fake client always lists in name order, so the input is
+// built out of order here directly).
+func TestSortedRoleNames_IsStableWhateverTheListOrder(t *testing.T) {
+	zeta := role("zeta", "prod-cluster", "")
+	alpha := role("alpha", "prod-cluster", "")
+	mid := role("mid", "prod-cluster", "")
+	assert.Equal(t, []string{"alpha", "mid", "zeta"}, sortedRoleNames([]*neo4jv1beta1.Neo4jRole{&zeta, &alpha, &mid}))
+	assert.Equal(t, []string{"alpha", "mid", "zeta"}, sortedRoleNames([]*neo4jv1beta1.Neo4jRole{&mid, &zeta, &alpha}))
+}
