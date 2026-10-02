@@ -166,6 +166,8 @@ make test-integration LABEL=core       # the per-PR tier, as CI runs it
 make test-integration LABEL=extended   # the heavy / release tier
 make test-integration LABEL='core || extended'   # everything, spelled out
 make test-integration LABEL=extended INTEGRATION_TIMEOUT=120m   # longer suite deadline (default 60m)
+# A LABEL (or test-one TEST) that selects no spec fails the run (--fail-on-empty)
+# rather than reporting "Ran 0 of N Specs" as a pass.
 
 # To iterate against a cluster you already set up, skip make and call ginkgo:
 make test-cluster && make operator-setup     # once

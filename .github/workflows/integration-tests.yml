@@ -189,7 +189,9 @@ jobs:
         # --procs=1: the suite shares ONE Kind cluster + operator — must run
         # serially (Ginkgo's default, explicit here to guard against an accidental -p).
         # --json-report feeds the per-spec failure/timing summary below.
-        ./bin/ginkgo run -v --timeout="${GINKGO_TIMEOUT_MIN}m" --procs=1 \
+        # --fail-on-empty: a filter that selects no spec (a renamed label) fails
+        # the job instead of reporting "Ran 0 of N Specs" as a pass.
+        ./bin/ginkgo run -v --timeout="${GINKGO_TIMEOUT_MIN}m" --procs=1 --fail-on-empty \
           --label-filter="${LABEL_FILTER}" \
           --json-report=ginkgo-report.json \
           ./test/integration/... | tee integration-test-output.log
