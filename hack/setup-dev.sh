@@ -223,8 +223,8 @@ main() {
     log_success "Development environment setup complete!"
     log_info "Next steps:"
     log_info "  1. Run 'make install-hooks' to install pre-commit hooks"
-    log_info "  2. Run 'make dev-cluster' to create a development cluster"
-    log_info "  3. Run 'make dev-run' to start the operator locally"
+    log_info "  2. Run 'make dev-up' to create the Kind cluster and deploy the operator into it"
+    log_info "  3. Run 'make deploy-dev-local' (or 'tilt up') to redeploy after a code change"
     log_info "  4. Open the project in VS Code for optimal development experience"
 }
 

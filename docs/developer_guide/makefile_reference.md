@@ -326,9 +326,16 @@ make test-coverage
 
 #### `make test-integration`
 **Description**: Run comprehensive integration tests with real Kubernetes API
-**Usage**: `make test-integration`
+**Usage**: `make test-integration [LABEL=<ginkgo label expression>] [INTEGRATION_TIMEOUT=<duration>]`
 **Dependencies**: `manifests generate test-cluster ginkgo kustomize` — the `manifests`/`generate` prereqs guarantee CRDs and RBAC deployed to the test cluster match the current controller source. Skipping `manifests` (e.g., by calling kustomize directly) silently deploys stale schemas.
-**Duration**: long — it runs *every* spec (no `--label-filter`, so `core` **and** `extended`) with `--procs=1 --timeout=60m`. For a quick pass use `make test-one TEST="…"` or `ginkgo run --label-filter='core' ./test/integration/...` against an existing cluster (see [Testing](testing.md)).
+**Variables**:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `LABEL` | *(empty)* | Passed to `ginkgo --label-filter`. Empty passes no filter and runs every spec (`core` **and** `extended`). Use `core` for the per-PR tier, `extended` for the heavy / release tier, or any expression such as `'core || extended'`. Quote an expression that contains spaces or `|`. |
+| `INTEGRATION_TIMEOUT` | `60m` | The whole-suite deadline passed to `ginkgo --timeout` (not the per-spec 300s). Raise it for a long tier, e.g. `INTEGRATION_TIMEOUT=120m`. |
+
+**Duration**: long — with no `LABEL` it runs *every* spec (`core` **and** `extended`) with `--procs=1 --timeout=60m`; CI needs ~90–150 min for both tiers on CalVer. `LABEL=core` is the quick pass. To iterate on one spec, use `make test-one TEST="…"`; to run a tier against a cluster you already set up, call `ginkgo run --label-filter='core' ./test/integration/...` directly (see [Testing](testing.md)).
 **Features**:
 
 - **Always recreates** the `neo4j-operator-test` cluster (`test-cluster` deletes an existing one first)
@@ -338,45 +345,13 @@ make test-coverage
 
 **Example**:
 ```bash
-make test-integration
+make test-integration                  # every spec (core + extended)
+make test-integration LABEL=core       # the per-PR tier, as CI runs it
+make test-integration LABEL=extended   # the heavy / release tier
 # 🔄 Recreates the neo4j-operator-test cluster
 # 📦 Builds and deploys operator
-# 🧪 Runs the full spec suite (core + extended)
+# 🧪 Runs the selected specs
 # (cluster is left running — make test-cluster-delete to remove it)
-```
-
-#### `make test-integration-ci`
-**Description**: Run a name-focused subset of the integration tests (a `--focus` regex predating the `core`/`extended` labels). **Not used by any CI workflow** — the CI lanes call `ginkgo` with `--label-filter` directly (see [CI/CD & Workflows](ci_and_workflows.md)).
-**Usage**: `make test-integration-ci`
-**Dependencies**: Existing test cluster and deployed operator
-**Duration**: minutes (a small `--focus` subset)
-**Features**:
-
-- Assumes cluster and operator already deployed
-- Skips resource-intensive tests
-- Focuses on core functionality
-- Optimized for CI resource constraints
-
-**Example**:
-```bash
-make test-integration-ci
-# 🚀 CI-optimized test suite
-# ⚡ Essential tests only
-# 💾 Reduces resource usage
-```
-
-#### `make test-integration-ci-full`
-**Description**: Run complete integration test suite against an existing cluster (all specs, `--timeout=60m`). Not used by any CI workflow.
-**Usage**: `make test-integration-ci-full`
-**Dependencies**: Existing test cluster and deployed operator
-**Duration**: long — the whole suite (CI needs ~90–150 min for `core` + `extended` on CalVer)
-**⚠️ **Warning**: May cause resource exhaustion in CI
-
-**Example**:
-```bash
-make test-integration-ci-full
-# ⚠️  Full test suite - use with caution in CI
-# 🔋 High resource consumption
 ```
 
 #### `make test-one`

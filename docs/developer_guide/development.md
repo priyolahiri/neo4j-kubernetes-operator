@@ -300,11 +300,15 @@ go test ./internal/validation -v
 # the operator, runs all tests, then leaves the cluster for inspection
 make test-integration
 
+# The same, narrowed to a tier (core = the per-PR subset, extended = the heavy one)
+make test-integration LABEL=core
+make test-integration LABEL=extended
+
 # Step-by-step approach for debugging (reuse an existing cluster)
 make test-cluster              # Create test cluster only (cert-manager + issuer)
-# ... build and deploy operator manually, or use make operator-setup ...
-make test-integration-ci       # Run essential tests against the existing cluster
-make test-integration-ci-full  # Or run the complete suite (more resource-intensive)
+make operator-setup            # Build and deploy the operator into it
+./bin/ginkgo run --label-filter='core' ./test/integration/...   # a tier, against the existing cluster
+make test-one TEST="should create standalone"                   # or one spec
 make test-cluster-delete       # Clean up when done
 
 # Run a specific integration test
@@ -312,9 +316,9 @@ make test-cluster-delete       # Clean up when done
 ```
 
 > **Note**: `make test-integration` always recreates the cluster from scratch (it has
-> `test-cluster` as a prerequisite, which deletes any existing cluster first). Use
-> `make test-integration-ci` / `make test-integration-ci-full` when you want to run
-> tests against an already-configured cluster without rebuilding the environment.
+> `test-cluster` as a prerequisite, which deletes any existing cluster first). To run
+> tests against an already-configured cluster without rebuilding the environment, call
+> `./bin/ginkgo run --label-filter=…` (a tier) or `make test-one` (one spec) directly.
 
 ### CI Workflow Emulation (Added 2025-08-22)
 

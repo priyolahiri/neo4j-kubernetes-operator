@@ -412,6 +412,246 @@ func TestDiagnose_BackupJobFailedConditionMustBeTrue(t *testing.T) {
 	assert.False(t, d.problems(), joinSymptoms(d.symptoms))
 }
 
+// finishedPod builds a pod whose single container has FINISHED in its current
+// attempt and will not be restarted — the shape a Job attempt leaves behind
+// under RestartPolicyNever. The terminated state is the container's CURRENT
+// state; LastTerminationState is empty, because nothing ever restarted.
+func finishedPod(base *corev1.Pod, container string, t corev1.ContainerStateTerminated) *corev1.Pod {
+	base.Spec.RestartPolicy = corev1.RestartPolicyNever
+	base.Status.Phase = corev1.PodFailed
+	base.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name:  container,
+		State: corev1.ContainerState{Terminated: &t},
+	}}
+	return base
+}
+
+// backupJobPod builds a backup pod labelled the way the operator labels it,
+// and the way the Job controller labels every pod it creates.
+func backupJobPod(backup, job, name string) *corev1.Pod {
+	labels := map[string]string{batchv1.JobNameLabel: job}
+	for k, v := range resources.BackupJobSelector(backup) {
+		labels[k] = v
+	}
+	return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "neo4j", Labels: labels}}
+}
+
+// nightlyBackupWith diagnoses a Neo4jBackup "nightly" that owns one Job with
+// the given status and one pod, and returns what the user would be told.
+func nightlyBackupWith(t *testing.T, status batchv1.JobStatus, pod *corev1.Pod) diagnosis {
+	t.Helper()
+	jobLabels := map[string]string{}
+	for k, v := range resources.BackupJobSelector("nightly") {
+		jobLabels[k] = v
+	}
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jBackup{
+			ObjectMeta: metav1.ObjectMeta{Name: "nightly", Namespace: "neo4j"},
+			Spec:       neo4jv1beta1.Neo4jBackupSpec{InstanceRef: "prod"},
+		},
+		&batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{Name: "nightly-1", Namespace: "neo4j", Labels: jobLabels},
+			Status:     status,
+		},
+		pod,
+	)
+	results, err := diagnoseNamespace(context.Background(), c, "neo4j", "")
+	require.NoError(t, err)
+	for _, d := range results {
+		if d.kind+"/"+d.name == "Neo4jBackup/nightly" {
+			return d
+		}
+	}
+	t.Fatal("no diagnosis for Neo4jBackup/nightly")
+	return diagnosis{}
+}
+
+// A backup attempt OOM-killed under RestartPolicyNever sits in State.Terminated
+// forever: there is no restart, so LastTerminationState is empty and the old
+// code, which read only that, reported nothing for the pod. The single most
+// common cause of a failed backup was invisible at the container level.
+func TestDiagnose_NeverRestartPodOOMKilledIsReported(t *testing.T) {
+	pod := finishedPod(serverPod("prod", "prod-server-0"), "neo4j",
+		corev1.ContainerStateTerminated{ExitCode: 137, Reason: "OOMKilled"})
+
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"}},
+		pod,
+	)
+	results, err := diagnoseNamespace(context.Background(), c, "neo4j", "")
+	require.NoError(t, err)
+
+	d := results[0]
+	assert.True(t, d.problems(), joinSymptoms(d.symptoms))
+	out := joinSymptoms(d.symptoms)
+	assert.Contains(t, out, markProblem+" container neo4j in prod-server-0")
+	assert.Contains(t, out, "was OOMKilled (exit 137)")
+	assert.Contains(t, out, "1.5Gi", "a server pod gets the Enterprise memory floor")
+	assert.Contains(t, out, "kubectl logs prod-server-0 -c neo4j")
+	assert.NotContains(t, out, "--previous", "nothing restarted, so the log of this run IS the log")
+}
+
+// A backup pod is sized by spec.options.resources on the Neo4jBackup, not by
+// the server's spec.resources — pointing at the wrong field sends the user to
+// edit a cluster to fix a backup.
+func TestDiagnose_OOMKilledBackupPodPointsAtTheBackupsOwnResources(t *testing.T) {
+	pod := finishedPod(backupJobPod("nightly", "nightly-1", "nightly-1-abcde"), "backup",
+		corev1.ContainerStateTerminated{ExitCode: 137, Reason: "OOMKilled"})
+	d := nightlyBackupWith(t, batchv1.JobStatus{
+		Failed: 4,
+		Conditions: []batchv1.JobCondition{{
+			Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "BackoffLimitExceeded",
+		}},
+	}, pod)
+
+	assert.True(t, d.problems())
+	out := joinSymptoms(d.symptoms)
+	assert.Contains(t, out, markProblem+" container backup in nightly-1-abcde")
+	assert.Contains(t, out, "was OOMKilled (exit 137)")
+	assert.Contains(t, out, "spec.options.resources")
+	assert.NotContains(t, out, "1.5Gi", "the Enterprise server floor is not a backup Job's limit")
+	assert.Contains(t, out, "kubectl logs nightly-1-abcde -c backup")
+}
+
+// A container that failed without being OOM-killed: neo4j-admin exited
+// non-zero (reason "Error"). Same blind spot, different cause.
+func TestDiagnose_NeverRestartPodNonZeroExitIsReported(t *testing.T) {
+	pod := finishedPod(serverPod("prod", "prod-server-0"), "neo4j",
+		corev1.ContainerStateTerminated{ExitCode: 1, Reason: "Error", Message: "  permission denied on bucket  "})
+
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"}},
+		pod,
+	)
+	results, err := diagnoseNamespace(context.Background(), c, "neo4j", "")
+	require.NoError(t, err)
+
+	d := results[0]
+	assert.True(t, d.problems(), joinSymptoms(d.symptoms))
+	out := joinSymptoms(d.symptoms)
+	assert.Contains(t, out, markProblem+" container neo4j in prod-server-0")
+	assert.Contains(t, out, "exited 1 (Error)")
+	assert.Contains(t, out, "permission denied on bucket")
+	assert.Contains(t, out, "kubectl logs prod-server-0 -c neo4j")
+	assert.NotContains(t, out, "OOMKilled")
+	assert.NotContains(t, out, "--previous")
+}
+
+// Exit 0 is a container that did its job. Flagging it would turn every
+// successful backup Job pod into a finding.
+func TestDiagnose_CompletedContainerIsNotAFinding(t *testing.T) {
+	pod := finishedPod(serverPod("prod", "prod-server-0"), "neo4j",
+		corev1.ContainerStateTerminated{ExitCode: 0, Reason: "Completed"})
+	pod.Status.Phase = corev1.PodSucceeded
+
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"}},
+		pod,
+	)
+	results, err := diagnoseNamespace(context.Background(), c, "neo4j", "")
+	require.NoError(t, err)
+
+	d := results[0]
+	assert.False(t, d.problems(), joinSymptoms(d.symptoms))
+	assert.Empty(t, d.symptoms)
+}
+
+// A crash-looping container is already told about once: it is waiting in
+// CrashLoopBackOff and its previous run is reported with a --previous pointer.
+// Its current-attempt state must not add a second finding for the same
+// container (kubelet briefly reports both while it flips between restarts).
+func TestDiagnose_CrashLoopingContainerIsNotReportedTwice(t *testing.T) {
+	loop := serverPod("prod", "prod-server-0")
+	loop.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name:         "neo4j",
+		RestartCount: 5,
+		State: corev1.ContainerState{
+			Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"},
+		},
+		LastTerminationState: corev1.ContainerState{
+			Terminated: &corev1.ContainerStateTerminated{ExitCode: 137, Reason: "OOMKilled"},
+		},
+	}}
+	// The transitional shape: the current attempt has just died AND the
+	// previous one is still recorded.
+	transition := serverPod("prod", "prod-server-1")
+	transition.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name:         "neo4j",
+		RestartCount: 5,
+		State: corev1.ContainerState{
+			Terminated: &corev1.ContainerStateTerminated{ExitCode: 137, Reason: "OOMKilled"},
+		},
+		LastTerminationState: corev1.ContainerState{
+			Terminated: &corev1.ContainerStateTerminated{ExitCode: 137, Reason: "OOMKilled"},
+		},
+	}}
+
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"}},
+		loop, transition,
+	)
+	results, err := diagnoseNamespace(context.Background(), c, "neo4j", "")
+	require.NoError(t, err)
+
+	symptoms := symptomsFor(t, results, "Neo4jEnterpriseCluster/prod")
+	perPod := map[string]int{}
+	for _, s := range symptoms {
+		perPod[s.subject]++
+	}
+	// prod-server-0: crash-looping + OOMKilled (previous run) — the two
+	// findings it always had. prod-server-1: the one OOMKilled, not two.
+	assert.Equal(t, 2, perPod["container neo4j in prod-server-0"], joinSymptoms(symptoms))
+	assert.Equal(t, 1, perPod["container neo4j in prod-server-1"], joinSymptoms(symptoms))
+	out := joinSymptoms(symptoms)
+	assert.Contains(t, out, "crash-looping after 5 restart(s)")
+	assert.Contains(t, out, "--previous")
+}
+
+// A failed backup attempt that the Job then retried to success leaves a Failed
+// pod behind (Jobs keep them), and that pod's OOMKilled container is now a
+// finding. It must not flip the exit code of a backup that in fact completed —
+// the Job's own verdict stays the verdict, exactly as for status.failed.
+func TestDiagnose_OOMKilledAttemptOfASucceededBackupIsAWarningNotAProblem(t *testing.T) {
+	pod := finishedPod(backupJobPod("nightly", "nightly-1", "nightly-1-abcde"), "backup",
+		corev1.ContainerStateTerminated{ExitCode: 137, Reason: "OOMKilled"})
+	d := nightlyBackupWith(t, batchv1.JobStatus{
+		Failed: 1, Succeeded: 1,
+		Conditions: []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}},
+	}, pod)
+
+	assert.False(t, d.problems(), "a completed Job is not a problem:\n%s", joinSymptoms(d.symptoms))
+	out := joinSymptoms(d.symptoms)
+	assert.Contains(t, out, markWarning+" container backup in nightly-1-abcde")
+	assert.Contains(t, out, "was OOMKilled")
+}
+
+// Still retrying: the OOMKilled attempt is worth showing, but the Job has not
+// failed yet, so it waits rather than fails (same rule as status.failed).
+func TestDiagnose_OOMKilledAttemptOfARetryingBackupIsWaitingNotProblem(t *testing.T) {
+	pod := finishedPod(backupJobPod("nightly", "nightly-1", "nightly-1-abcde"), "backup",
+		corev1.ContainerStateTerminated{ExitCode: 137, Reason: "OOMKilled"})
+	d := nightlyBackupWith(t, batchv1.JobStatus{Failed: 1, Active: 1}, pod)
+
+	assert.False(t, d.problems(), joinSymptoms(d.symptoms))
+	assert.Contains(t, joinSymptoms(d.symptoms), markWaiting+" container backup in nightly-1-abcde")
+}
+
+// A Pending backup pod that cannot be scheduled is not a finished attempt: it
+// is the live cause of an in-progress Job, and stays a problem whatever the
+// Job's state. Capping must only soften attempts that are over.
+func TestDiagnose_UnschedulableBackupPodStaysAProblemWhileJobInProgress(t *testing.T) {
+	pod := backupJobPod("nightly", "nightly-1", "nightly-1-abcde")
+	pod.Status.Phase = corev1.PodPending
+	pod.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
+		Reason: corev1.PodReasonUnschedulable, Message: "0/3 nodes are available: 3 Insufficient memory.",
+	}}
+	d := nightlyBackupWith(t, batchv1.JobStatus{Active: 1}, pod)
+
+	assert.True(t, d.problems(), joinSymptoms(d.symptoms))
+	assert.Contains(t, joinSymptoms(d.symptoms), "cannot be scheduled")
+}
+
 // Targeting one resource must not diagnose its neighbours.
 func TestDiagnose_TargetSelectsASingleResource(t *testing.T) {
 	c := testClient(t,
