@@ -4,7 +4,7 @@ The front door for every contributor — human or LLM. Read this first. It state
 
 ## Project identity
 
-Neo4j Enterprise Operator for Kubernetes — manages Neo4j Enterprise (5.26.x LTS + 2025.x/2026.x CalVer) via the Kubebuilder framework. Go 1.27, `sigs.k8s.io/controller-runtime` v0.24.1, `k8s.io/*` v0.36.1, `neo4j-go-driver/v5` (Bolt). Two deployment CRDs: `Neo4jEnterpriseCluster` (HA, min 2 servers) and `Neo4jEnterpriseStandalone` (single-node).
+Neo4j Enterprise Operator for Kubernetes — manages Neo4j Enterprise (5.26.x LTS + 2025.x/2026.x CalVer) via the Kubebuilder framework. Go 1.27, `sigs.k8s.io/controller-runtime`, `k8s.io/*` and `neo4j-go-driver/v5` (Bolt) — exact versions are pinned in `go.mod`, not here. Two deployment CRDs: `Neo4jEnterpriseCluster` (HA, min 2 servers) and `Neo4jEnterpriseStandalone` (single-node).
 
 ## The 5 hard invariants — NEVER violate
 
@@ -21,13 +21,17 @@ These are non-negotiable. They are checked by `make check-invariants` (run by th
 | Path | What lives here |
 |---|---|
 | `api/v1beta1/` | CRD Go types + kubebuilder markers (source for generated CRDs & deepcopy). |
-| `internal/controller/` | Reconcilers (cluster, standalone, database, plugin, backup, restore, user/role/binding, authrule, sharded), split-brain detector, events. |
+| `internal/controller/` | One reconciler per CRD (27: cluster, standalone, database, sharded database, alias, composite database, replica database, replica promotion, plugin, backup, restore, user/role/binding, authrule, and the 12 `Aura*` kinds), plus the split-brain detector, topology scheduler, rolling upgrade and events. |
 | `internal/validation/` | Inline validators (one per concern: cluster, database, image, memory, plugin, tls, topology, backup, …). The ONLY validation layer — see invariant 1. |
 | `internal/resources/` | Kubernetes object builders (StatefulSet via `BuildServerStatefulSetForEnterprise`, Services, ConfigMaps, NetworkPolicy, TLS/discovery helpers). |
 | `internal/neo4j/` | Bolt client + Cypher helpers + version parsing (`ParseVersion`, `IsCalver`). |
-| `test/` | Ginkgo/Gomega suites in tiers: `unit`, `integration`, `e2e`. Every integration spec carries `Label("core")` or `Label("extended")`. |
+| `test/` | Ginkgo/Gomega integration suites (`test/integration`; fixtures in `test/fixtures`, helpers in `test/testutil`). Unit tests are colocated with the code as `*_test.go`. Every integration spec carries `Label("core")` or `Label("extended")`. |
 | `config/` + `charts/` | GENERATED manifests (CRDs, RBAC, kustomize, Helm chart, OperatorHub bundle). Never hand-edit files carrying the GENERATED header. |
 | `cmd/main.go` | Manager entrypoint — wires controllers (no webhooks). |
+
+## Keep the GitMir model current
+
+`.gitmir/model/` is the authoritative object-information model of the product (entities, server functions, events, processes …), cross-linked by id. Read the relevant dimension before changing code, and after ANY change that adds, changes or removes an entity, field, server function, route, event, process or status flow, update the affected `.gitmir/model/*.json` in the same change (English only, ids stable, `index.json` refreshed). `CLAUDE.md` has the full rule.
 
 ## Working principles (how to make changes here)
 

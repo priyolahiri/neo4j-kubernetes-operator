@@ -2,12 +2,12 @@
 
 Guidance to Claude Code (claude.ai/code) when working in this repository.
 
-Last updated: 2026-08-25
+Last updated: 2026-10-01
 
 This file is the **constitution + domain reference + index**. It holds the small set of
 non-negotiable invariants, the domain-knowledge sections an agent needs to make a change,
 and pointers to where the detailed, enforcement-tagged regression rules live. It is **not**
-the rule dump — the 79-rule regression checklist now lives in `docs/knowledge/` (single home;
+the rule dump — the regression checklist now lives in `docs/knowledge/` (single home;
 see [Regression rules](#regression-rules)). Do not re-add the inline numbered list here.
 
 ## INVARIANTS (NEVER violate)
@@ -43,7 +43,7 @@ Neo4j Enterprise Operator for Kubernetes — manages Neo4j Enterprise deployment
 ## Architecture
 
 - Neo4j client: Bolt protocol.
-- **Directories:** `api/v1beta1/` (CRD types — run `ls api/v1beta1/*_types.go` for the current CRD list), `internal/controller/`, `internal/resources/` (K8s builders), `test/` (unit/integration/e2e).
+- **Directories:** `api/v1beta1/` (CRD types — run `ls api/v1beta1/*_types.go` for the current CRD list), `internal/controller/`, `internal/resources/` (K8s builders), `test/integration/` (Ginkgo suites; fixtures in `test/fixtures`, helpers in `test/testutil`) — unit tests live next to the code as `*_test.go`.
 
 **Server role hints** (`initial.server.mode_constraint`):
 ```yaml
@@ -71,7 +71,7 @@ make test-unit                  # No cluster
 make test-one TEST="name"       # Single integration test
 make test-integration           # Auto-creates cluster, deploys operator
 make sync-all                   # Regenerate every generated artifact (see ## Generated artifacts)
-make ship-prep                  # sync-all + bundle + lint + CSV coverage (pre-release)
+make ship-prep                  # sync-all + bundle + helm-lint + CSV coverage (pre-release)
 make check-drift                # CI gate: fails on stale generated files
 make fmt / lint / vet / security / tidy
 ```
@@ -80,7 +80,7 @@ make fmt / lint / vet / security / tidy
 
 **Debug reconciliation:**
 ```bash
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager -f
+kubectl logs -n neo4j-operator-dev deployment/neo4j-operator-controller-manager -f   # dev (make dev-up); prod/ha/integration overlays use -n neo4j-operator-system
 kubectl describe neo4jenterprisecluster <name>
 kubectl describe pod <pod-name> | grep -E "(OOMKilled|Memory|Exit.*137)"
 kubectl exec <pod-name> -c neo4j -- cypher-shell -u neo4j -p <password> "SHOW SERVERS"
@@ -140,6 +140,8 @@ Integration tests deploy to `neo4j-operator-system` in prod mode (image `neo4j-o
 
 **Ports**: 5000 = V1 discovery (deprecated, never used) · **6000 = V2 discovery (always use)** · 7000 = RAFT. CalVer detection: `ParseVersion()` sets `IsCalver` when `major >= 2025` (handles 2026.x+ automatically).
 
+**Server default Cypher language** (`spec.serverDefaultCypherLanguage`, cluster + standalone): fixed at creation and recorded in `status.effectiveCypherLanguage` — a new CalVer deployment gets `CYPHER_25`, the 5.26 LTS `CYPHER_5` (where the setting does not exist and nothing is written), and an existing deployment keeps whatever it already runs, so upgrades roll nothing. Property sharding no longer sets it server-wide. A database's language is fixed at its creation; statements whose meaning differs between the languages are pinned with `Cypher5()` / `Cypher25()` (`internal/neo4j/cypher25.go`).
+
 **Never use** (deprecated 4.x): `dbms.mode=SINGLE`, `causal_clustering.*`, `metrics.bolt.*`, `server.groups`, `dbms.cluster.role`.
 
 **Always use** (5.26+): `server.*` instead of `dbms.connector.*`, env vars over config files, modern `TOPOLOGY` syntax.
@@ -181,10 +183,10 @@ Plugin-only mode: omit `tokenSecretRef` to defer registration. Implementation: `
 
 ## Live Cluster Diagnostics
 
-When `spec.monitoring.enabled=true` and cluster is `Ready`:
+When the cluster is `Ready` — on by default (`spec.monitoring` omitted, or `enabled: true`); only an explicit `spec.monitoring.enabled: false` turns it off:
 - `status.diagnostics.servers[]` from `SHOW SERVERS`; `status.diagnostics.databases[]` from `SHOW DATABASES` (`system` DB excluded from health checks).
 - Conditions `ServersHealthy`, `DatabasesHealthy` via `SetNamedCondition` (NOT `SetReadyCondition` — that's only for the `Ready` type).
-- Prometheus metric `neo4j_operator_server_health{cluster_name, namespace, server_name, server_address}`: 1=healthy, 0=degraded.
+- Prometheus metric `neo4j_operator_server_health{cluster_name, namespace, server_name, server_address, k8s_cluster}`: 1=healthy, 0=degraded (`k8s_cluster` is empty unless `--kubernetes-cluster-name` is set).
 
 **`CollectDiagnostics` is non-fatal**: errors go to `status.diagnostics.collectionError` only — never `return err`. Standalone has its own non-fatal `collectStandaloneDiagnostics()` (`SHOW DATABASES`) under the same conditions.
 
@@ -232,13 +234,14 @@ Works with both cluster and standalone. `DatabaseValidator` tries cluster lookup
 
 ## Neo4jUser, Neo4jRole & Neo4jRoleBinding CRDs
 
-Three CRDs, one design rule: **privileges live on `Neo4jRole`, not `Neo4jUser` or `Neo4jRoleBinding`**. Users carry only `roles: []`; roles carry `privileges: []`; bindings carry only `roles: []`. See `docs/user_guide/user_role_management.md`.
+Three CRDs, one design rule: **privileges live on `Neo4jRole`, not `Neo4jUser` or `Neo4jRoleBinding`**. Users carry only `roles: []`; roles carry `privileges: []` (and/or structured `privilegeRules: []`); bindings carry only `roles: []`. See `docs/user_guide/user_role_management.md`.
 
 **Files:** types under `api/v1beta1/neo4j{user,role,rolebinding}_types.go`; controllers under `internal/controller/neo4j{user,role,rolebinding}_controller.go`; cluster ref resolution in `cluster_resolver.go`; Cypher in `internal/neo4j/{users,privileges}.go`; validators in `internal/validation/{user,role,rolebinding}_validator.go`.
 
 **Source of truth:**
-- `Neo4jUser.spec` authoritative for password (via Secret hash), `accountStatus`, `homeDatabase`, `roles`, `externalAuth`. Drift reverted every loop.
-- `Neo4jRole.spec.privileges` authoritative when `enforcePrivileges: true` (default). `enforcePrivileges: false` skips the revoke pass.
+- `Neo4jUser.spec` authoritative for password (via Secret; `status.passwordSecretHash` is an opaque rotation token, not a hash of the password), `accountStatus`, `homeDatabase`, `roles`, `externalAuth`. Drift reverted every loop.
+- `Neo4jRole.spec.privileges` **and** `spec.privilegeRules` (structured fields, rendered to Cypher — never parsed) are authoritative when `enforcePrivileges: true` (default). `enforcePrivileges: false` skips the revoke pass.
+- **Privilege matching is against Neo4j's STORED form** (it expands lists, singularises plurals, resolves aliases). The default **learn mode** (`--privilege-normalisation=learn`, Helm `privilegeNormalisation`) learns each statement's stored rows from the operator's own grant (`status.privilegeRenderings`); rows it cannot attribute are kept in `status.unattributedPrivileges` and never revoked (`PrivilegesSynced=Unknown`, reason `UnattributedPrivileges` — expected on every pre-existing role after upgrading). `probe` mode uses throwaway `operator_privilege_probe_*` roles instead. A privilege on a missing database is skipped with `PrivilegesResolve=False`, never retried in a loop. See `docs/user_guide/user_role_management.md` and `docs/knowledge/operations.md`.
 - Built-in roles (`PUBLIC`, `reader`, `editor`, `publisher`, `architect`, `admin`) require `adoptBuiltin: true` to manage; never dropped on CR delete (only finalizer released). Validator rejects unmanaged built-in names.
 - `PUBLIC` is auto-assigned and never granted/revoked; user controller filters it from both sides. Listing it in `Neo4jUser.spec.roles` → warning, not error.
 

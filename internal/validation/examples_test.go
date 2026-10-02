@@ -25,6 +25,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apimachinery/pkg/util/yaml"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -138,6 +139,34 @@ func validateExampleDoc(t *testing.T, doc []byte) []string {
 			return []string{"cannot decode: " + err.Error()}
 		}
 		for _, e := range NewBackupValidator().Validate(obj) {
+			messages = append(messages, e.Error())
+		}
+		// The backup validator does not check the database name, but the CRD
+		// pattern does, so `kubectl apply` rejects an underscore here.
+		if obj.Spec.Database != "" && !IsValidDatabaseName(obj.Spec.Database) {
+			messages = append(messages, "spec.database "+obj.Spec.Database+
+				": must start with a letter and contain only letters, digits, dots or dashes")
+		}
+	case "Neo4jDatabase":
+		// Name rules only: the rest of the DatabaseValidator needs a live
+		// cluster to resolve spec.clusterRef, so `kubectl neo4j validate` skips
+		// the kind offline — which is how underscores in
+		// examples/end-to-end/multi-tenancy.yaml went unnoticed.
+		obj := &neo4jv1beta1.Neo4jDatabase{}
+		if err := yaml.Unmarshal(doc, obj); err != nil {
+			return []string{"cannot decode: " + err.Error()}
+		}
+		nameErrs, _ := validateDatabaseName(obj.Spec.Name, field.NewPath("spec", "name"))
+		for _, e := range nameErrs {
+			messages = append(messages, e.Error())
+		}
+	case "Neo4jShardedDatabase":
+		obj := &neo4jv1beta1.Neo4jShardedDatabase{}
+		if err := yaml.Unmarshal(doc, obj); err != nil {
+			return []string{"cannot decode: " + err.Error()}
+		}
+		nameErrs, _ := validateDatabaseName(obj.Spec.Name, field.NewPath("spec", "name"))
+		for _, e := range nameErrs {
 			messages = append(messages, e.Error())
 		}
 	case "Neo4jPlugin":

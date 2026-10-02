@@ -28,7 +28,7 @@
 > (`image_validator.go` rejects `-community` tags, pinned by
 > `image_validator_test.go` under the blocking `unit-tests` job) plus the
 > `CALL dbms.components()` backstop. INV-4 is
-> **test-pinned** (blocking); the INV-5 pod-naming half only partly (see INV-5). **Highest residual risk:** a bare Docker Hub tag
+> **test-pinned** (blocking); the INV-5 single-StatefulSet shape is pinned on the production builder (see INV-5). **Highest residual risk:** a bare Docker Hub tag
 > (`neo4j:5.26.0`, which *is* the community image) is not rejected statically —
 > only the explicit `-community` marker is — so that case relies on the runtime
 > edition backstop, by deliberate choice (see INV-3).
@@ -197,26 +197,28 @@ Quick reference (folded in from the former AGENT-GUARDRAILS table); per-invarian
   pod; both were deliberately deleted in favor of ephemeral Jobs that run, write
   one artifact, and exit. Reintroducing either resurrects retired, conflicting
   code paths.
-- **enforcement status:** the pod-naming half is only **partly** test-pinned.
-  `TestListDiscoveryConfiguration` (`internal/resources/cluster_startup_test.go`)
-  asserts the pod FQDNs `{cluster}-server-N` that the discovery endpoints use, and
-  `TestBuildStatefulSetForEnterprise_WithFeatures` (`internal/resources/cluster_test.go`)
-  asserts a `…-server-0` name — but that test (like `…_ParallelManagement`) drives
-  the **Deprecated** plural builder `BuildServerStatefulSetsForEnterprise`, which makes
-  N one-replica StatefulSets. **No unit test asserts that the production builder
+- **enforcement status:** the single-StatefulSet shape is **test-pinned** on the
+  production builder: `TestServerStatefulSet_IsOneStatefulSetWithReplicasEqualToServers`
+  (`internal/resources/server_architecture_test.go`) asserts that
   `BuildServerStatefulSetForEnterprise` yields ONE StatefulSet named `{cluster}-server`
-  with `replicas: N`** (known unit-level gap — `internal/resources/CLAUDE.md` tells you not
-  to use the plural builder). The shape is exercised end to end only by the
-  integration specs in `test/integration/multi_node_cluster_test.go` (extended: fetches
-  `{cluster}-server` and asserts `replicas`) and `plugin_test.go` (core). The removed-backup half is guard-checked —
+  with `replicas` equal to `spec.topology.servers`, and no `primary`/`secondary` in its
+  name. `TestListDiscoveryConfiguration` (`internal/resources/cluster_startup_test.go`)
+  additionally asserts the pod FQDNs `{cluster}-server-N` that the discovery endpoints
+  use. Beware `TestBuildStatefulSetForEnterprise_WithFeatures` (`cluster_test.go`) and its
+  `…_ParallelManagement` sibling: they drive the **Deprecated** plural builder
+  `BuildServerStatefulSetsForEnterprise` (N one-replica StatefulSets), so they do NOT
+  prove this invariant — `internal/resources/CLAUDE.md` tells you not to use that
+  builder. The shape is also exercised end to end by the integration specs in
+  `test/integration/multi_node_cluster_test.go` (extended: fetches `{cluster}-server`
+  and asserts `replicas`) and `plugin_test.go` (core). The removed-backup half is guard-checked —
   `scripts/check-invariants.sh` greps for `BuildBackupStatefulSet`, a
   `backups:`/`spec.backups` field in the CRD surface (`config/`+`api/`), and
   `-primary-`/`-secondary-` pod-name construction in `internal/resources/` (advisory).
   The other removed symbols (`BackupsSpec`, `buildBackupSidecarContainer`) are kept
   gone by file/symbol absence only.
-- **violation symptom:** Renaming the StatefulSet or introducing `primary-*` /
-  `secondary-*` pods fails the naming assertions in
-  `TestBuildStatefulSetForEnterprise_WithFeatures` under `make test-unit`.
+- **violation symptom:** Renaming the StatefulSet, changing its replica count away from
+  `spec.topology.servers`, or introducing `primary-*` / `secondary-*` names fails
+  `TestServerStatefulSet_IsOneStatefulSetWithReplicasEqualToServers` under `make test-unit`.
   Re-adding a `spec.backups` field or a `BuildBackupStatefulSet` builder,
   however, **compiles and passes all current tests** — the live symptom is a
   resurrected long-running backup pod competing with the Neo4jBackup Job path for
