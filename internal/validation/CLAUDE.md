@@ -17,7 +17,7 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 | `topology_validator.go` | Server count, `serverModeConstraint`/`serverRoles` index/dup/all-SECONDARY checks. |
 | `config_validator.go` | Rejects deprecated / operator-managed / per-pod runtime `spec.config` keys. |
 | `memory_validator.go`, `resource_validator.go`, `storage_validator.go` | Memory floors, scaling resource checks, PVC/storage checks. |
-| `tls_validator.go`, `truststore_validator.go`, `security_validator.go` | TLS mode/issuer/strict-peer rules, trusted CA secrets, security context. |
+| `tls_validator.go`, `truststore_validator.go` | TLS mode/issuer/strict-peer rules, trusted CA secrets. |
 | `auth_validator.go`, `user_validator.go`, `role_validator.go`, `rolebinding_validator.go`, `authrule_validator.go` | Auth providers and the user/role/binding/authrule CRDs. |
 | `backup_validator.go` | `BackupValidator` + standalone helper `ValidateNeo4jVersion`. |
 | `upgrade_validator.go`, `plugin_validator.go`, `fleet_validator.go`, `mcp_validator.go`, `shardeddatabase_validator.go`, `sharding.go` | Version-upgrade rules, plugins, Aura fleet, MCP, sharded DB, `IsClusterShardingReady`. |
@@ -49,7 +49,8 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
   for topology/secondaries on standalone targets.
 - Add new sub-validators to the right aggregator's `New...Validator` constructor and `validateCluster`
   (or `validateStandalone`) chain — a validator not wired in is dormant (cf. the previously-unwired
-  `configValidator` / `PluginValidator`).
+  `configValidator` / `PluginValidator`, and the deleted `SecurityValidator`). `TestEveryValidatorIsWiredIn`
+  fails the build for a validator type nothing constructs.
 - **Rules that belong to Neo4j, not to a Kind, go in a shared entry point that BOTH aggregators
   call** — `ConfigValidator.ValidateConfigMap` and `MemoryValidator.ValidateResourcesAndConfig`.
   When each aggregator carried its own copy the two drifted in both directions: `dbms.mode` was

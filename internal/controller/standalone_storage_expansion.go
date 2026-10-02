@@ -41,7 +41,13 @@ import (
 func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandaloneStorageExpansion(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (bool, error) {
 	logger := log.FromContext(ctx)
 
-	desiredSize := resource.MustParse(standalone.Spec.Storage.Size)
+	// User input: ParseQuantity, never MustParse (a malformed value would panic
+	// the manager). The inline validator rejects a bad size first, but this
+	// function does not depend on it.
+	desiredSize, err := parseUserQuantity("spec.storage.size", standalone.Spec.Storage.Size)
+	if err != nil {
+		return false, err
+	}
 	stsName := standalone.Name
 
 	state, err := r.compareStandalonePVCSizes(ctx, standalone.Namespace, stsName, "neo4j-data", desiredSize)

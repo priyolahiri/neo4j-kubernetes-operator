@@ -27,7 +27,9 @@ never reaches `Completed`), and `spec.suspend: true` is declared state rather
 than a fault, so both map to Healthy — otherwise an Application containing a
 scheduled backup would show Progressing forever and hold up any later sync wave.
 The `Ready` condition (what Flux reads) agrees for `Scheduled`: it is `True`
-with reason `BackupScheduled`. `Suspended` still reports `Ready=False`.
+with reason `BackupScheduled`. `Suspended` still reports `Ready=False` (a suspended
+backup is not ready to run) but with reason `Suspended`, not `ReconciliationFailed`:
+nothing failed.
 `Invalid` (a spec the validator rejected) is terminal until the spec is edited,
 so it maps to Degraded rather than Progressing.
 

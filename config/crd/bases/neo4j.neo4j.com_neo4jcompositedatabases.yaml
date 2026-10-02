@@ -191,11 +191,14 @@ spec:
                 description: |-
                   DefaultCypherLanguage sets the composite's default Cypher version.
 
-                  CalVer only. On the 5.26 LTS the clause does not parse — `CREATE
+                  "25" needs CalVer. On the 5.26 LTS the clause does not parse — `CREATE
                   COMPOSITE DATABASE` there accepts only IF NOT EXISTS / WAIT / NOWAIT /
                   OPTIONS, and `ALTER DATABASE ... SET` accepts only OPTION, ACCESS READ
-                  and TOPOLOGY. The validator rejects this field on a 5.26 deployment
-                  rather than letting the server produce a syntax error.
+                  and TOPOLOGY — and Cypher 25 does not exist, so the validator rejects
+                  "25" on a 5.26 deployment rather than letting the server produce a syntax
+                  error. "5" is accepted there (every database on the LTS already runs
+                  Cypher 5): it raises a warning and the clause is left out, as for
+                  Neo4jDatabase.
 
                   It is the ONLY property of a composite that can be altered after
                   creation.

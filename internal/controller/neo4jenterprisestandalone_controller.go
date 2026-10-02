@@ -36,7 +36,6 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -1862,7 +1861,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(ctx context.Cont
 						StorageClassName: resources.StorageClassNamePtr(standalone.Spec.Storage.ClassName),
 						Resources: corev1.VolumeResourceRequirements{
 							Requests: corev1.ResourceList{
-								corev1.ResourceStorage: resource.MustParse(standalone.Spec.Storage.Size),
+								corev1.ResourceStorage: resources.StorageRequest(standalone.Spec.Storage.Size),
 							},
 						},
 					},

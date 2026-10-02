@@ -30,6 +30,33 @@ import (
 )
 
 // validStandalone returns a minimal standalone that should pass all validations.
+// A standalone's storage.size used to be checked only for being non-empty, so
+// "fifty" or "10 Gi" passed validation and then panicked the manager in the
+// StatefulSet builder (resource.MustParse). It must be a Kubernetes quantity —
+// and anything Kubernetes accepts stays accepted, including forms the cluster
+// validator's stricter format rule would refuse (1.5Gi), so no working
+// standalone is newly rejected.
+func TestStandaloneValidator_StorageSizeMustBeAQuantity(t *testing.T) {
+	v := NewStandaloneValidator()
+
+	for _, bad := range []string{"fifty", "10 Gi", "10GB", "5K", "-1Gi", "0", "0Gi"} {
+		t.Run("rejects "+bad, func(t *testing.T) {
+			sa := validStandalone()
+			sa.Spec.Storage.Size = bad
+			errs := v.ValidateCreate(sa)
+			require.NotEmpty(t, errs)
+			assert.Contains(t, errs.ToAggregate().Error(), "spec.storage.size")
+		})
+	}
+	for _, good := range []string{"1Gi", "10Gi", "1.5Gi", "500Mi", "2G", "100Ki", "1Ti", "1073741824"} {
+		t.Run("accepts "+good, func(t *testing.T) {
+			sa := validStandalone()
+			sa.Spec.Storage.Size = good
+			assert.Empty(t, v.ValidateCreate(sa))
+		})
+	}
+}
+
 func validStandalone() *neo4jv1beta1.Neo4jEnterpriseStandalone {
 	return &neo4jv1beta1.Neo4jEnterpriseStandalone{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-standalone", Namespace: "default"},

@@ -273,10 +273,10 @@ func (r *Neo4jBackupReconciler) applyShardedPreflight(ctx context.Context, backu
 	case preflightContinue:
 		return false, ctrl.Result{}, nil
 	case preflightWait:
-		r.updateBackupStatus(ctx, backup, "Waiting", waitMsg)
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseWaiting, waitMsg)
 		return true, ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	case preflightFail:
-		r.updateBackupStatus(ctx, backup, "Failed", err.Error())
+		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, err.Error())
 		// Returning nil error so controller-runtime doesn't requeue with
 		// backoff. The terminal-phase guard in handleOneTimeBackup keeps the
 		// CR pinned to Failed.

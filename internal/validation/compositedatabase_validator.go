@@ -83,7 +83,9 @@ func (v *CompositeDatabaseValidator) Validate(ctx context.Context, cd *neo4jv1be
 	}
 
 	res.Errors = append(res.Errors, v.validateConstituents(cd, name, specPath)...)
-	res.Errors = append(res.Errors, v.validateCypherLanguage(ctx, cd, specPath)...)
+	langErrs, langWarnings := v.validateCypherLanguage(ctx, cd, specPath)
+	res.Errors = append(res.Errors, langErrs...)
+	res.Warnings = append(res.Warnings, langWarnings...)
 	remoteErrs, remoteWarnings := v.validateRemoteConstituents(ctx, cd, specPath)
 	res.Errors = append(res.Errors, remoteErrs...)
 	res.Warnings = append(res.Warnings, remoteWarnings...)
@@ -278,34 +280,53 @@ func (v *CompositeDatabaseValidator) validateConstituents(
 	return errs
 }
 
-// validateCypherLanguage refuses defaultCypherLanguage on the 5.26 LTS.
+// validateCypherLanguage checks defaultCypherLanguage against the target
+// server's version, answering the same way the Neo4jDatabase validator does.
 //
-// The clause genuinely does not parse there — `CREATE COMPOSITE DATABASE`
-// accepts only IF NOT EXISTS / WAIT / NOWAIT / OPTIONS, and `ALTER DATABASE
-// ... SET` accepts only OPTION, ACCESS READ and TOPOLOGY. Without this the
-// user would get a raw Cypher syntax error in status.message with no
-// indication that the field is version-gated.
+// The DEFAULT LANGUAGE CYPHER clause genuinely does not parse on the 5.26 LTS —
+// `CREATE COMPOSITE DATABASE` accepts only IF NOT EXISTS / WAIT / NOWAIT /
+// OPTIONS, and `ALTER DATABASE ... SET` accepts only OPTION, ACCESS READ and
+// TOPOLOGY. So there:
+//
+//   - "25" is refused: Cypher 25 does not exist on the LTS, and without this the
+//     user would get a raw Cypher syntax error in status.message with no
+//     indication that the field is version-gated.
+//   - "5" is accepted with a warning: every database on the LTS already runs
+//     Cypher 5, so the outcome is what was asked for. The controller leaves the
+//     clause out (neo4j.DefaultLanguageForImage) rather than sending one the
+//     server cannot parse. Refusing it would make a manifest that is valid on
+//     CalVer unappliable on the LTS for no reason.
+//
+// A deployment that does not exist yet, or whose tag cannot be parsed, cannot
+// be gated and is left alone.
 func (v *CompositeDatabaseValidator) validateCypherLanguage(
 	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase, specPath *field.Path,
-) field.ErrorList {
+) (field.ErrorList, []string) {
 	if cd.Spec.DefaultCypherLanguage == "" {
-		return nil
+		return nil, nil
 	}
 	tag, found := v.imageTagFor(ctx, cd)
 	if !found {
 		// The deployment is not there yet. Applying both together is normal;
 		// the controller retries, and this check runs again once it exists.
-		return nil
+		return nil, nil
 	}
 	parsed, err := neo4j.ParseVersion(tag)
-	if err != nil || parsed.IsCalver {
-		return nil
+	if err != nil || parsed.SupportsCypherLanguageVersion() {
+		return nil, nil
+	}
+	if cd.Spec.DefaultCypherLanguage == "5" {
+		return nil, []string{fmt.Sprintf(
+			"spec.defaultCypherLanguage '5' has no effect on Neo4j %s (the 5.26 LTS): every database there "+
+				"already runs Cypher 5 and the DEFAULT LANGUAGE CYPHER clause does not exist, so the clause is "+
+				"omitted when the composite is created.", tag)}
 	}
 	return field.ErrorList{field.Invalid(
 		specPath.Child("defaultCypherLanguage"), cd.Spec.DefaultCypherLanguage,
-		fmt.Sprintf("not supported on Neo4j %s: the DEFAULT LANGUAGE CYPHER clause does not "+
-			"parse on the 5.26 LTS, for composite databases or any other kind. Remove the "+
-			"field, or run a CalVer image", tag))}
+		fmt.Sprintf("not supported on Neo4j %s: Cypher 25 does not exist there, and the DEFAULT LANGUAGE "+
+			"CYPHER clause does not parse on the 5.26 LTS, for composite databases or any other kind. "+
+			"Remove the field, or run a CalVer image ('5' is accepted: every database on the LTS already "+
+			"runs Cypher 5)", tag))}, nil
 }
 
 // imageTagFor resolves the referenced deployment's image tag, from either Kind.

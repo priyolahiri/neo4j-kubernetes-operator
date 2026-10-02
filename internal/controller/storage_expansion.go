@@ -81,7 +81,11 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileStorageExpansion(ctx context
 
 	// Expand data volumes
 	if result.dataExpansion {
-		desiredSize := resource.MustParse(cluster.Spec.Storage.Size)
+		desiredSize, err := parseUserQuantity("spec.storage.size", cluster.Spec.Storage.Size)
+		if err != nil {
+			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Storage expansion failed: %v", err))
+			return false, err
+		}
 		stsName := fmt.Sprintf("%s-server", cluster.Name)
 
 		if err := r.expandVolumes(ctx, cluster, stsName, "data", desiredSize); err != nil {
@@ -105,7 +109,13 @@ func (r *Neo4jEnterpriseClusterReconciler) checkStorageExpansionNeeded(ctx conte
 	result := storageExpansionResult{}
 
 	// Check data volumes
-	desiredDataSize := resource.MustParse(cluster.Spec.Storage.Size)
+	// User input: ParseQuantity, never MustParse (a malformed value would panic
+	// the manager). The inline validator rejects a bad size first, but this
+	// function does not depend on it.
+	desiredDataSize, err := parseUserQuantity("spec.storage.size", cluster.Spec.Storage.Size)
+	if err != nil {
+		return result, err
+	}
 	stsName := fmt.Sprintf("%s-server", cluster.Name)
 	state, err := r.comparePVCSizes(ctx, cluster.Namespace, cluster.Name, stsName, "data", desiredDataSize)
 	if err != nil {

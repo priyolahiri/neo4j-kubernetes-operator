@@ -134,6 +134,10 @@ func TestCompositeDatabaseValidator_Constituents(t *testing.T) {
 // `ALTER DATABASE ... SET` accepts only OPTION, ACCESS READ and TOPOLOGY.
 // Without this gate the user gets a raw Cypher syntax error in status.message
 // with no hint that the field is version-dependent.
+//
+// "25" is therefore refused on the LTS. "5" is accepted there — every database
+// on the LTS already runs Cypher 5, and the controller leaves the clause out —
+// which is the same answer the Neo4jDatabase validator gives.
 func TestCompositeDatabaseValidator_CypherLanguageIsCalVerOnly(t *testing.T) {
 	deployment := func(tag string) *neo4jv1beta1.Neo4jEnterpriseCluster {
 		return &neo4jv1beta1.Neo4jEnterpriseCluster{
@@ -149,18 +153,36 @@ func TestCompositeDatabaseValidator_CypherLanguageIsCalVerOnly(t *testing.T) {
 		return cd
 	}
 
-	t.Run("refused on the 5.26 LTS", func(t *testing.T) {
+	t.Run("25 is refused on the 5.26 LTS", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).
 			WithObjects(deployment("5.26-enterprise")).Build()
 		res := NewCompositeDatabaseValidator(c).Validate(t.Context(), withLang("25"))
 		require.NotEmpty(t, res.Errors)
 		assert.Contains(t, res.Errors.ToAggregate().Error(), "does not parse on the 5.26 LTS")
+		assert.Empty(t, res.Warnings, "a refused value must not also warn")
 	})
 
-	t.Run("accepted on CalVer", func(t *testing.T) {
+	// "5" is what every LTS database runs, so the outcome is what was asked for;
+	// the clause is simply omitted. It must be accepted with a warning that says
+	// so, not refused (the Neo4jDatabase validator behaves the same way).
+	t.Run("5 is accepted on the 5.26 LTS with a warning", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).
+			WithObjects(deployment("5.26-enterprise")).Build()
+		res := NewCompositeDatabaseValidator(c).Validate(t.Context(), withLang("5"))
+		assert.Empty(t, res.Errors)
+		require.Len(t, res.Warnings, 1)
+		assert.Contains(t, res.Warnings[0], "defaultCypherLanguage")
+		assert.Contains(t, res.Warnings[0], "omitted")
+	})
+
+	t.Run("5 and 25 are both accepted on CalVer, without a warning", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).
 			WithObjects(deployment("2026.08.1-enterprise")).Build()
-		assert.Empty(t, NewCompositeDatabaseValidator(c).Validate(t.Context(), withLang("25")).Errors)
+		for _, lang := range []string{"5", "25"} {
+			res := NewCompositeDatabaseValidator(c).Validate(t.Context(), withLang(lang))
+			assert.Empty(t, res.Errors, "lang %q", lang)
+			assert.Empty(t, res.Warnings, "lang %q", lang)
+		}
 	})
 
 	// Applying a composite and its cluster together is ordinary GitOps. A
@@ -187,9 +209,11 @@ func TestCompositeDatabaseValidator_CypherLanguageIsCalVerOnly(t *testing.T) {
 			},
 		}
 		c := fake.NewClientBuilder().WithScheme(compositeScheme(t)).WithObjects(sa).Build()
-		res := NewCompositeDatabaseValidator(c).Validate(t.Context(), withLang("5"))
+		res := NewCompositeDatabaseValidator(c).Validate(t.Context(), withLang("25"))
 		require.NotEmpty(t, res.Errors)
 		assert.True(t, strings.Contains(res.Errors.ToAggregate().Error(), "5.26"))
+		// ...and "5" is the accepted value there, as on a cluster.
+		assert.Empty(t, NewCompositeDatabaseValidator(c).Validate(t.Context(), withLang("5")).Errors)
 	})
 }
 

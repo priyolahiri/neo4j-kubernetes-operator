@@ -193,7 +193,7 @@ PVC configuration for local storage.
 |-------|------|----------|-------------|
 | `storageClassName` | `string` | ❌ | Storage class name for dynamic provisioning (used only when the operator creates the PVC, i.e. `size` is set and the PVC does not exist) |
 | `name` | `string` | ✅ (for `type: pvc`) | Name of the PVC to use. Always required: the validator rejects a PVC backup without it. If the PVC does not exist and `size` is set, the operator creates it under this name (without an owner reference, so it survives deletion of the CR) |
-| `size` | `string` | ❌ | Size for a new PVC (e.g., `"100Gi"`); omit to reference an externally provisioned PVC |
+| `size` | `string` | ❌ | Size for a new PVC (e.g., `"100Gi"`); omit to reference an externally provisioned PVC. Must be a valid Kubernetes quantity greater than zero — validation refuses anything else, and the controller reports phase `Invalid` (naming this field) rather than relying on that check |
 
 ### RetentionPolicy
 
@@ -252,7 +252,7 @@ The `Neo4jBackupStatus` represents the observed state of the backup.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `conditions` | `[]metav1.Condition` | Current backup conditions. The operator maintains a single `Ready` condition derived from `phase` (`Completed` → `True` with reason `BackupSucceeded`; `Scheduled` → `True` with reason `BackupScheduled`; `Failed`/`Suspended`/`Invalid` → `False`; everything else → `Unknown`). |
+| `conditions` | `[]metav1.Condition` | Current backup conditions. The operator maintains a single `Ready` condition derived from `phase` (`Completed` → `True` with reason `BackupSucceeded`; `Scheduled` → `True` with reason `BackupScheduled`; `Suspended` → `False` with reason `Suspended` — a deliberate pause, not a failure; `Failed`/`Invalid` → `False` with reason `ReconciliationFailed`; everything else → `Unknown`). |
 | `phase` | `string` | Current backup phase — see [Backup Phases](#backup-phases) |
 | `message` | `string` | Human-readable message about the current state |
 | `observedGeneration` | `int64` | The `.metadata.generation` most recently observed by the controller |
@@ -270,7 +270,7 @@ The `Neo4jBackupStatus` represents the observed state of the backup.
 | `Pending` | A transient precondition isn't met yet — e.g. the `chainFromBackup` parent CR doesn't exist yet, another Job in the same chain is still running, or the sharded-backup preflight couldn't connect to the cluster. The controller requeues and retries. |
 | `Waiting` | The target cluster/standalone CR doesn't exist yet (common with `kubectl apply -f dir/` ordering) or isn't `Ready`. Transient — the controller requeues. |
 | `Scheduled` | A CronJob has been created for `spec.schedule`. **This is the steady state for scheduled backups** — they never transition to `Completed`; per-run outcomes accumulate in `status.history[]`. The `Ready` condition is `True` (reason `BackupScheduled`) in this phase. |
-| `Suspended` | `spec.suspend: true` — the CronJob is suspended and one-shot runs are paused. |
+| `Suspended` | `spec.suspend: true` — the CronJob is suspended and one-shot runs are paused. The `Ready` condition is `False` with reason `Suspended` (a deliberate pause, not a failure). |
 | `Running` | A one-shot backup Job is executing. |
 | `Completed` | The one-shot backup Job succeeded. Terminal — re-running requires deleting and recreating the CR. |
 | `Failed` | The one-shot backup Job failed terminally (Job `Failed` condition, after retries) or a non-transient error occurred (e.g. chain target/storage mismatch). Terminal for one-shot backups. |
@@ -282,10 +282,10 @@ The `Neo4jBackupStatus` represents the observed state of the backup.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `size` | `string` | Total backup size (e.g., `"2.5GB"`) |
+| `size` | `string` | **Reserved** — accepted by the schema but never populated today. Total backup size (e.g., `"2.5GB"`) |
 | `duration` | `string` | Backup operation duration (e.g., `"5m30s"`) |
-| `throughput` | `string` | Backup throughput rate (e.g., `"8.3MB/s"`) |
-| `fileCount` | `int32` | Number of files in the backup |
+| `throughput` | `string` | **Reserved** — accepted by the schema but never populated today. Backup throughput rate (e.g., `"8.3MB/s"`) |
+| `fileCount` | `int32` | **Reserved** — accepted by the schema but never populated today. Number of files in the backup |
 
 > **Only `duration` is currently populated.** `size`, `throughput`, and `fileCount` are reserved and not yet emitted by the operator — treat them as a forward-looking schema. To inspect artifact sizes, look at the `.backup` files under `status.history[*].backupsPath` in your storage backend.
 

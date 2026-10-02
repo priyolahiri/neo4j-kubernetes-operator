@@ -19,6 +19,7 @@ package validation
 import (
 	"regexp"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -70,5 +71,14 @@ func (v *StorageValidator) isValidStorageSize(size string) bool {
 	if err != nil {
 		return false // Invalid regex should not happen, but handle gracefully
 	}
-	return matched
+	if !matched {
+		return false
+	}
+	// The format above also admits capital "K", which is not a Kubernetes
+	// quantity suffix (decimal kilo is a lowercase "k"; binary is "Ki"). The
+	// StatefulSet builder runs resource.MustParse on this value, which PANICS
+	// on it, so "5K" used to pass validation and then crash the manager.
+	// Require that Kubernetes itself can parse what the regex let through.
+	_, err = resource.ParseQuantity(size)
+	return err == nil
 }

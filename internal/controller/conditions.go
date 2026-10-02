@@ -52,6 +52,11 @@ const (
 	// (it never reaches Completed), so this is a healthy, waiting state.
 	ConditionReasonBackupScheduled = "BackupScheduled"
 	ConditionReasonBackupFailed    = "BackupFailed"
+	// ConditionReasonSuspended — reconciliation is deliberately paused
+	// (Neo4jBackup spec.suspend). The Ready status stays False, since a
+	// suspended resource is not ready to do its work, but the reason must not
+	// be ConditionReasonFailed: nothing failed.
+	ConditionReasonSuspended       = "Suspended"
 	ConditionReasonRestoreComplete = "RestoreCompleted"
 	ConditionReasonRestoreFailed   = "RestoreFailed"
 	ConditionReasonPluginInstalled = "PluginInstalled"
@@ -129,8 +134,12 @@ func PhaseToConditionStatus(phase string) (metav1.ConditionStatus, string) {
 		// CronJob firing. Falling through to the default reported Unknown/Pending
 		// forever, which hangs anything that waits on the Ready condition.
 		return metav1.ConditionTrue, ConditionReasonBackupScheduled
+	case neo4jv1beta1.PhaseSuspended:
+		// Declared state, not a fault: False (not Ready to run) with a reason
+		// that says so, instead of the ReconciliationFailed a real failure gets.
+		return metav1.ConditionFalse, ConditionReasonSuspended
 	case neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseDegraded,
-		neo4jv1beta1.PhaseSuspended, neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseError:
+		neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseError:
 		return metav1.ConditionFalse, ConditionReasonFailed
 	case neo4jv1beta1.PhaseUpgrading:
 		return metav1.ConditionUnknown, ConditionReasonUpgrading

@@ -142,6 +142,14 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}()
 
+	// The DEFAULT LANGUAGE clause exists only on CalVer. On the 5.26 LTS a
+	// requested "5" is left out (every database there runs Cypher 5 already).
+	language := compositeCypherLanguage(cd, target)
+	if cd.Spec.DefaultCypherLanguage != "" && language == "" {
+		logger.V(1).Info("Omitting DEFAULT LANGUAGE CYPHER: the target server (5.26 LTS) has no such clause and runs Cypher 5",
+			"composite", name, "defaultCypherLanguage", cd.Spec.DefaultCypherLanguage)
+	}
+
 	// STEP 1 — the composite itself, before any constituent.
 	info, err := nc.ShowCompositeDatabase(ctx, name)
 	if err != nil {
@@ -163,17 +171,16 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 		}
 		r.setStatus(ctx, cd, neo4jv1beta1.PhaseCreating, metav1.ConditionFalse,
 			"Creating", fmt.Sprintf("creating composite database %q", name), nil)
-		if err := nc.CreateCompositeDatabase(ctx, name, compositeWait(cd), true,
-			cd.Spec.DefaultCypherLanguage); err != nil {
+		if err := nc.CreateCompositeDatabase(ctx, name, compositeWait(cd), true, language); err != nil {
 			return r.fail(ctx, cd, "create composite database failed", err, requeue)
 		}
 		r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeCreated,
 			"Composite database %q created", name)
-	} else if cd.Spec.DefaultCypherLanguage != "" {
+	} else if language != "" {
 		// The only alterable property. Applied unconditionally because the
 		// server does not report it on SHOW DATABASE, so there is nothing to
 		// diff against; the statement is idempotent.
-		if err := nc.AlterCompositeDatabaseLanguage(ctx, name, cd.Spec.DefaultCypherLanguage); err != nil {
+		if err := nc.AlterCompositeDatabaseLanguage(ctx, name, language); err != nil {
 			return r.fail(ctx, cd, "set default Cypher language failed", err, requeue)
 		}
 	}
@@ -556,6 +563,26 @@ func compositeName(cd *neo4jv1beta1.Neo4jCompositeDatabase) string {
 		return cd.Spec.Name
 	}
 	return cd.Name
+}
+
+// compositeCypherLanguage returns the value to put in the composite's DEFAULT
+// LANGUAGE CYPHER clause, or "" when the clause must be left out.
+//
+// The 5.26 LTS does not parse that clause on CREATE COMPOSITE DATABASE or
+// ALTER DATABASE, and every database there already runs Cypher 5, so a
+// requested "5" is dropped (the outcome is what the user asked for) — the same
+// rule Neo4jDatabase follows via DefaultLanguageForImage. A requested "25" on
+// the LTS never gets this far: the validator refuses it first. A target whose
+// image tag cannot be read passes the request through unchanged.
+func compositeCypherLanguage(cd *neo4jv1beta1.Neo4jCompositeDatabase, target ResolvedTarget) string {
+	var tag string
+	switch {
+	case target.Cluster != nil:
+		tag = target.Cluster.Spec.Image.Tag
+	case target.Standalone != nil:
+		tag = target.Standalone.Spec.Image.Tag
+	}
+	return neo4jclient.DefaultLanguageForImage(tag, cd.Spec.DefaultCypherLanguage)
 }
 
 // compositeWait defaults to true.

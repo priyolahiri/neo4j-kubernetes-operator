@@ -29,7 +29,6 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -894,7 +893,7 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 		// Reject it up front with an actionable pointer to the cluster-native
 		// path (Neo4jDatabase.spec.seedConfig.restoreUntil).
 		if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && isCluster {
-			return fmt.Errorf("source.type=pitr is not supported for cluster targets (clusterRef %q resolves to a Neo4jEnterpriseCluster); Neo4jRestore PITR applies to Neo4jEnterpriseStandalone targets only. For cluster point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead", restore.Spec.InstanceRef)
+			return fmt.Errorf("source.type=pitr is not supported for cluster targets (instanceRef %q resolves to a Neo4jEnterpriseCluster); Neo4jRestore PITR applies to Neo4jEnterpriseStandalone targets only. For cluster point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead", restore.Spec.InstanceRef)
 		}
 
 	default:
@@ -943,7 +942,7 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 	// asked for a point in time is worse than failing: reject up front.
 	if restore.Spec.Source.PointInTime != nil {
 		if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && isCluster {
-			return fmt.Errorf("source.pointInTime is not supported for cluster targets (clusterRef %q resolves to a Neo4jEnterpriseCluster) — the cluster restore path seeds from a backup artifact and cannot replay to a point in time. For cluster point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead", restore.Spec.InstanceRef)
+			return fmt.Errorf("source.pointInTime is not supported for cluster targets (instanceRef %q resolves to a Neo4jEnterpriseCluster) — the cluster restore path seeds from a backup artifact and cannot replay to a point in time. For cluster point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead", restore.Spec.InstanceRef)
 		}
 	}
 
@@ -1015,6 +1014,13 @@ func (r *Neo4jRestoreReconciler) ensureRestoreTempStagingPVC(ctx context.Context
 		return nil // already exists
 	}
 
+	// User input: ParseQuantity, never MustParse (a malformed value would panic
+	// the manager). The CRD pattern is not relied on.
+	size, err := parseUserQuantity("spec.options.tempStorage.size", restore.Spec.Options.TempStorage.Size)
+	if err != nil {
+		return err
+	}
+
 	pvc = &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pvcName,
@@ -1024,7 +1030,7 @@ func (r *Neo4jRestoreReconciler) ensureRestoreTempStagingPVC(ctx context.Context
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse(restore.Spec.Options.TempStorage.Size),
+					corev1.ResourceStorage: size,
 				},
 			},
 		},
@@ -3699,7 +3705,7 @@ func ternaryString(cond bool, ifTrue, ifFalse string) string {
 	return ifFalse
 }
 
-// isRestoreTargetTrueCluster returns true when spec.clusterRef points at an
+// isRestoreTargetTrueCluster returns true when spec.instanceRef points at an
 // actual Neo4jEnterpriseCluster (not a Neo4jEnterpriseStandalone). The
 // cluster restore path uses Cypher (`dbms.recreateDatabase` or
 // `CREATE DATABASE OPTIONS{seedURI}`) per the Neo4j cluster restore docs;
