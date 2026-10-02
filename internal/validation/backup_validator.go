@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	cron "github.com/robfig/cron/v3"
+	"k8s.io/apimachinery/pkg/api/resource"
 	apivalidation "k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -337,6 +338,19 @@ func (v *BackupValidator) validateStorageProvider(storage *neo4jv1beta1.StorageL
 		// MountVolume.SetUp failure on Pod startup.
 		if strings.TrimSpace(storage.PVC.Name) == "" {
 			return fmt.Errorf("PVC storage requires spec.storage.pvc.name to reference an existing PVC — without it, backup artifacts are written to an EmptyDir and discarded when the Job's TTL elapses")
+		}
+		// When size is set the controller creates the claim, and it parses the
+		// value with resource.MustParse — which PANICS on a malformed quantity.
+		// The CRD has no pattern for this field, so reject it here, where the
+		// user gets a clear message instead of a crashing reconcile.
+		if size := strings.TrimSpace(storage.PVC.Size); size != "" {
+			q, err := resource.ParseQuantity(size)
+			if err != nil {
+				return fmt.Errorf("spec.storage.pvc.size %q is not a valid Kubernetes quantity (e.g. \"50Gi\"): %w", storage.PVC.Size, err)
+			}
+			if q.Sign() <= 0 {
+				return fmt.Errorf("spec.storage.pvc.size %q must be greater than zero", storage.PVC.Size)
+			}
 		}
 	}
 

@@ -173,6 +173,55 @@ func TestBackupValidator_Validate(t *testing.T) {
 			expectedErrorContains: []string{"spec.storage.pvc.name"},
 		},
 		{
+			name: "PVC storage with a malformed size is rejected (the controller would panic in MustParse)",
+			backup: &neo4jv1beta1.Neo4jBackup{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-backup"},
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					InstanceRef:  "test-cluster",
+					AllDatabases: true,
+					Storage: neo4jv1beta1.StorageLocation{
+						Type: "pvc",
+						PVC:  &neo4jv1beta1.PVCSpec{Name: "backups", Size: "lots"},
+					},
+				},
+			},
+			expectError:           true,
+			errorCount:            1,
+			expectedErrorContains: []string{"spec.storage.pvc.size", "not a valid Kubernetes quantity"},
+		},
+		{
+			name: "PVC storage with a negative size is rejected",
+			backup: &neo4jv1beta1.Neo4jBackup{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-backup"},
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					InstanceRef:  "test-cluster",
+					AllDatabases: true,
+					Storage: neo4jv1beta1.StorageLocation{
+						Type: "pvc",
+						PVC:  &neo4jv1beta1.PVCSpec{Name: "backups", Size: "-5Gi"},
+					},
+				},
+			},
+			expectError:           true,
+			errorCount:            1,
+			expectedErrorContains: []string{"spec.storage.pvc.size", "greater than zero"},
+		},
+		{
+			name: "PVC storage with a valid size is accepted",
+			backup: &neo4jv1beta1.Neo4jBackup{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-backup"},
+				Spec: neo4jv1beta1.Neo4jBackupSpec{
+					InstanceRef:  "test-cluster",
+					AllDatabases: true,
+					Storage: neo4jv1beta1.StorageLocation{
+						Type: "pvc",
+						PVC:  &neo4jv1beta1.PVCSpec{Name: "backups", Size: "50Gi"},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
 			name: "PVC storage with nil PVC is rejected",
 			backup: &neo4jv1beta1.Neo4jBackup{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-backup"},
