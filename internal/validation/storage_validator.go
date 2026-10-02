@@ -17,8 +17,6 @@ limitations under the License.
 package validation
 
 import (
-	"regexp"
-
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -50,35 +48,35 @@ func (v *StorageValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster
 		))
 	}
 
-	// Validate size format
 	if cluster.Spec.Storage.Size != "" {
-		if !v.isValidStorageSize(cluster.Spec.Storage.Size) {
-			allErrs = append(allErrs, field.Invalid(
-				storagePath.Child("size"),
-				cluster.Spec.Storage.Size,
-				"storage size must be in format like '100Gi', '1Ti'",
-			))
+		if err := storageSizeError(storagePath.Child("size"), cluster.Spec.Storage.Size); err != nil {
+			allErrs = append(allErrs, err)
 		}
 	}
 
 	return allErrs
 }
 
-// isValidStorageSize validates storage size format
-func (v *StorageValidator) isValidStorageSize(size string) bool {
-	// Simple storage size validation
-	matched, err := regexp.MatchString(`^\d+([KMGT]i?)?$`, size)
+// storageSizeError returns the error for a data-volume size that cannot be
+// used, or nil. A size is usable when Kubernetes can parse it as a quantity and
+// it is greater than zero; anything Kubernetes accepts beyond that (1.5Gi, 500M,
+// 1e12) is accepted here too, because it is the apiserver, not this operator,
+// that decides what a PVC request may be.
+//
+// Shared by StorageValidator (cluster) and StandaloneValidator, which had
+// drifted in both directions: the cluster used a format regex that refused
+// 100.5Gi and lowercase k yet admitted capital "5K", which is not a quantity at
+// all and panicked the manager in resource.MustParse; the standalone checked
+// only that the field was non-empty. The cluster also accepted "0", which no
+// Neo4j store fits in. TestStandaloneAndClusterAgreeOnStorageSize pins parity.
+func storageSizeError(fldPath *field.Path, size string) *field.Error {
+	q, err := resource.ParseQuantity(size)
 	if err != nil {
-		return false // Invalid regex should not happen, but handle gracefully
+		return field.Invalid(fldPath, size,
+			"storage size must be a valid Kubernetes quantity, e.g. '100Gi' or '1Ti'")
 	}
-	if !matched {
-		return false
+	if q.Sign() <= 0 {
+		return field.Invalid(fldPath, size, "storage size must be greater than zero")
 	}
-	// The format above also admits capital "K", which is not a Kubernetes
-	// quantity suffix (decimal kilo is a lowercase "k"; binary is "Ki"). The
-	// StatefulSet builder runs resource.MustParse on this value, which PANICS
-	// on it, so "5K" used to pass validation and then crash the manager.
-	// Require that Kubernetes itself can parse what the regex let through.
-	_, err = resource.ParseQuantity(size)
-	return err == nil
+	return nil
 }
