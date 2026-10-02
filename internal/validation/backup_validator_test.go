@@ -632,6 +632,14 @@ func TestBackupValidator_CloudErrorPathsAreUnderStorage(t *testing.T) {
 			wantField: "spec.storage.cloud.provider",
 		},
 		{
+			// The CRD enum is aws;gcp;azure. The validator used to list "custom"
+			// as well, a value the apiserver refuses before it gets here and that
+			// no code gave any meaning to.
+			name:      "custom is not a provider the schema accepts",
+			cloud:     &neo4jv1beta1.CloudBlock{Provider: "custom"},
+			wantField: "spec.storage.cloud.provider",
+		},
+		{
 			name: "identity without provider",
 			cloud: &neo4jv1beta1.CloudBlock{
 				Provider: "aws",
