@@ -133,7 +133,13 @@ cmd_up() {
     command -v docker >/dev/null || die "docker is not installed"
 
     log "building ${OPERATOR_IMAGE}"
-    docker build -t "${OPERATOR_IMAGE}" "${REPO_ROOT}"
+    # Through the Makefile, not a bare `docker build`: docker-build passes
+    # VERSION, BUILD_DATE and VCS_REF, which become neo4j_operator_build_info's
+    # labels. A bare build reported vcs_ref="unknown" on both clusters, and the
+    # journey's own build-info check reads that as an image that is not the
+    # tree under test — the false blocker a wrong image on the second cluster
+    # produced once already (release_verification.md, 2026-09-13).
+    make -C "${REPO_ROOT}" docker-build IMG="${OPERATOR_IMAGE}"
 
     create_cluster "${UPSTREAM}"
     create_cluster "${DOWNSTREAM}"
