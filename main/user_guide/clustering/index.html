@@ -4827,10 +4827,10 @@
 </span></code></pre></div></p>
 <p>Ref: <a href="https://neo4j.com/docs/operations-manual/5/clustering/setup/discovery/">5.26.x discovery docs</a> · <a href="https://neo4j.com/docs/operations-manual/current/clustering/setup/discovery/">2025.x+ discovery docs</a></p>
 <h2 id="cluster-formation">Cluster Formation<a class="headerlink" href="#cluster-formation" title="Anchor link to this section">&para;</a></h2>
-<p>The operator uses a <strong>ME/OTHER bootstrap strategy</strong> with <code>Parallel</code> pod management for fast, split-brain-free cluster formation.</p>
+<p>The operator uses <code>Parallel</code> pod management and a minimum-primaries floor for fast, split-brain-free cluster formation. On Neo4j 5.26 it also steers bootstrap with a <strong>ME/OTHER</strong> hint.</p>
 <h3 id="key-configuration">Key Configuration<a class="headerlink" href="#key-configuration" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li><strong>Bootstrap strategy</strong>: server-0 uses <code>me</code> (preferred bootstrapper); all other servers use <code>other</code> (join when ready)</li>
+<li><strong>Bootstrap strategy</strong> (5.26 only): server-0 uses <code>me</code> (preferred bootstrapper); all other servers use <code>other</code> (join when ready). On CalVer no hint is emitted — V2 discovery elects a bootstrapper from the endpoint list</li>
 <li><strong>Minimum primaries</strong>: Set to <code>min(3, servers)</code> on initial formation (override with <code>spec.topology.minSystemPrimaries</code>) — that many servers must mutually discover each other before RAFT elects a leader, preventing premature solo bootstrap. Note it's a bootstrap <strong>floor</strong>, not a cap: all initially-joined servers become system primaries</li>
 <li><strong>On restart</strong> (data already exists): minimum primaries check is skipped so servers rejoin immediately without blocking StatefulSet rolling updates</li>
 <li><strong>Pod Management</strong>: <code>Parallel</code> — all pods start simultaneously</li>
@@ -4839,9 +4839,9 @@
 <ol>
 <li><strong>All server pods start in parallel</strong> — Single StatefulSet with <code>Parallel</code> pod management</li>
 <li><strong>Servers discover each other</strong> — Via static pod FQDNs in the LIST endpoint list (port 6000)</li>
-<li><strong>RAFT coordination</strong> — server-0's <code>me</code> hint makes it the preferred bootstrapper; others wait with <code>other</code> hint</li>
+<li><strong>RAFT coordination</strong> — on 5.26, server-0's <code>me</code> hint makes it the preferred bootstrapper and others wait with the <code>other</code> hint; on CalVer the bootstrapper is elected without a hint</li>
 <li><strong>A quorum of servers must see each other</strong> — <code>dbms.cluster.minimum_initial_system_primaries_count</code> (default <code>min(3, servers)</code>, override via <code>spec.topology.minSystemPrimaries</code>) prevents any single node from forming a solo cluster (split-brain)</li>
-<li><strong>Cluster forms once quorum reached</strong> — RAFT elects server-0 as bootstrap leader; others join</li>
+<li><strong>Cluster forms once quorum reached</strong> — RAFT elects a bootstrap leader (server-0 on 5.26); others join</li>
 <li><strong>Servers self-organize</strong> — Neo4j automatically assigns primary and secondary roles per database</li>
 </ol>
 <h3 id="benefits">Benefits<a class="headerlink" href="#benefits" title="Anchor link to this section">&para;</a></h3>
@@ -4862,7 +4862,7 @@
 <p>The operator uses a unified clustering approach for all deployments:</p>
 <h4 id="unified-cluster-formation">Unified Cluster Formation<a class="headerlink" href="#unified-cluster-formation" title="Anchor link to this section">&para;</a></h4>
 <ul>
-<li>All deployments use Neo4j's clustering infrastructure (even single-node)</li>
+<li>Every <code>Neo4jEnterpriseCluster</code> (minimum 2 servers) uses Neo4j's clustering infrastructure; single-node deployments are <code>Neo4jEnterpriseStandalone</code>, which has no cluster configuration</li>
 <li>Automatic handling of discovery configuration based on Neo4j version</li>
 <li>Coordinated startup ensures data consistency</li>
 </ul>
@@ -4873,47 +4873,47 @@
 <li>Prevents split-brain scenarios through proper coordination</li>
 </ul>
 <h4 id="formation-requirements">Formation Requirements<a class="headerlink" href="#formation-requirements" title="Anchor link to this section">&para;</a></h4>
-<p>All primaries must be present for initial cluster formation:</p>
+<p>Initial formation waits for <code>dbms.cluster.minimum_initial_system_primaries_count</code> servers (default <code>min(3, servers)</code>, or <code>spec.topology.minSystemPrimaries</code>) to see each other:</p>
 <table>
 <thead>
 <tr>
 <th>Cluster Size</th>
-<th>Formation Requirement</th>
+<th>Servers needed to form</th>
 <th>Rationale</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>2 servers</td>
-<td>2 servers required</td>
+<td>2</td>
 <td>Minimum cluster size</td>
 </tr>
 <tr>
 <td>3 servers</td>
-<td>3 servers required</td>
+<td>3</td>
 <td>Odd number for optimal fault tolerance</td>
 </tr>
 <tr>
 <td>4+ servers</td>
-<td>All servers required</td>
-<td>Ensures consistent initial state</td>
+<td>3 (default)</td>
+<td>The floor is a minimum, not a cap: servers that have joined by then all become system primaries</td>
 </tr>
 </tbody>
 </table>
-<p>This approach ensures that clusters form with a complete and consistent initial membership.</p>
+<p>This keeps any single server from bootstrapping a solo cluster.</p>
 <h3 id="cluster-formation-process">Cluster Formation Process<a class="headerlink" href="#cluster-formation-process" title="Anchor link to this section">&para;</a></h3>
 <ol>
 <li><strong>Resource Creation</strong>: The operator creates all Kubernetes resources (StatefulSets, Services, RBAC)</li>
 <li><strong>Parallel Pod Startup</strong>: All pods start simultaneously (not sequentially)</li>
 <li><strong>Discovery Phase</strong>: Pods discover each other via Kubernetes service discovery</li>
-<li><strong>Coordination Phase</strong>: All pods wait for complete membership before forming cluster</li>
+<li><strong>Coordination Phase</strong>: Pods wait until the minimum number of system primaries can see each other before the cluster forms</li>
 <li><strong>Service Ready</strong>: Cluster accepts connections after successful formation</li>
 </ol>
 <h3 id="important-considerations">Important Considerations<a class="headerlink" href="#important-considerations" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li><strong>Complete Membership</strong>: All configured server nodes must be available for initial cluster formation</li>
+<li><strong>Minimum Membership</strong>: At least <code>min(3, servers)</code> servers (or <code>spec.topology.minSystemPrimaries</code>) must be available for initial cluster formation</li>
 <li><strong>Startup Time</strong>: Cluster formation typically completes within 2-3 minutes</li>
-<li><strong>Pod Readiness</strong>: Pods are marked ready only after successful cluster formation</li>
+<li><strong>Pod Readiness</strong>: The readiness probe is lenient while the cluster forms (it passes once the HTTP port answers or the log shows cluster-formation activity), so a pod can be <code>Ready</code> before formation finishes; check the cluster's <code>status.phase</code> for the real state</li>
 <li><strong>Scaling</strong>: After initial formation, clusters can be scaled following Neo4j's online scaling procedures</li>
 </ul>
 <h2 id="basic-cluster-configuration">Basic Cluster Configuration<a class="headerlink" href="#basic-cluster-configuration" title="Anchor link to this section">&para;</a></h2>
@@ -5021,7 +5021,7 @@
 </span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">      </span><span class="nt">antiAffinity</span><span class="p">:</span>
 </span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">        </span><span class="nt">topologyKey</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology.kubernetes.io/zone</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preferredDuringSchedulingIgnoredDuringExecution</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preferred</span><span class="w">   </span><span class="c1"># or "required"; any other value is treated as preferred</span>
 </span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">      </span><span class="nt">topologySpread</span><span class="p">:</span>
 </span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">        </span><span class="nt">topologyKey</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology.kubernetes.io/zone</span>

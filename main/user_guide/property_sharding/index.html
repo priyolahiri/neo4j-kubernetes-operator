@@ -4635,7 +4635,7 @@
 <ul>
 <li><strong>Authentication</strong>: Admin secret required (property sharding requires authenticated cluster access)</li>
 <li><strong>Storage Class</strong>: Persistent storage class must be specified (e.g., <code>standard</code>, <code>fast-ssd</code>)</li>
-<li><strong>Kubernetes Version</strong>: 1.24+ for full operator compatibility</li>
+<li><strong>Kubernetes Version</strong>: 1.32+ (the operator's minimum; see <a href="../installation/#installation-requirements">Installation</a>)</li>
 <li><strong>Network Policy</strong>: Allow inter-pod communication on discovery and bolt ports</li>
 <li><strong>Cypher Version</strong>: sharded databases are created with Cypher 25 as their default language (the operator sets it on the whole sharded family); the rest of the server is governed by <code>spec.serverDefaultCypherLanguage</code></li>
 </ul>
@@ -4746,9 +4746,9 @@
 </span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="c1"># Virtual database name (what users connect to)</span>
 </span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">products</span>
 </span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>
-</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">  </span><span class="c1"># The sharded family's default Cypher language. "25" is the only value, and</span>
-</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">  </span><span class="c1"># the operator sets it even when this is omitted: the graph shard and every</span>
-</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">  </span><span class="c1"># property shard inherit it from this, the parent database.</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">  </span><span class="c1"># The sharded family's default Cypher language. Required, and "25" is the only</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">  </span><span class="c1"># accepted value: the graph shard and every property shard inherit it from</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">  </span><span class="c1"># this, the parent database, whatever spec.serverDefaultCypherLanguage says.</span>
 </span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="nt">defaultCypherLanguage</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span>
 </span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>
 </span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">  </span><span class="c1"># Property sharding configuration</span>
@@ -5068,7 +5068,7 @@ Solution: Ensure <code>propertySharding.enabled: true</code> on the referenced c
 </span><span id="__span-24-5"><a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jshardeddatabase<span class="w"> </span>products-sharded-db
 </span><span id="__span-24-6"><a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a>
 </span><span id="__span-24-7"><a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a><span class="c1"># View operator logs</span>
-</span><span id="__span-24-8"><a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator<span class="w"> </span>deployment/neo4j-operator-controller-manager
+</span><span id="__span-24-8"><a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator
 </span><span id="__span-24-9"><a id="__codelineno-24-9" name="__codelineno-24-9" href="#__codelineno-24-9"></a>
 </span><span id="__span-24-10"><a id="__codelineno-24-10" name="__codelineno-24-10" href="#__codelineno-24-10"></a><span class="c1"># Check individual database status</span>
 </span><span id="__span-24-11"><a id="__codelineno-24-11" name="__codelineno-24-11" href="#__codelineno-24-11"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>property-sharding-cluster-server-0<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>

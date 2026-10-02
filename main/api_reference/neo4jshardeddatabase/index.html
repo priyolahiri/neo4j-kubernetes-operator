@@ -4789,17 +4789,18 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 <tr>
 <td><code>db.tx_log.rotation.retention_policy</code></td>
 <td>string</td>
-<td>"7 days"</td>
-<td>Transaction log retention policy</td>
+<td><em>(not set by the operator)</em></td>
+<td>Transaction log retention policy; Neo4j's own default applies unless you set it here</td>
 </tr>
 <tr>
 <td><code>internal.dbms.sharded_property_database.property_pull_interval</code></td>
 <td>string</td>
-<td>"10ms"</td>
-<td>Property synchronization interval</td>
+<td><em>(not set by the operator)</em></td>
+<td>Property synchronization interval; Neo4j's own default applies unless you set it here</td>
 </tr>
 </tbody>
 </table>
+<p>Only the first two keys are defaulted by the operator; any other key you list is passed through to <code>neo4j.conf</code>.</p>
 <h3 id="status-fields">Status Fields<a class="headerlink" href="#status-fields" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">status</span><span class="p">:</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">propertyShardingReady</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">boolean</span><span class="w">      </span><span class="c1"># Indicates if property sharding is ready</span>
@@ -5134,11 +5135,11 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 </span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">string</span><span class="w">                        </span><span class="c1"># Status message</span>
 </span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">int64</span><span class="w">              </span><span class="c1"># Observed generation</span>
 </span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">  </span><span class="nt">shardingReady</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">boolean</span><span class="w">                 </span><span class="c1"># All shards operational</span>
-</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span><span class="nt">creationTime</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">metav1.Time</span><span class="w">              </span><span class="c1"># Creation timestamp</span>
-</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">  </span><span class="nt">graphShard</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ShardStatus</span><span class="w">                </span><span class="c1"># Graph shard status</span>
-</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">  </span><span class="nt">propertyShards</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="l l-Scalar l-Scalar-Plain">ShardStatus</span><span class="w">          </span><span class="c1"># Property shard statuses</span>
-</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">  </span><span class="nt">virtualDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VirtualDatabaseStatus</span><span class="w">  </span><span class="c1"># Virtual database status</span>
-</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">  </span><span class="nt">totalSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">string</span><span class="w">                      </span><span class="c1"># Total size across shards</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span><span class="nt">creationTime</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">metav1.Time</span><span class="w">              </span><span class="c1"># RESERVED: never populated today</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">  </span><span class="nt">graphShard</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ShardStatus</span><span class="w">                </span><span class="c1"># RESERVED: never populated today</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">  </span><span class="nt">propertyShards</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="l l-Scalar l-Scalar-Plain">ShardStatus</span><span class="w">          </span><span class="c1"># RESERVED: never populated today</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">  </span><span class="nt">virtualDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VirtualDatabaseStatus</span><span class="w">  </span><span class="c1"># RESERVED: never populated today</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">  </span><span class="nt">totalSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">string</span><span class="w">                      </span><span class="c1"># RESERVED: never populated today</span>
 </span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">  </span><span class="nt">lastBackup</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">object</span><span class="w">                     </span><span class="c1"># Reverse-lookup of most recent Succeeded backup</span>
 </span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">  </span><span class="nt">lastDestructiveRestoreGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">int64</span><span class="w">  </span><span class="c1"># Generation at which the last replaceExisting recreate completed</span>
 </span></code></pre></div>
@@ -5153,56 +5154,38 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>Initializing</code></td>
-<td>Creating and configuring shards</td>
+<td><code>Validating</code></td>
+<td>Initial phase while the spec is validated</td>
+</tr>
+<tr>
+<td><code>Creating</code></td>
+<td>Spec validated; the sharded database is being created</td>
+</tr>
+<tr>
+<td><code>Waiting</code></td>
+<td>The target cluster is not yet <code>Ready</code> with property sharding operational (reconciler requeues)</td>
 </tr>
 <tr>
 <td><code>Pending</code></td>
-<td>Waiting on a <code>seedBackupRef</code> whose backup has no Succeeded run yet (reconciler requeues)</td>
+<td>Waiting on a <code>seedBackupRef</code> whose backup has no Succeeded run yet, on the PVC seed proxy, or on seed credentials being projected onto the cluster (reconciler requeues)</td>
 </tr>
 <tr>
 <td><code>Ready</code></td>
-<td>All shards operational</td>
+<td>Sharded database created and operational</td>
 </tr>
 <tr>
 <td><code>Failed</code></td>
-<td>Error in shard creation or operation</td>
-</tr>
-<tr>
-<td><code>Mixed</code></td>
-<td>Some shards operational, others not</td>
+<td>Validation, seed resolution, client creation or database creation failed</td>
 </tr>
 </tbody>
 </table>
+<p>The controller sets no other phases (for example there is no <code>Initializing</code> or <code>Mixed</code> phase).</p>
 <h4 id="conditions">Conditions<a class="headerlink" href="#conditions" title="Anchor link to this section">&para;</a></h4>
-<p>Standard Kubernetes conditions with these types:</p>
-<table>
-<thead>
-<tr>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>Ready</code></td>
-<td>Sharded database is ready for use</td>
-</tr>
-<tr>
-<td><code>GraphShardReady</code></td>
-<td>Graph shard is operational</td>
-</tr>
-<tr>
-<td><code>PropertyShardsReady</code></td>
-<td>All property shards are operational</td>
-</tr>
-<tr>
-<td><code>VirtualDatabaseReady</code></td>
-<td>Virtual database is accessible</td>
-</tr>
-</tbody>
-</table>
+<p>A single standard <code>Ready</code> condition, derived from <code>phase</code> (<code>Ready</code> → <code>True</code>; <code>Failed</code> → <code>False</code>; every other phase → <code>Unknown</code>). There are no per-shard or virtual-database condition types.</p>
 <h3 id="shardstatus">ShardStatus<a class="headerlink" href="#shardstatus" title="Anchor link to this section">&para;</a></h3>
+<blockquote>
+<p><strong>Reserved — never populated today.</strong> <code>status.graphShard</code>, <code>status.propertyShards</code>, <code>status.virtualDatabase</code> (and its metrics types below), <code>status.totalSize</code> and <code>status.creationTime</code> are part of the schema but no controller writes them. Use <code>kubectl exec ... SHOW DATABASES</code> for per-shard state.</p>
+</blockquote>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">shardStatus</span><span class="p">:</span>
 </span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">string</span><span class="w">                  </span><span class="c1"># Shard database name</span>
 </span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">string</span><span class="w">                 </span><span class="c1"># "graph" or "property"</span>
@@ -5293,16 +5276,19 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 <h3 id="neo4jshardeddatabase-validation">Neo4jShardedDatabase Validation<a class="headerlink" href="#neo4jshardeddatabase-validation" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li><code>clusterRef</code> must reference existing Neo4jEnterpriseCluster with property sharding enabled</li>
+<li><code>name</code> is at most 63 characters, contains only letters, digits, <code>_</code> and <code>-</code>, and must not be <code>system</code> or <code>neo4j</code></li>
 <li><code>defaultCypherLanguage</code> must be "25"</li>
 <li><code>propertyShards</code> must be 1-1000</li>
-<li><code>propertyShardTopology.replicas</code> must be &gt;= 1</li>
+<li><code>graphShard.primaries</code> must be &gt;= 1 (and <code>graphShard.primaries + graphShard.secondaries</code> must not exceed the cluster's <code>spec.topology.servers</code>)</li>
+<li><code>propertyShardTopology.replicas</code> must be &gt;= 1 and must not exceed the cluster's <code>spec.topology.servers</code></li>
 <li><code>seedURI</code> and <code>seedURIs</code> cannot both be set</li>
 <li><code>seedBackupRef</code> is mutually exclusive with <code>seedURI</code> and <code>seedURIs</code></li>
-<li><code>seedSourceDatabase</code>, <code>seedConfig</code>, and <code>seedCredentials</code> require <code>seedURI</code> or <code>seedURIs</code></li>
+<li><code>seedSourceDatabase</code>, <code>seedConfig</code>, and <code>seedCredentials</code> require a seed source: <code>seedURI</code>, <code>seedURIs</code>, or <code>seedBackupRef</code></li>
+<li><code>seedConfig.restoreUntil</code>, when set, is an RFC3339 timestamp or <code>txId:&lt;positive integer&gt;</code>; <code>seedConfig.config</code> and <code>seedURIs</code> keys may contain only letters, digits, <code>.</code>, <code>_</code> and <code>-</code>, and <code>seedConfig.config</code> values may not contain <code>,</code>, <code>=</code>, quotes, backticks or newlines</li>
 <li><code>replaceExisting: true</code> requires <code>force: true</code> (destructive <code>DROP ... DESTROY DATA</code>)</li>
 <li><code>replaceExisting: true</code> is mutually exclusive with <code>ifNotExists: true</code> and requires a seed source (<code>seedURI</code>, <code>seedURIs</code>, or <code>seedBackupRef</code>)</li>
-<li>Target cluster must be in "Ready" phase with <code>propertyShardingReady: true</code></li>
-<li><code>graphShard.primaries</code> should be &gt;= 3 for high availability</li>
+<li>The target cluster must be <code>Ready</code> with property sharding operational (<code>propertyShardingReady: true</code>). This is not a validation error: until then the sharded database waits in phase <code>Waiting</code> and retries</li>
+<li><code>graphShard.primaries</code> should be &gt;= 3 for high availability (advice only)</li>
 </ul>
 <h2 id="error-conditions">Error Conditions<a class="headerlink" href="#error-conditions" title="Anchor link to this section">&para;</a></h2>
 <h3 id="common-validation-errors">Common Validation Errors<a class="headerlink" href="#common-validation-errors" title="Anchor link to this section">&para;</a></h3>

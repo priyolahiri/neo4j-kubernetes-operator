@@ -4534,7 +4534,7 @@ reflect cluster health without requiring <code>kubectl exec</code>. See the
 <blockquote>
 <p><strong>Warning</strong>: Do not set <code>NEO4J_AUTH</code> via <code>spec.env</code>. The operator builds it from the admin Secret's <code>username</code> / <code>password</code> keys (referenced via <code>spec.auth.adminSecret</code>); overriding via <code>spec.env</code> bypasses the Secret-managed flow and the two paths can desync on Secret rotation. Override the Secret itself, not the env var.
 *   <code>spec.service</code>: Configure service type (ClusterIP, NodePort, LoadBalancer), annotations, and external access settings (Ingress; OpenShift Route).
-*   <code>spec.propertySharding</code>: (Neo4j 2025.12+) Enable property sharding for horizontal scaling of large datasets. See the <a href="../property_sharding/">Property Sharding Guide</a> for detailed configuration options.</p>
+*   <code>spec.propertySharding</code>: (Cluster only; Neo4j 2025.12+) Enable property sharding for horizontal scaling of large datasets. See the <a href="../property_sharding/">Property Sharding Guide</a> for detailed configuration options.</p>
 </blockquote>
 </li>
 </ul>
@@ -4593,7 +4593,7 @@ reflect cluster health without requiring <code>kubectl exec</code>. See the
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.storage.retentionPolicy}'</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># List PVCs that would be affected</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span><span class="nv">app</span><span class="o">=</span>my-cluster
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/instance<span class="o">=</span>my-cluster
 </span></code></pre></div>
 <h3 id="recovering-retained-pvcs">Recovering retained PVCs<a class="headerlink" href="#recovering-retained-pvcs" title="Anchor link to this section">&para;</a></h3>
 <p>If you deleted a cluster with <code>Retain</code> and want to redeploy using the same data, create a new cluster with the same name and storage configuration. The StatefulSet will reattach to the existing PVCs (matched by name).</p>
@@ -4690,13 +4690,13 @@ For client configuration and HTTP/STDIO usage, see the <a href="../guides/mcp_cl
 <h2 id="best-practices-for-specconfig">Best practices for <code>spec.config</code><a class="headerlink" href="#best-practices-for-specconfig" title="Anchor link to this section">&para;</a></h2>
 <p><code>spec.config</code> is a free-form <code>map[string]string</code> that lands in <code>neo4j.conf</code>. A lot of older example material still floats around using the pre-5.x key namespace. Use the current keys below and you'll avoid the most common foot-guns.</p>
 <h3 id="memory">Memory<a class="headerlink" href="#memory" title="Anchor link to this section">&para;</a></h3>
-<p>Use the <code>server.memory.*</code> namespace. The pre-5.x <code>dbms.memory.*</code> keys still appear in many older tutorials but are deprecated:</p>
+<p>Use the <code>server.memory.*</code> namespace. The pre-5.x <code>dbms.memory.heap.*</code> and <code>dbms.memory.pagecache.*</code> keys still appear in many older tutorials but were renamed in Neo4j 5.0:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"4G"</span>
 </span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span>
 </span></code></pre></div>
-<p>Don't use <code>dbms.memory.*</code> — those keys have been deprecated since Neo4j 5.0.</p>
+<p>Don't use <code>dbms.memory.heap.*</code> or <code>dbms.memory.pagecache.*</code>. (<code>dbms.memory.transaction.total.max</code>, as used in the <a href="../performance/">Performance guide</a>, is still a valid current setting.)</p>
 <h3 id="query-log">Query log<a class="headerlink" href="#query-log" title="Anchor link to this section">&para;</a></h3>
 <p>Neo4j 5.x+ uses the <code>db.logs.query.*</code> namespace; the validator rejects the legacy <code>dbms.logs.query.enabled</code> form at apply time:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">config</span><span class="p">:</span>
@@ -4782,9 +4782,9 @@ different values is refused, and on the 5.26 LTS the key is refused outright
 <td>(no replacement — standalone is just <code>Neo4jEnterpriseStandalone</code>)</td>
 </tr>
 <tr>
-<td><code>dbms.memory.*</code></td>
-<td>Deprecated</td>
-<td><code>server.memory.*</code></td>
+<td><code>dbms.memory.heap.*</code>, <code>dbms.memory.pagecache.*</code></td>
+<td>Renamed in 5.0</td>
+<td><code>server.memory.heap.*</code>, <code>server.memory.pagecache.*</code></td>
 </tr>
 <tr>
 <td><code>dbms.connector.*</code></td>
@@ -4830,26 +4830,27 @@ different values is refused, and on the 5.26 LTS the key is refused outright
 </span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-cluster</span>
 </span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">  </span><span class="nt">acceptLicenseAgreement</span><span class="p">:</span><span class="w"> </span><span class="s">"eval"</span>
-</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
-</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">    </span><span class="nt">servers</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span><span class="w">   </span><span class="c1"># self-organise into primary/secondary</span>
-</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">    </span><span class="c1"># Memory</span>
-</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"8G"</span>
-</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"16G"</span>
-</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"8G"</span>
-</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>
-</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">    </span><span class="c1"># Query logging</span>
-</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">    </span><span class="nt">db.logs.query.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"INFO"</span>
-</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">    </span><span class="nt">db.logs.query.threshold</span><span class="p">:</span><span class="w"> </span><span class="s">"1s"</span>
-</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="w">    </span><span class="nt">db.logs.query.parameter_logging_enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
-</span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>
-</span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="w">    </span><span class="c1"># Transactions</span>
-</span><span id="__span-10-21"><a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a><span class="w">    </span><span class="nt">db.transaction.timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"5m"</span>
-</span><span id="__span-10-22"><a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a><span class="w">    </span><span class="nt">db.lock.acquisition.timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"2m"</span>
-</span><span id="__span-10-23"><a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a>
-</span><span id="__span-10-24"><a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a><span class="w">    </span><span class="c1"># Checkpointing</span>
-</span><span id="__span-10-25"><a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a><span class="w">    </span><span class="nt">db.checkpoint.interval.time</span><span class="p">:</span><span class="w"> </span><span class="s">"15m"</span>
-</span><span id="__span-10-26"><a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a><span class="w">    </span><span class="nt">db.checkpoint.interval.tx</span><span class="p">:</span><span class="w"> </span><span class="s">"100000"</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span><span class="c1"># image and storage omitted for brevity (both are required in a real manifest)</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">    </span><span class="nt">servers</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span><span class="w">   </span><span class="c1"># self-organise into primary/secondary</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">    </span><span class="c1"># Memory</span>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"8G"</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"16G"</span>
+</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"8G"</span>
+</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>
+</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">    </span><span class="c1"># Query logging</span>
+</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">    </span><span class="nt">db.logs.query.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"INFO"</span>
+</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="w">    </span><span class="nt">db.logs.query.threshold</span><span class="p">:</span><span class="w"> </span><span class="s">"1s"</span>
+</span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="w">    </span><span class="nt">db.logs.query.parameter_logging_enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
+</span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a>
+</span><span id="__span-10-21"><a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a><span class="w">    </span><span class="c1"># Transactions</span>
+</span><span id="__span-10-22"><a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a><span class="w">    </span><span class="nt">db.transaction.timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"5m"</span>
+</span><span id="__span-10-23"><a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a><span class="w">    </span><span class="nt">db.lock.acquisition.timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"2m"</span>
+</span><span id="__span-10-24"><a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a>
+</span><span id="__span-10-25"><a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a><span class="w">    </span><span class="c1"># Checkpointing</span>
+</span><span id="__span-10-26"><a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a><span class="w">    </span><span class="nt">db.checkpoint.interval.time</span><span class="p">:</span><span class="w"> </span><span class="s">"15m"</span>
+</span><span id="__span-10-27"><a id="__codelineno-10-27" name="__codelineno-10-27" href="#__codelineno-10-27"></a><span class="w">    </span><span class="nt">db.checkpoint.interval.tx</span><span class="p">:</span><span class="w"> </span><span class="s">"100000"</span>
 </span></code></pre></div>
 <h3 id="sample-development-standalone-config">Sample development standalone config<a class="headerlink" href="#sample-development-standalone-config" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
@@ -4858,14 +4859,15 @@ different values is refused, and on the 5.26 LTS the key is refused outright
 </span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dev-instance</span>
 </span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">  </span><span class="nt">acceptLicenseAgreement</span><span class="p">:</span><span class="w"> </span><span class="s">"eval"</span>
-</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"1G"</span>
-</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span>
-</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"512M"</span>
-</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>
-</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="w">    </span><span class="nt">db.logs.query.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"INFO"</span><span class="w">   </span><span class="c1"># enum: OFF | INFO | VERBOSE (not a boolean)</span>
-</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="w">    </span><span class="nt">dbms.security.procedures.unrestricted</span><span class="p">:</span><span class="w"> </span><span class="s">"gds.*,apoc.*"</span>
-</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="w">    </span><span class="nt">dbms.security.allow_csv_import_from_file_urls</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">  </span><span class="c1"># image and storage omitted for brevity (both are required in a real manifest)</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"1G"</span>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span>
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"512M"</span>
+</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>
+</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="w">    </span><span class="nt">db.logs.query.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"INFO"</span><span class="w">   </span><span class="c1"># enum: OFF | INFO | VERBOSE (not a boolean)</span>
+</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="w">    </span><span class="nt">dbms.security.procedures.unrestricted</span><span class="p">:</span><span class="w"> </span><span class="s">"gds.*,apoc.*"</span>
+</span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="w">    </span><span class="nt">dbms.security.allow_csv_import_from_file_urls</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
 </span></code></pre></div>
 <h3 id="configuration-the-operator-writes-for-you">Configuration the operator writes for you<a class="headerlink" href="#configuration-the-operator-writes-for-you" title="Anchor link to this section">&para;</a></h3>
 <p>You don't need to set these yourself — the operator injects them at pod startup based on <code>spec.topology</code> and the Neo4j version:</p>
@@ -4874,20 +4876,21 @@ different values is refused, and on the 5.26 LTS the key is refused outright
 <li>LIST discovery with static pod FQDNs (<code>{cluster}-server-{n}.{cluster}-headless.{ns}.svc.cluster.local:6000</code>)</li>
 <li>Version-specific endpoint key (<code>dbms.cluster.discovery.v2.endpoints</code> for 5.26.x, <code>dbms.cluster.endpoints</code> for 2025.x+)</li>
 <li><code>dbms.cluster.discovery.version=V2_ONLY</code> (5.26.x only — V2 is the only protocol in CalVer)</li>
-<li>ME/OTHER bootstrap strategy (server-0 is the preferred bootstrapper)</li>
+<li>ME/OTHER bootstrap strategy (5.26.x only; server-0 is the preferred bootstrapper)</li>
 <li>RAFT and routing port advertisement</li>
 <li><code>db.query.default_language</code>, from <code>spec.serverDefaultCypherLanguage</code> (CalVer only; see above)</li>
 </ul>
 <p><strong>Standalone deployments</strong></p>
 <ul>
-<li>Unified clustering infrastructure (no <code>dbms.mode=SINGLE</code>)</li>
-<li>Single-member cluster configuration</li>
-<li>Listen-address bindings</li>
+<li>No cluster or discovery settings at all (and no <code>dbms.mode=SINGLE</code>)</li>
+<li>Listen-address bindings, the backup listener (6362) and, with <code>spec.tls</code>, the SSL policies</li>
+<li>Metrics hardening (JMX and CSV off) and the seed-from-URI providers</li>
+<li><code>db.query.default_language</code>, from <code>spec.serverDefaultCypherLanguage</code> (CalVer only; see above)</li>
 </ul>
 <h2 id="migrating-from-older-neo4j-versions">Migrating from older Neo4j versions<a class="headerlink" href="#migrating-from-older-neo4j-versions" title="Anchor link to this section">&para;</a></h2>
 <p>If you're moving from Neo4j 4.x or an early 5.x release:</p>
 <ol>
-<li><code>dbms.memory.*</code> → <code>server.memory.*</code></li>
+<li><code>dbms.memory.heap.*</code> / <code>dbms.memory.pagecache.*</code> → <code>server.memory.heap.*</code> / <code>server.memory.pagecache.*</code></li>
 <li><code>dbms.connector.*</code> → <code>server.bolt.*</code> / <code>server.http.*</code> / <code>server.https.*</code> (and TLS via <code>spec.tls</code>)</li>
 <li>Remove any <code>dbms.mode=SINGLE</code> — there is no replacement; use <code>Neo4jEnterpriseStandalone</code> instead</li>
 <li><code>causal_clustering.*</code> → <code>dbms.cluster.*</code> (most discovery keys are now operator-managed anyway)</li>

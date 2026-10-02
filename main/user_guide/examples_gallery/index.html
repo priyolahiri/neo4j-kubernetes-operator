@@ -4296,6 +4296,11 @@ Neo4j 2025.12+.</p>
 <td>Backing up a sharded database with a <code>Neo4jBackup</code> CR</td>
 <td><code>Neo4jShardedDatabase</code> + <code>Neo4jBackup</code> target</td>
 </tr>
+<tr>
+<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/property_sharding/all-databases-backup-sharded-dr.yaml"><code>all-databases-backup-sharded-dr.yaml</code></a></td>
+<td>One all-databases backup as the DR source for a cluster mixing standard and sharded databases; sharded families restore via their own CR</td>
+<td><code>allDatabases: true</code>, <code>Neo4jShardedDatabase.spec.seedBackupRef</code>, <code>seedSourceDatabase</code></td>
+</tr>
 </tbody>
 </table>
 <h2 id="backup-restore">Backup &amp; Restore<a class="headerlink" href="#backup-restore" title="Anchor link to this section">&para;</a></h2>
@@ -4571,6 +4576,11 @@ its upstream, and whatever lag is outstanding becomes permanent data loss.</p>
 <td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/fleet-management/standalone-with-fleet-management.yaml"><code>standalone-with-fleet-management.yaml</code></a></td>
 <td>Single-node deployment registered with Aura Fleet Management</td>
 <td><code>auraFleetManagement.enabled</code>, <code>tokenSecretRef.name</code></td>
+</tr>
+<tr>
+<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/fleet-management/cluster-with-fleet-provisioning.yaml"><code>cluster-with-fleet-provisioning.yaml</code></a></td>
+<td>Operator-managed onboarding — the operator registers the deployment and mints the token itself from Aura API credentials</td>
+<td><code>auraFleetManagement.provision</code> (mutually exclusive with <code>tokenSecretRef</code>)</td>
 </tr>
 </tbody>
 </table>

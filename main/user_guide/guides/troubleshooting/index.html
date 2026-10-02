@@ -5023,7 +5023,7 @@ section reaches by hand, and it knows the operator's naming scheme and namespace
 </span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--sort-by<span class="o">=</span>.metadata.creationTimestamp
 </span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>
 </span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="c1"># Check operator logs</span>
-</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager
+</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator
 </span></code></pre></div>
 <h3 id="common-port-forwarding-commands">Common Port Forwarding Commands<a class="headerlink" href="#common-port-forwarding-commands" title="Anchor link to this section">&para;</a></h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># For clusters</span>
@@ -5049,8 +5049,9 @@ section reaches by hand, and it knows the operator's naming scheme and namespace
 </span></code></pre></div></p>
 <h3 id="2-deployment-validation-errors">2. Deployment Validation Errors<a class="headerlink" href="#2-deployment-validation-errors" title="Anchor link to this section">&para;</a></h3>
 <h4 id="problem-single-node-cluster-not-allowed">Problem: Single-Node Cluster Not Allowed<a class="headerlink" href="#problem-single-node-cluster-not-allowed" title="Anchor link to this section">&para;</a></h4>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Error: Neo4jEnterpriseCluster requires minimum 2 servers for clustering. For single-node deployments, use Neo4jEnterpriseStandalone instead
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>servers must be at least 2 for clustering. For single-node deployments, use Neo4jEnterpriseStandalone instead
 </span></code></pre></div>
+<p>(The CRD schema also enforces <code>spec.topology.servers &gt;= 2</code>, so <code>kubectl apply</code> itself may reject a smaller value with the apiserver's own "should be greater than or equal to 2" message.)</p>
 <p><strong>Solution</strong>: Use the correct CRD for your deployment type:</p>
 <p><strong>For development/testing</strong> (single-node):
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
@@ -5391,7 +5392,7 @@ before you apply. By hand:</p>
 </ol>
 <h3 id="8-backup-and-restore-issues">8. Backup and Restore Issues<a class="headerlink" href="#8-backup-and-restore-issues" title="Anchor link to this section">&para;</a></h3>
 <h4 id="problem-backup-job-fails-to-start-serviceaccount-permission-errors">Problem: Backup Job fails to start (ServiceAccount / permission errors)<a class="headerlink" href="#problem-backup-job-fails-to-start-serviceaccount-permission-errors" title="Anchor link to this section">&para;</a></h4>
-<p>Backups run as Kubernetes Jobs that execute <code>neo4j-admin</code> directly against a database — they do NOT exec into the Neo4j pods. Each Job runs under the <code>neo4j-backup-sa</code> ServiceAccount, which the operator creates automatically in the backup's namespace (and stamps with any workload-identity annotations from <code>spec.cloud.identity</code>).</p>
+<p>Backups run as Kubernetes Jobs that execute <code>neo4j-admin</code> directly against a database — they do NOT exec into the Neo4j pods. Each Job runs under the <code>neo4j-backup-sa</code> ServiceAccount, which the operator creates automatically in the backup's namespace (and stamps with any workload-identity annotations from <code>spec.storage.cloud.identity.autoCreate.annotations</code>).</p>
 <p><strong>Solution</strong>: <code>kubectl neo4j preflight Neo4jBackup/&lt;name&gt; -n &lt;ns&gt;</code> checks this before the
 first run — that the ServiceAccount carries a cloud-identity annotation, or that the
 credentials Secret exists and holds every key the Job mounts. <code>kubectl neo4j diagnose</code>
@@ -5408,8 +5409,9 @@ reports a Job that has already failed. By hand:</p>
 <p>Neo4j 5.26+ requires backup destination path to exist. The operator's backup Job creates the directory automatically (<code>mkdir -p</code> is prepended to the command for PVC targets; cloud targets get a trailing slash for directory semantics).</p>
 <p><strong>Solution</strong>: inspect the backup Job's Pod log:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-45-1"><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a><span class="c1"># The Job is named "&lt;neo4jbackup-name&gt;-backup" (one-shot) or</span>
-</span><span id="__span-45-2"><a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a><span class="c1"># "&lt;neo4jbackup-name&gt;-&lt;unix-seconds&gt;" (CronJob child).</span>
-</span><span id="__span-45-3"><a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>&lt;ns&gt;<span class="w"> </span>job/&lt;job-name&gt;
+</span><span id="__span-45-2"><a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a><span class="c1"># "&lt;neo4jbackup-name&gt;-backup-cron-&lt;timestamp&gt;" (CronJob child; the</span>
+</span><span id="__span-45-3"><a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a><span class="c1"># runID in status.history is this Job name).</span>
+</span><span id="__span-45-4"><a id="__codelineno-45-4" name="__codelineno-45-4" href="#__codelineno-45-4"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>&lt;ns&gt;<span class="w"> </span>job/&lt;job-name&gt;
 </span></code></pre></div>
 <h3 id="9-security-issues">9. Security Issues<a class="headerlink" href="#9-security-issues" title="Anchor link to this section">&para;</a></h3>
 <h4 id="problem-authentication-failures">Problem: Authentication Failures<a class="headerlink" href="#problem-authentication-failures" title="Anchor link to this section">&para;</a></h4>
@@ -5525,7 +5527,7 @@ reports a Job that has already failed. By hand:</p>
 </span><span id="__span-57-2"><a id="__codelineno-57-2" name="__codelineno-57-2" href="#__codelineno-57-2"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jdatabase<span class="w"> </span>&lt;database-name&gt;
 </span><span id="__span-57-3"><a id="__codelineno-57-3" name="__codelineno-57-3" href="#__codelineno-57-3"></a>
 </span><span id="__span-57-4"><a id="__codelineno-57-4" name="__codelineno-57-4" href="#__codelineno-57-4"></a><span class="c1"># Check operator logs for seed URI specific errors</span>
-</span><span id="__span-57-5"><a id="__codelineno-57-5" name="__codelineno-57-5" href="#__codelineno-57-5"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>seed
+</span><span id="__span-57-5"><a id="__codelineno-57-5" name="__codelineno-57-5" href="#__codelineno-57-5"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>seed
 </span></code></pre></div>
 <p><strong>Common seed URI issues:</strong></p>
 <ol>
@@ -5576,12 +5578,9 @@ reports a Job that has already failed. By hand:</p>
 </span><span id="__span-62-2"><a id="__codelineno-62-2" name="__codelineno-62-2" href="#__codelineno-62-2"></a><span class="c1"># Solution: Use .backup format for large datasets</span>
 </span><span id="__span-62-3"><a id="__codelineno-62-3" name="__codelineno-62-3" href="#__codelineno-62-3"></a><span class="nt">seedURI</span><span class="p">:</span><span class="w"> </span><span class="s">"s3://my-backups/database.backup"</span><span class="w">  </span><span class="c1"># Instead of .dump</span>
 </span><span id="__span-62-4"><a id="__codelineno-62-4" name="__codelineno-62-4" href="#__codelineno-62-4"></a>
-</span><span id="__span-62-5"><a id="__codelineno-62-5" name="__codelineno-62-5" href="#__codelineno-62-5"></a><span class="c1"># Optimize seed configuration for better performance</span>
-</span><span id="__span-62-6"><a id="__codelineno-62-6" name="__codelineno-62-6" href="#__codelineno-62-6"></a><span class="nt">seedConfig</span><span class="p">:</span>
-</span><span id="__span-62-7"><a id="__codelineno-62-7" name="__codelineno-62-7" href="#__codelineno-62-7"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-62-8"><a id="__codelineno-62-8" name="__codelineno-62-8" href="#__codelineno-62-8"></a><span class="w">    </span><span class="nt">compression</span><span class="p">:</span><span class="w"> </span><span class="s">"lz4"</span><span class="w">      </span><span class="c1"># Faster than gzip</span>
-</span><span id="__span-62-9"><a id="__codelineno-62-9" name="__codelineno-62-9" href="#__codelineno-62-9"></a><span class="w">    </span><span class="nt">bufferSize</span><span class="p">:</span><span class="w"> </span><span class="s">"256MB"</span><span class="w">     </span><span class="c1"># Larger buffer for big files</span>
-</span><span id="__span-62-10"><a id="__codelineno-62-10" name="__codelineno-62-10" href="#__codelineno-62-10"></a><span class="w">    </span><span class="nt">validation</span><span class="p">:</span><span class="w"> </span><span class="s">"lenient"</span><span class="w">   </span><span class="c1"># Skip intensive validation</span>
+</span><span id="__span-62-5"><a id="__codelineno-62-5" name="__codelineno-62-5" href="#__codelineno-62-5"></a><span class="c1"># `seedConfig.config` is not a tuning surface for CloudSeedProvider (it only</span>
+</span><span id="__span-62-6"><a id="__codelineno-62-6" name="__codelineno-62-6" href="#__codelineno-62-6"></a><span class="c1"># carries S3SeedProvider options such as `region`); for large seeds, give the</span>
+</span><span id="__span-62-7"><a id="__codelineno-62-7" name="__codelineno-62-7" href="#__codelineno-62-7"></a><span class="c1"># server pods enough memory/CPU and a reliable path to the bucket.</span>
 </span></code></pre></div></p>
 </li>
 </ol>
@@ -5597,7 +5596,7 @@ reports a Job that has already failed. By hand:</p>
 <li>
 <p><strong>Check Cluster Connectivity:</strong>
    <div class="language-bash highlight"><pre><span></span><code><span id="__span-64-1"><a id="__codelineno-64-1" name="__codelineno-64-1" href="#__codelineno-64-1"></a><span class="c1"># Ensure operator can connect to Neo4j cluster</span>
-</span><span id="__span-64-2"><a id="__codelineno-64-2" name="__codelineno-64-2" href="#__codelineno-64-2"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"connection failed"</span>
+</span><span id="__span-64-2"><a id="__codelineno-64-2" name="__codelineno-64-2" href="#__codelineno-64-2"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"connection failed"</span>
 </span></code></pre></div></p>
 </li>
 <li>
@@ -5628,7 +5627,7 @@ reports a Job that has already failed. By hand:</p>
 </span><span id="__span-68-2"><a id="__codelineno-68-2" name="__codelineno-68-2" href="#__codelineno-68-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jdatabase<span class="w"> </span>&lt;database-name&gt;<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.dataImported}'</span>
 </span><span id="__span-68-3"><a id="__codelineno-68-3" name="__codelineno-68-3" href="#__codelineno-68-3"></a>
 </span><span id="__span-68-4"><a id="__codelineno-68-4" name="__codelineno-68-4" href="#__codelineno-68-4"></a><span class="c1"># Check for import errors in operator logs</span>
-</span><span id="__span-68-5"><a id="__codelineno-68-5" name="__codelineno-68-5" href="#__codelineno-68-5"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"initial data\|import"</span>
+</span><span id="__span-68-5"><a id="__codelineno-68-5" name="__codelineno-68-5" href="#__codelineno-68-5"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"initial data\|import"</span>
 </span></code></pre></div></p>
 </li>
 <li>
@@ -5642,11 +5641,13 @@ reports a Job that has already failed. By hand:</p>
 </ol>
 <h2 id="advanced-troubleshooting">Advanced Troubleshooting<a class="headerlink" href="#advanced-troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <h3 id="debug-mode">Debug Mode<a class="headerlink" href="#debug-mode" title="Anchor link to this section">&para;</a></h3>
-<p>Enable debug logging in the operator:
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-70-1"><a id="__codelineno-70-1" name="__codelineno-70-1" href="#__codelineno-70-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>deployment<span class="w"> </span>neo4j-operator-controller-manager<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-70-2"><a id="__codelineno-70-2" name="__codelineno-70-2" href="#__codelineno-70-2"></a><span class="w">  </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-70-3"><a id="__codelineno-70-3" name="__codelineno-70-3" href="#__codelineno-70-3"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">'{"spec":{"template":{"spec":{"containers":[{"name":"manager","args":["--zap-log-level=debug"]}]}}}}'</span>
+<p>Enable debug logging in the operator by appending a flag to the manager's existing arguments (a plain strategic-merge patch of <code>args</code> would replace them all). The Deployment is named <code>neo4j-operator</code> for a Helm release called <code>neo4j-operator</code>, and <code>neo4j-operator-controller-manager</code> for kustomize installs:
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-70-1"><a id="__codelineno-70-1" name="__codelineno-70-1" href="#__codelineno-70-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>deployment<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w">   </span><span class="c1"># find the operator Deployment name</span>
+</span><span id="__span-70-2"><a id="__codelineno-70-2" name="__codelineno-70-2" href="#__codelineno-70-2"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>deployment<span class="w"> </span>&lt;operator-deployment&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-70-3"><a id="__codelineno-70-3" name="__codelineno-70-3" href="#__codelineno-70-3"></a><span class="w">  </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>--type<span class="o">=</span>json<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-70-4"><a id="__codelineno-70-4" name="__codelineno-70-4" href="#__codelineno-70-4"></a><span class="w">  </span>-p<span class="w"> </span><span class="s1">'[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--zap-log-level=debug"}]'</span>
 </span></code></pre></div></p>
+<p>For Helm installs, <code>helm upgrade neo4j-operator ... --set logLevel=debug</code> is the durable way (the chart renders <code>--zap-log-level</code> from <code>logLevel</code>).</p>
 <h3 id="resource-monitoring">Resource Monitoring<a class="headerlink" href="#resource-monitoring" title="Anchor link to this section">&para;</a></h3>
 <p>Monitor resource usage:
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-71-1"><a id="__codelineno-71-1" name="__codelineno-71-1" href="#__codelineno-71-1"></a><span class="c1"># Watch resource usage</span>
@@ -5673,7 +5674,7 @@ reports a Job that has already failed. By hand:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-73-1"><a id="__codelineno-73-1" name="__codelineno-73-1" href="#__codelineno-73-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster,neo4jenterprisestandalone<span class="w"> </span>-A
 </span><span id="__span-73-2"><a id="__codelineno-73-2" name="__codelineno-73-2" href="#__codelineno-73-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods,svc,pvc<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j
 </span><span id="__span-73-3"><a id="__codelineno-73-3" name="__codelineno-73-3" href="#__codelineno-73-3"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--sort-by<span class="o">=</span>.metadata.creationTimestamp<span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-30
-</span><span id="__span-73-4"><a id="__codelineno-73-4" name="__codelineno-73-4" href="#__codelineno-73-4"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager<span class="w"> </span>--tail<span class="o">=</span><span class="m">200</span>
+</span><span id="__span-73-4"><a id="__codelineno-73-4" name="__codelineno-73-4" href="#__codelineno-73-4"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator<span class="w"> </span>--tail<span class="o">=</span><span class="m">200</span>
 </span><span id="__span-73-5"><a id="__codelineno-73-5" name="__codelineno-73-5" href="#__codelineno-73-5"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>nodes<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-A<span class="w"> </span><span class="m">5</span><span class="w"> </span><span class="s2">"Allocated resources:"</span>
 </span></code></pre></div>
 <h2 id="getting-help">Getting Help<a class="headerlink" href="#getting-help" title="Anchor link to this section">&para;</a></h2>

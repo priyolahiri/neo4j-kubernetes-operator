@@ -4877,6 +4877,13 @@ the DR cluster. Neo4j refuses such a grant, so the operator skips it: the
 only <code>PrivilegesResolve=False</code> (reason <code>DatabaseNotFound</code>) says that the
 ones DR depends on are missing — the exact failure DR exists to prevent.
 Watch that condition, not <code>Ready</code>.</p>
+<p>The one exception is a name that is an <strong>alias</strong> on the DR cluster: the
+operator treats an existing alias as resolving, and Neo4j stores a grant
+on an alias against the alias's <em>target</em> database. So once the failover
+alias from <a href="#3-downstream-pre-stage-the-failover-alias">step 3</a> exists, a
+verbatim <code>ON DATABASE foo</code> is not skipped. Do not lean on that: the stored
+privilege is bound to whatever the alias pointed at when it was granted,
+so writing the replica's real name is the explicit, durable form.</p>
 <p>Rewrite every database name in <code>spec.privileges</code> (or <code>onDatabase</code> /
 <code>onGraph</code> in <code>spec.privilegeRules</code>) to the replica's name.</p>
 </div>
@@ -4903,7 +4910,7 @@ Watch that condition, not <code>Ready</code>.</p>
 <tr>
 <td><code>Neo4jRole</code></td>
 <td>❌ <strong>No</strong></td>
-<td><code>spec.privileges</code> are complete Cypher statements with the database name embedded. The alias does <strong>not</strong> help here</td>
+<td><code>spec.privileges</code> are complete Cypher statements with the database name embedded. Rewrite them to the replica's name rather than relying on the failover alias resolving at grant time</td>
 </tr>
 </tbody>
 </table>
@@ -5206,19 +5213,19 @@ alert on it the same way as the proxy condition above.</p>
 <td>the upstream has <code>spec.networkPolicy.enabled: true</code> — its port-6000 rule only admits pods carrying its own <code>neo4j.com/cluster</code> label; add the downstream to <code>spec.networkPolicy.allowReplicasFrom</code> (step 1, Network mode), or disable NetworkPolicy on the upstream, or use the proxy path instead</td>
 </tr>
 <tr>
-<td><code>Pending</code>, event <code>UpstreamClusterNotFound</code></td>
+<td><code>Pending</code>, <code>Ready</code> condition reason <code>UpstreamClusterNotFound</code> (in <code>status.message</code>, not an event)</td>
 <td><code>source.upstreamClusterRef</code> names a <code>Neo4jEnterpriseCluster</code> that doesn't exist (yet) in the given namespace — check the name/namespace, or wait if it's still being created</td>
 </tr>
 <tr>
-<td><code>Pending</code>, event <code>UpstreamClusterNotReady</code></td>
+<td><code>Pending</code>, <code>Ready</code> condition reason <code>UpstreamClusterNotReady</code></td>
 <td>the referenced upstream exists but hasn't published <code>status.internalAddresses</code> yet — normal briefly after the upstream is first created; check <code>kubectl get neo4jenterprisecluster &lt;name&gt; -n &lt;ns&gt; -o jsonpath='{.status.internalAddresses}'</code> if it persists</td>
 </tr>
 <tr>
-<td><code>Pending</code>, event <code>UpstreamBackupNotFound</code></td>
+<td><code>Pending</code>, <code>Ready</code> condition reason <code>UpstreamBackupNotFound</code></td>
 <td><code>source.upstreamBackupRef</code> names a <code>Neo4jBackup</code> that doesn't exist (yet) in the given namespace — check the name/namespace</td>
 </tr>
 <tr>
-<td><code>Pending</code>, event <code>UpstreamBackupNotReady</code></td>
+<td><code>Pending</code>, <code>Ready</code> condition reason <code>UpstreamBackupNotReady</code></td>
 <td>the referenced <code>Neo4jBackup</code> exists but hasn't run its first backup yet (empty <code>status.replicationPullURI</code>) — check <code>kubectl get neo4jbackup &lt;name&gt; -n &lt;ns&gt;</code> for its own phase/schedule</td>
 </tr>
 <tr>

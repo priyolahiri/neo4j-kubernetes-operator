@@ -4623,7 +4623,7 @@ released chart already carries the real version.)</p>
 </span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">  </span><span class="nt">team</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">database</span>
 </span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="nt">images</span><span class="p">:</span>
 </span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/priyolahiri/neo4j-kubernetes-operator</span>
-</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">  </span><span class="nt">newTag</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1.0.0</span>
+</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">  </span><span class="nt">newTag</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1.17.0</span>
 </span></code></pre></div>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-k<span class="w"> </span>.
 </span></code></pre></div>
@@ -4651,7 +4651,7 @@ image by digest:</p>
 </span><span id="__span-14-14"><a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a><span class="w">          </span><span class="no">- name: manager</span>
 </span><span id="__span-14-15"><a id="__codelineno-14-15" name="__codelineno-14-15" href="#__codelineno-14-15"></a><span class="w">            </span><span class="no">env:</span>
 </span><span id="__span-14-16"><a id="__codelineno-14-16" name="__codelineno-14-16" href="#__codelineno-14-16"></a><span class="w">            </span><span class="no">- name: OPERATOR_VERSION</span>
-</span><span id="__span-14-17"><a id="__codelineno-14-17" name="__codelineno-14-17" href="#__codelineno-14-17"></a><span class="w">              </span><span class="no">value: v1.0.0</span>
+</span><span id="__span-14-17"><a id="__codelineno-14-17" name="__codelineno-14-17" href="#__codelineno-14-17"></a><span class="w">              </span><span class="no">value: v1.17.0</span>
 </span></code></pre></div>
 <p>This is a strategic merge patch, matched on the container and variable
 <em>names</em>. A positional JSON patch (<code>/env/0/value</code>) would silently rewrite
@@ -4690,18 +4690,34 @@ the blocking install/upgrade/uninstall gate), see
 </span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>NAME<span class="w">                              </span>READY<span class="w">   </span>STATUS<span class="w">    </span>RESTARTS<span class="w">   </span>AGE
 </span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>neo4j-operator-xxx<span class="w">                </span><span class="m">1</span>/1<span class="w">     </span>Running<span class="w">   </span><span class="m">0</span><span class="w">          </span>1m
 </span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>
-</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="c1"># CRDs should be present (11 total)</span>
-</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>neo4jauthrules.neo4j.neo4j.com
-</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>neo4jbackups.neo4j.neo4j.com
-</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>neo4jdatabases.neo4j.neo4j.com
-</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>neo4jenterpriseclusters.neo4j.neo4j.com
-</span><span id="__span-17-12"><a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>neo4jenterprisestandalones.neo4j.neo4j.com
-</span><span id="__span-17-13"><a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a>neo4jplugins.neo4j.neo4j.com
-</span><span id="__span-17-14"><a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a>neo4jrestores.neo4j.neo4j.com
-</span><span id="__span-17-15"><a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a>neo4jrolebindings.neo4j.neo4j.com
-</span><span id="__span-17-16"><a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a>neo4jroles.neo4j.neo4j.com
-</span><span id="__span-17-17"><a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a>neo4jshardeddatabases.neo4j.neo4j.com
-</span><span id="__span-17-18"><a id="__codelineno-17-18" name="__codelineno-17-18" href="#__codelineno-17-18"></a>neo4jusers.neo4j.neo4j.com
+</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="c1"># CRDs should be present (27 total)</span>
+</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>auracustomermanagedkeys.neo4j.neo4j.com
+</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>auradatabasebackups.neo4j.neo4j.com
+</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>auradatabaserestores.neo4j.neo4j.com
+</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>auradatabases.neo4j.neo4j.com
+</span><span id="__span-17-12"><a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>aurainstances.neo4j.neo4j.com
+</span><span id="__span-17-13"><a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a>aurainvites.neo4j.neo4j.com
+</span><span id="__span-17-14"><a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a>auraipfilters.neo4j.neo4j.com
+</span><span id="__span-17-15"><a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a>auraorganizationmembers.neo4j.neo4j.com
+</span><span id="__span-17-16"><a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a>auraprojectmembers.neo4j.neo4j.com
+</span><span id="__span-17-17"><a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a>auraproviderconfigs.neo4j.neo4j.com
+</span><span id="__span-17-18"><a id="__codelineno-17-18" name="__codelineno-17-18" href="#__codelineno-17-18"></a>aurarestores.neo4j.neo4j.com
+</span><span id="__span-17-19"><a id="__codelineno-17-19" name="__codelineno-17-19" href="#__codelineno-17-19"></a>aurasnapshots.neo4j.neo4j.com
+</span><span id="__span-17-20"><a id="__codelineno-17-20" name="__codelineno-17-20" href="#__codelineno-17-20"></a>neo4jauthrules.neo4j.neo4j.com
+</span><span id="__span-17-21"><a id="__codelineno-17-21" name="__codelineno-17-21" href="#__codelineno-17-21"></a>neo4jbackups.neo4j.neo4j.com
+</span><span id="__span-17-22"><a id="__codelineno-17-22" name="__codelineno-17-22" href="#__codelineno-17-22"></a>neo4jcompositedatabases.neo4j.neo4j.com
+</span><span id="__span-17-23"><a id="__codelineno-17-23" name="__codelineno-17-23" href="#__codelineno-17-23"></a>neo4jdatabasealiases.neo4j.neo4j.com
+</span><span id="__span-17-24"><a id="__codelineno-17-24" name="__codelineno-17-24" href="#__codelineno-17-24"></a>neo4jdatabases.neo4j.neo4j.com
+</span><span id="__span-17-25"><a id="__codelineno-17-25" name="__codelineno-17-25" href="#__codelineno-17-25"></a>neo4jenterpriseclusters.neo4j.neo4j.com
+</span><span id="__span-17-26"><a id="__codelineno-17-26" name="__codelineno-17-26" href="#__codelineno-17-26"></a>neo4jenterprisestandalones.neo4j.neo4j.com
+</span><span id="__span-17-27"><a id="__codelineno-17-27" name="__codelineno-17-27" href="#__codelineno-17-27"></a>neo4jplugins.neo4j.neo4j.com
+</span><span id="__span-17-28"><a id="__codelineno-17-28" name="__codelineno-17-28" href="#__codelineno-17-28"></a>neo4jreplicadatabases.neo4j.neo4j.com
+</span><span id="__span-17-29"><a id="__codelineno-17-29" name="__codelineno-17-29" href="#__codelineno-17-29"></a>neo4jreplicapromotions.neo4j.neo4j.com
+</span><span id="__span-17-30"><a id="__codelineno-17-30" name="__codelineno-17-30" href="#__codelineno-17-30"></a>neo4jrestores.neo4j.neo4j.com
+</span><span id="__span-17-31"><a id="__codelineno-17-31" name="__codelineno-17-31" href="#__codelineno-17-31"></a>neo4jrolebindings.neo4j.neo4j.com
+</span><span id="__span-17-32"><a id="__codelineno-17-32" name="__codelineno-17-32" href="#__codelineno-17-32"></a>neo4jroles.neo4j.neo4j.com
+</span><span id="__span-17-33"><a id="__codelineno-17-33" name="__codelineno-17-33" href="#__codelineno-17-33"></a>neo4jshardeddatabases.neo4j.neo4j.com
+</span><span id="__span-17-34"><a id="__codelineno-17-34" name="__codelineno-17-34" href="#__codelineno-17-34"></a>neo4jusers.neo4j.neo4j.com
 </span></code></pre></div></p>
 <h2 id="available-make-targets">Available Make Targets<a class="headerlink" href="#available-make-targets" title="Anchor link to this section">&para;</a></h2>
 <p>After cloning the repository, you have access to these make targets:</p>
@@ -4858,12 +4874,15 @@ wedges in <code>Terminating</code> forever.</p>
 <p><strong>Step 1 — Delete all Neo4j custom resources and wait for them to disappear</strong>
 (the operator must still be running to strip their finalizers):</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># List everything the operator manages — this must come back EMPTY before step 2</span>
-</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterpriseclusters,neo4jenterprisestandalones,neo4jdatabases,neo4jshardeddatabases,neo4jbackups,neo4jrestores,neo4jusers,neo4jroles,neo4jrolebindings,neo4jauthrules,neo4jplugins<span class="w"> </span>-A
-</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
-</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="c1"># Delete them (repeat per namespace, or script over the list above), e.g.:</span>
-</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>neo4jenterpriseclusters,neo4jenterprisestandalones,neo4jdatabases,neo4jshardeddatabases,neo4jbackups,neo4jrestores,neo4jusers,neo4jroles,neo4jrolebindings,neo4jauthrules,neo4jplugins<span class="w"> </span>--all<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterpriseclusters,neo4jenterprisestandalones,neo4jdatabases,neo4jshardeddatabases,neo4jcompositedatabases,neo4jdatabasealiases,neo4jreplicadatabases,neo4jreplicapromotions,neo4jbackups,neo4jrestores,neo4jusers,neo4jroles,neo4jrolebindings,neo4jauthrules,neo4jplugins<span class="w"> </span>-A
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="c1"># Also any Aura resources you created (they hold finalizers too; check each CR's</span>
+</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="c1"># deletionPolicy before deleting — Delete removes the resource in Aura as well):</span>
+</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>auraproviderconfigs,aurainstances,aurasnapshots,aurarestores,auracustomermanagedkeys,auraipfilters,auradatabases,auradatabasebackups,auradatabaserestores,auraorganizationmembers,auraprojectmembers,aurainvites<span class="w"> </span>-A
 </span><span id="__span-20-6"><a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>
-</span><span id="__span-20-7"><a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="c1"># Re-run the `kubectl get ... -A` above and wait until no resources are listed</span>
+</span><span id="__span-20-7"><a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="c1"># Delete them (repeat per namespace, or script over the list above), e.g.:</span>
+</span><span id="__span-20-8"><a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>neo4jenterpriseclusters,neo4jenterprisestandalones,neo4jdatabases,neo4jshardeddatabases,neo4jcompositedatabases,neo4jdatabasealiases,neo4jreplicadatabases,neo4jreplicapromotions,neo4jbackups,neo4jrestores,neo4jusers,neo4jroles,neo4jrolebindings,neo4jauthrules,neo4jplugins<span class="w"> </span>--all<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+</span><span id="__span-20-9"><a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>
+</span><span id="__span-20-10"><a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="c1"># Re-run the `kubectl get ... -A` above and wait until no resources are listed</span>
 </span></code></pre></div>
 <p><strong>Step 2 — Remove the operator</strong> (only once step 1 shows no remaining CRs):</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># Helm install — Methods 1, 2, 4</span>
@@ -4937,11 +4956,12 @@ resources) may be orphaned.</p>
 </span><span id="__span-27-11"><a id="__codelineno-27-11" name="__codelineno-27-11" href="#__codelineno-27-11"></a><span class="w">  </span>--docker-password<span class="o">=</span>&lt;github-token&gt;<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-27-12"><a id="__codelineno-27-12" name="__codelineno-27-12" href="#__codelineno-27-12"></a><span class="w">  </span>--namespace<span class="o">=</span>neo4j-operator-system
 </span><span id="__span-27-13"><a id="__codelineno-27-13" name="__codelineno-27-13" href="#__codelineno-27-13"></a>
-</span><span id="__span-27-14"><a id="__codelineno-27-14" name="__codelineno-27-14" href="#__codelineno-27-14"></a><span class="c1"># Add imagePullSecrets to deployment</span>
-</span><span id="__span-27-15"><a id="__codelineno-27-15" name="__codelineno-27-15" href="#__codelineno-27-15"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>deployment<span class="w"> </span>neo4j-operator-controller-manager<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-27-16"><a id="__codelineno-27-16" name="__codelineno-27-16" href="#__codelineno-27-16"></a><span class="w">  </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-27-17"><a id="__codelineno-27-17" name="__codelineno-27-17" href="#__codelineno-27-17"></a><span class="w">  </span>--type<span class="o">=</span><span class="s1">'json'</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-27-18"><a id="__codelineno-27-18" name="__codelineno-27-18" href="#__codelineno-27-18"></a><span class="w">  </span>-p<span class="o">=</span><span class="s1">'[{"op": "add", "path": "/spec/template/spec/imagePullSecrets", "value": [{"name": "ghcr-secret"}]}]'</span>
+</span><span id="__span-27-14"><a id="__codelineno-27-14" name="__codelineno-27-14" href="#__codelineno-27-14"></a><span class="c1"># Add imagePullSecrets to the deployment (named neo4j-operator-controller-manager for</span>
+</span><span id="__span-27-15"><a id="__codelineno-27-15" name="__codelineno-27-15" href="#__codelineno-27-15"></a><span class="c1"># Methods 3/5; for a Helm install it is `neo4j-operator`, or set `imagePullSecrets` in the chart values)</span>
+</span><span id="__span-27-16"><a id="__codelineno-27-16" name="__codelineno-27-16" href="#__codelineno-27-16"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>deployment<span class="w"> </span>neo4j-operator-controller-manager<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-27-17"><a id="__codelineno-27-17" name="__codelineno-27-17" href="#__codelineno-27-17"></a><span class="w">  </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-27-18"><a id="__codelineno-27-18" name="__codelineno-27-18" href="#__codelineno-27-18"></a><span class="w">  </span>--type<span class="o">=</span><span class="s1">'json'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-27-19"><a id="__codelineno-27-19" name="__codelineno-27-19" href="#__codelineno-27-19"></a><span class="w">  </span>-p<span class="o">=</span><span class="s1">'[{"op": "add", "path": "/spec/template/spec/imagePullSecrets", "value": [{"name": "ghcr-secret"}]}]'</span>
 </span></code></pre></div>
 <p><strong>Note</strong>: The ghcr.io images are public for this operator, so authentication should not be required for pulling images.</p>
 <h4 id="5-manifest-url-not-found-404-error">5. Manifest URL Not Found (404 Error)<a class="headerlink" href="#5-manifest-url-not-found-404-error" title="Anchor link to this section">&para;</a></h4>
@@ -4952,8 +4972,8 @@ resources) may be orphaned.</p>
 </span><span id="__span-28-4"><a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="c1"># Or visit: https://github.com/priyolahiri/neo4j-kubernetes-operator/releases</span>
 </span><span id="__span-28-5"><a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a>
 </span><span id="__span-28-6"><a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a><span class="c1"># Ensure you're using the correct version format (with 'v' prefix)</span>
-</span><span id="__span-28-7"><a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a><span class="c1"># Correct: v1.0.0</span>
-</span><span id="__span-28-8"><a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a><span class="c1"># Incorrect: 1.0.0</span>
+</span><span id="__span-28-7"><a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a><span class="c1"># Correct: v1.17.0</span>
+</span><span id="__span-28-8"><a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a><span class="c1"># Incorrect: 1.17.0</span>
 </span></code></pre></div>
 <h3 id="installation-requirements">Installation Requirements<a class="headerlink" href="#installation-requirements" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -4964,7 +4984,7 @@ resources) may be orphaned.</p>
 </ul>
 <blockquote>
 <p><strong>cert-manager install order</strong>: The operator installs and runs fine without cert-manager. It only watches cert-manager <code>Certificate</code> resources when the cert-manager CRDs are present <em>at operator startup</em>. If you install cert-manager <strong>after</strong> the operator, restart the operator so the watch becomes active:
-<div class="language-text highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>kubectl rollout restart deployment/neo4j-operator-controller-manager -n neo4j-operator-system
+<div class="language-text highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>kubectl rollout restart deployment -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
 </span></code></pre></div>
 If you know you'll use cert-manager TLS, install cert-manager <strong>before</strong> the operator to avoid the restart.</p>
 <p><strong>OpenShift note</strong>: Clusters enforcing SCCs with allocated UID/FSGroup ranges should disable the chart’s pod security context so SCC can inject IDs, then bind an appropriate SCC (e.g., <code>restricted</code>) to the operator service account:

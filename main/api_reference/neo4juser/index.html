@@ -4220,7 +4220,7 @@
 <h2 id="design-rules">Design rules<a class="headerlink" href="#design-rules" title="Anchor link to this section">&para;</a></h2>
 <ol>
 <li><strong>Privileges live on <code>Neo4jRole</code>, not on <code>Neo4jUser</code>.</strong> Bind users to roles; never inline grants on a user.</li>
-<li><strong>Passwords come from <code>Secret</code>, never from the spec.</strong> The Secret value is hashed (SHA-256) and stored on <code>status.passwordSecretHash</code> to detect rotation; the password itself is never echoed back.</li>
+<li><strong>Passwords come from <code>Secret</code>, never from the spec.</strong> Rotation is detected with an opaque change token stored on <code>status.passwordSecretHash</code>; the token is derived from the Secret's namespace, name, key and <code>resourceVersion</code> — <strong>not</strong> from the password value — so neither the password nor a hash of it is ever written to the CR.</li>
 <li><strong>Same-namespace <code>clusterRef</code> only.</strong> Cross-namespace references are rejected.</li>
 <li><strong><code>PUBLIC</code> is implicit.</strong> It is auto-assigned by Neo4j and never granted/revoked by the controller. Listing it in <code>spec.roles</code> produces a warning.</li>
 </ol>
@@ -4366,7 +4366,7 @@
 <tr>
 <td><code>passwordSecretHash</code></td>
 <td><code>string</code></td>
-<td>SHA-256 hex digest of the password value last applied (used to detect Secret rotation; never the password itself).</td>
+<td>Opaque change-detection token for the password Secret last applied: a SHA-256 of the Secret's namespace, name, key and <code>resourceVersion</code> (never of the password). Any write to the Secret changes it, so a cosmetic edit triggers one harmless no-op password re-apply. The field name is kept for API compatibility.</td>
 </tr>
 <tr>
 <td><code>passwordLastRotated</code></td>
@@ -4392,8 +4392,8 @@
 <tbody>
 <tr>
 <td><code>Ready</code></td>
-<td><code>UserReady</code>, <code>RolesPending</code>, <code>ClusterNotReady</code>, <code>ConnectionFailed</code>, <code>UserSyncFailed</code>, <code>ValidationFailed</code></td>
-<td>True when user exists, password and roles are in sync.</td>
+<td><code>UserReady</code>, <code>RolesPending</code>, <code>SecretPending</code>, <code>ClusterNotFound</code>, <code>ClusterNotReady</code>, <code>ConnectionFailed</code>, <code>UserSyncFailed</code>, <code>ValidationFailed</code></td>
+<td>True when user exists, password and roles are in sync. <code>SecretPending</code> (phase <code>Pending</code>) means the password Secret does not exist yet.</td>
 </tr>
 <tr>
 <td><code>RolesSynced</code></td>
@@ -4403,7 +4403,7 @@
 <tr>
 <td><code>PasswordSynced</code></td>
 <td><code>PasswordMatchesSecret</code></td>
-<td>True when last-applied hash matches the current Secret.</td>
+<td>True when the last-applied change token matches the current Secret.</td>
 </tr>
 <tr>
 <td><code>PendingDependencies</code></td>
@@ -4421,9 +4421,9 @@
 <ul>
 <li><code>clusterRef</code> must resolve to a <code>Neo4jEnterpriseCluster</code> or <code>Neo4jEnterpriseStandalone</code> in the same namespace.</li>
 <li><code>username</code> (or <code>metadata.name</code> fallback) matches <code>^[a-zA-Z][a-zA-Z0-9_.@\-]*$</code> (the at-sign supports email-style SSO/LDAP usernames), max 65 characters.</li>
-<li>The reserved name <code>system</code> is rejected.</li>
+<li>The reserved name <code>system</code> is rejected. The default bootstrap admin name <code>neo4j</code> is allowed with a warning: the operator authenticates as it, so managing it rewrites the credential in the cluster's admin Secret and can lock the operator out.</li>
 <li>At least one of <code>passwordSecretRef</code> or <code>externalAuth</code> must be set (Neo4j requires ≥1 auth provider per user).</li>
-<li><code>passwordSecretRef</code>: the Secret must exist and contain a non-empty value at the named key. Values shorter than 8 characters produce a warning (Neo4j's default minimum is 8).</li>
+<li><code>passwordSecretRef</code>: the Secret must contain a non-empty value at the named key. A Secret that does not exist yet is not an error — the user waits in phase <code>Pending</code> (reason <code>SecretPending</code>) and retries. Values shorter than 8 characters produce a warning (Neo4j's default minimum is 8).</li>
 <li><code>externalAuth[].provider</code> cannot be <code>native</code>.</li>
 <li><code>homeDatabase</code>, when set, must be a valid Neo4j database name.</li>
 <li><code>accountStatus</code> must be one of <code>active</code> or <code>suspended</code> (enforced by kubebuilder enum).</li>

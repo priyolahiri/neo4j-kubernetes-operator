@@ -3961,21 +3961,29 @@
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>apiVersion: neo4j.neo4j.com/v1beta1
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>kind: Neo4jReplicaDatabase
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>metadata:
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  name: dr-copy
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  namespace: neo4j
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>spec:
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>  clusterRef: dr
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>  upstreamDatabase: neo4j
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  creationTimestamp: null
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  name: dr-copy
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  namespace: neo4j
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>spec:
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>  clusterRef: dr
 </span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>  source:
 </span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    mode: backup
 </span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    pullURI: s3://prod-backups/nightly-chain/
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>  upstreamDatabase: neo4j
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>status: {}
 </span></code></pre></div>
+<p><code>metadata.namespace</code> defaults to the upstream resource's namespace (<code>-n</code>); pass <code>--downstream-namespace</code> to write a different one into the manifest. The <code>creationTimestamp: null</code> and <code>status: {}</code> lines are harmless and are ignored on apply.</p>
 <p>with, on stderr:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>source.pullURI taken from Neo4jBackup neo4j/nightly status.replicationPullURI
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>note: the upstream reads its bucket with Secret "cloud-creds". The DOWNSTREAM cluster
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>      needs its own credentials for the same bucket — set source.credentialsSecretRef
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>      there, or bind a workload identity. This command cannot copy a Secret between
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>      clusters.
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>note: the upstream reads its bucket with Secret "cloud-creds". The DOWNSTREAM servers need their
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>      own credentials for the same bucket: the seed and every pull run on the Neo4j
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>      server, so they must be in its environment. Either create a Secret in the
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>      replica's namespace with AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>      (and AWS_ENDPOINT_URL_S3 for S3-compatible stores) and set
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>      source.credentialsSecretRef to it — the operator projects it onto the
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>      downstream servers, one rolling restart — or bind a workload identity, in
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>      which case only AWS_REGION is needed. This command cannot copy a Secret
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>      between clusters.
 </span></code></pre></div>
 <h3 id="-seed-from-latest"><code>--seed-from-latest</code><a class="headerlink" href="#-seed-from-latest" title="Anchor link to this section">&para;</a></h3>
 <p>Off by default. When set, <code>source.seedURI</code> is built by joining the newest <strong>successful</strong> run's <code>artifactFilename</code> onto the pull URI. If no successful run carries one — the operator parses that name out of the Job's pod log, so it can be missing even on a run that worked — the command <strong>fails rather than reconstructs it</strong>. A replica can seed from the chain in <code>pullURI</code> alone.</p>

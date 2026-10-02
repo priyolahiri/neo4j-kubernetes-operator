@@ -6247,7 +6247,7 @@ a known gap.)</p>
 </span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws</span>
 </span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">    </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-backup-creds</span>
 </span></code></pre></div>
-<p>The operator mounts all keys from the Secret as environment variables in the backup Job pod, which <code>neo4j-admin</code> picks up automatically.</p>
+<p>The operator injects <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code> and <code>AWS_REGION</code> from the Secret (each as a <code>secretKeyRef</code>) as environment variables in the backup Job pod, which <code>neo4j-admin</code> picks up automatically. Other keys in the Secret — including <code>AWS_SESSION_TOKEN</code> — are not passed to the Job.</p>
 <h4 id="path-2-aws-irsa-iam-roles-for-service-accounts">Path 2: AWS IRSA (IAM Roles for Service Accounts)<a class="headerlink" href="#path-2-aws-irsa-iam-roles-for-service-accounts" title="Anchor link to this section">&para;</a></h4>
 <p>Annotate the automatically-created <code>neo4j-backup-sa</code> ServiceAccount with your IAM role ARN:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nt">storage</span><span class="p">:</span>
@@ -6726,7 +6726,7 @@ endpoint is not auto-projected — provide the endpoint via the cluster's
 </span><span id="__span-38-23"><a id="__codelineno-38-23" name="__codelineno-38-23" href="#__codelineno-38-23"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span><span class="w">         </span><span class="p p-Indicator">{</span><span class="nt"> backupType</span><span class="p">:</span><span class="w"> </span><span class="nv">DIFF</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span><span id="__span-38-24"><a id="__codelineno-38-24" name="__codelineno-38-24" href="#__codelineno-38-24"></a><span class="w">  </span><span class="nt">retention</span><span class="p">:</span><span class="w">       </span><span class="p p-Indicator">{</span><span class="nt"> maxCount</span><span class="p">:</span><span class="w"> </span><span class="nv">168</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span></code></pre></div>
-<p><strong>Constraints</strong> (validator-enforced; mismatches → <code>status.phase=Failed</code>):</p>
+<p><strong>Constraints</strong> (validator-enforced; a target or storage mismatch → <code>status.phase=Failed</code>, while a parent that does not exist yet just leaves the backup <code>Pending</code> until it appears):</p>
 <ul>
 <li>The parent CR (<code>inventory-daily</code>) must exist in the same namespace.</li>
 <li>Both CRs must reference the same database (same <code>instanceRef</code> + <code>database</code>).</li>
@@ -6799,14 +6799,15 @@ operator-side rule protects you here.</p>
 </span><span id="__span-40-4"><a id="__codelineno-40-4" name="__codelineno-40-4" href="#__codelineno-40-4"></a><span class="w">  </span><span class="nt">tempStorage</span><span class="p">:</span>
 </span><span id="__span-40-5"><a id="__codelineno-40-5" name="__codelineno-40-5" href="#__codelineno-40-5"></a><span class="w">    </span><span class="nt">size</span><span class="p">:</span><span class="w"> </span><span class="s">"50Gi"</span>
 </span></code></pre></div>
-<p>This option is ignored on Neo4j 5.26.x (semver) and CalVer versions before 2025.04.</p>
+<p>On Neo4j 5.26.x (semver) and CalVer versions before 2025.04 the operator refuses to build the backup command (<code>--prefer-diff-as-parent requires CalVer 2025.04+</code>), so the backup fails rather than silently ignoring the option. The same applies to the other version-gated options: <code>parallelDownload</code> and <code>skipRecovery</code> (CalVer 2025.11+) and <code>remoteAddressResolution</code> (CalVer 2025.09+).</p>
 <h3 id="the-temppath-option">The <code>tempPath</code> Option<a class="headerlink" href="#the-temppath-option" title="Anchor link to this section">&para;</a></h3>
-<p>For cloud storage destinations, <code>neo4j-admin</code> may use local disk space during streaming. Set <code>tempPath</code> to a dedicated temporary directory to avoid filling the pod's working filesystem:</p>
+<p>For cloud storage destinations, <code>neo4j-admin</code> may use local disk space during streaming. Give it a dedicated staging volume to avoid filling the pod's working filesystem. The operator-managed way is <code>options.tempStorage</code>, which provisions a PVC and passes <code>--temp-path</code> for you:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-41-1"><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a><span class="nt">options</span><span class="p">:</span>
 </span><span id="__span-41-2"><a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a><span class="w">  </span><span class="nt">tempStorage</span><span class="p">:</span>
 </span><span id="__span-41-3"><a id="__codelineno-41-3" name="__codelineno-41-3" href="#__codelineno-41-3"></a><span class="w">    </span><span class="nt">size</span><span class="p">:</span><span class="w"> </span><span class="s">"50Gi"</span>
 </span></code></pre></div>
-<p><strong>Strongly recommended for all cloud storage backups.</strong> The directory is created automatically if it does not exist.</p>
+<p>If you mount your own volume instead, set <code>options.tempPath</code> to its absolute path (see <a href="#temporary-storage-for-cloud-operations">Temporary Storage for Cloud Operations</a>); the directory is created automatically if it does not exist.</p>
+<p><strong>Strongly recommended for all cloud storage backups.</strong></p>
 <hr />
 <h3 id="scheduled-backup-examples">Scheduled Backup Examples<a class="headerlink" href="#scheduled-backup-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="daily-scheduled-backup-to-s3">Daily Scheduled Backup to S3<a class="headerlink" href="#daily-scheduled-backup-to-s3" title="Anchor link to this section">&para;</a></h4>
@@ -7072,7 +7073,7 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 </blockquote>
 <hr />
 <h3 id="point-in-time-recovery-pitr">Point-in-Time Recovery (PITR)<a class="headerlink" href="#point-in-time-recovery-pitr" title="Anchor link to this section">&para;</a></h3>
-<p>PITR restores your database to a specific point in time using a base backup combined with transaction logs.</p>
+<p>PITR restores your database to a specific point in time from a base backup. The operator runs <code>neo4j-admin database restore --restore-until="&lt;pointInTime&gt;"</code> against the base backup (<code>source.pitr.baseBackup</code>); the transaction logs it replays come from that backup chain. <code>source.pitr.logStorage</code> is accepted by the CRD but the restore command does not read it (a <code>pvc</code> log storage is only mounted at <code>/transaction-logs</code>), so the examples below omit it.</p>
 <blockquote>
 <p><strong>Note:</strong> <code>source.type: pitr</code> (the <code>--restore-until</code> path) applies only to a <code>Neo4jEnterpriseStandalone</code> target. For cluster point-in-time recovery, create a <code>Neo4jDatabase</code> with <code>spec.seedConfig.restoreUntil</code>. The operator rejects <code>source.type: pitr</code> against a cluster target with an actionable error.</p>
 </blockquote>
@@ -7091,17 +7092,9 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 </span><span id="__span-52-12"><a id="__codelineno-52-12" name="__codelineno-52-12" href="#__codelineno-52-12"></a><span class="w">      </span><span class="nt">baseBackup</span><span class="p">:</span>
 </span><span id="__span-52-13"><a id="__codelineno-52-13" name="__codelineno-52-13" href="#__codelineno-52-13"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
 </span><span id="__span-52-14"><a id="__codelineno-52-14" name="__codelineno-52-14" href="#__codelineno-52-14"></a><span class="w">        </span><span class="nt">backupRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">daily-backup</span>
-</span><span id="__span-52-15"><a id="__codelineno-52-15" name="__codelineno-52-15" href="#__codelineno-52-15"></a><span class="w">      </span><span class="nt">logStorage</span><span class="p">:</span>
-</span><span id="__span-52-16"><a id="__codelineno-52-16" name="__codelineno-52-16" href="#__codelineno-52-16"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3</span>
-</span><span id="__span-52-17"><a id="__codelineno-52-17" name="__codelineno-52-17" href="#__codelineno-52-17"></a><span class="w">        </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">transaction-logs</span>
-</span><span id="__span-52-18"><a id="__codelineno-52-18" name="__codelineno-52-18" href="#__codelineno-52-18"></a><span class="w">        </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-logs/production</span>
-</span><span id="__span-52-19"><a id="__codelineno-52-19" name="__codelineno-52-19" href="#__codelineno-52-19"></a><span class="w">        </span><span class="nt">cloud</span><span class="p">:</span>
-</span><span id="__span-52-20"><a id="__codelineno-52-20" name="__codelineno-52-20" href="#__codelineno-52-20"></a><span class="w">          </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws</span>
-</span><span id="__span-52-21"><a id="__codelineno-52-21" name="__codelineno-52-21" href="#__codelineno-52-21"></a><span class="w">          </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-backup-creds</span>
-</span><span id="__span-52-22"><a id="__codelineno-52-22" name="__codelineno-52-22" href="#__codelineno-52-22"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-52-23"><a id="__codelineno-52-23" name="__codelineno-52-23" href="#__codelineno-52-23"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-52-24"><a id="__codelineno-52-24" name="__codelineno-52-24" href="#__codelineno-52-24"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-52-25"><a id="__codelineno-52-25" name="__codelineno-52-25" href="#__codelineno-52-25"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"2h"</span>
+</span><span id="__span-52-15"><a id="__codelineno-52-15" name="__codelineno-52-15" href="#__codelineno-52-15"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-52-16"><a id="__codelineno-52-16" name="__codelineno-52-16" href="#__codelineno-52-16"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-52-17"><a id="__codelineno-52-17" name="__codelineno-52-17" href="#__codelineno-52-17"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <p><strong>Best for:</strong> Compliance requirements, precise recovery to a moment before a bad event.</p>
 <h4 id="pitr-with-storage-based-base-backup">PITR with Storage-Based Base Backup<a class="headerlink" href="#pitr-with-storage-based-base-backup" title="Anchor link to this section">&para;</a></h4>
@@ -7125,17 +7118,12 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 </span><span id="__span-53-18"><a id="__codelineno-53-18" name="__codelineno-53-18" href="#__codelineno-53-18"></a><span class="w">          </span><span class="nt">cloud</span><span class="p">:</span>
 </span><span id="__span-53-19"><a id="__codelineno-53-19" name="__codelineno-53-19" href="#__codelineno-53-19"></a><span class="w">            </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcp</span>
 </span><span id="__span-53-20"><a id="__codelineno-53-20" name="__codelineno-53-20" href="#__codelineno-53-20"></a><span class="w">            </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcs-backup-creds</span>
-</span><span id="__span-53-21"><a id="__codelineno-53-21" name="__codelineno-53-21" href="#__codelineno-53-21"></a><span class="w">        </span><span class="nt">backupPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/backup/base-backup-20250104</span>
-</span><span id="__span-53-22"><a id="__codelineno-53-22" name="__codelineno-53-22" href="#__codelineno-53-22"></a><span class="w">      </span><span class="nt">logStorage</span><span class="p">:</span>
-</span><span id="__span-53-23"><a id="__codelineno-53-23" name="__codelineno-53-23" href="#__codelineno-53-23"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcs</span>
-</span><span id="__span-53-24"><a id="__codelineno-53-24" name="__codelineno-53-24" href="#__codelineno-53-24"></a><span class="w">        </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">transaction-logs</span>
-</span><span id="__span-53-25"><a id="__codelineno-53-25" name="__codelineno-53-25" href="#__codelineno-53-25"></a><span class="w">        </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production/logs</span>
-</span><span id="__span-53-26"><a id="__codelineno-53-26" name="__codelineno-53-26" href="#__codelineno-53-26"></a><span class="w">        </span><span class="nt">cloud</span><span class="p">:</span>
-</span><span id="__span-53-27"><a id="__codelineno-53-27" name="__codelineno-53-27" href="#__codelineno-53-27"></a><span class="w">          </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcp</span>
-</span><span id="__span-53-28"><a id="__codelineno-53-28" name="__codelineno-53-28" href="#__codelineno-53-28"></a><span class="w">          </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcs-backup-creds</span>
-</span><span id="__span-53-29"><a id="__codelineno-53-29" name="__codelineno-53-29" href="#__codelineno-53-29"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-53-30"><a id="__codelineno-53-30" name="__codelineno-53-30" href="#__codelineno-53-30"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-53-31"><a id="__codelineno-53-31" name="__codelineno-53-31" href="#__codelineno-53-31"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-53-21"><a id="__codelineno-53-21" name="__codelineno-53-21" href="#__codelineno-53-21"></a><span class="w">        </span><span class="c1"># Relative to storage.path: the operator reads</span>
+</span><span id="__span-53-22"><a id="__codelineno-53-22" name="__codelineno-53-22" href="#__codelineno-53-22"></a><span class="w">        </span><span class="c1"># gs://base-backups/production/base-backup-20250104/critical-app-2025-01-04T02-00-00.backup</span>
+</span><span id="__span-53-23"><a id="__codelineno-53-23" name="__codelineno-53-23" href="#__codelineno-53-23"></a><span class="w">        </span><span class="nt">backupPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">critical-app-2025-01-04T02-00-00.backup</span>
+</span><span id="__span-53-24"><a id="__codelineno-53-24" name="__codelineno-53-24" href="#__codelineno-53-24"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-53-25"><a id="__codelineno-53-25" name="__codelineno-53-25" href="#__codelineno-53-25"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-53-26"><a id="__codelineno-53-26" name="__codelineno-53-26" href="#__codelineno-53-26"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <hr />
 <h3 id="restore-with-hooks">Restore with Hooks<a class="headerlink" href="#restore-with-hooks" title="Anchor link to this section">&para;</a></h3>
@@ -7357,7 +7345,7 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 </span><span id="__span-62-5"><a id="__codelineno-62-5" name="__codelineno-62-5" href="#__codelineno-62-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--parallel-recovery"</span>
 </span></code></pre></div>
 <h3 id="namespace-scoping">Namespace scoping<a class="headerlink" href="#namespace-scoping" title="Anchor link to this section">&para;</a></h3>
-<p>A <code>Neo4jBackup</code> backs up a deployment <strong>in its own namespace</strong>. Both <code>instanceRef</code> and the legacy <code>target</code> resolve within the backup CR's namespace; a cross-namespace <code>target.namespace</code> is <strong>rejected</strong> by the validator. This keeps each backup's blast radius inside a single namespace — the same boundary the operator enforces for users and roles. To back up a cluster that lives in another namespace, create the <code>Neo4jBackup</code> in <strong>that</strong> namespace.</p>
+<p>A <code>Neo4jBackup</code> backs up a deployment <strong>in its own namespace</strong>. <code>instanceRef</code> (and <code>shardedDatabase</code>) resolve within the backup CR's namespace, and the API has no namespace field to point elsewhere (the legacy <code>target</code> block, including <code>target.namespace</code>, was removed in v1.14). This keeps each backup's blast radius inside a single namespace — the same boundary the operator enforces for users and roles. To back up a cluster that lives in another namespace, create the <code>Neo4jBackup</code> in <strong>that</strong> namespace.</p>
 <hr />
 <h2 id="troubleshooting-quick-reference">Troubleshooting Quick Reference<a class="headerlink" href="#troubleshooting-quick-reference" title="Anchor link to this section">&para;</a></h2>
 <h3 id="quick-fixes">Quick Fixes<a class="headerlink" href="#quick-fixes" title="Anchor link to this section">&para;</a></h3>
@@ -7396,9 +7384,9 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 <td>Set a valid <code>tempPath</code> or ensure the path is auto-created</td>
 </tr>
 <tr>
-<td><strong><code>preferDiffAsParent</code> has no effect</strong></td>
+<td><strong>Backup fails with <code>--prefer-diff-as-parent requires CalVer 2025.04+</code></strong></td>
 <td>Check Neo4j version</td>
-<td>Requires CalVer 2025.04+</td>
+<td>Remove <code>preferDiffAsParent</code>, or run CalVer 2025.04+</td>
 </tr>
 <tr>
 <td><strong>Database not online after restore</strong></td>

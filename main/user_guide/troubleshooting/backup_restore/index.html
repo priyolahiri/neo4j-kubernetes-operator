@@ -3921,11 +3921,14 @@ actually work against the bucket, which preflight deliberately does not claim to
 <li><strong>Missing ServiceAccount</strong>:
    ```bash</li>
 </ol>
-<h1 id="the-operator-automatically-creates-the-backup-serviceaccount-check-it-exists">The operator automatically creates the backup ServiceAccount — check it exists.<a class="headerlink" href="#the-operator-automatically-creates-the-backup-serviceaccount-check-it-exists" title="Anchor link to this section">&para;</a></h1>
+<h1 id="the-neo4jbackup-controller-creates-the-backup-serviceaccount-when-it-reconciles-a-backup">The Neo4jBackup controller creates the backup ServiceAccount when it reconciles a backup<a class="headerlink" href="#the-neo4jbackup-controller-creates-the-backup-serviceaccount-when-it-reconciles-a-backup" title="Anchor link to this section">&para;</a></h1>
+<h1 id="the-cluster-controller-does-not-check-it-exists">(the cluster controller does not) — check it exists.<a class="headerlink" href="#the-cluster-controller-does-not-check-it-exists" title="Anchor link to this section">&para;</a></h1>
 <h1 id="no-rolerolebinding-is-created-the-backup-job-needs-no-kubernetes-api-access">(No Role/RoleBinding is created: the backup Job needs no Kubernetes API access.)<a class="headerlink" href="#no-rolerolebinding-is-created-the-backup-job-needs-no-kubernetes-api-access" title="Anchor link to this section">&para;</a></h1>
 <p>kubectl get serviceaccount neo4j-backup-sa</p>
-<h1 id="if-missing-trigger-operator-reconciliation-with-a-no-op-annotation-change">If missing, trigger operator reconciliation with a no-op annotation change<a class="headerlink" href="#if-missing-trigger-operator-reconciliation-with-a-no-op-annotation-change" title="Anchor link to this section">&para;</a></h1>
-<p>kubectl annotate neo4jenterprisecluster production-cluster troubleshooting.neo4j.com/reconcile="$(date +%s)" --overwrite
+<h1 id="if-missing-the-neo4jbackup-has-not-been-reconciled-yet-or-already-reached">If missing, the Neo4jBackup has not been reconciled yet (or already reached<a class="headerlink" href="#if-missing-the-neo4jbackup-has-not-been-reconciled-yet-or-already-reached" title="Anchor link to this section">&para;</a></h1>
+<h1 id="completedfailed-which-are-terminal-for-a-pending-or-scheduled-backup-trigger">Completed/Failed, which are terminal). For a pending or scheduled backup, trigger<a class="headerlink" href="#completedfailed-which-are-terminal-for-a-pending-or-scheduled-backup-trigger" title="Anchor link to this section">&para;</a></h1>
+<h1 id="reconciliation-with-a-no-op-annotation-change-on-the-neo4jbackup-itself">reconciliation with a no-op annotation change on the Neo4jBackup itself:<a class="headerlink" href="#reconciliation-with-a-no-op-annotation-change-on-the-neo4jbackup-itself" title="Anchor link to this section">&para;</a></h1>
+<p>kubectl annotate neo4jbackup production-backup troubleshooting.neo4j.com/reconcile="$(date +%s)" --overwrite
    ```</p>
 <ol>
 <li>
@@ -3954,12 +3957,13 @@ actually work against the bucket, which preflight deliberately does not claim to
 <h4 id="symptom-backup-job-starts-but-fails-during-execution">Symptom: Backup job starts but fails during execution<a class="headerlink" href="#symptom-backup-job-starts-but-fails-during-execution" title="Anchor link to this section">&para;</a></h4>
 <p><strong>Diagnosis:</strong>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Check backup Job's Pod log (one-shot: &lt;neo4jbackup-name&gt;-backup;</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1"># CronJob child: &lt;neo4jbackup-name&gt;-backup-cron-&lt;unix-seconds&gt;).</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>&lt;ns&gt;<span class="w"> </span>job/&lt;job-name&gt;
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># Check Neo4j server logs for backup-related errors (which server</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># was the leader at backup time).</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>&lt;cluster&gt;-server-0<span class="w"> </span>-c<span class="w"> </span>neo4j<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>backup
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1"># CronJob child: named by Kubernetes after the CronJob, &lt;neo4jbackup-name&gt;-backup-cron-&lt;suffix&gt;</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># — find it with `kubectl get jobs`).</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>&lt;ns&gt;<span class="w"> </span>job/&lt;job-name&gt;
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># Check Neo4j server logs for backup-related errors (which server</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># was the leader at backup time).</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>&lt;cluster&gt;-server-0<span class="w"> </span>-c<span class="w"> </span>neo4j<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>backup
 </span></code></pre></div></p>
 <p><strong>Common Solutions:</strong></p>
 <ol>
@@ -3974,7 +3978,7 @@ actually work against the bucket, which preflight deliberately does not claim to
 <p><strong>Database Lock Issues</strong>:
    <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Check for long-running transactions</span>
 </span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>production-cluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>password<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="s2">"CALL db.listTransactions() YIELD transactionId, elapsedTimeMillis WHERE elapsedTimeMillis &gt; 30000"</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="s2">"SHOW TRANSACTIONS YIELD transactionId, currentQuery, elapsedTime WHERE elapsedTime &gt; duration({seconds: 30})"</span>
 </span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
 </span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># Solution: Wait for transactions to complete or schedule backups off-peak</span>
 </span></code></pre></div></p>
@@ -4088,7 +4092,7 @@ actually work against the bucket, which preflight deliberately does not claim to
 <p><strong>Diagnosis:</strong>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Check CronJob status</span>
 </span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>cronjob
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>cronjob<span class="w"> </span>production-backup-schedule
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>cronjob<span class="w"> </span>production-backup-backup-cron<span class="w">   </span><span class="c1"># the operator names it &lt;neo4jbackup-name&gt;-backup-cron</span>
 </span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
 </span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="c1"># Check backup schedule configuration</span>
 </span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jbackup<span class="w"> </span>production-backup<span class="w"> </span>-o<span class="w"> </span>yaml<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-A<span class="w"> </span><span class="m">10</span><span class="w"> </span>schedule
@@ -4193,7 +4197,8 @@ actually work against the bucket, which preflight deliberately does not claim to
 </span></code></pre></div></p>
 </li>
 </ol>
-<h4 id="symptom-cluster-restore-reports-failed-with-cluster-missing-seed-credentials-projection">Symptom: Cluster restore reports <code>Failed</code> with "Cluster missing seed credentials projection"<a class="headerlink" href="#symptom-cluster-restore-reports-failed-with-cluster-missing-seed-credentials-projection" title="Anchor link to this section">&para;</a></h4>
+<h4 id="symptom-cluster-restore-reports-failed-with-server-pods-cant-reach-the-seed-source">Symptom: Cluster restore reports <code>Failed</code> with "server pods can't reach the seed source"<a class="headerlink" href="#symptom-cluster-restore-reports-failed-with-server-pods-cant-reach-the-seed-source" title="Anchor link to this section">&para;</a></h4>
+<p>The <code>Neo4jRestore</code> message reads <code>cluster "&lt;name&gt;"'s server pods can't reach the seed source: missing &lt;credentials and/or endpoint settings&gt;. The server JVM fetches the seed itself. Provide these on the cluster CR, or set annotation neo4j.com/auto-inherit-seed-creds="true" …</code>, and a <code>SeedEndpointNotProjected</code> Warning event carries the same text.</p>
 <p><strong>Cause:</strong> the cluster pods need the cloud credentials Secret projected via <code>spec.extraEnvFrom</code> so the JVM's AWS/GCP/Azure SDK can authenticate the <code>seedURI</code> fetch from <code>CloudSeedProvider</code>.</p>
 <p><strong>Fix:</strong></p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="c1"># On the Neo4jEnterpriseCluster CR:</span>

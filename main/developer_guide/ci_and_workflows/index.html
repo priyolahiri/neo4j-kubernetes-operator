@@ -4176,19 +4176,34 @@ in-repo <code>.github/workflows/README.md</code> is a short pointer back here.</
 <td>manual dispatch only (full)</td>
 </tr>
 <tr>
+<td><a href="#install-confidence">Install Confidence</a></td>
+<td><code>install-confidence.yml</code></td>
+<td>manual dispatch only (the same matrix also runs inside <code>release.yml</code>)</td>
+</tr>
+<tr>
 <td><a href="#release">Release</a></td>
 <td><code>release.yml</code></td>
 <td>push of a <code>vX.Y.Z</code> tag, manual dispatch</td>
 </tr>
 <tr>
+<td><a href="#retracting-a-release">Retracting a release</a></td>
+<td><code>release-retract.yml</code></td>
+<td>manual dispatch only</td>
+</tr>
+<tr>
 <td><a href="#pages-docs">Pages — Docs</a></td>
 <td><code>pages-docs.yml</code></td>
-<td>push to <code>main</code>, push of a <code>v*</code> tag, manual dispatch</td>
+<td>push to <code>main</code>, manual dispatch, and <code>workflow_call</code> from <code>release.yml</code> (no tag trigger of its own)</td>
 </tr>
 <tr>
 <td><a href="#pages-helm-repo">Pages — Helm Repo</a></td>
 <td><code>pages-helm.yml</code></td>
-<td>push of a <code>v*</code> tag, manual dispatch</td>
+<td>manual dispatch and <code>workflow_call</code> from <code>release.yml</code> (no tag trigger of its own)</td>
+</tr>
+<tr>
+<td>CodeQL</td>
+<td><code>codeql.yml</code></td>
+<td>push/PR to <code>main</code>, weekly schedule</td>
 </tr>
 </tbody>
 </table>
@@ -4201,17 +4216,27 @@ gate that blocks merge. Jobs:</p>
    (<code>sync-all</code> + <code>bundle</code>, then <code>git diff --exit-code</code>). Fails if any committed
    CRD, RBAC, deepcopy, Helm CRD, or OLM bundle file is stale (untracked
    generated files fail it too). Fix locally with <code>make sync-all</code> and commit
-   the result. The same job then runs <code>make helm-lint</code> and
-   <code>make check-csv-coverage</code> — both used to be ship-prep-only, which let a
-   chart template error or a CSV missing a new CRD hide until release time.
-   Static and seconds-fast; the failure summary distinguishes drift failures
-   from lint/coverage failures.</li>
-<li><strong>Unit Tests</strong> — <code>make test-unit</code> (race-enabled, envtest-backed controller
-   suite + plain unit tests). No external cluster required. The job runs the
+   the result. The same job then runs the static checks that have no generator
+   to catch them: <code>make helm-lint</code>, <code>make check-csv-coverage</code>,
+   <code>make check-apiref-drift</code>, <code>make check-cli-asset-names</code>,
+   <code>make check-cli-docs</code>, <code>make check-docs-release-pins</code>,
+   <code>make check-examples-catalog</code>, <code>make check-docs-tables</code>,
+   <code>make check-crd-catalog</code>, and a gitleaks secret scan. All are static and
+   seconds-fast; the failure summary distinguishes drift failures from the rest.</li>
+<li><strong>Go Lint (<code>go-lint</code>)</strong> — builds golangci-lint against the current toolchain
+   and runs the whole <code>.golangci.yml</code> (<code>ci.yml</code> calls it a merge gate), then
+   cross-compiles <code>kubectl-neo4j</code> for every released platform (darwin, linux,
+   windows) so a unix-only import fails here rather than at release time.</li>
+<li><strong>Unit Tests (<code>unit-tests</code>)</strong> — <code>make test-unit</code> (race-enabled, envtest-backed
+   controller suite + plain unit tests). No external cluster required. The job runs the
    suite through <a href="../makefile_reference/#make-gotestsum">gotestsum</a>
    (<code>make test-unit GO_TEST_CMD="./bin/gotestsum …"</code>), which emits a JUnit XML +
    test2json report; a summary step (<code>scripts/gotest-summary.sh</code>) writes the
    failed and slowest tests to the GitHub step summary.</li>
+<li><strong>Invariant Guards (advisory)</strong> — runs <code>scripts/check-invariants.sh</code> and
+   <code>scripts/check-knowledge-drift.sh</code> with <code>continue-on-error</code>, so a violation is
+   reported in the run summary but never fails the job or blocks merge. See
+   <a href="../AGENT-GUARDRAILS/">Agent guardrails</a>.</li>
 </ol>
 <p>Integration coverage lives in its own workflows, not in <code>ci.yml</code>: the fast
 contributor lane is <a href="#integration-tests">Integration Tests</a>; the full matrix is
@@ -4290,8 +4315,8 @@ against <strong>both supported Neo4j tracks in parallel</strong>:</p>
 <p>Because it's the core subset and the two cells run in parallel, wall-clock ≈ the
 slower (CalVer) cell, not the sum. Triggers on <code>pull_request</code> + <code>push</code> to <code>main</code>
 when <strong>runtime paths</strong> change (<code>internal/**</code>, <code>api/**</code>, <code>cmd/**</code>,
-<code>test/integration/**</code>, <code>Makefile</code>, <code>go.{mod,sum}</code>, the workflow itself) — never
-on docs-only changes.</p>
+<code>test/integration/**</code>, <code>config/**</code>, <code>Dockerfile</code>, <code>Makefile</code>, <code>go.{mod,sum}</code>, the
+workflow itself) — never on docs-only changes.</p>
 <p>This is the lane that should give a contributor a fast, legible yes/no on the
 contracts they touched, on the versions users actually run.</p>
 <blockquote>
@@ -4318,9 +4343,10 @@ the fast core lane, keeping the dev cycle short. The extended suite is
 ("Run workflow") or with <code>gh workflow run integration-tests.yml --ref &lt;branch&gt;</code>,
 <strong>full suite</strong>, with inputs:</p>
 <ul>
-<li><code>neo4j-version</code> — image tag (default the pinned CalVer; pass <code>5.26-enterprise</code>
-  to verify the LTS floor, or <code>2025.12-enterprise+</code> for the property-sharding
-  paths). Dispatch against your branch to run the full suite before merging.</li>
+<li><code>neo4j-version</code> — the exact image tag, used verbatim as <code>neo4j:&lt;tag&gt;</code> (default
+  the pinned CalVer, which already satisfies the CalVer-gated specs, property
+  sharding included; pass <code>5.26-enterprise</code> to verify the LTS floor). Dispatch
+  against your branch to run the full suite before merging.</li>
 <li><code>timeout-minutes</code> — default <code>150</code> (CalVer is ~2× slower per spec).</li>
 </ul>
 <p>Dispatch it explicitly for backup/restore/sharding/coordination changes that the
@@ -4404,8 +4430,10 @@ with a tag input). Jobs:</p>
    <code>createdAt:</code> is still the dev placeholder), renders the release body from
    <code>.github/release-notes-template.md</code>, and publishes the GitHub release.</li>
 </ol>
-<p>Pushing the tag also fires <strong>Pages — Docs</strong> and <strong>Pages — Helm Repo</strong> (below),
-so a single tag publishes images, the release, the docs version, and the chart.</p>
+<p>The release workflow's final jobs (<code>publish-docs</code>, <code>publish-helm</code>) then call
+<strong>Pages — Docs</strong> and <strong>Pages — Helm Repo</strong> (below) once every gate and artifact
+exists, so a single tag publishes images, the release, the docs version, and the
+chart.</p>
 <h3 id="cutting-a-release-runbook">Cutting a release (runbook)<a class="headerlink" href="#cutting-a-release-runbook" title="Anchor link to this section">&para;</a></h3>
 <p>Releases are tag-driven. <strong>Do not bump <code>Chart.yaml</code></strong> — <code>version</code>/<code>appVersion</code>
 are the <code>0.0.1</code> placeholder in the repo and the workflows stamp the real value
@@ -4426,7 +4454,13 @@ from the tag.</p>
    extended coverage; tag the exact commit the suite validated.</li>
 <li>If there are breaking changes or notable upgrade steps, add/extend the
    <code>Upgrading between future releases</code> section in
-   <a href="../../user_guide/migration_guide/"><code>migration_guide.md</code></a> (the Upgrade Guide).</li>
+   <a href="../../user_guide/migration_guide/"><code>migration_guide.md</code></a> (the Upgrade Guide).
+3b. Bump the documented install pins (Helm <code>--version</code>, the <code>RELEASE_VERSION</code>
+   examples, the ArgoCD <code>targetRevision</code>, <code>go install</code>) to the new version on
+   <code>main</code> <strong>before</strong> pushing the tag — <code>make check-docs-release-pins</code> (run in the
+   <code>check-drift</code> job) lets docs run ahead of the newest tag but fails once the tag
+   exists and the docs still name the previous release. <code>make ship-prep</code> does not
+   run it; run it yourself.</li>
 <li>Draft the <strong>What's Changed</strong> notes — <code>git log &lt;last-tag&gt;..HEAD --pretty=oneline</code>
    is a good starting point. (The release workflow renders only the
    boilerplate from <code>.github/release-notes-template.md</code>; the changelog is
@@ -4483,8 +4517,11 @@ missing page <strong>fails the publish</strong> — treat it as a docs gate on <
 <ul>
 <li><strong>Push to <code>main</code></strong> → the <code>/main/</code> alias, a rolling preview of unreleased docs.
   Does not touch <code>latest</code>.</li>
-<li><strong>Push of a <code>vX.Y.Z</code> tag</strong> → published as <code>/vX.Y/</code> (the patch is dropped, so a
-  later <code>vX.Y.Z+1</code> overwrites the same <code>/vX.Y/</code>), and <code>/latest/</code> is moved to it.
+<li><strong>Called from <code>release.yml</code></strong> (the <code>publish-docs</code> job, after <code>create-release</code>;
+  the workflow has <strong>no tag trigger of its own</strong> — publishing on tag push ran in
+  parallel with the release gates and could advertise a version that never
+  shipped, #245) → published as <code>/vX.Y/</code> (the patch is dropped, so a later
+  <code>vX.Y.Z+1</code> overwrites the same <code>/vX.Y/</code>), and <code>/latest/</code> is moved to it.
   <code>mike set-default latest</code> also points the site <strong>root</strong> at <code>/latest/</code>.</li>
 <li><strong>Manual dispatch</strong> → publish under an arbitrary <code>version-alias</code>, optionally
   updating <code>latest</code>.</li>
@@ -4502,7 +4539,8 @@ to the Helm repository index under <code>/charts/</code> on <code>gh-pages</code
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>helm<span class="w"> </span>repo<span class="w"> </span>update
 </span></code></pre></div>
 <ul>
-<li><strong>Push of a <code>v*</code> tag</strong> → packages and publishes that version.</li>
+<li><strong>Called from <code>release.yml</code></strong> (the <code>publish-helm</code> job, after <code>create-release</code>;
+  no tag trigger of its own) → packages and publishes that version.</li>
 <li><strong>Manual dispatch</strong> → package a specific existing tag.</li>
 </ul>
 <h2 id="openshift-olm">OpenShift / OLM<a class="headerlink" href="#openshift-olm" title="Anchor link to this section">&para;</a></h2>

@@ -4019,12 +4019,12 @@
 <tr>
 <td><code>name</code></td>
 <td><code>string</code></td>
-<td>Replica database name. Defaults to <code>metadata.name</code>. <strong>Permanent</strong> — Cypher has no <code>RENAME DATABASE</code>, so this name survives promotion. Pair with a <code>Neo4jDatabaseAlias</code> if applications should address it under the upstream's name after failover.</td>
+<td>Replica database name. Defaults to <code>metadata.name</code>. 3-63 characters, pattern <code>^[a-zA-Z][a-zA-Z0-9_.\-]*$</code>; no backticks. <strong>Permanent</strong> — Cypher has no <code>RENAME DATABASE</code>, so this name survives promotion. Pair with a <code>Neo4jDatabaseAlias</code> if applications should address it under the upstream's name after failover.</td>
 </tr>
 <tr>
 <td><code>upstreamDatabase</code></td>
 <td><code>string</code></td>
-<td><strong>Required.</strong> Name of the database being replicated, as known on the upstream cluster. Becomes <code>replicaConfig.remote</code>.</td>
+<td><strong>Required.</strong> Name of the database being replicated, as known on the upstream cluster (1-63 characters). Becomes <code>replicaConfig.remote</code>.</td>
 </tr>
 <tr>
 <td><code>topology</code></td>
@@ -4091,7 +4091,7 @@
 <tr>
 <td><code>credentialsSecretRef</code></td>
 <td><code>string</code></td>
-<td><strong>Backup mode.</strong> Secret holding object-storage credentials, when workload identity is unavailable. Independent of <code>upstreamBackupRef</code>. Ignored (warned) in network mode.</td>
+<td><strong>Backup mode.</strong> Secret holding object-storage credentials, when workload identity is unavailable. Independent of <code>upstreamBackupRef</code>. Ignored (warned) in network mode. The operator projects the Secret's keys (<code>AWS_REGION</code>, <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, <code>AWS_SESSION_TOKEN</code>, <code>AWS_ENDPOINT_URL_S3</code>, <code>AWS_ENDPOINT_URL</code>) onto the <strong>downstream</strong> servers as <code>secretKeyRef</code> env vars, because Neo4j itself performs the seed and every pull. <strong>This restarts the downstream servers</strong> (the replica waits for the rollout), so set it when the downstream is built, not mid-failover. The projection is add-only (clearing the field does not remove it), and two replicas of one cluster naming different Secrets is refused.</td>
 </tr>
 </tbody>
 </table>

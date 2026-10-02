@@ -4325,9 +4325,12 @@ because plugin discovery by binary name is part of what is being verified:</p>
 <td><code>explain</code> admits a gap</td>
 <td>an invented term (<code>explain NotARealCondition</code>) prints <em>no explanation for …</em>, points at <code>--list</code>, and exits <code>2</code> — it never guesses. The other half of this, an unrecognised phase on a live resource naming the CLI's own version, is only reachable against an operator newer than the CLI; note it as unreachable rather than recording it as passed</td>
 </tr>
+<tr>
+<td><code>preflight</code> on the cloud substrate</td>
+<td>on Kind, a cluster with <code>spec.crossClusterReplication.enabled</code> reports the <strong>Kind</strong> case (<code>…</code> — no load-balancer controller), not a false exposure problem. A cluster with a hard zone constraint (<code>topologySpread.enabled</code>, default <code>DoNotSchedule</code>) on a single unlabelled-node Kind reports <code>✗ zones</code>. A <code>spec.securityContext</code> override that drops <code>runAsNonRoot</code> in a namespace labelled <code>pod-security.kubernetes.io/enforce=restricted</code> reports <code>✗ spec.securityContext</code> naming each missing field. All three are new in v1.16.0 and need no running database</td>
+</tr>
 </tbody>
 </table>
-<p>| <code>preflight</code> on the cloud substrate | on Kind, a cluster with <code>spec.crossClusterReplication.enabled</code> reports the <strong>Kind</strong> case (<code>…</code> — no load-balancer controller), not a false exposure problem. A cluster with a hard zone constraint (<code>topologySpread.enabled</code>, default <code>DoNotSchedule</code>) on a single unlabelled-node Kind reports <code>✗ zones</code>. A <code>spec.securityContext</code> override that drops <code>runAsNonRoot</code> in a namespace labelled <code>pod-security.kubernetes.io/enforce=restricted</code> reports <code>✗ spec.securityContext</code> naming each missing field. All three are new in v1.16.0 and need no running database |</p>
 <p><strong>Part B — the failure paths (operator up, no Neo4j running):</strong></p>
 <p>Every resource below is built <em>not to start</em>, so none of them runs a JVM and
 none of them counts against the one-deployment-at-a-time rule. Apply, read,
@@ -4445,6 +4448,10 @@ back to 1 replica.</p>
 <tr>
 <td>Standalone recommended labels</td>
 <td><code>kubectl get pods -l app.kubernetes.io/name=neo4j</code> returns the standalone pod (it carries <code>app.kubernetes.io/{name,instance,managed-by}</code>)</td>
+</tr>
+<tr>
+<td>Operator build metadata</td>
+<td>scrape the operator's <code>/metrics</code> (<code>kubectl port-forward -n &lt;operator-ns&gt; deploy/&lt;operator-deploy&gt; 8082:8082</code> on the dev overlay, which serves plain HTTP in <code>--mode=dev</code>; production mode serves <code>:8080</code>, over HTTPS with a bearer token when <code>metrics.secure</code> is on) and find <code>neo4j_operator_build_info</code>: exactly one series, value <code>1</code>, with <code>version</code>, <code>vcs_ref</code>, <code>build_date</code> and <code>go_version</code> labels. <code>vcs_ref</code> must equal <code>git rev-parse --short HEAD</code> of the tree you built (a <code>make deploy-dev-local</code> build stamps <code>version</code> with the Makefile placeholder <code>0.0.1</code>; only a release image carries a release version). A <code>vcs_ref</code> of <code>unknown</code> or a stale SHA means you are running an image that is not the tree under test</td>
 </tr>
 <tr>
 <td><code>system</code> is not restorable</td>
@@ -4604,7 +4611,7 @@ cluster (~2Gi each):</p>
 <tbody>
 <tr>
 <td>Sharding cluster</td>
-<td><code>CALL dbms.components()</code> → <code>2026.06.x</code> enterprise; <code>status.propertyShardingReady=true</code></td>
+<td><code>CALL dbms.components()</code> → the CI anchor you deployed (<code>2026.08.1</code> enterprise as of v1.17.0); <code>status.propertyShardingReady=true</code></td>
 </tr>
 <tr>
 <td>Sharded database</td>
@@ -4862,9 +4869,9 @@ whole observe-before-act design exists to prevent, and it is invisible to unit
 tests.</p>
 <p><strong>Part C — network mode core mechanism, same Kind cluster, no proxy (two concurrent deployments):</strong></p>
 <p><strong>Automated</strong> — <code>test/integration/ccdr_same_cluster_network_mode_test.go</code>,
-<code>Label("extended")</code>, gated by <code>isCCDRReplicaCompatible()</code> (dormant on the
-default CI anchor; runs when dispatched with <code>neo4j-version:
-2026.08-enterprise+</code>). Uses <code>source.upstreamClusterRef</code> rather than a
+<code>Label("extended")</code>, gated by <code>isCCDRReplicaCompatible()</code> (it needs a
+<code>2026.08+</code> image: it runs on the default CI anchor, <code>2026.08.1</code>, in the dispatched
+Extended suite, and skips if you dispatch <code>5.26-enterprise</code> or an older CalVer). Uses <code>source.upstreamClusterRef</code> rather than a
 hand-typed <code>source.addresses</code> FQDN — exercises the same underlying mechanism
 via the newer, higher-level API. Re-run manually only if you want the
 hand-typed-address path specifically, or a version this repo's CI cannot yet
@@ -5031,7 +5038,7 @@ the first walk. The scripted steps already do.</p>
 </tr>
 </tbody>
 </table>
-<p>→ <strong>Tear down both</strong>: <code>kind delete cluster --name neo4j-operator-dev --name neo4j-dr</code>.</p>
+<p>→ <strong>Tear down both</strong>: <code>make ccdr-e2e-down</code>.</p>
 <h2 id="coverage-at-a-glance">Coverage at a glance<a class="headerlink" href="#coverage-at-a-glance" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
@@ -5040,7 +5047,7 @@ the first walk. The scripted steps already do.</p>
 <th style="text-align: center;">CLI (Phase 0)</th>
 <th style="text-align: center;">Standalone</th>
 <th style="text-align: center;">Cluster (3)</th>
-<th style="text-align: center;">Sharding (2026.06)</th>
+<th style="text-align: center;">Sharding (CI anchor)</th>
 <th style="text-align: center;">Aura (Phase 4)</th>
 <th style="text-align: center;">CCDR (Phase 5, 2026.08+)</th>
 </tr>

@@ -4826,15 +4826,16 @@
 <p><strong><code>Neo4jEnterpriseStandalone</code> target</strong> — Kubernetes Job:</p>
 <ol>
 <li>Spawns a restore Job that runs <code>neo4j-admin database restore --from-path=$(ls &lt;dir&gt;/&lt;dbname&gt;-*.backup | tail -1) &lt;dbname&gt;</code>. The shell substitution picks the latest run in the chain by default.</li>
-<li>If <code>stopCluster: true</code>, the operator scales down the StatefulSet first and mounts <code>data-{name}-server-0</code> directly into the Job container for offline access. With <code>stopCluster: false</code> the operator <strong>refuses to start the Job while any server pod is running</strong> (it never writes into a live data volume) — so in practice standalone restores need <code>stopCluster: true</code> unless you have already scaled the instance down yourself.</li>
+<li>If <code>stopCluster: true</code>, the operator scales down the StatefulSet first and mounts the standalone's data PVC (<code>neo4j-data-{name}-0</code>) directly into the Job container for offline access. With <code>stopCluster: false</code> the operator <strong>refuses to start the Job while any server pod is running</strong> (it never writes into a live data volume) — so in practice standalone restores need <code>stopCluster: true</code> unless you have already scaled the instance down yourself.</li>
 <li>After the Job succeeds, automatically runs <code>CREATE DATABASE &lt;dbname&gt;</code> (new) or <code>START DATABASE &lt;dbname&gt;</code> (existed but stopped) via Bolt.</li>
 <li><code>spec.options.preRestore</code> / <code>postRestore</code> hooks run <strong>only on this path</strong> (never for cluster targets): pre-restore hooks run <strong>before</strong> the instance is stopped (so Cypher like <code>CALL db.checkpoint()</code> hits a live Bolt endpoint); post-restore hooks run <strong>after</strong> the restored database is registered and started.</li>
 </ol>
 <p><strong><code>Neo4jShardedDatabase</code> target</strong> — rejected. Sharded restore is owned by the <code>Neo4jShardedDatabase</code> CRD; set <code>spec.replaceExisting: true</code> + <code>spec.force: true</code> on the target sharded DB and reference the backup via <code>spec.seedBackupRef</code>. The Neo4jRestore validator emits an actionable error pointing at this flow.</p>
 <p><strong>No manual post-restore Cypher is required</strong> for either path — with one exception: if the backup was taken with <code>includeMetadata</code> (users/roles), <code>neo4j-admin database restore</code> writes a <code>restore_metadata.cypher</code> script next to the restored store, and the operator does <strong>not</strong> run it. Re-creating the database's users/roles is a manual step — run it against the <code>system</code> database, e.g.:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>&lt;instance&gt;-server-0<span class="w"> </span>-c<span class="w"> </span>neo4j<span class="w"> </span>--<span class="w"> </span>bash<span class="w"> </span>-c<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="s1">'cypher-shell -u neo4j -p "$NEO4J_PASSWORD" -d system \</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="s1">     -f /data/scripts/&lt;dbname&gt;/restore_metadata.cypher'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Standalone pod; the script exists only after a neo4j-admin (Job-path) restore</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>&lt;instance&gt;-0<span class="w"> </span>-c<span class="w"> </span>neo4j<span class="w"> </span>--<span class="w"> </span>bash<span class="w"> </span>-c<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="s1">'cypher-shell -u neo4j -p "$NEO4J_PASSWORD" -d system \</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="s1">     -f /data/scripts/&lt;dbname&gt;/restore_metadata.cypher'</span>
 </span></code></pre></div>
 <h3 id="retrying-a-finished-restore">Retrying a finished restore<a class="headerlink" href="#retrying-a-finished-restore" title="Anchor link to this section">&para;</a></h3>
 <p><code>Completed</code> and <code>Failed</code> are terminal <strong>for the current spec generation</strong>, not forever. To re-run a restore, <strong>edit the spec</strong> (any change that bumps <code>metadata.generation</code> — typically <code>source.backupRef</code> or <code>database</code>): the operator clears the previous attempt's one-shot state and issues a fresh restore. Changing <code>source.backupRef</code> also invalidates the pinned <code>status.resolvedSource</code>, so the new reference is re-resolved rather than silently reusing the old snapshot. Alternatively, delete and recreate the CR.</p>
@@ -4884,7 +4885,7 @@
 <td><code>stopCluster</code></td>
 <td><code>bool</code></td>
 <td>❌</td>
-<td><strong>Standalone targets only</strong> (cluster targets restore via Cypher and ignore it). <code>true</code> scales the instance down before the restore Job (mounting <code>data-{name}-server-0</code> directly) and scales it back up after. With <code>false</code>, the operator <strong>refuses</strong> to run the Job while any server pod is running — it never writes into a live data volume.</td>
+<td><strong>Standalone targets only</strong> (cluster targets restore via Cypher and ignore it). <code>true</code> scales the instance down before the restore Job (mounting the data PVC <code>neo4j-data-{name}-0</code> directly) and scales it back up after. With <code>false</code>, the operator <strong>refuses</strong> to run the Job while any server pod is running — it never writes into a live data volume.</td>
 </tr>
 <tr>
 <td><code>timeout</code></td>
@@ -4935,20 +4936,20 @@
 <tr>
 <td><code>backupPath</code></td>
 <td><code>string</code></td>
-<td>❌</td>
-<td>Specific backup path within the storage location</td>
+<td>conditional</td>
+<td>Specific backup path within the storage location. <strong>Required (non-empty) when <code>type="storage"</code></strong> — the controller fails the restore otherwise; for cluster targets it must be the exact <code>.backup</code> file. Not used for <code>type="backup"</code> (resolved from the <code>Neo4jBackup</code>).</td>
 </tr>
 <tr>
 <td><code>pointInTime</code></td>
 <td><code>*metav1.Time</code></td>
 <td>❌</td>
-<td>Recovery point in RFC3339 format; maps to <code>--restore-until</code></td>
+<td>Recovery point in RFC3339 format; maps to <code>--restore-until</code>. <strong>Standalone targets only</strong> — a cluster target rejects it (use a <code>Neo4jDatabase</code> with <code>spec.seedConfig.restoreUntil</code>).</td>
 </tr>
 <tr>
 <td><code>pitr</code></td>
 <td><a href="#pitrconfig"><code>PITRConfig</code></a></td>
-<td>❌</td>
-<td>Full PITR configuration (used when <code>type="pitr"</code>)</td>
+<td>conditional</td>
+<td>Full PITR configuration. <strong>Required when <code>type="pitr"</code></strong>, together with <code>pitr.baseBackup</code> and/or <code>pointInTime</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -5660,7 +5661,7 @@
 <p>When <code>spec.stopCluster: true</code>:</p>
 <ol>
 <li>The operator scales the target StatefulSet down to 0 replicas (recording the original replica count so re-entries don't lose it).</li>
-<li>The restore Job is created with the actual server data PVC (<code>data-{name}-server-0</code>) mounted into the container, enabling direct offline file-level restore.</li>
+<li>The restore Job is created with the standalone's actual data PVC (<code>neo4j-data-{name}-0</code>) mounted into the container, enabling direct offline file-level restore.</li>
 <li>After the restore Job succeeds, the StatefulSet is scaled back up. If the restore fails after the scale-down (hook failure, Job-create failure), the operator scales the instance back up rather than leaving it stranded at 0 replicas.</li>
 <li>The operator then issues <code>CREATE DATABASE</code> or <code>START DATABASE</code> as described above.</li>
 </ol>
@@ -5806,7 +5807,7 @@
 </span><span id="__span-6-33"><a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"4h"</span>
 </span></code></pre></div>
 <h3 id="offline-restore-via-stopcluster-standalone">Offline Restore via stopCluster (Standalone)<a class="headerlink" href="#offline-restore-via-stopcluster-standalone" title="Anchor link to this section">&para;</a></h3>
-<p><code>stopCluster</code> applies to <strong>standalone</strong> targets only — cluster targets restore online via Cypher and ignore it. When <code>stopCluster: true</code>, the operator scales the standalone to 0 and mounts its data PVC (<code>data-{name}-server-0</code>) directly into the restore Job for a cold/offline restore.</p>
+<p><code>stopCluster</code> applies to <strong>standalone</strong> targets only — cluster targets restore online via Cypher and ignore it. When <code>stopCluster: true</code>, the operator scales the standalone to 0 and mounts its data PVC (<code>neo4j-data-{name}-0</code>) directly into the restore Job for a cold/offline restore.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRestore</span>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -5827,7 +5828,7 @@
 </span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">    </span><span class="nt">backupPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nightly-backup/large-graph-2026-06-01T02-00-00.backup</span>
 </span><span id="__span-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
 </span><span id="__span-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># confirms overwriting the existing database</span>
-</span><span id="__span-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># Scales the standalone to 0; mounts data-reporting-standalone-server-0</span>
+</span><span id="__span-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># Scales the standalone to 0; mounts neo4j-data-reporting-standalone-0</span>
 </span><span id="__span-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"8h"</span>
 </span></code></pre></div>
 <h3 id="standalone-restore">Standalone Restore<a class="headerlink" href="#standalone-restore" title="Anchor link to this section">&para;</a></h3>

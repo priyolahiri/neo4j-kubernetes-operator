@@ -3925,6 +3925,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#shipped-differently-and-not-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shipped differently and not built
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3952,7 +3963,7 @@
 
 <h1 id="design-backuprestore-api-redesign-v113">Design: Backup/Restore API redesign (v1.13)<a class="headerlink" href="#design-backuprestore-api-redesign-v113" title="Anchor link to this section">&para;</a></h1>
 <blockquote>
-<p><strong>Status:</strong> Draft for review — schema names are a strawman, open for <code>a community reviewer</code> input (see §11).
+<p><strong>Status:</strong> Implemented — the scope-based API shipped in v1.13 and the legacy fields were removed in v1.14 (see the <a href="../../user_guide/migration_guide/">migration guide</a>, which is authoritative for the shipped field names). Kept as the design record; §5–§11 are the original proposal. Several proposed fields were not built or were built differently — see <a href="#shipped-differently-and-not-built">Shipped differently and not built</a> at the end.
 <strong>Issues:</strong> <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/244">#244</a> (anchor — scope split), <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222">#222</a> (cluster-wide restore, "Priority #1"), inputs: #242, #185, #186, #227 (item 9).
 <strong>Milestone:</strong> v1.13.0 (transition) → <strong>v1.14.0 (clean end-state)</strong>.
 <strong>Decision (Plan B — clean cut with a one-release overlap):</strong> Redesign <code>Neo4jBackup</code>/<code>Neo4jRestore</code> <strong>in place on <code>v1beta1</code>, Kind names retained</strong> — a <strong>scope-based target</strong> + <strong>restore symmetry</strong> as the <em>only documented</em> API. The legacy shape (overloaded <code>target.*</code>, <code>clusterRef</code>, <code>force</code>/<code>replaceExisting</code>, top-level <code>spec.cloud</code>) and <strong>all dead fields</strong> are honored for <strong>one release (v1.13) behind loud deprecation, then removed in v1.14</strong>. No conversion webhook. The cluster/standalone CRDs are untouched.</p>
@@ -4213,6 +4224,17 @@
 <li><strong>Kind names retained, redesigned in place on <code>v1beta1</code></strong> — over new Kinds (abandons familiar names / triples surface) and over <code>v1beta2</code>+webhook (barred by invariant 1).</li>
 <li><strong>Scope-based discriminator over the two-CRD split</strong> — same ergonomic win (scope not topology), single scheduling/history/retention surface, unblocks #222 with the same artifact-map change; the two-CRD split stays a later option as new Kinds.</li>
 <li><strong>Legacy + dead fields removed in v1.14</strong>, behind a full-release v1.13 deprecation window (revises #227 item 9).</li>
+</ul>
+<h2 id="shipped-differently-and-not-built">Shipped differently and not built<a class="headerlink" href="#shipped-differently-and-not-built" title="Anchor link to this section">&para;</a></h2>
+<p>What shipped (<code>api/v1beta1/neo4jbackup_types.go</code>, <code>neo4jrestore_types.go</code>): <code>instanceRef</code> plus exactly one of <code>database</code> / <code>allDatabases</code> / <code>shardedDatabase</code> on <code>Neo4jBackup</code>; <code>instanceRef</code> plus <code>database</code> / <code>allDatabases</code> on <code>Neo4jRestore</code>; <code>status.history[].databaseArtifacts</code>; and the v1.14 removal of <code>spec.target.*</code>, restore <code>clusterRef</code> / <code>databaseName</code> / <code>force</code> / <code>verifyBackup</code>, top-level <code>spec.cloud</code>, <code>options.verify</code> and <code>deletePolicy: Archive</code>. Differences from the proposal:</p>
+<ul>
+<li><strong>Not built: <code>options.overwriteExisting</code>.</strong> The destructive-confirm flag is <code>Neo4jRestore.spec.options.replaceExisting</code> (the v1.14 migration maps <code>spec.force</code> to it), not the proposed <code>overwriteExisting</code>.</li>
+<li><strong>Not built: <code>storage.pvc.create</code>.</strong> <code>PVCSpec</code> has no <code>create</code>; create-versus-bind is still inferred from whether <code>size</code> is set.</li>
+<li><strong>Not built: <code>Neo4jRestore.spec.databases[]</code>.</strong> Only <code>database</code> and <code>allDatabases</code> exist.</li>
+<li><strong>Not built: <code>manifest.json</code>.</strong> <code>databaseArtifacts</code> is the per-database artifact map and is populated by parsing the backup Job's pod log, not from a manifest written to storage.</li>
+<li><strong>Sharded databases use their own field.</strong> Open question §11.3 went the other way: <code>Neo4jBackup.spec.shardedDatabase</code> is an explicit selector, and <code>database</code> is for standard databases only.</li>
+<li><strong>No deprecation events.</strong> The v1.13 <code>BackupAPIDeprecated</code> / <code>RestoreAPIDeprecated</code> events do not exist in the code.</li>
+<li><strong>Two "dead" fields remain.</strong> <code>storage.cloud.identity.serviceAccount</code> and <code>storage.cloud.identity.autoCreate.enabled</code> were not removed; they are documented as reserved no-ops.</li>
 </ul>
 
 

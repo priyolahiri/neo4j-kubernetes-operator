@@ -5566,9 +5566,8 @@
 <ul>
 <li><strong>Unit Tests</strong>: Fast tests for individual functions and components (envtest for the controller suite, no cluster otherwise)</li>
 <li><strong>Integration Tests</strong>: Full workflow testing against a real Kind cluster with the operator deployed</li>
-<li><strong>Performance Tests</strong>: Reconciliation efficiency and resource usage validation</li>
 </ul>
-<p>(There is no separate end-to-end suite — the dedicated E2E targets were removed; integration tests against Kind cover real-cluster behavior.)</p>
+<p>(There is no separate performance suite — the "Performance Testing" examples below are illustrative sketches, not tests in the repo — and no separate end-to-end suite: the dedicated E2E targets were removed; integration tests against Kind cover real-cluster behavior.)</p>
 <h2 id="test-infrastructure">Test Infrastructure<a class="headerlink" href="#test-infrastructure" title="Anchor link to this section">&para;</a></h2>
 <h3 id="testing-framework">Testing Framework<a class="headerlink" href="#testing-framework" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -5626,7 +5625,7 @@ worth knowing in the same spirit:</p>
   driver's real retry windows (<code>ConnectionAcquisitionTimeout</code> 10s /
   <code>MaxTransactionRetryTime</code> 15s). That mistake once made <code>TestClient</code> ~160s and
   gated the whole suite; a 2s deadline cut it to ~13s. The production timeouts in
-  <code>client.go</code> are load-bearing (pinned by <code>uri_test.go</code>) — never relax those to
+  <code>client.go</code> are load-bearing (no test pins them — see <code>docs/knowledge/operations.md</code> id 12) — never relax those to
   speed a test; bound the <strong>test's</strong> context instead.</li>
 <li><strong>Config-assembly invariants.</strong> <code>TestStandaloneCreateConfigMap_NoDuplicateKeys</code>
   and <code>TestBuildConfigMapForEnterprise_NoDuplicateKeys</code> render the real conf
@@ -5695,24 +5694,28 @@ worth knowing in the same spirit:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Full integration test suite (automatically creates cluster and deploys operator)</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>make<span class="w"> </span>test-integration
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Alternative: step-by-step approach</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>make<span class="w"> </span>test-cluster<span class="w">         </span><span class="c1"># Create test cluster</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>make<span class="w"> </span>test-integration<span class="w">     </span><span class="c1"># Run tests (uses existing cluster)</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>make<span class="w"> </span>test-cluster-delete<span class="w">  </span><span class="c1"># Clean up cluster</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Note: `make test-integration` always RECREATES the neo4j-operator-test cluster</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># (it depends on `test-cluster`, which deletes an existing one first), runs every</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># spec (core + extended, --timeout=60m) and leaves the cluster running afterwards.</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>make<span class="w"> </span>test-cluster-delete<span class="w">  </span><span class="c1"># Clean up the cluster when you are done</span>
 </span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="c1"># Run by tier label (matches what CI selects — see below)</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>--label-filter<span class="o">=</span><span class="s1">'core'</span><span class="w">     </span>./test/integration/...<span class="w">  </span><span class="c1"># fast contributor subset</span>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>--label-filter<span class="o">=</span><span class="s1">'extended'</span><span class="w"> </span>./test/integration/...<span class="w">  </span><span class="c1"># heavy / release subset</span>
-</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>--label-filter<span class="o">=</span><span class="s1">'core || extended'</span><span class="w"> </span>./test/integration/...<span class="w">  </span><span class="c1"># everything</span>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
-</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="c1"># Run specific test suites</span>
-</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>-focus<span class="w"> </span><span class="s2">"Neo4jEnterpriseCluster"</span><span class="w"> </span>./test/integration
-</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>-focus<span class="w"> </span><span class="s2">"should create backup"</span><span class="w"> </span>./test/integration
-</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>-focus<span class="w"> </span><span class="s2">"Plugin Installation"</span><span class="w"> </span>./test/integration
-</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>
-</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="c1"># CI-optimized test commands (for advanced use)</span>
-</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>make<span class="w"> </span>test-integration-ci<span class="w">     </span><span class="c1"># Assumes cluster and operator already deployed</span>
-</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>make<span class="w"> </span>test-integration-ci-full<span class="w"> </span><span class="c1"># Full suite in CI environment</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="c1"># To iterate against a cluster you already set up, skip make and call ginkgo:</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>make<span class="w"> </span>test-cluster<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>make<span class="w"> </span>operator-setup<span class="w">     </span><span class="c1"># once</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>--label-filter<span class="o">=</span><span class="s1">'core'</span><span class="w"> </span>./test/integration/...
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="c1"># Run by tier label (matches what CI selects — see below)</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>--label-filter<span class="o">=</span><span class="s1">'core'</span><span class="w">     </span>./test/integration/...<span class="w">  </span><span class="c1"># fast contributor subset</span>
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>--label-filter<span class="o">=</span><span class="s1">'extended'</span><span class="w"> </span>./test/integration/...<span class="w">  </span><span class="c1"># heavy / release subset</span>
+</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>--label-filter<span class="o">=</span><span class="s1">'core || extended'</span><span class="w"> </span>./test/integration/...<span class="w">  </span><span class="c1"># everything</span>
+</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>
+</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="c1"># Run specific test suites</span>
+</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>-focus<span class="w"> </span><span class="s2">"Neo4jEnterpriseCluster"</span><span class="w"> </span>./test/integration
+</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>-focus<span class="w"> </span><span class="s2">"should create backup"</span><span class="w"> </span>./test/integration
+</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>ginkgo<span class="w"> </span>run<span class="w"> </span>-focus<span class="w"> </span><span class="s2">"Plugin Installation"</span><span class="w"> </span>./test/integration
+</span><span id="__span-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>
+</span><span id="__span-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="c1"># CI-optimized test commands (for advanced use)</span>
+</span><span id="__span-4-24"><a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>make<span class="w"> </span>test-integration-ci<span class="w">     </span><span class="c1"># Assumes cluster and operator already deployed</span>
+</span><span id="__span-4-25"><a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>make<span class="w"> </span>test-integration-ci-full<span class="w"> </span><span class="c1"># Full suite in CI environment</span>
 </span></code></pre></div>
 <h3 id="tier-labels-core-extended">Tier labels (<code>core</code> / <code>extended</code>)<a class="headerlink" href="#tier-labels-core-extended" title="Anchor link to this section">&para;</a></h3>
 <p>Each spec's top-level <code>Describe</code> carries a Ginkgo <code>Label</code>:</p>
@@ -5758,14 +5761,14 @@ means "the Extended lane is the only lane that will <em>consider</em> it" — a 
 </thead>
 <tbody>
 <tr>
-<td><code>standalone_deployment</code>, <code>cluster_lifecycle</code>, <code>neo4j{user,role,rolebinding}</code>, <code>database_neo4j_verification</code>, <code>enterprise_features</code>, <code>plugin</code>, <code>tls_cluster_lifecycle</code></td>
-<td>Core reconcile contracts: Ready, formation, RBAC/DB CRUD, config rendering, plugin install, TLS</td>
+<td><code>standalone_deployment</code>, <code>cluster_lifecycle</code>, <code>neo4j{user,role,rolebinding}</code>, <code>database_neo4j_verification</code>, <code>enterprise_features</code>, <code>plugin</code>, <code>tls_cluster_lifecycle</code>, <code>composite_database</code>, <code>ccdr_proxy</code>, <code>ccdr_replica</code></td>
+<td>Core reconcile contracts: Ready, formation, RBAC/DB CRUD, config rendering, plugin install, TLS, composite databases, the CCDR proxy toggle and replica-API validation</td>
 <td><code>core</code></td>
 <td><strong>Integration Tests</strong> lane — both 5.26 + CalVer, every runtime-path PR</td>
 </tr>
 <tr>
-<td><code>multi_node_cluster</code>, <code>splitbrain_detection</code>, <code>rolling_upgrade</code>, <code>backup_*</code>, <code>restore_*</code>, <code>standard_database_*_restore</code>, <code>database_seed_uri</code>, <code>mcp_integration</code></td>
-<td>Multi-node, coordination, backup/restore matrix, MCP</td>
+<td><code>multi_node_cluster</code>, <code>splitbrain_detection</code>, <code>rolling_upgrade</code>, <code>backup_*</code>, <code>restore_*</code>, <code>all_databases_restore_*</code>, <code>standard_database_*_restore</code>, <code>database_seed_uri</code>, <code>composite_database_deployed</code>, <code>ccdr_same_cluster_network_mode</code>, <code>mcp_integration</code></td>
+<td>Multi-node, coordination, backup/restore matrix, composite DBs on a live deployment, same-cluster CCDR network mode, MCP</td>
 <td><code>extended</code></td>
 <td><strong>Extended</strong> lane — CalVer, <strong>manual dispatch only</strong></td>
 </tr>
@@ -6110,8 +6113,9 @@ sidecar. Tests verify the Job spawned by a <code>Neo4jBackup</code> CR:</p>
 <div class="language-go highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1">// Clean up all custom resources in namespace</span>
 </span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nx">cleanupCustomResourcesInNamespace</span><span class="p">(</span><span class="nx">namespace</span><span class="p">)</span>
 </span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
-</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1">// Force remove finalizers if needed</span>
-</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="nx">forceRemoveFinalizers</span><span class="p">(</span><span class="nx">resource</span><span class="p">)</span>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1">// Remove a resource's finalizers by hand (as in the AfterEach pattern above)</span>
+</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="nx">resource</span><span class="p">.</span><span class="nx">SetFinalizers</span><span class="p">([]</span><span class="kt">string</span><span class="p">{})</span>
+</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="nx">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">k8sClient</span><span class="p">.</span><span class="nx">Update</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">resource</span><span class="p">)</span>
 </span></code></pre></div>
 <h2 id="testing-best-practices">Testing Best Practices<a class="headerlink" href="#testing-best-practices" title="Anchor link to this section">&para;</a></h2>
 <h3 id="resource-naming-patterns">Resource Naming Patterns<a class="headerlink" href="#resource-naming-patterns" title="Anchor link to this section">&para;</a></h3>
@@ -6177,6 +6181,10 @@ sidecar. Tests verify the Job spawned by a <code>Neo4jBackup</code> CR:</p>
 </span><span id="__span-21-8"><a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="p">},</span><span class="w"> </span><span class="nx">timeout</span><span class="p">,</span><span class="w"> </span><span class="nx">interval</span><span class="p">).</span><span class="nx">Should</span><span class="p">(</span><span class="nx">Succeed</span><span class="p">())</span>
 </span></code></pre></div>
 <h2 id="performance-testing">Performance Testing<a class="headerlink" href="#performance-testing" title="Anchor link to this section">&para;</a></h2>
+<blockquote>
+<p><strong>Illustrative only.</strong> No performance suite exists in the repo; these are
+sketches of what such a spec would assert, not specs you can run.</p>
+</blockquote>
 <h3 id="reconciliation-efficiency-tests">Reconciliation Efficiency Tests<a class="headerlink" href="#reconciliation-efficiency-tests" title="Anchor link to this section">&para;</a></h3>
 <div class="language-go highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nx">It</span><span class="p">(</span><span class="s">"Should maintain efficient reconciliation rates"</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="w">    </span><span class="c1">// Monitor reconciliation frequency</span>
@@ -6264,10 +6272,10 @@ the drift job, so chart template errors fail at PR time, not release time.</p>
 </ul>
 <p><strong>Solutions</strong>:
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="c1"># Check operator status</span>
-</span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>neo4j-operator
+</span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system
 </span><span id="__span-28-3"><a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>
 </span><span id="__span-28-4"><a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="c1"># Check operator logs</span>
-</span><span id="__span-28-5"><a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator<span class="w"> </span>deployment/neo4j-operator-controller-manager
+</span><span id="__span-28-5"><a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager
 </span><span id="__span-28-6"><a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a>
 </span><span id="__span-28-7"><a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a><span class="c1"># Verify cert-manager (required for TLS tests)</span>
 </span><span id="__span-28-8"><a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>cert-manager
@@ -6337,7 +6345,7 @@ the drift job, so chart template errors fail at PR time, not release time.</p>
 </li>
 <li>Creates test cluster with CI-appropriate resource constraints</li>
 <li>Deploys Neo4j operator</li>
-<li>Runs integration tests with 512Mi memory limits (same as CI)</li>
+<li>Runs integration tests with the CI resource profile (1.5Gi memory limit, same as CI)</li>
 <li>
 <p>Saves output to <code>logs/ci-local-integration.log</code></p>
 </li>
@@ -6359,10 +6367,10 @@ the drift job, so chart template errors fail at PR time, not release time.</p>
 </thead>
 <tbody>
 <tr>
-<td>Memory Limits</td>
-<td>1.5Gi</td>
-<td>512Mi</td>
-<td>512Mi ✅</td>
+<td>Memory request / limit</td>
+<td>1.5Gi / 2Gi</td>
+<td>1Gi / 1.5Gi</td>
+<td>1Gi / 1.5Gi ✅</td>
 </tr>
 <tr>
 <td>Environment Variables</td>

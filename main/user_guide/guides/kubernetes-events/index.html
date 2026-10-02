@@ -2028,6 +2028,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#scale-down" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scale-down
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#rolling-upgrades" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2109,6 +2120,61 @@
     <span class="md-ellipsis">
       
         Sharded Databases
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#users-roles-and-role-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Users, Roles and Role Bindings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auth-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auth Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cross-cluster-replication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-Cluster Replication
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#composite-databases-and-aliases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Composite Databases and Aliases
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#aura-orchestration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aura Orchestration
       
     </span>
   </a>
@@ -3954,6 +4020,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#scale-down" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scale-down
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#rolling-upgrades" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4035,6 +4112,61 @@
     <span class="md-ellipsis">
       
         Sharded Databases
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#users-roles-and-role-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Users, Roles and Role Bindings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auth-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auth Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cross-cluster-replication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-Cluster Replication
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#composite-databases-and-aliases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Composite Databases and Aliases
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#aura-orchestration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aura Orchestration
       
     </span>
   </a>
@@ -4158,6 +4290,11 @@ and alerting systems.</p>
 <td>Topology placement constraint calculation failed</td>
 </tr>
 <tr>
+<td><code>TopologyZoneDiscoveryDegraded</code></td>
+<td>Warning</td>
+<td>Availability-zone auto-discovery is unavailable (the operator cannot list cluster-scoped nodes, as in namespace-scoped installs); best-effort zone spread is applied via the topology key — set <code>spec.topology.availabilityZones</code> to enumerate zones explicitly</td>
+</tr>
+<tr>
 <td><code>PropertyShardingValidationFailed</code></td>
 <td>Warning</td>
 <td>Property sharding configuration validation failed</td>
@@ -4178,9 +4315,36 @@ and alerting systems.</p>
 <td>MCP server requires APOC plugin which is not installed</td>
 </tr>
 <tr>
+<td><code>ConnectivityDegraded</code></td>
+<td>Warning</td>
+<td>The operator has failed to reach the cluster's Bolt endpoint for a sustained streak of consecutive reconciles; emitted once when the streak threshold is reached, with the last error and any pod issues</td>
+</tr>
+<tr>
 <td><code>ReconcileFailed</code></td>
 <td>Warning</td>
 <td>Reconciliation loop encountered an unrecoverable error</td>
+</tr>
+</tbody>
+</table>
+<h3 id="scale-down">Scale-down<a class="headerlink" href="#scale-down" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ScaleDownDraining</code></td>
+<td>Normal</td>
+<td>A scale-down step ran: servers cordoned, their databases deallocated, or the drained servers dropped</td>
+</tr>
+<tr>
+<td><code>ScaleDownBlocked</code></td>
+<td>Warning</td>
+<td>Scale-down refused or stuck — the target is below the <code>system</code> database's minimum voting members, or the <code>DEALLOCATE</code> dry-run / <code>DROP SERVER</code> failed; replicas are held</td>
 </tr>
 </tbody>
 </table>
@@ -4215,9 +4379,9 @@ and alerting systems.</p>
 <td>Upgrade failed</td>
 </tr>
 <tr>
-<td><code>UpgradeRolledBack</code></td>
-<td>Warning</td>
-<td>Upgrade rolled back to previous version</td>
+<td><code>UpgradeDeferred</code></td>
+<td>Normal</td>
+<td>An image change was held back — the cluster is not yet <code>Ready</code>, or a scale-down drain is in progress — and will be performed by the rolling-upgrade state machine afterwards</td>
 </tr>
 </tbody>
 </table>
@@ -4276,6 +4440,41 @@ and alerting systems.</p>
 <td>Warning</td>
 <td>Database creation failed during a restore operation</td>
 </tr>
+<tr>
+<td><code>BackupRetentionCaveat</code></td>
+<td>Warning</td>
+<td>Retention pruning is configured on a CR whose chain may contain differential artifacts; pruning can orphan DIFFs whose parent FULL ages out (prefer <code>backupType: FULL</code> with retention)</td>
+</tr>
+<tr>
+<td><code>BackupShardedDatabasesExcluded</code></td>
+<td>Warning</td>
+<td>An all-databases backup captured property-sharded database(s) as per-shard artifacts; an all-databases restore does not recreate them — restore each from the same backup via its <code>Neo4jShardedDatabase</code> CR with <code>spec.seedBackupRef</code></td>
+</tr>
+<tr>
+<td><code>BackupValidateUnsupported</code></td>
+<td>Warning</td>
+<td><code>options.validate</code> has no effect: <code>neo4j-admin backup validate</code> needs a CalVer (2025.x+) image</td>
+</tr>
+<tr>
+<td><code>ServiceAccountAnnotationConflict</code></td>
+<td>Warning</td>
+<td>A backup/restore CR overwrote different workload-identity annotations on the namespace's shared <code>neo4j-backup-sa</code> / <code>neo4j-restore-sa</code>; the last CR reconciled wins and the others' cloud access breaks</td>
+</tr>
+<tr>
+<td><code>SeedEndpointNotProjected</code></td>
+<td>Warning</td>
+<td>A cluster restore's server pods lack the cloud credentials or custom S3 endpoint (<code>AWS_ENDPOINT_URL_S3</code>) the seed fetch needs, and the cluster is not opted in to <code>neo4j.com/auto-inherit-seed-creds</code>; the restore goes <code>Failed</code> with the missing items named</td>
+</tr>
+<tr>
+<td><code>RestoreSeedProgress</code></td>
+<td>Normal</td>
+<td>One poll of an all-databases restore's per-database seed (emitted on every non-terminal poll; the apiserver aggregates repeats into a count with first/last timestamps, which shows whether a seed is progressing or stuck)</td>
+</tr>
+<tr>
+<td><code>RestoreShardedDatabasesNotCovered</code></td>
+<td>Warning</td>
+<td>An all-databases restore's source backup recorded property-sharded databases it does not recreate; restore each via its <code>Neo4jShardedDatabase</code> CR</td>
+</tr>
 </tbody>
 </table>
 <h3 id="databases">Databases<a class="headerlink" href="#databases" title="Anchor link to this section">&para;</a></h3>
@@ -4327,6 +4526,16 @@ and alerting systems.</p>
 <td><code>DataSeeded</code></td>
 <td>Normal</td>
 <td>Database seeded from URI</td>
+</tr>
+<tr>
+<td><code>SeedCredsMissing</code></td>
+<td>Warning</td>
+<td>The seed credentials Secret (<code>spec.seedCredentials.secretRef</code>) is not projected onto the hosting cluster/standalone's <code>spec.extraEnvFrom</code>; the message carries a copy-pasteable fix (also emitted for <code>Neo4jShardedDatabase</code>)</td>
+</tr>
+<tr>
+<td><code>SeedCredsAutoInherited</code></td>
+<td>Normal</td>
+<td>The hosting cluster/standalone carries <code>neo4j.com/auto-inherit-seed-creds: "true"</code>, so the operator patched its <code>spec.extraEnvFrom</code> with the seed credentials Secret and is waiting for the rolling restart (also emitted for <code>Neo4jShardedDatabase</code>)</td>
 </tr>
 <tr>
 <td><code>ValidationWarning</code></td>
@@ -4434,6 +4643,31 @@ and alerting systems.</p>
 <td>Warning</td>
 <td>Failed to patch the fleet-management plugin onto the StatefulSet</td>
 </tr>
+<tr>
+<td><code>AuraFleetDeploymentCreated</code></td>
+<td>Normal</td>
+<td>Operator-driven provisioning (<code>spec.auraFleetManagement.provision</code>) registered a Fleet Manager deployment in Aura</td>
+</tr>
+<tr>
+<td><code>AuraFleetDeploymentAdopted</code></td>
+<td>Normal</td>
+<td>Provisioning adopted an existing Aura fleet deployment of the same name instead of creating one</td>
+</tr>
+<tr>
+<td><code>AuraFleetDeploymentDeleted</code></td>
+<td>Normal</td>
+<td>The Aura fleet deployment was unregistered</td>
+</tr>
+<tr>
+<td><code>AuraFleetTokenProvisioned</code></td>
+<td>Normal</td>
+<td>The fleet registration token was stored in a Secret</td>
+</tr>
+<tr>
+<td><code>AuraFleetTokenRotated</code></td>
+<td>Warning</td>
+<td>The fleet token was rotated; any previous registration is now invalid</td>
+</tr>
 </tbody>
 </table>
 <h3 id="storage-expansion">Storage Expansion<a class="headerlink" href="#storage-expansion" title="Anchor link to this section">&para;</a></h3>
@@ -4482,6 +4716,454 @@ and alerting systems.</p>
 <td><code>ShardedDatabaseReady</code></td>
 <td>Normal</td>
 <td>Sharded database is created and all shards are online</td>
+</tr>
+<tr>
+<td><code>ShardedDatabaseDropped</code></td>
+<td>Normal</td>
+<td>An existing sharded database was dropped before being recreated from a seed (<code>spec.replaceExisting</code> with <code>spec.force</code>)</td>
+</tr>
+<tr>
+<td><code>SeedBackupPending</code></td>
+<td>Normal</td>
+<td><code>spec.seedBackupRef</code> names a <code>Neo4jBackup</code> with no Succeeded run yet; the sharded database stays <code>Pending</code> and requeues</td>
+</tr>
+<tr>
+<td><code>SeedBackupResolutionFailed</code></td>
+<td>Warning</td>
+<td><code>spec.seedBackupRef</code> could not be resolved into a concrete seed</td>
+</tr>
+<tr>
+<td><code>SeedProxyStarting</code></td>
+<td>Normal</td>
+<td>Waiting for the PVC <code>backup-seed-proxy</code> Deployment to become Ready before seeding</td>
+</tr>
+</tbody>
+</table>
+<h3 id="users-roles-and-role-bindings">Users, Roles and Role Bindings<a class="headerlink" href="#users-roles-and-role-bindings" title="Anchor link to this section">&para;</a></h3>
+<p>Emitted on <code>Neo4jUser</code>, <code>Neo4jRole</code> and <code>Neo4jRoleBinding</code> objects.</p>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>UserCreated</code></td>
+<td>Normal</td>
+<td>User created in Neo4j</td>
+</tr>
+<tr>
+<td><code>UserUpdated</code></td>
+<td>Normal</td>
+<td>User updated (or its password recorded as already applied)</td>
+</tr>
+<tr>
+<td><code>UserReady</code></td>
+<td>Normal</td>
+<td>User exists and its roles are in sync</td>
+</tr>
+<tr>
+<td><code>UserDeleted</code></td>
+<td>Normal</td>
+<td>User dropped</td>
+</tr>
+<tr>
+<td><code>UserDeletionFailed</code></td>
+<td>Warning</td>
+<td><code>DROP USER</code> failed; retried, and the finalizer is released if it keeps failing so deletion is not wedged</td>
+</tr>
+<tr>
+<td><code>UserSyncFailed</code></td>
+<td>Warning</td>
+<td>Reconciling the user against Neo4j failed</td>
+</tr>
+<tr>
+<td><code>PasswordRotated</code></td>
+<td>Normal</td>
+<td>Password updated from the referenced Secret</td>
+</tr>
+<tr>
+<td><code>RolesGranted</code> / <code>RolesRevoked</code></td>
+<td>Normal</td>
+<td>Roles granted to / revoked from a user, role binding or auth rule</td>
+</tr>
+<tr>
+<td><code>RolesResolved</code></td>
+<td>Normal</td>
+<td><code>Neo4jRole</code> CR names were resolved to Neo4j role names</td>
+</tr>
+<tr>
+<td><code>RolePending</code></td>
+<td>Warning</td>
+<td>Waiting for referenced roles to exist</td>
+</tr>
+<tr>
+<td><code>RoleCreated</code></td>
+<td>Normal</td>
+<td>Role created in Neo4j</td>
+</tr>
+<tr>
+<td><code>RoleReady</code></td>
+<td>Normal</td>
+<td>Role exists and its privileges are in sync</td>
+</tr>
+<tr>
+<td><code>RoleDeleted</code></td>
+<td>Normal</td>
+<td>Role dropped</td>
+</tr>
+<tr>
+<td><code>RoleDeletionFailed</code></td>
+<td>Warning</td>
+<td><code>DROP ROLE</code> failed; retried, finalizer released if it keeps failing</td>
+</tr>
+<tr>
+<td><code>RoleSyncFailed</code></td>
+<td>Warning</td>
+<td>Reconciling the role against Neo4j failed</td>
+</tr>
+<tr>
+<td><code>PrivilegesApplied</code></td>
+<td>Normal</td>
+<td>Privileges were added to and/or revoked from the role</td>
+</tr>
+<tr>
+<td><code>PrivilegesDriftKept</code></td>
+<td>Warning</td>
+<td>A drifting privilege was not revoked (it is immutable, or no <code>REVOKE</code> could be derived)</td>
+</tr>
+<tr>
+<td><code>PrivilegeNamesUnknownDatabase</code></td>
+<td>Warning</td>
+<td>A privilege names a database that does not exist on the cluster and is not an alias for one (it is skipped), or grants graph privileges on a composite database (accepted by Neo4j but inert); see <code>PrivilegesResolve</code> on the role</td>
+</tr>
+<tr>
+<td><code>PrivilegeTargetDropped</code></td>
+<td>Warning</td>
+<td>A <code>Neo4jDatabase</code> was dropped while a <code>Neo4jRole</code> on the same cluster still grants on it; emitted on both objects</td>
+</tr>
+<tr>
+<td><code>BindingCreated</code> / <code>BindingUpdated</code> / <code>BindingDeleted</code></td>
+<td>Normal</td>
+<td><code>Neo4jRoleBinding</code> granted its roles, changed the granted set, or revoked its roles on deletion</td>
+</tr>
+<tr>
+<td><code>BindingFailed</code></td>
+<td>Warning</td>
+<td>A role binding grant or revoke failed</td>
+</tr>
+<tr>
+<td><code>UserNotFound</code></td>
+<td>Warning</td>
+<td>The user a <code>Neo4jRoleBinding</code> names does not exist</td>
+</tr>
+</tbody>
+</table>
+<h3 id="auth-rules">Auth Rules<a class="headerlink" href="#auth-rules" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AuthRuleCreated</code> / <code>AuthRuleUpdated</code> / <code>AuthRuleDeleted</code></td>
+<td>Normal</td>
+<td><code>Neo4jAuthRule</code> created, its condition or enabled flag updated, or the rule dropped</td>
+</tr>
+<tr>
+<td><code>AuthRuleFailed</code></td>
+<td>Warning</td>
+<td>Creating, updating or dropping the auth rule failed</td>
+</tr>
+<tr>
+<td><code>AuthRuleVersionTooOld</code></td>
+<td>Warning</td>
+<td>Auth rules need Neo4j 2026.03 or later on the referenced cluster</td>
+</tr>
+<tr>
+<td><code>OIDCProviderNotConfigured</code></td>
+<td>Warning</td>
+<td>The referenced cluster's <code>spec.config</code> lists no OIDC provider for attribute-based access control; the rule stays <code>Pending</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="cross-cluster-replication">Cross-Cluster Replication<a class="headerlink" href="#cross-cluster-replication" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ReplicationSourceCaveat</code></td>
+<td>Normal / Warning</td>
+<td>On a <code>Neo4jBackup</code> with <code>mode: replication-source</code>: Normal when the pull URI is published (with the reminder that bucket lifecycle rules can break the chain); Warning when the storage type (e.g. <code>pvc</code>) has no cross-cluster URI form</td>
+</tr>
+<tr>
+<td><code>ReplicaCreated</code></td>
+<td>Normal</td>
+<td>Replica database created</td>
+</tr>
+<tr>
+<td><code>ReplicaReady</code></td>
+<td>Normal</td>
+<td>Replica database is online</td>
+</tr>
+<tr>
+<td><code>ReplicaFailed</code></td>
+<td>Warning</td>
+<td>Creating the replica (or dropping it on deletion) failed</td>
+</tr>
+<tr>
+<td><code>ReplicaDropped</code></td>
+<td>Normal</td>
+<td>Replica database dropped on CR deletion</td>
+</tr>
+<tr>
+<td><code>ReplicaVersionTooOld</code></td>
+<td>Warning</td>
+<td>The downstream cluster predates Neo4j 2026.08</td>
+</tr>
+<tr>
+<td><code>ReplicaPromotionDetected</code></td>
+<td>Warning</td>
+<td>The database is no longer a replica (promoted, possibly out of band); the CR goes inert</td>
+</tr>
+<tr>
+<td><code>ReplicaRetainedAfterPromotion</code></td>
+<td>Warning</td>
+<td>The CR was deleted after promotion; the promoted database is retained, not dropped</td>
+</tr>
+<tr>
+<td><code>ReplicaPromotionStarted</code></td>
+<td>Warning</td>
+<td>A <code>Neo4jReplicaPromotion</code> started; irreversible, and any outstanding lag becomes permanent data loss</td>
+</tr>
+<tr>
+<td><code>ReplicaPromotionCompleted</code></td>
+<td>Normal</td>
+<td>Promotion completed</td>
+</tr>
+<tr>
+<td><code>ReplicaPromotionFailed</code></td>
+<td>Warning</td>
+<td>Promotion failed</td>
+</tr>
+<tr>
+<td><code>CrossClusterProxyUnauthenticated</code></td>
+<td>Warning</td>
+<td>The CCDR proxy was published while <code>spec.tls.strictPeerValidation</code> is disabled, so the exposed tx-shipping port is encrypted but not authenticated</td>
+</tr>
+</tbody>
+</table>
+<p>The replica's <code>UpstreamClusterNotFound</code>, <code>UpstreamClusterNotReady</code>, <code>UpstreamBackupNotFound</code> and <code>UpstreamBackupNotReady</code> are not events: they are the reason on the replica's <code>Ready</code> condition (phase <code>Pending</code>) while <code>source.upstreamClusterRef</code> / <code>source.upstreamBackupRef</code> cannot be resolved yet — read them with <code>kubectl describe neo4jreplicadatabase</code>.</p>
+<h3 id="composite-databases-and-aliases">Composite Databases and Aliases<a class="headerlink" href="#composite-databases-and-aliases" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CompositeDatabaseCreated</code></td>
+<td>Normal</td>
+<td>Composite database created</td>
+</tr>
+<tr>
+<td><code>CompositeDatabaseReady</code></td>
+<td>Normal</td>
+<td>Composite database is ready, with its observed constituent count</td>
+</tr>
+<tr>
+<td><code>CompositeDatabaseFailed</code></td>
+<td>Warning</td>
+<td>Reconciling the composite database failed</td>
+</tr>
+<tr>
+<td><code>CompositeDatabaseDropped</code></td>
+<td>Normal</td>
+<td>Composite dropped (constituent aliases removed; their target databases kept)</td>
+</tr>
+<tr>
+<td><code>CompositeConstituentAdded</code></td>
+<td>Normal</td>
+<td>A constituent alias now resolves to its target</td>
+</tr>
+<tr>
+<td><code>CompositeConstituentRetargeted</code></td>
+<td>Normal</td>
+<td>A constituent alias was re-pointed to a different target</td>
+</tr>
+<tr>
+<td><code>CompositeConstituentRemoved</code></td>
+<td>Normal</td>
+<td>A constituent not in <code>spec.constituents</code> was removed</td>
+</tr>
+<tr>
+<td><code>CompositeDatabaseNameBlocked</code></td>
+<td>Warning</td>
+<td>A dotted alias already occupies the composite's namespace, so the composite cannot be created until that alias is dropped (<code>kubectl neo4j explain CompositeDatabaseNameBlocked</code>)</td>
+</tr>
+<tr>
+<td><code>AliasCreated</code></td>
+<td>Normal</td>
+<td>Database alias created</td>
+</tr>
+<tr>
+<td><code>AliasRetargeted</code></td>
+<td>Normal</td>
+<td>Alias re-pointed to a different target database</td>
+</tr>
+<tr>
+<td><code>AliasReady</code></td>
+<td>Normal</td>
+<td>Alias resolves to its target</td>
+</tr>
+<tr>
+<td><code>AliasDropped</code></td>
+<td>Normal</td>
+<td>Alias dropped</td>
+</tr>
+<tr>
+<td><code>AliasFailed</code></td>
+<td>Warning</td>
+<td>Reconciling or dropping the alias failed</td>
+</tr>
+</tbody>
+</table>
+<h3 id="aura-orchestration">Aura Orchestration<a class="headerlink" href="#aura-orchestration" title="Anchor link to this section">&para;</a></h3>
+<p>Emitted by the Aura CRDs (<code>AuraProviderConfig</code>, <code>AuraInstance</code>, <code>AuraSnapshot</code>, <code>AuraRestore</code>, <code>AuraCustomerManagedKey</code>, <code>AuraIPFilter</code>, <code>AuraDatabase</code>, <code>AuraDatabaseBackup</code>, <code>AuraDatabaseRestore</code>, <code>AuraOrganizationMember</code>, <code>AuraProjectMember</code>, <code>AuraInvite</code>). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place.</p>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AuraCredentialsValidated</code> / <code>AuraCredentialsInvalid</code></td>
+<td>Normal / Warning</td>
+<td>The provider config's Aura API credentials were accepted / rejected</td>
+</tr>
+<tr>
+<td><code>AuraInstanceCreated</code>, <code>AuraInstanceAdopted</code>, <code>AuraInstanceUpdated</code>, <code>AuraInstancePaused</code>, <code>AuraInstanceResumed</code>, <code>AuraInstanceUpgraded</code>, <code>AuraInstanceDeleted</code>, <code>AuraInstanceOrphaned</code></td>
+<td>Normal</td>
+<td>Lifecycle of the Aura instance</td>
+</tr>
+<tr>
+<td><code>AuraInstanceFailed</code></td>
+<td>Warning</td>
+<td>Aura instance reconcile failed (also: deletion refused while <code>deletionProtection</code> is set)</td>
+</tr>
+<tr>
+<td><code>AuraSnapshotCreated</code></td>
+<td>Normal</td>
+<td>Aura snapshot requested</td>
+</tr>
+<tr>
+<td><code>AuraRestoreStarted</code>, <code>AuraRestoreCompleted</code></td>
+<td>Normal</td>
+<td>Instance restore from a snapshot started / completed</td>
+</tr>
+<tr>
+<td><code>AuraRestoreFailed</code></td>
+<td>Warning</td>
+<td>The instance entered a failed status during restore</td>
+</tr>
+<tr>
+<td><code>AuraCustomerManagedKeyCreated</code>, <code>AuraCustomerManagedKeyAdopted</code>, <code>AuraCustomerManagedKeyReady</code>, <code>AuraCustomerManagedKeyDeleted</code>, <code>AuraCustomerManagedKeyOrphaned</code></td>
+<td>Normal</td>
+<td>Lifecycle of the customer-managed key</td>
+</tr>
+<tr>
+<td><code>AuraCustomerManagedKeyDeleteBlocked</code></td>
+<td>Warning</td>
+<td>The key cannot be deleted: still in use by one or more instances</td>
+</tr>
+<tr>
+<td><code>AuraCustomerManagedKeyFailed</code></td>
+<td>Warning</td>
+<td>Customer-managed key reconcile failed</td>
+</tr>
+<tr>
+<td><code>AuraIPFilterCreated</code>, <code>AuraIPFilterAdopted</code>, <code>AuraIPFilterUpdated</code>, <code>AuraIPFilterReady</code>, <code>AuraIPFilterDeleted</code>, <code>AuraIPFilterOrphaned</code></td>
+<td>Normal</td>
+<td>Lifecycle of the IP filter</td>
+</tr>
+<tr>
+<td><code>AuraIPFilterFailed</code></td>
+<td>Warning</td>
+<td>IP filter reconcile failed</td>
+</tr>
+<tr>
+<td><code>AuraDatabaseCreated</code>, <code>AuraDatabaseAdopted</code>, <code>AuraDatabaseReady</code>, <code>AuraDatabaseDeleted</code>, <code>AuraDatabaseOrphaned</code></td>
+<td>Normal</td>
+<td>Lifecycle of the Aura database (<code>AuraDatabaseCreated</code> is a Warning when the instance already had databases: a pre-existing one cannot be adopted by name, so verify no duplicate was created)</td>
+</tr>
+<tr>
+<td><code>AuraDatabaseFailed</code></td>
+<td>Warning</td>
+<td>Aura database reconcile failed</td>
+</tr>
+<tr>
+<td><code>AuraDatabaseBackupCreated</code></td>
+<td>Normal</td>
+<td>Per-database backup created</td>
+</tr>
+<tr>
+<td><code>AuraDatabaseBackupFailed</code></td>
+<td>Warning</td>
+<td>Per-database backup failed</td>
+</tr>
+<tr>
+<td><code>AuraDatabaseRestoreStarted</code>, <code>AuraDatabaseRestoreCompleted</code></td>
+<td>Normal</td>
+<td>Per-database restore started / submitted</td>
+</tr>
+<tr>
+<td><code>AuraDatabaseRestoreFailed</code></td>
+<td>Warning</td>
+<td>Per-database restore failed</td>
+</tr>
+<tr>
+<td><code>AuraMemberRoleUpdated</code>, <code>AuraMemberReady</code>, <code>AuraMemberRemoved</code></td>
+<td>Normal</td>
+<td>Organization/project member role set or member added/removed, reconciled, or removed on CR deletion</td>
+</tr>
+<tr>
+<td><code>AuraMemberNotFound</code></td>
+<td>Warning</td>
+<td>The person is not an organization member; invite them with an <code>AuraInvite</code></td>
+</tr>
+<tr>
+<td><code>AuraMemberFailed</code></td>
+<td>Warning</td>
+<td>Member reconcile failed</td>
+</tr>
+<tr>
+<td><code>AuraInviteCreated</code>, <code>AuraInviteAdopted</code>, <code>AuraInviteReady</code>, <code>AuraInviteDeleted</code>, <code>AuraInviteOrphaned</code></td>
+<td>Normal</td>
+<td>Lifecycle of the invite</td>
+</tr>
+<tr>
+<td><code>AuraInviteFailed</code></td>
+<td>Warning</td>
+<td>Invite reconcile failed</td>
 </tr>
 </tbody>
 </table>

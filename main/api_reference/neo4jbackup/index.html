@@ -4576,7 +4576,7 @@
 <li>For PVC storage, <code>--to-path</code> uses the local path within the mounted PVC.</li>
 <li>RBAC: Only a <code>neo4j-backup-sa</code> ServiceAccount is created. No Role or RoleBinding is created because the backup Job requires no Kubernetes API access.</li>
 <li>Retention: cloud storage (S3/GCS/Azure) is pruned by <strong>your bucket's lifecycle rules</strong>, not the operator. For PVC storage, the operator runs a cleanup Job <strong>only when the Neo4jBackup CR is deleted</strong> — see <a href="#retentionpolicy">RetentionPolicy</a>.</li>
-<li><strong>Scope:</strong> set <code>spec.instanceRef</code> (the deployment — a cluster <strong>or</strong> a standalone) plus exactly one scope field: <code>spec.database</code> (a single database), <code>spec.shardedDatabase</code> (a logical property-sharded database), or <code>spec.allDatabases: true</code> (every user database; the <code>system</code> database is excluded). The operator resolves cluster-vs-standalone itself — topology is not part of the API. <code>spec.allDatabases</code> produces one <code>.backup</code> artifact per database (recorded in <code>status.history[].databaseArtifacts</code>) and is restorable cluster-wide via <code>Neo4jRestore.spec.allDatabases</code> (closes <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222">#222</a>).</li>
+<li><strong>Scope:</strong> set <code>spec.instanceRef</code> (the deployment — a cluster <strong>or</strong> a standalone) plus exactly one scope field: <code>spec.database</code> (a single database), <code>spec.shardedDatabase</code> (the name of a <code>Neo4jShardedDatabase</code> CR), or <code>spec.allDatabases: true</code> (every user database; the <code>system</code> database is excluded). The operator resolves cluster-vs-standalone itself — topology is not part of the API. <code>spec.allDatabases</code> produces one <code>.backup</code> artifact per database (recorded in <code>status.history[].databaseArtifacts</code>) and is restorable cluster-wide via <code>Neo4jRestore.spec.allDatabases</code> (closes <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222">#222</a>).</li>
 <li>The legacy <code>spec.target</code> block (<code>kind</code>/<code>name</code>/<code>clusterRef</code>) was deprecated in v1.13 and <strong>removed in v1.14</strong>. Use <code>spec.instanceRef</code> + a scope field instead.</li>
 </ul>
 <h2 id="spec">Spec<a class="headerlink" href="#spec" title="Anchor link to this section">&para;</a></h2>
@@ -4601,13 +4601,13 @@
 <td><code>database</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Single-database scope: back up exactly this database. Mutually exclusive with <code>shardedDatabase</code> / <code>allDatabases</code>.</td>
+<td>Single-database scope: back up exactly this database. Must match <code>^[a-zA-Z][a-zA-Z0-9.\-]*$</code> (max 65 characters). Mutually exclusive with <code>shardedDatabase</code> / <code>allDatabases</code>.</td>
 </tr>
 <tr>
 <td><code>shardedDatabase</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Sharded-database scope: back up all shards of this logical property-sharded database (<code>&lt;name&gt;-g000</code>, <code>&lt;name&gt;-p000</code>, …) in one <code>neo4j-admin</code> invocation. Mutually exclusive with <code>database</code> / <code>allDatabases</code>.</td>
+<td>Sharded-database scope: the <strong>name of the <code>Neo4jShardedDatabase</code> CR</strong> (same namespace; <code>^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$</code>, max 253), not the logical database name — the operator reads the logical name from that CR's <code>spec.name</code>, and the two often differ. Backs up all its shards (<code>&lt;name&gt;-g000</code>, <code>&lt;name&gt;-p000</code>, …) in one <code>neo4j-admin</code> invocation. Mutually exclusive with <code>database</code> / <code>allDatabases</code>.</td>
 </tr>
 <tr>
 <td><code>allDatabases</code></td>
@@ -4679,7 +4679,7 @@
 <tr>
 <td><code>shardedDatabase</code></td>
 <td><code>string</code></td>
-<td>Back up all shards of a logical property-sharded database (e.g. <code>"products"</code> → <code>products-g000</code>, <code>products-p000</code>, …) in one <code>neo4j-admin</code> invocation via a glob.</td>
+<td>The name of a <code>Neo4jShardedDatabase</code> CR; backs up all shards of that logical property-sharded database (e.g. a CR whose <code>spec.name</code> is <code>products</code> → <code>products-g000</code>, <code>products-p000</code>, …) in one <code>neo4j-admin</code> invocation via a glob.</td>
 </tr>
 <tr>
 <td><code>allDatabases</code></td>
@@ -4734,13 +4734,13 @@
 <td><code>pvc</code></td>
 <td><a href="#pvcspec"><code>*PVCSpec</code></a></td>
 <td>❌</td>
-<td>PVC configuration (required when <code>type=pvc</code>)</td>
+<td>PVC configuration (required when <code>type=pvc</code>, with <code>pvc.name</code> set)</td>
 </tr>
 <tr>
 <td><code>cloud</code></td>
 <td><a href="#cloudblock"><code>*CloudBlock</code></a></td>
 <td>❌</td>
-<td>Cloud provider configuration including optional credentials secret</td>
+<td>Cloud provider configuration including optional credentials secret. <strong>Required for <code>s3</code> / <code>gcs</code> / <code>azure</code></strong>, with <code>cloud.provider</code> set to <code>aws</code> / <code>gcp</code> / <code>azure</code> respectively</td>
 </tr>
 </tbody>
 </table>
@@ -4760,7 +4760,7 @@
 <td><code>provider</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Cloud provider: <code>"aws"</code>, <code>"gcp"</code>, <code>"azure"</code></td>
+<td>Cloud provider: <code>"aws"</code>, <code>"gcp"</code>, <code>"azure"</code>. <strong>Required when <code>storage.type</code> is <code>s3</code> (<code>aws</code>), <code>gcs</code> (<code>gcp</code>) or <code>azure</code> (<code>azure</code>)</strong> — the validator rejects a missing or mismatched provider</td>
 </tr>
 <tr>
 <td><code>credentialsSecretRef</code></td>
@@ -4947,19 +4947,19 @@
 <td><code>storageClassName</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Storage class name for dynamic provisioning</td>
+<td>Storage class name for dynamic provisioning (used only when the operator creates the PVC, i.e. <code>size</code> is set and the PVC does not exist)</td>
 </tr>
 <tr>
 <td><code>name</code></td>
 <td><code>string</code></td>
-<td>❌</td>
-<td>Name of an existing PVC to use</td>
+<td>✅ (for <code>type: pvc</code>)</td>
+<td>Name of the PVC to use. Always required: the validator rejects a PVC backup without it. If the PVC does not exist and <code>size</code> is set, the operator creates it under this name (without an owner reference, so it survives deletion of the CR)</td>
 </tr>
 <tr>
 <td><code>size</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Size for a new PVC (e.g., <code>"100Gi"</code>)</td>
+<td>Size for a new PVC (e.g., <code>"100Gi"</code>); omit to reference an externally provisioned PVC</td>
 </tr>
 </tbody>
 </table>
@@ -4995,6 +4995,7 @@
 </tr>
 </tbody>
 </table>
+<p>When <code>retention</code> is set it must contain <code>maxAge</code> and/or <code>maxCount</code> — an empty <code>retention: {}</code> is rejected (<code>phase: Invalid</code>) — and <code>maxCount</code> may not be negative.</p>
 <p><strong>How retention actually works</strong> (read this before relying on it):</p>
 <ul>
 <li><strong>Cloud storage (S3/GCS/Azure)</strong>: the operator never deletes cloud objects. Configure <strong>bucket lifecycle rules</strong> on the provider side; <code>retention</code> on a cloud-backed CR is advisory only.</li>
@@ -5101,7 +5102,7 @@
 <td><code>additionalArgs</code></td>
 <td><code>[]string</code></td>
 <td>❌</td>
-<td>Additional arguments passed verbatim to <code>neo4j-admin database backup</code></td>
+<td>Additional arguments passed verbatim to <code>neo4j-admin database backup</code>. Each must start with <code>-</code>; the removed <code>--cc-graph</code>, <code>--cc-indexes</code>, <code>--cc-label-scan-store</code> and <code>--legacy-format</code> are rejected by the validator</td>
 </tr>
 </tbody>
 </table>
@@ -5189,6 +5190,11 @@
 <td><code>history</code></td>
 <td><a href="#backuprun"><code>[]BackupRun</code></a></td>
 <td>History of recent backup runs. For scheduled backups this is the <strong>authoritative record</strong> of run outcomes.</td>
+</tr>
+<tr>
+<td><code>replicationPullURI</code></td>
+<td><code>string</code></td>
+<td>Populated only when <code>spec.mode</code> is <code>replication-source</code> and the storage is cloud (<code>s3://</code>, <code>gs://</code> or <code>azb://</code>; empty for <code>pvc</code>). The exact object-storage directory a downstream cross-cluster replica pulls this chain from — paste it into <code>Neo4jReplicaDatabase.spec.source.pullURI</code> instead of assembling bucket + path + chain directory by hand.</td>
 </tr>
 </tbody>
 </table>

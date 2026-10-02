@@ -4083,7 +4083,7 @@ cross-cluster <em>actions</em>, with no GitOps tool assumable — which repositi
 differently-shaped controllers. §8's order is revised accordingly.</strong>
 <strong>Source:</strong> this repository, read at commit <code>33a3204</code>; the CCDR design
 (<code>cross-cluster-replication.md</code>), whose B1 recurs here in a worse form;
-controller-runtime v0.24.1 (<code>go.mod:22</code>).
+controller-runtime v0.24.1 (<code>go.mod:22</code> at the time; <code>go.mod</code> now pins v0.25.1).
 <strong>Scope of this document:</strong> what it would take for <strong>one operator instance to
 manage Neo4j across N Kubernetes clusters</strong>. It covers the Kubernetes API
 plane, the Bolt data plane, the CRD-surface consequences, and four delivery
@@ -4092,7 +4092,7 @@ already shipped, and it is a different question (§1.1).
 <strong>Headline:</strong> the Kubernetes API half is cheap and mechanically supported —
 the operator has no <code>remotecommand</code>/exec dependency, and controller-runtime
 ships per-cluster caches. The <strong>Bolt half is the blocker</strong>, and it is
-<a href="../cross-cluster-replication/#b1--advertised-addresses-are-hardcoded-to-in-cluster-dns-network-only-the-real-blocker">B1 from the CCDR design</a>
+<a href="../cross-cluster-replication/">B1 from the CCDR design</a> ("Advertised addresses are hardcoded to in-cluster DNS")
 again: the operator is a Neo4j client as well as a Kubernetes client, its
 connection URIs are hardcoded to in-cluster DNS, and the <code>neo4j://</code> routing
 scheme means exposing a Service does not fix it — the server hands back

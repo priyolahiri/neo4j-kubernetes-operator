@@ -4945,7 +4945,7 @@
 </ul>
 <h3 id="how-the-operator-uses-resources">How the Operator Uses Resources<a class="headerlink" href="#how-the-operator-uses-resources" title="Anchor link to this section">&para;</a></h3>
 <ol>
-<li><strong>Validation</strong>: Ensures minimum 1Gi memory for Neo4j Enterprise (clusters over 3 servers require at least 2Gi/server)</li>
+<li><strong>Validation</strong>: Ensures minimum 1Gi memory for Neo4j Enterprise (clusters over 3 servers require at least 2Gi/server). When you set heap, page cache or transaction memory in <code>spec.config</code>, <code>heap + page cache + max(25% of the memory limit, 512Mi)</code> must fit inside the memory limit — the last term is the reserve the operator keeps for the OS and native memory, so in practice heap + page cache can use at most 75% of the limit (for limits of 2Gi and up)</li>
 <li><strong>Auto-calculation</strong>: Divides memory between heap, page cache, and OS</li>
 <li><strong>Recommendations</strong>: Suggests optimal settings based on cluster size</li>
 <li><strong>Prevention</strong>: Blocks configurations that would cause OOM errors</li>
@@ -5064,10 +5064,11 @@
 </span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">      </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"4"</span>
 </span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>
 </span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="w">  </span><span class="c1"># Explicit Neo4j configuration</span>
-</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"4G"</span>
-</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"4G"</span>
-</span><span id="__span-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span>
+</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="w">  </span><span class="c1"># 3G heap + 3G page cache + 2Gi reserve (25% of 8Gi) = 8Gi, which fits the limit</span>
+</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span>
+</span><span id="__span-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span>
+</span><span id="__span-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span>
 </span></code></pre></div>
 <h3 id="large-production-1tb-data-1000-users">Large Production (1TB+ data, 1000+ users)<a class="headerlink" href="#large-production-1tb-data-1000-users" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Goal</strong>: Maximum performance and availability</p>
@@ -5090,13 +5091,14 @@
 </span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>
 </span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">    </span><span class="c1"># Fine-tuned memory settings</span>
-</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"8G"</span>
-</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"8G"</span>
-</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"6G"</span>
-</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>
-</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">    </span><span class="c1"># Performance tuning (Neo4j 5.26+ settings)</span>
-</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">    </span><span class="nt">dbms.memory.transaction.total.max</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span>
-</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">    </span><span class="nt">server.bolt.thread_pool_max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"400"</span>
+</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">    </span><span class="c1"># 6G heap + 6G page cache + 4Gi reserve (25% of 16Gi) = 16Gi, which fits the limit</span>
+</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"6G"</span>
+</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"6G"</span>
+</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"6G"</span>
+</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a>
+</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">    </span><span class="c1"># Performance tuning (Neo4j 5.26+ settings)</span>
+</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">    </span><span class="nt">dbms.memory.transaction.total.max</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span>
+</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">    </span><span class="nt">server.bolt.thread_pool_max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"400"</span>
 </span></code></pre></div>
 <h2 id="advanced-configuration">Advanced Configuration<a class="headerlink" href="#advanced-configuration" title="Anchor link to this section">&para;</a></h2>
 <h3 id="manual-memory-tuning">Manual Memory Tuning<a class="headerlink" href="#manual-memory-tuning" title="Anchor link to this section">&para;</a></h3>
@@ -5121,17 +5123,18 @@
 </span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="w">    </span><span class="c1"># Manual memory configuration</span>
 </span><span id="__span-6-20"><a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"4G"</span>
-</span><span id="__span-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"6G"</span><span class="w">      </span><span class="c1"># 50% for heap</span>
-</span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"5G"</span><span class="w">     </span><span class="c1"># 42% for cache</span>
-</span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="w">    </span><span class="c1"># Leaves 1GB (8%) for OS</span>
-</span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>
-</span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="w">    </span><span class="c1"># Transaction memory limits (Neo4j recommended)</span>
-</span><span id="__span-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="w">    </span><span class="nt">dbms.memory.transaction.total.max</span><span class="p">:</span><span class="w"> </span><span class="s">"1G"</span><span class="w">        </span><span class="c1"># Global transaction memory limit</span>
-</span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="w">    </span><span class="nt">db.memory.transaction.total.max</span><span class="p">:</span><span class="w"> </span><span class="s">"512M"</span><span class="w">        </span><span class="c1"># Per-database limit</span>
-</span><span id="__span-6-28"><a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a><span class="w">    </span><span class="nt">db.memory.transaction.max</span><span class="p">:</span><span class="w"> </span><span class="s">"256M"</span><span class="w">              </span><span class="c1"># Per-transaction limit</span>
-</span><span id="__span-6-29"><a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a>
-</span><span id="__span-6-30"><a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a><span class="w">    </span><span class="c1"># Off-heap memory</span>
-</span><span id="__span-6-31"><a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a><span class="w">    </span><span class="nt">server.memory.off_heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"512M"</span>
+</span><span id="__span-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"5G"</span><span class="w">      </span><span class="c1"># ~42% for heap</span>
+</span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"4G"</span><span class="w">     </span><span class="c1"># ~33% for cache</span>
+</span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="w">    </span><span class="c1"># Leaves 3GB (25%) for OS — the operator requires at least</span>
+</span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="w">    </span><span class="c1"># max(25% of the limit, 512Mi): 5G + 4G + 3Gi = 12Gi fits the 12Gi limit</span>
+</span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>
+</span><span id="__span-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="w">    </span><span class="c1"># Transaction memory limits (Neo4j recommended)</span>
+</span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="w">    </span><span class="nt">dbms.memory.transaction.total.max</span><span class="p">:</span><span class="w"> </span><span class="s">"1G"</span><span class="w">        </span><span class="c1"># Global transaction memory limit</span>
+</span><span id="__span-6-28"><a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a><span class="w">    </span><span class="nt">db.memory.transaction.total.max</span><span class="p">:</span><span class="w"> </span><span class="s">"512M"</span><span class="w">        </span><span class="c1"># Per-database limit</span>
+</span><span id="__span-6-29"><a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a><span class="w">    </span><span class="nt">db.memory.transaction.max</span><span class="p">:</span><span class="w"> </span><span class="s">"256M"</span><span class="w">              </span><span class="c1"># Per-transaction limit</span>
+</span><span id="__span-6-30"><a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a>
+</span><span id="__span-6-31"><a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a><span class="w">    </span><span class="c1"># Off-heap memory</span>
+</span><span id="__span-6-32"><a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a><span class="w">    </span><span class="nt">server.memory.off_heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"512M"</span>
 </span></code></pre></div>
 <h3 id="jvm-and-garbage-collection-tuning">JVM and Garbage Collection Tuning<a class="headerlink" href="#jvm-and-garbage-collection-tuning" title="Anchor link to this section">&para;</a></h3>
 <p>Configure JVM settings for optimal performance:</p>
@@ -5149,29 +5152,20 @@
 </span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">      </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">"16Gi"</span>
 </span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>
 </span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">    </span><span class="c1"># Memory configuration</span>
-</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"8G"</span>
-</span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"8G"</span>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">    </span><span class="c1"># Memory configuration (6G + 6G + 4Gi reserve = 16Gi, the limit)</span>
+</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"6G"</span>
+</span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"6G"</span>
 </span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"6G"</span>
 </span><span id="__span-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a>
-</span><span id="__span-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="w">    </span><span class="c1"># JVM tuning (Neo4j 5.26+ and 2025.x)</span>
-</span><span id="__span-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">    </span><span class="nt">server.jvm.additional</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-</span><span id="__span-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">      </span><span class="no">-XX:+UseG1GC</span>
-</span><span id="__span-7-23"><a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a><span class="w">      </span><span class="no">-XX:MaxGCPauseMillis=200</span>
-</span><span id="__span-7-24"><a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a><span class="w">      </span><span class="no">-XX:+ParallelRefProcEnabled</span>
-</span><span id="__span-7-25"><a id="__codelineno-7-25" name="__codelineno-7-25" href="#__codelineno-7-25"></a><span class="w">      </span><span class="no">-XX:+UnlockExperimentalVMOptions</span>
-</span><span id="__span-7-26"><a id="__codelineno-7-26" name="__codelineno-7-26" href="#__codelineno-7-26"></a><span class="w">      </span><span class="no">-XX:+UnlockDiagnosticVMOptions</span>
-</span><span id="__span-7-27"><a id="__codelineno-7-27" name="__codelineno-7-27" href="#__codelineno-7-27"></a><span class="w">      </span><span class="no">-XX:G1NewSizePercent=2</span>
-</span><span id="__span-7-28"><a id="__codelineno-7-28" name="__codelineno-7-28" href="#__codelineno-7-28"></a><span class="w">      </span><span class="no">-XX:G1MaxNewSizePercent=10</span>
-</span><span id="__span-7-29"><a id="__codelineno-7-29" name="__codelineno-7-29" href="#__codelineno-7-29"></a><span class="w">      </span><span class="no">-XX:+G1UseAdaptiveIHOP</span>
-</span><span id="__span-7-30"><a id="__codelineno-7-30" name="__codelineno-7-30" href="#__codelineno-7-30"></a><span class="w">      </span><span class="no">-XX:InitiatingHeapOccupancyPercent=45</span>
-</span><span id="__span-7-31"><a id="__codelineno-7-31" name="__codelineno-7-31" href="#__codelineno-7-31"></a><span class="w">      </span><span class="no">-XX:+UseCompressedOops</span>
-</span><span id="__span-7-32"><a id="__codelineno-7-32" name="__codelineno-7-32" href="#__codelineno-7-32"></a><span class="w">      </span><span class="no">-XX:+UseCompressedClassPointers</span>
-</span><span id="__span-7-33"><a id="__codelineno-7-33" name="__codelineno-7-33" href="#__codelineno-7-33"></a>
-</span><span id="__span-7-34"><a id="__codelineno-7-34" name="__codelineno-7-34" href="#__codelineno-7-34"></a><span class="w">    </span><span class="c1"># Bolt thread pool tuning (Neo4j 5.26+ format)</span>
-</span><span id="__span-7-35"><a id="__codelineno-7-35" name="__codelineno-7-35" href="#__codelineno-7-35"></a><span class="w">    </span><span class="nt">server.bolt.thread_pool_min_size</span><span class="p">:</span><span class="w"> </span><span class="s">"10"</span>
-</span><span id="__span-7-36"><a id="__codelineno-7-36" name="__codelineno-7-36" href="#__codelineno-7-36"></a><span class="w">    </span><span class="nt">server.bolt.thread_pool_max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"400"</span>
-</span><span id="__span-7-37"><a id="__codelineno-7-37" name="__codelineno-7-37" href="#__codelineno-7-37"></a><span class="w">    </span><span class="nt">server.bolt.thread_pool_keep_alive</span><span class="p">:</span><span class="w"> </span><span class="s">"5m"</span>
+</span><span id="__span-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="w">    </span><span class="c1"># JVM tuning (Neo4j 5.26+ and 2025.x). One line, space-separated: a</span>
+</span><span id="__span-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">    </span><span class="c1"># multi-line value is rejected. On a cluster this REPLACES the operator's</span>
+</span><span id="__span-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">    </span><span class="c1"># default JVM flags, so it repeats the ones worth keeping.</span>
+</span><span id="__span-7-23"><a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a><span class="w">    </span><span class="nt">server.jvm.additional</span><span class="p">:</span><span class="w"> </span><span class="s">"-XX:+UseG1GC</span><span class="nv"> </span><span class="s">-XX:MaxGCPauseMillis=200</span><span class="nv"> </span><span class="s">-XX:+ParallelRefProcEnabled</span><span class="nv"> </span><span class="s">-XX:+UnlockExperimentalVMOptions</span><span class="nv"> </span><span class="s">-XX:+UnlockDiagnosticVMOptions</span><span class="nv"> </span><span class="s">-XX:G1NewSizePercent=2</span><span class="nv"> </span><span class="s">-XX:G1MaxNewSizePercent=10</span><span class="nv"> </span><span class="s">-XX:+G1UseAdaptiveIHOP</span><span class="nv"> </span><span class="s">-XX:InitiatingHeapOccupancyPercent=45</span><span class="nv"> </span><span class="s">-XX:+UseCompressedOops</span><span class="nv"> </span><span class="s">-XX:+UseCompressedClassPointers</span><span class="nv"> </span><span class="s">-XX:+ExitOnOutOfMemoryError"</span>
+</span><span id="__span-7-24"><a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a>
+</span><span id="__span-7-25"><a id="__codelineno-7-25" name="__codelineno-7-25" href="#__codelineno-7-25"></a><span class="w">    </span><span class="c1"># Bolt thread pool tuning (Neo4j 5.26+ format)</span>
+</span><span id="__span-7-26"><a id="__codelineno-7-26" name="__codelineno-7-26" href="#__codelineno-7-26"></a><span class="w">    </span><span class="nt">server.bolt.thread_pool_min_size</span><span class="p">:</span><span class="w"> </span><span class="s">"10"</span>
+</span><span id="__span-7-27"><a id="__codelineno-7-27" name="__codelineno-7-27" href="#__codelineno-7-27"></a><span class="w">    </span><span class="nt">server.bolt.thread_pool_max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"400"</span>
+</span><span id="__span-7-28"><a id="__codelineno-7-28" name="__codelineno-7-28" href="#__codelineno-7-28"></a><span class="w">    </span><span class="nt">server.bolt.thread_pool_keep_alive</span><span class="p">:</span><span class="w"> </span><span class="s">"5m"</span>
 </span></code></pre></div>
 <p><strong>JVM Best Practices:</strong></p>
 <ul>
@@ -5200,9 +5194,9 @@
 </span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">      </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"8"</span>
 </span><span id="__span-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>
 </span><span id="__span-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-8-19"><a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="w">    </span><span class="c1"># Favor heap for query processing</span>
-</span><span id="__span-8-20"><a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"20G"</span><span class="w">     </span><span class="c1"># 62% for complex queries</span>
-</span><span id="__span-8-21"><a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"10G"</span><span class="w">    </span><span class="c1"># 31% for data access</span>
+</span><span id="__span-8-19"><a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="w">    </span><span class="c1"># Favor heap for query processing (14G + 10G + 8Gi reserve = 32Gi, the limit)</span>
+</span><span id="__span-8-20"><a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"14G"</span><span class="w">     </span><span class="c1"># ~44% for complex queries</span>
+</span><span id="__span-8-21"><a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"10G"</span><span class="w">    </span><span class="c1"># ~31% for data access</span>
 </span><span id="__span-8-22"><a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a>
 </span><span id="__span-8-23"><a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a><span class="w">    </span><span class="c1"># Query optimization</span>
 </span><span id="__span-8-24"><a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a><span class="w">    </span><span class="nt">dbms.cypher.planner</span><span class="p">:</span><span class="w"> </span><span class="s">"cost"</span>
@@ -5231,9 +5225,9 @@
 </span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="w">      </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"4"</span>
 </span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a>
 </span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="w">    </span><span class="c1"># Favor page cache for write buffers</span>
-</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"6G"</span><span class="w">      </span><span class="c1"># 37% for processing</span>
-</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"9G"</span><span class="w">     </span><span class="c1"># 56% for write caching</span>
+</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="w">    </span><span class="c1"># Favor page cache for write buffers (4G + 8G + 4Gi reserve = 16Gi, the limit)</span>
+</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"4G"</span><span class="w">      </span><span class="c1"># 25% for processing</span>
+</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"8G"</span><span class="w">     </span><span class="c1"># 50% for write caching</span>
 </span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a>
 </span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a><span class="w">    </span><span class="c1"># Write optimization (Neo4j 5.x+ uses the db.* namespace)</span>
 </span><span id="__span-9-24"><a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a><span class="w">    </span><span class="nt">db.checkpoint.interval.time</span><span class="p">:</span><span class="w"> </span><span class="s">"30m"</span>
@@ -5308,8 +5302,8 @@
 </span><span id="__span-11-16"><a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="w">      </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"2"</span>
 </span><span id="__span-11-17"><a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a>
 </span><span id="__span-11-18"><a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-11-19"><a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a><span class="w">    </span><span class="c1"># Balanced configuration</span>
-</span><span id="__span-11-20"><a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"4G"</span>
+</span><span id="__span-11-19"><a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a><span class="w">    </span><span class="c1"># Balanced configuration (3G + 3G + 2Gi reserve = 8Gi, the limit)</span>
+</span><span id="__span-11-20"><a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span>
 </span><span id="__span-11-21"><a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span>
 </span><span id="__span-11-22"><a id="__codelineno-11-22" name="__codelineno-11-22" href="#__codelineno-11-22"></a>
 </span><span id="__span-11-23"><a id="__codelineno-11-23" name="__codelineno-11-23" href="#__codelineno-11-23"></a><span class="w">    </span><span class="c1"># Read routing</span>
@@ -5330,7 +5324,7 @@
 <h2 id="memory-deep-dive">Memory Deep Dive<a class="headerlink" href="#memory-deep-dive" title="Anchor link to this section">&para;</a></h2>
 <h3 id="memory-architecture">Memory Architecture<a class="headerlink" href="#memory-architecture" title="Anchor link to this section">&para;</a></h3>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>Container Memory Limit (e.g., 8Gi)
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>├── JVM Heap (e.g., 4Gi)
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>├── JVM Heap (e.g., 3Gi)
 </span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>│   ├── Query Processing
 </span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>│   ├── Transaction State
 </span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>│   └── Cypher Runtime
@@ -5338,7 +5332,7 @@
 </span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>│   ├── Database Pages
 </span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>│   ├── Index Caching
 </span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>│   └── Write Buffers
-</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>└── System/OS (e.g., 1Gi)
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>└── System/OS reserve (at least max(25% of the limit, 512Mi) — 2Gi here)
 </span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>    ├── Native Memory
 </span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>    ├── Network Buffers
 </span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>    └── File System Cache
@@ -5357,34 +5351,41 @@
 <div class="language-text highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>Page Cache Size = Database Size × 1.2 (20% growth buffer)
 </span></code></pre></div></p>
 <p><strong>Examples:</strong></p>
+<p>The container memory limit must cover heap + page cache plus the operator's reserve
+of <code>max(25% of the limit, 512Mi)</code>, i.e. limit ≥ (heap + page cache) ÷ 0.75:</p>
 <table>
 <thead>
 <tr>
 <th>Database Size</th>
 <th>Recommended Page Cache</th>
-<th>Container Memory</th>
+<th>Example Heap</th>
+<th>Container Memory limit</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>10GB</td>
 <td>12GB</td>
-<td>16GB+</td>
+<td>4GB</td>
+<td>22Gi+ (16 ÷ 0.75 ≈ 21.3)</td>
 </tr>
 <tr>
 <td>50GB</td>
 <td>60GB</td>
-<td>80GB+</td>
+<td>16GB</td>
+<td>102Gi+ (76 ÷ 0.75 ≈ 101.3)</td>
 </tr>
 <tr>
 <td>100GB</td>
 <td>120GB</td>
-<td>160GB+</td>
+<td>24GB</td>
+<td>192Gi+ (144 ÷ 0.75)</td>
 </tr>
 <tr>
 <td>500GB</td>
 <td>600GB</td>
-<td>640GB+</td>
+<td>31GB</td>
+<td>842Gi+ (631 ÷ 0.75 ≈ 841.3)</td>
 </tr>
 </tbody>
 </table>
@@ -5392,7 +5393,8 @@
 </span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">  </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"16G"</span><span class="w">      </span><span class="c1"># For operations</span>
 </span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">  </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"60G"</span><span class="w">     </span><span class="c1"># 1.2 × 50GB</span>
-</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">  </span><span class="c1"># Total: 76GB Neo4j + 4GB OS = 80GB container</span>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">  </span><span class="c1"># 76G heap + page cache needs a limit of at least 76 ÷ 0.75 ≈ 101.3Gi,</span>
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">  </span><span class="c1"># so set resources.limits.memory to 102Gi or more</span>
 </span></code></pre></div>
 <h3 id="calculation-examples">Calculation Examples<a class="headerlink" href="#calculation-examples" title="Anchor link to this section">&para;</a></h3>
 <p><strong>8Gi Container Memory:</strong>
@@ -5403,27 +5405,36 @@
 </span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>
 </span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="c1"># Manual override:</span>
 </span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="w">  </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"4G"</span><span class="w">     </span><span class="c1"># 50%</span>
+</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="w">  </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span><span class="w">     </span><span class="c1"># 37.5%</span>
 </span><span id="__span-16-9"><a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="w">  </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span><span class="w">    </span><span class="c1"># 37.5%</span>
-</span><span id="__span-16-10"><a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="w">  </span><span class="c1"># System: 1Gi (12.5%)</span>
+</span><span id="__span-16-10"><a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="w">  </span><span class="c1"># System: 2Gi (25%) — the minimum reserve the operator accepts for an 8Gi limit</span>
 </span></code></pre></div></p>
 <h3 id="memory-validation">Memory Validation<a class="headerlink" href="#memory-validation" title="Anchor link to this section">&para;</a></h3>
-<p>The operator validates memory to prevent issues:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># ❌ WILL FAIL: Neo4j memory exceeds container</span>
+<p>The operator validates memory to prevent issues. The rule is
+<code>heap + page cache + max(25% of the limit, 512Mi) ≤ limit</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># ❌ WILL FAIL: Neo4j memory plus reserve exceeds container</span>
 </span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="nt">resources</span><span class="p">:</span>
 </span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">  </span><span class="nt">limits</span><span class="p">:</span>
 </span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">    </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">"4Gi"</span>
 </span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">  </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span>
-</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">  </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span><span class="w">  </span><span class="c1"># Total 5G &gt; 4Gi limit!</span>
+</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">  </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span><span class="w">  </span><span class="c1"># 5G + 1Gi reserve = 6Gi &gt; 4Gi limit!</span>
 </span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>
-</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="c1"># ✅ VALID: Fits within container</span>
+</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="c1"># ❌ ALSO FAILS: the sum alone fits, the reserve does not</span>
 </span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="nt">resources</span><span class="p">:</span>
 </span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="w">  </span><span class="nt">limits</span><span class="p">:</span>
 </span><span id="__span-17-12"><a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="w">    </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">"6Gi"</span>
 </span><span id="__span-17-13"><a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-17-14"><a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a><span class="w">  </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span>
-</span><span id="__span-17-15"><a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a><span class="w">  </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span><span class="w">  </span><span class="c1"># Total 5G &lt; 6Gi limit</span>
+</span><span id="__span-17-15"><a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a><span class="w">  </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span><span class="w">  </span><span class="c1"># 5G + 1.5Gi reserve = 6.5Gi &gt; 6Gi limit!</span>
+</span><span id="__span-17-16"><a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a>
+</span><span id="__span-17-17"><a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a><span class="c1"># ✅ VALID: Fits within container</span>
+</span><span id="__span-17-18"><a id="__codelineno-17-18" name="__codelineno-17-18" href="#__codelineno-17-18"></a><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-17-19"><a id="__codelineno-17-19" name="__codelineno-17-19" href="#__codelineno-17-19"></a><span class="w">  </span><span class="nt">limits</span><span class="p">:</span>
+</span><span id="__span-17-20"><a id="__codelineno-17-20" name="__codelineno-17-20" href="#__codelineno-17-20"></a><span class="w">    </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">"8Gi"</span>
+</span><span id="__span-17-21"><a id="__codelineno-17-21" name="__codelineno-17-21" href="#__codelineno-17-21"></a><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-17-22"><a id="__codelineno-17-22" name="__codelineno-17-22" href="#__codelineno-17-22"></a><span class="w">  </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span>
+</span><span id="__span-17-23"><a id="__codelineno-17-23" name="__codelineno-17-23" href="#__codelineno-17-23"></a><span class="w">  </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span><span class="w">  </span><span class="c1"># 5G + 2Gi reserve = 7Gi &lt;= 8Gi limit</span>
 </span></code></pre></div>
 <h2 id="cpu-configuration">CPU Configuration<a class="headerlink" href="#cpu-configuration" title="Anchor link to this section">&para;</a></h2>
 <h3 id="cpu-units-explained">CPU Units Explained<a class="headerlink" href="#cpu-units-explained" title="Anchor link to this section">&para;</a></h3>
@@ -5688,7 +5699,7 @@
 <tbody>
 <tr>
 <td>Container Memory</td>
-<td>1Gi</td>
+<td>1Gi (2Gi/server when the cluster has more than 3 servers)</td>
 <td>4Gi+</td>
 <td>Node capacity</td>
 </tr>
@@ -5696,17 +5707,17 @@
 <td>Heap Size</td>
 <td>256MB</td>
 <td>2Gi+</td>
-<td>31Gi (JVM limit)</td>
+<td>Container − page cache − reserve (31Gi is the cap for the operator's automatic sizing, not a validated limit)</td>
 </tr>
 <tr>
 <td>Page Cache</td>
 <td>128MB</td>
 <td>1Gi+</td>
-<td>Container - heap - 1Gi</td>
+<td>Container − heap − max(25% of container, 512Mi)</td>
 </tr>
 <tr>
 <td>CPU</td>
-<td>100m</td>
+<td>— (not validated)</td>
 <td>1 core+</td>
 <td>Node capacity</td>
 </tr>

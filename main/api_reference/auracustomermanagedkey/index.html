@@ -4054,7 +4054,7 @@ with a per-key <code>GET</code> — a key can never be matched on
 </tbody>
 </table>
 <h2 id="deletion-note">Deletion note<a class="headerlink" href="#deletion-note" title="Anchor link to this section">&para;</a></h2>
-<p>A key still bound to an instance <strong>cannot be deleted</strong> — Aura returns <code>encryption-key-is-active</code>. The CR then reports a <code>KeyInUse</code> condition and keeps its finalizer until the key is no longer referenced by any instance.</p>
+<p>A key still bound to an instance <strong>cannot be deleted</strong> — Aura returns <code>encryption-key-is-active</code>. The CR then sets <code>Synced=False</code> with reason <code>KeyInUse</code> and keeps its finalizer until the key is no longer referenced by any instance.</p>
 <h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraCustomerManagedKey</span>

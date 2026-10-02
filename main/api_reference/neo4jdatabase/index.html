@@ -2610,23 +2610,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="SeedConfiguration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#seedconfiguration-options" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        SeedConfiguration Options
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
         
           <li class="md-nav__item">
@@ -4361,23 +4344,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="SeedConfiguration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#seedconfiguration-options" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        SeedConfiguration Options
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
         
           <li class="md-nav__item">
@@ -4873,7 +4839,7 @@
 <tr>
 <td><code>name</code></td>
 <td><code>string</code></td>
-<td><strong>Required</strong>. Database name to create</td>
+<td><strong>Required</strong>. Database name to create. Must start with a letter and contain only letters, digits, dots and dashes (max 65 characters). <code>system</code> is reserved; <code>neo4j</code> is allowed with a warning (it shadows the default database)</td>
 </tr>
 <tr>
 <td><code>wait</code></td>
@@ -4888,22 +4854,22 @@
 <tr>
 <td><code>topology</code></td>
 <td><a href="#databasetopology"><code>DatabaseTopology</code></a></td>
-<td>Database distribution topology (cluster only)</td>
+<td>Database distribution topology (cluster only). Applied at <code>CREATE DATABASE</code> only — an existing database is observed, not altered</td>
 </tr>
 <tr>
 <td><code>defaultCypherLanguage</code></td>
 <td><code>string</code> (enum: <code>"5"</code>, <code>"25"</code>)</td>
-<td>Default Cypher version for Neo4j 2025.x</td>
+<td>Default Cypher version for Neo4j 2025.x. <strong>Currently only emitted when <code>topology</code> or <code>seedURI</code> is also set</strong>; on a plain create (neither set) it is accepted but not acted on</td>
 </tr>
 <tr>
 <td><code>options</code></td>
 <td><code>map[string]string</code></td>
-<td>Additional database options (e.g., <code>txLogEnrichment</code>)</td>
+<td>Additional <code>CREATE DATABASE</code> options. The validator accepts only these keys: <code>txLogEnrichment</code> (<code>OFF</code> or <code>DIFF</code>), <code>storeFormat</code> (<code>standard</code>, <code>high_limit</code> or <code>block</code>), <code>existingData</code> (<code>use</code> or <code>fail</code>), <code>existingDataSeedServer</code>, <code>existingDataSeedInstance</code>, <code>existingMetadata</code>, <code>seedCredentials</code>, and <code>seedURI</code> / <code>seedConfig</code> (the last two are deprecated as options — use the dedicated spec fields). Any other key is rejected, and values may not be empty</td>
 </tr>
 <tr>
 <td><code>initialData</code></td>
 <td><a href="#initialdataspec"><code>InitialDataSpec</code></a></td>
-<td>Initial data import (<strong>mutually exclusive with <code>seedURI</code></strong>)</td>
+<td>Cypher statements run once after creation (<strong>mutually exclusive with <code>seedURI</code></strong>). Only <code>cypherStatements</code> is executed</td>
 </tr>
 <tr>
 <td><code>seedURI</code></td>
@@ -4950,6 +4916,7 @@
 <li><code>primaries + secondaries</code> must not exceed cluster's <code>spec.topology.servers</code></li>
 <li>Servers are selected based on role constraints (if configured)</li>
 <li>For standalone deployments, topology is automatically managed</li>
+<li>Topology is applied when the database is created. Editing it on an existing database has no effect — the operator does not issue <code>ALTER DATABASE … SET TOPOLOGY</code></li>
 </ul>
 <h3 id="initialdataspec">InitialDataSpec<a class="headerlink" href="#initialdataspec" title="Anchor link to this section">&para;</a></h3>
 <table>
@@ -4964,27 +4931,27 @@
 <tr>
 <td><code>source</code></td>
 <td><code>string</code></td>
-<td>Source type for initial data: <code>"cypher"</code>, <code>"dump"</code>, <code>"csv"</code></td>
+<td>Source type for initial data: <code>"cypher"</code>, <code>"dump"</code>, <code>"csv"</code>. <strong>Accepted but not acted on</strong> — the controller does not read it</td>
 </tr>
 <tr>
 <td><code>cypherStatements</code></td>
 <td><code>[]string</code></td>
-<td>Cypher statements to execute on database creation</td>
+<td>Cypher statements to execute, in order, against the new database. <strong>The only field that is executed.</strong> Runs once; <code>status.dataImported</code> records that it has run</td>
 </tr>
 <tr>
 <td><code>configMapRef</code></td>
 <td><code>string</code></td>
-<td>ConfigMap containing data or statements</td>
+<td><strong>Accepted but not acted on</strong> — the ConfigMap is never read, so put statements in <code>cypherStatements</code></td>
 </tr>
 <tr>
 <td><code>secretRef</code></td>
 <td><code>string</code></td>
-<td>Secret containing data or statements</td>
+<td><strong>Accepted but not acted on</strong></td>
 </tr>
 <tr>
 <td><code>storage</code></td>
 <td><a href="#storagelocation"><code>*StorageLocation</code></a></td>
-<td>Storage location for data files</td>
+<td><strong>Accepted but not acted on</strong> (the <code>StorageLocation</code> tables below describe the schema only)</td>
 </tr>
 </tbody>
 </table>
@@ -5002,54 +4969,21 @@
 <tr>
 <td><code>restoreUntil</code></td>
 <td><code>string</code></td>
-<td>Point-in-time recovery timestamp (Neo4j 2025.x only)</td>
+<td>Point-in-time recovery timestamp (Neo4j 2025.x only; rejected on 5.26)</td>
 </tr>
 <tr>
 <td><code>config</code></td>
 <td><code>map[string]string</code></td>
-<td>CloudSeedProvider configuration options</td>
+<td>Seed-provider configuration, rendered into the <code>seedConfig</code> <code>OPTIONS</code> string as comma-separated <code>key=value</code> pairs (for example <code>region=eu-west-1</code>). Consumed by the S3SeedProvider; the CloudSeedProvider (the default for <code>s3://</code>, <code>gs://</code> and <code>azb://</code>) takes region and credentials from the environment, so most deployments leave this empty</td>
 </tr>
 </tbody>
 </table>
 <p><strong>Point-in-Time Recovery Formats</strong> (Neo4j 2025.x only):</p>
 <ul>
 <li><strong>RFC3339 Timestamp</strong>: <code>"2025-01-15T10:30:00Z"</code></li>
-<li><strong>Transaction ID</strong>: <code>"txId:12345"</code></li>
+<li><strong>Transaction ID</strong>: <code>"txId:12345"</code> (a positive integer that fits in int64)</li>
 </ul>
-<p><strong>Configuration Options</strong>:</p>
-<ul>
-<li><code>compression</code>: <code>"gzip"</code>, <code>"lz4"</code>, <code>"none"</code></li>
-<li><code>validation</code>: <code>"strict"</code>, <code>"lenient"</code></li>
-<li><code>bufferSize</code>: Buffer size (e.g., <code>"64MB"</code>, <code>"128MB"</code>)</li>
-<li>Cloud-specific options for S3, GCS, Azure</li>
-</ul>
-<h4 id="seedconfiguration-options">SeedConfiguration Options<a class="headerlink" href="#seedconfiguration-options" title="Anchor link to this section">&para;</a></h4>
-<table>
-<thead>
-<tr>
-<th>Option</th>
-<th>Values</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>compression</code></td>
-<td><code>"gzip"</code>, <code>"lz4"</code>, <code>"none"</code></td>
-<td>Compression format for backup processing.</td>
-</tr>
-<tr>
-<td><code>validation</code></td>
-<td><code>"strict"</code>, <code>"lenient"</code></td>
-<td>Validation mode during restoration.</td>
-</tr>
-<tr>
-<td><code>bufferSize</code></td>
-<td>size string</td>
-<td>Buffer size for processing (e.g., <code>"64MB"</code>, <code>"128MB"</code>).</td>
-</tr>
-</tbody>
-</table>
+<p><strong><code>config</code> rules</strong>: keys may contain only letters, digits, <code>.</code>, <code>_</code> and <code>-</code>; values may not contain <code>,</code>, <code>=</code>, quotes, backticks or newlines. The operator forwards the pairs to Neo4j unchanged and does not define any keys of its own — see the Neo4j documentation for the keys your seed provider understands.</p>
 <h3 id="seedcredentials">SeedCredentials<a class="headerlink" href="#seedcredentials" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
@@ -5067,7 +5001,11 @@
 </tr>
 </tbody>
 </table>
+<p><strong>The Secret must be projected onto the server pods.</strong> The Neo4j JVM reads the credentials from its environment, so the Secret has to appear in the target <code>Neo4jEnterpriseCluster</code>/<code>Neo4jEnterpriseStandalone</code> <code>spec.extraEnvFrom</code>. If it does not, the database stays blocked with reason <code>SeedCredsMissing</code> and a message showing what to add. If the target carries the annotation <code>neo4j.com/auto-inherit-seed-creds: "true"</code>, the operator appends the entry to <code>spec.extraEnvFrom</code> itself (reason <code>SeedCredsAutoInherited</code>) — <strong>this triggers a rolling restart</strong> of the target. Omit <code>seedCredentials</code> entirely when you rely on IAM roles / workload identity.</p>
 <h3 id="storagelocation">StorageLocation<a class="headerlink" href="#storagelocation" title="Anchor link to this section">&para;</a></h3>
+<blockquote>
+<p><code>StorageLocation</code> and the tables below are only reachable through <code>initialData.storage</code>, which is currently accepted but not acted on.</p>
+</blockquote>
 <table>
 <thead>
 <tr>
@@ -5186,12 +5124,12 @@
 <tr>
 <td><code>serviceAccount</code></td>
 <td><code>string</code></td>
-<td>Service account name for cloud identity</td>
+<td><strong>Reserved — accepted but not acted on.</strong> Backup/restore Jobs always run as the operator-managed ServiceAccounts</td>
 </tr>
 <tr>
 <td><code>autoCreate</code></td>
 <td><a href="#autocreatespec"><code>*AutoCreateSpec</code></a></td>
-<td>Auto-create service account and annotations</td>
+<td>Workload-identity annotations (see below)</td>
 </tr>
 </tbody>
 </table>
@@ -5208,12 +5146,12 @@
 <tr>
 <td><code>enabled</code></td>
 <td><code>bool</code></td>
-<td>Enable auto-creation of service account (default: <code>true</code>)</td>
+<td><strong>Reserved — accepted but not acted on</strong> (the operator always ensures its backup/restore ServiceAccount exists). Schema default: <code>true</code></td>
 </tr>
 <tr>
 <td><code>annotations</code></td>
 <td><code>map[string]string</code></td>
-<td>Annotations to apply to auto-created service account</td>
+<td>Annotations applied to the operator-managed backup/restore ServiceAccount (used by <code>Neo4jBackup</code>/<code>Neo4jRestore</code>; <code>Neo4jDatabase</code> itself does not read <code>initialData.storage</code>)</td>
 </tr>
 </tbody>
 </table>
@@ -5259,7 +5197,7 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Current phase of the database</td>
+<td>Current phase of the database: <code>Ready</code>, <code>Pending</code> (target not found / not ready), <code>Failed</code> (connection, creation or data-import failure), <code>ValidationFailed</code>, or <code>Unknown</code> (any other blocked state, e.g. <code>SeedCredsMissing</code>)</td>
 </tr>
 <tr>
 <td><code>message</code></td>
@@ -5357,7 +5295,7 @@
 </span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span><span class="nt">initialData</span><span class="p">:</span>
 </span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">    </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cypher</span>
 </span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">    </span><span class="nt">cypherStatements</span><span class="p">:</span>
-</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">CONSTRAINT</span><span class="nv"> </span><span class="s">user_email</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">(u:User)</span><span class="nv"> </span><span class="s">ASSERT</span><span class="nv"> </span><span class="s">u.email</span><span class="nv"> </span><span class="s">IS</span><span class="nv"> </span><span class="s">UNIQUE"</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">CONSTRAINT</span><span class="nv"> </span><span class="s">user_email</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">FOR</span><span class="nv"> </span><span class="s">(u:User)</span><span class="nv"> </span><span class="s">REQUIRE</span><span class="nv"> </span><span class="s">u.email</span><span class="nv"> </span><span class="s">IS</span><span class="nv"> </span><span class="s">UNIQUE"</span>
 </span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">INDEX</span><span class="nv"> </span><span class="s">user_name</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">FOR</span><span class="nv"> </span><span class="s">(u:User)</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">(u.name)"</span>
 </span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>
 </span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="nn">---</span>
@@ -5389,7 +5327,7 @@
 </span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cypher</span>
 </span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">    </span><span class="nt">cypherStatements</span><span class="p">:</span>
 </span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">      </span><span class="c1"># Schema creation</span>
-</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">CONSTRAINT</span><span class="nv"> </span><span class="s">user_email</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">(u:User)</span><span class="nv"> </span><span class="s">ASSERT</span><span class="nv"> </span><span class="s">u.email</span><span class="nv"> </span><span class="s">IS</span><span class="nv"> </span><span class="s">UNIQUE"</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">CONSTRAINT</span><span class="nv"> </span><span class="s">user_email</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">FOR</span><span class="nv"> </span><span class="s">(u:User)</span><span class="nv"> </span><span class="s">REQUIRE</span><span class="nv"> </span><span class="s">u.email</span><span class="nv"> </span><span class="s">IS</span><span class="nv"> </span><span class="s">UNIQUE"</span>
 </span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">INDEX</span><span class="nv"> </span><span class="s">user_name</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">FOR</span><span class="nv"> </span><span class="s">(u:User)</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">(u.name)"</span>
 </span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">INDEX</span><span class="nv"> </span><span class="s">product_category</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">FOR</span><span class="nv"> </span><span class="s">(p:Product)</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">(p.category)"</span>
 </span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">      </span><span class="c1"># Sample data</span>
@@ -5415,15 +5353,13 @@
 </span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
 </span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 </span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">    </span><span class="c1"># Neo4j 2025.x specific options</span>
-</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">    </span><span class="nt">queryRouting</span><span class="p">:</span><span class="w"> </span><span class="s">"ENABLED"</span>
-</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">    </span><span class="nt">vectorIndexing</span><span class="p">:</span><span class="w"> </span><span class="s">"AUTO"</span>
-</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">  </span><span class="nt">initialData</span><span class="p">:</span>
-</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">    </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cypher</span>
-</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">    </span><span class="nt">cypherStatements</span><span class="p">:</span>
-</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">      </span><span class="c1"># Use Cypher 25 syntax features</span>
-</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">VECTOR</span><span class="nv"> </span><span class="s">INDEX</span><span class="nv"> </span><span class="s">document_embedding</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">FOR</span><span class="nv"> </span><span class="s">(d:Document)</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">d.embedding</span><span class="nv"> </span><span class="s">OPTIONS</span><span class="nv"> </span><span class="s">{dimension:</span><span class="nv"> </span><span class="s">1536,</span><span class="nv"> </span><span class="s">similarity:</span><span class="nv"> </span><span class="s">'cosine'}"</span>
-</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">(d:Document</span><span class="nv"> </span><span class="s">{title:</span><span class="nv"> </span><span class="s">'Neo4j</span><span class="nv"> </span><span class="s">2025</span><span class="nv"> </span><span class="s">Guide',</span><span class="nv"> </span><span class="s">embedding:</span><span class="nv"> </span><span class="s">[0.1,</span><span class="nv"> </span><span class="s">0.2,</span><span class="nv"> </span><span class="s">0.3]})"</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">    </span><span class="nt">txLogEnrichment</span><span class="p">:</span><span class="w"> </span><span class="s">"DIFF"</span><span class="w">  </span><span class="c1"># One of the few keys the validator accepts (see `options` above)</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="nt">initialData</span><span class="p">:</span>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">    </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cypher</span>
+</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">    </span><span class="nt">cypherStatements</span><span class="p">:</span>
+</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">      </span><span class="c1"># Use Cypher 25 syntax features</span>
+</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">VECTOR</span><span class="nv"> </span><span class="s">INDEX</span><span class="nv"> </span><span class="s">document_embedding</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">FOR</span><span class="nv"> </span><span class="s">(d:Document)</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">d.embedding</span><span class="nv"> </span><span class="s">OPTIONS</span><span class="nv"> </span><span class="s">{dimension:</span><span class="nv"> </span><span class="s">1536,</span><span class="nv"> </span><span class="s">similarity:</span><span class="nv"> </span><span class="s">'cosine'}"</span>
+</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">(d:Document</span><span class="nv"> </span><span class="s">{title:</span><span class="nv"> </span><span class="s">'Neo4j</span><span class="nv"> </span><span class="s">2025</span><span class="nv"> </span><span class="s">Guide',</span><span class="nv"> </span><span class="s">embedding:</span><span class="nv"> </span><span class="s">[0.1,</span><span class="nv"> </span><span class="s">0.2,</span><span class="nv"> </span><span class="s">0.3]})"</span>
 </span></code></pre></div>
 <h3 id="database-from-seed-uri-production-restore">Database from Seed URI (Production Restore)<a class="headerlink" href="#database-from-seed-uri-production-restore" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
@@ -5446,16 +5382,13 @@
 </span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="w">  </span><span class="nt">seedConfig</span><span class="p">:</span>
 </span><span id="__span-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="w">    </span><span class="nt">restoreUntil</span><span class="p">:</span><span class="w"> </span><span class="s">"2025-01-15T10:30:00Z"</span><span class="w">  </span><span class="c1"># Specific point in time</span>
 </span><span id="__span-6-20"><a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="w">    </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="w">      </span><span class="nt">compression</span><span class="p">:</span><span class="w"> </span><span class="s">"lz4"</span><span class="w">        </span><span class="c1"># Faster decompression</span>
-</span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="w">      </span><span class="nt">validation</span><span class="p">:</span><span class="w"> </span><span class="s">"strict"</span><span class="w">      </span><span class="c1"># Ensure data integrity</span>
-</span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="w">      </span><span class="nt">bufferSize</span><span class="p">:</span><span class="w"> </span><span class="s">"256MB"</span><span class="w">       </span><span class="c1"># Large buffer for performance</span>
-</span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="w">      </span><span class="nt">region</span><span class="p">:</span><span class="w"> </span><span class="s">"us-east-1"</span><span class="w">       </span><span class="c1"># S3 region optimization</span>
-</span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>
-</span><span id="__span-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="w">  </span><span class="nt">wait</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-6-28"><a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a><span class="w">  </span><span class="nt">defaultCypherLanguage</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span><span class="w">  </span><span class="c1"># Neo4j 2025.x</span>
-</span><span id="__span-6-29"><a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-6-30"><a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a><span class="w">    </span><span class="nt">txLogEnrichment</span><span class="p">:</span><span class="w"> </span><span class="s">"DIFF"</span><span class="w">    </span><span class="c1"># Enhanced logging for production</span>
+</span><span id="__span-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="w">      </span><span class="nt">region</span><span class="p">:</span><span class="w"> </span><span class="s">"us-east-1"</span><span class="w">       </span><span class="c1"># S3SeedProvider key (rendered as seedConfig "region=us-east-1")</span>
+</span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>
+</span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="w">  </span><span class="nt">wait</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="w">  </span><span class="nt">defaultCypherLanguage</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span><span class="w">  </span><span class="c1"># Neo4j 2025.x</span>
+</span><span id="__span-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="w">    </span><span class="nt">txLogEnrichment</span><span class="p">:</span><span class="w"> </span><span class="s">"DIFF"</span><span class="w">    </span><span class="c1"># Enhanced logging for production</span>
 </span></code></pre></div>
 <h3 id="database-from-seed-uri-development-copy">Database from Seed URI (Development Copy)<a class="headerlink" href="#database-from-seed-uri-development-copy" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
@@ -5469,20 +5402,14 @@
 </span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">  </span><span class="c1"># Copy from Google Cloud Storage backup</span>
 </span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">  </span><span class="nt">seedURI</span><span class="p">:</span><span class="w"> </span><span class="s">"gs://dev-backups/prod-snapshot-2025-01-15.backup"</span>
 </span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>
-</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">  </span><span class="c1"># Explicit credentials for dev environment</span>
-</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">  </span><span class="nt">seedCredentials</span><span class="p">:</span>
-</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">    </span><span class="nt">secretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcs-dev-credentials</span>
-</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>
-</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">  </span><span class="c1"># Simplified configuration for development</span>
-</span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">  </span><span class="nt">seedConfig</span><span class="p">:</span>
-</span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">    </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">      </span><span class="nt">compression</span><span class="p">:</span><span class="w"> </span><span class="s">"gzip"</span>
-</span><span id="__span-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="w">      </span><span class="nt">validation</span><span class="p">:</span><span class="w"> </span><span class="s">"lenient"</span><span class="w">  </span><span class="c1"># Allow minor inconsistencies</span>
-</span><span id="__span-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">      </span><span class="nt">bufferSize</span><span class="p">:</span><span class="w"> </span><span class="s">"64MB"</span><span class="w">     </span><span class="c1"># Smaller buffer for dev</span>
-</span><span id="__span-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a>
-</span><span id="__span-7-23"><a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a><span class="w">  </span><span class="nt">wait</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-7-24"><a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-7-25"><a id="__codelineno-7-25" name="__codelineno-7-25" href="#__codelineno-7-25"></a><span class="w">  </span><span class="c1"># No topology needed for standalone deployment</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">  </span><span class="c1"># Explicit credentials for dev environment (the Secret must be in the target's</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">  </span><span class="c1"># spec.extraEnvFrom, or the target needs the neo4j.com/auto-inherit-seed-creds annotation)</span>
+</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">  </span><span class="nt">seedCredentials</span><span class="p">:</span>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">    </span><span class="nt">secretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcs-dev-credentials</span>
+</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a>
+</span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">  </span><span class="nt">wait</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">  </span><span class="c1"># No topology needed for standalone deployment</span>
 </span></code></pre></div>
 <h3 id="multi-cloud-seed-uri-examples">Multi-Cloud Seed URI Examples<a class="headerlink" href="#multi-cloud-seed-uri-examples" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># AWS S3 with explicit credentials</span>
@@ -5592,43 +5519,25 @@
 </span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
 </span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>
 </span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="nn">---</span>
-</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="c1"># Database with complex initial data from ConfigMap</span>
-</span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
-</span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ConfigMap</span>
-</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">complex-schema</span>
-</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="w">  </span><span class="nt">schema.cypher</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-</span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a><span class="w">    </span><span class="no">// Create constraints</span>
-</span><span id="__span-9-24"><a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a><span class="w">    </span><span class="no">CREATE CONSTRAINT user_id IF NOT EXISTS ON (u:User) ASSERT u.id IS UNIQUE;</span>
-</span><span id="__span-9-25"><a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a><span class="w">    </span><span class="no">CREATE CONSTRAINT product_sku IF NOT EXISTS ON (p:Product) ASSERT p.sku IS UNIQUE;</span>
-</span><span id="__span-9-26"><a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a>
-</span><span id="__span-9-27"><a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a><span class="w">    </span><span class="no">// Create indexes</span>
-</span><span id="__span-9-28"><a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a><span class="w">    </span><span class="no">CREATE INDEX user_email IF NOT EXISTS FOR (u:User) ON (u.email);</span>
-</span><span id="__span-9-29"><a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a><span class="w">    </span><span class="no">CREATE INDEX product_name IF NOT EXISTS FOR (p:Product) ON (p.name);</span>
-</span><span id="__span-9-30"><a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a>
-</span><span id="__span-9-31"><a id="__codelineno-9-31" name="__codelineno-9-31" href="#__codelineno-9-31"></a><span class="w">    </span><span class="no">// Create sample data</span>
-</span><span id="__span-9-32"><a id="__codelineno-9-32" name="__codelineno-9-32" href="#__codelineno-9-32"></a><span class="w">    </span><span class="no">CREATE (u1:User {id: 1, name: 'Alice', email: 'alice@example.com'});</span>
-</span><span id="__span-9-33"><a id="__codelineno-9-33" name="__codelineno-9-33" href="#__codelineno-9-33"></a><span class="w">    </span><span class="no">CREATE (u2:User {id: 2, name: 'Bob', email: 'bob@example.com'});</span>
-</span><span id="__span-9-34"><a id="__codelineno-9-34" name="__codelineno-9-34" href="#__codelineno-9-34"></a><span class="w">    </span><span class="no">CREATE (p1:Product {sku: 'NEO4J-ENT', name: 'Neo4j Enterprise'});</span>
-</span><span id="__span-9-35"><a id="__codelineno-9-35" name="__codelineno-9-35" href="#__codelineno-9-35"></a>
-</span><span id="__span-9-36"><a id="__codelineno-9-36" name="__codelineno-9-36" href="#__codelineno-9-36"></a><span class="w">    </span><span class="no">// Create relationships</span>
-</span><span id="__span-9-37"><a id="__codelineno-9-37" name="__codelineno-9-37" href="#__codelineno-9-37"></a><span class="w">    </span><span class="no">MATCH (u:User {id: 1}), (p:Product {sku: 'NEO4J-ENT'})</span>
-</span><span id="__span-9-38"><a id="__codelineno-9-38" name="__codelineno-9-38" href="#__codelineno-9-38"></a><span class="w">    </span><span class="no">CREATE (u)-[:PURCHASED {date: date('2025-01-15')}]-&gt;(p);</span>
-</span><span id="__span-9-39"><a id="__codelineno-9-39" name="__codelineno-9-39" href="#__codelineno-9-39"></a><span class="nn">---</span>
-</span><span id="__span-9-40"><a id="__codelineno-9-40" name="__codelineno-9-40" href="#__codelineno-9-40"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-9-41"><a id="__codelineno-9-41" name="__codelineno-9-41" href="#__codelineno-9-41"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jDatabase</span>
-</span><span id="__span-9-42"><a id="__codelineno-9-42" name="__codelineno-9-42" href="#__codelineno-9-42"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-9-43"><a id="__codelineno-9-43" name="__codelineno-9-43" href="#__codelineno-9-43"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">complex-database</span>
-</span><span id="__span-9-44"><a id="__codelineno-9-44" name="__codelineno-9-44" href="#__codelineno-9-44"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-9-45"><a id="__codelineno-9-45" name="__codelineno-9-45" href="#__codelineno-9-45"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-9-46"><a id="__codelineno-9-46" name="__codelineno-9-46" href="#__codelineno-9-46"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">complex-app</span>
-</span><span id="__span-9-47"><a id="__codelineno-9-47" name="__codelineno-9-47" href="#__codelineno-9-47"></a><span class="w">  </span><span class="nt">initialData</span><span class="p">:</span>
-</span><span id="__span-9-48"><a id="__codelineno-9-48" name="__codelineno-9-48" href="#__codelineno-9-48"></a><span class="w">    </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cypher</span>
-</span><span id="__span-9-49"><a id="__codelineno-9-49" name="__codelineno-9-49" href="#__codelineno-9-49"></a><span class="w">    </span><span class="nt">configMapRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">complex-schema</span><span class="w">  </span><span class="c1"># Reference to ConfigMap</span>
-</span><span id="__span-9-50"><a id="__codelineno-9-50" name="__codelineno-9-50" href="#__codelineno-9-50"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
-</span><span id="__span-9-51"><a id="__codelineno-9-51" name="__codelineno-9-51" href="#__codelineno-9-51"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-</span><span id="__span-9-52"><a id="__codelineno-9-52" name="__codelineno-9-52" href="#__codelineno-9-52"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="c1"># Initial data: only initialData.cypherStatements is executed (configMapRef,</span>
+</span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="c1"># secretRef, source and storage are accepted but not acted on), so put every</span>
+</span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="c1"># statement inline, one per list item</span>
+</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jDatabase</span>
+</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">complex-database</span>
+</span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-9-24"><a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-9-25"><a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">complex-app</span>
+</span><span id="__span-9-26"><a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a><span class="w">  </span><span class="nt">initialData</span><span class="p">:</span>
+</span><span id="__span-9-27"><a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a><span class="w">    </span><span class="nt">cypherStatements</span><span class="p">:</span>
+</span><span id="__span-9-28"><a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">CONSTRAINT</span><span class="nv"> </span><span class="s">user_id</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">FOR</span><span class="nv"> </span><span class="s">(u:User)</span><span class="nv"> </span><span class="s">REQUIRE</span><span class="nv"> </span><span class="s">u.id</span><span class="nv"> </span><span class="s">IS</span><span class="nv"> </span><span class="s">UNIQUE"</span>
+</span><span id="__span-9-29"><a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">CONSTRAINT</span><span class="nv"> </span><span class="s">product_sku</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">FOR</span><span class="nv"> </span><span class="s">(p:Product)</span><span class="nv"> </span><span class="s">REQUIRE</span><span class="nv"> </span><span class="s">p.sku</span><span class="nv"> </span><span class="s">IS</span><span class="nv"> </span><span class="s">UNIQUE"</span>
+</span><span id="__span-9-30"><a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">(u:User</span><span class="nv"> </span><span class="s">{id:</span><span class="nv"> </span><span class="s">1,</span><span class="nv"> </span><span class="s">name:</span><span class="nv"> </span><span class="s">'Alice',</span><span class="nv"> </span><span class="s">email:</span><span class="nv"> </span><span class="s">'alice@example.com'})"</span>
+</span><span id="__span-9-31"><a id="__codelineno-9-31" name="__codelineno-9-31" href="#__codelineno-9-31"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">(p:Product</span><span class="nv"> </span><span class="s">{sku:</span><span class="nv"> </span><span class="s">'NEO4J-ENT',</span><span class="nv"> </span><span class="s">name:</span><span class="nv"> </span><span class="s">'Neo4j</span><span class="nv"> </span><span class="s">Enterprise'})"</span>
+</span><span id="__span-9-32"><a id="__codelineno-9-32" name="__codelineno-9-32" href="#__codelineno-9-32"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-9-33"><a id="__codelineno-9-33" name="__codelineno-9-33" href="#__codelineno-9-33"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span><span id="__span-9-34"><a id="__codelineno-9-34" name="__codelineno-9-34" href="#__codelineno-9-34"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 </span></code></pre></div>
 <h2 id="behavior">Behavior<a class="headerlink" href="#behavior" title="Anchor link to this section">&para;</a></h2>
 <h3 id="target-discovery">Target Discovery<a class="headerlink" href="#target-discovery" title="Anchor link to this section">&para;</a></h3>
@@ -5645,7 +5554,7 @@
 <ol>
 <li><strong>Emit a validation warning</strong>: <code>'neo4j' is the default database name; creating a database with this name will shadow the default database</code></li>
 <li><strong>Skip creation</strong>: Since <code>ifNotExists: true</code> is the default and the database already exists, <code>CREATE DATABASE</code> is a no-op</li>
-<li><strong>Apply topology changes</strong>: If you specify a <code>topology</code>, the operator will issue an <code>ALTER DATABASE</code> to update it</li>
+<li><strong>Not alter topology</strong>: <code>topology</code> is applied at <code>CREATE DATABASE</code> only. Because <code>neo4j</code> already exists, a <code>topology</code> on the CR is <strong>not</strong> applied; change it yourself with <code>ALTER DATABASE neo4j SET TOPOLOGY …</code></li>
 <li><strong>Drop on deletion</strong>: If you delete the <code>Neo4jDatabase</code> resource, the operator will drop the <code>neo4j</code> database — use caution</li>
 </ol>
 <p>To control the default database topology at cluster creation time without using this CRD, set <code>initial.dbms.default_primaries_count</code> and <code>initial.dbms.default_secondaries_count</code> in the cluster's <code>spec.config</code> (bootstrap-only, see <a href="../../user_guide/clustering/#default-database-topology">Clustering Guide</a>).</p>
@@ -5702,12 +5611,12 @@
 <li>Additional database options available</li>
 </ul>
 <h3 id="reconciliation">Reconciliation<a class="headerlink" href="#reconciliation" title="Anchor link to this section">&para;</a></h3>
-<p>The operator continuously reconciles the database state:</p>
+<p>The operator creates the database if it is missing, then observes it:</p>
 <ul>
-<li>If database doesn't exist and <code>ifNotExists: true</code>, creates it</li>
-<li>If database exists and state differs, updates it (start/stop)</li>
-<li>If topology changes, redistributes database (Neo4j 5.20+)</li>
-<li>Updates status with current database information</li>
+<li>If the database doesn't exist, it is created (with <code>topology</code>, <code>defaultCypherLanguage</code>, seed and <code>options</code> applied at that moment)</li>
+<li>If the database already exists, nothing about it is altered: later edits to <code>topology</code>, <code>options</code>, <code>defaultCypherLanguage</code> or the seed fields are <strong>not</strong> applied, and the operator never starts or stops the database. Use <code>ALTER DATABASE …</code> for those changes</li>
+<li><code>initialData.cypherStatements</code> run once after creation (recorded in <code>status.dataImported</code>)</li>
+<li>Status (<code>state</code>, <code>servers</code>, <code>phase</code>) is refreshed from the live database on every reconcile</li>
 </ul>
 <h2 id="best-practices">Best Practices<a class="headerlink" href="#best-practices" title="Anchor link to this section">&para;</a></h2>
 <h3 id="general-best-practices">General Best Practices<a class="headerlink" href="#general-best-practices" title="Anchor link to this section">&para;</a></h3>
@@ -5726,7 +5635,7 @@
 <li><strong>Use point-in-time recovery</strong> (<code>restoreUntil</code>) when available for precise restoration</li>
 <li><strong>Test seed URI access</strong> from Neo4j pods before creating databases</li>
 <li><strong>Monitor restoration progress</strong> - large backups may take significant time</li>
-<li><strong>Use appropriate compression</strong> (<code>gzip</code> or <code>lz4</code>) for faster transfer and processing</li>
+<li><strong>Use <code>seedConfig.config</code> only for seed-provider keys</strong> the provider documents (for example <code>region</code> for the S3SeedProvider); the operator passes them through unchanged</li>
 </ol>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <h3 id="database-creation-fails">Database Creation Fails<a class="headerlink" href="#database-creation-fails" title="Anchor link to this section">&para;</a></h3>
@@ -5793,8 +5702,6 @@
 <p><strong>Performance Issues:</strong></p>
 <ul>
 <li>Use <code>.backup</code> format instead of <code>.dump</code> for large datasets</li>
-<li>Increase <code>bufferSize</code> in <code>seedConfig.config</code></li>
-<li>Use <code>compression: "lz4"</code> for faster processing</li>
 <li>Monitor pod resources during restoration</li>
 </ul>
 <p><strong>Validation Errors:</strong>
@@ -5847,7 +5754,8 @@
 <li><code>DataSeeded</code>: Database seeding completed</li>
 <li><code>ValidationWarning</code>: Configuration or URI format warnings</li>
 <li><code>CreationFailed</code>: Seed restoration failed</li>
-<li><code>AuthenticationError</code>: Credential issues with seed URI</li>
+<li><code>SeedCredsMissing</code>: <code>seedCredentials.secretRef</code> is not in the target's <code>spec.extraEnvFrom</code> (and the target lacks the <code>neo4j.com/auto-inherit-seed-creds</code> annotation)</li>
+<li><code>SeedCredsAutoInherited</code>: the operator added the Secret to the target's <code>spec.extraEnvFrom</code>; waiting for the rolling restart</li>
 </ul>
 <p><strong>Authentication Debugging</strong>:
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Check secret exists and has correct format</span>
@@ -5860,8 +5768,6 @@
 <p><strong>Performance Issues</strong>:</p>
 <ul>
 <li>Use <code>.backup</code> format instead of <code>.dump</code> for large datasets</li>
-<li>Increase <code>bufferSize</code> in seed configuration</li>
-<li>Use faster compression (<code>lz4</code> instead of <code>gzip</code>)</li>
 <li>Monitor pod resource usage during restoration</li>
 </ul>
 

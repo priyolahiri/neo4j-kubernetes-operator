@@ -3888,7 +3888,7 @@
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>diagnose<span class="w"> </span>--quiet<span class="w">                            </span><span class="c1"># only what has something to say</span>
 </span></code></pre></div>
 <p><code>status</code> reads custom resources, so it can tell you a cluster is <code>Pending</code>. But most deployments fail one layer below the CR — a pod that will not schedule, a container OOMKilled at 1Gi, an image that will not pull, a PVC that never bound. <code>diagnose</code> follows the operator's own selectors from the resource down to its StatefulSet, pods, PVCs, Jobs and events, and names the Kubernetes-level cause.</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>$ kubectl neo4j diagnose -n neo4j
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>$ kubectl neo4j diagnose --quiet -n neo4j
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Neo4jEnterpriseCluster/prod — Pending · 2/3 pods ready
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  ✗ pod prod-server-2 — cannot be scheduled
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>      0/3 nodes are available: 3 Insufficient memory.
@@ -3939,7 +3939,7 @@
 </tr>
 <tr>
 <td>Backup Job failed</td>
-<td>the Job's <code>Failed</code> condition, plus its pods</td>
+<td>the Job reporting failed pods (<code>status.failed &gt; 0</code>; the <code>Failed</code> condition's reason and message are shown when present), plus the Job's pods</td>
 </tr>
 <tr>
 <td>Nothing ever reconciled</td>
@@ -3952,6 +3952,7 @@
 </tbody>
 </table>
 <p>That last-but-one row is worth calling out. A resource with <strong>no status at all</strong> has no other signal — nothing is broken, the CR simply sits there. That is what you see when the operator is not running, has no RBAC for the kind, or is namespace-scoped and not watching this namespace.</p>
+<p>The pod and PVC checks apply to <code>Neo4jEnterpriseCluster</code> and <code>Neo4jEnterpriseStandalone</code>; the Job checks apply to <code>Neo4jBackup</code>. Every other kind gets only the Warning-events and no-status checks.</p>
 <h2 id="exit-codes">Exit codes<a class="headerlink" href="#exit-codes" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
