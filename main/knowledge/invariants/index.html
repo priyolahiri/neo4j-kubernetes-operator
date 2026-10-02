@@ -3953,7 +3953,7 @@ artifacts) and <code>unit-tests</code>. INV-3 additionally gained a <strong>runt
 (<code>image_validator.go</code> rejects <code>-community</code> tags, pinned by
 <code>image_validator_test.go</code> under the blocking <code>unit-tests</code> job) plus the
 <code>CALL dbms.components()</code> backstop. INV-4 is
-<strong>test-pinned</strong> (blocking); the INV-5 pod-naming half only partly (see INV-5). <strong>Highest residual risk:</strong> a bare Docker Hub tag
+<strong>test-pinned</strong> (blocking); the INV-5 single-StatefulSet shape is pinned on the production builder (see INV-5). <strong>Highest residual risk:</strong> a bare Docker Hub tag
 (<code>neo4j:5.26.0</code>, which <em>is</em> the community image) is not rejected statically —
 only the explicit <code>-community</code> marker is — so that case relies on the runtime
 edition backstop, by deliberate choice (see INV-3).</p>
@@ -4136,26 +4136,28 @@ edition backstop, by deliberate choice (see INV-3).</p>
   pod; both were deliberately deleted in favor of ephemeral Jobs that run, write
   one artifact, and exit. Reintroducing either resurrects retired, conflicting
   code paths.</li>
-<li><strong>enforcement status:</strong> the pod-naming half is only <strong>partly</strong> test-pinned.
-  <code>TestListDiscoveryConfiguration</code> (<code>internal/resources/cluster_startup_test.go</code>)
-  asserts the pod FQDNs <code>{cluster}-server-N</code> that the discovery endpoints use, and
-  <code>TestBuildStatefulSetForEnterprise_WithFeatures</code> (<code>internal/resources/cluster_test.go</code>)
-  asserts a <code>…-server-0</code> name — but that test (like <code>…_ParallelManagement</code>) drives
-  the <strong>Deprecated</strong> plural builder <code>BuildServerStatefulSetsForEnterprise</code>, which makes
-  N one-replica StatefulSets. <strong>No unit test asserts that the production builder
+<li><strong>enforcement status:</strong> the single-StatefulSet shape is <strong>test-pinned</strong> on the
+  production builder: <code>TestServerStatefulSet_IsOneStatefulSetWithReplicasEqualToServers</code>
+  (<code>internal/resources/server_architecture_test.go</code>) asserts that
   <code>BuildServerStatefulSetForEnterprise</code> yields ONE StatefulSet named <code>{cluster}-server</code>
-  with <code>replicas: N</code></strong> (known unit-level gap — <code>internal/resources/CLAUDE.md</code> tells you not
-  to use the plural builder). The shape is exercised end to end only by the
-  integration specs in <code>test/integration/multi_node_cluster_test.go</code> (extended: fetches
-  <code>{cluster}-server</code> and asserts <code>replicas</code>) and <code>plugin_test.go</code> (core). The removed-backup half is guard-checked —
+  with <code>replicas</code> equal to <code>spec.topology.servers</code>, and no <code>primary</code>/<code>secondary</code> in its
+  name. <code>TestListDiscoveryConfiguration</code> (<code>internal/resources/cluster_startup_test.go</code>)
+  additionally asserts the pod FQDNs <code>{cluster}-server-N</code> that the discovery endpoints
+  use. Beware <code>TestBuildStatefulSetForEnterprise_WithFeatures</code> (<code>cluster_test.go</code>) and its
+  <code>…_ParallelManagement</code> sibling: they drive the <strong>Deprecated</strong> plural builder
+  <code>BuildServerStatefulSetsForEnterprise</code> (N one-replica StatefulSets), so they do NOT
+  prove this invariant — <code>internal/resources/CLAUDE.md</code> tells you not to use that
+  builder. The shape is also exercised end to end by the integration specs in
+  <code>test/integration/multi_node_cluster_test.go</code> (extended: fetches <code>{cluster}-server</code>
+  and asserts <code>replicas</code>) and <code>plugin_test.go</code> (core). The removed-backup half is guard-checked —
   <code>scripts/check-invariants.sh</code> greps for <code>BuildBackupStatefulSet</code>, a
   <code>backups:</code>/<code>spec.backups</code> field in the CRD surface (<code>config/</code>+<code>api/</code>), and
   <code>-primary-</code>/<code>-secondary-</code> pod-name construction in <code>internal/resources/</code> (advisory).
   The other removed symbols (<code>BackupsSpec</code>, <code>buildBackupSidecarContainer</code>) are kept
   gone by file/symbol absence only.</li>
-<li><strong>violation symptom:</strong> Renaming the StatefulSet or introducing <code>primary-*</code> /
-  <code>secondary-*</code> pods fails the naming assertions in
-  <code>TestBuildStatefulSetForEnterprise_WithFeatures</code> under <code>make test-unit</code>.
+<li><strong>violation symptom:</strong> Renaming the StatefulSet, changing its replica count away from
+  <code>spec.topology.servers</code>, or introducing <code>primary-*</code> / <code>secondary-*</code> names fails
+  <code>TestServerStatefulSet_IsOneStatefulSetWithReplicasEqualToServers</code> under <code>make test-unit</code>.
   Re-adding a <code>spec.backups</code> field or a <code>BuildBackupStatefulSet</code> builder,
   however, <strong>compiles and passes all current tests</strong> — the live symptom is a
   resurrected long-running backup pod competing with the Neo4jBackup Job path for
