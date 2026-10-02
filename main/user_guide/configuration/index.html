@@ -4740,7 +4740,9 @@ is a first-class field on clusters and standalones:</p>
   database's language when the database is created and never re-reads the
   setting. Change an existing database with
   <code>ALTER DATABASE &lt;name&gt; SET DEFAULT LANGUAGE CYPHER 5|25</code>, or set
-  <code>defaultCypherLanguage</code> on a <code>Neo4jDatabase</code> before it is created.</li>
+  <code>defaultCypherLanguage</code> on a <code>Neo4jDatabase</code> before it is created (CalVer
+  only: the 5.26 LTS has no such clause, so <code>"25"</code> is rejected there and <code>"5"</code>
+  is accepted but has no effect).</li>
 <li><strong>Changing the field restarts the servers</strong>, because Neo4j reads the setting
   at startup.</li>
 <li><strong><code>CYPHER_25</code> needs a CalVer image</strong>, and is refused on the 5.26 LTS.</li>

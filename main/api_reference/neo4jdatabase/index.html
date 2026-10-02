@@ -4854,12 +4854,12 @@
 <tr>
 <td><code>topology</code></td>
 <td><a href="#databasetopology"><code>DatabaseTopology</code></a></td>
-<td>Database distribution topology (cluster only). Applied at <code>CREATE DATABASE</code> only — an existing database is observed, not altered</td>
+<td>Database distribution topology (cluster only; ignored, with a warning, for a standalone target). Applied at <code>CREATE DATABASE</code> only — an existing database is observed, not altered</td>
 </tr>
 <tr>
 <td><code>defaultCypherLanguage</code></td>
 <td><code>string</code> (enum: <code>"5"</code>, <code>"25"</code>)</td>
-<td>Default Cypher version for Neo4j 2025.x. <strong>Currently only emitted when <code>topology</code> or <code>seedURI</code> is also set</strong>; on a plain create (neither set) it is accepted but not acted on</td>
+<td>Default Cypher language for the database, set at creation with <code>DEFAULT LANGUAGE CYPHER &lt;n&gt;</code>. <strong>CalVer only</strong> — the clause does not exist on the 5.26 LTS, so the value is checked against the target's image: on the LTS <code>"25"</code> is <strong>rejected</strong> by validation (<code>spec.defaultCypherLanguage</code>), and <code>"5"</code> is accepted but has <strong>no effect</strong> (every LTS database already runs Cypher 5, and the clause is omitted from <code>CREATE DATABASE</code>). On CalVer it is applied on every create path — plain, with <code>topology</code>, from a <code>seedURI</code>, or both. Unset, the database takes the server default (<code>spec.serverDefaultCypherLanguage</code> on the deployment)</td>
 </tr>
 <tr>
 <td><code>options</code></td>
@@ -4915,7 +4915,7 @@
 <ul>
 <li><code>primaries + secondaries</code> must not exceed cluster's <code>spec.topology.servers</code></li>
 <li>Servers are selected based on role constraints (if configured)</li>
-<li>For standalone deployments, topology is automatically managed</li>
+<li>For standalone deployments, topology is ignored: validation emits a warning, the controller sends no <code>TOPOLOGY</code> clause, and <code>primaries: 0</code> is <strong>not</strong> an error there (on a cluster it is, because a database needs at least one primary)</li>
 <li>Topology is applied when the database is created. Editing it on an existing database has no effect — the operator does not issue <code>ALTER DATABASE … SET TOPOLOGY</code></li>
 </ul>
 <h3 id="initialdataspec">InitialDataSpec<a class="headerlink" href="#initialdataspec" title="Anchor link to this section">&para;</a></h3>
@@ -5278,7 +5278,7 @@
 </span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span><span class="w">  </span><span class="c1"># Uses 2 servers for secondary role</span>
 </span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
 </span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="nt">txLogEnrichment</span><span class="p">:</span><span class="w"> </span><span class="s">"DIFF"</span><span class="w">  </span><span class="c1"># Enhanced transaction logging</span>
-</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nt">defaultCypherLanguage</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span><span class="w">  </span><span class="c1"># Neo4j 2025.x only</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nt">defaultCypherLanguage</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span><span class="w">  </span><span class="c1"># CalVer only — rejected on the 5.26 LTS</span>
 </span></code></pre></div>
 <h3 id="multi-database-setup">Multi-Database Setup<a class="headerlink" href="#multi-database-setup" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># User-facing database with high availability</span>
@@ -5348,7 +5348,7 @@
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">moderndb</span>
 </span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">wait</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="nt">defaultCypherLanguage</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span><span class="w">  </span><span class="c1"># Enable Cypher 25 features</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="nt">defaultCypherLanguage</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span><span class="w">  </span><span class="c1"># Enable Cypher 25 features (CalVer only)</span>
 </span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
 </span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
 </span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
@@ -5386,7 +5386,7 @@
 </span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>
 </span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="w">  </span><span class="nt">wait</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="w">  </span><span class="nt">defaultCypherLanguage</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span><span class="w">  </span><span class="c1"># Neo4j 2025.x</span>
+</span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="w">  </span><span class="nt">defaultCypherLanguage</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span><span class="w">  </span><span class="c1"># CalVer only</span>
 </span><span id="__span-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
 </span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="w">    </span><span class="nt">txLogEnrichment</span><span class="p">:</span><span class="w"> </span><span class="s">"DIFF"</span><span class="w">    </span><span class="c1"># Enhanced logging for production</span>
 </span></code></pre></div>
@@ -5584,12 +5584,12 @@
 <ul>
 <li>Standard <code>CREATE DATABASE</code> syntax with <code>TOPOLOGY</code> clause</li>
 <li>Seed URI support via CloudSeedProvider</li>
-<li>No Cypher language version support</li>
+<li>No <code>DEFAULT LANGUAGE CYPHER</code> clause: <code>defaultCypherLanguage: "25"</code> is rejected by validation, and <code>"5"</code> is accepted but omitted from the statement (every database runs Cypher 5)</li>
 <li>Compatible with both cluster and standalone deployments</li>
 </ul>
 <p><strong>Neo4j 2025.x</strong>:</p>
 <ul>
-<li>Enhanced <code>CREATE DATABASE</code> with <code>DEFAULT LANGUAGE CYPHER</code> support</li>
+<li>Enhanced <code>CREATE DATABASE</code> with <code>DEFAULT LANGUAGE CYPHER</code> support, applied on every create path</li>
 <li>Point-in-time recovery for seed URIs (<code>restoreUntil</code>)</li>
 <li>Advanced seed configuration options</li>
 <li>Same compatibility with cluster and standalone deployments</li>
@@ -5599,13 +5599,13 @@
 <ul>
 <li>Standard CREATE DATABASE syntax</li>
 <li>Seed URI support with CloudSeedProvider</li>
-<li>No Cypher language version support</li>
+<li>No <code>DEFAULT LANGUAGE CYPHER</code> clause (<code>defaultCypherLanguage: "25"</code> is rejected; <code>"5"</code> has no effect)</li>
 <li>No point-in-time recovery for seed URIs</li>
 <li>Supports all topology and option features</li>
 </ul>
 <p><strong>Neo4j 2025.x</strong>:</p>
 <ul>
-<li>Supports <code>defaultCypherLanguage</code> field</li>
+<li>Supports <code>defaultCypherLanguage</code> (<code>"5"</code> and <code>"25"</code>)</li>
 <li>Enhanced seed URI support with point-in-time recovery (<code>restoreUntil</code>)</li>
 <li>Enhanced topology management</li>
 <li>Additional database options available</li>
