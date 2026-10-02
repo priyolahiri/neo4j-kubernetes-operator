@@ -45,6 +45,17 @@ import (
 // (or deliberately decline to) before the CR disappears.
 const Neo4jReplicaDatabaseFinalizer = "neo4j.com/replicadatabase-finalizer"
 
+// replicaNeo4jClient is the part of the Neo4j client that Reconcile uses. It
+// exists so the branches that depend on what the server answers (database
+// absent, lookup failing, still a replica) can be driven without a Bolt server;
+// production always supplies a *neo4jclient.Client.
+type replicaNeo4jClient interface {
+	GetDatabaseInfo(ctx context.Context, databaseName string) (*neo4jclient.DatabaseInfo, error)
+	CreateReplicaDatabaseFromBackup(ctx context.Context, databaseName string, src neo4jclient.ReplicaBackupSource) error
+	CreateReplicaDatabaseFromNetwork(ctx context.Context, databaseName string, src neo4jclient.ReplicaNetworkSource) error
+	Close() error
+}
+
 // Neo4jReplicaDatabaseReconciler reconciles a Neo4jReplicaDatabase resource.
 type Neo4jReplicaDatabaseReconciler struct {
 	client.Client
@@ -53,6 +64,24 @@ type Neo4jReplicaDatabaseReconciler struct {
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
 	Validator               *validation.ReplicaValidator
+
+	// newNeo4jClient builds the Neo4j client for a resolved target. nil selects
+	// the real one; tests substitute a scripted server.
+	newNeo4jClient func(target ResolvedTarget, c client.Client) (replicaNeo4jClient, error)
+}
+
+// neo4jClientFor returns the Neo4j client for a resolved target.
+func (r *Neo4jReplicaDatabaseReconciler) neo4jClientFor(target ResolvedTarget) (replicaNeo4jClient, error) {
+	if r.newNeo4jClient != nil {
+		return r.newNeo4jClient(target, r.Client)
+	}
+	nc, err := target.NewClient(r.Client)
+	if err != nil {
+		// Return an untyped nil: a nil *Client inside a non-nil interface would
+		// pass the caller's error check and then be dereferenced.
+		return nil, err
+	}
+	return nc, nil
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jreplicadatabases,verbs=get;list;watch;create;update;patch;delete
@@ -124,6 +153,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 		if len(res.Errors) > 0 {
 			msg := fmt.Sprintf("validation failed: %s", res.Errors.ToAggregate().Error())
+			withdrawReplicaLag(replica)
 			r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
 				EventReasonValidationFailed, msg, nil)
 			r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
@@ -137,12 +167,14 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 	if !target.Found {
+		withdrawReplicaLag(replica)
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(replica.Spec.ClusterRef))
 		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhasePending, metav1.ConditionFalse,
 			EventReasonClusterNotFound, msg, nil)
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
+		withdrawReplicaLag(replica)
 		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(replica.Spec.ClusterRef))
 		r.setNamedCondition(ctx, replica, ConditionTypeClusterNotReady, metav1.ConditionTrue,
 			ConditionReasonClusterNotReady, msg)
@@ -154,6 +186,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// Version gate — hosting a replica requires Neo4j 2026.08+.
 	if !targetSupportsCCDRReplica(target) {
+		withdrawReplicaLag(replica)
 		msg := fmt.Sprintf("Neo4jReplicaDatabase requires Neo4j %s or later on the downstream cluster; %s runs %s",
 			neo4jclient.MinCCDRReplicaVersion, replica.Spec.ClusterRef, targetVersionString(target))
 		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
@@ -162,8 +195,9 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 
-	nc, err := target.NewClient(r.Client)
+	nc, err := r.neo4jClientFor(target)
 	if err != nil {
+		withdrawReplicaLag(replica)
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
 			EventReasonConnectionFailed, msg, nil)
@@ -179,12 +213,17 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	// OBSERVE. Everything below branches on the live state, never on spec.
 	info, err := nc.GetDatabaseInfo(ctx, dbName)
 	if err != nil {
+		withdrawReplicaLag(replica)
 		return r.fail(ctx, replica, "database lookup failed", err, requeue)
 	}
 
 	switch {
 	case info == nil:
-		// Absent — create it.
+		// Absent — create it. For a replica that was replicating, "absent" means
+		// the database vanished out of band (dropped at a cypher-shell, or lost
+		// with its volumes); the last reading describes a database that no longer
+		// exists. On first creation there is no series and this is a no-op.
+		withdrawReplicaLag(replica)
 		src := replica.Spec.Source
 		mode := src.Mode
 		if mode == "" {
@@ -317,6 +356,17 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 }
 
+// withdrawReplicaLag removes the replica's lag series because this reconcile
+// cannot vouch for it: the downstream cluster is missing, not Ready or too old,
+// the server cannot be reached or queried, the database is gone, or the spec is
+// being refused. A frozen last reading is worse than no data. It is idempotent
+// and a no-op for a replica that never published, and reportReplicating sets the
+// gauge again from the next successful observation, so a recovery needs nothing
+// more than the ordinary reconcile.
+func withdrawReplicaLag(replica *neo4jv1beta1.Neo4jReplicaDatabase) {
+	metrics.DeleteReplicaLagTransactions(replica.Namespace, replica.Name)
+}
+
 // reportReplicating records the observed state of a database that is still a
 // replica: the Replicating phase, the lag in status, and the lag gauge.
 //
@@ -324,7 +374,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 // the downstream cluster hosting the replica, the CR and the database. It is
 // set from the observation itself, independent of whether the status write
 // below changes anything, and removed again when the replica is deleted or
-// promoted.
+// promoted and whenever a reconcile cannot read it (see withdrawReplicaLag).
 func (r *Neo4jReplicaDatabaseReconciler) reportReplicating(
 	ctx context.Context,
 	replica *neo4jv1beta1.Neo4jReplicaDatabase,

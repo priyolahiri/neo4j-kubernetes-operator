@@ -9,7 +9,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/trace"
 )
 
 func TestNewReconcileMetrics(t *testing.T) {
@@ -65,26 +64,6 @@ func TestReconcileMetrics_RecordReconcile(t *testing.T) {
 			assert.Equal(t, 1, testutil.CollectAndCount(reconcileDuration))
 		})
 	}
-}
-
-func TestReconcileMetrics_StartReconcileSpan(t *testing.T) {
-	metrics := NewReconcileMetrics("test-cluster", "test-namespace")
-
-	ctx := context.Background()
-	newCtx, span := metrics.StartReconcileSpan(ctx, "test-operation")
-
-	require.NotNil(t, newCtx)
-	require.NotNil(t, span)
-	// Verify the returned context actually carries the same span — this is
-	// the contract callers rely on (downstream code reads the active span
-	// from ctx, not from the explicit span return). Works against the
-	// global noop tracer too because tracer.Start always puts the
-	// returned span into the returned context via WithValue.
-	require.Equal(t, span, trace.SpanFromContext(newCtx),
-		"newCtx must carry the returned span")
-
-	// Clean up
-	span.End()
 }
 
 func TestNewClusterMetrics(t *testing.T) {
@@ -250,52 +229,6 @@ func TestBackupMetrics_RecordBackup(t *testing.T) {
 			histogram := backupDuration.WithLabelValues("test-cluster", "test-namespace")
 			require.NotNil(t, histogram)
 			assert.Equal(t, 1, testutil.CollectAndCount(backupDuration))
-		})
-	}
-}
-
-func TestSpanTracing(t *testing.T) {
-	tests := []struct {
-		name     string
-		spanFunc func(context.Context) (context.Context, trace.Span)
-	}{
-		{
-			name: "reconcile span",
-			spanFunc: func(ctx context.Context) (context.Context, trace.Span) {
-				metrics := NewReconcileMetrics("test-cluster", "test-namespace")
-				return metrics.StartReconcileSpan(ctx, "test-op")
-			},
-		},
-		{
-			name: "upgrade span",
-			spanFunc: func(ctx context.Context) (context.Context, trace.Span) {
-				metrics := NewUpgradeMetrics("test-cluster", "test-namespace")
-				return metrics.StartUpgradeSpan(ctx, "test-phase")
-			},
-		},
-		{
-			name: "backup span",
-			spanFunc: func(ctx context.Context) (context.Context, trace.Span) {
-				metrics := NewBackupMetrics("test-cluster", "test-namespace")
-				return metrics.StartBackupSpan(ctx)
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-			newCtx, span := tt.spanFunc(ctx)
-
-			require.NotNil(t, newCtx)
-			require.NotNil(t, span)
-			// Same rationale as TestReconcileMetrics_StartReconcileSpan:
-			// verify the returned context actually carries the same span.
-			require.Equal(t, span, trace.SpanFromContext(newCtx),
-				"newCtx must carry the returned span")
-
-			// Clean up
-			span.End()
 		})
 	}
 }

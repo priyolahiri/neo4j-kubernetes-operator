@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -40,8 +39,6 @@ const (
 	MetricResultSuccess = "success"
 	// MetricResultFailure represents a failed operation
 	MetricResultFailure = "failure"
-	// MetricValueTrue represents a true boolean value as string
-	MetricValueTrue = "true"
 
 	// LabelClusterName is the label key for cluster name
 	LabelClusterName = "cluster_name"
@@ -56,11 +53,6 @@ const (
 	// LabelRole is the label key for node role
 	LabelRole = "role"
 
-	// LabelCluster is the label key for cluster name
-	LabelCluster = "cluster"
-	// LabelStatus is the label key for operation status
-	LabelStatus = "status"
-
 	// LabelK8sCluster is the label key for the Kubernetes cluster this
 	// operator instance runs in. Deliberately NOT `cluster_name`, which is
 	// already taken and means the *Neo4j* cluster — the two are different
@@ -70,9 +62,6 @@ const (
 )
 
 var (
-	// Tracer for OTEL tracing
-	tracer = otel.Tracer("neo4j-operator")
-
 	// Prometheus metrics
 
 	// Cluster metrics.
@@ -333,18 +322,6 @@ func (m *ReconcileMetrics) RecordReconcile(ctx context.Context, operation string
 	}
 }
 
-// StartReconcileSpan starts a new tracing span for reconciliation
-// The caller is responsible for calling span.End()
-func (m *ReconcileMetrics) StartReconcileSpan(ctx context.Context, operation string) (context.Context, trace.Span) {
-	ctx, span := tracer.Start(ctx, "reconcile."+operation,
-		trace.WithAttributes(
-			attribute.String("cluster.name", m.clusterName),
-			attribute.String("namespace", m.namespace),
-			attribute.String("operation", operation),
-		))
-	return ctx, span
-}
-
 // ClusterMetrics provides methods for recording cluster-related metrics
 type ClusterMetrics struct {
 	clusterName string
@@ -437,18 +414,6 @@ func (m *UpgradeMetrics) RecordUpgradePhase(phase string, duration time.Duration
 	upgradeDuration.WithLabelValues(m.clusterName, m.namespace, phase).Observe(duration.Seconds())
 }
 
-// StartUpgradeSpan starts a new tracing span for upgrade operations
-// The caller is responsible for calling span.End()
-func (m *UpgradeMetrics) StartUpgradeSpan(ctx context.Context, phase string) (context.Context, trace.Span) {
-	ctx, span := tracer.Start(ctx, "upgrade."+phase,
-		trace.WithAttributes(
-			attribute.String("cluster.name", m.clusterName),
-			attribute.String("namespace", m.namespace),
-			attribute.String("phase", phase),
-		))
-	return ctx, span
-}
-
 // BackupMetrics provides methods for recording backup-related metrics
 type BackupMetrics struct {
 	clusterName string
@@ -484,16 +449,6 @@ func (m *BackupMetrics) RecordBackup(ctx context.Context, success bool, duration
 		)
 		span.End()
 	}
-}
-
-// StartBackupSpan starts a new tracing span for backup operations
-func (m *BackupMetrics) StartBackupSpan(ctx context.Context) (context.Context, trace.Span) {
-	ctx, span := tracer.Start(ctx, "backup",
-		trace.WithAttributes(
-			attribute.String("cluster.name", m.clusterName),
-			attribute.String("namespace", m.namespace),
-		))
-	return ctx, span
 }
 
 // Server health and Aura control-plane metrics.

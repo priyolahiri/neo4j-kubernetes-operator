@@ -40,6 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/metrics"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 )
 
@@ -97,6 +98,35 @@ func TestReportReplicating_PublishesLagGauge(t *testing.T) {
 	r.reportReplicating(context.Background(), replica, "orders",
 		&neo4jclient.DatabaseInfo{Name: "orders", Type: neo4jclient.DatabaseTypeReplica, ReplicationLag: 3})
 	assert.Equal(t, 3.0, replicaLagSeries(t, "lag-set-ns", "lag-set-cr").value)
+}
+
+// TestReplicaMetrics_ControllersStampKubernetesCluster: both CCDR controllers
+// publish through the metrics package, so --kubernetes-cluster-name reaches the
+// replica series the same way it reaches neo4j_operator_server_health. Pinned at
+// the controller seam because a recorder that bypassed the setters would pass
+// every metrics-package test and still emit unlabelled series.
+func TestReplicaMetrics_ControllersStampKubernetesCluster(t *testing.T) {
+	t.Cleanup(func() { metrics.SetKubernetesClusterName("") })
+	metrics.SetKubernetesClusterName("eu-west-prod")
+	ctx := context.Background()
+
+	replica := newReplicaForMetrics("k8s-label-cr", "k8s-label-ns", "k8s-label-cluster", "billing",
+		neo4jv1beta1.ReplicaPhaseReplicating)
+	newReplicaReconciler(replica).reportReplicating(ctx, replica, "billing",
+		&neo4jclient.DatabaseInfo{Name: "billing", Type: neo4jclient.DatabaseTypeReplica, ReplicationLag: 8})
+	lag := gatherSeries(t, replicaLagMetric, map[string]string{
+		"namespace": "k8s-label-ns", "replica": "k8s-label-cr", "k8s_cluster": "eu-west-prod",
+	})
+	require.True(t, lag.found, "the lag series must carry the k8s_cluster label")
+	assert.Equal(t, 8.0, lag.value)
+
+	promo := newPromotionForMetrics("k8s-label-promo", "k8s-label-ns", replica.Name, neo4jv1beta1.PromotionPhasePromoting)
+	newPromotionReconciler(promo, replica).complete(ctx, promo, replica,
+		&neo4jclient.DatabaseInfo{Name: "billing", Type: "standard"}, "promoted")
+	assert.Equal(t, 1.0, gatherSeries(t, replicaPromotionsMetric, map[string]string{
+		"namespace": "k8s-label-ns", "cluster_name": "k8s-label-cluster", "result": "success",
+		"k8s_cluster": "eu-west-prod",
+	}).value, "the promotion counter must carry the k8s_cluster label")
 }
 
 // TestReplicaLagGauge_RemovedWhenReplicationEnds: every way a replica stops
