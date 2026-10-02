@@ -4817,7 +4817,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="nt">enforcePrivileges</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
 </span></code></pre></div>
-<p>With <code>enforcePrivileges: false</code>, the controller still creates the role and applies the initial <code>.privileges</code> list, but never revokes anything added out-of-band. Useful when you intend to layer manual privilege overrides on top.</p>
+<p>With <code>enforcePrivileges: false</code>, the controller still creates the role and applies every privilege in <code>.privileges</code> on each reconcile (including ones you add later, and re-granting one that was revoked out-of-band), but never revokes anything added out-of-band. Useful when you intend to layer manual privilege overrides on top.</p>
 <h3 id="immutable-privileges">Immutable privileges<a class="headerlink" href="#immutable-privileges" title="Anchor link to this section">&para;</a></h3>
 <p>Privileges created with <code>GRANT IMMUTABLE</code> cannot be revoked while authentication is enabled. The controller detects these (via the <code>immutable</code> column of <code>SHOW ROLE PRIVILEGES</code>) and:</p>
 <ul>

@@ -5110,7 +5110,7 @@
 <p><strong><code>preferDiffAsParent</code> version requirement</strong>: This flag was introduced in Neo4j CalVer 2025.04. Using it against Neo4j 5.26.x or CalVer 2025.01–2025.03 will cause the backup Job to fail with an unsupported argument error. The operator validates this at runtime and returns an error before creating the Job.</p>
 </blockquote>
 <h3 id="tempstoragespec">TempStorageSpec<a class="headerlink" href="#tempstoragespec" title="Anchor link to this section">&para;</a></h3>
-<p>Provisions temporary staging storage for cloud backup/restore. The operator creates a PVC, mounts it at <code>/tmp/neo4j-staging</code> in the Job pod, and passes <code>--temp-path=/tmp/neo4j-staging</code> to <code>neo4j-admin</code>. The PVC is owned by the Job and garbage-collected when the Job's TTL expires.</p>
+<p>Provisions temporary staging storage for cloud backup/restore. The operator creates a PVC, mounts it at <code>/tmp/neo4j-staging</code> in the Job pod, and passes <code>--temp-path=/tmp/neo4j-staging</code> to <code>neo4j-admin</code>. The PVC (named <code>&lt;cr-name&gt;-temp-staging</code>) is owned by the <code>Neo4jBackup</code> (or <code>Neo4jRestore</code>) CR, not by the Job: it outlives the Job's TTL and is garbage-collected only when that CR is deleted.</p>
 <table>
 <thead>
 <tr>
@@ -5149,7 +5149,7 @@
 <tr>
 <td><code>conditions</code></td>
 <td><code>[]metav1.Condition</code></td>
-<td>Current backup conditions. The operator maintains a single <code>Ready</code> condition derived from <code>phase</code> (<code>Completed</code> → <code>True</code> with reason <code>BackupSucceeded</code>; <code>Failed</code>/<code>Suspended</code>/<code>Invalid</code> → <code>False</code>; everything else → <code>Unknown</code>).</td>
+<td>Current backup conditions. The operator maintains a single <code>Ready</code> condition derived from <code>phase</code> (<code>Completed</code> → <code>True</code> with reason <code>BackupSucceeded</code>; <code>Scheduled</code> → <code>True</code> with reason <code>BackupScheduled</code>; <code>Failed</code>/<code>Suspended</code>/<code>Invalid</code> → <code>False</code>; everything else → <code>Unknown</code>).</td>
 </tr>
 <tr>
 <td><code>phase</code></td>
@@ -5217,7 +5217,7 @@
 </tr>
 <tr>
 <td><code>Scheduled</code></td>
-<td>A CronJob has been created for <code>spec.schedule</code>. <strong>This is the steady state for scheduled backups</strong> — they never transition to <code>Completed</code>; per-run outcomes accumulate in <code>status.history[]</code>.</td>
+<td>A CronJob has been created for <code>spec.schedule</code>. <strong>This is the steady state for scheduled backups</strong> — they never transition to <code>Completed</code>; per-run outcomes accumulate in <code>status.history[]</code>. The <code>Ready</code> condition is <code>True</code> (reason <code>BackupScheduled</code>) in this phase.</td>
 </tr>
 <tr>
 <td><code>Suspended</code></td>
@@ -5242,7 +5242,7 @@
 </tbody>
 </table>
 <blockquote>
-<p><strong>Don't <code>kubectl wait --for=condition=Ready</code> on a scheduled backup</strong> — it stays in <code>Scheduled</code> (Ready=<code>Unknown</code>) forever. Poll <code>status.history[*].status</code> for <code>Succeeded</code> instead.</p>
+<p><strong><code>Ready=True</code> on a scheduled backup means the CronJob is armed, not that a run succeeded.</strong> A scheduled backup stays in <code>Scheduled</code> (Ready=<code>True</code>, reason <code>BackupScheduled</code>) for its whole life, so <code>kubectl wait --for=condition=Ready</code> returns as soon as the CronJob exists — long before the first run. Poll <code>status.history[*].status</code> for <code>Succeeded</code> to see whether a run completed.</p>
 </blockquote>
 <h3 id="backupstats">BackupStats<a class="headerlink" href="#backupstats" title="Anchor link to this section">&para;</a></h3>
 <table>

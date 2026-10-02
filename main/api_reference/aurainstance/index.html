@@ -4155,7 +4155,7 @@
 <tr>
 <td><code>connectionSecretFormat</code></td>
 <td><code>string</code></td>
-<td>Enum <code>neo4j-driver</code> / <code>aura-dotenv</code> / <code>jdbc</code> / <code>servicebinding</code> / <code>custom</code>. Default <code>neo4j-driver</code>. Selects the connection Secret's key layout.</td>
+<td>Enum <code>neo4j-driver</code> / <code>aura-dotenv</code> / <code>jdbc</code> / <code>servicebinding</code> / <code>custom</code>. Default <code>neo4j-driver</code>. Selects the connection Secret's key layout. <strong><code>custom</code> is reserved — accepted but not acted on:</strong> it has no key template of its own and writes the same keys as <code>neo4j-driver</code>.</td>
 </tr>
 <tr>
 <td><code>publishConnectionDetailsTo</code></td>
@@ -4329,7 +4329,7 @@
 <li><code>type</code> — <strong>except</strong> the one in-place <code>professional-db</code> → <code>business-critical</code> upgrade</li>
 <li><code>projectId</code>, <code>organizationId</code>, <code>customerManagedKeyId</code>, <code>instanceId</code> — immutable once set</li>
 <li><code>source</code>, <code>multiDatabase</code></li>
-<li><code>graphAnalytics</code> — applied at creation; the only allowed edit is replacing the deprecated <code>graphAnalyticsPlugin</code> with its equivalent value</li>
+<li><code>graphAnalytics</code> — applied at creation; the only way to set it on an existing instance is to replace the deprecated <code>graphAnalyticsPlugin</code> with its equivalent value (the boolean itself is not locked, but it is only read at creation, so editing or removing it changes nothing)</li>
 </ul>
 <p>The <code>type</code> / <code>region</code> / <code>cloudProvider</code> combination is additionally validated before create against the live per-project <code>instance_configurations</code> inline in the reconciler (the one check CEL cannot express). <code>memory</code> and <code>version</code> are not checked locally.</p>
 <h2 id="multi-database-instances">Multi-database instances<a class="headerlink" href="#multi-database-instances" title="Anchor link to this section">&para;</a></h2>

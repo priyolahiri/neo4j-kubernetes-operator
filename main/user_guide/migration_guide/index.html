@@ -4163,8 +4163,9 @@ upgrade restarts nothing. See the
 <li><code>AuraInstance.spec.graphAnalyticsPlugin</code> — use <code>spec.graphAnalytics</code>. It keeps
   working and maps to <code>plugin</code> (true) or <code>unavailable</code> (false). Setting both is
   refused. An existing instance may switch to the equivalent <code>graphAnalytics</code>
-  value; any other change is refused, because Aura cannot change it after
-  creation.</li>
+  value; setting any other <code>graphAnalytics</code> value is refused, because Aura cannot
+  change it after creation. Editing or removing the boolean itself is accepted
+  but has no effect on an existing instance, which only reads it at creation.</li>
 </ul>
 <h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
 <p>When a newer version ships:</p>

@@ -4545,7 +4545,7 @@ a reconcile.</p>
 </span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="s2">"SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'fleetManagement' RETURN name"</span>
 </span></code></pre></div></p>
 <p><strong>Registration failing (<code>registered: false</code> with a message)</strong></p>
-<p>Registration failures are reported in <code>status.auraFleetManagement.message</code>, not as events:</p>
+<p>Registration failures are recorded in <code>status.auraFleetManagement.message</code>, and each <em>new</em> failure also raises an <code>AuraFleetManagementFailed</code> warning event:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.auraFleetManagement.message}'</span>
 </span></code></pre></div>
 <p>Common causes:</p>
@@ -4554,17 +4554,20 @@ a reconcile.</p>
 <li>Incorrect key name in the Secret (default is <code>token</code>) (<code>key "token" not found in secret …</code>)</li>
 <li>Token has expired — generate a new one in the Aura console, update the Secret, and reset <code>registered</code> as described under <a href="#token-rotation">Token rotation</a></li>
 </ul>
-<p>An <code>AuraFleetManagementFailed</code> warning event is only recorded when the reconcile step itself errors (for example the status write fails); check <code>kubectl get events --field-selector reason=AuraFleetManagementFailed</code> as well.</p>
+<p>The event is raised when a failure first appears or its message changes, not on every retry, so a registration that keeps failing the same way produces one event rather than a stream. The message in <code>status.auraFleetManagement.message</code> is always the current one:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>AuraFleetManagementFailed
+</span></code></pre></div>
+<p>A failure to <em>patch the plugin onto the StatefulSet</em> is reported separately, as <code>AuraFleetManagementPluginPatchFailed</code>.</p>
 <p><strong>Other plugins disappear after enabling Fleet Management</strong></p>
 <p>This should not happen with current operator versions (the additive merge strategy prevents it). If you observe it, verify the operator is up to date and check:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Inspect the full NEO4J_PLUGINS value</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>statefulset<span class="w"> </span>my-cluster-server<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.template.spec.containers[0].env[?(@.name=="NEO4J_PLUGINS")].value}'</span>
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Should show all plugins, e.g. ["apoc","fleet-management"]</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Inspect the full NEO4J_PLUGINS value</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>statefulset<span class="w"> </span>my-cluster-server<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.template.spec.containers[0].env[?(@.name=="NEO4J_PLUGINS")].value}'</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Should show all plugins, e.g. ["apoc","fleet-management"]</span>
 </span></code></pre></div>
 <p><strong>Manually verify the plugin</strong></p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>my-cluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="s2">"CALL fleetManagement.status()"</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>my-cluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="s2">"CALL fleetManagement.status()"</span>
 </span></code></pre></div>
 
 
