@@ -63,7 +63,9 @@ func tlsNoEffectWarnings(tls *neo4jv1beta1.TLSSpec, resourceName string) []strin
 			"certificate chain, point spec.tls.issuerRef at an Issuer backed by it", resourceName))}
 }
 
-// NoEffectWarnings reports cluster spec fields that are set but not read.
+// NoEffectWarnings reports cluster spec fields that are set but not read, plus
+// the advisory AuthProviderWarnings, which share the same ValidationWarning
+// channel.
 func (v *ClusterValidator) NoEffectWarnings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []string {
 	warnings := tlsNoEffectWarnings(cluster.Spec.TLS, cluster.Name)
 
@@ -79,12 +81,13 @@ func (v *ClusterValidator) NoEffectWarnings(cluster *neo4jv1beta1.Neo4jEnterpris
 					"for hard placement"))
 		}
 	}
-	return warnings
+	return append(warnings, AuthProviderWarnings(cluster.Spec.Auth, field.NewPath("spec", "auth"))...)
 }
 
-// NoEffectWarnings reports standalone spec fields that are set but not read.
-// The standalone has no warning channel of its own (ValidateCreate returns only
-// errors), so this is a separate method the reconciler turns into events.
+// NoEffectWarnings reports standalone spec fields that are set but not read,
+// plus the advisory AuthProviderWarnings. The standalone has no warning channel
+// of its own (ValidateCreate returns only errors), so this is a separate method
+// the reconciler turns into events.
 func (v *StandaloneValidator) NoEffectWarnings(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) []string {
 	warnings := tlsNoEffectWarnings(standalone.Spec.TLS, standalone.Name)
 
@@ -101,7 +104,7 @@ func (v *StandaloneValidator) NoEffectWarnings(standalone *neo4jv1beta1.Neo4jEnt
 				"no intra-cluster traffic, so remove it. Bolt and HTTPS TLS on a standalone are governed by "+
 				"spec.tls.mode and spec.tls.issuerRef"))
 	}
-	return warnings
+	return append(warnings, AuthProviderWarnings(standalone.Spec.Auth, field.NewPath("spec", "auth"))...)
 }
 
 // pluginNoEffectWarnings reports Neo4jPlugin spec fields that are set but not

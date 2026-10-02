@@ -32,7 +32,8 @@ type ClusterValidationResult struct {
 	Errors field.ErrorList
 	// Warnings are topology warnings (reason TopologyWarning).
 	Warnings []string
-	// NoEffectWarnings name spec fields that are set but not read by any code
+	// NoEffectWarnings name spec fields that are set but not read by any code,
+	// and auth provider names Neo4j does not document (AuthProviderWarnings)
 	// (reason ValidationWarning). Advisory only: never added to Errors.
 	NoEffectWarnings []string
 }
