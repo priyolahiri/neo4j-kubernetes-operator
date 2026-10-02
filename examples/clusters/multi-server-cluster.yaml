@@ -14,7 +14,7 @@ spec:
   # Neo4j Docker image configuration
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"  # 5.26 LTS; any CalVer release works too, e.g. "2026.04-enterprise" (operator auto-detects)
+    tag: "5.26-enterprise"  # 5.26 LTS; any CalVer release works too, e.g. "2026.08.1-enterprise" (operator auto-detects)
     pullPolicy: IfNotPresent
 
   # Multi-server topology: 5 servers that self-organize into roles

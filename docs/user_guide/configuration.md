@@ -206,7 +206,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: 5.26.0-enterprise
+    tag: 5.26-enterprise
   storage:
     className: standard
     size: 10Gi

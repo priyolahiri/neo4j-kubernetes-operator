@@ -306,7 +306,7 @@ config:
 # Neo4j-specific configuration
 neo4j:
   # Default Neo4j enterprise image to use if not specified in CR
-  defaultImage: neo4j:5.26.0-enterprise
+  defaultImage: neo4j:5.26-enterprise
   # Default resource requirements for Neo4j pods if not specified in CR
   defaultResources:
     requests:

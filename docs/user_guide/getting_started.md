@@ -11,9 +11,9 @@ This guide will walk you through the process of deploying your first Neo4j Enter
 
 Building from source additionally needs Go 1.27+ — see the [Installation Guide](installation.md) for that path.
 
-> **Neo4j version:** the examples below pin `5.26.0-enterprise`, but every one
-> works on a CalVer release too — just change the image `tag` (e.g.
-> `2026.04-enterprise`). The operator auto-detects CalVer (discovery mode,
+> **Neo4j version:** the examples below use `5.26-enterprise`, the 5.26 LTS
+> line (it tracks the latest 5.26 patch), but every one works on a CalVer
+> release too — just change the image `tag` (e.g. `2026.08.1-enterprise`). The operator auto-detects CalVer (discovery mode,
 > Cypher 25, etc.); nothing else in the manifest changes. For the CalVer-only
 > default Cypher 25 language on a database, see
 > [`examples/databases/database-2025x.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/databases/database-2025x.yaml).

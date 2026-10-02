@@ -1066,7 +1066,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j  # Note: field name is 'repo', not 'repository'
-    tag: "5.26.0-enterprise"
+    tag: "5.26-enterprise"
   topology:
     servers: 3  # Creates StatefulSet basic-cluster-server with 3 replicas
   storage:
@@ -1094,7 +1094,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"
+    tag: "5.26-enterprise"
   topology:
     servers: 5
     # Global constraint: all servers default to any role
@@ -1147,7 +1147,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"
+    tag: "5.26-enterprise"
   topology:
     servers: 3  # Creates monitored-cluster-server StatefulSet
   storage:
@@ -1204,7 +1204,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"
+    tag: "5.26-enterprise"
   topology:
     servers: 5  # Creates public-cluster-server StatefulSet with 5 replicas
   storage:
@@ -1236,7 +1236,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"
+    tag: "5.26-enterprise"
   topology:
     servers: 3  # Creates ingress-cluster-server StatefulSet
   storage:

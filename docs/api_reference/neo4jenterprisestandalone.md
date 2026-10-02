@@ -61,7 +61,7 @@ Specifies the Neo4j Docker image to use.
 ```yaml
 image:
   repo: neo4j                    # Docker repository
-  tag: "5.26.0-enterprise"       # Neo4j version: 5.26 LTS or any CalVer release (2025.x, 2026.x, ...)
+  tag: "5.26-enterprise"       # Neo4j version: 5.26 LTS or any CalVer release (2025.x, 2026.x, ...)
   pullPolicy: IfNotPresent       # Image pull policy
   pullSecrets: []                # Image pull secrets
 ```
@@ -581,7 +581,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"       # Use specific version
+    tag: "5.26-enterprise"       # Use specific version
 
   storage:
     className: standard
@@ -619,7 +619,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"
+    tag: "5.26-enterprise"
 
   storage:
     className: fast-ssd
@@ -715,7 +715,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"
+    tag: "5.26-enterprise"
 
   storage:
     className: fast-ssd
@@ -1037,7 +1037,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"
+    tag: "5.26-enterprise"
   storage:
     className: standard
     size: 5Gi
@@ -1065,7 +1065,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"
+    tag: "5.26-enterprise"
   storage:
     className: standard
     size: 20Gi
