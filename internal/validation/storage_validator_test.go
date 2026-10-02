@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -162,8 +163,6 @@ func TestStorageValidator_Validate(t *testing.T) {
 }
 
 func TestStorageValidator_isValidStorageSize(t *testing.T) {
-	validator := NewStorageValidator()
-
 	tests := []struct {
 		name  string
 		size  string
@@ -249,8 +248,35 @@ func TestStorageValidator_isValidStorageSize(t *testing.T) {
 			valid: false,
 		},
 		{
-			name:  "size with decimal",
+			// Kubernetes accepts a decimal quantity, so the operator does too:
+			// the old format regex refused it although the apiserver would not.
+			name:  "decimal quantity",
 			size:  "100.5Gi",
+			valid: true,
+		},
+		{
+			name:  "decimal quantity in Gi",
+			size:  "1.5Gi",
+			valid: true,
+		},
+		{
+			name:  "lowercase k is the decimal kilo suffix",
+			size:  "500000000k",
+			valid: true,
+		},
+		{
+			name:  "exponent form",
+			size:  "1e12",
+			valid: true,
+		},
+		{
+			name:  "zero holds no Neo4j store",
+			size:  "0",
+			valid: false,
+		},
+		{
+			name:  "zero with a unit",
+			size:  "0Gi",
 			valid: false,
 		},
 		{
@@ -272,8 +298,45 @@ func TestStorageValidator_isValidStorageSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := validator.isValidStorageSize(tt.size)
-			assert.Equal(t, tt.valid, result, "Expected isValidStorageSize(%q) to be %v", tt.size, tt.valid)
+			err := storageSizeError(field.NewPath("spec", "storage", "size"), tt.size)
+			assert.Equal(t, tt.valid, err == nil, "storageSizeError(%q) = %v, want valid=%v", tt.size, err, tt.valid)
 		})
 	}
+}
+
+// A cluster and a standalone are the same Neo4j server with the same data
+// volume, so they must accept the same sizes. They had drifted both ways: the
+// cluster's format regex refused 100.5Gi yet admitted capital 5K (which panicked
+// the manager), and accepted 0, while the standalone accepted anything non-empty.
+// Runs each size through BOTH validators' real entry points.
+func TestStandaloneAndClusterAgreeOnStorageSize(t *testing.T) {
+	sizes := []string{"100Gi", "1.5Gi", "100.5Gi", "500000000k", "1e12", "2048M",
+		"0", "0Gi", "-1Gi", "5K", "fifty", "10 Gi", "100Zi", "Gi"}
+
+	for _, size := range sizes {
+		t.Run(size, func(t *testing.T) {
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+					Storage: neo4jv1beta1.StorageSpec{Size: size},
+				},
+			}
+			clusterRefuses := hasFieldError(NewStorageValidator().Validate(cluster), "spec.storage.size")
+
+			standalone := validStandalone()
+			standalone.Spec.Storage.Size = size
+			standaloneRefuses := hasFieldError(NewStandaloneValidator().ValidateCreate(standalone), "spec.storage.size")
+
+			assert.Equal(t, clusterRefuses, standaloneRefuses,
+				"size %q: cluster refuses=%v, standalone refuses=%v", size, clusterRefuses, standaloneRefuses)
+		})
+	}
+}
+
+func hasFieldError(errs field.ErrorList, path string) bool {
+	for _, e := range errs {
+		if e.Field == path {
+			return true
+		}
+	}
+	return false
 }

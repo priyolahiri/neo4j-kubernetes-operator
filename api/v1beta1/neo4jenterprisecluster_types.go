@@ -499,15 +499,19 @@ type IssuerRef struct {
 // Supports multi-provider setups (e.g., ldap+native) and typed configuration
 // for LDAP, OIDC/SSO, and Kerberos that generates correct neo4j.conf entries.
 type AuthSpec struct {
-	// AuthenticationProviders is an ordered list of authentication providers.
-	// Neo4j evaluates them in order during login. Valid values: native, ldap, oidc-<name>, kerberos.
-	// For OIDC providers, use the format "oidc-<name>" where <name> matches a key in the OIDC map.
+	// AuthenticationProviders is an ordered list of authentication providers,
+	// written into dbms.security.authentication_providers. Neo4j evaluates them in
+	// order during login. Valid values: native, ldap, oidc-<name> where <name> is a
+	// key in the OIDC map, or plugin-<name> for an auth plugin or add-on such as the
+	// Kerberos Add-On. The older names oidc, kerberos, jwt, saml and custom are
+	// still accepted with a warning; Neo4j does not document them.
 	// Defaults to ["native"] if empty.
 	// +optional
 	AuthenticationProviders []string `json:"authenticationProviders,omitempty"`
 
-	// AuthorizationProviders is an ordered list of authorization providers.
-	// Valid values: native, ldap, oidc-<name>, kerberos.
+	// AuthorizationProviders is an ordered list of authorization providers,
+	// written into dbms.security.authorization_providers. Same values as
+	// AuthenticationProviders.
 	// Defaults to ["native"] if empty.
 	// +optional
 	AuthorizationProviders []string `json:"authorizationProviders,omitempty"`

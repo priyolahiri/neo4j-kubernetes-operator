@@ -168,8 +168,8 @@ Specifies role constraints for individual servers.
 
 | Field | Type | Description |
 |---|---|---|
-| `authenticationProviders` | `[]string` | Ordered list of authentication providers (e.g., `["ldap", "native"]`). Default: `["native"]` |
-| `authorizationProviders` | `[]string` | Ordered list of authorization providers. Default: `["native"]` |
+| `authenticationProviders` | `[]string` | Ordered list of authentication providers (e.g., `["ldap", "native"]`), written into `dbms.security.authentication_providers`. Values: `native`, `ldap`, `oidc-<name>`, `plugin-<name>`; the older `oidc`, `kerberos`, `jwt`, `saml`, `custom` validate with a warning. Default: `["native"]` |
+| `authorizationProviders` | `[]string` | Ordered list of authorization providers, written into `dbms.security.authorization_providers`. Same values. Default: `["native"]` |
 | `adminSecret` | `string` | Secret containing admin username and password (keys: `username`, `password`) |
 | `externalSecrets` | [`*ExternalSecretsConfig`](#externalsecretsconfig) | External secrets configuration |
 | `ldap` | [`*Neo4jLDAPSpec`](#neo4jldapspec) | LDAP authentication and authorization configuration |

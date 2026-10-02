@@ -181,7 +181,9 @@ jobs:
         # adding -p, which would race on the shared cluster). Matches the
         # `make test-integration` invocation this lane replaced.
         # --json-report feeds the per-spec failure/timing summary below.
-        ./bin/ginkgo run -v --timeout=60m --procs=1 --label-filter='core' \
+        # --fail-on-empty: if 'core' ever selects no spec (a renamed label), fail
+        # instead of reporting "Ran 0 of N Specs" as a pass.
+        ./bin/ginkgo run -v --timeout=60m --procs=1 --fail-on-empty --label-filter='core' \
           --json-report=ginkgo-report.json \
           ./test/integration/... | tee integration-test-output.log
       env:

@@ -194,6 +194,12 @@ test-unit: manifests generate fmt vet envtest ## Run unit tests (no cluster requ
 # Empty (the default) passes no --label-filter and runs every spec, as before.
 # INTEGRATION_TIMEOUT is the whole-suite deadline handed to `ginkgo --timeout`
 # (not the per-spec 300s); raise it for a long tier, e.g. INTEGRATION_TIMEOUT=120m.
+#
+# --fail-on-empty: a filter that selects no spec FAILS the run. Without it Ginkgo
+# reports "Ran 0 of N Specs" and exits 0, so a typo (LABEL=cor) or an unrelated
+# LABEL exported in the shell — make lets the environment override `?=` — looked
+# like a green run. test-one uses it for the same reason (a TEST that matches
+# nothing). There is one suite package, so no package is ever legitimately empty.
 LABEL ?=
 INTEGRATION_TIMEOUT ?= 60m
 .PHONY: test-integration
@@ -208,7 +214,7 @@ test-integration: manifests generate test-cluster ginkgo kustomize ## Run integr
 	@kubectl rollout status deployment/neo4j-operator-controller-manager -n neo4j-operator-system --timeout=120s
 	@echo "✅ Operator deployed in production mode (neo4j-operator-system)!"
 	@echo '🔗 Running integration tests$(if $(LABEL), (label-filter: $(LABEL)))...'
-	@$(GINKGO) run --timeout=$(INTEGRATION_TIMEOUT) --procs=1$(if $(LABEL), --label-filter='$(LABEL)') -v ./test/integration/...
+	@$(GINKGO) run --timeout=$(INTEGRATION_TIMEOUT) --procs=1 --fail-on-empty$(if $(LABEL), --label-filter='$(LABEL)') -v ./test/integration/...
 
 # E2E Tests - Removed to simplify test structure
 
@@ -909,7 +915,7 @@ test-one: ginkgo ## Run a single integration test by name. Usage: make test-one 
 	fi
 	@echo "Running test matching: $(TEST)"
 	@kind export kubeconfig --name neo4j-operator-test 2>/dev/null || kind export kubeconfig --name neo4j-operator-dev 2>/dev/null || true
-	@$(GINKGO) run --focus "$(TEST)" --timeout=300s --procs=1 -v ./test/integration/...
+	@$(GINKGO) run --focus "$(TEST)" --timeout=300s --procs=1 --fail-on-empty -v ./test/integration/...
 
 .PHONY: smoke-test
 smoke-test: ## Deploy a standalone Neo4j instance and verify it reaches Ready state.

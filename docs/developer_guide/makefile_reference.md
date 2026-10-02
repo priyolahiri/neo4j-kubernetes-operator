@@ -332,7 +332,7 @@ make test-coverage
 
 | Variable | Default | Effect |
 |---|---|---|
-| `LABEL` | *(empty)* | Passed to `ginkgo --label-filter`. Empty passes no filter and runs every spec (`core` **and** `extended`). Use `core` for the per-PR tier, `extended` for the heavy / release tier, or any expression such as `'core || extended'`. Quote an expression that contains spaces or `|`. |
+| `LABEL` | *(empty)* | Passed to `ginkgo --label-filter`. Empty passes no filter and runs every spec (`core` **and** `extended`). Use `core` for the per-PR tier, `extended` for the heavy / release tier, or any expression such as `'core || extended'`. Quote an expression that contains spaces or `|`. A filter that selects no spec **fails** the run (`--fail-on-empty`), so a typo such as `LABEL=cor` — or an unrelated `LABEL` exported in your shell, which make lets override the default — cannot pass as a green "Ran 0 of N Specs". `test-one` does the same for a `TEST` that matches nothing. |
 | `INTEGRATION_TIMEOUT` | `60m` | The whole-suite deadline passed to `ginkgo --timeout` (not the per-spec 300s). Raise it for a long tier, e.g. `INTEGRATION_TIMEOUT=120m`. |
 
 **Duration**: long — with no `LABEL` it runs *every* spec (`core` **and** `extended`) with `--procs=1 --timeout=60m`; CI needs ~90–150 min for both tiers on CalVer. `LABEL=core` is the quick pass. To iterate on one spec, use `make test-one TEST="…"`; to run a tier against a cluster you already set up, call `ginkgo run --label-filter='core' ./test/integration/...` directly (see [Testing](testing.md)).

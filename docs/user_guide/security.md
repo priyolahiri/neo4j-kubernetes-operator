@@ -129,6 +129,8 @@ For OIDC providers, reference them as `oidc-<name>` where `<name>` matches a key
 
 If you omit `authenticationProviders`, the operator defaults to `["native"]`.
 
+Both lists are written as given into `dbms.security.authentication_providers` and `dbms.security.authorization_providers`. The values Neo4j documents for them, on the 5.26 LTS and on CalVer alike, are `native`, `ldap`, `oidc-<name>`, and `plugin-<name>` for an auth plugin or add-on such as [Kerberos](#kerberos-authentication). Any other name is refused. The older names `oidc` (without a provider name), `kerberos`, `jwt`, `saml` and `custom`, which earlier operator versions accepted, still validate but raise a `ValidationWarning` event naming what to use instead.
+
 ### Native Authentication
 
 ```yaml

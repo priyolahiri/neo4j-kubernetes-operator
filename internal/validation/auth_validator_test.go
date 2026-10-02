@@ -17,9 +17,13 @@ limitations under the License.
 package validation
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/ptr"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -64,8 +68,12 @@ func TestAuthValidator_BackwardCompat_OldProviderField(t *testing.T) {
 	}{
 		{"native provider - no errors", "native", 0},
 		{"ldap provider - no errors", "ldap", 0},
+		// Legacy names Neo4j does not document: still accepted (they warn, see
+		// TestAuthProviders_MatchTheManual), so no CR accepted before is refused.
 		{"kerberos provider - no errors", "kerberos", 0},
 		{"jwt provider - no errors", "jwt", 0},
+		{"plugin provider - no errors", "plugin-Neo4j-Kerberos", 0},
+		{"plugin prefix with no name - NotSupported", "plugin-", 1},
 		{"invalid provider - NotSupported", "invalid", 1},
 	}
 
@@ -371,4 +379,83 @@ func TestAuthValidator_TrustStore_Valid(t *testing.T) {
 	if len(errs) != 0 {
 		t.Errorf("expected no errors, got: %v", errs)
 	}
+}
+
+// The provider lists are written verbatim into dbms.security.authentication_providers
+// and dbms.security.authorization_providers. The manual documents the same value
+// space for both settings on the 5.26 LTS and on CalVer: native, ldap,
+// oidc-<name> (Single sign-on integration, /5/ and /current/) and plugin-<name>
+// (configuration settings). The validator used to accept oidc, jwt, kerberos,
+// saml and custom, none of which Neo4j documents, and to refuse plugin-<name>,
+// which it does. Old names keep validating and warn instead (knowledge rule 103).
+func TestAuthProviders_MatchTheManual(t *testing.T) {
+	v := NewAuthValidator()
+	authPath := field.NewPath("spec", "auth")
+	spec := func(p string) *neo4jv1beta1.AuthSpec {
+		return &neo4jv1beta1.AuthSpec{
+			AuthenticationProviders: []string{p},
+			AuthorizationProviders:  []string{p},
+		}
+	}
+
+	for _, p := range []string{"native", "ldap", "oidc-okta", "plugin-Neo4j-Kerberos"} {
+		t.Run("documented "+p, func(t *testing.T) {
+			assert.Empty(t, v.ValidateAuthSpec(spec(p), authPath), "a documented provider must validate")
+			assert.Empty(t, AuthProviderWarnings(spec(p), authPath), "a documented provider must not warn")
+		})
+	}
+
+	for _, p := range []string{"oidc", "kerberos", "jwt", "saml", "custom"} {
+		t.Run("legacy "+p, func(t *testing.T) {
+			assert.Empty(t, v.ValidateAuthSpec(spec(p), authPath),
+				"a name accepted before must not become an error")
+			warnings := AuthProviderWarnings(spec(p), authPath)
+			require.Len(t, warnings, 2, "one warning per list that names it")
+			assert.Contains(t, warnings[0], `spec.auth.authenticationProviders[0] "`+p+`"`)
+			assert.Contains(t, warnings[0], "dbms.security.authentication_providers")
+			assert.Contains(t, warnings[1], `spec.auth.authorizationProviders[0] "`+p+`"`)
+			assert.Contains(t, warnings[1], "dbms.security.authorization_providers")
+		})
+	}
+
+	t.Run("an unknown name is still refused, and does not also warn", func(t *testing.T) {
+		errs := v.ValidateAuthSpec(spec("kerberos5"), authPath)
+		require.Len(t, errs, 2)
+		assert.Contains(t, errs[0].Error(), "plugin-<name>", "the error lists the documented values")
+		assert.Empty(t, AuthProviderWarnings(spec("kerberos5"), authPath))
+	})
+}
+
+// docs/user_guide/security.md tells Kerberos Add-On users to list
+// [plugin-Neo4j-Kerberos, native]. The validator refused plugin-<name> until it
+// was checked against the manual, so the documented setup could not be applied.
+func TestAuthProviders_SecurityGuideKerberosSetupValidates(t *testing.T) {
+	cluster := clusterWithAuth("plugin-Neo4j-Kerberos")
+	cluster.Spec.Auth.AuthenticationProviders = append(cluster.Spec.Auth.AuthenticationProviders, "native")
+	assert.Empty(t, NewAuthValidator().Validate(cluster))
+	assert.Empty(t, AuthProviderWarnings(cluster.Spec.Auth, field.NewPath("spec", "auth")))
+}
+
+// The warnings reach the user through each Kind's existing ValidationWarning
+// channel: ClusterValidator.NoEffectWarnings (also what ValidateCreateWithWarnings
+// returns) and StandaloneValidator.NoEffectWarnings, both turned into events by
+// their reconcilers.
+func TestAuthProviderWarnings_ReachBothKinds(t *testing.T) {
+	cluster := clusterWithAuth("saml")
+	assert.True(t, containsSubstring(NewClusterValidator(nil).NoEffectWarnings(cluster),
+		`spec.auth.authenticationProviders[0] "saml"`), "cluster must surface the provider warning")
+
+	standalone := validStandalone()
+	standalone.Spec.Auth = &neo4jv1beta1.AuthSpec{AuthenticationProviders: []string{"kerberos"}}
+	assert.True(t, containsSubstring(NewStandaloneValidator().NoEffectWarnings(standalone),
+		`spec.auth.authenticationProviders[0] "kerberos"`), "standalone must surface the provider warning")
+}
+
+func containsSubstring(lines []string, sub string) bool {
+	for _, l := range lines {
+		if strings.Contains(l, sub) {
+			return true
+		}
+	}
+	return false
 }

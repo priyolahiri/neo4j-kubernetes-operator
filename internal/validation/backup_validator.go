@@ -401,7 +401,10 @@ func (v *BackupValidator) validateCloudConfiguration(cloud *neo4jv1beta1.CloudBl
 
 	// Validate cloud provider if specified
 	if cloud.Provider != "" {
-		validProviders := []string{"aws", "gcp", "azure", "custom"}
+		// Keep in step with the +kubebuilder:validation:Enum on CloudBlock.Provider
+		// (api/v1beta1/neo4jenterprisecluster_types.go). "custom" was once listed
+		// here too: the schema never allowed it and nothing gave it a meaning.
+		validProviders := []string{"aws", "gcp", "azure"}
 		valid := false
 		for _, provider := range validProviders {
 			if cloud.Provider == provider {
