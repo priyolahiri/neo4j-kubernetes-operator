@@ -63,7 +63,10 @@ func TestEveryValidatorIsWiredIn(t *testing.T) {
 				continue
 			}
 			for _, spec := range gd.Specs {
-				ts := spec.(*ast.TypeSpec)
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
 				if _, isStruct := ts.Type.(*ast.StructType); isStruct && strings.HasSuffix(ts.Name.Name, "Validator") {
 					declaredIn[ts.Name.Name] = f
 				}
