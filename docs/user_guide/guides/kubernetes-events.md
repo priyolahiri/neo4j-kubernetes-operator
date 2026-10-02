@@ -40,7 +40,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `ServerRoleValidationFailed` | Warning | Server role hint validation failed |
 | `RouteAPINotFound` | Warning | OpenShift Route API not available in cluster |
 | `MCPApocMissing` | Warning | MCP server requires APOC plugin which is not installed |
-| `ConnectivityDegraded` | Warning | The operator has failed to reach the cluster's Bolt endpoint for a sustained streak of consecutive reconciles; emitted once when the streak threshold is reached, with the last error and any pod issues |
+| `ConnectivityDegraded` | Warning | The operator has failed to reach the cluster's Bolt endpoint for a sustained streak: at least 10 consecutive reconciles spanning at least 5 minutes, so a cluster that is still forming does not raise it. Emitted once per streak, with the last error and any pod issues |
 | `ReconcileFailed` | Warning | Reconciliation loop encountered an unrecoverable error |
 
 ### Scale-down
