@@ -3914,18 +3914,21 @@
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Neo4jEnterpriseCluster/prod in namespace neo4j
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>In-cluster Bolt:
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  bolt+s://prod-client.neo4j.svc.cluster.local:7687
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  neo4j+s://prod-client.neo4j.svc.cluster.local:7687
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>From your machine:
 </span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  kubectl port-forward -n neo4j svc/prod-client 7687:7687 7474:7474
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>  then connect to bolt+s://localhost:7687
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>  then connect to neo4j+ssc://localhost:7687   (local testing only — see below)
 </span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>...
-</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>TLS is enabled: plain bolt:// is rejected by this deployment — use bolt+s://.
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>TLS is enabled: plain bolt:// is rejected by this deployment — use neo4j+s://.
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>...
 </span></code></pre></div>
-<div class="admonition note">
-<p class="admonition-title">What <code>connect</code> prints is not what <code>cypher</code> dials</p>
-<p><code>connect</code> always prints the <code>bolt</code> / <code>bolt+s</code> scheme and a <code>localhost</code> port-forward address, for clusters as well as standalones. That has two limits today. On a <strong>cluster</strong>, a pinned <code>bolt://</code> session can answer <code>Database neo4j not found</code> — use a routing scheme (<code>neo4j://</code>, or <code>neo4j+s://</code> with TLS) in your own driver. On a <strong>TLS</strong> deployment, the certificates carry no <code>localhost</code> SAN, so a client dialled at <code>localhost</code> fails hostname verification; either connect from inside the cluster through the client Service name, or use the <code>+ssc</code> schemes (which encrypt but verify nothing) for local debugging only. <code>kubectl neo4j cypher</code> avoids both (see below).</p>
-</div>
+<p>The scheme depends on what the deployment is: a <strong>cluster</strong> is addressed with the routing scheme (<code>neo4j://</code>, or <code>neo4j+s://</code> under TLS), a <strong>standalone</strong> with the direct one (<code>bolt://</code>, or <code>bolt+s://</code>). <code>connect</code> and <code>cypher</code> share the one function that decides this, so the address <code>connect</code> prints is the address <code>cypher</code> dials.</p>
+<p>Through a port-forward <code>connect</code> tells you two things instead of leaving you to find them out:</p>
+<ul>
+<li><strong>TLS and <code>localhost</code>.</strong> The certificates name the client Service and the pods, never <code>localhost</code>, so the verifying scheme (<code>neo4j+s://localhost:7687</code>) fails hostname verification against a port-forward. <code>connect</code> offers the <code>+ssc</code> variant for that — it encrypts but does <strong>not</strong> verify the server, so it is for local testing only — and points at the in-cluster address, which does verify. <code>kubectl neo4j cypher</code> uses that address.</li>
+<li><strong>A cluster behind a single port-forward.</strong> <code>neo4j://</code> follows the routing table to the server that hosts the database, but the table lists servers by their in-cluster addresses, which one port-forward does not make reachable from your machine. From outside the cluster the session may not connect to the server it is routed to; <code>kubectl neo4j cypher</code> runs inside the cluster and does not have this problem.</li>
+</ul>
 <h3 id="your-password-is-never-read-moved-or-logged">Your password is never read, moved, or logged<a class="headerlink" href="#your-password-is-never-read-moved-or-logged" title="Anchor link to this section">&para;</a></h3>
 <p>This is worth stating precisely, because the obvious implementation gets it wrong.</p>
 <p>The admin credentials are <strong>already inside the pod</strong> — the operator injects them via <code>secretKeyRef</code> as <code>DB_USERNAME</code> and <code>DB_PASSWORD</code>. So the command references them <em>by variable name</em> and lets the shell expand them in the container:</p>

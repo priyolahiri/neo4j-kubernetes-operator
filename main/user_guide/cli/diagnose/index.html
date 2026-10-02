@@ -3939,7 +3939,7 @@
 </tr>
 <tr>
 <td>Backup Job failed</td>
-<td>the Job reporting failed pods (<code>status.failed &gt; 0</code>; the <code>Failed</code> condition's reason and message are shown when present), plus the Job's pods</td>
+<td>the Job's <code>Failed</code> condition being <code>True</code> (including a missed <code>activeDeadlineSeconds</code>, where no pod failed), plus its pods. The verdict is the Job's conditions, not its <code>status.failed</code> count: that counts failed <em>attempts</em> and never goes down, so a backup that retried and then completed is a success — it gets a <code>⚠</code> line noting the retries, and one still retrying gets <code>…</code>, neither of which changes the exit code</td>
 </tr>
 <tr>
 <td>Nothing ever reconciled</td>

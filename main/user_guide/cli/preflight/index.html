@@ -3959,8 +3959,8 @@
 <td>With no Secret and no IRSA / Workload Identity binding, the Job runs with no credentials at all</td>
 </tr>
 <tr>
-<td>A PVC-backed backup names its claim (<code>spec.storage.pvc.name</code>) and that claim exists</td>
-<td>A nameless PVC is refused by the operator outright (artifacts would land in an EmptyDir and be discarded); a named claim that does not exist leaves the Job unschedulable. <strong>Known limitation:</strong> the existence check does not yet account for <code>spec.storage.pvc.size</code>, which makes the operator create the claim itself — so on the first apply of an auto-provisioned backup, expect a <code>✗ pvc … does not exist</code> (and exit code 1) that the operator will resolve on its own. No StorageClass check is made for backup claims</td>
+<td>A PVC-backed backup names its claim (<code>spec.storage.pvc.name</code>) and that claim exists, or the operator will create it</td>
+<td>A nameless PVC is refused by the operator outright (artifacts would land in an EmptyDir and be discarded). When <code>spec.storage.pvc.size</code> is set the operator provisions an absent claim itself, so that is reported as waiting (<code>…</code>) and does not fail the run. With no size nothing is ever created: a missing claim is a failure, because the Job would wait on a volume that does not exist. If the claim cannot be read at all (RBAC, an unhealthy API server), that is a <code>⚠</code> saying the check could not be made, not a pass and not a failure. No StorageClass check is made for backup claims</td>
 </tr>
 </tbody>
 </table>
