@@ -223,6 +223,10 @@ them. `neo4j_operator_` followed by: `backup_size_bytes`,
 - `Neo4jShardedDatabase` status now fills `creationTime`, `graphShard`,
   `propertyShards` and `virtualDatabase`; `Neo4jPlugin` status fills
   `installedVersion` and `installationTime`. They were in the schema but empty.
+- `ConnectivityDegraded` (a Warning on the cluster) now needs ten consecutive
+  connectivity failures **spanning at least five minutes**, not ten alone. A
+  new cluster no longer raises it while it forms; if you alert on this event,
+  expect it no earlier than five minutes into a real outage.
 - A failed Aura Fleet Management token registration raises an
   `AuraFleetManagementFailed` Warning event, once per distinct failure message.
   It almost never fired before.
