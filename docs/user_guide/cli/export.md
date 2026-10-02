@@ -33,7 +33,6 @@ $ kubectl neo4j export replica-database dr-copy --from-backup nightly \
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jReplicaDatabase
 metadata:
-  creationTimestamp: null
   name: dr-copy
   namespace: neo4j
 spec:
@@ -42,10 +41,9 @@ spec:
     mode: backup
     pullURI: s3://prod-backups/nightly-chain/
   upstreamDatabase: neo4j
-status: {}
 ```
 
-`metadata.namespace` defaults to the upstream resource's namespace (`-n`); pass `--downstream-namespace` to write a different one into the manifest. The `creationTimestamp: null` and `status: {}` lines are harmless and are ignored on apply.
+`metadata.namespace` defaults to the upstream resource's namespace (`-n`); pass `--downstream-namespace` to write a different one into the manifest.
 
 with, on stderr:
 

@@ -209,3 +209,17 @@ func TestExport_ManifestCarriesAPIVersionAndKind(t *testing.T) {
 	assert.Equal(t, "Neo4jReplicaDatabase", r.Kind)
 	assert.Equal(t, neo4jv1beta1.GroupVersion.String(), r.APIVersion)
 }
+
+// The printed manifest is something a user redirects to a file and commits.
+// Marshalling the typed object added `status: {}` (v1.18.0 journey); it must
+// not, and the conventional key order must survive.
+func TestExport_ManifestHasNoStatusBlock(t *testing.T) {
+	r := newReplicaSkeleton("dr-copy", "neo4j", "dr", "neo4j")
+	body, err := manifestYAML(r)
+	require.NoError(t, err)
+	out := string(body)
+	assert.NotContains(t, out, "status:")
+	assert.True(t, strings.HasPrefix(out, "apiVersion: "), "apiVersion first, got:\n%s", out)
+	assert.Contains(t, out, "\nkind: Neo4jReplicaDatabase\n")
+	assert.Contains(t, out, "\nspec:\n")
+}
