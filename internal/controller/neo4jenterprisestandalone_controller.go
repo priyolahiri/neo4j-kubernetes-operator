@@ -1921,7 +1921,16 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 	// Get the StatefulSet to check its status
 	statefulSet := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, statefulSet); err != nil {
-		return fmt.Errorf("failed to get StatefulSet: %w", err)
+		if !errors.IsNotFound(err) {
+			return fmt.Errorf("failed to get StatefulSet: %w", err)
+		}
+		// reconcileStatefulSet created it earlier in this same pass and the
+		// cached client has not seen it yet. That is "not ready yet", not a
+		// failure: returning the error put a ReconcileFailed warning on every
+		// new standalone, which `kubectl neo4j diagnose` then reported. The
+		// zero-value StatefulSet below has no ready replicas, so this reads as
+		// Pending, and the create event re-queues the standalone.
+		logger.V(1).Info("StatefulSet not in the cache yet; reporting Pending")
 	}
 
 	// Calculate the desired status
