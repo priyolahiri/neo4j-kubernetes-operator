@@ -188,7 +188,7 @@
   {
     "id": "ev-validation-warning",
     "name": "ValidationWarning",
-    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues.",
+    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues. Also raised, in the form 'spec.<path> is accepted but has no effect today: <what to do instead>', when a spec field the schema accepts but nothing reads is set (Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jPlugin, Neo4jDatabase, Neo4jBackup, Neo4jRestore, AuraInstance).",
     "moduleId": "mod-database"
   },
   {

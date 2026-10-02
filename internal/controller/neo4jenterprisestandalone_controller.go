@@ -173,6 +173,10 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	// site and test for one check. The reconciler has both, and inline validation
 	// from the reconciler is the project's convention anyway (invariant 1).
 	validationErrs := r.Validator.ValidateCreate(standalone)
+	// Spec fields the schema accepts but nothing reads: advisory, never blocking.
+	for _, warning := range r.Validator.NoEffectWarnings(standalone) {
+		r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
+	}
 	validationErrs = append(validationErrs, validation.ValidateAdminSecretPassword(
 		ctx, r.Client, standalone.Namespace, standaloneAdminSecretName(standalone),
 		field.NewPath("spec", "auth", "adminSecret"))...)

@@ -91,7 +91,7 @@ kind: Neo4jPlugin
 | `dependencies` | [`[]PluginDependency`](#plugindependency) | ❌ | Plugin dependencies (automatically resolved) |
 | `config` | `map[string]string` | ❌ | Plugin-specific configuration (becomes `NEO4J_*` env vars) |
 | `security` | [`PluginSecurity`](#pluginsecurity) | ❌ | Security settings and procedure restrictions |
-| `resources` | `PluginResourceRequirements` | ❌ | **Reserved — no effect today.** Declared (`memoryLimit`, `cpuLimit`, `threadPoolSize`) and syntax-checked by the validator, but no controller or builder reads it: nothing is allocated or limited. Size the Neo4j pods through the cluster/standalone `spec.resources` instead. |
+| `resources` | `PluginResourceRequirements` | ❌ | **Reserved — no effect today.** Declared (`memoryLimit`, `cpuLimit`, `threadPoolSize`) and syntax-checked by the validator, but no controller or builder reads it: nothing is allocated or limited. Size the Neo4j pods through the cluster/standalone `spec.resources` instead. A `ValidationWarning` event is raised when it is set. |
 
 ### PluginSource
 
@@ -101,11 +101,11 @@ kind: Neo4jPlugin
 | `url` | `string` | Direct URL for "url" and "custom" source types. **Must be `https://`** — the controller-side validator rejects `http://`, `file://`, and every other scheme (plugin JARs are downloaded over the network and a non-https scheme has no transport integrity). Host internal plugins on an https mirror, e.g. with a cert-manager certificate. |
 | `checksum` | `string` | Checksum for verification. **Required** by the controller-side validator for `type: url` and `type: custom`. Must match `^(sha256:[a-fA-F0-9]{64}\|sha512:[a-fA-F0-9]{128})$` (hex digits of either case). SHA1 and MD5 are rejected. See [Supply-chain](#supply-chain). |
 | `authSecret` | `string` | Secret containing auth for private repositories/URLs. Consumed only by `installMode: VerifiedDownload` (keys `token` or `header` — see [Supply-chain](#supply-chain)). |
-| `registry` | [`PluginRegistry`](#pluginregistry) | **Reserved — no effect today.** Never read by any controller; a `custom` source is fetched from `source.url`, which (with `checksum`) is required for `type: url` and `type: custom` regardless of `registry`. |
+| `registry` | [`PluginRegistry`](#pluginregistry) | **Reserved — no effect today.** Never read by any controller; a `custom` source is fetched from `source.url`, which (with `checksum`) is required for `type: url` and `type: custom` regardless of `registry`. A `ValidationWarning` event is raised when it is set, and another when `registry.tls` is set. |
 
 ### PluginRegistry
 
-> **Reserved — no effect today.** `source.registry` and everything under it (including `tls`) is accepted by the schema but never read; see the `registry` row above.
+> **Reserved — no effect today.** `source.registry` and everything under it (including `tls`) is accepted by the schema but never read, and a `ValidationWarning` event says so when it is set; see the `registry` row above.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -134,7 +134,7 @@ kind: Neo4jPlugin
 |-------|------|-------------|
 | `allowedProcedures` | `[]string` | Becomes `dbms.security.procedures.allowlist` (and `…unrestricted` unless `sandbox: true`). An **allowlist**: plugin procedures and functions it does not match are not loaded at all, server-wide, and fail as *Unknown function*. |
 | `deniedProcedures` | `[]string` | List of denied procedures/functions |
-| `securityPolicy` | `string` | Security policy: one of `"strict"`, `"moderate"`, `"permissive"` (any other value fails validation and the plugin goes to phase `Invalid`). **Reserved — no effect today:** the value is validated but not used to change any Neo4j setting. |
+| `securityPolicy` | `string` | Security policy: one of `"strict"`, `"moderate"`, `"permissive"` (any other value fails validation and the plugin goes to phase `Invalid`). **Reserved — no effect today:** the value is validated but not used to change any Neo4j setting (restrict procedures with `allowedProcedures` / `deniedProcedures`). A `ValidationWarning` event is raised when it is set. |
 | `sandbox` | `boolean` | Enable sandbox mode: with `allowedProcedures` set, the list is applied as an allowlist only; when `false` (default) the same list is also written to `dbms.security.procedures.unrestricted`. |
 
 ## Status Fields

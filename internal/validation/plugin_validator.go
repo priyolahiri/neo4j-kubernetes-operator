@@ -108,6 +108,9 @@ func (v *PluginValidator) Validate(plugin *neo4jv1beta1.Neo4jPlugin) *PluginVali
 	// Cross-field gates for installMode: VerifiedDownload.
 	result.Errors = append(result.Errors, v.validateVerifiedDownloadMode(plugin)...)
 
+	// Fields the schema accepts but nothing reads: warn, never reject.
+	result.Warnings = append(result.Warnings, pluginNoEffectWarnings(plugin)...)
+
 	// Validate plugin config: keys become neo4j.conf keys / env-var names and
 	// values are rendered into neo4j.conf as `key=value` (standalone) or env
 	// vars, so constrain keys to a safe identifier set and reject control

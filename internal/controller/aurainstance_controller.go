@@ -37,6 +37,7 @@ import (
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/aura"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
 
 // AuraInstanceFinalizer guards the operator's chance to delete (or deliberately
@@ -116,6 +117,12 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}); err != nil {
 			return ctrl.Result{}, err
 		}
+	}
+
+	// Spec fields the schema accepts but nothing reads: advisory, never
+	// blocking. AuraInstance has no validator, so the warning is raised here.
+	for _, warning := range validation.AuraInstanceNoEffectWarnings(inst) {
+		r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
 	}
 
 	if projectID == "" {

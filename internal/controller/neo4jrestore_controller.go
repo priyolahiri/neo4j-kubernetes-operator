@@ -228,6 +228,11 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
+	// Spec fields the schema accepts but nothing reads: advisory, never blocking.
+	for _, warning := range validation.RestoreNoEffectWarnings(restore) {
+		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
+	}
+
 	// Get target cluster. Not-found is TRANSIENT (#218): `kubectl apply -f
 	// dir/` commonly creates the Neo4jRestore before its target CR, and a
 	// terminal Failed here is pinned by the previously-failed guard below

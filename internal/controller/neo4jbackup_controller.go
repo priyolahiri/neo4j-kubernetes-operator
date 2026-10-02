@@ -148,7 +148,13 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// spec re-triggers reconcile; unlike the terminal one-time "Failed" guard)
 	// and don't requeue. Catching it here gives a clear, aggregated message
 	// instead of an opaque apiserver failure when a resource is later created.
-	errs := validation.NewBackupValidator().Validate(backup)
+	backupValidator := validation.NewBackupValidator()
+	errs := backupValidator.Validate(backup)
+
+	// Spec fields the schema accepts but nothing reads: advisory, never blocking.
+	for _, warning := range backupValidator.NoEffectWarnings(backup) {
+		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
+	}
 
 	// mode=replication-source carries extra constraints (design §4.4): the
 	// differential chain feeding a cross-cluster replica must stay unbroken
@@ -649,7 +655,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 		}
 		r.updateBackupStatus(ctx, backup, "Completed", "Backup completed successfully")
 		r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupCompleted, "Backup completed successfully")
-		backupM.RecordBackup(ctx, true, jobDuration(job), 0)
+		backupM.RecordBackup(ctx, true, jobDuration(job))
 		return ctrl.Result{}, nil
 	}
 
@@ -662,7 +668,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 		// minutes).
 		r.updateBackupStatus(ctx, backup, "Failed", "Backup job failed")
 		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, "Backup job failed")
-		backupM.RecordBackup(ctx, false, jobDuration(job), 0)
+		backupM.RecordBackup(ctx, false, jobDuration(job))
 		r.recordOneShotBackupRun(ctx, backup, job)
 		return ctrl.Result{}, nil
 	}
@@ -692,7 +698,7 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 		_ = r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
 		r.updateBackupStatus(ctx, backup, "Failed", msg)
 		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
-		metrics.NewBackupMetrics(backup.Name, backup.Namespace).RecordBackup(ctx, false, elapsed, 0)
+		metrics.NewBackupMetrics(backup.Name, backup.Namespace).RecordBackup(ctx, false, elapsed)
 		return ctrl.Result{}, nil
 	}
 

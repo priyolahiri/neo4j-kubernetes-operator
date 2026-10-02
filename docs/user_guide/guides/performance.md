@@ -14,7 +14,7 @@ The Neo4j Enterprise Operator has been optimized for production environments wit
 ### Resource Management
 - **Memory Validation**: Automatic validation ensures Neo4j memory settings don't exceed available resources
 - **Resource Recommendations**: Built-in recommendations for optimal CPU and memory allocation based on cluster size
-- **Efficient Monitoring**: Lightweight resource monitoring with minimal overhead
+- **Low-overhead observability**: The operator exposes a small set of Prometheus metrics (see [Monitoring](monitoring.md)); it does not poll node or pod utilization itself
 
 ## Resource Allocation
 
@@ -62,17 +62,16 @@ For advanced use cases, you can tune the JVM settings for your Neo4j pods using 
 
 ## Performance Monitoring
 
-The operator includes built-in performance monitoring capabilities:
+The operator does not track resource utilization or detect bottlenecks itself. Use the standard Kubernetes and Prometheus tooling for that, and the operator's own metrics for the operator's behaviour.
 
-### Resource Monitoring
-- Real-time tracking of CPU, memory, and storage utilization
-- Neo4j-specific metrics including transaction rates and query performance
-- Automatic detection of resource constraints and bottlenecks
+### Resource utilization
+- **CPU, memory and storage**: observe pod and node usage with `kubectl top` or Prometheus (cAdvisor / kubelet metrics and kube-state-metrics). Compare usage with `spec.resources` and the PVC size.
+- **Neo4j metrics**: transaction rates, query counts, page-cache and JVM metrics come from Neo4j's own Prometheus endpoint, which the operator enables with `spec.monitoring.enabled` (see [Monitoring](monitoring.md)).
+- **Capacity before apply**: `kubectl neo4j preflight -f <manifest>` checks that a Ready node has enough allocatable memory for the requested pods.
 
-### Operational Insights
-- ConfigMap update frequency and debounce effectiveness
-- Controller reconciliation patterns and efficiency metrics
-- Cluster health and readiness status tracking
+### Operator behaviour
+- **Operator metrics**: reconcile counts and durations, upgrade and backup outcomes, and resource-version conflicts. The full list, and which families are populated, is in [Monitoring](monitoring.md).
+- **Cluster health**: `status.phase`, the `Ready`, `ServersHealthy` and `DatabasesHealthy` conditions, and `status.diagnostics` (live `SHOW SERVERS` / `SHOW DATABASES`).
 
 ## Best Practices
 

@@ -497,8 +497,6 @@ kubectl top pod production-cluster-server-0
 neo4j_operator_backup_total{cluster_name, namespace, result}
 # Backup duration histogram
 neo4j_operator_backup_duration_seconds{cluster_name, namespace}
-# Size of the latest backup in bytes
-neo4j_operator_backup_size_bytes{cluster_name, namespace}
 
 # Alert rules
 groups:
@@ -554,10 +552,11 @@ validate_backup() {
     return 1
   fi
 
-  # Check backup size (human-readable string such as "2.5GB", parsed by
-  # neo4j-admin output; empty if the Pod log couldn't be read)
-  local backup_size=$(kubectl get neo4jbackup $BACKUP_NAME -n $NAMESPACE -o jsonpath='{.status.stats.size}')
-  echo "ℹ️  Latest backup size: ${backup_size:-unknown}"
+  # Backup duration of the latest successful run (the operator does not
+  # populate status.stats.size; check the .backup files in your storage backend
+  # for the artifact size)
+  local backup_duration=$(kubectl get neo4jbackup $BACKUP_NAME -n $NAMESPACE -o jsonpath='{.status.stats.duration}')
+  echo "ℹ️  Latest backup duration: ${backup_duration:-unknown}"
 
   echo "✅ Backup validation passed"
   return 0

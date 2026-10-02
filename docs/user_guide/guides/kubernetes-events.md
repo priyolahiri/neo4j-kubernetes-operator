@@ -32,6 +32,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `ClusterReady` | Normal | Cluster has reached Ready phase |
 | `ValidationFailed` | Warning | Cluster spec validation failed |
 | `TopologyWarning` | Warning | Topology validation produced warnings |
+| `ValidationWarning` | Warning | A spec field the schema accepts but nothing reads is set (`spec.<path> is accepted but has no effect today: <what to do instead>`). Advisory: the resource is still reconciled. Also emitted by `Neo4jEnterpriseStandalone`, `Neo4jBackup`, `Neo4jRestore`, `Neo4jPlugin`, `Neo4jDatabase` and `AuraInstance` |
 | `TopologyPlacementCalculated` | Normal | Topology placement constraints calculated successfully |
 | `TopologyPlacementFailed` | Warning | Topology placement constraint calculation failed |
 | `TopologyZoneDiscoveryDegraded` | Warning | Availability-zone auto-discovery is unavailable (the operator cannot list cluster-scoped nodes, as in namespace-scoped installs); best-effort zone spread is applied via the topology key — set `spec.topology.availabilityZones` to enumerate zones explicitly |
@@ -94,7 +95,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `DataSeeded` | Normal | Database seeded from URI |
 | `SeedCredsMissing` | Warning | The seed credentials Secret (`spec.seedCredentials.secretRef`) is not projected onto the hosting cluster/standalone's `spec.extraEnvFrom`; the message carries a copy-pasteable fix (also emitted for `Neo4jShardedDatabase`) |
 | `SeedCredsAutoInherited` | Normal | The hosting cluster/standalone carries `neo4j.com/auto-inherit-seed-creds: "true"`, so the operator patched its `spec.extraEnvFrom` with the seed credentials Secret and is waiting for the rolling restart (also emitted for `Neo4jShardedDatabase`) |
-| `ValidationWarning` | Warning | Database spec produced validation warnings |
+| `ValidationWarning` | Warning | Database spec produced validation warnings, including a set field that nothing reads (`spec.initialData.configMapRef`, `secretRef`, `storage`, or a `source` other than `cypher`) |
 | `ClusterNotFound` | Warning | Referenced cluster or standalone not found |
 | `ClusterNotReady` | Warning | Referenced cluster is not yet Ready |
 | `ConnectionFailed` | Warning | Could not connect to Neo4j via Bolt |

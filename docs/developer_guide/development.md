@@ -259,7 +259,6 @@ neo4j-kubernetes-operator/
 │   └── neo4jrestore_controller.go
 ├── internal/resources/              # Resource builders
 ├── internal/validation/             # Validation framework
-├── internal/monitoring/             # Resource monitoring
 ├── config/                         # Kubernetes manifests
 │   ├── crd/bases/                  # Generated CRDs
 │   ├── rbac/                       # RBAC manifests
@@ -512,15 +511,18 @@ go test ./internal/controller -run TestSpecificFunction -v
 
 ### Resource Monitoring
 
-The operator includes built-in resource monitoring:
+The operator does not monitor resource utilization itself. Observe pod and node usage with `kubectl top` or Prometheus (cAdvisor and kube-state-metrics), and the operator's own metrics (`neo4j_operator_reconcile_*`, listed in [Monitoring](../user_guide/guides/monitoring.md)) for reconciliation efficiency:
 
 ```bash
-# Check resource recommendations
-kubectl logs -l app.kubernetes.io/name=neo4j-operator | grep -i "resource"
+# Pod and node usage (requires metrics-server)
+kubectl top pods -n <namespace>
+kubectl top nodes
 
-# Monitor reconciliation efficiency
+# Reconciliation activity in the operator log
 kubectl logs -l app.kubernetes.io/name=neo4j-operator | grep -i "reconcile"
 ```
+
+`kubectl neo4j preflight -f <manifest>` checks node capacity before you apply.
 
 ### Development Performance Tips
 

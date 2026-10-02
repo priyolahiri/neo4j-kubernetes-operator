@@ -156,6 +156,10 @@ func (v *DatabaseValidator) Validate(ctx context.Context, database *neo4jv1beta1
 		result.Warnings = append(result.Warnings, nameWarnings...)
 	}
 
+	// Fields the schema accepts but nothing reads: warn, never reject. Placed
+	// before the cluster lookup so the warning is not lost when it fails.
+	result.Warnings = append(result.Warnings, databaseNoEffectWarnings(database)...)
+
 	// Try to get referenced cluster first
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	clusterKey := types.NamespacedName{

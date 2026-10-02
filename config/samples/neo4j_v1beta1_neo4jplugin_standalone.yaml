@@ -36,8 +36,6 @@ spec:
       - "apoc.load.*"
     sandbox: true
 
-  # Resource requirements
-  resources:
-    memoryLimit: "1Gi"
-    cpuLimit: "500m"
-    threadPoolSize: 4
+  # Plugins run inside the Neo4j JVM, so there is no per-plugin resources block
+  # (spec.resources is accepted but has no effect): size the pod through the
+  # standalone's own spec.resources.

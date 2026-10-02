@@ -255,8 +255,9 @@ func TestPluginValidator_Validate(t *testing.T) {
 					},
 				},
 			},
-			expectError: false,
-			errorCount:  0,
+			expectError:  false,
+			errorCount:   0,
+			warningCount: 1, // securityPolicy / resources are accepted but not read: advisory warning
 		},
 		{
 			name: "invalid plugin security - conflicting procedures",
@@ -276,8 +277,9 @@ func TestPluginValidator_Validate(t *testing.T) {
 					},
 				},
 			},
-			expectError: true,
-			errorCount:  1,
+			expectError:  true,
+			errorCount:   1,
+			warningCount: 1, // securityPolicy / resources are accepted but not read: advisory warning
 		},
 		{
 			name: "valid plugin with resources",
@@ -297,8 +299,9 @@ func TestPluginValidator_Validate(t *testing.T) {
 					},
 				},
 			},
-			expectError: false,
-			errorCount:  0,
+			expectError:  false,
+			errorCount:   0,
+			warningCount: 1, // securityPolicy / resources are accepted but not read: advisory warning
 		},
 		{
 			name: "invalid plugin resources - negative thread pool",
@@ -316,8 +319,9 @@ func TestPluginValidator_Validate(t *testing.T) {
 					},
 				},
 			},
-			expectError: true,
-			errorCount:  1,
+			expectError:  true,
+			errorCount:   1,
+			warningCount: 1, // securityPolicy / resources are accepted but not read: advisory warning
 		},
 	}
 

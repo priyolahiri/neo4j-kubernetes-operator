@@ -374,7 +374,7 @@
     "id": "su-validation",
     "name": "Inline Spec Validators",
     "kind": "service",
-    "description": "Inline spec validators under internal/validation/, one struct per CRD, called synchronously from each reconciler's Reconcile — explicitly NOT a Kubernetes admission webhook, which this project forbids (invariant 1).",
+    "description": "Inline spec validators under internal/validation/, one struct per CRD, called synchronously from each reconciler's Reconcile — explicitly NOT a Kubernetes admission webhook, which this project forbids (invariant 1). Also owns the advisory warnings for schema fields that are accepted but not read by any code (noeffect_warnings.go), which reconcilers emit as ValidationWarning events without blocking.",
     "entityIds": [],
     "dependsOn": [],
     "moduleId": "mod-platform",
@@ -383,7 +383,8 @@
       "internal/validation/role_validator.go",
       "internal/validation/rolebinding_validator.go",
       "internal/validation/authrule_validator.go",
-      "internal/validation/auth_validator.go"
+      "internal/validation/auth_validator.go",
+      "internal/validation/noeffect_warnings.go"
     ]
   },
   {

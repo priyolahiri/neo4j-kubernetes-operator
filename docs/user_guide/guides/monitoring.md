@@ -207,10 +207,10 @@ Two uses worth wiring up:
 | `neo4j_operator_split_brain_detected_total` | Counter | `cluster_name`, `namespace` | Total split-brain detection events |
 | `neo4j_operator_server_health` | Gauge | `cluster_name`, `namespace`, `server_name`, `server_address`, `k8s_cluster` | `1` = Enabled+Available; `0` = degraded. `k8s_cluster` is empty unless the operator runs with `--kubernetes-cluster-name` (Helm `kubernetesClusterName`) — see [Multi-cluster](multi_cluster.md) |
 
-> **Which metrics are populated.** Every metric below is registered, so it is listed
-> here, but a metric family that no controller records yet exports no series at all.
-> Rows marked *registered, not currently populated* are in that state today; do not
-> build dashboards or alerts on them.
+> **Which metrics are populated.** Every metric listed here is registered, but a family
+> exports a series only once a controller has recorded it. A row marked *registered, not
+> currently populated* has no recorder wired up yet and exports nothing; do not build
+> dashboards or alerts on it.
 
 ### Reconcile metrics
 
@@ -234,24 +234,8 @@ Recorded for **one-shot** `Neo4jBackup` Jobs only (when the Job reaches a termin
 |---|---|---|---|
 | `neo4j_operator_backup_total` | Counter | `cluster_name`, `namespace`, `result` (`success`/`failure`) | Total one-shot backup attempts |
 | `neo4j_operator_backup_duration_seconds` | Histogram | `cluster_name`, `namespace` | Backup job duration |
-| `neo4j_operator_backup_size_bytes` | Gauge | `cluster_name`, `namespace` | Size of the last successful backup in bytes — *registered, not currently populated* (the size is never supplied) |
 
-### Cypher execution metrics
-
-*Registered, not currently populated.*
-
-| Metric | Type | Labels | Description |
-|---|---|---|---|
-| `neo4j_operator_cypher_executions_total` | Counter | `cluster_name`, `namespace`, `operation`, `result` (`success`/`failure`) | Total Cypher statement executions by the operator |
-| `neo4j_operator_cypher_execution_duration_seconds` | Histogram | `cluster_name`, `namespace`, `operation` | Duration of operator-issued Cypher statements |
-
-### Security operation metrics
-
-*Registered, not currently populated.*
-
-| Metric | Type | Labels | Description |
-|---|---|---|---|
-| `neo4j_operator_security_operations_total` | Counter | `cluster_name`, `namespace`, `operation`, `result` (`success`/`failure`) | Total security operations (user, role, grant) |
+The operator does not export a backup-size metric. Measure the `.backup` artifacts in your storage backend, or read `status.history[*].databaseArtifacts[*].size` / `shardArtifacts[*].size` where the run populated them (`status.history[*].stats.size` is reserved and never populated).
 
 ### Resource conflict metrics
 
@@ -260,28 +244,6 @@ Recorded for **one-shot** `Neo4jBackup` Jobs only (when the Job reaches a termin
 | `neo4j_operator_resource_version_conflicts_total` | Counter | `resource_type`, `namespace` | Total Kubernetes resource version conflicts encountered |
 | `neo4j_operator_conflict_retry_attempts` | Histogram | `resource_type`, `namespace` | Retry attempts needed to resolve each conflict |
 | `neo4j_operator_conflict_retry_duration_seconds` | Histogram | `resource_type`, `namespace` | Time spent retrying due to resource version conflicts |
-
-### Disaster recovery metrics
-
-*Registered, not currently populated.*
-
-| Metric | Type | Labels | Description |
-|---|---|---|---|
-| `neo4j_operator_disaster_recovery_status` | Gauge | `cluster_name`, `namespace`, `primary_region`, `secondary_region` | `1` = DR ready, `0` = not ready |
-| `neo4j_operator_failover_total` | Counter | `cluster_name`, `namespace`, `result` (`success`/`failure`) | Total failovers performed |
-| `neo4j_operator_replication_lag_seconds` | Gauge | `cluster_name`, `namespace`, `primary_region`, `secondary_region` | Replication lag in seconds |
-
-### Scaling metrics
-
-*Registered, not currently populated.*
-
-| Metric | Type | Labels | Description |
-|---|---|---|---|
-| `neo4j_operator_manual_scaler_enabled` | Gauge | `cluster_name`, `namespace` | `1` = manual scaling enabled, `0` = disabled |
-| `neo4j_operator_scale_events_total` | Counter | `cluster_name`, `namespace`, `node_type`, `direction` (`up`/`down`) | Total manual scale events |
-| `neo4j_operator_primary_count` | Gauge | `cluster_name`, `namespace` | Current number of primary nodes |
-| `neo4j_operator_secondary_count` | Gauge | `cluster_name`, `namespace` | Current number of secondary nodes |
-| `neo4j_operator_scaling_validation_total` | Counter | `cluster_name`, `namespace`, `validation_type`, `result` (`success`/`failure`) | Total scaling validation attempts |
 
 ### Aura orchestration metrics
 

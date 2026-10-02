@@ -728,7 +728,10 @@ spec:
                           format: int32
                           type: integer
                         size:
-                          description: Size of the backup
+                          description: |-
+                            Size of the backup.
+
+                            Reserved: accepted by the schema but never populated today.
                           type: string
                         throughput:
                           description: Throughput of the backup
@@ -839,7 +842,10 @@ spec:
                     format: int32
                     type: integer
                   size:
-                    description: Size of the backup
+                    description: |-
+                      Size of the backup.
+
+                      Reserved: accepted by the schema but never populated today.
                     type: string
                   throughput:
                     description: Throughput of the backup

@@ -308,8 +308,8 @@ type TLSSpec struct {
 	//
 	// Reserved: accepted by the schema but not acted on today. No builder or
 	// controller reads it — the operator always uses the cert-manager-issued
-	// Secret "<name>-tls-secret". The only code that looks at it is the security
-	// validator, which rejects it when tls.mode is "disabled".
+	// Secret "<name>-tls-secret". The operator raises a ValidationWarning event
+	// whenever it is set.
 	CertificateSecret string `json:"certificateSecret,omitempty"`
 
 	// TrustedCASecret references a Secret containing a trusted CA certificate (key: "ca.crt")
