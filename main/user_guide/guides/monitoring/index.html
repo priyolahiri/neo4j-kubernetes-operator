@@ -2172,6 +2172,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cross-cluster-replication-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-cluster replication metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#backup-metrics" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4371,6 +4382,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cross-cluster-replication-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-cluster replication metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#backup-metrics" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4825,8 +4847,34 @@ dashboards or alerts on it.</p>
 <tr>
 <td><code>neo4j_operator_upgrade_duration_seconds</code></td>
 <td>Histogram</td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>phase</code></td>
-<td>Duration per upgrade phase — <em>registered, not currently populated</em></td>
+<td><code>cluster_name</code>, <code>namespace</code>, <code>phase</code> (<code>Staging</code>/<code>Rolling</code>/<code>Stabilizing</code>/<code>Verifying</code>)</td>
+<td>Time a rolling upgrade spent in each phase, observed once when the phase ends. <code>Rolling</code> is the whole walk across all servers, not one server. The step that leaves the chain is observed too: <code>Verifying</code> when the upgrade completes, or whichever phase was active when it failed or paused (a <code>Rolling</code> timeout appears as a <code>Rolling</code> observation of about <code>upgradeTimeout</code>). <code>Completed</code>, <code>Failed</code> and <code>Paused</code> are terminal and not timed. Measured from the persisted <code>status.upgradeStatus.phaseStartTime</code>, so an operator restart mid-phase is included in that phase's wall-clock time and no phase is observed twice. Resolution is one second; buckets run from 5s to 1h</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cross-cluster-replication-metrics">Cross-cluster replication metrics<a class="headerlink" href="#cross-cluster-replication-metrics" title="Anchor link to this section">&para;</a></h3>
+<p>Recorded by the <code>Neo4jReplicaDatabase</code> and <code>Neo4jReplicaPromotion</code> controllers (see <a href="../cross_cluster_replication/">Cross-cluster replication</a>). <code>cluster_name</code> is the <em>downstream</em> cluster that hosts the replica.</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Type</th>
+<th>Labels</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>neo4j_operator_replica_lag_transactions</code></td>
+<td>Gauge</td>
+<td><code>namespace</code>, <code>cluster_name</code>, <code>replica</code>, <code>database</code></td>
+<td>How many <strong>transactions</strong> (not seconds) the replica is behind its upstream, as <code>SHOW DATABASES</code> reports it. <code>replica</code> is the <code>Neo4jReplicaDatabase</code> name and <code>database</code> the Neo4j database name (<code>spec.name</code>, defaulting to the CR name). Set while the replica is observed replicating; the series is <strong>removed</strong> when the CR is deleted or the replica is promoted, so a dashboard never shows a frozen last value. This is the data loss a promotion right now would make permanent</td>
+</tr>
+<tr>
+<td><code>neo4j_operator_replica_promotions_total</code></td>
+<td>Counter</td>
+<td><code>namespace</code>, <code>cluster_name</code>, <code>result</code> (<code>success</code>/<code>failure</code>)</td>
+<td>Replica promotions by terminal outcome, one increment per <code>Neo4jReplicaPromotion</code> when it reaches <code>Completed</code> (<code>success</code>) or <code>Failed</code> (<code>failure</code>). A promotion that is still retrying counts as neither, and reconciles after the terminal phase do not count again</td>
 </tr>
 </tbody>
 </table>

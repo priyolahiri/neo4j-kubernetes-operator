@@ -4819,6 +4819,10 @@ the CR instead if you need to.</p>
 </span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="c1"># NAME          CLUSTER      UPSTREAM   PHASE         LAG   AGE</span>
 </span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="c1"># foo-replica   dr-cluster   foo        Replicating   3     12m</span>
 </span></code></pre></div>
+<p><code>LAG</code> is a count of <strong>transactions</strong> behind the upstream, not a duration. The
+operator also exports it as <code>neo4j_operator_replica_lag_transactions</code>, and counts
+promotions in <code>neo4j_operator_replica_promotions_total</code> — see the
+<a href="../monitoring/#cross-cluster-replication-metrics">replication metrics</a>.</p>
 <p><strong>Replicas are read-only.</strong> Both primaries and secondaries refuse writes.
 Clients must use <code>AccessMode.READ</code> / <code>executeRead</code>, or
 <code>cypher-shell --access-mode=read</code>.</p>

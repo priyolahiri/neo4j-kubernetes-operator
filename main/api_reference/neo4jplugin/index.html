@@ -5502,12 +5502,12 @@
 <tr>
 <td><code>installedVersion</code></td>
 <td><code>string</code></td>
-<td><strong>Reserved — never populated today.</strong> Intended: actually installed plugin version</td>
+<td>The version the operator last installed successfully: <code>spec.version</code> as it was when the plugin reached <code>Ready</code> (the version <em>requested</em>, not read back from the running plugin). Left unchanged while a later attempt is <code>Installing</code> or <code>Failed</code>, so it always names the last install that worked</td>
 </tr>
 <tr>
 <td><code>installationTime</code></td>
 <td><code>*metav1.Time</code></td>
-<td><strong>Reserved — never populated today.</strong> Intended: when the plugin was successfully installed</td>
+<td>When the plugin was first recorded as installed at <code>installedVersion</code>: set on reaching <code>Ready</code>, not touched by later reconciles or by <code>Ready</code> → <code>Installing</code> → <code>Ready</code> cycles at the same version. A different <code>spec.version</code> is a new installation and restarts it. For a plugin that was already <code>Ready</code> before this field existed, it is the time the operator first saw it so</td>
 </tr>
 <tr>
 <td><code>health</code></td>

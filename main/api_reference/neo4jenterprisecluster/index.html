@@ -8225,6 +8225,11 @@ visible via <code>kubectl get svc</code>.</p>
 <td>Anchor for the per-step timeout (<code>upgradeTimeout</code> per Rolling step, <code>stabilizationTimeout</code>, <code>healthCheckTimeout</code>); reset on every phase transition and partition advance</td>
 </tr>
 <tr>
+<td><code>phaseStartTime</code></td>
+<td><code>*metav1.Time</code></td>
+<td>When the current phase began; reset only when the phase changes (unlike <code>stepStartTime</code>, which also restarts on every partition advance inside <code>Rolling</code>). It is the anchor <code>neo4j_operator_upgrade_duration_seconds</code> is measured from. Absent on an upgrade that began under an older operator version</td>
+</tr>
+<tr>
 <td><code>currentPartition</code></td>
 <td><code>*int32</code></td>
 <td>StatefulSet <code>RollingUpdate</code> partition most recently applied; servers with ordinal &gt;= partition have been rolled to the target version. Used to resume after an operator restart</td>
