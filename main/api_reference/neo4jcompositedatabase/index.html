@@ -4137,7 +4137,7 @@ A <code>composite: true</code> flag would leave most of that spec silently inert
 <tr>
 <td><code>defaultCypherLanguage</code></td>
 <td><code>string</code></td>
-<td><code>"5"</code> or <code>"25"</code>. <strong>CalVer only</strong> — the <code>DEFAULT LANGUAGE CYPHER</code> clause does not parse on the 5.26 LTS, and the validator rejects it there rather than letting the server emit a raw syntax error. This is the <strong>only</strong> property of a composite that can be altered after creation.</td>
+<td><code>"5"</code> or <code>"25"</code>. The <code>DEFAULT LANGUAGE CYPHER</code> clause <strong>exists only on CalVer</strong> — it does not parse on the 5.26 LTS — so the value is checked against the target's image, the same way <a href="../neo4jdatabase/"><code>Neo4jDatabase.spec.defaultCypherLanguage</code></a> is. On the LTS <code>"25"</code> is <strong>rejected</strong> by validation (<code>spec.defaultCypherLanguage</code>) rather than letting the server emit a raw syntax error, and <code>"5"</code> is accepted with a warning but has <strong>no effect</strong>: every LTS database already runs Cypher 5, and the operator leaves the clause out of <code>CREATE COMPOSITE DATABASE</code> and <code>ALTER DATABASE</code>. On CalVer both values are applied. This is the <strong>only</strong> property of a composite that can be altered after creation.</td>
 </tr>
 <tr>
 <td><code>wait</code></td>

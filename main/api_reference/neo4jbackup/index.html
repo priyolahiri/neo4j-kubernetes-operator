@@ -4959,7 +4959,7 @@
 <td><code>size</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Size for a new PVC (e.g., <code>"100Gi"</code>); omit to reference an externally provisioned PVC</td>
+<td>Size for a new PVC (e.g., <code>"100Gi"</code>); omit to reference an externally provisioned PVC. Must be a valid Kubernetes quantity greater than zero — validation refuses anything else, and the controller reports phase <code>Invalid</code> (naming this field) rather than relying on that check</td>
 </tr>
 </tbody>
 </table>
@@ -5149,7 +5149,7 @@
 <tr>
 <td><code>conditions</code></td>
 <td><code>[]metav1.Condition</code></td>
-<td>Current backup conditions. The operator maintains a single <code>Ready</code> condition derived from <code>phase</code> (<code>Completed</code> → <code>True</code> with reason <code>BackupSucceeded</code>; <code>Scheduled</code> → <code>True</code> with reason <code>BackupScheduled</code>; <code>Failed</code>/<code>Suspended</code>/<code>Invalid</code> → <code>False</code>; everything else → <code>Unknown</code>).</td>
+<td>Current backup conditions. The operator maintains a single <code>Ready</code> condition derived from <code>phase</code> (<code>Completed</code> → <code>True</code> with reason <code>BackupSucceeded</code>; <code>Scheduled</code> → <code>True</code> with reason <code>BackupScheduled</code>; <code>Suspended</code> → <code>False</code> with reason <code>Suspended</code> — a deliberate pause, not a failure; <code>Failed</code>/<code>Invalid</code> → <code>False</code> with reason <code>ReconciliationFailed</code>; everything else → <code>Unknown</code>).</td>
 </tr>
 <tr>
 <td><code>phase</code></td>
@@ -5221,7 +5221,7 @@
 </tr>
 <tr>
 <td><code>Suspended</code></td>
-<td><code>spec.suspend: true</code> — the CronJob is suspended and one-shot runs are paused.</td>
+<td><code>spec.suspend: true</code> — the CronJob is suspended and one-shot runs are paused. The <code>Ready</code> condition is <code>False</code> with reason <code>Suspended</code> (a deliberate pause, not a failure).</td>
 </tr>
 <tr>
 <td><code>Running</code></td>
@@ -5257,7 +5257,7 @@
 <tr>
 <td><code>size</code></td>
 <td><code>string</code></td>
-<td>Total backup size (e.g., <code>"2.5GB"</code>)</td>
+<td><strong>Reserved</strong> — accepted by the schema but never populated today. Total backup size (e.g., <code>"2.5GB"</code>)</td>
 </tr>
 <tr>
 <td><code>duration</code></td>
@@ -5267,12 +5267,12 @@
 <tr>
 <td><code>throughput</code></td>
 <td><code>string</code></td>
-<td>Backup throughput rate (e.g., <code>"8.3MB/s"</code>)</td>
+<td><strong>Reserved</strong> — accepted by the schema but never populated today. Backup throughput rate (e.g., <code>"8.3MB/s"</code>)</td>
 </tr>
 <tr>
 <td><code>fileCount</code></td>
 <td><code>int32</code></td>
-<td>Number of files in the backup</td>
+<td><strong>Reserved</strong> — accepted by the schema but never populated today. Number of files in the backup</td>
 </tr>
 </tbody>
 </table>

@@ -5607,7 +5607,7 @@ license on your behalf — you must hold your own valid Neo4j Enterprise license
 <tr>
 <td><code>size</code></td>
 <td><code>string</code></td>
-<td><strong>Required</strong>. Storage size (e.g., <code>"10Gi"</code>). Can be increased after creation — the operator automatically expands the PVC and recreates the StatefulSet with zero downtime. <strong>Cannot be decreased.</strong> Requires <code>allowVolumeExpansion: true</code> on the StorageClass.</td>
+<td><strong>Required</strong>. Storage size (e.g., <code>"10Gi"</code>). Must be a valid Kubernetes quantity greater than zero (<code>"1.5Gi"</code> is fine; <code>"fifty"</code> or <code>"10 Gi"</code> is refused by validation). Can be increased after creation — the operator automatically expands the PVC and recreates the StatefulSet with zero downtime. <strong>Cannot be decreased.</strong> Requires <code>allowVolumeExpansion: true</code> on the StorageClass.</td>
 </tr>
 <tr>
 <td><code>retentionPolicy</code></td>
@@ -5676,7 +5676,9 @@ license on your behalf — you must hold your own valid Neo4j Enterprise license
 <p><strong>Note on <code>strictPeerValidation</code>:</strong> the field is present on the shared
 <code>TLSSpec</code> but has no effect on <code>Neo4jEnterpriseStandalone</code> — single-server
 deployments have no intra-cluster traffic, so there's no cluster SSL
-policy to govern. Setting it on a standalone is silently ignored.</p>
+policy to govern. Setting it to <code>false</code> on a standalone raises a
+<code>ValidationWarning</code> event saying so (<code>true</code> is the CRD default, so it is
+not warned about); the standalone is still accepted.</p>
 <p><strong>Note on <code>certificateSecret</code>:</strong> the field is present on the shared
 <code>TLSSpec</code> but is never read: the operator always uses the cert-manager
 Secret <code>{name}-tls-secret</code>. A <code>ValidationWarning</code> event is raised whenever

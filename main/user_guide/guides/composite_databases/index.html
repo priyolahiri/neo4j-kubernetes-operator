@@ -4238,8 +4238,8 @@ constituent.</p>
 <td>There is no store to place.</td>
 </tr>
 <tr>
-<td><code>defaultCypherLanguage</code> is CalVer-only</td>
-<td>The <code>DEFAULT LANGUAGE CYPHER</code> clause does not parse on the 5.26 LTS. It is also the only property of a composite that can be changed after creation.</td>
+<td><code>defaultCypherLanguage</code> needs CalVer for <code>"25"</code></td>
+<td>The <code>DEFAULT LANGUAGE CYPHER</code> clause does not parse on the 5.26 LTS, so <code>"25"</code> is rejected there. <code>"5"</code> is accepted with a warning and the clause is left out, because every database on the LTS already runs Cypher 5. It is also the only property of a composite that can be changed after creation.</td>
 </tr>
 <tr>
 <td>Writes are single-graph</td>

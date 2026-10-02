@@ -3817,7 +3817,9 @@ never reaches <code>Completed</code>), and <code>spec.suspend: true</code> is de
 than a fault, so both map to Healthy — otherwise an Application containing a
 scheduled backup would show Progressing forever and hold up any later sync wave.
 The <code>Ready</code> condition (what Flux reads) agrees for <code>Scheduled</code>: it is <code>True</code>
-with reason <code>BackupScheduled</code>. <code>Suspended</code> still reports <code>Ready=False</code>.
+with reason <code>BackupScheduled</code>. <code>Suspended</code> still reports <code>Ready=False</code> (a suspended
+backup is not ready to run) but with reason <code>Suspended</code>, not <code>ReconciliationFailed</code>:
+nothing failed.
 <code>Invalid</code> (a spec the validator rejected) is terminal until the spec is edited,
 so it maps to Degraded rather than Progressing.</p>
 <p>Health checks are configured for <strong>all 27 CRDs</strong> in the <code>neo4j.neo4j.com</code>
