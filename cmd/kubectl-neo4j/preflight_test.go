@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -28,6 +29,11 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
@@ -277,6 +283,113 @@ func TestPreflight_AbsentServiceAccountBeforeFirstBackupIsNotAFailure(t *testing
 	out := joinChecks(res.checks)
 	assert.Contains(t, out, "does not exist yet")
 	assert.Contains(t, out, "creates it on the first backup")
+}
+
+const pvcBackupManifestTmpl = `
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jBackup
+metadata: {name: nightly, namespace: neo4j}
+spec:
+  instanceRef: prod
+  storage:
+    type: pvc
+    pvc:
+%s
+`
+
+func pvcBackup(pvcFields string) []byte {
+	return []byte(strings.Replace(pvcBackupManifestTmpl, "%s", pvcFields, 1))
+}
+
+// The operator provisions the destination claim itself when spec.storage.pvc.size
+// is set (ensureBackupPVC in internal/controller/neo4jbackup_controller.go), so
+// an absent claim is the EXPECTED state before the first reconcile. Reporting it
+// as a failure made preflight exit 1 on the very manifest the operator is built
+// to accept — and told the user "the operator does not provision one".
+func TestPreflight_AbsentPVCWithSizeIsNotAFailure(t *testing.T) {
+	res := preflightObject(context.Background(), testClient(t), "neo4j", "f.yaml",
+		pvcBackup("      name: backups\n      size: 50Gi\n      storageClassName: standard"))
+
+	assert.False(t, res.problems(), "the operator creates this claim; got:\n%s", joinChecks(res.checks))
+	out := joinChecks(res.checks)
+	assert.Contains(t, out, markWaiting+" pvc backups")
+	assert.Contains(t, out, "creates this claim")
+	assert.Contains(t, out, "50Gi")
+	assert.NotContains(t, out, "does not provision")
+}
+
+// Without a size the operator has nothing to provision from: a missing claim
+// surfaces only as a Job that never starts, which is exactly what preflight
+// exists to catch first.
+func TestPreflight_AbsentPVCWithoutSizeIsAProblem(t *testing.T) {
+	res := preflightObject(context.Background(), testClient(t), "neo4j", "f.yaml",
+		pvcBackup("      name: backups"))
+
+	assert.True(t, res.problems())
+	out := joinChecks(res.checks)
+	assert.Contains(t, out, "pvc backups")
+	assert.Contains(t, out, "does not exist")
+	assert.Contains(t, out, "spec.storage.pvc.size", "the fix is to set a size or create the claim")
+}
+
+func TestPreflight_ExistingPVCPasses(t *testing.T) {
+	c := testClient(t, &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "backups", Namespace: "neo4j"},
+	})
+	for name, fields := range map[string]string{
+		"with size":    "      name: backups\n      size: 50Gi",
+		"without size": "      name: backups",
+	} {
+		t.Run(name, func(t *testing.T) {
+			res := preflightObject(context.Background(), c, "neo4j", "f.yaml", pvcBackup(fields))
+			assert.False(t, res.problems())
+			assert.Empty(t, res.checks)
+		})
+	}
+}
+
+// Only NotFound means "the claim is absent". Any other error from the read
+// (RBAC, a struggling API server) says nothing about the claim, so preflight
+// must neither claim it is missing nor report a clean pass: it says the check
+// could not be made. It used to return nothing at all, which printed as a pass.
+func TestPreflight_UnreadablePVCIsAWarningNotASilentPass(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, neo4jv1beta1.AddToScheme(scheme))
+	c := clientfake.NewClientBuilder().WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*corev1.PersistentVolumeClaim); ok {
+					return errors.New(`persistentvolumeclaims "backups" is forbidden: User "dev" cannot get resource`)
+				}
+				return cl.Get(ctx, key, obj, opts...)
+			},
+		}).Build()
+
+	for name, fields := range map[string]string{
+		"with size":    "      name: backups\n      size: 50Gi",
+		"without size": "      name: backups",
+	} {
+		t.Run(name, func(t *testing.T) {
+			res := preflightObject(context.Background(), c, "neo4j", "f.yaml", pvcBackup(fields))
+
+			assert.False(t, res.problems(), "an unreadable claim is not a failed one")
+			require.Len(t, res.checks, 1, "the check must say it could not be made, not stay silent")
+			out := joinChecks(res.checks)
+			assert.Contains(t, out, markWarning+" pvc backups could not be read")
+			assert.Contains(t, out, "is forbidden", "the underlying error is shown")
+			assert.NotContains(t, out, "does not exist", "it must not claim the claim is missing")
+			assert.NotContains(t, out, "creates this claim")
+		})
+	}
+}
+
+func TestPreflight_NamelessPVCIsAProblem(t *testing.T) {
+	res := preflightObject(context.Background(), testClient(t), "neo4j", "f.yaml",
+		pvcBackup("      size: 50Gi"))
+
+	assert.True(t, res.problems(), "the operator refuses a PVC backup without a name even when a size is set")
+	assert.Contains(t, joinChecks(res.checks), "spec.storage.pvc.name")
 }
 
 // A kind with no cluster-side preconditions must say so. A silent pass would

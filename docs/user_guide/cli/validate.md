@@ -63,10 +63,9 @@ Neo4jEnterpriseStandalone/db (standalone.yaml):
 
 This is the most common manifest error there is, and it used to pass: the document was decoded leniently, so an unrecognised key was dropped in silence and the file reported clean — then `kubectl apply` refused it with a strict-decoding error.
 
-Open maps are left alone, because every key in them is your data rather than a field name: `spec.config`, a composite constituent's `driverSettings`, labels and annotations. `metadata` and `status` are not walked either — they belong to Kubernetes, not to this operator.
+The check descends into lists of objects as well, and reports the index of the offending item — `spec.topology.serverRoles[0].modeContraint`, `spec.env[1].valueFrom.secretKeyRef.kee` — so a typo in `serverRoles`, `env`, a composite's `constituents` or any other list is caught the same way as one in a plain object. Lists of plain values (`[]string`, `[]int`) have no field names to misspell and are left alone.
 
-!!! warning "Limitation: typos inside list items are not detected yet"
-    Only keys under objects are checked. A misspelled key inside an item of a list — for example `spec.topology.serverRoles[0].…`, `spec.privileges[0].…` or `spec.env[0].…` — passes this check, and the API server will reject it at apply time. Use `kubectl apply --dry-run=server` to catch those.
+Open maps are left alone, because every key in them is your data rather than a field name: `spec.config`, a composite constituent's `driverSettings`, labels and annotations. `metadata` and `status` are not walked either — they belong to Kubernetes, not to this operator.
 
 This check is **offline**, so it runs on **every one of the 27 kinds** — including the ones whose cross-reference rules need `--connect`, and the ones with no operator-side validator at all. "No validator" is not "no spelling": the kinds governed only by their CRD schema can still be misspelled, and the API server is a slower place to find out. The types come from the API scheme, so a CRD added later is covered the day it lands. Such a document reports the typo *and* says what is still unchecked:
 

@@ -77,6 +77,10 @@ archive lists every redaction it made in REDACTIONS.txt — read it before
 sharing, since only you can judge whether your own spec.config or logs contain
 something private.
 
+Collection is best-effort: a read that fails is skipped, not fatal. Every one is
+listed in errors.txt (what was being read, and the error), so a section that is
+missing from the archive is never mistaken for one that was empty.
+
 Flags:
 `)
 		fs.PrintDefaults()
@@ -111,11 +115,8 @@ Flags:
 		target = fmt.Sprintf("neo4j-support-bundle-%s.tar.gz", time.Now().UTC().Format("20060102-150405"))
 	}
 
-	files, notes := collectBundle(context.Background(), c, clientset, ns, *logLines)
-	files = append(files, bundleFile{
-		name: "REDACTIONS.txt",
-		body: []byte(renderRedactions(notes)),
-	})
+	files, notes, failures := collectBundle(context.Background(), c, clientset, ns, *logLines)
+	files = finishBundle(files, notes, failures)
 
 	if err := writeArchive(target, files); err != nil {
 		fmt.Fprintf(stderr, "error: could not write %s: %v\n", target, err)
@@ -124,18 +125,71 @@ Flags:
 
 	fmt.Fprintf(stdout, "wrote %s (%d file(s))\n", target, len(files))
 	fmt.Fprintf(stdout, "%d redaction(s) applied — see REDACTIONS.txt inside the archive.\n", len(notes))
+	fmt.Fprintf(stdout, "%d read(s) failed — see errors.txt inside the archive.\n", len(failures))
 	fmt.Fprintln(stdout, "Review the contents before sharing: only you can judge whether your own")
 	fmt.Fprintln(stdout, "configuration or log output contains something private.")
 	return exitOK
 }
 
+// finishBundle adds the two files that describe the collection itself:
+// REDACTIONS.txt (what was withheld) and errors.txt (what could not be read).
+// Both are always present, so their absence never has to be interpreted — an
+// empty errors.txt says every read succeeded, where a missing one could mean
+// that or an older kubectl-neo4j.
+func finishBundle(files []bundleFile, notes, failures []string) []bundleFile {
+	return append(files,
+		bundleFile{name: "REDACTIONS.txt", body: []byte(renderRedactions(notes))},
+		bundleFile{name: "errors.txt", body: []byte(renderReadErrors(failures))},
+	)
+}
+
+// maxErrorLen bounds one recorded error. API errors are short; the cap only
+// guards against a pathological one bloating the file.
+const maxErrorLen = 500
+
+// readFailure formats one failed read for errors.txt: what was being read, and
+// the error — and nothing else. Only err.Error() is ever recorded, never a
+// response body or any data the read might have returned, so this file cannot
+// carry a value the redaction pass exists to withhold. Flattened to one line so
+// a multi-line error cannot forge an extra entry.
+func readFailure(what string, err error) string {
+	msg := strings.Join(strings.Fields(err.Error()), " ")
+	if r := []rune(msg); len(r) > maxErrorLen {
+		msg = string(r[:maxErrorLen]) + "…"
+	}
+	return what + ": " + msg
+}
+
+func renderReadErrors(failures []string) string {
+	var b strings.Builder
+	b.WriteString("Reads that failed\n")
+	b.WriteString("=================\n\n")
+	b.WriteString("Collection is best-effort: a read that fails is skipped and the rest carries on.\n")
+	b.WriteString("Everything listed below is therefore MISSING from this archive. Only the error\n")
+	b.WriteString("text is recorded here, never any data the read might have returned.\n\n")
+	if len(failures) == 0 {
+		b.WriteString("(every read succeeded)\n")
+		return b.String()
+	}
+	sorted := append([]string(nil), failures...)
+	sort.Strings(sorted)
+	for _, f := range sorted {
+		b.WriteString("- " + f + "\n")
+	}
+	return b.String()
+}
+
 // collectBundle gathers everything, tolerating per-item failures. A bundle is
 // most wanted when a cluster is unhealthy, so one unreadable resource must not
-// abort the collection — each failure is recorded as a file in the archive
-// instead, which also tells the recipient what could not be read.
-func collectBundle(ctx context.Context, c client.Client, cs kubernetes.Interface, ns string, logLines int64) ([]bundleFile, []string) {
+// abort the collection. The third return value lists every read that failed,
+// for errors.txt: a silently missing section is indistinguishable from a
+// section that was empty, and tells the recipient nothing about what
+// permissions the collector had.
+func collectBundle(ctx context.Context, c client.Client, cs kubernetes.Interface, ns string, logLines int64) ([]bundleFile, []string, []string) {
 	var files []bundleFile
 	var notes []string
+	var failures []string
+	fail := func(what string, err error) { failures = append(failures, readFailure(what, err)) }
 
 	files = append(files, bundleFile{
 		name: "meta.txt",
@@ -149,7 +203,9 @@ func collectBundle(ctx context.Context, c client.Client, cs kubernetes.Interface
 		list := &unstructured.UnstructuredList{}
 		list.SetGroupVersionKind(gvk.GroupVersion().WithKind(gvk.Kind + "List"))
 		if err := c.List(ctx, list, client.InNamespace(ns)); err != nil {
-			continue // not installed, or not readable — see errors.txt below
+			// Not installed, or not readable by this user.
+			fail("list "+gvk.Kind, err)
+			continue
 		}
 		for i := range list.Items {
 			item := &list.Items[i]
@@ -157,6 +213,7 @@ func collectBundle(ctx context.Context, c client.Client, cs kubernetes.Interface
 			notes = append(notes, n...)
 			body, err := yaml.Marshal(cleaned.Object)
 			if err != nil {
+				fail(fmt.Sprintf("render %s/%s", gvk.Kind, item.GetName()), err)
 				continue
 			}
 			files = append(files, bundleFile{
@@ -171,7 +228,7 @@ func collectBundle(ctx context.Context, c client.Client, cs kubernetes.Interface
 	if err := c.List(ctx, &events, client.InNamespace(ns)); err == nil {
 		files = append(files, bundleFile{name: "events.txt", body: []byte(renderEvents(events.Items))})
 	} else {
-		notes = append(notes, "events could not be read: "+err.Error())
+		fail("list events", err)
 	}
 
 	// Pods: status summary plus logs, current and previous.
@@ -183,20 +240,12 @@ func collectBundle(ctx context.Context, c client.Client, cs kubernetes.Interface
 				name: path.Join("pods", p.Name, "status.txt"),
 				body: []byte(renderPodStatus(p)),
 			})
-			for _, ctr := range p.Spec.Containers {
-				for _, prev := range []bool{false, true} {
-					body, err := podLogs(ctx, cs, ns, p.Name, ctr.Name, prev, logLines)
-					if err != nil {
-						continue // a container that never restarted has no previous log
-					}
-					suffix := ctr.Name + ".log"
-					if prev {
-						suffix = ctr.Name + ".previous.log"
-					}
-					files = append(files, bundleFile{name: path.Join("pods", p.Name, suffix), body: body})
-				}
-			}
+			lf, lfail := collectContainerLogs(ctx, cs, p, logLines, path.Join("pods", p.Name))
+			files = append(files, lf...)
+			failures = append(failures, lfail...)
 		}
+	} else {
+		fail("list pods", err)
 	}
 
 	// Secrets: names and keys only, never values. Included at all because
@@ -216,6 +265,8 @@ func collectBundle(ctx context.Context, c client.Client, cs kubernetes.Interface
 			notes = append(notes, fmt.Sprintf("Secret %q: values withheld, key names kept", s.Name))
 		}
 		files = append(files, bundleFile{name: "secrets-keys-only.txt", body: []byte(b.String())})
+	} else {
+		fail("list secrets (names and key names only)", err)
 	}
 
 	// The operator's own log, which lives in ANOTHER namespace.
@@ -224,19 +275,66 @@ func collectBundle(ctx context.Context, c client.Client, cs kubernetes.Interface
 	// reconcile behaviour — and the command promised it in its help text and
 	// in the docs while collecting nothing, because everything above is scoped
 	// to the target namespace and the operator does not run there.
-	opFiles, opNotes := collectOperatorLogs(ctx, c, cs, logLines)
+	opFiles, opNotes, opFailures := collectOperatorLogs(ctx, c, cs, logLines)
 	files = append(files, opFiles...)
 	notes = append(notes, opNotes...)
+	failures = append(failures, opFailures...)
 
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
-	return files, notes
+	return files, notes, failures
+}
+
+// collectContainerLogs reads the current log of every container in the pod, and
+// the previous one where a previous instance can exist. dir is the archive
+// directory the logs are filed under.
+//
+// A failed read is returned, not dropped. The one exception is a previous log
+// for a container that has never restarted: that instance does not exist, so
+// the API server's refusal is the correct answer rather than a fault, and
+// listing it would put a false "failure" in front of every healthy pod.
+func collectContainerLogs(ctx context.Context, cs kubernetes.Interface, p *corev1.Pod, logLines int64, dir string) ([]bundleFile, []string) {
+	var files []bundleFile
+	var failures []string
+	for _, ctr := range p.Spec.Containers {
+		for _, prev := range []bool{false, true} {
+			body, err := podLogs(ctx, cs, p.Namespace, p.Name, ctr.Name, prev, logLines)
+			if err != nil {
+				if !prev || containerRestarted(p, ctr.Name) {
+					which := "log"
+					if prev {
+						which = "previous log"
+					}
+					failures = append(failures, readFailure(
+						fmt.Sprintf("%s of container %s in pod %s/%s", which, ctr.Name, p.Namespace, p.Name), err))
+				}
+				continue
+			}
+			suffix := ctr.Name + ".log"
+			if prev {
+				suffix = ctr.Name + ".previous.log"
+			}
+			files = append(files, bundleFile{name: path.Join(dir, suffix), body: body})
+		}
+	}
+	return files, failures
+}
+
+// containerRestarted reports whether a previous instance of the container can
+// exist, from the pod's own status.
+func containerRestarted(p *corev1.Pod, container string) bool {
+	for _, cs := range p.Status.ContainerStatuses {
+		if cs.Name == container {
+			return cs.RestartCount > 0
+		}
+	}
+	return false
 }
 
 // collectOperatorLogs finds the operator by the label it ships with, wherever
 // it runs, and takes the log of each of its pods. Best-effort like everything
-// else here: a user without cluster-wide read access gets a note saying so
-// rather than a failed bundle.
-func collectOperatorLogs(ctx context.Context, c client.Client, cs kubernetes.Interface, logLines int64) ([]bundleFile, []string) {
+// else here: a user without cluster-wide read access gets a failure entry
+// saying so rather than a failed bundle.
+func collectOperatorLogs(ctx context.Context, c client.Client, cs kubernetes.Interface, logLines int64) ([]bundleFile, []string, []string) {
 	// The identifying label (app.kubernetes.io/name=neo4j-operator) is on the
 	// DEPLOYMENT, not on its pods — the pod template carries only
 	// control-plane=controller-manager. So find the Deployment by label and
@@ -245,17 +343,18 @@ func collectOperatorLogs(ctx context.Context, c client.Client, cs kubernetes.Int
 	var deployments appsv1.DeploymentList
 	if err := c.List(ctx, &deployments,
 		client.MatchingLabels{"app.kubernetes.io/name": "neo4j-operator"}); err != nil {
-		return nil, []string{"operator logs could not be collected (cannot list deployments cluster-wide): " + err.Error()}
+		return nil, nil, []string{readFailure("operator logs (cannot list deployments cluster-wide)", err)}
 	}
 	if len(deployments.Items) == 0 {
-		return nil, []string{
-			"operator logs could not be collected: no Deployment labelled " +
+		return nil, nil, []string{
+			"operator logs: no Deployment labelled " +
 				"app.kubernetes.io/name=neo4j-operator was found in any namespace this user can " +
 				"read. If the operator IS running, that absence is itself worth reporting — it is " +
 				"what a resource with no status looks like.",
 		}
 	}
 
+	var failures []string
 	var pods corev1.PodList
 	for i := range deployments.Items {
 		d := &deployments.Items[i]
@@ -266,45 +365,34 @@ func collectOperatorLogs(ctx context.Context, c client.Client, cs kubernetes.Int
 		if err := c.List(ctx, &found,
 			client.InNamespace(d.Namespace),
 			client.MatchingLabels(d.Spec.Selector.MatchLabels)); err != nil {
+			failures = append(failures, readFailure(
+				fmt.Sprintf("list pods of operator Deployment %s/%s", d.Namespace, d.Name), err))
 			continue
 		}
 		pods.Items = append(pods.Items, found.Items...)
 	}
 	if len(pods.Items) == 0 {
-		return nil, []string{
-			"operator logs could not be collected: the operator Deployment was found but none of " +
-				"its pods could be listed. A Deployment with no running pod is itself the answer " +
-				"to why nothing is reconciling.",
-		}
+		return nil, nil, append(failures,
+			"operator logs: the operator Deployment was found but none of "+
+				"its pods could be listed. A Deployment with no running pod is itself the answer "+
+				"to why nothing is reconciling.")
 	}
 
 	var files []bundleFile
 	var notes []string
 	for i := range pods.Items {
 		p := &pods.Items[i]
+		dir := path.Join("operator", p.Namespace, p.Name)
 		files = append(files, bundleFile{
-			name: path.Join("operator", p.Namespace, p.Name, "status.txt"),
+			name: path.Join(dir, "status.txt"),
 			body: []byte(renderPodStatus(p)),
 		})
-		for _, ctr := range p.Spec.Containers {
-			for _, prev := range []bool{false, true} {
-				body, err := podLogs(ctx, cs, p.Namespace, p.Name, ctr.Name, prev, logLines)
-				if err != nil {
-					continue
-				}
-				suffix := ctr.Name + ".log"
-				if prev {
-					suffix = ctr.Name + ".previous.log"
-				}
-				files = append(files, bundleFile{
-					name: path.Join("operator", p.Namespace, p.Name, suffix),
-					body: body,
-				})
-			}
-		}
+		lf, lfail := collectContainerLogs(ctx, cs, p, logLines, dir)
+		files = append(files, lf...)
+		failures = append(failures, lfail...)
 		notes = append(notes, fmt.Sprintf("operator log collected from %s/%s", p.Namespace, p.Name))
 	}
-	return files, notes
+	return files, notes, failures
 }
 
 func podLogs(ctx context.Context, cs kubernetes.Interface, ns, pod, container string, previous bool, tail int64) ([]byte, error) {

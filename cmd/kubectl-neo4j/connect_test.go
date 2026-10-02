@@ -204,3 +204,112 @@ func TestCypherShellArgs_TLSSessionVerifiesTheServer(t *testing.T) {
 	plain := target{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j"}
 	assert.NotContains(t, plain.cypherShellArgs(""), "keytool")
 }
+
+func schemeOf(uri string) string {
+	scheme, _, _ := strings.Cut(uri, "://")
+	return scheme
+}
+
+// The scheme `connect` prints has to be the one that works for the Kind it
+// describes. It used to print bolt(+s):// for everything, which on a cluster
+// pins the session to one server (the default database has a single primary, so
+// "Database neo4j not found" on a healthy cluster) and on TLS fails hostname
+// verification when dialled at localhost.
+func TestRenderConnect_SchemeFollowsKindAndTLS(t *testing.T) {
+	tests := []struct {
+		name      string
+		tgt       target
+		inCluster string
+		local     string // what "then connect to" shows
+	}{
+		{
+			name:      "cluster",
+			tgt:       target{kind: "Neo4jEnterpriseCluster", name: "prod", namespace: "neo4j"},
+			inCluster: "neo4j://prod-client.neo4j.svc.cluster.local:7687",
+			local:     "neo4j://localhost:7687",
+		},
+		{
+			name:      "cluster with TLS",
+			tgt:       target{kind: "Neo4jEnterpriseCluster", name: "prod", namespace: "neo4j", tls: true},
+			inCluster: "neo4j+s://prod-client.neo4j.svc.cluster.local:7687",
+			local:     "neo4j+ssc://localhost:7687",
+		},
+		{
+			name:      "standalone",
+			tgt:       target{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j"},
+			inCluster: "bolt://dev-client.neo4j.svc.cluster.local:7687",
+			local:     "bolt://localhost:7687",
+		},
+		{
+			name:      "standalone with TLS",
+			tgt:       target{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j", tls: true},
+			inCluster: "bolt+s://dev-client.neo4j.svc.cluster.local:7687",
+			local:     "bolt+ssc://localhost:7687",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out := renderConnect(tc.tgt)
+			assert.Contains(t, out, "In-cluster Bolt:\n  "+tc.inCluster+"\n")
+			assert.Contains(t, out, "then connect to "+tc.local)
+			// `connect` and `cypher` must agree about the in-cluster address.
+			assert.Equal(t, tc.inCluster, tc.tgt.sessionAddress())
+		})
+	}
+}
+
+func TestRenderConnect_ClusterNeverSuggestsADirectBoltScheme(t *testing.T) {
+	for _, tls := range []bool{false, true} {
+		out := renderConnect(target{kind: "Neo4jEnterpriseCluster", name: "prod", namespace: "neo4j", tls: tls})
+		assert.NotContains(t, out, "then connect to bolt", "tls=%v: a cluster needs the routing scheme", tls)
+		assert.NotContains(t, out, "In-cluster Bolt:\n  bolt", "tls=%v", tls)
+		assert.Contains(t, out, "Database neo4j not found",
+			"tls=%v: say why bolt:// is the wrong scheme for a cluster", tls)
+	}
+}
+
+// Through a port-forward the routing table's in-cluster server addresses are
+// not reachable from a laptop. Printing neo4j://localhost:7687 with no word
+// about that would be a URI that looks right and then fails on first use.
+func TestRenderConnect_ClusterSaysWhatAPortForwardCannotDo(t *testing.T) {
+	out := renderConnect(target{kind: "Neo4jEnterpriseCluster", name: "prod", namespace: "neo4j"})
+	assert.Contains(t, out, "in-cluster addresses")
+	assert.Contains(t, out, "kubectl neo4j cypher")
+
+	solo := renderConnect(target{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j"})
+	assert.NotContains(t, solo, "routing", "a standalone has one server and no routing table")
+}
+
+// The certificates name the client Service and the pods, never localhost, so
+// the verifying schemes cannot succeed against a port-forward. `connect` must
+// say so, offer the +ssc variant for LOCAL TESTING ONLY, and point at the
+// address that does verify — while still telling the user plain bolt:// is
+// refused.
+func TestRenderConnect_TLSIsHonestAboutLocalhost(t *testing.T) {
+	for _, tgt := range []target{
+		{kind: "Neo4jEnterpriseCluster", name: "prod", namespace: "neo4j", tls: true},
+		{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j", tls: true},
+	} {
+		t.Run(tgt.kind, func(t *testing.T) {
+			out := renderConnect(tgt)
+			secure := schemeOf(tgt.sessionAddress())
+
+			assert.Contains(t, out, "TLS is enabled: plain bolt:// is rejected by this deployment — use "+secure+"://")
+			assert.Contains(t, out, "never `localhost`")
+			assert.Contains(t, out, "hostname verification")
+			assert.Contains(t, out, "does NOT verify the server")
+			assert.Contains(t, out, "local testing only")
+			assert.Contains(t, out, tgt.sessionAddress(), "the in-cluster URI is the one that verifies")
+
+			// It must not offer the verifying scheme at localhost as the way in.
+			assert.NotContains(t, out, "then connect to "+secure+"://localhost")
+		})
+	}
+}
+
+// Without TLS there is nothing to warn about.
+func TestRenderConnect_PlaintextHasNoTLSNote(t *testing.T) {
+	out := renderConnect(target{kind: "Neo4jEnterpriseStandalone", name: "dev", namespace: "neo4j"})
+	assert.NotContains(t, out, "TLS is enabled")
+	assert.NotContains(t, out, "ssc")
+}

@@ -35,7 +35,7 @@ For an archive to attach to an issue: kubectl neo4j support-bundle
 | Config not resolvable | waiting reason `CreateContainerConfigError` — usually a missing Secret key |
 | PVC never bound | `pvc.status.phase != Bound`, naming the StorageClass |
 | No pods at all | a StatefulSet that wants replicas but has none |
-| Backup Job failed | the Job reporting failed pods (`status.failed > 0`; the `Failed` condition's reason and message are shown when present), plus the Job's pods |
+| Backup Job failed | the Job's `Failed` condition being `True` (including a missed `activeDeadlineSeconds`, where no pod failed), plus its pods. The verdict is the Job's conditions, not its `status.failed` count: that counts failed *attempts* and never goes down, so a backup that retried and then completed is a success — it gets a `⚠` line noting the retries, and one still retrying gets `…`, neither of which changes the exit code |
 | Nothing ever reconciled | a CR with no status at all after two minutes |
 | Operator warnings | the three most recent `Warning` events on the resource |
 

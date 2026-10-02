@@ -83,11 +83,28 @@ func (t target) routingScheme() string {
 // The password still never leaves the pod: the shell runs in the container and
 // expands $DB_USERNAME / $DB_PASSWORD there.
 func (t target) sessionAddress() string {
-	scheme := t.scheme()
+	return fmt.Sprintf("%s://%s-client.%s.svc.cluster.local:7687", t.connectScheme(), t.name, t.namespace)
+}
+
+// connectScheme is the Bolt scheme a client of this deployment must use:
+// routed (neo4j) for a cluster, direct (bolt) for a standalone, each with +s
+// when TLS is on. It is the single place that decision is made, shared by the
+// session `cypher` opens and the address `connect` prints, so the two cannot
+// drift apart again.
+func (t target) connectScheme() string {
 	if t.isCluster() {
-		scheme = t.routingScheme()
+		return t.routingScheme()
 	}
-	return fmt.Sprintf("%s://%s-client.%s.svc.cluster.local:7687", scheme, t.name, t.namespace)
+	return t.scheme()
+}
+
+// unverifiedScheme is connectScheme's +ssc variant: encrypted, but the server's
+// certificate is not verified. It exists only so `connect` can offer a way to
+// try a TLS deployment through a port-forward — where the verifying scheme
+// cannot succeed, because the certificate does not name localhost — and says
+// plainly that it is for local testing. Plaintext deployments have none.
+func (t target) unverifiedScheme() string {
+	return strings.TrimSuffix(t.connectScheme(), "+s") + "+ssc"
 }
 
 // cypherShellArgs builds the in-container command.
@@ -167,9 +184,10 @@ func runCypher(args []string, stdout, stderr *os.File) int {
 Usage:
   kubectl neo4j cypher [name] [-n <namespace>] [-c "<query>"]
 
-Resolves the deployment, picks a ready pod, chooses bolt:// or bolt+s:// from
-its TLS settings, and hands you an interactive session. With no name, the only
-deployment in the namespace is used.
+Resolves the deployment, picks a ready pod, chooses the Bolt scheme from its
+kind and TLS settings (neo4j:// routing for a cluster, bolt:// for a standalone,
+each with +s under TLS), and hands you an interactive session. With no name,
+the only deployment in the namespace is used.
 
 The admin password is never read by this command or placed on your command
 line: it is already inside the pod, and is referenced there by variable name.
@@ -255,7 +273,7 @@ Usage:
 
 Shows the in-cluster address, the port-forward command for reaching it from
 your machine, where the credentials live, and the correct Bolt scheme for its
-TLS settings. Executes nothing.
+kind and TLS settings. Executes nothing.
 
 Flags:
 `)
@@ -281,18 +299,66 @@ Flags:
 		return exitUsage
 	}
 
-	svc := fmt.Sprintf("%s-client", tgt.name)
-	fmt.Fprintf(stdout, "%s/%s in namespace %s\n\n", tgt.kind, tgt.name, tgt.namespace)
-	fmt.Fprintf(stdout, "In-cluster Bolt:\n  %s://%s.%s.svc.cluster.local:7687\n\n", tgt.scheme(), svc, tgt.namespace)
-	fmt.Fprintf(stdout, "From your machine:\n  kubectl port-forward -n %s svc/%s 7687:7687 7474:7474\n", tgt.namespace, svc)
-	fmt.Fprintf(stdout, "  then connect to %s://localhost:7687\n\n", tgt.scheme())
-	fmt.Fprintf(stdout, "Interactive session (no local port-forward needed):\n  kubectl neo4j cypher -n %s %s\n\n", tgt.namespace, tgt.name)
-	fmt.Fprintf(stdout, "Credentials live in the admin Secret for this deployment; they are already\n")
-	fmt.Fprintf(stdout, "present inside the pod, so `kubectl neo4j cypher` never needs to read them.\n")
-	if tgt.tls {
-		fmt.Fprintf(stdout, "\nTLS is enabled: plain bolt:// is rejected by this deployment — use %s://.\n", tgt.scheme())
-	}
+	fmt.Fprint(stdout, renderConnect(tgt))
 	return exitOK
+}
+
+// renderConnect is everything `connect` prints, as a string so the wording the
+// user acts on can be tested.
+//
+// The scheme is per Kind: a cluster is addressed with the routing scheme
+// (neo4j://), a standalone with the direct one (bolt://), each with +s under
+// TLS — the same decision `cypher` makes, via connectScheme.
+//
+// Two things are said rather than left for the user to discover, because the
+// URI alone looks right and then fails:
+//
+//   - On a cluster, why bolt:// is wrong, and that a single port-forward does
+//     not give a laptop the routing table's in-cluster server addresses.
+//   - Under TLS, that the certificate never names localhost, so the verifying
+//     scheme cannot work through a port-forward; the +ssc variant can, and is
+//     labelled as the unverified, local-testing-only thing it is.
+func renderConnect(tgt target) string {
+	var b strings.Builder
+	svc := fmt.Sprintf("%s-client", tgt.name)
+	local := tgt.connectScheme()
+	if tgt.tls {
+		local = tgt.unverifiedScheme()
+	}
+
+	fmt.Fprintf(&b, "%s/%s in namespace %s\n\n", tgt.kind, tgt.name, tgt.namespace)
+	fmt.Fprintf(&b, "In-cluster Bolt:\n  %s\n\n", tgt.sessionAddress())
+	fmt.Fprintf(&b, "From your machine:\n  kubectl port-forward -n %s svc/%s 7687:7687 7474:7474\n", tgt.namespace, svc)
+	if tgt.tls {
+		fmt.Fprintf(&b, "  then connect to %s://localhost:7687   (local testing only — see below)\n\n", local)
+	} else {
+		fmt.Fprintf(&b, "  then connect to %s://localhost:7687\n\n", local)
+	}
+	fmt.Fprintf(&b, "Interactive session (no local port-forward needed):\n  kubectl neo4j cypher -n %s %s\n\n", tgt.namespace, tgt.name)
+	fmt.Fprintf(&b, "Credentials live in the admin Secret for this deployment; they are already\n")
+	fmt.Fprintf(&b, "present inside the pod, so `kubectl neo4j cypher` never needs to read them.\n")
+
+	if tgt.isCluster() {
+		fmt.Fprintf(&b, "\nThis is a cluster, so use the routing scheme (%s://), not bolt://. The\n", strings.TrimSuffix(tgt.connectScheme(), "+s"))
+		fmt.Fprintf(&b, "default database has a single primary: a session pinned to one server answers\n")
+		fmt.Fprintf(&b, "\"Database neo4j not found\" whenever that server is not the one hosting it.\n")
+		fmt.Fprintf(&b, "Routing finds the right server, but it lists servers by their\n")
+		fmt.Fprintf(&b, "in-cluster addresses, which a single port-forward does not make reachable\n")
+		fmt.Fprintf(&b, "from your machine, so outside the cluster the session may not connect to the\n")
+		fmt.Fprintf(&b, "server it is routed to. `kubectl neo4j cypher` runs inside the cluster and\n")
+		fmt.Fprintf(&b, "has neither problem.\n")
+	}
+	if tgt.tls {
+		fmt.Fprintf(&b, "\nTLS is enabled: plain bolt:// is rejected by this deployment — use %s://.\n", tgt.connectScheme())
+		fmt.Fprintf(&b, "The certificate names the client Service and the pods, never `localhost`, so\n")
+		fmt.Fprintf(&b, "%s://localhost:7687 fails hostname verification through a port-forward.\n", tgt.connectScheme())
+		fmt.Fprintf(&b, "%s://localhost:7687 gets past that, but it does NOT verify the server:\n", local)
+		fmt.Fprintf(&b, "use it for local testing only, never for anything real. To verify properly,\n")
+		fmt.Fprintf(&b, "connect from inside the cluster at the in-cluster address above;\n")
+		fmt.Fprintf(&b, "`kubectl neo4j cypher` does, checking the server against the CA that is\n")
+		fmt.Fprintf(&b, "already in the pod.\n")
+	}
+	return b.String()
 }
 
 // resolveTarget finds the deployment to talk to and a pod that can serve the

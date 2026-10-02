@@ -48,16 +48,39 @@ type resourceStatus struct {
 	message   string
 }
 
+// problemPhases are the phases that mean something is wrong and needs the
+// user: the operator gave up (Failed), hit an error (Error), rejected the spec
+// (Invalid), is serving below full health (Degraded), or could not tell
+// (Unknown). They are api/v1beta1 constants so a rename breaks the build; the
+// test over api/v1beta1.AllPhases fails when a new phase is added without a
+// decision about which side of this list it belongs on.
+//
+// Suspended is deliberately absent — it is a pause the user asked for — as is
+// every in-progress or terminal-healthy phase.
+var problemPhases = []string{
+	neo4jv1beta1.PhaseFailed,
+	neo4jv1beta1.PhaseError,
+	neo4jv1beta1.PhaseInvalid,
+	neo4jv1beta1.PhaseDegraded,
+	neo4jv1beta1.PhaseUnknown,
+}
+
 // healthy reports whether this row needs the user's attention. Deliberately
 // conservative: an unrecognised phase counts as healthy rather than alarming
 // someone about a status vocabulary this binary predates (the same reasoning
 // the project's ArgoCD health checks use for the Aura kinds).
+//
+// The decision rests on the phase alone. status.ready is no help: only a
+// couple of kinds have it, and it is `omitempty`, so the operator stores "true"
+// or nothing — a "false" is never written, and a test for it could not match a
+// real resource.
 func (r resourceStatus) healthy() bool {
-	switch strings.ToLower(r.phase) {
-	case "failed", "error", "degraded", "unknown":
-		return false
+	for _, p := range problemPhases {
+		if strings.EqualFold(r.phase, p) {
+			return false
+		}
 	}
-	return r.ready != "false"
+	return true
 }
 
 func runStatus(args []string, stdout, stderr *os.File) int {
@@ -263,8 +286,11 @@ func renderStatus(rows []resourceStatus, stdout *os.File, allNamespaces, problem
 	// hiding it because the resource is not technically broken would withhold
 	// the one line that says what to do next. It is marked "…" rather than "✗",
 	// matching how `validate` distinguishes "not yet" from "wrong".
+	//
+	// Built from the rows actually shown: under --problems that is the flagged
+	// ones only, so a message never appears without the row it belongs to.
 	var notes []string
-	for _, r := range rows {
+	for _, r := range shown {
 		if r.message == "" {
 			continue
 		}
