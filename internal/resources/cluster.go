@@ -443,11 +443,14 @@ func BuildHeadlessServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseClus
 	}
 }
 
-// BuildDiscoveryServiceForEnterprise creates a ClusterIP service specifically for Neo4j K8s discovery
-// This service has the clustering label so Neo4j can discover it, and being a regular ClusterIP service,
-// it has endpoints that list all pod IPs, which Neo4j's K8s discovery can query.
-// Important: PublishNotReadyAddresses is set to true to ensure pods are discoverable during startup,
-// which is critical for Neo4j cluster formation as pods need to discover each other before they're ready
+// BuildDiscoveryServiceForEnterprise creates the ClusterIP service "<cluster>-discovery"
+// over the cluster's member pods (those carrying the neo4j.com/clustering label).
+// PublishNotReadyAddresses is set to true so not-yet-ready pods are still listed.
+//
+// Neo4j itself does not use this Service for discovery: the operator configures
+// LIST discovery with static pod FQDNs on the headless Service (see
+// buildVersionSpecificDiscoveryConfig), so cluster formation does not depend on
+// this Service or on the neo4j.com/clustering label.
 func BuildDiscoveryServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Service {
 	// Minimal labels - just what's needed for discovery
 	labels := map[string]string{
@@ -455,7 +458,10 @@ func BuildDiscoveryServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseClu
 		"app.kubernetes.io/instance":   cluster.Name,
 		"app.kubernetes.io/managed-by": "neo4j-operator",
 		"neo4j.com/cluster":            cluster.Name,
-		"neo4j.com/clustering":         "true", // Critical: This label is required for Neo4j K8s discovery
+		// Marks the cluster's member pods. The operator selects on it (this
+		// Service's selector, split-brain pod listing); Neo4j does not read it —
+		// discovery is LIST with static pod FQDNs.
+		"neo4j.com/clustering": "true",
 	}
 
 	// Selector to match pods with clustering label
@@ -494,7 +500,7 @@ func BuildInternalsServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseClu
 	labels := getLabelsForEnterprise(cluster, "")
 	labels["neo4j.com/service-type"] = "internals"
 	// IMPORTANT: Remove clustering label from ALL services
-	// Only pods should have the clustering label for direct discovery
+	// Only pods carry the clustering label; Services select on it
 	delete(labels, "neo4j.com/clustering")
 
 	return &corev1.Service{
@@ -1129,7 +1135,7 @@ func getLabelsForEnterpriseServer(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, 
 		"app.kubernetes.io/managed-by": "neo4j-operator",
 		"neo4j.com/cluster":            cluster.Name,
 		"neo4j.com/server-name":        serverName,
-		"neo4j.com/clustering":         "true", // Required for Neo4j discovery
+		"neo4j.com/clustering":         "true", // Marks member pods; operator Services and split-brain detection select on it
 		"neo4j.com/service-type":       "internals",
 	}
 
@@ -2718,6 +2724,15 @@ func getMinInitialPrimariesSetting(_ *neo4jv1beta1.Neo4jEnterpriseCluster) strin
 // without an explicit hint — so on CalVer the variable would be assigned
 // and never consumed. Return an empty string so the dead assignment isn't
 // even emitted into the startup script.
+//
+// KNOWN-STALE TEXT, deliberately left in the returned script: its comment says
+// minimum_initial_system_primaries_count is "set to TOTAL_SERVERS". The value the
+// script actually writes is cluster.EffectiveMinSystemPrimaries() (min(3, servers)
+// by default, or spec.topology.minSystemPrimaries) — see the "Initial formation"
+// block in buildStartupScriptForEnterprise. The text is inside the emitted
+// startup.sh, and ConfigMapManager hashes that script, so correcting even a
+// comment changes the hash and rolls every existing cluster on operator upgrade.
+// Fix the wording in a release that restarts pods anyway.
 func buildBootstrapStrategyShellBlock(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	if isCalverImage(cluster.Spec.Image.Tag) {
 		return `# CalVer (2025.x+): V2 discovery elects a bootstrapper from the LIST endpoints;

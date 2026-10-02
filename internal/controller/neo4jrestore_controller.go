@@ -841,7 +841,7 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 	// per-database artifact map (status.history[*].databaseArtifacts).
 	if restore.Spec.AllDatabases {
 		if restore.Spec.Database != "" {
-			return fmt.Errorf("spec.allDatabases is mutually exclusive with spec.database/databaseName")
+			return fmt.Errorf("spec.allDatabases is mutually exclusive with spec.database")
 		}
 		if restore.Spec.Source.Type != SourceTypeBackup {
 			return fmt.Errorf("spec.allDatabases requires source.type=backup (the operator reads the backup's per-database artifact map); got source.type=%q", restore.Spec.Source.Type)
@@ -897,12 +897,12 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 	}
 
 	// Single-database name validation. Skipped for spec.allDatabases, where there
-	// is no spec.databaseName — the per-database names come from the resolved
+	// is no spec.database — the per-database names come from the resolved
 	// backup's artifact map (real, already-backed-up databases; system is
 	// excluded by the orchestrator).
 	if !restore.Spec.AllDatabases {
 		if restore.Spec.Database == "" {
-			return fmt.Errorf("spec.database (or the deprecated spec.databaseName) is required")
+			return fmt.Errorf("spec.database is required (or set spec.allDatabases to restore every database in the backup)")
 		}
 		// The `system` database holds cluster topology, users, roles, and
 		// privileges — it is owned by Neo4j itself and is never a user-restorable
@@ -910,14 +910,14 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 		// membership. neo4j-admin restore of `system` is unsupported here and the
 		// in-place Cypher path can't drop/recreate it; reject up front. (#269)
 		if strings.EqualFold(restore.Spec.Database, "system") {
-			return fmt.Errorf("databaseName %q is not restorable: the system database is managed by Neo4j and holds cluster topology, users, and roles — restoring it via Neo4jRestore is unsupported", restore.Spec.Database)
+			return fmt.Errorf("spec.database %q is not restorable: the system database is managed by Neo4j and holds cluster topology, users, and roles — restoring it via Neo4jRestore is unsupported", restore.Spec.Database)
 		}
 		// The database name is interpolated into the restore Job's shell command
 		// and Cypher; restrict it to the Neo4j database-name grammar (no shell or
 		// Cypher metacharacters) so it can't inject either. Defense-in-depth on top
 		// of the CRD Pattern marker.
 		if !validation.IsValidDatabaseName(restore.Spec.Database) {
-			return fmt.Errorf("databaseName %q is invalid: must start with a letter, contain only letters, digits, dots or dashes, and be at most %d characters",
+			return fmt.Errorf("spec.database %q is invalid: must start with a letter, contain only letters, digits, dots or dashes, and be at most %d characters",
 				restore.Spec.Database, validation.MaxDatabaseNameLength)
 		}
 	}
@@ -1796,7 +1796,7 @@ func isLocalPVCRestoreSource(restore *neo4jv1beta1.Neo4jRestore) bool {
 // neo4j-admin database backup at execution). Instead of staging the file or
 // teaching the operator to predict timestamps, the shell resolves the path
 // at Pod startup via command substitution: `$(ls .../<dbname>-*.backup
-// | head -1)`. This sidesteps both the "directory not file" issue and the
+// | tail -1)` (the latest match). This sidesteps both the "directory not file" issue and the
 // multi-database directory issue (cluster-target backups co-locate one
 // .backup per database in one folder).
 //
@@ -1904,7 +1904,7 @@ func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restor
 	//   /backup/<run-id>/<dbname>-<timestamp>.backup
 	// where <timestamp> is set by neo4j-admin at backup execution and isn't
 	// known to the operator at restore-CR reconcile time. The shell resolves
-	// it via `$(ls .../<dbname>-*.backup | head -1)` at Pod startup.
+	// it via `$(ls .../<dbname>-*.backup | tail -1)` (the latest) at Pod startup.
 	// This also handles the cluster-target backup case where multiple
 	// `*.backup` files co-locate in one directory (one per database) — the
 	// glob naturally selects only the requested DB's file.
@@ -3025,7 +3025,7 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		// Recreating an EXISTING database wipes and replaces its contents —
 		// destructive by definition. Gate on the same explicit opt-in the
 		// standalone Job path requires (#218): without it, a typo'd
-		// databaseName against a cluster target silently overwrote a live
+		// spec.database against a cluster target silently overwrote a live
 		// database with backup contents.
 		if !restoreOverwriteConfirmed(restore) {
 			msg := fmt.Sprintf(

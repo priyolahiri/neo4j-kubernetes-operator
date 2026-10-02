@@ -34,7 +34,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef`.
 | Field | Type | Description |
 |---|---|---|
 | `inviteId` | `string` | Aura-assigned invite ID. |
-| `phase` | `string` | `Sent` (invite active, awaiting acceptance), `Accepted`, `Revoked`, `Expired`, `Declined` (mirroring the Aura invite status), or `Error`. |
+| `phase` | `string` | `Sent` (invite active, awaiting acceptance), `Accepted`, `Revoked`, `Expired`, `Declined` (mirroring the Aura invite status), `Gone` (the invite is no longer listed at all — accepted, declined, revoked or expired, and Aura does not say which), `Pending` (no matching invite exists and `managementPolicies` does not permit creating one), or `Error`. |
 | `conditions` | `[]metav1.Condition` | Standard readiness conditions. |
 | `observedGeneration` | `int64` | The `.metadata.generation` last reconciled. |
 | `lastSyncedTime` | `*metav1.Time` | When the invite was last observed from the Aura API. |

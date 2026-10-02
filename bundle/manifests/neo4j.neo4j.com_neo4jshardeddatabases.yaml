@@ -167,9 +167,10 @@ spec:
                   become unrecoverable (e.g. all replicas of a property shard severed),
                   and the only restore mechanism is drop-and-recreate from backup.
 
-                  REQUIRES `force: true` as a separate confirmation field, mirroring
-                  the safety pattern used by `Neo4jRestore.spec.force`. The validator
-                  rejects `replaceExisting: true` without `force: true`.
+                  REQUIRES `force: true` as a separate confirmation field, the same
+                  two-key safety pattern Neo4jRestore uses for an overwrite
+                  (spec.options.replaceExisting). The validator rejects
+                  `replaceExisting: true` without `force: true`.
 
                   Mutually exclusive with `ifNotExists: true` — those two settings
                   contradict each other (one says "no-op if it exists", the other says
@@ -189,15 +190,18 @@ spec:
                   concrete seedURI (computed from the backup's storage type + per-run
                   subdirectory). Mutually exclusive with SeedURI and SeedURIs.
 
-                  Currently restricted to backups stored in cloud locations (S3, GCS,
-                  Azure Blob): PVC-stored backups would require mounting the backup PVC
-                  on cluster pods, which is out of scope for this field. The validator
-                  rejects PVC-backed seedBackupRef at reconcile time with an explanatory
-                  status message.
+                  Supports backups stored in cloud locations (S3, GCS, Azure Blob) and on
+                  a PVC. A PVC-backed backup is served to the cluster by an operator-managed
+                  seed proxy (an in-cluster HTTP server that mounts the backup PVC and is
+                  torn down once the sharded database is Ready), so the backup PVC is never
+                  mounted on the cluster pods. Any other storage type, or a backup with no
+                  per-shard artifact metadata, is rejected at reconcile time with an
+                  explanatory status message.
 
                   If the referenced Neo4jBackup has no Succeeded run yet, the sharded
                   database stays in Pending phase and the reconciler requeues — it does
-                  NOT route to Failed (mirrors CLAUDE.md rule 72's restore-side semantics).
+                  NOT route to Failed (the same semantics as the restore side, see
+                  docs/knowledge/backup-restore.md Rule 43).
                 type: string
               seedConfig:
                 description: Seed configuration for advanced initialization
@@ -356,11 +360,19 @@ spec:
                   type: object
                 type: array
               creationTime:
-                description: CreationTime shows when the sharded database was created
+                description: |-
+                  CreationTime shows when the sharded database was created.
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it.
                 format: date-time
                 type: string
               graphShard:
-                description: Graph shard status
+                description: |-
+                  Graph shard status.
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it. Use SHOW DATABASES for per-shard state.
                 properties:
                   lastError:
                     description: Last error encountered for this shard
@@ -456,7 +468,11 @@ spec:
                 description: Phase represents the current phase of the sharded database
                 type: string
               propertyShards:
-                description: Property shard statuses
+                description: |-
+                  Property shard statuses.
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it. Use SHOW DATABASES for per-shard state.
                 items:
                   description: ShardStatus tracks the status of individual shards
                     (graph or property)
@@ -501,10 +517,18 @@ spec:
                   and operational
                 type: boolean
               totalSize:
-                description: Total size across all shards
+                description: |-
+                  Total size across all shards.
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it.
                 type: string
               virtualDatabase:
-                description: Virtual database status (logical view combining all shards)
+                description: |-
+                  Virtual database status (logical view combining all shards).
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it.
                 properties:
                   endpoint:
                     description: Connection endpoint for virtual database queries

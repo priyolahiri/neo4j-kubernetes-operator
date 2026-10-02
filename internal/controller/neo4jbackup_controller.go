@@ -317,7 +317,7 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 	}
 
 	// Update status
-	r.updateBackupStatus(ctx, backup, "Scheduled", "Backup scheduled with CronJob "+cronJob.Name)
+	r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseScheduled, "Backup scheduled with CronJob "+cronJob.Name)
 	r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupScheduled, "Backup scheduled with CronJob "+cronJob.Name)
 
 	// Record any completed CronJob child Jobs in status.history. Non-fatal —

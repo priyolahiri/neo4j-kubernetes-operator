@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 func TestFindCondition(t *testing.T) {
@@ -59,4 +61,57 @@ func TestUpsertCondition(t *testing.T) {
 		})
 		assert.Len(t, updated, 1)
 	})
+}
+
+// A CronJob-backed Neo4jBackup never leaves the Scheduled phase — that IS its
+// healthy resting state — so the Ready condition must say so. It used to fall
+// through PhaseToConditionStatus's default and report Unknown/Pending, which
+// made `kubectl wait --for=condition=Ready` and Flux health assessment hang on
+// a perfectly healthy scheduled backup.
+func TestPhaseToConditionStatus_ScheduledIsHealthyAndWaiting(t *testing.T) {
+	status, reason := PhaseToConditionStatus("Scheduled")
+	assert.Equal(t, metav1.ConditionTrue, status)
+	assert.Equal(t, ConditionReasonBackupScheduled, reason)
+	assert.Equal(t, "BackupScheduled", reason, "the reason is user-visible in `kubectl describe`")
+}
+
+// The shared phase vocabulary must stay the single source for what the
+// controllers set. If a controller starts setting a phase that AllPhases does
+// not list, `kubectl neo4j explain` answers "may be newer than this CLI" and
+// this classification silently defaults — so the resting phases are pinned.
+func TestAllPhases_ListsEveryRestingPhaseTheControllersSet(t *testing.T) {
+	assert.Contains(t, neo4jv1beta1.AllPhases, "Scheduled",
+		"Neo4jBackup sets Scheduled for CronJob-backed backups; it must be in the shared vocabulary")
+}
+
+// Pin the rest of the classification table so a future edit to one arm cannot
+// quietly move another phase.
+func TestPhaseToConditionStatus_Table(t *testing.T) {
+	cases := []struct {
+		phase  string
+		status metav1.ConditionStatus
+		reason string
+	}{
+		{neo4jv1beta1.PhaseReady, metav1.ConditionTrue, ConditionReasonReady},
+		{neo4jv1beta1.PhaseInstalled, metav1.ConditionTrue, ConditionReasonReady},
+		{neo4jv1beta1.PhaseCompleted, metav1.ConditionTrue, ConditionReasonBackupSucceeded},
+		{neo4jv1beta1.PhaseFailed, metav1.ConditionFalse, ConditionReasonFailed},
+		{neo4jv1beta1.PhaseDegraded, metav1.ConditionFalse, ConditionReasonFailed},
+		{neo4jv1beta1.PhaseSuspended, metav1.ConditionFalse, ConditionReasonFailed},
+		{neo4jv1beta1.PhaseInvalid, metav1.ConditionFalse, ConditionReasonFailed},
+		{neo4jv1beta1.PhaseError, metav1.ConditionFalse, ConditionReasonFailed},
+		{neo4jv1beta1.PhaseUpgrading, metav1.ConditionUnknown, ConditionReasonUpgrading},
+		{neo4jv1beta1.PhaseExpanding, metav1.ConditionUnknown, ConditionReasonStorageExpanding},
+		{neo4jv1beta1.PhaseForming, metav1.ConditionUnknown, ConditionReasonForming},
+		{neo4jv1beta1.PhaseCreating, metav1.ConditionUnknown, ConditionReasonForming},
+		{neo4jv1beta1.PhasePending, metav1.ConditionUnknown, ConditionReasonPending},
+		{neo4jv1beta1.PhaseWaiting, metav1.ConditionUnknown, ConditionReasonPending},
+		{neo4jv1beta1.PhaseRunning, metav1.ConditionUnknown, ConditionReasonPending},
+		{neo4jv1beta1.PhaseUnknown, metav1.ConditionUnknown, ConditionReasonPending},
+	}
+	for _, tc := range cases {
+		status, reason := PhaseToConditionStatus(tc.phase)
+		assert.Equal(t, tc.status, status, "phase %q", tc.phase)
+		assert.Equal(t, tc.reason, reason, "phase %q", tc.phase)
+	}
 }

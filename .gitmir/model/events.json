@@ -170,7 +170,7 @@
   {
     "id": "ev-aura-fleet-management-failed",
     "name": "AuraFleetManagementFailed",
-    "description": "Fires when Phase 2 Aura Fleet Management token registration fails (Secret unreadable, plugin not yet loaded, registerToken errors) — the cluster/standalone itself remains operational.",
+    "description": "Fires when Phase 2 Aura Fleet Management token registration fails (Secret unreadable, plugin check or registerToken errors) — the cluster/standalone itself remains operational. Raised when a failure first appears or its message changes, not on every retry; the current message is also in status.auraFleetManagement.message.",
     "moduleId": "mod-cluster"
   },
   {

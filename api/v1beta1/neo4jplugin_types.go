@@ -93,7 +93,12 @@ type Neo4jPluginSpec struct {
 	// Security configuration
 	Security *PluginSecurity `json:"security,omitempty"`
 
-	// Resource requirements for the plugin
+	// Resource requirements for the plugin.
+	//
+	// Reserved: accepted by the schema but not acted on today. The values are
+	// syntax-checked by the validator, but no controller or builder reads them,
+	// so nothing is allocated or limited. Size the Neo4j pods through the
+	// cluster/standalone spec.resources instead.
 	Resources *PluginResourceRequirements `json:"resources,omitempty"`
 }
 
@@ -117,11 +122,18 @@ type PluginSource struct {
 	// Secret containing authentication for private repositories
 	AuthSecret string `json:"authSecret,omitempty"`
 
-	// Custom registry configuration
+	// Custom registry configuration.
+	//
+	// Reserved: accepted by the schema but not acted on today. No controller
+	// reads it (including registry.tls); a custom source is fetched from
+	// source.url.
 	Registry *PluginRegistry `json:"registry,omitempty"`
 }
 
-// PluginRegistry defines a custom plugin registry
+// PluginRegistry defines a custom plugin registry.
+//
+// Reserved: accepted by the schema but not acted on today (see
+// PluginSource.Registry).
 type PluginRegistry struct {
 	// Registry URL
 	URL string `json:"url"`
@@ -129,11 +141,16 @@ type PluginRegistry struct {
 	// Authentication secret
 	AuthSecret string `json:"authSecret,omitempty"`
 
-	// TLS configuration
+	// TLS configuration.
+	//
+	// Reserved: accepted by the schema but not acted on today.
 	TLS *RegistryTLSConfig `json:"tls,omitempty"`
 }
 
-// RegistryTLSConfig defines TLS settings for plugin registry
+// RegistryTLSConfig defines TLS settings for plugin registry.
+//
+// Reserved: accepted by the schema but not acted on today (see
+// PluginSource.Registry).
 type RegistryTLSConfig struct {
 	// Skip TLS verification
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
@@ -165,7 +182,11 @@ type PluginSecurity struct {
 	// Sandbox mode
 	Sandbox bool `json:"sandbox,omitempty"`
 
-	// Security policy
+	// Security policy: one of "strict", "moderate" or "permissive".
+	//
+	// Reserved: accepted by the schema but not acted on today. The value is
+	// validated (any other value puts the plugin in phase Invalid) but is not
+	// used to change any Neo4j setting.
 	SecurityPolicy string `json:"securityPolicy,omitempty"`
 }
 
@@ -192,16 +213,28 @@ type Neo4jPluginStatus struct {
 	// Message provides additional information
 	Message string `json:"message,omitempty"`
 
-	// Installed version
+	// Installed version.
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it.
 	InstalledVersion string `json:"installedVersion,omitempty"`
 
-	// Installation time
+	// Installation time.
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it.
 	InstallationTime *metav1.Time `json:"installationTime,omitempty"`
 
-	// Plugin health status
+	// Plugin health status.
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it. Read status.phase and status.conditions instead.
 	Health *PluginHealth `json:"health,omitempty"`
 
-	// Usage statistics
+	// Usage statistics.
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it.
 	Usage *PluginUsage `json:"usage,omitempty"`
 
 	// Observed generation

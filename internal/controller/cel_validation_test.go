@@ -251,4 +251,34 @@ func TestCELValidations(t *testing.T) {
 	update("aura set graphAnalytics after creation without a plugin value",
 		aura("cel-aura-late", func(*neo4jv1beta1.AuraInstance) {}),
 		func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalytics = "plugin" }, false)
+
+	// The deprecated boolean itself is NOT locked, and never was: v1.16.0 shipped
+	// it with no transition rule, the controller reads it only at create, and
+	// docs/api_reference/aurainstance.md says editing or removing it is accepted
+	// but inert. These pin that contract so a tightening is a decision, not an
+	// accident — rejecting an edit that applies cleanly today would break
+	// GitOps repos that carry the field.
+	update("aura flip deprecated graphAnalyticsPlugin after creation (inert, accepted)",
+		aura("cel-aura-flip", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalyticsPlugin = &yes }),
+		func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalyticsPlugin = &no }, true)
+	update("aura remove deprecated graphAnalyticsPlugin after creation (inert, accepted)",
+		aura("cel-aura-drop", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalyticsPlugin = &yes }),
+		func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalyticsPlugin = nil }, true)
+	// ...but it cannot be traded for a graphAnalytics value it does not mean.
+	update("aura migrate graphAnalyticsPlugin false to plugin",
+		aura("cel-aura-mig-false", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalyticsPlugin = &no }),
+		func(i *neo4jv1beta1.AuraInstance) {
+			i.Spec.GraphAnalyticsPlugin = nil
+			i.Spec.GraphAnalytics = "plugin"
+		}, false)
+	update("aura migrate graphAnalyticsPlugin false to unavailable",
+		aura("cel-aura-mig-unavail", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalyticsPlugin = &no }),
+		func(i *neo4jv1beta1.AuraInstance) {
+			i.Spec.GraphAnalyticsPlugin = nil
+			i.Spec.GraphAnalytics = "unavailable"
+		}, true)
+	// Once graphAnalytics is set, it cannot be removed.
+	update("aura remove graphAnalytics after creation",
+		aura("cel-aura-rm", func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalytics = "plugin" }),
+		func(i *neo4jv1beta1.AuraInstance) { i.Spec.GraphAnalytics = "" }, false)
 }

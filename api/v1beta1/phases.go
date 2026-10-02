@@ -34,6 +34,11 @@ const (
 	PhaseInstalled = "Installed"
 	PhaseCompleted = "Completed"
 
+	// Resting, healthy: set for a Neo4jBackup that has a spec.schedule. Its
+	// CronJob is armed and the CR never reaches Completed — per-run outcomes
+	// accumulate in status.history — so Scheduled is where it stays for life.
+	PhaseScheduled = "Scheduled"
+
 	// Terminal, unhealthy.
 	PhaseFailed    = "Failed"
 	PhaseError     = "Error"
@@ -71,6 +76,7 @@ var AllPhases = []string{
 	PhaseReady,
 	PhaseInstalled,
 	PhaseCompleted,
+	PhaseScheduled,
 	PhaseFailed,
 	PhaseError,
 	PhaseInvalid,

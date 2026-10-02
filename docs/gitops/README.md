@@ -26,6 +26,8 @@ A `Neo4jBackup` with `spec.schedule` stays in `Scheduled` for its whole life (it
 never reaches `Completed`), and `spec.suspend: true` is declared state rather
 than a fault, so both map to Healthy — otherwise an Application containing a
 scheduled backup would show Progressing forever and hold up any later sync wave.
+The `Ready` condition (what Flux reads) agrees for `Scheduled`: it is `True`
+with reason `BackupScheduled`. `Suspended` still reports `Ready=False`.
 `Invalid` (a spec the validator rejected) is terminal until the spec is edited,
 so it maps to Degraded rather than Progressing.
 

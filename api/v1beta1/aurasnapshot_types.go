@@ -43,7 +43,8 @@ type AuraSnapshotStatus struct {
 	// +optional
 	Profile string `json:"profile,omitempty"`
 
-	// Phase maps the Aura snapshot status: Pending, InProgress, Completed, Failed.
+	// Phase maps the Aura snapshot status: Pending, InProgress, Completed,
+	// Failed or Cancelled. Completed, Failed and Cancelled are terminal.
 	// +optional
 	Phase string `json:"phase,omitempty"`
 

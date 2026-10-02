@@ -40,11 +40,13 @@ type AuraInstanceSource struct {
 // AuraInstanceSpec is the desired state of an Aura-hosted instance.
 //
 // Immutable fields (cloudProvider, region, type, version, projectId,
-// customerManagedKeyId, source, instanceId) are enforced declaratively by the
-// apiserver via CEL transition rules below — there is no admission webhook
-// (project Invariant 1). Combinations of type/region/memory/version are further
-// validated against the live per-project instance_configurations inline in the
-// reconciler (the one check CEL cannot express).
+// organizationId, customerManagedKeyId, source, instanceId, multiDatabase,
+// graphAnalytics) are enforced declaratively by the apiserver via CEL
+// transition rules below — there is no admission webhook (project Invariant 1).
+// The type/region/cloudProvider combination is further checked, before a
+// create, against the project's live instance_configurations inline in the
+// reconciler (the one check CEL cannot express). memory and version are not
+// checked locally; Aura rejects a bad value at create.
 //
 // +kubebuilder:validation:XValidation:rule="has(self.providerConfigRef) != has(self.credentialsSecretRef)",message="set exactly one of providerConfigRef or credentialsSecretRef"
 // +kubebuilder:validation:XValidation:rule="self.type != 'free-db' || !has(self.storage)",message="storage is not configurable for free-db"
@@ -65,7 +67,7 @@ type AuraInstanceSource struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.multiDatabase) || !self.multiDatabase || self.type in ['business-critical','enterprise-db']",message="multiDatabase is only supported on business-critical or enterprise-db (Virtual Dedicated Cloud); Aura refuses it on every other tier"
 // +kubebuilder:validation:XValidation:rule="((!has(self.multiDatabase) || !self.multiDatabase) && (!has(self.graphAnalytics) || self.graphAnalytics != 'serverless')) || (!has(self.secondariesCount) && !has(self.cdcEnrichmentMode) && !has(self.customerManagedKeyId) && !has(self.source))",message="multiDatabase and graphAnalytics: serverless create the instance through the Aura v2beta1 API, which has no equivalent of secondariesCount, cdcEnrichmentMode, customerManagedKeyId or source: unset them"
 // +kubebuilder:validation:XValidation:rule="!has(self.graphAnalytics) || !has(self.graphAnalyticsPlugin)",message="set graphAnalytics or the deprecated graphAnalyticsPlugin, not both"
-// +kubebuilder:validation:XValidation:rule="has(oldSelf.graphAnalytics) ? (has(self.graphAnalytics) && self.graphAnalytics == oldSelf.graphAnalytics) : (!has(self.graphAnalytics) || (has(oldSelf.graphAnalyticsPlugin) && self.graphAnalytics == (oldSelf.graphAnalyticsPlugin ? 'plugin' : 'unavailable')))",message="graphAnalytics is applied when the instance is created and cannot change afterwards; the only allowed edit is replacing the deprecated graphAnalyticsPlugin with its equivalent (true is plugin, false is unavailable)"
+// +kubebuilder:validation:XValidation:rule="has(oldSelf.graphAnalytics) ? (has(self.graphAnalytics) && self.graphAnalytics == oldSelf.graphAnalytics) : (!has(self.graphAnalytics) || (has(oldSelf.graphAnalyticsPlugin) && self.graphAnalytics == (oldSelf.graphAnalyticsPlugin ? 'plugin' : 'unavailable')))",message="graphAnalytics is applied when the instance is created and cannot be changed afterwards; the only way to set it on an existing instance is to replace the deprecated graphAnalyticsPlugin with its equivalent (true is plugin, false is unavailable)"
 // +kubebuilder:validation:XValidation:rule="!has(self.multiDatabase) || !self.multiDatabase || !has(self.vectorOptimized) || !self.vectorOptimized",message="vectorOptimized is not available on a multi-database instance: Aura refuses the combination (multi-database-capability-not-supported)"
 type AuraInstanceSpec struct {
 	// ProviderConfigRef selects the AuraProviderConfig (credentials + defaults +
@@ -146,7 +148,9 @@ type AuraInstanceSpec struct {
 
 	// GraphAnalyticsPlugin enables the graph-analytics plugin. DEPRECATED — use
 	// graphAnalytics (true is plugin, false is unavailable), which can also
-	// express serverless.
+	// express serverless. It is read only when the instance is created: editing
+	// or removing it afterwards is accepted but has no effect on the Aura
+	// instance. An existing CR may switch to the equivalent graphAnalytics value.
 	// +optional
 	GraphAnalyticsPlugin *bool `json:"graphAnalyticsPlugin,omitempty"`
 
@@ -197,6 +201,10 @@ type AuraInstanceSpec struct {
 	ConnectionSecretName string `json:"connectionSecretName,omitempty"`
 
 	// ConnectionSecretFormat selects the key layout of the connection Secret.
+	//
+	// Reserved: the "custom" value is accepted by the schema but not acted on
+	// today. It has no key template of its own and writes the same keys as
+	// neo4j-driver.
 	// +kubebuilder:validation:Enum=neo4j-driver;aura-dotenv;jdbc;servicebinding;custom
 	// +kubebuilder:default=neo4j-driver
 	// +optional

@@ -110,10 +110,10 @@ type Neo4jAuthRuleSpec struct {
 type Neo4jAuthRuleStatus struct {
 	// Conditions reflects the latest reconcile state. Conditions used:
 	//   Ready                  — auth rule exists and granted roles are in sync
-	//   ConditionValid         — the Cypher condition parses successfully
 	//   OIDCProviderConfigured — the cluster has dbms.security.abac.authorization_providers set
 	//   RolesSynced            — all spec.grantedRoles are granted in Neo4j
-	//   ClusterNotReady        — referenced cluster is not Ready or too old
+	//   ClusterNotReady        — referenced cluster is not Ready
+	//   AuthRuleVersionTooOld  — the Neo4j version running is older than auth rules require
 	//   PendingDependencies    — one or more granted roles do not yet exist
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

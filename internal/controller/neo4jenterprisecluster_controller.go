@@ -68,6 +68,10 @@ type Neo4jEnterpriseClusterReconciler struct {
 	Validator          *validation.ClusterValidator
 	ConfigMapManager   *ConfigMapManager
 	SplitBrainDetector *SplitBrainDetector
+	// fleetFailures dedupes the AuraFleetManagementFailed event so a
+	// registration that keeps failing the same way is announced once, not on
+	// every reconcile.
+	fleetFailures fleetFailureTracker
 	// FleetClientFactory injects a fake Aura Fleet Manager client in tests. nil in
 	// production, where the shared credential-keyed client is used.
 	FleetClientFactory auraFleetClientFactory
@@ -731,6 +735,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	// (deletionPolicy: Delete). Non-fatal and hooked into the existing finalizer
 	// rather than adding a second one — a stuck Aura API must not block deletion.
 	r.newFleetProvisioner().deprovisionAuraFleet(ctx, cluster)
+	r.fleetFailures.clear(client.ObjectKeyFromObject(cluster))
 
 	// Clean up PVCs if retention policy is Delete (default behavior)
 	retentionPolicy := cluster.Spec.Storage.RetentionPolicy
@@ -2051,9 +2056,7 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 			"repairAction", analysis.RepairAction)
 
 		// Record event about split-brain detection
-		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonSplitBrainDetected,
-			"Split-brain detected: %s", analysis.ErrorMessage)
-		metrics.RecordSplitBrainDetected(cluster.Name, cluster.Namespace)
+		splitBrainMsg := r.reportSplitBrainDetected(cluster, analysis)
 
 		// Attempt automatic repair if configured
 		if analysis.RepairAction == RepairActionRestartPods {
@@ -2076,7 +2079,7 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 		}
 
 		// For other repair actions, report but don't auto-repair
-		return false, fmt.Sprintf("Split-brain detected: %s", analysis.ErrorMessage), nil
+		return false, splitBrainMsg, nil
 	}
 
 	// If no split-brain, check if cluster formation is complete
@@ -2106,6 +2109,17 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 	logger.Info("Final legacy cluster formation check result",
 		"isFormed", isFormed, "message", message, "error", legacyErr)
 	return isFormed, message, legacyErr
+}
+
+// reportSplitBrainDetected emits the SplitBrainDetected Warning event, counts
+// the detection in metrics, and returns the text to use as the cluster's status
+// message. The text comes from splitBrainMessage so the "Split-brain detected"
+// prefix the detector already wrote is not repeated.
+func (r *Neo4jEnterpriseClusterReconciler) reportSplitBrainDetected(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, analysis *SplitBrainAnalysis) string {
+	msg := splitBrainMessage(analysis)
+	r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonSplitBrainDetected, msg)
+	metrics.RecordSplitBrainDetected(cluster.Name, cluster.Namespace)
+	return msg
 }
 
 // legacyClusterFormationCheck performs the original cluster formation verification
@@ -2816,24 +2830,24 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileAuraFleetManagement(ctx cont
 
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: cluster.Namespace, Name: secretName}, secret); err != nil {
-		return r.setFleetManagementStatus(ctx, cluster, false, fmt.Sprintf("cannot read token secret %s: %v", secretName, err))
+		return r.failFleetRegistration(ctx, cluster, fmt.Sprintf("cannot read token secret %s: %v", secretName, err))
 	}
 
 	tokenBytes, ok := secret.Data[secretKey]
 	if !ok || len(tokenBytes) == 0 {
-		return r.setFleetManagementStatus(ctx, cluster, false, fmt.Sprintf("key %q not found in secret %s", secretKey, secretName))
+		return r.failFleetRegistration(ctx, cluster, fmt.Sprintf("key %q not found in secret %s", secretKey, secretName))
 	}
 	token := strings.TrimSpace(string(tokenBytes))
 
 	neo4jClient, err := neo4jclient.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
 	if err != nil {
-		return r.setFleetManagementStatus(ctx, cluster, false, fmt.Sprintf("cannot connect to Neo4j: %v", err))
+		return r.failFleetRegistration(ctx, cluster, fmt.Sprintf("cannot connect to Neo4j: %v", err))
 	}
 	defer neo4jClient.Close()
 
 	installed, err := neo4jClient.IsFleetManagementInstalled(ctx)
 	if err != nil {
-		return r.setFleetManagementStatus(ctx, cluster, false, fmt.Sprintf("cannot check fleet management plugin: %v", err))
+		return r.failFleetRegistration(ctx, cluster, fmt.Sprintf("cannot check fleet management plugin: %v", err))
 	}
 	if !installed {
 		// Pods may still be mid-restart after the NEO4J_PLUGINS patch above.
@@ -2842,13 +2856,24 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileAuraFleetManagement(ctx cont
 	}
 
 	if err := neo4jClient.RegisterFleetManagementToken(ctx, token); err != nil {
-		return r.setFleetManagementStatus(ctx, cluster, false, fmt.Sprintf("token registration failed: %v", err))
+		return r.failFleetRegistration(ctx, cluster, fmt.Sprintf("token registration failed: %v", err))
 	}
 
 	logger.Info("Aura Fleet Management token registered successfully")
 	r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonAuraFleetRegistered,
 		"Successfully registered with Aura Fleet Management")
+	r.fleetFailures.clear(client.ObjectKeyFromObject(cluster))
 	return r.setFleetManagementStatus(ctx, cluster, true, "Registered with Aura Fleet Management")
+}
+
+// failFleetRegistration records a registration failure on
+// status.auraFleetManagement and raises the AuraFleetManagementFailed Warning
+// when the failure is new or its message changed. The failure stays non-fatal:
+// the returned error is only ever the status write's, never the registration's,
+// because the cluster is operational and only the Aura registration failed.
+func (r *Neo4jEnterpriseClusterReconciler) failFleetRegistration(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, message string) error {
+	announceFleetFailure(r.Recorder, &r.fleetFailures, cluster, message)
+	return r.setFleetManagementStatus(ctx, cluster, false, message)
 }
 
 // mergeFleetManagementPlugin patches the named StatefulSet to ensure "fleet-management"

@@ -137,7 +137,13 @@ spec:
                 description: Plugin name
                 type: string
               resources:
-                description: Resource requirements for the plugin
+                description: |-
+                  Resource requirements for the plugin.
+
+                  Reserved: accepted by the schema but not acted on today. The values are
+                  syntax-checked by the validator, but no controller or builder reads them,
+                  so nothing is allocated or limited. Size the Neo4j pods through the
+                  cluster/standalone spec.resources instead.
                 properties:
                   cpuLimit:
                     description: CPU limit for the plugin
@@ -167,7 +173,12 @@ spec:
                     description: Sandbox mode
                     type: boolean
                   securityPolicy:
-                    description: Security policy
+                    description: |-
+                      Security policy: one of "strict", "moderate" or "permissive".
+
+                      Reserved: accepted by the schema but not acted on today. The value is
+                      validated (any other value puts the plugin in phase Invalid) but is not
+                      used to change any Neo4j setting.
                     type: string
                 type: object
               source:
@@ -182,13 +193,21 @@ spec:
                     description: Checksum for verification
                     type: string
                   registry:
-                    description: Custom registry configuration
+                    description: |-
+                      Custom registry configuration.
+
+                      Reserved: accepted by the schema but not acted on today. No controller
+                      reads it (including registry.tls); a custom source is fetched from
+                      source.url.
                     properties:
                       authSecret:
                         description: Authentication secret
                         type: string
                       tls:
-                        description: TLS configuration
+                        description: |-
+                          TLS configuration.
+
+                          Reserved: accepted by the schema but not acted on today.
                         properties:
                           caSecret:
                             description: CA certificate secret
@@ -310,7 +329,11 @@ spec:
                   type: object
                 type: array
               health:
-                description: Plugin health status
+                description: |-
+                  Plugin health status.
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it. Read status.phase and status.conditions instead.
                 properties:
                   errors:
                     description: Error messages
@@ -343,11 +366,19 @@ spec:
                     type: string
                 type: object
               installationTime:
-                description: Installation time
+                description: |-
+                  Installation time.
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it.
                 format: date-time
                 type: string
               installedVersion:
-                description: Installed version
+                description: |-
+                  Installed version.
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it.
                 type: string
               message:
                 description: Message provides additional information
@@ -360,7 +391,11 @@ spec:
                 description: Phase represents the current phase
                 type: string
               usage:
-                description: Usage statistics
+                description: |-
+                  Usage statistics.
+
+                  Reserved: accepted by the schema but not acted on today; no controller
+                  populates it.
                 properties:
                   lastUsed:
                     description: Last used time

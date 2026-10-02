@@ -73,6 +73,10 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	// FleetClientFactory injects a fake Aura Fleet Manager client in tests. nil in
 	// production, where the shared credential-keyed client is used.
 	FleetClientFactory auraFleetClientFactory
+	// fleetFailures dedupes the AuraFleetManagementFailed event so a
+	// registration that keeps failing the same way is announced once, not on
+	// every reconcile.
+	fleetFailures fleetFailureTracker
 }
 
 func podSecurityContextForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.PodSecurityContext {
@@ -220,6 +224,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 	// (deletionPolicy: Delete). Non-fatal and hooked into the existing finalizer
 	// rather than adding a second one — a stuck Aura API must not block deletion.
 	r.newFleetProvisioner().deprovisionAuraFleet(ctx, standalone)
+	r.fleetFailures.clear(client.ObjectKeyFromObject(standalone))
 
 	// Cleanup resources
 	if err := r.cleanupResources(ctx, standalone); err != nil {
@@ -2643,24 +2648,24 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: standalone.Namespace, Name: secretName}, secret); err != nil {
-		return r.setFleetManagementStatus(ctx, standalone, false, fmt.Sprintf("cannot read token secret %s: %v", secretName, err))
+		return r.failFleetRegistration(ctx, standalone, fmt.Sprintf("cannot read token secret %s: %v", secretName, err))
 	}
 
 	tokenBytes, ok := secret.Data[secretKey]
 	if !ok || len(tokenBytes) == 0 {
-		return r.setFleetManagementStatus(ctx, standalone, false, fmt.Sprintf("key %q not found in secret %s", secretKey, secretName))
+		return r.failFleetRegistration(ctx, standalone, fmt.Sprintf("key %q not found in secret %s", secretKey, secretName))
 	}
 	token := strings.TrimSpace(string(tokenBytes))
 
 	neo4jClient, err := neo4jclient.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
 	if err != nil {
-		return r.setFleetManagementStatus(ctx, standalone, false, fmt.Sprintf("cannot connect to Neo4j: %v", err))
+		return r.failFleetRegistration(ctx, standalone, fmt.Sprintf("cannot connect to Neo4j: %v", err))
 	}
 	defer neo4jClient.Close()
 
 	installed, err := neo4jClient.IsFleetManagementInstalled(ctx)
 	if err != nil {
-		return r.setFleetManagementStatus(ctx, standalone, false, fmt.Sprintf("cannot check fleet management plugin: %v", err))
+		return r.failFleetRegistration(ctx, standalone, fmt.Sprintf("cannot check fleet management plugin: %v", err))
 	}
 	if !installed {
 		logger.Info("Fleet management plugin not yet loaded; will retry on next reconcile")
@@ -2668,7 +2673,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 	}
 
 	if err := neo4jClient.RegisterFleetManagementToken(ctx, token); err != nil {
-		return r.setFleetManagementStatus(ctx, standalone, false, fmt.Sprintf("token registration failed: %v", err))
+		return r.failFleetRegistration(ctx, standalone, fmt.Sprintf("token registration failed: %v", err))
 	}
 
 	logger.Info("Aura Fleet Management token registered successfully")
@@ -2676,7 +2681,18 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 		r.Recorder.Event(standalone, corev1.EventTypeNormal, EventReasonAuraFleetRegistered,
 			"Successfully registered with Aura Fleet Management")
 	}
+	r.fleetFailures.clear(client.ObjectKeyFromObject(standalone))
 	return r.setFleetManagementStatus(ctx, standalone, true, "Registered with Aura Fleet Management")
+}
+
+// failFleetRegistration records a registration failure on
+// status.auraFleetManagement and raises the AuraFleetManagementFailed Warning
+// when the failure is new or its message changed. The failure stays non-fatal:
+// the returned error is only ever the status write's, never the registration's,
+// because the standalone is operational and only the Aura registration failed.
+func (r *Neo4jEnterpriseStandaloneReconciler) failFleetRegistration(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, message string) error {
+	announceFleetFailure(r.Recorder, &r.fleetFailures, standalone, message)
+	return r.setFleetManagementStatus(ctx, standalone, false, message)
 }
 
 // mergeFleetManagementPlugin patches the named StatefulSet so "fleet-management" is present

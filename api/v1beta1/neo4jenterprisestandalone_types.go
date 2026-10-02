@@ -197,13 +197,22 @@ type Neo4jEnterpriseStandaloneStatus struct {
 	// Ready indicates if the standalone deployment is ready for connections
 	Ready bool `json:"ready,omitempty"`
 
-	// LastStartTime shows when the standalone deployment was last started
+	// LastStartTime shows when the standalone deployment was last started.
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it.
 	LastStartTime *metav1.Time `json:"lastStartTime,omitempty"`
 
-	// PodStatus provides information about the Neo4j pod
+	// PodStatus provides information about the Neo4j pod.
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it. Use kubectl get pod <name>-0 for pod state.
 	PodStatus *StandalonePodStatus `json:"podStatus,omitempty"`
 
-	// DatabaseStatus provides information about the Neo4j database
+	// DatabaseStatus provides information about the Neo4j database.
+	//
+	// Reserved: accepted by the schema but not acted on today; no controller
+	// populates it. Use status.diagnostics.databases instead.
 	DatabaseStatus *StandaloneDatabaseStatus `json:"databaseStatus,omitempty"`
 
 	// AuraFleetManagementStatus reports the current state of the Aura Fleet Management integration.

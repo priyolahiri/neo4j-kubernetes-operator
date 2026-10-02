@@ -47,6 +47,10 @@ const (
 	ConditionReasonDatabaseReady   = "DatabaseReady"
 	ConditionReasonDatabaseFailed  = "DatabaseCreationFailed"
 	ConditionReasonBackupSucceeded = "BackupSucceeded"
+	// ConditionReasonBackupScheduled — a CronJob-backed Neo4jBackup whose
+	// CronJob exists and is armed. Scheduled is that backup's resting phase
+	// (it never reaches Completed), so this is a healthy, waiting state.
+	ConditionReasonBackupScheduled = "BackupScheduled"
 	ConditionReasonBackupFailed    = "BackupFailed"
 	ConditionReasonRestoreComplete = "RestoreCompleted"
 	ConditionReasonRestoreFailed   = "RestoreFailed"
@@ -120,6 +124,11 @@ func PhaseToConditionStatus(phase string) (metav1.ConditionStatus, string) {
 		return metav1.ConditionTrue, ConditionReasonReady
 	case neo4jv1beta1.PhaseCompleted:
 		return metav1.ConditionTrue, ConditionReasonBackupSucceeded
+	case neo4jv1beta1.PhaseScheduled:
+		// A scheduled backup's resting state: healthy and waiting for its next
+		// CronJob firing. Falling through to the default reported Unknown/Pending
+		// forever, which hangs anything that waits on the Ready condition.
+		return metav1.ConditionTrue, ConditionReasonBackupScheduled
 	case neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseDegraded,
 		neo4jv1beta1.PhaseSuspended, neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseError:
 		return metav1.ConditionFalse, ConditionReasonFailed

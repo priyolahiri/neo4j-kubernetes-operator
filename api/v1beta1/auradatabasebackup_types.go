@@ -43,7 +43,9 @@ type AuraDatabaseBackupStatus struct {
 	// +optional
 	BackupID string `json:"backupId,omitempty"`
 
-	// Phase mirrors the reconcile outcome (Pending, Completed, Error).
+	// Phase mirrors the reconcile outcome: Pending (Aura's Pending or
+	// InProgress, or no status read yet), Completed, Failed (Aura reported the
+	// backup failed) or Error (the operator could not reconcile it).
 	// +optional
 	Phase string `json:"phase,omitempty"`
 

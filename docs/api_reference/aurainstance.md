@@ -41,7 +41,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 | `source` | `object` | Clone a new instance from an existing one at create time. **Immutable.** See [AuraInstanceSource](#aurainstancesource). |
 | `instanceId` | `string` | Adopt/import an existing Aura instance by ID rather than creating one. **Immutable once set.** |
 | `connectionSecretName` | `string` | Secret the operator writes connection details (URI + one-time credentials) to. Defaults to `<name>-conn`. |
-| `connectionSecretFormat` | `string` | Enum `neo4j-driver` / `aura-dotenv` / `jdbc` / `servicebinding` / `custom`. Default `neo4j-driver`. Selects the connection Secret's key layout. |
+| `connectionSecretFormat` | `string` | Enum `neo4j-driver` / `aura-dotenv` / `jdbc` / `servicebinding` / `custom`. Default `neo4j-driver`. Selects the connection Secret's key layout. **`custom` is reserved — accepted but not acted on:** it has no key template of its own and writes the same keys as `neo4j-driver`. |
 | `publishConnectionDetailsTo` | `string` | Name of a ConfigMap to receive the non-secret endpoint details (URI, instanceId, region, type). Credentials stay in the connection Secret. |
 | `deletionPolicy` | `string` | Enum `Orphan` / `Delete`. Default `Orphan` (keep the running instance on CR delete). |
 | `deletionProtection` | `bool` | Blocks deletion of the cloud instance even when `deletionPolicy: Delete`, until cleared. |
@@ -95,7 +95,7 @@ The following fields are immutable and enforced declaratively by the apiserver v
 - `type` — **except** the one in-place `professional-db` → `business-critical` upgrade
 - `projectId`, `organizationId`, `customerManagedKeyId`, `instanceId` — immutable once set
 - `source`, `multiDatabase`
-- `graphAnalytics` — applied at creation; the only allowed edit is replacing the deprecated `graphAnalyticsPlugin` with its equivalent value
+- `graphAnalytics` — applied at creation; the only way to set it on an existing instance is to replace the deprecated `graphAnalyticsPlugin` with its equivalent value (the boolean itself is not locked, but it is only read at creation, so editing or removing it changes nothing)
 
 The `type` / `region` / `cloudProvider` combination is additionally validated before create against the live per-project `instance_configurations` inline in the reconciler (the one check CEL cannot express). `memory` and `version` are not checked locally.
 
