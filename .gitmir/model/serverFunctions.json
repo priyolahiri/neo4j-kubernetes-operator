@@ -132,12 +132,14 @@
     "name": "Advance Rolling Upgrade",
     "serverUnitId": "su-rolling-upgrade",
     "operation": "business_action",
-    "description": "Dispatches exactly one non-blocking state-machine step per reconcile (Staging, Rolling, Stabilizing, Verifying) and re-stages from any active phase if the target image tag changes mid-flight, so an in-flight upgrade never blocks reconciliation of other clusters.",
+    "description": "Dispatches exactly one non-blocking state-machine step per reconcile (Staging, Rolling, Stabilizing, Verifying) and re-stages from any active phase if the target image tag changes mid-flight, so an in-flight upgrade never blocks reconciliation of other clusters. Each phase transition restarts status.upgradeStatus.phaseStartTime and records the ended phase's duration in neo4j_operator_upgrade_duration_seconds exactly once, derived from the persisted phaseStartTime.",
     "readsFieldIds": [
-      "status.upgradeStatus.phase"
+      "status.upgradeStatus.phase",
+      "status.upgradeStatus.phaseStartTime"
     ],
     "writesFieldIds": [
-      "status.upgradeStatus.phase"
+      "status.upgradeStatus.phase",
+      "status.upgradeStatus.phaseStartTime"
     ],
     "callsFunctionIds": [
       "sf-verify-version-upgrade",
@@ -156,10 +158,11 @@
     "name": "Pause Or Fail Rolling Upgrade",
     "serverUnitId": "su-rolling-upgrade",
     "operation": "business_action",
-    "description": "Routes a failed upgrade step to a terminal Paused state (manual intervention required, never auto-resumed) when upgradeStrategy.autoPauseOnFailure is set, or to Failed so image drift can retry the upgrade automatically once the underlying problem is resolved.",
+    "description": "Routes a failed upgrade step to a terminal Paused state (manual intervention required, never auto-resumed) when upgradeStrategy.autoPauseOnFailure is set, or to Failed so image drift can retry the upgrade automatically once the underlying problem is resolved. The phase that was active when the step failed is recorded in neo4j_operator_upgrade_duration_seconds.",
     "readsFieldIds": [],
     "writesFieldIds": [
-      "status.upgradeStatus.phase"
+      "status.upgradeStatus.phase",
+      "status.upgradeStatus.phaseStartTime"
     ],
     "callsFunctionIds": [],
     "emitsEventIds": [
@@ -672,7 +675,7 @@
     "name": "Update Shard Status",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "update",
-    "description": "updateShardStatus() reads SHOW DATABASES to confirm the `{name}-g000` graph shard exists and is online.",
+    "description": "updateShardStatus() reads SHOW DATABASES once per reconcile and records, from those rows only, status.graphShard (`{name}-g000`), status.propertyShards (`{name}-pNNN`, ordered by index), status.virtualDatabase (the logical database) and status.creationTime (set once when the graph shard is first seen; restarted by a destructive recreate). Per-shard state is online only when every copy is online; ready means at least one copy is online and none that should be online is not. The write is skipped when nothing changed and failures are non-fatal. Shard size, servers, lastError, propertyCount, the virtual database's endpoint and metrics, and status.totalSize stay unpopulated because SHOW DATABASES does not carry them.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -685,7 +688,7 @@
     "name": "Reconcile Neo4jReplicaDatabase",
     "serverUnitId": "su-neo4jreplicadatabase",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves clusterRef, checks the version gate for cross-cluster replicas, then OBSERVES the live database's type before dispatching on source.mode to create (backup or network), reporting, or terminally marking it promoted.",
+    "description": "Main reconcile loop: validates the spec, resolves clusterRef, checks the version gate for cross-cluster replicas, then OBSERVES the live database's type before dispatching on source.mode to create (backup or network), reporting, or terminally marking it promoted. While the database is still a replica it publishes the lag SHOW DATABASES reports (a transaction count) as neo4j_operator_replica_lag_transactions{namespace,cluster_name,replica,database}, and removes that series when the CR is deleted, found gone, or promoted.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -727,7 +730,7 @@
     "name": "Detect Out-Of-Band Promotion",
     "serverUnitId": "su-neo4jreplicadatabase",
     "operation": "business_action",
-    "description": "markPromoted() records the terminal Promoted phase the moment the live database's `type` column is observed to no longer be replica, whether caused by this operator's own Neo4jReplicaPromotion or an external actor.",
+    "description": "markPromoted() records the terminal Promoted phase the moment the live database's `type` column is observed to no longer be replica, whether caused by this operator's own Neo4jReplicaPromotion or an external actor. Removes the replica's neo4j_operator_replica_lag_transactions series, since a promoted database no longer replicates.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -742,7 +745,7 @@
     "name": "Drop Replica Database On Deletion",
     "serverUnitId": "su-neo4jreplicadatabase",
     "operation": "delete",
-    "description": "handleDeletion() re-checks the live database type and only issues DROP DATABASE while it is still type=replica; a promoted database is retained instead.",
+    "description": "handleDeletion() re-checks the live database type and only issues DROP DATABASE while it is still type=replica; a promoted database is retained instead. Removes the replica's neo4j_operator_replica_lag_transactions series whatever the outcome.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -759,7 +762,7 @@
     "name": "Promote Replica Database",
     "serverUnitId": "su-neo4jreplicapromotion",
     "operation": "business_action",
-    "description": "Reconcile() runs CHECK (live type=replica) -> PROMOTE (PromoteReplicaDatabase) -> CHECK (type no longer replica) -> RECORD, so a crash between the call and the status write is recovered as an idempotent success rather than a repeat promote.",
+    "description": "Reconcile() runs CHECK (live type=replica) -> PROMOTE (PromoteReplicaDatabase) -> CHECK (type no longer replica) -> RECORD, so a crash between the call and the status write is recovered as an idempotent success rather than a repeat promote. The terminal Completed/Failed phase latches: the first write that persists it increments neo4j_operator_replica_promotions_total{namespace,cluster_name,result} exactly once (result=success or failure) and later or stale reconciles count nothing; a successful promotion also removes the replica's lag series.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1717,7 +1720,7 @@
     "name": "Reconcile Neo4jPlugin",
     "serverUnitId": "su-neo4jplugin",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves clusterRef, refuses to install when another CR in the namespace already targets the same clusterRef with the same plugin name (older CR by creationTimestamp wins), then merges the plugin into the target's env/init-containers.",
+    "description": "Main reconcile loop: validates the spec, resolves clusterRef, refuses to install when another CR in the namespace already targets the same clusterRef with the same plugin name (older CR by creationTimestamp wins), then merges the plugin into the target's env/init-containers. On reaching Ready it records status.installedVersion (the spec.version it installed) and status.installationTime (set once per installed version, not touched by later reconciles or same-version Ready/Installing cycles); a plugin already Ready before those fields existed is backfilled on its next reconcile.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [

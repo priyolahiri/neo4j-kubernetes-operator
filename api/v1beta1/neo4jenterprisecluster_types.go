@@ -1340,6 +1340,15 @@ type UpgradeStatus struct {
 	// phase transition and partition advance.
 	StepStartTime *metav1.Time `json:"stepStartTime,omitempty"`
 
+	// PhaseStartTime is when the current phase began. Unlike stepStartTime,
+	// which restarts on every partition advance inside Rolling, it is reset
+	// only when the phase itself changes, so it is the anchor
+	// neo4j_operator_upgrade_duration_seconds is measured from: the duration
+	// observed for a phase is the time from its phaseStartTime to the
+	// transition out of it. Absent on an upgrade that began under an older
+	// operator version; that upgrade's first phase transition is not observed.
+	PhaseStartTime *metav1.Time `json:"phaseStartTime,omitempty"`
+
 	// CurrentPartition is the StatefulSet RollingUpdate partition most
 	// recently applied by the upgrade state machine. Servers with ordinal
 	// >= partition have been rolled to the target version. Used to resume

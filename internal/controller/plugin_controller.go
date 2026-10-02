@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -714,23 +715,46 @@ func (r *Neo4jPluginReconciler) prunePluginSecurityEnv(ctx context.Context, plug
 }
 
 func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, phase, message string) {
+	// The version this reconcile installed: what spec.version asked for when
+	// the install ran (not whatever the spec says by the time the status write
+	// lands).
+	installedVersion := plugin.Spec.Version
+
 	update := func() error {
 		latest := &neo4jv1beta1.Neo4jPlugin{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(plugin), latest); err != nil {
 			return err
 		}
+		// status.installedVersion / installationTime are recorded when the
+		// plugin reaches Ready, and only then: a plugin that is still
+		// Installing or has Failed keeps reporting the last install that
+		// worked. A different version is a new installation (it is
+		// reinstalled), so the time follows the version; the same version
+		// across Ready -> Installing -> Ready blips keeps its original time.
+		// Also true for a plugin that was already Ready before these fields
+		// existed, which is why it takes part in the "nothing changed" check
+		// below rather than being treated as settled.
+		recordInstall := phase == neo4jv1beta1.PhaseReady &&
+			(latest.Status.InstalledVersion != installedVersion || latest.Status.InstallationTime == nil)
+
 		// A write that changes nothing still produces a watch event, which
 		// reconciles again, which writes again: the CR was observed being
 		// rewritten roughly once a second in steady state. Nothing to say is
 		// a valid outcome.
 		if latest.Status.Phase == phase &&
 			latest.Status.Message == message &&
-			latest.Status.ObservedGeneration == latest.Generation {
+			latest.Status.ObservedGeneration == latest.Generation &&
+			!recordInstall {
 			return nil
 		}
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
+		if recordInstall {
+			now := metav1.Now()
+			latest.Status.InstalledVersion = installedVersion
+			latest.Status.InstallationTime = &now
+		}
 		condStatus, condReason := PhaseToConditionStatus(phase)
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
 		return r.Status().Update(ctx, latest)

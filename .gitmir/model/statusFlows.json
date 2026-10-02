@@ -128,7 +128,7 @@
     "name": "Rolling Upgrade State Machine",
     "entityId": "ent-neo4jenterprisecluster",
     "fieldName": "status.upgradeStatus.phase",
-    "description": "The requeue-driven, per-reconcile-step state machine (#174) that performs an in-place image upgrade one ordinal at a time instead of blocking a single reconcile for the whole rollout.",
+    "description": "The requeue-driven, per-reconcile-step state machine (#174) that performs an in-place image upgrade one ordinal at a time instead of blocking a single reconcile for the whole rollout. Every phase change stamps status.upgradeStatus.phaseStartTime and, once that status write succeeds, records the duration of the phase that just ended in neo4j_operator_upgrade_duration_seconds{phase}; the terminal Completed/Failed/Paused phases are not timed, and a repeated or restarted reconcile observes nothing because the persisted phase has already changed.",
     "moduleId": "mod-cluster",
     "states": [
       {

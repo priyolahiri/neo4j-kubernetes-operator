@@ -144,8 +144,8 @@ kind: Neo4jPlugin
 | `conditions` | `[]metav1.Condition` | A single `Ready` condition derived from `phase` (`Ready` → `True`; `Failed`/`Invalid` → `False`; `Pending`/`Waiting`/`Installing` → `Unknown`) |
 | `phase` | `string` | Current phase: `"Pending"`, `"Installing"`, `"Ready"`, `"Failed"`, `"Waiting"`, `"Invalid"` (spec failed validation; not retried until the CR is edited) |
 | `message` | `string` | Human-readable status message |
-| `installedVersion` | `string` | **Reserved — never populated today.** Intended: actually installed plugin version |
-| `installationTime` | `*metav1.Time` | **Reserved — never populated today.** Intended: when the plugin was successfully installed |
+| `installedVersion` | `string` | The version the operator last installed successfully: `spec.version` as it was when the plugin reached `Ready` (the version *requested*, not read back from the running plugin). Left unchanged while a later attempt is `Installing` or `Failed`, so it always names the last install that worked |
+| `installationTime` | `*metav1.Time` | When the plugin was first recorded as installed at `installedVersion`: set on reaching `Ready`, not touched by later reconciles or by `Ready` → `Installing` → `Ready` cycles at the same version. A different `spec.version` is a new installation and restarts it. For a plugin that was already `Ready` before this field existed, it is the time the operator first saw it so |
 | `health` | [`*PluginHealth`](#pluginhealth) | **Reserved — never populated today.** Intended: plugin health and performance information |
 | `usage` | [`*PluginUsage`](#pluginusage) | **Reserved — never populated today.** Intended: plugin usage statistics |
 | `observedGeneration` | `int64` | Generation of the most recently observed spec |

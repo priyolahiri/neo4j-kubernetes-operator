@@ -55,6 +55,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/metrics"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
@@ -161,7 +162,13 @@ func (r *Neo4jEnterpriseClusterReconciler) patchUpgradeStatus(
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	mutate func(*neo4jv1beta1.UpgradeStatus),
 ) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+	// A phase transition ends the previous phase: observe its duration
+	// (upgrade_duration_seconds) once the write that moves the persisted phase
+	// has succeeded — see rolling_upgrade_phase_metrics.go for why that is
+	// exactly-once. Reset per attempt: the closure re-runs on conflict.
+	var ended *endedUpgradePhase
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		ended = nil
 		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
 			return err
@@ -169,10 +176,17 @@ func (r *Neo4jEnterpriseClusterReconciler) patchUpgradeStatus(
 		if latest.Status.UpgradeStatus == nil {
 			latest.Status.UpgradeStatus = &neo4jv1beta1.UpgradeStatus{}
 		}
-		mutate(latest.Status.UpgradeStatus)
-		cluster.Status.UpgradeStatus = latest.Status.UpgradeStatus
+		us := latest.Status.UpgradeStatus
+		prevPhase, prevPhaseStart := us.Phase, snapshotPhaseStart(us.PhaseStartTime)
+		mutate(us)
+		ended = stampUpgradePhaseTransition(us, prevPhase, prevPhaseStart, metav1.Now())
+		cluster.Status.UpgradeStatus = us
 		return r.Status().Update(ctx, latest)
 	})
+	if err == nil {
+		recordEndedUpgradePhase(metrics.NewUpgradeMetrics(cluster.Name, cluster.Namespace), ended)
+	}
+	return err
 }
 
 // upgradeStepDeadlineExceeded reports whether the current step has been

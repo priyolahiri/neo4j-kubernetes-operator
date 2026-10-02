@@ -544,7 +544,15 @@
         "id": "f-neo4jplugin-status-installed-version",
         "name": "status.installedVersion",
         "type": "string",
-        "isNullable": true
+        "isNullable": true,
+        "note": "The spec.version the operator last installed successfully, recorded when the plugin reaches Ready; unchanged while a later attempt is Installing or Failed."
+      },
+      {
+        "id": "f-neo4jplugin-status-installation-time",
+        "name": "status.installationTime",
+        "type": "timestamp",
+        "isNullable": true,
+        "note": "When the plugin was first recorded as installed at status.installedVersion; set on reaching Ready and restarted only by a different version."
       },
       {
         "id": "f-neo4jplugin-status-health-status",
@@ -934,7 +942,29 @@
         "id": "f-neo4jshardeddatabase-status-creation-time",
         "name": "status.creationTime",
         "type": "timestamp",
-        "isNullable": true
+        "isNullable": true,
+        "note": "When the operator first saw the graph shard in SHOW DATABASES after creating the database; set once and restarted by a destructive recreate."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-status-graph-shard",
+        "name": "status.graphShard",
+        "type": "json",
+        "isNullable": true,
+        "note": "Graph shard {name,type,state,ready} taken from SHOW DATABASES; size, servers and lastError are not populated."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-status-property-shards",
+        "name": "status.propertyShards",
+        "type": "json",
+        "isNullable": true,
+        "note": "Property shards {name,type,state,ready,propertyShardIndex} ordered by index, taken from SHOW DATABASES; size, servers, lastError and propertyCount are not populated."
+      },
+      {
+        "id": "f-neo4jshardeddatabase-status-virtual-database",
+        "name": "status.virtualDatabase",
+        "type": "json",
+        "isNullable": true,
+        "note": "Logical database {name,ready} taken from SHOW DATABASES; endpoint and metrics are not populated."
       },
       {
         "id": "f-neo4jshardeddatabase-status-last-backup-backup-ref",
@@ -955,7 +985,8 @@
         "id": "f-neo4jshardeddatabase-status-total-size",
         "name": "status.totalSize",
         "type": "string",
-        "isNullable": true
+        "isNullable": true,
+        "note": "Reserved: never populated, because SHOW DATABASES carries no store size."
       }
     ],
     "paths": [

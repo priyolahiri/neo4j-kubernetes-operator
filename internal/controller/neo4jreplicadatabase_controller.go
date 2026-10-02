@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/metrics"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
@@ -81,6 +82,9 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	replica := &neo4jv1beta1.Neo4jReplicaDatabase{}
 	if err := r.Get(ctx, req.NamespacedName, replica); err != nil {
 		if apierrors.IsNotFound(err) {
+			// The CR is gone (its finalizer released, or stripped by hand).
+			// The lag series is keyed by the CR, so take it with it.
+			metrics.DeleteReplicaLagTransactions(req.Namespace, req.Name)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -106,6 +110,10 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	// longer exists and the controller must never touch the database again.
 	// The live re-check below is the actual guard; this is the cheap one.
 	if replica.Status.Phase == neo4jv1beta1.ReplicaPhasePromoted {
+		// Replication has ended. The promotion controller drives the CR to
+		// Promoted itself, so this fast path (not markPromoted) is where a
+		// promotion this operator performed is first seen here.
+		metrics.DeleteReplicaLagTransactions(replica.Namespace, replica.Name)
 		return ctrl.Result{}, nil
 	}
 
@@ -304,15 +312,34 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		// Still a replica. Report observed state; do not attempt to re-point
 		// replicaConfig (spec.source is immutable and Neo4j offers no way to
 		// change it in place).
-		msg := fmt.Sprintf("replica of %q, %d transactions behind", replica.Spec.UpstreamDatabase, info.ReplicationLag)
-		if replica.Status.Phase != neo4jv1beta1.ReplicaPhaseReplicating {
-			r.Recorder.Eventf(replica, corev1.EventTypeNormal, EventReasonReplicaReady,
-				"Replica database %q is online (lag %d)", dbName, info.ReplicationLag)
-		}
-		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseReplicating, metav1.ConditionTrue,
-			"Replicating", msg, info)
+		r.reportReplicating(ctx, replica, dbName, info)
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
+}
+
+// reportReplicating records the observed state of a database that is still a
+// replica: the Replicating phase, the lag in status, and the lag gauge.
+//
+// The gauge is a TRANSACTION COUNT (SHOW DATABASES replicationLag), labelled by
+// the downstream cluster hosting the replica, the CR and the database. It is
+// set from the observation itself, independent of whether the status write
+// below changes anything, and removed again when the replica is deleted or
+// promoted.
+func (r *Neo4jReplicaDatabaseReconciler) reportReplicating(
+	ctx context.Context,
+	replica *neo4jv1beta1.Neo4jReplicaDatabase,
+	dbName string,
+	info *neo4jclient.DatabaseInfo,
+) {
+	metrics.SetReplicaLagTransactions(replica.Namespace, replica.Spec.ClusterRef, replica.Name, dbName, info.ReplicationLag)
+
+	msg := fmt.Sprintf("replica of %q, %d transactions behind", replica.Spec.UpstreamDatabase, info.ReplicationLag)
+	if replica.Status.Phase != neo4jv1beta1.ReplicaPhaseReplicating {
+		r.Recorder.Eventf(replica, corev1.EventTypeNormal, EventReasonReplicaReady,
+			"Replica database %q is online (lag %d)", dbName, info.ReplicationLag)
+	}
+	r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseReplicating, metav1.ConditionTrue,
+		"Replicating", msg, info)
 }
 
 // markPromoted records the terminal Promoted phase. Called both when the
@@ -326,6 +353,10 @@ func (r *Neo4jReplicaDatabaseReconciler) markPromoted(
 ) (ctrl.Result, error) {
 	msg := fmt.Sprintf("database is no longer a replica (type=%q); this CR is now inert and will not "+
 		"modify the database. Manage it with a Neo4jDatabase CR (ifNotExists: true) to adopt it.", info.Type)
+
+	// It stopped replicating, so its lag is no longer meaningful: drop the
+	// series rather than leave the last reading frozen on a dashboard.
+	metrics.DeleteReplicaLagTransactions(replica.Namespace, replica.Name)
 
 	if replica.Status.Phase != neo4jv1beta1.ReplicaPhasePromoted {
 		r.Recorder.Eventf(replica, corev1.EventTypeWarning, EventReasonReplicaPromotedDetected,
@@ -367,6 +398,9 @@ func (r *Neo4jReplicaDatabaseReconciler) markPromoted(
 // case it must NOT.
 func (r *Neo4jReplicaDatabaseReconciler) handleDeletion(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, dbName string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+	// Whatever happens to the database below, this replica is going away:
+	// stop publishing its lag.
+	metrics.DeleteReplicaLagTransactions(replica.Namespace, replica.Name)
 	if !controllerutil.ContainsFinalizer(replica, Neo4jReplicaDatabaseFinalizer) {
 		return ctrl.Result{}, nil
 	}

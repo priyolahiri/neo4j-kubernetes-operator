@@ -459,7 +459,7 @@ func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Co
 	}
 
 	// Update shard status
-	if statusErr := r.updateShardStatus(ctx, shardedDB, client); statusErr != nil {
+	if statusErr := r.updateShardStatus(ctx, shardedDB, client, destructive); statusErr != nil {
 		logger.Error(statusErr, "Failed to update shard status, continuing")
 		// Non-fatal error, continue
 	}
@@ -702,46 +702,38 @@ func isTransientError(err error) bool {
 		strings.Contains(errMsg, "connection")
 }
 
-// updateShardStatus updates the status with current shard information
-func (r *Neo4jShardedDatabaseReconciler) updateShardStatus(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
+// updateShardStatus records the shard-level state of the sharded database
+// (status.graphShard, propertyShards, virtualDatabase and creationTime) from
+// one SHOW DATABASES pass. recreated is true when this reconcile dropped and
+// recreated the database (replaceExisting + force).
+//
+// Best-effort: the caller logs and continues on error, because shard state is
+// informational. A shard that is missing or not online yet is reported as
+// observed, never turned into a failure here -- that can be a transient state
+// during startup. The write is skipped when nothing changed (see
+// applyShardStatus).
+func (r *Neo4jShardedDatabaseReconciler) updateShardStatus(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client, recreated bool) error {
 	logger := log.FromContext(ctx).WithValues("database", shardedDB.Spec.Name)
 
-	// Get individual database statuses for each shard
 	databases, err := client.GetDatabases(ctx)
 	if err != nil {
 		logger.Error(err, "Failed to get database information")
 		return fmt.Errorf("failed to get database information: %w", err)
 	}
 
-	// Check if the graph shard was successfully created
-	graphShardName := fmt.Sprintf("%s-g000", shardedDB.Spec.Name)
-	graphShardExists := false
-	graphShardOnline := false
-
-	for _, db := range databases {
-		if db.Name == graphShardName {
-			graphShardExists = true
-			if db.Status == "online" {
-				graphShardOnline = true
-			}
-			logger.Info("Graph shard found", "database", db.Name, "status", db.Status)
-			break
-		}
+	obs := observeShardFamily(shardedDB.Spec.Name, databases)
+	switch {
+	case obs.GraphShard == nil:
+		logger.Info("Graph shard not found yet", "expectedName", shardedDB.Spec.Name+"-g000")
+	case !obs.GraphShard.Ready:
+		logger.Info("Graph shard exists but is not ready yet", "database", obs.GraphShard.Name, "state", obs.GraphShard.State)
+	default:
+		logger.V(1).Info("Graph shard is ready", "database", obs.GraphShard.Name)
 	}
 
-	// If we have the graph shard and it's online, consider the sharded database ready
-	// The virtual database may not appear in SHOW DATABASES until first access
-	if graphShardExists && graphShardOnline {
-		logger.Info("Sharded database appears to be ready", "graphShard", graphShardName, "online", graphShardOnline)
-	} else if graphShardExists {
-		logger.Info("Graph shard exists but not online yet", "database", graphShardName)
-		// Don't fail - this might be transient during startup
-	} else {
-		logger.Info("Graph shard not found yet", "expectedName", graphShardName)
-		// Don't fail - this might be due to timing or eventual consistency
+	if err := r.applyShardStatus(ctx, shardedDB, obs, recreated); err != nil {
+		return fmt.Errorf("failed to record shard status: %w", err)
 	}
-
-	logger.Info("Sharded database status check completed successfully")
 	return nil
 }
 

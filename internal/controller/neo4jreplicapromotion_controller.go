@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/metrics"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 )
 
@@ -83,8 +84,7 @@ func (r *Neo4jReplicaPromotionReconciler) Reconcile(ctx context.Context, req ctr
 
 	// Terminal phases are final. A one-shot CR must not re-run because
 	// something touched it, and re-running a promotion is meaningless anyway.
-	if promo.Status.Phase == neo4jv1beta1.PromotionPhaseCompleted ||
-		promo.Status.Phase == neo4jv1beta1.PromotionPhaseFailed {
+	if isPromotionTerminal(promo.Status.Phase) {
 		return ctrl.Result{}, nil
 	}
 
@@ -145,7 +145,7 @@ func (r *Neo4jReplicaPromotionReconciler) Reconcile(ctx context.Context, req ctr
 	}
 	if before == nil {
 		msg := fmt.Sprintf("database %q does not exist", dbName)
-		r.fail(ctx, promo, msg)
+		r.fail(ctx, promo, replica.Spec.ClusterRef, msg)
 		return ctrl.Result{}, nil
 	}
 	if before.Type != neo4jclient.DatabaseTypeReplica {
@@ -221,11 +221,26 @@ func (r *Neo4jReplicaPromotionReconciler) complete(
 ) {
 	r.Recorder.Eventf(promo, corev1.EventTypeNormal, EventReasonPromotionCompleted, "%s", msg)
 
+	// The replica stopped replicating, so its lag series goes now rather than
+	// when the replica controller next reconciles the CR.
+	metrics.DeleteReplicaLagTransactions(replica.Namespace, replica.Name)
+
+	// transitioned is true only for the attempt whose write moved the persisted
+	// phase into Completed. The promotions counter hangs off it: a stale-cache
+	// reconcile, or the replica-watch re-enqueue that follows this function's own
+	// replica status write, reaches here again with the in-memory promotion
+	// still Promoting, finds Completed already persisted, and counts nothing.
+	transitioned := false
 	update := func() error {
+		transitioned = false
 		latest := &neo4jv1beta1.Neo4jReplicaPromotion{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(promo), latest); err != nil {
 			return err
 		}
+		if isPromotionTerminal(latest.Status.Phase) {
+			return nil
+		}
+		transitioned = true
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, metav1.ConditionTrue,
 			"Promoted", msg)
 		latest.Status.Phase = neo4jv1beta1.PromotionPhaseCompleted
@@ -242,6 +257,8 @@ func (r *Neo4jReplicaPromotionReconciler) complete(
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to record promotion completion")
+	} else if transitioned {
+		metrics.RecordReplicaPromotion(promo.Namespace, replica.Spec.ClusterRef, true)
 	}
 
 	// Drive the replica CR terminal so it stops managing the database, and so
@@ -276,10 +293,24 @@ func (r *Neo4jReplicaPromotionReconciler) complete(
 	}
 }
 
-func (r *Neo4jReplicaPromotionReconciler) fail(ctx context.Context, promo *neo4jv1beta1.Neo4jReplicaPromotion, msg string) {
+// fail records the terminal Failed phase. clusterName is the downstream
+// cluster hosting the replica, for the promotions metric.
+func (r *Neo4jReplicaPromotionReconciler) fail(ctx context.Context, promo *neo4jv1beta1.Neo4jReplicaPromotion, clusterName, msg string) {
 	r.Recorder.Event(promo, corev1.EventTypeWarning, EventReasonPromotionFailed, msg)
-	r.setStatus(ctx, promo, neo4jv1beta1.PromotionPhaseFailed, metav1.ConditionFalse,
-		EventReasonPromotionFailed, msg, nil)
+	// setStatus reports true only when this call moved the persisted phase, so
+	// a repeated fail() counts once.
+	if r.setStatus(ctx, promo, neo4jv1beta1.PromotionPhaseFailed, metav1.ConditionFalse,
+		EventReasonPromotionFailed, msg, nil) {
+		metrics.RecordReplicaPromotion(promo.Namespace, clusterName, false)
+	}
+}
+
+// isPromotionTerminal reports whether a promotion phase is final. Terminal
+// phases latch: once persisted, no later (possibly stale) reconcile may
+// overwrite them or count a second outcome.
+func isPromotionTerminal(phase string) bool {
+	return phase == neo4jv1beta1.PromotionPhaseCompleted ||
+		phase == neo4jv1beta1.PromotionPhaseFailed
 }
 
 func (r *Neo4jReplicaPromotionReconciler) requeueAfter() time.Duration {
@@ -296,15 +327,19 @@ func (r *Neo4jReplicaPromotionReconciler) setStatus(
 	readyStatus metav1.ConditionStatus,
 	readyReason, message string,
 	completionTime *metav1.Time,
-) {
+) bool {
+	written := false
 	update := func() error {
+		written = false
 		latest := &neo4jv1beta1.Neo4jReplicaPromotion{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(promo), latest); err != nil {
 			return err
 		}
-		if latest.Status.Phase == neo4jv1beta1.PromotionPhaseCompleted {
+		// Terminal phases are final (see isPromotionTerminal).
+		if isPromotionTerminal(latest.Status.Phase) {
 			return nil
 		}
+		written = true
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message)
 		latest.Status.Phase = phase
 		latest.Status.Message = message
@@ -316,7 +351,9 @@ func (r *Neo4jReplicaPromotionReconciler) setStatus(
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jReplicaPromotion status")
+		return false
 	}
+	return written
 }
 
 // SetupWithManager registers the controller and re-enqueues a promotion when

@@ -6183,6 +6183,10 @@ func (in *UpgradeStatus) DeepCopyInto(out *UpgradeStatus) {
 		in, out := &in.StepStartTime, &out.StepStartTime
 		*out = (*in).DeepCopy()
 	}
+	if in.PhaseStartTime != nil {
+		in, out := &in.PhaseStartTime, &out.PhaseStartTime
+		*out = (*in).DeepCopy()
+	}
 	if in.CurrentPartition != nil {
 		in, out := &in.CurrentPartition, &out.CurrentPartition
 		*out = new(int32)

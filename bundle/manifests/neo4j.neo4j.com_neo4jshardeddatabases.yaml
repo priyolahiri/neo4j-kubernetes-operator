@@ -361,45 +361,61 @@ spec:
                 type: array
               creationTime:
                 description: |-
-                  CreationTime shows when the sharded database was created.
-
-                  Reserved: accepted by the schema but not acted on today; no controller
-                  populates it.
+                  CreationTime is when the operator first saw the sharded database's graph
+                  shard in SHOW DATABASES after creating it, i.e. when the database came
+                  into existence as far as the operator can tell. Set once and kept across
+                  reconciles; restarted when a destructive restore (replaceExisting + force)
+                  drops and recreates the database. Not the CR's own creation time (see
+                  metadata.creationTimestamp).
                 format: date-time
                 type: string
               graphShard:
                 description: |-
-                  Graph shard status.
-
-                  Reserved: accepted by the schema but not acted on today; no controller
-                  populates it. Use SHOW DATABASES for per-shard state.
+                  GraphShard is the state of the graph shard database (<name>-g000) as of
+                  the last reconcile, taken from SHOW DATABASES. Absent until the shard is
+                  visible. Populated: name, type, state and ready; size, servers and
+                  lastError are not (SHOW DATABASES does not report them).
                 properties:
                   lastError:
-                    description: Last error encountered for this shard
+                    description: Last error encountered for this shard. Not populated.
                     type: string
                   name:
                     description: Database name for this shard
                     type: string
                   propertyCount:
+                    description: |-
+                      PropertyCount is the number of properties held by a property shard. Not
+                      populated.
                     format: int64
                     type: integer
                   propertyShardIndex:
-                    description: Property shard specific fields
+                    description: |-
+                      PropertyShardIndex is the zero-based index of a property shard (the NNN
+                      in <name>-pNNN). Set for property shards only.
                     format: int32
                     type: integer
                   ready:
-                    description: Ready indicates if this shard is operational
+                    description: |-
+                      Ready indicates if this shard is operational: at least one copy is online
+                      and no copy that is meant to be online is not.
                     type: boolean
                   servers:
-                    description: Servers hosting this shard
+                    description: |-
+                      Servers hosting this shard. Not populated: the SHOW DATABASES columns the
+                      controller reads do not include the hosting server.
                     items:
                       type: string
                     type: array
                   size:
-                    description: Size of this shard database
+                    description: |-
+                      Size of this shard database. Not populated: SHOW DATABASES does not
+                      report store size.
                     type: string
                   state:
-                    description: Current state of this shard database
+                    description: |-
+                      Current state of this shard database: "online" when every copy is online,
+                      otherwise the first non-online state any copy reports (for example
+                      "offline" or "store copying").
                     type: string
                   type:
                     description: 'Shard type: graph or property'
@@ -469,40 +485,54 @@ spec:
                 type: string
               propertyShards:
                 description: |-
-                  Property shard statuses.
-
-                  Reserved: accepted by the schema but not acted on today; no controller
-                  populates it. Use SHOW DATABASES for per-shard state.
+                  PropertyShards are the states of the property shard databases
+                  (<name>-p000, <name>-p001, ...) as of the last reconcile, ordered by
+                  propertyShardIndex. Populated: name, type, state, ready and
+                  propertyShardIndex; size, servers, lastError and propertyCount are not.
                 items:
                   description: ShardStatus tracks the status of individual shards
                     (graph or property)
                   properties:
                     lastError:
-                      description: Last error encountered for this shard
+                      description: Last error encountered for this shard. Not populated.
                       type: string
                     name:
                       description: Database name for this shard
                       type: string
                     propertyCount:
+                      description: |-
+                        PropertyCount is the number of properties held by a property shard. Not
+                        populated.
                       format: int64
                       type: integer
                     propertyShardIndex:
-                      description: Property shard specific fields
+                      description: |-
+                        PropertyShardIndex is the zero-based index of a property shard (the NNN
+                        in <name>-pNNN). Set for property shards only.
                       format: int32
                       type: integer
                     ready:
-                      description: Ready indicates if this shard is operational
+                      description: |-
+                        Ready indicates if this shard is operational: at least one copy is online
+                        and no copy that is meant to be online is not.
                       type: boolean
                     servers:
-                      description: Servers hosting this shard
+                      description: |-
+                        Servers hosting this shard. Not populated: the SHOW DATABASES columns the
+                        controller reads do not include the hosting server.
                       items:
                         type: string
                       type: array
                     size:
-                      description: Size of this shard database
+                      description: |-
+                        Size of this shard database. Not populated: SHOW DATABASES does not
+                        report store size.
                       type: string
                     state:
-                      description: Current state of this shard database
+                      description: |-
+                        Current state of this shard database: "online" when every copy is online,
+                        otherwise the first non-online state any copy reports (for example
+                        "offline" or "store copying").
                       type: string
                     type:
                       description: 'Shard type: graph or property'
@@ -518,23 +548,25 @@ spec:
                 type: boolean
               totalSize:
                 description: |-
-                  Total size across all shards.
+                  TotalSize is the total size across all shards.
 
                   Reserved: accepted by the schema but not acted on today; no controller
-                  populates it.
+                  populates it. SHOW DATABASES, the only source the controller reads shard
+                  state from, does not report store size.
                 type: string
               virtualDatabase:
                 description: |-
-                  Virtual database status (logical view combining all shards).
-
-                  Reserved: accepted by the schema but not acted on today; no controller
-                  populates it.
+                  VirtualDatabase is the logical database that combines all shards (the
+                  name clients connect to), as of the last reconcile. Absent until it is
+                  visible in SHOW DATABASES. Populated: name and ready; endpoint and metrics
+                  are not.
                 properties:
                   endpoint:
-                    description: Connection endpoint for virtual database queries
+                    description: Connection endpoint for virtual database queries.
+                      Not populated.
                     type: string
                   metrics:
-                    description: Performance metrics for virtual database
+                    description: Performance metrics for virtual database. Not populated.
                     properties:
                       queryMetrics:
                         description: Query performance statistics
@@ -568,7 +600,9 @@ spec:
                     description: Name of the virtual database (logical view)
                     type: string
                   ready:
-                    description: Ready indicates if the virtual database is operational
+                    description: |-
+                      Ready indicates if the virtual database is operational: at least one copy
+                      is online and no copy that is meant to be online is not.
                     type: boolean
                 type: object
             type: object
