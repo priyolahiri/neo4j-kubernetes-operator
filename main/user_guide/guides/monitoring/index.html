@@ -4867,14 +4867,14 @@ dashboards or alerts on it.</p>
 <tr>
 <td><code>neo4j_operator_replica_lag_transactions</code></td>
 <td>Gauge</td>
-<td><code>namespace</code>, <code>cluster_name</code>, <code>replica</code>, <code>database</code></td>
-<td>How many <strong>transactions</strong> (not seconds) the replica is behind its upstream, as <code>SHOW DATABASES</code> reports it. <code>replica</code> is the <code>Neo4jReplicaDatabase</code> name and <code>database</code> the Neo4j database name (<code>spec.name</code>, defaulting to the CR name). Set while the replica is observed replicating; the series is <strong>removed</strong> when the CR is deleted or the replica is promoted, so a dashboard never shows a frozen last value. This is the data loss a promotion right now would make permanent</td>
+<td><code>namespace</code>, <code>cluster_name</code>, <code>replica</code>, <code>database</code>, <code>k8s_cluster</code></td>
+<td>How many <strong>transactions</strong> (not seconds) the replica is behind its upstream, as <code>SHOW DATABASES</code> reports it. <code>replica</code> is the <code>Neo4jReplicaDatabase</code> name and <code>database</code> the Neo4j database name (<code>spec.name</code>, defaulting to the CR name). <code>k8s_cluster</code> is empty unless the operator runs with <code>--kubernetes-cluster-name</code> (Helm <code>kubernetesClusterName</code>), exactly as for <code>neo4j_operator_server_health</code>. Set while the replica is observed replicating. The series is <strong>removed</strong> whenever the operator can no longer vouch for it, so a dashboard never shows a frozen last value: when the CR is deleted or the replica is promoted, when the database has vanished from the server, and while the downstream cluster is missing or not <code>Ready</code> or the lag cannot be read (Neo4j unreachable, <code>SHOW DATABASES</code> failing, or the spec rejected). It is set again by the first reconcile that reads the lag, so an absent series means "unknown", never "caught up". This is the data loss a promotion right now would make permanent</td>
 </tr>
 <tr>
 <td><code>neo4j_operator_replica_promotions_total</code></td>
 <td>Counter</td>
-<td><code>namespace</code>, <code>cluster_name</code>, <code>result</code> (<code>success</code>/<code>failure</code>)</td>
-<td>Replica promotions by terminal outcome, one increment per <code>Neo4jReplicaPromotion</code> when it reaches <code>Completed</code> (<code>success</code>) or <code>Failed</code> (<code>failure</code>). A promotion that is still retrying counts as neither, and reconciles after the terminal phase do not count again</td>
+<td><code>namespace</code>, <code>cluster_name</code>, <code>result</code> (<code>success</code>/<code>failure</code>), <code>k8s_cluster</code></td>
+<td>Replica promotions by terminal outcome, one increment per <code>Neo4jReplicaPromotion</code> when it reaches <code>Completed</code> (<code>success</code>) or <code>Failed</code> (<code>failure</code>). A promotion that is still retrying counts as neither, and reconciles after the terminal phase do not count again. <code>k8s_cluster</code> is populated as for the lag gauge</td>
 </tr>
 </tbody>
 </table>
