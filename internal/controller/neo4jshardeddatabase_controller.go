@@ -203,8 +203,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	// resolving again would re-create the PVC seed proxy that the Ready
 	// transition just tore down — oscillating Ready→Pending and re-exposing
 	// the backup PVC on every periodic reconcile (#224 review).
-	seedConsumable := shardedDatabase.Status.ShardingReady == nil || !*shardedDatabase.Status.ShardingReady ||
-		(shardedDatabase.Spec.ReplaceExisting && shardedDatabase.Status.LastDestructiveRestoreGeneration < shardedDatabase.Generation)
+	seedConsumable := shardedSeedConsumable(&shardedDatabase)
 	var resolved *ResolvedShardedSeed
 	var seedErr error
 	if seedConsumable {
@@ -438,8 +437,7 @@ func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Co
 	// the drop+create cycle succeeds; any subsequent reconcile at the same
 	// generation skips the destructive branch and falls through to the
 	// standard create path.
-	destructive = shardedDB.Spec.ReplaceExisting && shardedDB.Spec.Force &&
-		shardedDB.Status.LastDestructiveRestoreGeneration < shardedDB.Generation
+	destructive = destructiveRestorePending(shardedDB)
 	if destructive {
 		if dropErr := r.dropShardedDatabaseIfExists(ctx, shardedDB, client); dropErr != nil {
 			return false, fmt.Errorf("failed to DROP DATABASE %q for replaceExisting: %w", shardedDB.Spec.Name, dropErr)
@@ -848,4 +846,29 @@ func (r *Neo4jShardedDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) erro
 			MaxConcurrentReconciles: maxConcurrentReconciles,
 		}).
 		Complete(r)
+}
+
+// shardedSeedConsumable reports whether the sharded database's seed can still be
+// CONSUMED, i.e. whether the reconcile should resolve it at all: during initial
+// creation (not ShardingReady yet) or while a destructive replaceExisting
+// re-trigger is pending (rule 64). Once the database is Ready, resolving again
+// would re-create the PVC seed proxy that the Ready transition just tore down,
+// oscillating Ready→Pending and re-exposing the backup PVC on every periodic
+// reconcile (#224 review). It is a function of its own so a test can pin the
+// real predicate rather than a copy of it.
+func shardedSeedConsumable(sd *neo4jv1beta1.Neo4jShardedDatabase) bool {
+	return sd.Status.ShardingReady == nil || !*sd.Status.ShardingReady ||
+		(sd.Spec.ReplaceExisting && sd.Status.LastDestructiveRestoreGeneration < sd.Generation)
+}
+
+// destructiveRestorePending reports whether the drop-and-recreate (replaceExisting
+// + force) path should run for this generation of the spec. It is the gate of
+// knowledge rule 64: the controller stamps Status.LastDestructiveRestoreGeneration
+// once the cycle succeeds, so a later reconcile at the same generation falls
+// through to the standard create path instead of re-dropping the database and
+// re-seeding it on every poll. Re-triggering means changing the spec (which bumps
+// the generation). A function of its own so a test pins the real predicate.
+func destructiveRestorePending(sd *neo4jv1beta1.Neo4jShardedDatabase) bool {
+	return sd.Spec.ReplaceExisting && sd.Spec.Force &&
+		sd.Status.LastDestructiveRestoreGeneration < sd.Generation
 }

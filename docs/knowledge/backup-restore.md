@@ -210,8 +210,8 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 - **Scope:** `api/v1beta1/neo4jshardeddatabase_types.go` (`Status.LastDestructiveRestoreGeneration`), `internal/controller/neo4jshardeddatabase_controller.go`
 - **Rule:** The destructive branch fires only when `LastDestructiveRestoreGeneration < Generation`; it stamps `= Generation` on success. Re-trigger by mutating the spec (which bumps generation) — typically editing `seedBackupRef`.
 - **Why:** Without the generation gate, every reconcile of a `replaceExisting=true` CR would re-drop and re-seed the database in a loop.
-- **Pinned-by:** integration only — `test/integration/property_sharding_minio_restore_test.go` (`LastDestructiveRestoreGeneration` stamped after the destructive restore). That spec is local-only (it skips in CI). Do NOT count `TestShardedSeedConsumableGate` (`internal/controller/neo4jrestore_cloud_test.go`): it restates the predicate in a local closure and never calls the controller, so it passes whatever the controller does.
-- **Status:** Documented (integration, local-only) — no unit test exercises the controller's generation gate
+- **Pinned-by:** `TestDestructiveRestorePending_GatesOnGeneration` (`internal/controller/neo4jshardeddatabase_gate_test.go`) pins the controller's own predicate `destructiveRestorePending` (replaceExisting && force && `LastDestructiveRestoreGeneration < Generation`); the end-to-end stamp after a real destructive restore is also covered by `test/integration/property_sharding_minio_restore_test.go` (local-only; it skips in CI). The related *seed-consumable* gate (skip seed resolution once the database is Ready, #224) is pinned by `TestShardedSeedConsumableGate`, which now calls the controller's `shardedSeedConsumable` rather than a copy of it.
+- **Status:** Enforced (unit test on the real predicate; integration stamp local-only)
 
 ### Rule 65 — Sharded DDL requires `CYPHER 25` prefix
 - **Scope:** `internal/controller/neo4jshardeddatabase_controller.go` (CREATE / DROP statements)
