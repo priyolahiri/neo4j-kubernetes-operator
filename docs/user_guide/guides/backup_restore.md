@@ -118,6 +118,16 @@ Restore into a fresh database `neo4jrestored` on the same cluster. The operator
 seeds it from the backup over Cypher — online, no downtime, and your original
 `neo4j` database is untouched.
 
+!!! warning "On a `Neo4jEnterpriseStandalone`, this step is different"
+
+    The online path above is cluster-only. A standalone restores **offline**
+    through `neo4j-admin`, so the `Neo4jRestore` needs `stopCluster: true` (the
+    operator scales the instance to 0 for the restore and back up afterwards),
+    plus `options.replaceExisting: true` to overwrite a database that already
+    exists. Applied as written below, it goes `Failed` with *"cannot run
+    against a live cluster … Set spec.stopCluster=true"*. See
+    [Restore Operations](#restore-operations).
+
 ```yaml
 cat <<'EOF' | kubectl apply -f -
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -178,7 +188,7 @@ spec:
   storage: { type: s3, bucket: backups }
 ```
 
-**Back up every database (instance-wide; `system` excluded)**
+**Back up every database (instance-wide; `system` is captured but never restored)**
 ```yaml
 spec:
   instanceRef: my-neo4j
@@ -195,7 +205,7 @@ spec:
   source: { type: backup, backupRef: customers-backup }
 ```
 
-**Cross-topology restore.** A backup is database-scoped, not topology-scoped — a database backed up from a **standalone** can be restored into a **cluster** (and vice-versa); the operator picks the engine from the *target*. Caveats: the target Neo4j version must be ≥ the source; the `system` database is never restored across topologies (`allDatabases` excludes it — carry users/roles via `options.includeMetadata` on the backup).
+**Cross-topology restore.** A backup is database-scoped, not topology-scoped — a database backed up from a **standalone** can be restored into a **cluster** (and vice-versa); the operator picks the engine from the *target*. Caveats: the target Neo4j version must be ≥ the source; the `system` database is never restored across topologies (an `allDatabases` restore skips it, although the backup captures it — carry users/roles via `options.includeMetadata` on the backup).
 
 **All-databases restore ([#222](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222), [#288](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/288)).** `Neo4jRestore.spec.allDatabases: true` restores every user database recorded in the source backup, with per-database progress in `status.databaseResults`. Requires `source.type=backup`. On a **cluster** target the operator restores one database per reconcile pass via the in-place Cypher path (cloud and PVC-backed backups). On a **standalone** target it runs a single offline `neo4j-admin database restore` Job covering all user databases — set `stopCluster: true` (the instance is scaled to 0 for the offline restore) and `options.replaceExisting: true` to overwrite existing databases — then brings each database online.
 
@@ -213,7 +223,7 @@ Set **`instanceRef`** to the deployment (a `Neo4jEnterpriseCluster` **or** `Neo4
 
 | Scope field | Backs up |
 |---|---|
-| `allDatabases: true` | every **standard** database (`neo4j-admin database backup "*"` — one `.backup` artifact per database; `system` excluded) **and catalogues each property-sharded family** (`status.shardedFamilies`). The all-databases *restore loop* recreates standard DBs only; restore each sharded family from the **same** backup via its `Neo4jShardedDatabase` CR — **see the note below.** |
+| `allDatabases: true` | every **standard** database (`neo4j-admin database backup "*"` — one `.backup` artifact per database, `system` included — the all-databases restore never restores it) **and catalogues each property-sharded family** (`status.shardedFamilies`). The all-databases *restore loop* recreates standard DBs only; restore each sharded family from the **same** backup via its `Neo4jShardedDatabase` CR — **see the note below.** |
 | `database: <name>` | a single standard database (e.g. `neo4j`) |
 | `shardedDatabase: <cr-name>` | a single property-sharded database, named by its `Neo4jShardedDatabase` CR (the operator resolves the logical DB name from that CR's `spec.name` — the two often differ). All shards (graph + property) are captured in one `neo4j-admin` run. |
 
