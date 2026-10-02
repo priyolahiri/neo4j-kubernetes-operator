@@ -6142,12 +6142,12 @@ cluster reaches <code>Ready</code> — see <a href="../neo4jrestore/"><code>Neo4
 <tr>
 <td><code>authenticationProviders</code></td>
 <td><code>[]string</code></td>
-<td>Ordered list of authentication providers (e.g., <code>["ldap", "native"]</code>). Default: <code>["native"]</code></td>
+<td>Ordered list of authentication providers (e.g., <code>["ldap", "native"]</code>), written into <code>dbms.security.authentication_providers</code>. Values: <code>native</code>, <code>ldap</code>, <code>oidc-&lt;name&gt;</code>, <code>plugin-&lt;name&gt;</code>; the older <code>oidc</code>, <code>kerberos</code>, <code>jwt</code>, <code>saml</code>, <code>custom</code> validate with a warning. Default: <code>["native"]</code></td>
 </tr>
 <tr>
 <td><code>authorizationProviders</code></td>
 <td><code>[]string</code></td>
-<td>Ordered list of authorization providers. Default: <code>["native"]</code></td>
+<td>Ordered list of authorization providers, written into <code>dbms.security.authorization_providers</code>. Same values. Default: <code>["native"]</code></td>
 </tr>
 <tr>
 <td><code>adminSecret</code></td>

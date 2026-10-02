@@ -7661,7 +7661,7 @@ Chains: <code>manifests</code> → <code>generate</code> → <code>sync-kustomiz
 <tr>
 <td><code>LABEL</code></td>
 <td><em>(empty)</em></td>
-<td>Passed to <code>ginkgo --label-filter</code>. Empty passes no filter and runs every spec (<code>core</code> <strong>and</strong> <code>extended</code>). Use <code>core</code> for the per-PR tier, <code>extended</code> for the heavy / release tier, or any expression such as <code>'core || extended'</code>. Quote an expression that contains spaces or <code>|</code>.</td>
+<td>Passed to <code>ginkgo --label-filter</code>. Empty passes no filter and runs every spec (<code>core</code> <strong>and</strong> <code>extended</code>). Use <code>core</code> for the per-PR tier, <code>extended</code> for the heavy / release tier, or any expression such as <code>'core || extended'</code>. Quote an expression that contains spaces or <code>|</code>. A filter that selects no spec <strong>fails</strong> the run (<code>--fail-on-empty</code>), so a typo such as <code>LABEL=cor</code> — or an unrelated <code>LABEL</code> exported in your shell, which make lets override the default — cannot pass as a green "Ran 0 of N Specs". <code>test-one</code> does the same for a <code>TEST</code> that matches nothing.</td>
 </tr>
 <tr>
 <td><code>INTEGRATION_TIMEOUT</code></td>
