@@ -6586,7 +6586,7 @@ not parse policy config to wire up filesystem mounts automatically.</p>
 <tr>
 <td><code>certificateSecret</code></td>
 <td><code>string</code></td>
-<td><strong>Reserved — no effect today.</strong> Intended for manual certificates, but no builder or controller reads it: the operator always uses the cert-manager-issued Secret <code>{name}-tls-secret</code>.</td>
+<td><strong>Reserved — no effect today.</strong> Intended for manual certificates, but no builder or controller reads it: the operator always uses the cert-manager-issued Secret <code>{name}-tls-secret</code>. A <code>ValidationWarning</code> event is raised whenever it is set, whatever <code>mode</code> is.</td>
 </tr>
 <tr>
 <td><code>trustedCASecret</code></td>
@@ -7340,12 +7340,12 @@ sharded database. The server default is <code>serverDefaultCypherLanguage</code>
 <tr>
 <td><code>nodeSelector</code></td>
 <td><code>map[string]string</code></td>
-<td><strong>Reserved — no effect today.</strong> Never read by the topology scheduler; use the top-level <code>spec.nodeSelector</code>.</td>
+<td><strong>Reserved — no effect today.</strong> Never read by the topology scheduler; use the top-level <code>spec.nodeSelector</code>. A <code>ValidationWarning</code> event is raised when it is set.</td>
 </tr>
 <tr>
 <td><code>requiredDuringScheduling</code></td>
 <td><code>bool</code></td>
-<td><strong>Reserved — no effect today.</strong> Never read; use <code>antiAffinity.type: required</code> or <code>topology.enforceDistribution</code> for hard placement.</td>
+<td><strong>Reserved — no effect today.</strong> Never read; use <code>antiAffinity.type: required</code> or <code>topology.enforceDistribution</code> for hard placement. A <code>ValidationWarning</code> event is raised when it is <code>true</code>.</td>
 </tr>
 </tbody>
 </table>

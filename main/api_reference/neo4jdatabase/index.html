@@ -4931,7 +4931,7 @@
 <tr>
 <td><code>source</code></td>
 <td><code>string</code></td>
-<td>Source type for initial data: <code>"cypher"</code>, <code>"dump"</code>, <code>"csv"</code>. <strong>Accepted but not acted on</strong> — the controller does not read it</td>
+<td>Source type for initial data: <code>"cypher"</code>, <code>"dump"</code>, <code>"csv"</code>. <strong>Accepted but not acted on</strong> — the controller does not read it. A <code>ValidationWarning</code> event is raised when it is set to <code>"dump"</code> or <code>"csv"</code>; <code>"cypher"</code> (what <code>cypherStatements</code> does) is not warned about</td>
 </tr>
 <tr>
 <td><code>cypherStatements</code></td>
@@ -4941,17 +4941,17 @@
 <tr>
 <td><code>configMapRef</code></td>
 <td><code>string</code></td>
-<td><strong>Accepted but not acted on</strong> — the ConfigMap is never read, so put statements in <code>cypherStatements</code></td>
+<td><strong>Accepted but not acted on</strong> — the ConfigMap is never read, so put statements in <code>cypherStatements</code>. A <code>ValidationWarning</code> event is raised when it is set.</td>
 </tr>
 <tr>
 <td><code>secretRef</code></td>
 <td><code>string</code></td>
-<td><strong>Accepted but not acted on</strong></td>
+<td><strong>Accepted but not acted on.</strong> A <code>ValidationWarning</code> event is raised when it is set.</td>
 </tr>
 <tr>
 <td><code>storage</code></td>
 <td><a href="#storagelocation"><code>*StorageLocation</code></a></td>
-<td><strong>Accepted but not acted on</strong> (the <code>StorageLocation</code> tables below describe the schema only)</td>
+<td><strong>Accepted but not acted on</strong> (the <code>StorageLocation</code> tables below describe the schema only). A <code>ValidationWarning</code> event is raised when it is set.</td>
 </tr>
 </tbody>
 </table>

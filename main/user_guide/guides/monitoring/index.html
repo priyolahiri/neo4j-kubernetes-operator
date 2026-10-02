@@ -2183,54 +2183,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cypher-execution-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cypher execution metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#security-operation-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Security operation metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#resource-conflict-metrics" class="md-nav__link">
     <span class="md-ellipsis">
       
         Resource conflict metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#disaster-recovery-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Disaster recovery metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#scaling-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Scaling metrics
       
     </span>
   </a>
@@ -4426,54 +4382,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cypher-execution-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cypher execution metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#security-operation-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Security operation metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#resource-conflict-metrics" class="md-nav__link">
     <span class="md-ellipsis">
       
         Resource conflict metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#disaster-recovery-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Disaster recovery metrics
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#scaling-metrics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Scaling metrics
       
     </span>
   </a>
@@ -4863,10 +4775,10 @@ string, so a missing value is visible instead of silently absent.</p>
 </tbody>
 </table>
 <blockquote>
-<p><strong>Which metrics are populated.</strong> Every metric below is registered, so it is listed
-here, but a metric family that no controller records yet exports no series at all.
-Rows marked <em>registered, not currently populated</em> are in that state today; do not
-build dashboards or alerts on them.</p>
+<p><strong>Which metrics are populated.</strong> Every metric listed here is registered, but a family
+exports a series only once a controller has recorded it. A row marked <em>registered, not
+currently populated</em> has no recorder wired up yet and exports nothing; do not build
+dashboards or alerts on it.</p>
 </blockquote>
 <h3 id="reconcile-metrics">Reconcile metrics<a class="headerlink" href="#reconcile-metrics" title="Anchor link to this section">&para;</a></h3>
 <table>
@@ -4942,60 +4854,9 @@ build dashboards or alerts on them.</p>
 <td><code>cluster_name</code>, <code>namespace</code></td>
 <td>Backup job duration</td>
 </tr>
-<tr>
-<td><code>neo4j_operator_backup_size_bytes</code></td>
-<td>Gauge</td>
-<td><code>cluster_name</code>, <code>namespace</code></td>
-<td>Size of the last successful backup in bytes — <em>registered, not currently populated</em> (the size is never supplied)</td>
-</tr>
 </tbody>
 </table>
-<h3 id="cypher-execution-metrics">Cypher execution metrics<a class="headerlink" href="#cypher-execution-metrics" title="Anchor link to this section">&para;</a></h3>
-<p><em>Registered, not currently populated.</em></p>
-<table>
-<thead>
-<tr>
-<th>Metric</th>
-<th>Type</th>
-<th>Labels</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>neo4j_operator_cypher_executions_total</code></td>
-<td>Counter</td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>operation</code>, <code>result</code> (<code>success</code>/<code>failure</code>)</td>
-<td>Total Cypher statement executions by the operator</td>
-</tr>
-<tr>
-<td><code>neo4j_operator_cypher_execution_duration_seconds</code></td>
-<td>Histogram</td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>operation</code></td>
-<td>Duration of operator-issued Cypher statements</td>
-</tr>
-</tbody>
-</table>
-<h3 id="security-operation-metrics">Security operation metrics<a class="headerlink" href="#security-operation-metrics" title="Anchor link to this section">&para;</a></h3>
-<p><em>Registered, not currently populated.</em></p>
-<table>
-<thead>
-<tr>
-<th>Metric</th>
-<th>Type</th>
-<th>Labels</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>neo4j_operator_security_operations_total</code></td>
-<td>Counter</td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>operation</code>, <code>result</code> (<code>success</code>/<code>failure</code>)</td>
-<td>Total security operations (user, role, grant)</td>
-</tr>
-</tbody>
-</table>
+<p>The operator does not export a backup-size metric. Measure the <code>.backup</code> artifacts in your storage backend, or read <code>status.history[*].databaseArtifacts[*].size</code> / <code>shardArtifacts[*].size</code> where the run populated them (<code>status.history[*].stats.size</code> is reserved and never populated).</p>
 <h3 id="resource-conflict-metrics">Resource conflict metrics<a class="headerlink" href="#resource-conflict-metrics" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
@@ -5024,82 +4885,6 @@ build dashboards or alerts on them.</p>
 <td>Histogram</td>
 <td><code>resource_type</code>, <code>namespace</code></td>
 <td>Time spent retrying due to resource version conflicts</td>
-</tr>
-</tbody>
-</table>
-<h3 id="disaster-recovery-metrics">Disaster recovery metrics<a class="headerlink" href="#disaster-recovery-metrics" title="Anchor link to this section">&para;</a></h3>
-<p><em>Registered, not currently populated.</em></p>
-<table>
-<thead>
-<tr>
-<th>Metric</th>
-<th>Type</th>
-<th>Labels</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>neo4j_operator_disaster_recovery_status</code></td>
-<td>Gauge</td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>primary_region</code>, <code>secondary_region</code></td>
-<td><code>1</code> = DR ready, <code>0</code> = not ready</td>
-</tr>
-<tr>
-<td><code>neo4j_operator_failover_total</code></td>
-<td>Counter</td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>result</code> (<code>success</code>/<code>failure</code>)</td>
-<td>Total failovers performed</td>
-</tr>
-<tr>
-<td><code>neo4j_operator_replication_lag_seconds</code></td>
-<td>Gauge</td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>primary_region</code>, <code>secondary_region</code></td>
-<td>Replication lag in seconds</td>
-</tr>
-</tbody>
-</table>
-<h3 id="scaling-metrics">Scaling metrics<a class="headerlink" href="#scaling-metrics" title="Anchor link to this section">&para;</a></h3>
-<p><em>Registered, not currently populated.</em></p>
-<table>
-<thead>
-<tr>
-<th>Metric</th>
-<th>Type</th>
-<th>Labels</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>neo4j_operator_manual_scaler_enabled</code></td>
-<td>Gauge</td>
-<td><code>cluster_name</code>, <code>namespace</code></td>
-<td><code>1</code> = manual scaling enabled, <code>0</code> = disabled</td>
-</tr>
-<tr>
-<td><code>neo4j_operator_scale_events_total</code></td>
-<td>Counter</td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>node_type</code>, <code>direction</code> (<code>up</code>/<code>down</code>)</td>
-<td>Total manual scale events</td>
-</tr>
-<tr>
-<td><code>neo4j_operator_primary_count</code></td>
-<td>Gauge</td>
-<td><code>cluster_name</code>, <code>namespace</code></td>
-<td>Current number of primary nodes</td>
-</tr>
-<tr>
-<td><code>neo4j_operator_secondary_count</code></td>
-<td>Gauge</td>
-<td><code>cluster_name</code>, <code>namespace</code></td>
-<td>Current number of secondary nodes</td>
-</tr>
-<tr>
-<td><code>neo4j_operator_scaling_validation_total</code></td>
-<td>Counter</td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>validation_type</code>, <code>result</code> (<code>success</code>/<code>failure</code>)</td>
-<td>Total scaling validation attempts</td>
 </tr>
 </tbody>
 </table>

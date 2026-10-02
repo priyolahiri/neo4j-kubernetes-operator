@@ -4540,7 +4540,7 @@ defaults.</p>
 </tr>
 </tbody>
 </table>
-<p>Compatibility-matrix notes (unknown plugin name, version below the recorded minimum) are <strong>advisory only</strong> — they surface as <code>ValidationWarning</code> events and never block installation.</p>
+<p>Compatibility-matrix notes (unknown plugin name, version below the recorded minimum) are <strong>advisory only</strong> — they surface as <code>ValidationWarning</code> events and never block installation. So does a field the schema accepts but nothing reads (<code>spec.resources</code>, <code>spec.source.registry</code> and its <code>tls</code>, <code>spec.security.securityPolicy</code>): the event reads <code>spec.&lt;path&gt; is accepted but has no effect today: &lt;what to do instead&gt;</code>.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jplugin<span class="w"> </span>&lt;name&gt;<span class="w">          </span><span class="c1"># status.message + events</span>
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span>involvedObject.name<span class="o">=</span>&lt;name&gt;
 </span></code></pre></div>
@@ -4591,7 +4591,7 @@ defaults.</p>
 <tr>
 <td><code>ValidationWarning</code></td>
 <td>Warning</td>
-<td>Advisory compatibility note — does not block install</td>
+<td>Advisory compatibility note, or a set field that nothing reads — does not block install</td>
 </tr>
 </tbody>
 </table>

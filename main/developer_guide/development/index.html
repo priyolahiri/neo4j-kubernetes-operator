@@ -5300,14 +5300,13 @@ which chains all of it.</p>
 </span><span id="__span-15-15"><a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a>│   └── neo4jrestore_controller.go
 </span><span id="__span-15-16"><a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a>├── internal/resources/              # Resource builders
 </span><span id="__span-15-17"><a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>├── internal/validation/             # Validation framework
-</span><span id="__span-15-18"><a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a>├── internal/monitoring/             # Resource monitoring
-</span><span id="__span-15-19"><a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a>├── config/                         # Kubernetes manifests
-</span><span id="__span-15-20"><a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a>│   ├── crd/bases/                  # Generated CRDs
-</span><span id="__span-15-21"><a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a>│   ├── rbac/                       # RBAC manifests
-</span><span id="__span-15-22"><a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a>│   └── manager/                    # Operator deployment
-</span><span id="__span-15-23"><a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a>├── examples/                       # Example configurations
-</span><span id="__span-15-24"><a id="__codelineno-15-24" name="__codelineno-15-24" href="#__codelineno-15-24"></a>├── test/integration/               # Integration tests
-</span><span id="__span-15-25"><a id="__codelineno-15-25" name="__codelineno-15-25" href="#__codelineno-15-25"></a>└── docs/                          # Documentation
+</span><span id="__span-15-18"><a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a>├── config/                         # Kubernetes manifests
+</span><span id="__span-15-19"><a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a>│   ├── crd/bases/                  # Generated CRDs
+</span><span id="__span-15-20"><a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a>│   ├── rbac/                       # RBAC manifests
+</span><span id="__span-15-21"><a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a>│   └── manager/                    # Operator deployment
+</span><span id="__span-15-22"><a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a>├── examples/                       # Example configurations
+</span><span id="__span-15-23"><a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a>├── test/integration/               # Integration tests
+</span><span id="__span-15-24"><a id="__codelineno-15-24" name="__codelineno-15-24" href="#__codelineno-15-24"></a>└── docs/                          # Documentation
 </span></code></pre></div>
 <h3 id="current-architecture-august-2025">Current Architecture (August 2025)<a class="headerlink" href="#current-architecture-august-2025" title="Anchor link to this section">&para;</a></h3>
 <p>The operator implements a <strong>server-based architecture</strong>:</p>
@@ -5524,13 +5523,15 @@ else deploy in-cluster with <code>make deploy-dev-local</code> and read the logs
 </span></code></pre></div>
 <h2 id="performance-development">Performance Development<a class="headerlink" href="#performance-development" title="Anchor link to this section">&para;</a></h2>
 <h3 id="resource-monitoring">Resource Monitoring<a class="headerlink" href="#resource-monitoring" title="Anchor link to this section">&para;</a></h3>
-<p>The operator includes built-in resource monitoring:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="c1"># Check resource recommendations</span>
-</span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"resource"</span>
-</span><span id="__span-28-3"><a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>
-</span><span id="__span-28-4"><a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="c1"># Monitor reconciliation efficiency</span>
-</span><span id="__span-28-5"><a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"reconcile"</span>
+<p>The operator does not monitor resource utilization itself. Observe pod and node usage with <code>kubectl top</code> or Prometheus (cAdvisor and kube-state-metrics), and the operator's own metrics (<code>neo4j_operator_reconcile_*</code>, listed in <a href="../../user_guide/guides/monitoring/">Monitoring</a>) for reconciliation efficiency:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="c1"># Pod and node usage (requires metrics-server)</span>
+</span><span id="__span-28-2"><a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>kubectl<span class="w"> </span>top<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+</span><span id="__span-28-3"><a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>kubectl<span class="w"> </span>top<span class="w"> </span>nodes
+</span><span id="__span-28-4"><a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a>
+</span><span id="__span-28-5"><a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a><span class="c1"># Reconciliation activity in the operator log</span>
+</span><span id="__span-28-6"><a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"reconcile"</span>
 </span></code></pre></div>
+<p><code>kubectl neo4j preflight -f &lt;manifest&gt;</code> checks node capacity before you apply.</p>
 <h3 id="development-performance-tips">Development Performance Tips<a class="headerlink" href="#development-performance-tips" title="Anchor link to this section">&para;</a></h3>
 <ol>
 <li><strong>Use in-cluster development</strong>: Required for proper DNS resolution</li>

@@ -4335,10 +4335,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#resource-monitoring-internalmonitoring" class="md-nav__link">
+  <a href="#resource-utilization-and-operator-metrics" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Resource Monitoring (internal/monitoring/):
+        Resource utilization and operator metrics:
       
     </span>
   </a>
@@ -5701,10 +5701,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#resource-monitoring-internalmonitoring" class="md-nav__link">
+  <a href="#resource-utilization-and-operator-metrics" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Resource Monitoring (internal/monitoring/):
+        Resource utilization and operator metrics:
       
     </span>
   </a>
@@ -5928,7 +5928,7 @@
 <li><strong>Performance</strong>: Intelligent rate limiting and status update optimization</li>
 <li><strong>Server-Based Architecture</strong>: Unified server deployments with self-organizing roles</li>
 <li><strong>Resource Efficiency</strong>: On-demand backup Jobs (no long-running backup pod or sidecar)</li>
-<li><strong>Observability</strong>: Comprehensive monitoring and operational insights</li>
+<li><strong>Observability</strong>: Prometheus metrics, Kubernetes events and conditions, and live <code>SHOW SERVERS</code> / <code>SHOW DATABASES</code> diagnostics in <code>status</code></li>
 <li><strong>Validation</strong>: Proactive resource validation and recommendations</li>
 </ul>
 <h2 id="current-architecture">Current Architecture<a class="headerlink" href="#current-architecture" title="Anchor link to this section">&para;</a></h2>
@@ -6679,11 +6679,11 @@ references a per-policy <code>truststore_path</code>.</p>
 </tbody>
 </table>
 <h2 id="monitoring-observability">Monitoring &amp; Observability<a class="headerlink" href="#monitoring-observability" title="Anchor link to this section">&para;</a></h2>
-<h3 id="resource-monitoring-internalmonitoring">Resource Monitoring (<code>internal/monitoring/</code>):<a class="headerlink" href="#resource-monitoring-internalmonitoring" title="Anchor link to this section">&para;</a></h3>
+<h3 id="resource-utilization-and-operator-metrics">Resource utilization and operator metrics:<a class="headerlink" href="#resource-utilization-and-operator-metrics" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li><strong>ResourceMonitor</strong> (<code>resource_monitor.go</code>): Real-time utilization tracking</li>
-<li><strong>Performance Metrics</strong>: Controller performance and reconciliation efficiency</li>
-<li><strong>Operational Insights</strong>: ConfigMap update patterns and debounce effectiveness</li>
+<li><strong>The operator does not track CPU, memory or storage utilization.</strong> An earlier <code>internal/monitoring/</code> package (a <code>ResourceMonitor</code>) was never wired into any controller and has been removed. Observe utilization with Prometheus: cAdvisor / kubelet metrics and kube-state-metrics for the pods, and Neo4j's own metrics endpoint on port 2004 for the database.</li>
+<li><strong>Operator metrics</strong> (<code>internal/metrics/</code>): reconcile counts and durations, upgrade and backup outcomes, resource-version conflicts, per-server health and Aura API traffic. The authoritative list, including which families are populated, is in <a href="../../user_guide/guides/monitoring/">Monitoring</a>.</li>
+<li><strong>Capacity before apply</strong>: <code>kubectl neo4j preflight</code> checks that a Ready node can fit the requested memory before you apply a manifest (see <a href="../../user_guide/cli/preflight/"><code>preflight</code></a>).</li>
 </ul>
 <h3 id="status-management">Status Management:<a class="headerlink" href="#status-management" title="Anchor link to this section">&para;</a></h3>
 <ul>

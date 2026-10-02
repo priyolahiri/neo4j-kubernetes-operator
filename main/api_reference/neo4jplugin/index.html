@@ -5318,7 +5318,7 @@
 <td><code>resources</code></td>
 <td><code>PluginResourceRequirements</code></td>
 <td>❌</td>
-<td><strong>Reserved — no effect today.</strong> Declared (<code>memoryLimit</code>, <code>cpuLimit</code>, <code>threadPoolSize</code>) and syntax-checked by the validator, but no controller or builder reads it: nothing is allocated or limited. Size the Neo4j pods through the cluster/standalone <code>spec.resources</code> instead.</td>
+<td><strong>Reserved — no effect today.</strong> Declared (<code>memoryLimit</code>, <code>cpuLimit</code>, <code>threadPoolSize</code>) and syntax-checked by the validator, but no controller or builder reads it: nothing is allocated or limited. Size the Neo4j pods through the cluster/standalone <code>spec.resources</code> instead. A <code>ValidationWarning</code> event is raised when it is set.</td>
 </tr>
 </tbody>
 </table>
@@ -5355,13 +5355,13 @@
 <tr>
 <td><code>registry</code></td>
 <td><a href="#pluginregistry"><code>PluginRegistry</code></a></td>
-<td><strong>Reserved — no effect today.</strong> Never read by any controller; a <code>custom</code> source is fetched from <code>source.url</code>, which (with <code>checksum</code>) is required for <code>type: url</code> and <code>type: custom</code> regardless of <code>registry</code>.</td>
+<td><strong>Reserved — no effect today.</strong> Never read by any controller; a <code>custom</code> source is fetched from <code>source.url</code>, which (with <code>checksum</code>) is required for <code>type: url</code> and <code>type: custom</code> regardless of <code>registry</code>. A <code>ValidationWarning</code> event is raised when it is set, and another when <code>registry.tls</code> is set.</td>
 </tr>
 </tbody>
 </table>
 <h3 id="pluginregistry">PluginRegistry<a class="headerlink" href="#pluginregistry" title="Anchor link to this section">&para;</a></h3>
 <blockquote>
-<p><strong>Reserved — no effect today.</strong> <code>source.registry</code> and everything under it (including <code>tls</code>) is accepted by the schema but never read; see the <code>registry</code> row above.</p>
+<p><strong>Reserved — no effect today.</strong> <code>source.registry</code> and everything under it (including <code>tls</code>) is accepted by the schema but never read, and a <code>ValidationWarning</code> event says so when it is set; see the <code>registry</code> row above.</p>
 </blockquote>
 <table>
 <thead>
@@ -5465,7 +5465,7 @@
 <tr>
 <td><code>securityPolicy</code></td>
 <td><code>string</code></td>
-<td>Security policy: one of <code>"strict"</code>, <code>"moderate"</code>, <code>"permissive"</code> (any other value fails validation and the plugin goes to phase <code>Invalid</code>). <strong>Reserved — no effect today:</strong> the value is validated but not used to change any Neo4j setting.</td>
+<td>Security policy: one of <code>"strict"</code>, <code>"moderate"</code>, <code>"permissive"</code> (any other value fails validation and the plugin goes to phase <code>Invalid</code>). <strong>Reserved — no effect today:</strong> the value is validated but not used to change any Neo4j setting (restrict procedures with <code>allowedProcedures</code> / <code>deniedProcedures</code>). A <code>ValidationWarning</code> event is raised when it is set.</td>
 </tr>
 <tr>
 <td><code>sandbox</code></td>

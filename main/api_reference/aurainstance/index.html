@@ -4155,7 +4155,7 @@
 <tr>
 <td><code>connectionSecretFormat</code></td>
 <td><code>string</code></td>
-<td>Enum <code>neo4j-driver</code> / <code>aura-dotenv</code> / <code>jdbc</code> / <code>servicebinding</code> / <code>custom</code>. Default <code>neo4j-driver</code>. Selects the connection Secret's key layout. <strong><code>custom</code> is reserved — accepted but not acted on:</strong> it has no key template of its own and writes the same keys as <code>neo4j-driver</code>.</td>
+<td>Enum <code>neo4j-driver</code> / <code>aura-dotenv</code> / <code>jdbc</code> / <code>servicebinding</code> / <code>custom</code>. Default <code>neo4j-driver</code>. Selects the connection Secret's key layout. <strong><code>custom</code> is reserved — accepted but not acted on:</strong> it has no key template of its own and writes the same keys as <code>neo4j-driver</code>. A <code>ValidationWarning</code> event is raised when it is set to <code>custom</code>.</td>
 </tr>
 <tr>
 <td><code>publishConnectionDetailsTo</code></td>

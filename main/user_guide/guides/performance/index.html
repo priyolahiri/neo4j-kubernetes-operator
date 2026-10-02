@@ -2203,10 +2203,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#resource-monitoring" class="md-nav__link">
+  <a href="#resource-utilization" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Resource Monitoring
+        Resource utilization
       
     </span>
   </a>
@@ -2214,10 +2214,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#operational-insights" class="md-nav__link">
+  <a href="#operator-behaviour" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Operational Insights
+        Operator behaviour
       
     </span>
   </a>
@@ -4017,10 +4017,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#resource-monitoring" class="md-nav__link">
+  <a href="#resource-utilization" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Resource Monitoring
+        Resource utilization
       
     </span>
   </a>
@@ -4028,10 +4028,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#operational-insights" class="md-nav__link">
+  <a href="#operator-behaviour" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Operational Insights
+        Operator behaviour
       
     </span>
   </a>
@@ -4121,7 +4121,7 @@
 <ul>
 <li><strong>Memory Validation</strong>: Automatic validation ensures Neo4j memory settings don't exceed available resources</li>
 <li><strong>Resource Recommendations</strong>: Built-in recommendations for optimal CPU and memory allocation based on cluster size</li>
-<li><strong>Efficient Monitoring</strong>: Lightweight resource monitoring with minimal overhead</li>
+<li><strong>Low-overhead observability</strong>: The operator exposes a small set of Prometheus metrics (see <a href="../monitoring/">Monitoring</a>); it does not poll node or pod utilization itself</li>
 </ul>
 <h2 id="resource-allocation">Resource Allocation<a class="headerlink" href="#resource-allocation" title="Anchor link to this section">&para;</a></h2>
 <p>One of the most important factors for performance is resource allocation. You can configure the CPU and memory resources for your Neo4j pods using the <code>spec.resources</code> field in the <code>Neo4jEnterpriseCluster</code> resource. It is crucial to set both <code>requests</code> and <code>limits</code> for predictable performance.</p>
@@ -4157,18 +4157,17 @@
 </span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">        </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span>
 </span></code></pre></div>
 <h2 id="performance-monitoring">Performance Monitoring<a class="headerlink" href="#performance-monitoring" title="Anchor link to this section">&para;</a></h2>
-<p>The operator includes built-in performance monitoring capabilities:</p>
-<h3 id="resource-monitoring">Resource Monitoring<a class="headerlink" href="#resource-monitoring" title="Anchor link to this section">&para;</a></h3>
+<p>The operator does not track resource utilization or detect bottlenecks itself. Use the standard Kubernetes and Prometheus tooling for that, and the operator's own metrics for the operator's behaviour.</p>
+<h3 id="resource-utilization">Resource utilization<a class="headerlink" href="#resource-utilization" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li>Real-time tracking of CPU, memory, and storage utilization</li>
-<li>Neo4j-specific metrics including transaction rates and query performance</li>
-<li>Automatic detection of resource constraints and bottlenecks</li>
+<li><strong>CPU, memory and storage</strong>: observe pod and node usage with <code>kubectl top</code> or Prometheus (cAdvisor / kubelet metrics and kube-state-metrics). Compare usage with <code>spec.resources</code> and the PVC size.</li>
+<li><strong>Neo4j metrics</strong>: transaction rates, query counts, page-cache and JVM metrics come from Neo4j's own Prometheus endpoint, which the operator enables with <code>spec.monitoring.enabled</code> (see <a href="../monitoring/">Monitoring</a>).</li>
+<li><strong>Capacity before apply</strong>: <code>kubectl neo4j preflight -f &lt;manifest&gt;</code> checks that a Ready node has enough allocatable memory for the requested pods.</li>
 </ul>
-<h3 id="operational-insights">Operational Insights<a class="headerlink" href="#operational-insights" title="Anchor link to this section">&para;</a></h3>
+<h3 id="operator-behaviour">Operator behaviour<a class="headerlink" href="#operator-behaviour" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li>ConfigMap update frequency and debounce effectiveness</li>
-<li>Controller reconciliation patterns and efficiency metrics</li>
-<li>Cluster health and readiness status tracking</li>
+<li><strong>Operator metrics</strong>: reconcile counts and durations, upgrade and backup outcomes, and resource-version conflicts. The full list, and which families are populated, is in <a href="../monitoring/">Monitoring</a>.</li>
+<li><strong>Cluster health</strong>: <code>status.phase</code>, the <code>Ready</code>, <code>ServersHealthy</code> and <code>DatabasesHealthy</code> conditions, and <code>status.diagnostics</code> (live <code>SHOW SERVERS</code> / <code>SHOW DATABASES</code>).</li>
 </ul>
 <h2 id="best-practices">Best Practices<a class="headerlink" href="#best-practices" title="Anchor link to this section">&para;</a></h2>
 <h3 id="for-production-deployments">For Production Deployments<a class="headerlink" href="#for-production-deployments" title="Anchor link to this section">&para;</a></h3>

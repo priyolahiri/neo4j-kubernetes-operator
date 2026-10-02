@@ -5415,7 +5415,7 @@
 <td><code>serviceAccount</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td><strong>RESERVED — currently a no-op.</strong> Restore Jobs always run as the operator-managed <code>neo4j-restore-sa</code>. Bind your cloud IAM role via <code>autoCreate.annotations</code>.</td>
+<td><strong>RESERVED — currently a no-op.</strong> Restore Jobs always run as the operator-managed <code>neo4j-restore-sa</code>. Bind your cloud IAM role via <code>autoCreate.annotations</code>. A <code>ValidationWarning</code> event is raised when it is set.</td>
 </tr>
 <tr>
 <td><code>autoCreate</code></td>
@@ -5440,7 +5440,7 @@
 <td><code>enabled</code></td>
 <td><code>bool</code></td>
 <td>❌</td>
-<td><strong>RESERVED — currently a no-op.</strong> The operator always ensures the ServiceAccount exists; only <code>annotations</code> is honored.</td>
+<td><strong>RESERVED — currently a no-op.</strong> The operator always ensures the ServiceAccount exists; only <code>annotations</code> is honored. A <code>ValidationWarning</code> event is raised when it is set to <code>false</code> (the schema default is <code>true</code>, so only <code>false</code> is detectable).</td>
 </tr>
 <tr>
 <td><code>annotations</code></td>

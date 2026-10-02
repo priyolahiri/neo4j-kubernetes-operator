@@ -5677,6 +5677,10 @@ license on your behalf — you must hold your own valid Neo4j Enterprise license
 <code>TLSSpec</code> but has no effect on <code>Neo4jEnterpriseStandalone</code> — single-server
 deployments have no intra-cluster traffic, so there's no cluster SSL
 policy to govern. Setting it on a standalone is silently ignored.</p>
+<p><strong>Note on <code>certificateSecret</code>:</strong> the field is present on the shared
+<code>TLSSpec</code> but is never read: the operator always uses the cert-manager
+Secret <code>{name}-tls-secret</code>. A <code>ValidationWarning</code> event is raised whenever
+it is set, whatever <code>mode</code> is.</p>
 </blockquote>
 <h4 id="auth-authspec"><code>auth</code> (AuthSpec)<a class="headerlink" href="#auth-authspec" title="Anchor link to this section">&para;</a></h4>
 <p>Authentication configuration.</p>

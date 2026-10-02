@@ -4280,6 +4280,11 @@ and alerting systems.</p>
 <td>Topology validation produced warnings</td>
 </tr>
 <tr>
+<td><code>ValidationWarning</code></td>
+<td>Warning</td>
+<td>A spec field the schema accepts but nothing reads is set (<code>spec.&lt;path&gt; is accepted but has no effect today: &lt;what to do instead&gt;</code>). Advisory: the resource is still reconciled. Also emitted by <code>Neo4jEnterpriseStandalone</code>, <code>Neo4jBackup</code>, <code>Neo4jRestore</code>, <code>Neo4jPlugin</code>, <code>Neo4jDatabase</code> and <code>AuraInstance</code></td>
+</tr>
+<tr>
 <td><code>TopologyPlacementCalculated</code></td>
 <td>Normal</td>
 <td>Topology placement constraints calculated successfully</td>
@@ -4540,7 +4545,7 @@ and alerting systems.</p>
 <tr>
 <td><code>ValidationWarning</code></td>
 <td>Warning</td>
-<td>Database spec produced validation warnings</td>
+<td>Database spec produced validation warnings, including a set field that nothing reads (<code>spec.initialData.configMapRef</code>, <code>secretRef</code>, <code>storage</code>, or a <code>source</code> other than <code>cypher</code>)</td>
 </tr>
 <tr>
 <td><code>ClusterNotFound</code></td>
