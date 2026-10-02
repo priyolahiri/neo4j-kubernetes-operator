@@ -3860,9 +3860,10 @@
 
 
 <h1 id="support-bundle"><code>support-bundle</code><a class="headerlink" href="#support-bundle" title="Anchor link to this section">&para;</a></h1>
-<p>Collects the diagnostic material for a Neo4j deployment into one archive — the 98 documented <code>kubectl</code> invocations in the troubleshooting guide, in a single command.</p>
+<p>Collects the diagnostic material for a Neo4j deployment into one archive — the roughly hundred documented <code>kubectl</code> invocations in the troubleshooting guide, in a single command.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>support-bundle<span class="w"> </span>-n<span class="w"> </span>neo4j
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>support-bundle<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>-o<span class="w"> </span>incident-4821.tar.gz
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>support-bundle<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>--log-lines<span class="w"> </span><span class="m">5000</span><span class="w">   </span><span class="c1"># default: tail 2000 lines per container log</span>
 </span></code></pre></div>
 <p>What it gathers: every Neo4j custom resource, namespace events, per-pod status (including <strong>last termination reason and exit code</strong> — exit 137 is OOMKilled, the most common Enterprise failure on an under-provisioned cluster), container logs current and previous, and the operator's own logs — found by label wherever the operator runs, which is usually a different namespace from the one being diagnosed, and filed under <code>operator/&lt;namespace&gt;/&lt;pod&gt;/</code>. If no operator pod is visible, the archive says so rather than omitting it silently: that absence is itself worth reporting.</p>
 <h3 id="what-it-will-not-collect">What it will not collect<a class="headerlink" href="#what-it-will-not-collect" title="Anchor link to this section">&para;</a></h3>
@@ -3897,7 +3898,8 @@
 </div>
 <p>Deliberately <em>not</em> redacted: <code>valueFrom</code> / <code>secretKeyRef</code> references. They contain no secret, and blanking them would destroy exactly the information that explains a misconfigured reference.</p>
 <h3 id="collection-is-best-effort-by-design">Collection is best-effort by design<a class="headerlink" href="#collection-is-best-effort-by-design" title="Anchor link to this section">&para;</a></h3>
-<p>A bundle is most wanted when a cluster is unhealthy, so one unreadable resource must not abort the whole collection. Individual failures are recorded rather than fatal — which also tells the recipient what could not be read, and by extension what permissions the collector had.</p>
+<p>A bundle is most wanted when a cluster is unhealthy, so one unreadable resource must not abort the whole collection. Individual failures are non-fatal.</p>
+<p>Not every failure is recorded yet, though. An unreadable events list and an operator whose logs cannot be found are noted (in <code>REDACTIONS.txt</code>), but a Neo4j kind, the pod list, the Secret list or a single container log that cannot be read is skipped silently. A file missing from the archive therefore does not always come with an explanation — check your RBAC (<code>kubectl auth can-i list pods -n &lt;ns&gt;</code> and so on) before concluding the thing did not exist.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><a href="../../guides/troubleshooting/">Troubleshooting</a> — diagnosing by hand, when you want to look rather than collect</li>

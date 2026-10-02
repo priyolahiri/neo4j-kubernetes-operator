@@ -4210,9 +4210,11 @@ as delete-and-recreate, not an edit.</p>
 interpolated into the statement, so it does not reach the query log. Neo4j
 stores it encrypted, and <code>SHOW ALIASES</code> never returns a password on any
 alias — so alias output is safe to include in a support bundle.</p>
-<p>Forget the keystore and the CR is rejected at apply time naming the field
-to set, instead of failing inside the server with an internal error that
-mentions neither the CR nor the constituent.</p>
+<p>Forget the keystore and the CR goes to <code>Failed</code> on its first reconcile
+(the operator has no admission webhook, so <code>kubectl apply</code> itself succeeds)
+with a message naming the field to set, instead of failing inside the
+server with an internal error that mentions neither the CR nor the
+constituent.</p>
 </div>
 <h2 id="limits">Limits<a class="headerlink" href="#limits" title="Anchor link to this section">&para;</a></h2>
 <table>

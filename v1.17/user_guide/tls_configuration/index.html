@@ -4772,16 +4772,17 @@
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secure-cluster</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">acceptLicenseAgreement</span><span class="p">:</span><span class="w"> </span><span class="s">"eval"</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">servers</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">tls</span><span class="p">:</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cert-manager</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="nt">issuerRef</span><span class="p">:</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ca-cluster-issuer</span>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ClusterIssuer</span>
-</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="c1"># Optional: customize cert lifetime</span>
-</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8760h</span><span class="w">     </span><span class="c1"># 1 year</span>
-</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">renewBefore</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">720h</span><span class="w">   </span><span class="c1"># 30 days</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="c1"># image and storage omitted for brevity (both are required in a real manifest)</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">servers</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">tls</span><span class="p">:</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cert-manager</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="nt">issuerRef</span><span class="p">:</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ca-cluster-issuer</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ClusterIssuer</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="c1"># Optional: customize cert lifetime</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8760h</span><span class="w">     </span><span class="c1"># 1 year</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">    </span><span class="nt">renewBefore</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">720h</span><span class="w">   </span><span class="c1"># 30 days</span>
 </span></code></pre></div>
 <h3 id="what-the-operator-configures">What the operator configures<a class="headerlink" href="#what-the-operator-configures" title="Anchor link to this section">&para;</a></h3>
 <p>When TLS is enabled, the operator automatically:</p>
@@ -5156,7 +5157,7 @@
 Bolt/HTTPS. Neo4j also makes <strong>outbound</strong> TLS calls (OIDC providers, LDAPS,
 plugin downloads, cross-cluster replication peers, Aura Fleet Management).
 For those, Neo4j needs to <em>trust</em> the remote endpoint's CA.</p>
-<p>The operator exposes two fields for this:</p>
+<p>The operator exposes three fields for this:</p>
 <table>
 <thead>
 <tr>
@@ -5167,7 +5168,11 @@ For those, Neo4j needs to <em>trust</em> the remote endpoint's CA.</p>
 <tbody>
 <tr>
 <td><code>spec.trustedCASecrets</code> (list of <code>{name, key}</code>)</td>
-<td>Most cases. Adds each Secret's CA to Neo4j's JVM-default truststore. Works for OIDC, LDAPS, generic outbound HTTPS. Cert-manager-issued Secrets reference directly — default key <code>ca.crt</code> matches.</td>
+<td>Most cases. Adds each Secret's CA to Neo4j's JVM-default truststore. Works for OIDC, LDAPS, generic outbound HTTPS. Cert-manager-issued Secrets reference directly — default key <code>ca.crt</code> matches. Does <strong>not</strong> cover cross-cluster replication.</td>
+</tr>
+<tr>
+<td><code>spec.tls.additionalClusterTrustCAs</code> (list of <code>{name, key}</code>)</td>
+<td>A peer cluster's CA for the operator-managed <code>cluster</code> SSL policy — needed for network-mode cross-cluster replication, set on <strong>both</strong> clusters. Each CA is projected as its own file into <code>/ssl/trusted/</code> next to this cluster's <code>ca.crt</code>. Only relevant with <code>strictPeerValidation: true</code>.</td>
 </tr>
 <tr>
 <td><code>spec.extraVolumes</code> + <code>spec.extraVolumeMounts</code></td>
@@ -5223,11 +5228,12 @@ entry (<code>ca.crt</code> → <code>trusted/ca.crt</code>). Two things block au
 builds a JVM truststore at <code>/truststore/truststore.jks</code>), and
 <code>spec.extraVolumes</code> covers SSL policies <strong>you</strong> define at paths you choose.
 Neither can add a peer CA to the operator-managed <code>cluster</code> policy.</p>
-<p><strong>Consequence for cross-cluster replication:</strong> mutual CA trust between two
-Neo4j clusters — which CCDR's network-replication mode requires — is <em>not</em>
-currently expressible through this operator. Backup-based replication needs
-no cross-cluster TLS trust at all and is unaffected. See
-<code>docs/design/cross-cluster-replication.md</code> (B3).</p>
+<p><strong>For cross-cluster replication,</strong> use <code>spec.tls.additionalClusterTrustCAs</code>
+instead: the operator projects each listed CA into <code>/ssl/trusted/</code> itself,
+alongside its own <code>trusted/ca.crt</code>. Network-mode replication needs mutual
+trust, so list the other cluster's CA on both. Backup-based replication needs
+no cross-cluster TLS trust at all. See
+<a href="../guides/cross_cluster_replication/">Cross-cluster replication</a>.</p>
 </div>
 <p>The legacy singular <code>spec.auth.trustStore</code> continues to work and is folded
 into the same JKS at reconcile time.</p>

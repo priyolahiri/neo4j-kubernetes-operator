@@ -4122,7 +4122,7 @@ A <code>composite: true</code> flag would leave most of that spec silently inert
 <tr>
 <td><code>name</code></td>
 <td><code>string</code></td>
-<td>The composite database name in Neo4j. Defaults to <code>metadata.name</code>. Neo4j database names accept only ASCII letters, digits, dots and dashes — <strong>underscores are rejected by the server</strong>. A dot is rejected here: <code>&lt;composite&gt;.&lt;constituent&gt;</code> is how constituents are addressed, so a dotted composite name could never have any.</td>
+<td>The composite database name in Neo4j. Defaults to <code>metadata.name</code>. 3–63 characters, <code>^[a-zA-Z][a-zA-Z0-9.\-]*$</code>; <code>system</code> is reserved. Neo4j database names accept only ASCII letters, digits, dots and dashes — <strong>underscores are rejected by the server</strong>. A dot is rejected by the validator (the CRD pattern alone would allow it): <code>&lt;composite&gt;.&lt;constituent&gt;</code> is how constituents are addressed, so a dotted composite name could never have any.</td>
 </tr>
 <tr>
 <td><code>constituents</code></td>
@@ -4164,12 +4164,12 @@ A <code>composite: true</code> flag would leave most of that spec silently inert
 <tr>
 <td><code>name</code></td>
 <td><code>string</code></td>
-<td><strong>Required.</strong> The constituent's name within the composite. The resulting alias is <code>&lt;composite&gt;.&lt;name&gt;</code>, which is also how queries address it. May not contain a dot — it is already namespaced.</td>
+<td><strong>Required.</strong> The constituent's name within the composite. The resulting alias is <code>&lt;composite&gt;.&lt;name&gt;</code>, which is also how queries address it. 1–63 characters, <code>^[a-zA-Z][a-zA-Z0-9\-]*$</code> (no dots or underscores — it is already namespaced). Must be unique within the composite.</td>
 </tr>
 <tr>
 <td><code>targetDatabase</code></td>
 <td><code>string</code></td>
-<td><strong>Required.</strong> The database the constituent resolves to — in this DBMS when <code>remote</code> is unset, or on the remote DBMS when it is set. A local target need not exist yet: the controller skips that constituent and retries. A remote target is never checked, because the operator cannot see the other DBMS.</td>
+<td><strong>Required.</strong> 1–63 characters. The database the constituent resolves to — in this DBMS when <code>remote</code> is unset, or on the remote DBMS when it is set. A local target need not exist yet: the controller skips that constituent and retries. A remote target is never checked, because the operator cannot see the other DBMS. May not be <code>system</code>, nor the composite itself.</td>
 </tr>
 <tr>
 <td><code>remote</code></td>
@@ -4196,17 +4196,17 @@ A <code>composite: true</code> flag would leave most of that spec silently inert
 <tr>
 <td><code>oidcCredentialForwarding</code></td>
 <td><code>bool</code></td>
-<td>Forwards the querying user's own OIDC token instead of storing any credential. <strong>Requires Cypher 25</strong>, so CalVer only. Mutually exclusive with <code>credentialsSecretRef</code>.</td>
+<td>Forwards the querying user's own OIDC token instead of storing any credential. <strong>Requires Cypher 25</strong>, so CalVer only. Mutually exclusive with <code>credentialsSecretRef</code>; <strong>exactly one of the two must be set</strong> — a remote constituent with neither is rejected.</td>
 </tr>
 <tr>
 <td><code>credentialsSecretRef</code></td>
 <td><code>string</code></td>
-<td>A Secret in this namespace with <code>username</code> and <code>password</code> keys. <strong>Requires <code>spec.remoteAliasKeystore</code> on the deployment.</strong> Mutually exclusive with <code>oidcCredentialForwarding</code>.</td>
+<td>A Secret in this namespace with <code>username</code> and <code>password</code> keys. <strong>Requires <code>spec.remoteAliasKeystore</code> on the deployment.</strong> Mutually exclusive with <code>oidcCredentialForwarding</code>; exactly one of the two must be set.</td>
 </tr>
 <tr>
 <td><code>driverSettings</code></td>
 <td><code>map[string]string</code></td>
-<td>Passed through to the alias's <code>DRIVER</code> clause (e.g. <code>connection_timeout</code>). Emitted verbatim as Cypher map values.</td>
+<td>Passed through to the alias's <code>DRIVER</code> clause (e.g. <code>connection_timeout</code>). Emitted verbatim as Cypher map values. Keys must match <code>[a-zA-Z][a-zA-Z0-9_]*</code> (they are Cypher map keys and cannot be parameterised).</td>
 </tr>
 </tbody>
 </table>
@@ -4221,9 +4221,11 @@ outright. The operator passes the password as a <strong>Cypher parameter</strong
 interpolated into the statement text, so it does not reach the query log.
 <code>SHOW ALIASES</code> never returns a password on any alias.</p>
 <p>A composite with a <code>credentialsSecretRef</code> constituent on a deployment that has
-no keystore is rejected at apply time, naming the field to set — rather than
-failing later inside the server with an internal <code>50N09</code>/<code>50N00</code> error that
-mentions neither the CR nor the constituent.</p>
+no keystore is rejected by the operator's inline validation before any Cypher
+runs (the CR reports <code>Failed</code> / <code>Ready=False</code>, reason <code>ValidationFailed</code>), naming
+the field to set — rather than failing later inside the server with an internal
+<code>50N09</code>/<code>50N00</code> error that mentions neither the CR nor the constituent. There is
+no admission webhook, so <code>kubectl apply</code> itself succeeds.</p>
 <h2 id="ordering-the-composite-always-comes-first">Ordering: the composite always comes first<a class="headerlink" href="#ordering-the-composite-always-comes-first" title="Anchor link to this section">&para;</a></h2>
 <p>Neo4j accepts <code>CREATE ALIAS cineasts.latest</code> <strong>even when no composite
 <code>cineasts</code> exists</strong>. The result is an ordinary alias whose name merely contains
@@ -4304,7 +4306,7 @@ name a composite reports <code>PrivilegesResolve=False</code>.</p>
 <tbody>
 <tr>
 <td><code>Ready</code></td>
-<td><code>CompositeDatabaseReady</code>, <code>CompositeDatabaseFailed</code>, <code>CompositeDatabaseNameBlocked</code>, <code>ClusterNotReady</code>, <code>ConnectionFailed</code>, <code>ValidationFailed</code></td>
+<td><code>CompositeDatabaseReady</code>, <code>CompositeDatabaseFailed</code>, <code>CompositeDatabaseNameBlocked</code>, <code>ClusterNotFound</code> (phase <code>Pending</code>), <code>ClusterNotReady</code> (phase <code>Pending</code>), <code>Creating</code> (phase <code>Creating</code>), <code>ConnectionFailed</code>, <code>ValidationFailed</code></td>
 <td>True when the composite exists and its constituents match spec.</td>
 </tr>
 <tr>

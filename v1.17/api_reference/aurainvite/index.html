@@ -3958,7 +3958,7 @@
 <tr>
 <td><code>role</code></td>
 <td><code>string</code></td>
-<td><strong>Required.</strong> An <code>organization-*</code> role for an org invite, or a <code>namespace-*</code> role for a project-scoped invite (<code>projectId</code> set). The Aura invite body spells project roles <code>namespace-*</code> even though the project-members endpoint spells the same concepts <code>project-*</code>.</td>
+<td><strong>Required.</strong> Enum <code>organization-owner</code> / <code>organization-admin</code> / <code>organization-member</code> for an org invite (<code>projectId</code> must be unset), or <code>namespace-admin</code> / <code>namespace-member</code> / <code>namespace-viewer</code> / <code>namespace-metrics-integration-reader</code> for a project-scoped invite (<code>projectId</code> required). Enforced by CEL. The Aura invite body spells project roles <code>namespace-*</code> even though the project-members endpoint spells the same concepts <code>project-*</code>.</td>
 </tr>
 <tr>
 <td><code>organizationRole</code></td>
@@ -3995,7 +3995,7 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td><code>Pending</code>, <code>Sent</code>, <code>Accepted</code>, <code>Error</code>.</td>
+<td><code>Sent</code> (invite active, awaiting acceptance), <code>Accepted</code>, <code>Revoked</code>, <code>Expired</code>, <code>Declined</code> (mirroring the Aura invite status), or <code>Error</code>.</td>
 </tr>
 <tr>
 <td><code>conditions</code></td>

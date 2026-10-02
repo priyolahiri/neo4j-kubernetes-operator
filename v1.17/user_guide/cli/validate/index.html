@@ -4084,7 +4084,7 @@
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  ⚠ 2 servers provide limited fault tolerance. If one server fails, databases may lose quorum. Consider using 3 or more servers for production deployments.
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>1 validated, 0 skipped — 2 error(s), 2 warning(s)
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>validated against operator rules v1.15.0
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>validated against operator rules v1.17.0
 </span></code></pre></div>
 <p>Errors are listed before warnings, each sorted by field path.</p>
 <h3 id="flags">Flags<a class="headerlink" href="#flags" title="Anchor link to this section">&para;</a></h3>
@@ -4098,7 +4098,7 @@
 <tbody>
 <tr>
 <td><code>-f</code></td>
-<td>File, directory, or <code>-</code> for stdin. Repeatable.</td>
+<td>File, directory, or <code>-</code> for stdin. Repeatable. A directory is read one level deep (<code>.yaml</code>, <code>.yml</code>, <code>.json</code>), not recursively.</td>
 </tr>
 <tr>
 <td><code>--connect</code></td>
@@ -4113,7 +4113,7 @@
 <td>Path to the kubeconfig file (implies <code>--connect</code>).</td>
 </tr>
 <tr>
-<td><code>--namespace</code></td>
+<td><code>--namespace</code>, <code>-n</code></td>
 <td>Namespace for manifests that omit one.</td>
 </tr>
 <tr>
@@ -4146,7 +4146,7 @@
 </tr>
 <tr>
 <td><code>2</code></td>
-<td>Usage problem: bad flags, unreadable file, undecodable YAML.</td>
+<td>Usage problem: bad flags, unreadable file, undecodable YAML, or (with <code>--connect</code>) a cluster that could not be reached.</td>
 </tr>
 </tbody>
 </table>
@@ -4161,6 +4161,10 @@
 </span></code></pre></div>
 <p>This is the most common manifest error there is, and it used to pass: the document was decoded leniently, so an unrecognised key was dropped in silence and the file reported clean — then <code>kubectl apply</code> refused it with a strict-decoding error.</p>
 <p>Open maps are left alone, because every key in them is your data rather than a field name: <code>spec.config</code>, a composite constituent's <code>driverSettings</code>, labels and annotations. <code>metadata</code> and <code>status</code> are not walked either — they belong to Kubernetes, not to this operator.</p>
+<div class="admonition warning">
+<p class="admonition-title">Limitation: typos inside list items are not detected yet</p>
+<p>Only keys under objects are checked. A misspelled key inside an item of a list — for example <code>spec.topology.serverRoles[0].…</code>, <code>spec.privileges[0].…</code> or <code>spec.env[0].…</code> — passes this check, and the API server will reject it at apply time. Use <code>kubectl apply --dry-run=server</code> to catch those.</p>
+</div>
 <p>This check is <strong>offline</strong>, so it runs on <strong>every one of the 27 kinds</strong> — including the ones whose cross-reference rules need <code>--connect</code>, and the ones with no operator-side validator at all. "No validator" is not "no spelling": the kinds governed only by their CRD schema can still be misspelled, and the API server is a slower place to find out. The types come from the API scheme, so a CRD added later is covered the day it lands. Such a document reports the typo <em>and</em> says what is still unchecked:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Neo4jShardedDatabase/products-sharded (sharded.yaml):
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  ✗ spec.propertyShards: Invalid value: unknown field: …
@@ -4225,12 +4229,12 @@
 </span></code></pre></div>
 <p><strong>Pending is neither an error nor a warning.</strong> It is the operator's own category for a dependency that is not satisfiable <em>yet</em> — a Secret you have not applied — as opposed to something wrong. Pending never affects the exit code, <strong>including under <code>--strict</code></strong>: failing a pipeline because a Secret has not been created yet would punish a correct manifest.</p>
 <p>The connection is also what makes version-skew detection possible. When connected, the CLI compares itself against the operator running in the cluster:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>⚠ version skew: this CLI carries v1.15.0 rules, but the operator in neo4j-operator/neo4j-operator-controller-manager is v1.14.0.
+<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>⚠ version skew: this CLI carries v1.17.0 rules, but the operator in neo4j-operator/neo4j-operator-controller-manager is v1.16.0.
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>  Rules added or removed between those releases are checked incorrectly here.
 </span></code></pre></div>
 <p>It is advisory and silent when it cannot tell — the operator may be in a namespace you cannot list, which is not worth failing over.</p>
 <h3 id="required-permissions">Required permissions<a class="headerlink" href="#required-permissions" title="Anchor link to this section">&para;</a></h3>
-<p><code>--connect</code> reads only. It needs <code>get</code> on <code>Neo4jEnterpriseCluster</code>, <code>Neo4jEnterpriseStandalone</code>, <code>Neo4jRole</code> and <code>Secret</code> in the namespaces you are validating, plus <code>list</code> on <code>Deployment</code> for the version check (which degrades silently without it). It never writes anything.</p>
+<p><code>--connect</code> reads only. It needs <code>get</code> on <code>Neo4jEnterpriseCluster</code>, <code>Neo4jEnterpriseStandalone</code>, <code>Neo4jRole</code> and <code>Secret</code> in the namespaces you are validating (plus <code>list</code> on <code>Neo4jUser</code> when validating a <code>Neo4jRoleBinding</code>, and <code>get</code> on <code>Neo4jShardedDatabase</code> when validating a <code>Neo4jRole</code>), plus <code>list</code> on <code>Deployment</code> for the version check (which degrades silently without it). It never writes anything.</p>
 <h3 id="a-clean-run-may-not-be-the-last-word">A clean run may not be the last word<a class="headerlink" href="#a-clean-run-may-not-be-the-last-word" title="Anchor link to this section">&para;</a></h3>
 <p>The operator stops validating a resource after certain critical errors — an invalid image, for example — because later checks are not meaningful once the image is wrong. <code>validate</code> reproduces that faithfully rather than inventing its own behaviour, so:</p>
 <blockquote>
@@ -4239,7 +4243,7 @@
 <p>A clean run means nothing further is reachable, not that nothing was ever wrong. Re-run until two consecutive runs agree.</p>
 <h3 id="version-skew">Version skew<a class="headerlink" href="#version-skew" title="Anchor link to this section">&para;</a></h3>
 <p>The output always names the ruleset it used:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>validated against operator rules v1.15.0
+<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>validated against operator rules v1.17.0
 </span></code></pre></div>
 <p>The CLI carries the validation rules of the release it was built from. If your cluster runs a different operator version, a rule added later will not be checked and a rule since removed may still be enforced. <strong>Keep the CLI on the same version as the operator you deploy.</strong></p>
 <h2 id="in-ci">In CI<a class="headerlink" href="#in-ci" title="Anchor link to this section">&para;</a></h2>
@@ -4254,10 +4258,12 @@
 </span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">hooks</span><span class="p">:</span>
 </span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-validate</span>
 </span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Validate Neo4j manifests</span>
-</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">      </span><span class="nt">entry</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kubectl-neo4j validate -f</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">      </span><span class="nt">entry</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kubectl-neo4j validate -f manifests/</span>
 </span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">      </span><span class="nt">language</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">system</span>
 </span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">      </span><span class="nt">files</span><span class="p">:</span><span class="w"> </span><span class="s">'^manifests/.*\.ya?ml$'</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">      </span><span class="nt">pass_filenames</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
 </span></code></pre></div>
+<p><code>pass_filenames: false</code> matters: <code>validate</code> reads only the paths given with <code>-f</code>, and silently ignores any extra positional arguments, so a hook that let pre-commit append the staged filenames would validate just the first one.</p>
 <p><code>--strict</code> is the usual choice for CI: it makes advisory warnings — such as a two-server cluster that will lose quorum if one server fails — block the pipeline rather than scroll past.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>

@@ -3820,6 +3820,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#shipped-differently" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shipped differently
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3847,8 +3858,11 @@
 
 <h1 id="design-database-references-in-neo4jrole-privileges">Design: database references in <code>Neo4jRole</code> privileges<a class="headerlink" href="#design-database-references-in-neo4jrole-privileges" title="Anchor link to this section">&para;</a></h1>
 <blockquote>
-<p><strong>Status:</strong> proposed, not built. No PM roadmap governs this repo, so this is
-a maintainer decision.</p>
+<p><strong>Status:</strong> built in v1.17.0 as <code>Neo4jRole.spec.privilegeRules</code> (see the
+<a href="../../user_guide/user_role_management/">user guide</a>). Kept as the design
+record; where the shipped feature differs from the proposal, see
+<a href="#shipped-differently">Shipped differently</a> at the end. No PM roadmap governs
+this repo, so this was a maintainer decision.</p>
 </blockquote>
 <h2 id="1-the-problem">1. The problem<a class="headerlink" href="#1-the-problem" title="Anchor link to this section">&para;</a></h2>
 <p><code>Neo4jRole.spec.privileges</code> is <code>[]string</code> — each entry a complete Cypher
@@ -3945,9 +3959,9 @@ renderer's output format does not matter — only that Neo4j accepts it.</p>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">grant</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ACCESS</span>
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">onDatabase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics</span><span class="w">         </span><span class="c1"># a structured field, not a substring</span>
 </span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">grant</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MATCH</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">properties</span><span class="p">:</span><span class="w"> </span><span class="s">"*"</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">properties</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"*"</span><span class="p p-Indicator">]</span><span class="w">             </span><span class="c1"># lists, not scalars (see "Shipped differently")</span>
 </span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">      </span><span class="nt">onGraph</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics</span>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">      </span><span class="nt">nodes</span><span class="p">:</span><span class="w"> </span><span class="s">"*"</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">      </span><span class="nt">nodes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"*"</span><span class="p p-Indicator">]</span>
 </span></code></pre></div>
 <h3 id="41-it-is-a-structured-field-not-a-kubernetes-object-reference">4.1 It is a structured field, not a Kubernetes object reference<a class="headerlink" href="#41-it-is-a-structured-field-not-a-kubernetes-object-reference" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Decided:</strong> <code>onDatabase</code> / <code>onGraph</code> take a database <strong>name</strong>, matching every
@@ -4015,7 +4029,7 @@ to be complete.</p>
 </tr>
 <tr>
 <td>Scope creep toward "model everything"</td>
-<td>The table in §4.1 is the contract; new verbs need a decision, not a reflex</td>
+<td>The list in §4.2 is the contract; new verbs need a decision, not a reflex</td>
 </tr>
 <tr>
 <td>Users assume a name field means cascade-delete</td>
@@ -4042,6 +4056,29 @@ convention and works for databases it does not manage.</p>
    only has to emit Cypher the server accepts.</li>
 </ol>
 <p><strong>Still open:</strong> nothing blocking. The field list in §4.2 is the build scope.</p>
+<h2 id="shipped-differently">Shipped differently<a class="headerlink" href="#shipped-differently" title="Anchor link to this section">&para;</a></h2>
+<p>The feature shipped in v1.17.0 (<code>api/v1beta1/neo4jrole_types.go</code> <code>PrivilegeRule</code>,
+<code>internal/neo4j/privilege_rules.go</code>, <code>internal/controller/neo4jrole_rules.go</code>,
+<code>internal/validation/role_validator.go</code>). It differs from the proposal above in
+these ways:</p>
+<ul>
+<li><strong>A missing database is reported, not refused.</strong> §4.1 promised refusal "before
+  any grant" of a privilege naming a database that does not exist, and refusal of
+  <code>onGraph</code> naming a composite, as validation errors. Neither was built. The
+  validator checks only a rule's shape and duplicates. A rule naming a missing
+  database is skipped and reported as <code>PrivilegesResolve=False/DatabaseNotFound</code>,
+  and a GRAPH privilege on a composite as <code>GraphPrivilegeOnComposite</code>; both
+  messages name the field (for example <code>spec.privilegeRules[1].onGraph</code>). The
+  controller's reasoning is that the operator cannot know the database is not
+  about to be created, and refusing would break applying a role and its
+  <code>Neo4jDatabase</code> together.</li>
+<li><strong>Built as proposed:</strong> the field-path report, the watch (a role re-reconciles
+  when a <code>Neo4jDatabase</code> it names appears), refusal of a rule that renders to a
+  statement already in <code>privileges</code> (§5), and the §4.2 scope (with <code>deny</code> as the
+  counterpart of <code>grant</code>).</li>
+<li><strong>Lists, not scalars.</strong> <code>properties</code>, <code>nodes</code>, <code>relationships</code> and <code>elements</code>
+  are <code>[]string</code> (<code>["*"]</code>), not the <code>"*"</code> strings drafted in §4.</li>
+</ul>
 
 
 

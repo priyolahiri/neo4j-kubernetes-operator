@@ -2846,6 +2846,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="AuraFleetManagementSpec">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#aurafleetprovisionspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AuraFleetProvisionSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -3112,6 +3129,17 @@
     <span class="md-ellipsis">
       
         EndpointStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#replicastatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReplicaStatus
       
     </span>
   </a>
@@ -5071,6 +5099,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="AuraFleetManagementSpec">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#aurafleetprovisionspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AuraFleetProvisionSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -5337,6 +5382,17 @@
     <span class="md-ellipsis">
       
         EndpointStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#replicastatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReplicaStatus
       
     </span>
   </a>
@@ -5671,6 +5727,7 @@
 <li><strong>Architecture</strong>: Server-based deployment with unified StatefulSet</li>
 <li><strong>Minimum Servers</strong>: 2 (required for clustering)</li>
 <li><strong>Maximum Servers</strong>: 100 (validated limit)</li>
+<li><strong>Name Limit</strong>: <code>metadata.name</code> is at most 56 characters (generated resources append suffixes; validated)</li>
 </ul>
 <h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Server-Based Architecture</strong>: <code>Neo4jEnterpriseCluster</code> uses a unified server-based architecture introduced in Neo4j 5.26.x:</p>
@@ -6529,7 +6586,7 @@ not parse policy config to wire up filesystem mounts automatically.</p>
 <tr>
 <td><code>certificateSecret</code></td>
 <td><code>string</code></td>
-<td>TLS secret name (manual certificates)</td>
+<td><strong>Reserved — no effect today.</strong> Intended for manual certificates, but no builder or controller reads it: the operator always uses the cert-manager-issued Secret <code>{name}-tls-secret</code>.</td>
 </tr>
 <tr>
 <td><code>trustedCASecret</code></td>
@@ -6559,7 +6616,7 @@ not parse policy config to wire up filesystem mounts automatically.</p>
 <tr>
 <td><code>usages</code></td>
 <td><code>[]string</code></td>
-<td>Certificate usages</td>
+<td>Certificate usages (max 32 entries, each from the cert-manager key-usage list, e.g. <code>digital signature</code>, <code>key encipherment</code>, <code>server auth</code>, <code>client auth</code>). When set it <strong>replaces</strong> the operator defaults and must include both <code>server auth</code> and <code>client auth</code> (CEL rule and validator) — Neo4j needs both EKUs for its mutual-TLS posture. Omit to use the defaults.</td>
 </tr>
 <tr>
 <td><code>strictPeerValidation</code></td>
@@ -6794,7 +6851,75 @@ covers the path) rather than pinning an older operator.</p>
 <tr>
 <td><code>tokenSecretRef</code></td>
 <td><a href="#secretkeyref-token"><code>*SecretKeyRef</code></a></td>
-<td>Reference to the Kubernetes Secret holding the Aura registration token (optional; registration deferred if omitted)</td>
+<td>Reference to the Kubernetes Secret holding the Aura registration token (optional; registration deferred if omitted). <strong>Mutually exclusive with <code>provision</code></strong> (enforced by a CEL rule: <em>set at most one of provision or tokenSecretRef</em>).</td>
+</tr>
+<tr>
+<td><code>provision</code></td>
+<td><a href="#aurafleetprovisionspec"><code>*AuraFleetProvisionSpec</code></a></td>
+<td>Let the operator register the deployment with Aura Fleet Manager and mint the registration token itself via the Aura API, instead of the console-wizard step. <strong>Beta / best-effort</strong> (the Fleet Manager request bodies are not published in the Aura OpenAPI spec). Mutually exclusive with <code>tokenSecretRef</code>.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="aurafleetprovisionspec">AuraFleetProvisionSpec<a class="headerlink" href="#aurafleetprovisionspec" title="Anchor link to this section">&para;</a></h4>
+<p>Exactly one of <code>providerConfigRef</code> or <code>credentialsSecretRef</code> must be set (CEL rule: <em>set exactly one of providerConfigRef or credentialsSecretRef</em>).</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>providerConfigRef</code></td>
+<td><code>corev1.LocalObjectReference</code></td>
+<td><code>AuraProviderConfig</code> (credentials plus default organization/project) in the same namespace. Mutually exclusive with <code>credentialsSecretRef</code>.</td>
+</tr>
+<tr>
+<td><code>credentialsSecretRef</code></td>
+<td><code>AuraCredentialsSecretRef</code></td>
+<td>Single-account shortcut when no <code>AuraProviderConfig</code> is used: <code>name</code> (<strong>required</strong>), <code>clientIdKey</code> (default <code>clientId</code>), <code>clientSecretKey</code> (default <code>clientSecret</code>). Mutually exclusive with <code>providerConfigRef</code>.</td>
+</tr>
+<tr>
+<td><code>organizationId</code></td>
+<td><code>string</code></td>
+<td>Aura organization owning the fleet deployment; defaults to the <code>AuraProviderConfig</code>'s <code>defaultOrganizationId</code>.</td>
+</tr>
+<tr>
+<td><code>projectId</code></td>
+<td><code>string</code></td>
+<td>Aura project (API <code>tenant_id</code>); defaults to the <code>AuraProviderConfig</code>'s <code>defaultProjectId</code>.</td>
+</tr>
+<tr>
+<td><code>deploymentName</code></td>
+<td><code>string</code></td>
+<td>Name registered in Fleet Manager, max 30 characters. Default <code>&lt;namespace&gt;-&lt;name&gt;</code> truncated to 30 characters.</td>
+</tr>
+<tr>
+<td><code>tokenSecretName</code></td>
+<td><code>string</code></td>
+<td>Secret the minted token is written to (key <code>token</code>), created in the CR's namespace and owned by the CR. Default <code>&lt;name&gt;-aura-fleet-token</code>.</td>
+</tr>
+<tr>
+<td><code>tokenPolicy</code></td>
+<td><code>string</code></td>
+<td><code>CreateIfMissing</code> (default) mints a token only when the Aura deployment has none — a token already registered successfully is never rotated, and the operator reports the problem instead. <code>Rotate</code> mints a fresh token whenever the Secret is missing or empty, <strong>invalidating any existing registration</strong> (the DBMS must re-register).</td>
+</tr>
+<tr>
+<td><code>deletionPolicy</code></td>
+<td><code>string</code></td>
+<td>Aura-side behaviour on CR deletion: <code>Orphan</code> (default; leave it registered) or <code>Delete</code> (revoke the token and unregister the deployment).</td>
+</tr>
+<tr>
+<td><code>managementPolicies</code></td>
+<td><code>[]string</code></td>
+<td>Restricts which actions the operator may take against the Fleet Manager API; items are <code>Observe</code>, <code>Create</code>, <code>Delete</code> or <code>*</code> (default <code>["*"]</code>).</td>
+</tr>
+<tr>
+<td><code>collectTelemetry</code></td>
+<td><code>bool</code></td>
+<td>Mirror Aura's own view of the deployment's servers and databases into <code>status.auraFleetManagement</code> (default <code>false</code>). Kept separate from <code>status.diagnostics</code>, which is the operator's Bolt-derived view; telemetry failures never fail a reconcile.</td>
 </tr>
 </tbody>
 </table>
@@ -6818,6 +6943,42 @@ covers the path) rather than pinning an older operator.</p>
 <tr>
 <td><code>status.auraFleetManagement.message</code></td>
 <td>Human-readable status or error detail</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.provisioned</code></td>
+<td><code>true</code> once the operator has registered a Fleet Manager deployment and stored a token for it (only meaningful with <code>spec.provision</code>)</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.deploymentId</code></td>
+<td>Aura-assigned Fleet Manager deployment ID (also mirrored to the <code>neo4j.com/external-fleet-deployment-id</code> annotation, the authoritative idempotency guard)</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.deploymentName</code></td>
+<td>Name the deployment is registered under in Aura</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.tokenSecretName</code></td>
+<td>Secret the minted token was written to</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.tokenCreationTime</code> / <code>tokenExpiryTime</code></td>
+<td>When Aura created / will expire the current deployment token (surfaced so an impending expiry is visible before it breaks registration)</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.tokenAutoRotate</code></td>
+<td>Whether Aura will auto-renew the token on expiry</td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.servers[]</code> / <code>serverCount</code></td>
+<td>Aura's view of the servers reporting to this deployment (<code>name</code>, <code>address</code>, <code>status</code>, <code>version</code>, <code>modeConstraint</code>, <code>lastPing</code>, <code>pluginVersion</code>, <code>licenseState</code>, <code>licenseType</code>); a bounded summary — <code>serverCount</code> is the true total. Populated when <code>provision.collectTelemetry</code> is <code>true</code></td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.databases[]</code> / <code>databaseCount</code></td>
+<td>Aura's view of the databases (<code>name</code>, <code>serverId</code>, <code>currentStatus</code>, <code>role</code>, <code>writer</code>, <code>lastCommittedTxn</code>, <code>replicationLag</code>, <code>graphShards</code>, <code>propertyShards</code>); one row per reporting server. Populated when <code>provision.collectTelemetry</code> is <code>true</code></td>
+</tr>
+<tr>
+<td><code>status.auraFleetManagement.telemetryError</code></td>
+<td>Why the last telemetry collection failed</td>
 </tr>
 </tbody>
 </table>
@@ -7118,7 +7279,7 @@ sharded database. The server default is <code>serverDefaultCypherLanguage</code>
 <tr>
 <td><code>rate</code></td>
 <td><code>string</code></td>
-<td>Sampling rate (0.0 to 1.0)</td>
+<td>Sampling rate as a decimal from 0 to 1 inclusive, pattern <code>^(0(\.\d+)?\|1(\.0+)?)$</code> (e.g. <code>"0.5"</code>, <code>"1.0"</code>, <code>"0"</code>)</td>
 </tr>
 <tr>
 <td><code>maxQueriesPerSecond</code></td>
@@ -7179,12 +7340,12 @@ sharded database. The server default is <code>serverDefaultCypherLanguage</code>
 <tr>
 <td><code>nodeSelector</code></td>
 <td><code>map[string]string</code></td>
-<td>Node selection constraints</td>
+<td><strong>Reserved — no effect today.</strong> Never read by the topology scheduler; use the top-level <code>spec.nodeSelector</code>.</td>
 </tr>
 <tr>
 <td><code>requiredDuringScheduling</code></td>
 <td><code>bool</code></td>
-<td>Hard placement requirements</td>
+<td><strong>Reserved — no effect today.</strong> Never read; use <code>antiAffinity.type: required</code> or <code>topology.enforceDistribution</code> for hard placement.</td>
 </tr>
 </tbody>
 </table>
@@ -7823,7 +7984,7 @@ for details.</p>
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Cluster phase: <code>"Initializing"</code>, <code>"Forming"</code>, <code>"Ready"</code>, <code>"Paused"</code>, <code>"Failed"</code></td>
+<td>Cluster phase: <code>"Initializing"</code>, <code>"Forming"</code>, <code>"Ready"</code>, <code>"Expanding"</code> (storage expansion in progress), <code>"Paused"</code> (upgrade paused after a failure), <code>"Failed"</code></td>
 </tr>
 <tr>
 <td><code>ready</code></td>
@@ -7838,12 +7999,12 @@ for details.</p>
 <tr>
 <td><code>conditions</code></td>
 <td><code>[]metav1.Condition</code></td>
-<td>Cluster conditions (e.g. <code>Ready</code>, <code>ServersHealthy</code>, <code>DatabasesHealthy</code>)</td>
+<td>Cluster conditions (e.g. <code>Ready</code>, <code>ServersHealthy</code>, <code>DatabasesHealthy</code>, <code>ServersPendingDrain</code>) — see <a href="#conditions">Conditions</a></td>
 </tr>
 <tr>
 <td><code>replicas</code></td>
-<td><code>map[string]ReplicaStatus</code></td>
-<td>Status of each replica (servers / ready counts)</td>
+<td><a href="#replicastatus"><code>*ReplicaStatus</code></a></td>
+<td>Server counts: <code>servers</code> (desired) and <code>ready</code></td>
 </tr>
 <tr>
 <td><code>endpoints</code></td>
@@ -7944,6 +8105,28 @@ as a deprecated alias for one release).</p>
 </tr>
 </tbody>
 </table>
+<h3 id="replicastatus">ReplicaStatus<a class="headerlink" href="#replicastatus" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>servers</code></td>
+<td><code>int32</code></td>
+<td>Number of servers</td>
+</tr>
+<tr>
+<td><code>ready</code></td>
+<td><code>int32</code></td>
+<td>Number of ready servers</td>
+</tr>
+</tbody>
+</table>
 <h3 id="internalendpoints">InternalEndpoints<a class="headerlink" href="#internalendpoints" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
@@ -8029,12 +8212,22 @@ visible via <code>kubectl get svc</code>.</p>
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Upgrade phase: <code>"Pending"</code>, <code>"InProgress"</code>, <code>"Paused"</code>, <code>"Completed"</code>, <code>"Failed"</code></td>
+<td>Upgrade state-machine phase (schema enum <code>Pending</code>, <code>Staging</code>, <code>InProgress</code>, <code>Rolling</code>, <code>Stabilizing</code>, <code>Verifying</code>, <code>Paused</code>, <code>Completed</code>, <code>Failed</code>): <code>Staging</code> (target pod template applied, pod restarts frozen) → <code>Rolling</code> (servers restarted one at a time, highest ordinal first) → <code>Stabilizing</code> (health, consensus and replication gate) → <code>Verifying</code> (per-server version check) → <code>Completed</code>. <code>Paused</code> and <code>Failed</code> are terminal until operator/user action. <code>InProgress</code> is a legacy value from older operator versions, resumed as <code>Staging</code>; <code>Pending</code> is reserved</td>
 </tr>
 <tr>
 <td><code>startTime</code></td>
 <td><code>*metav1.Time</code></td>
 <td>When the upgrade started</td>
+</tr>
+<tr>
+<td><code>stepStartTime</code></td>
+<td><code>*metav1.Time</code></td>
+<td>Anchor for the per-step timeout (<code>upgradeTimeout</code> per Rolling step, <code>stabilizationTimeout</code>, <code>healthCheckTimeout</code>); reset on every phase transition and partition advance</td>
+</tr>
+<tr>
+<td><code>currentPartition</code></td>
+<td><code>*int32</code></td>
+<td>StatefulSet <code>RollingUpdate</code> partition most recently applied; servers with ordinal &gt;= partition have been rolled to the target version. Used to resume after an operator restart</td>
 </tr>
 <tr>
 <td><code>completionTime</code></td>
@@ -8161,6 +8354,26 @@ visible via <code>kubectl get svc</code>.</p>
 </thead>
 <tbody>
 <tr>
+<td><code>users</code></td>
+<td><code>[]UserDiagnosticInfo</code></td>
+<td>Users currently in the <code>system</code> database (<code>SHOW USERS</code>): <code>user</code>, <code>roles</code>, <code>suspended</code>, <code>homeDatabase</code>. A bounded summary — see <code>userCount</code>.</td>
+</tr>
+<tr>
+<td><code>userCount</code></td>
+<td><code>int</code></td>
+<td>Total number of users observed, even when <code>users</code> is truncated.</td>
+</tr>
+<tr>
+<td><code>roles</code></td>
+<td><code>[]RoleDiagnosticInfo</code></td>
+<td>Roles currently in the <code>system</code> database (<code>SHOW ROLES</code>): <code>role</code>, <code>immutable</code>. A bounded summary — see <code>roleCount</code>.</td>
+</tr>
+<tr>
+<td><code>roleCount</code></td>
+<td><code>int</code></td>
+<td>Total number of roles observed, even when <code>roles</code> is truncated.</td>
+</tr>
+<tr>
 <td><code>servers</code></td>
 <td><code>[]ServerDiagnostic</code></td>
 <td>SHOW SERVERS results. Each entry has <code>name</code>, <code>address</code>, <code>state</code>, <code>health</code>, <code>hostingDatabases</code>.</td>
@@ -8193,7 +8406,7 @@ visible via <code>kubectl get svc</code>.</p>
 <tr>
 <td><code>databases</code></td>
 <td><code>[]DatabaseDiagnostic</code></td>
-<td>SHOW DATABASES results. Each entry has <code>name</code>, <code>status</code>, <code>requestedStatus</code>, <code>role</code>, <code>default</code>.</td>
+<td>SHOW DATABASES results. Each entry has <code>name</code>, <code>status</code>, <code>requestedStatus</code>, <code>role</code>, <code>default</code>, plus <code>type</code> (<code>system</code>, <code>standard</code>, <code>composite</code>, <code>graph shard</code>/<code>property shard</code> on 2025.12+, <code>replica</code> on 2026.08+), <code>access</code> (<code>read-write</code>/<code>read-only</code>), <code>writer</code>, <code>lastCommittedTxn</code> and <code>replicationLag</code> (for a cross-cluster replica, the data loss that promoting now would make permanent).</td>
 </tr>
 <tr>
 <td><code>databases[].name</code></td>
@@ -8255,6 +8468,12 @@ visible via <code>kubectl get svc</code>.</p>
 <td>All user databases have <code>status=online</code></td>
 <td>Any database has <code>requestedStatus=online</code> but <code>status≠online</code></td>
 <td>Diagnostics cannot be collected (cluster not Ready or Bolt unreachable)</td>
+</tr>
+<tr>
+<td><code>ServersPendingDrain</code></td>
+<td>Set during a scale-down: the cluster still has Neo4j servers registered beyond <code>spec.topology.servers</code> (removed servers not yet deallocated and dropped), so databases may be under-replicated on them</td>
+<td>The removed servers have been drained and dropped</td>
+<td>n/a</td>
 </tr>
 <tr>
 <td><code>CrossClusterProxySecure</code></td>
@@ -8381,20 +8600,19 @@ visible via <code>kubectl get svc</code>.</p>
 </span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="nt">metadata</span><span class="p">:</span>
 </span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">daily-cluster-backup</span>
 </span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">  </span><span class="nt">target</span><span class="p">:</span>
-</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Cluster</span>
-</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">monitored-cluster</span>
-</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">  </span><span class="nt">storage</span><span class="p">:</span>
-</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3</span>
-</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">    </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-backups</span>
-</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="w">    </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">daily/</span>
-</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="w">  </span><span class="nt">schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">2</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span><span class="w">  </span><span class="c1"># Daily at 2 AM</span>
-</span><span id="__span-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="w">  </span><span class="nt">retention</span><span class="p">:</span>
-</span><span id="__span-12-16"><a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a><span class="w">    </span><span class="nt">maxAge</span><span class="p">:</span><span class="w"> </span><span class="s">"30d"</span>
-</span><span id="__span-12-17"><a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a><span class="w">    </span><span class="nt">maxCount</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span>
-</span><span id="__span-12-18"><a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-12-19"><a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a><span class="w">    </span><span class="nt">compress</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-12-20"><a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a><span class="w">    </span><span class="nt">backupType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FULL</span>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">monitored-cluster</span><span class="w">   </span><span class="c1"># the Neo4jEnterpriseCluster (or Standalone) to back up</span>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">  </span><span class="nt">allDatabases</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">               </span><span class="c1"># or `database: &lt;name&gt;` for a single database</span>
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">  </span><span class="nt">storage</span><span class="p">:</span>
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3</span>
+</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">    </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-backups</span>
+</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">    </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">daily/</span>
+</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="w">  </span><span class="nt">schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">2</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span><span class="w">  </span><span class="c1"># Daily at 2 AM</span>
+</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="w">  </span><span class="nt">retention</span><span class="p">:</span>
+</span><span id="__span-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="w">    </span><span class="nt">maxAge</span><span class="p">:</span><span class="w"> </span><span class="s">"30d"</span>
+</span><span id="__span-12-16"><a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a><span class="w">    </span><span class="nt">maxCount</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span>
+</span><span id="__span-12-17"><a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-12-18"><a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a><span class="w">    </span><span class="nt">compress</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-12-19"><a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a><span class="w">    </span><span class="nt">backupType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FULL</span>
 </span></code></pre></div>
 <h3 id="cluster-with-loadbalancer-service">Cluster with LoadBalancer Service<a class="headerlink" href="#cluster-with-loadbalancer-service" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
@@ -8542,6 +8760,9 @@ visible via <code>kubectl get svc</code>.</p>
 </span><span id="__span-17-48"><a id="__codelineno-17-48" name="__codelineno-17-48" href="#__codelineno-17-48"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">  </span><span class="c1"># Uses remaining servers</span>
 </span></code></pre></div>
 <h3 id="development-vs-production">Development vs Production<a class="headerlink" href="#development-vs-production" title="Anchor link to this section">&para;</a></h3>
+<blockquote>
+<p>The <code>dev-cluster</code> and <code>prod-cluster</code> manifests below omit the required <code>spec.image</code> (and <code>auth</code>, where unset) for brevity — add them as in the examples above.</p>
+</blockquote>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># Development cluster (minimal resources)</span>
 </span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jEnterpriseCluster</span>

@@ -1162,10 +1162,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cloudseedprovider-options" class="md-nav__link">
+  <a href="#seed-provider-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
-        CloudSeedProvider Options
+        Seed provider configuration
       
     </span>
   </a>
@@ -4330,10 +4330,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cloudseedprovider-options" class="md-nav__link">
+  <a href="#seed-provider-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
-        CloudSeedProvider Options
+        Seed provider configuration
       
     </span>
   </a>
@@ -4735,17 +4735,11 @@
 </span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="c1"># Or restore to specific transaction ID</span>
 </span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="nt">restoreUntil</span><span class="p">:</span><span class="w"> </span><span class="s">"txId:12345"</span>
 </span></code></pre></div>
-<h3 id="cloudseedprovider-options">CloudSeedProvider Options<a class="headerlink" href="#cloudseedprovider-options" title="Anchor link to this section">&para;</a></h3>
+<h3 id="seed-provider-configuration">Seed provider configuration<a class="headerlink" href="#seed-provider-configuration" title="Anchor link to this section">&para;</a></h3>
+<p><code>spec.seedConfig.config</code> is a string map rendered into the <code>seedConfig</code> option of <code>CREATE DATABASE</code> as comma-separated <code>key=value</code> pairs. It is consumed by the (deprecated) <code>S3SeedProvider</code>, e.g. <code>region</code>. <code>CloudSeedProvider</code> — which the operator uses for <code>s3://</code>, <code>gs://</code> and <code>azb://</code> — resolves credentials and region from the environment / SDK default chain instead (see <code>spec.extraEnvFrom</code> above), so most deployments leave it empty. Keys and values must be simple: no <code>,</code>, <code>=</code>, quotes, backticks or newlines.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">seedConfig</span><span class="p">:</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="c1"># Compression: gzip, lz4, none</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">compression</span><span class="p">:</span><span class="w"> </span><span class="s">"gzip"</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="c1"># Validation: strict, lenient</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="nt">validation</span><span class="p">:</span><span class="w"> </span><span class="s">"strict"</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="c1"># Buffer size for processing</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">bufferSize</span><span class="p">:</span><span class="w"> </span><span class="s">"128MB"</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">region</span><span class="p">:</span><span class="w"> </span><span class="s">"eu-west-1"</span>
 </span></code></pre></div>
 <h2 id="file-format-considerations">File Format Considerations<a class="headerlink" href="#file-format-considerations" title="Anchor link to this section">&para;</a></h2>
 <h3 id="backup-files-backup-recommended">Backup Files (.backup) - Recommended<a class="headerlink" href="#backup-files-backup-recommended" title="Anchor link to this section">&para;</a></h3>
@@ -4780,7 +4774,7 @@
 </span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="nt">cypherStatements</span><span class="p">:</span>
 </span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">(:Person</span><span class="nv"> </span><span class="s">{name:</span><span class="nv"> </span><span class="s">'Alice'})"</span>
 </span></code></pre></div>
-<p>When <code>seedURI</code> is specified, <code>initialData</code> is ignored since the seed provides the initial data.</p>
+<p>The validator rejects this combination ("seedURI and initialData cannot be specified together"): the seed provides the initial data, so remove <code>initialData</code> — the resource does not reconcile while both are set.</p>
 <h2 id="status-and-events">Status and Events<a class="headerlink" href="#status-and-events" title="Anchor link to this section">&para;</a></h2>
 <p>The operator provides detailed status and events during seed restoration:</p>
 <p><strong>Events:</strong></p>
@@ -4788,12 +4782,13 @@
 <li><code>DatabaseCreatedFromSeed</code>: Database successfully created from seed URI</li>
 <li><code>DataSeeded</code>: Database seeded from URI successfully</li>
 <li><code>ValidationWarning</code>: Validation warnings (e.g., suboptimal topology)</li>
+<li><code>ValidationFailed</code>: Configuration validation failed (the database is not created)</li>
+<li><code>CreationFailed</code>: Database creation failed</li>
+<li><code>SeedCredsMissing</code> / <code>SeedCredsAutoInherited</code>: seed credentials Secret not projected onto the hosting cluster / auto-projected under <code>neo4j.com/auto-inherit-seed-creds</code> (see <a href="../kubernetes-events/">Kubernetes Events</a>)</li>
 </ul>
 <p><strong>Status Conditions:</strong></p>
 <ul>
-<li><code>Ready</code>: Database is ready and available</li>
-<li><code>ValidationFailed</code>: Configuration validation failed</li>
-<li><code>CreationFailed</code>: Database creation failed</li>
+<li><code>Ready</code>: <code>True</code> when the database is ready and available; when <code>False</code>, its reason names the cause (for example <code>ValidationFailed</code>, <code>SeedCredsMissing</code>)</li>
 </ul>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <h3 id="common-issues">Common Issues<a class="headerlink" href="#common-issues" title="Anchor link to this section">&para;</a></h3>
@@ -4824,7 +4819,6 @@
 <p><strong>Performance Issues</strong></p>
 </li>
 <li>Consider using .backup format instead of .dump</li>
-<li>Adjust bufferSize in seedConfig</li>
 <li>Ensure adequate resources for restoration</li>
 </ol>
 <h3 id="debugging-commands">Debugging Commands<a class="headerlink" href="#debugging-commands" title="Anchor link to this section">&para;</a></h3>
@@ -4832,7 +4826,7 @@
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jdatabase<span class="w"> </span>my-database<span class="w"> </span>-o<span class="w"> </span>yaml
 </span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
 </span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># View operator logs</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator
 </span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
 </span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="c1"># Check events</span>
 </span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jdatabase<span class="w"> </span>my-database

@@ -3871,16 +3871,17 @@ advisory, and the generic gates that apply to every change.</p>
 <h2 id="two-tiers-what-actually-stops-you">Two tiers — what actually stops you<a class="headerlink" href="#two-tiers-what-actually-stops-you" title="Anchor link to this section">&para;</a></h2>
 <p>If you are an LLM agent, treat enforcement as two tiers:</p>
 <ul>
-<li><strong>Blocking</strong> — <code>make check-drift</code> (generated artifacts) and the <code>unit-tests</code>
-  job reject a violating change mechanically; there is no arguing past review.</li>
+<li><strong>Blocking</strong> — <code>make check-drift</code> (generated artifacts), the <code>unit-tests</code> job
+  and the <code>go-lint</code> job (<code>ci.yml</code> describes it as a merge gate) reject a violating
+  change mechanically; there is no arguing past review.</li>
 <li><strong>Advisory</strong> — <code>make check-invariants</code> and <code>make check-knowledge-drift</code> (run by
   the agent skills and a non-blocking <code>Invariant Guards</code> CI job) surface a
   violation without gating merge. A flag there means you have broken the product
   contract, not tripped a lint nit. Fix the change, never the guard.</li>
 </ul>
 <p>INV-3 additionally has <strong>runtime</strong> teeth (<code>internal/validation/image_validator.go</code>
-rejects <code>-community</code>, pinned by <code>image_validator_test.go</code>); INV-4 and the INV-5
-pod-naming half are <strong>test-pinned</strong> (blocking). The per-invariant enforcement
+rejects <code>-community</code>, pinned by <code>image_validator_test.go</code>); INV-4 is
+<strong>test-pinned</strong> (blocking) and the INV-5 pod-naming half only partly so (see INV-5). The per-invariant enforcement
 status is in <a href="../../knowledge/invariants/"><code>invariants.md</code></a>.</p>
 <h2 id="generic-gates-apply-to-every-change">Generic gates (apply to every change)<a class="headerlink" href="#generic-gates-apply-to-every-change" title="Anchor link to this section">&para;</a></h2>
 <table>
@@ -3902,7 +3903,7 @@ status is in <a href="../../knowledge/invariants/"><code>invariants.md</code></a
 <tr>
 <td><strong>Lint.</strong> <code>golangci-lint</code> must be clean.</td>
 <td>Style/lint regressions land unnoticed.</td>
-<td><strong>Local only</strong> — <code>make lint</code>. <strong>NOTE: lint is <em>not</em> run in CI</strong> (only <code>check-drift</code> and <code>test-unit</code>, which itself runs <code>fmt</code> + <code>vet</code>). Run <code>make lint</code> yourself before pushing.</td>
+<td><strong>CI gate</strong> — the <code>Go Lint</code> job in <code>.github/workflows/ci.yml</code> runs the full <code>.golangci.yml</code> (and cross-compiles <code>kubectl-neo4j</code> for the released platforms). Locally: <code>make lint</code>, or the pre-commit hooks from <code>make install-hooks</code>.</td>
 <td>Fix the reported issues; re-run <code>make lint</code>.</td>
 </tr>
 </tbody>

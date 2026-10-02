@@ -4391,13 +4391,17 @@
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>--cache-strategy<span class="o">=</span>standard<span class="p">|</span>lazy<span class="p">|</span>selective<span class="p">|</span>on-demand<span class="p">|</span>none
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>--ultra-fast
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>--skip-cache-wait
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>--controllers<span class="o">=</span>cluster,standalone,database,backup,restore,plugin,shardeddatabase,user,role,rolebinding,authrule
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>--zap-log-level<span class="o">=</span>debug<span class="p">|</span>info<span class="p">|</span>warn<span class="p">|</span>error<span class="p">|</span>dpanic<span class="p">|</span>panic<span class="p">|</span>fatal
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>--controllers<span class="o">=</span>cluster,standalone,database<span class="w">       </span><span class="c1"># dev mode only; valid keys under "Controller Selection"</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>--privilege-normalisation<span class="o">=</span>learn<span class="p">|</span>probe<span class="w">          </span><span class="c1"># how Neo4jRole privileges are matched (default learn)</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>--kubernetes-cluster-name<span class="o">=</span>&lt;name&gt;<span class="w">               </span><span class="c1"># adds a k8s_cluster label to neo4j_operator_server_health</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>--zap-log-level<span class="o">=</span>debug<span class="p">|</span>info<span class="p">|</span>warn<span class="p">|</span>error<span class="p">|</span>dpanic<span class="p">|</span>panic<span class="p">|</span>fatal
 </span></code></pre></div>
 <h3 id="helm-shortcuts">Helm shortcuts<a class="headerlink" href="#helm-shortcuts" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li><code>developmentMode: true</code> adds <code>--mode=dev</code> and <code>--zap-devel=true</code>.</li>
 <li><code>metrics.enabled</code> controls <code>--metrics-bind-address</code> (<code>0</code> disables). Port comes from <code>metrics.service.port</code>.</li>
+<li><code>metrics.secure</code> (default <code>true</code>) adds <code>--metrics-secure=true</code>, so the metrics endpoint is served over <strong>HTTPS</strong> on that port — the plain <code>curl http://…:8080/metrics</code> below only works with <code>metrics.secure: false</code> or the binary's own defaults.</li>
+<li><code>privilegeNormalisation: learn|probe</code> passes <code>--privilege-normalisation</code> (see <a href="../user_role_management/#privilege-drift-reconciliation">Privilege drift reconciliation</a>); <code>kubernetesClusterName</code> passes <code>--kubernetes-cluster-name</code>.</li>
 <li><code>--health-probe-bind-address=:8081</code> is always set by the chart.</li>
 <li><code>leaderElection.enabled: true</code> passes <code>--leader-elect=true</code>.</li>
 <li><code>rbac.perNamespaceRoles: true</code> (with <code>operatorMode=namespaces</code> + a static <code>watchNamespaces</code> list) replaces the manager ClusterRole with one Role per namespace — see <a href="#multi-namespace-scope">Multi-Namespace Scope</a>.</li>
@@ -4465,7 +4469,7 @@ Explicit flags and Helm values always override the mode defaults.</p>
 <li><strong>Health bind</strong>: <code>:8081</code> (unless overridden)</li>
 <li><strong>Cache strategy</strong>: <code>on-demand</code> (unless overridden)</li>
 <li><strong>Leader election</strong>: off by default (recommended for HA)</li>
-<li><strong>Controllers loaded</strong>: all controllers — cluster, standalone, database, backup, restore, plugin, shardeddatabase, user, role, rolebinding, authrule</li>
+<li><strong>Controllers loaded</strong>: all of them — one per CRD (the Neo4j kinds and the Aura kinds; full list under <a href="#controller-selection-dev-mode">Controller Selection</a>)</li>
 </ul>
 <p><strong>Helm defaults that matter:</strong></p>
 <ul>
@@ -4488,7 +4492,7 @@ Explicit flags and Helm values always override the mode defaults.</p>
 <li><strong>Cache strategy</strong>: <code>on-demand</code> (or <code>none</code> if <code>--ultra-fast</code>)</li>
 <li><strong>skip-cache-wait</strong>: auto-enabled if not explicitly set</li>
 <li><strong>API rate limits</strong>: QPS 100, Burst 200</li>
-<li><strong>Controllers loaded</strong>: defaults to all controllers (cluster, standalone, database, backup, restore, plugin, shardeddatabase, user, role, rolebinding, authrule); narrow with <code>--controllers</code></li>
+<li><strong>Controllers loaded</strong>: defaults to all controllers (one per CRD; see <a href="#controller-selection-dev-mode">Controller Selection</a>); narrow with <code>--controllers</code></li>
 </ul>
 <p>Helm always sets <code>--metrics-bind-address</code> and <code>--health-probe-bind-address</code>, so the dev-mode defaults above only apply when you run the binary directly or override those values.</p>
 <p><strong>In-cluster dev workflow (Kind only):</strong>
@@ -4735,6 +4739,22 @@ Explicit flags and Helm values always override the mode defaults.</p>
 <li><code>role</code></li>
 <li><code>rolebinding</code></li>
 <li><code>authrule</code></li>
+<li><code>databasealias</code></li>
+<li><code>compositedatabase</code></li>
+<li><code>replicadatabase</code></li>
+<li><code>replicapromotion</code></li>
+<li><code>auraproviderconfig</code></li>
+<li><code>aurainstance</code></li>
+<li><code>aurasnapshot</code></li>
+<li><code>aurarestore</code></li>
+<li><code>auracustomermanagedkey</code></li>
+<li><code>auraipfilter</code></li>
+<li><code>auradatabase</code></li>
+<li><code>auradatabasebackup</code></li>
+<li><code>auradatabaserestore</code></li>
+<li><code>auraorganizationmember</code></li>
+<li><code>auraprojectmember</code></li>
+<li><code>aurainvite</code></li>
 </ul>
 <p>The default dev <code>--controllers</code> value is the full list above; override with <code>--controllers</code> to narrow scope.</p>
 <h2 id="logging-and-metrics">Logging and Metrics<a class="headerlink" href="#logging-and-metrics" title="Anchor link to this section">&para;</a></h2>

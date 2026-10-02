@@ -3952,8 +3952,8 @@ NOT a required merge gate — the blocking CI gates are <code>check-drift</code>
 artifacts) and <code>unit-tests</code>. INV-3 additionally gained a <strong>runtime</strong> check
 (<code>image_validator.go</code> rejects <code>-community</code> tags, pinned by
 <code>image_validator_test.go</code> under the blocking <code>unit-tests</code> job) plus the
-<code>CALL dbms.components()</code> backstop. INV-4 and the INV-5 pod-naming half are
-<strong>test-pinned</strong> (blocking). <strong>Highest residual risk:</strong> a bare Docker Hub tag
+<code>CALL dbms.components()</code> backstop. INV-4 is
+<strong>test-pinned</strong> (blocking); the INV-5 pod-naming half only partly (see INV-5). <strong>Highest residual risk:</strong> a bare Docker Hub tag
 (<code>neo4j:5.26.0</code>, which <em>is</em> the community image) is not rejected statically —
 only the explicit <code>-community</code> marker is — so that case relies on the runtime
 edition backstop, by deliberate choice (see INV-3).</p>
@@ -4136,17 +4136,23 @@ edition backstop, by deliberate choice (see INV-3).</p>
   pod; both were deliberately deleted in favor of ephemeral Jobs that run, write
   one artifact, and exit. Reintroducing either resurrects retired, conflicting
   code paths.</li>
-<li><strong>enforcement status:</strong> test-pinned for the naming half
-  (<code>TestBuildStatefulSetForEnterprise_WithFeatures</code> in
-  <code>internal/resources/cluster_test.go</code> asserts the StatefulSet name is
-  <code>{cluster}-server-0</code> and pod FQDNs follow <code>{cluster}-server-N</code>;
-  <code>TestListDiscoveryConfiguration</code> exercises the same naming via discovery
-  endpoints — both under the blocking <code>unit-tests</code> job) AND guard-checked for
-  the removed-backup half — <code>scripts/check-invariants.sh</code> now greps for
-  <code>BuildBackupStatefulSet</code>, a <code>backups:</code>/<code>spec.backups</code> field in the CRD surface
-  (<code>config/</code>+<code>api/</code>), and <code>-primary-</code>/<code>-secondary-</code> pod-name construction in
-  <code>internal/resources/</code> (advisory). (Previously the removed-backup symbols were
-  kept gone by file/symbol absence only.)</li>
+<li><strong>enforcement status:</strong> the pod-naming half is only <strong>partly</strong> test-pinned.
+  <code>TestListDiscoveryConfiguration</code> (<code>internal/resources/cluster_startup_test.go</code>)
+  asserts the pod FQDNs <code>{cluster}-server-N</code> that the discovery endpoints use, and
+  <code>TestBuildStatefulSetForEnterprise_WithFeatures</code> (<code>internal/resources/cluster_test.go</code>)
+  asserts a <code>…-server-0</code> name — but that test (like <code>…_ParallelManagement</code>) drives
+  the <strong>Deprecated</strong> plural builder <code>BuildServerStatefulSetsForEnterprise</code>, which makes
+  N one-replica StatefulSets. <strong>No unit test asserts that the production builder
+  <code>BuildServerStatefulSetForEnterprise</code> yields ONE StatefulSet named <code>{cluster}-server</code>
+  with <code>replicas: N</code></strong> (known unit-level gap — <code>internal/resources/CLAUDE.md</code> tells you not
+  to use the plural builder). The shape is exercised end to end only by the
+  integration specs in <code>test/integration/multi_node_cluster_test.go</code> (extended: fetches
+  <code>{cluster}-server</code> and asserts <code>replicas</code>) and <code>plugin_test.go</code> (core). The removed-backup half is guard-checked —
+  <code>scripts/check-invariants.sh</code> greps for <code>BuildBackupStatefulSet</code>, a
+  <code>backups:</code>/<code>spec.backups</code> field in the CRD surface (<code>config/</code>+<code>api/</code>), and
+  <code>-primary-</code>/<code>-secondary-</code> pod-name construction in <code>internal/resources/</code> (advisory).
+  The other removed symbols (<code>BackupsSpec</code>, <code>buildBackupSidecarContainer</code>) are kept
+  gone by file/symbol absence only.</li>
 <li><strong>violation symptom:</strong> Renaming the StatefulSet or introducing <code>primary-*</code> /
   <code>secondary-*</code> pods fails the naming assertions in
   <code>TestBuildStatefulSetForEnterprise_WithFeatures</code> under <code>make test-unit</code>.

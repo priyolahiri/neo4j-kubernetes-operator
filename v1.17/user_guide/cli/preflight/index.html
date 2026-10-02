@@ -3959,8 +3959,8 @@
 <td>With no Secret and no IRSA / Workload Identity binding, the Job runs with no credentials at all</td>
 </tr>
 <tr>
-<td>A PVC-backed backup's claim or class exists</td>
-<td>Same failure as a cluster's storage</td>
+<td>A PVC-backed backup names its claim (<code>spec.storage.pvc.name</code>) and that claim exists</td>
+<td>A nameless PVC is refused by the operator outright (artifacts would land in an EmptyDir and be discarded); a named claim that does not exist leaves the Job unschedulable. <strong>Known limitation:</strong> the existence check does not yet account for <code>spec.storage.pvc.size</code>, which makes the operator create the claim itself — so on the first apply of an auto-provisioned backup, expect a <code>✗ pvc … does not exist</code> (and exit code 1) that the operator will resolve on its own. No StorageClass check is made for backup claims</td>
 </tr>
 </tbody>
 </table>
@@ -3974,8 +3974,8 @@
 </thead>
 <tbody>
 <tr>
-<td>The downstream cluster has <code>AWS_REGION</code> in <code>spec.env</code></td>
-<td>The seed and every pull run <strong>on the Neo4j server</strong>, through the AWS SDK's default credential chain — so the object-store settings must be in the server's environment, not on the replica CR. Without it the replica fails inside the SDK with <em>"Unable to load region from any of the providers"</em>, which mentions neither replicas nor buckets</td>
+<td>The downstream cluster or standalone has <code>AWS_REGION</code> (or <code>AWS_DEFAULT_REGION</code>) in its <code>spec.env</code> or in the environment the operator has already rendered onto its StatefulSet — checked for <code>s3://</code> URIs only</td>
+<td>The seed and every pull run <strong>on the Neo4j server</strong>, through the AWS SDK's default credential chain — so the object-store settings must be in the server's environment, not on the replica CR. Without it the replica fails inside the SDK with <em>"Unable to load region from any of the providers"</em>, which mentions neither replicas nor buckets. A downstream bound to a cloud role through <code>spec.podServiceAccountAnnotations</code> gets a warning instead, because its credentials are injected by the platform and cannot be read here</td>
 </tr>
 <tr>
 <td><code>source.credentialsSecretRef</code> names a Secret that exists</td>

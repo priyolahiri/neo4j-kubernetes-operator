@@ -3914,6 +3914,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#shipped-differently" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shipped differently
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3942,9 +3953,10 @@
 <h1 id="design-cypher-language-defaulting-on-calver">Design: Cypher language defaulting on CalVer<a class="headerlink" href="#design-cypher-language-defaulting-on-calver" title="Anchor link to this section">&para;</a></h1>
 <blockquote>
 <p><strong>Status:</strong> built — §3 (the <code>Cypher25()</code> helper and guard) in #414; §5 and
-the §5.9 sharding change in the <code>serverDefaultCypherLanguage</code> PR. No PM roadmap governs this repo
-(<a href="#">wiki: <code>project-k8s-operator</code> closed 2026-06-18</a>), so this is a
-maintainer decision.</p>
+the §5.9 sharding change in the <code>serverDefaultCypherLanguage</code> PR. No PM roadmap
+governs this repo, so this was a maintainer decision. Kept as the design
+record; a few details shipped differently — see
+<a href="#shipped-differently">Shipped differently</a> at the end.</p>
 </blockquote>
 <h2 id="1-the-problem">1. The problem<a class="headerlink" href="#1-the-problem" title="Anchor link to this section">&para;</a></h2>
 <p>Some statements the operator emits are Cypher 25 syntax. On a CalVer server the
@@ -4231,6 +4243,32 @@ is (e.g. OIDC forwarding is refused on 5.26 at apply time) — not something the
 prefix helper should decide by silently dropping the directive.
 <code>TestCypher25Guard</code> pins the first half, and
 <code>TestRemoteAliasStatementPinsCypher25OnlyForOIDC</code> the second.</p>
+<h2 id="shipped-differently">Shipped differently<a class="headerlink" href="#shipped-differently" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li><strong>§3.1 helper.</strong> The helper is the package-level <code>Cypher25(stmt)</code> in
+  <code>internal/neo4j/cypher25.go</code> (with <code>HasCypher25Prefix</code>), not a <code>systemDDL25</code>
+  method on the client. <code>TestCypher25Guard</code> (<code>cypher25_guard_test.go</code>) is the §3.2
+  guard; its construct list is <code>AUTH RULE(S)</code>, <code>CREATE REPLICA DATABASE</code>,
+  <code>dbms.promoteReplicaDatabase</code>, <code>SET GRAPH SHARD</code> / <code>SET PROPERTY SHARDS</code> and
+  <code>OIDC CREDENTIAL FORWARDING</code> — not <code>COMPOSITE … DEFAULT LANGUAGE</code>.</li>
+<li><strong>Composite-constituent and alias DDL is pinned to Cypher 5.</strong> §1 and §3.2 treat
+  <code>composite.go</code> as a Cypher-25 user. It is not: since v1.17.0 a new CalVer
+  deployment defaults to Cypher 25, where the dotted <code>`comp`.`name`</code> alias
+  syntax fails (<code>42NAA</code>), so the constituent and alias statements are wrapped with
+  <code>Cypher5()</code> (<code>cypher25.go</code>; <code>aliases.go</code>, <code>composite.go</code>). Only the
+  OIDC-forwarding remote alias uses <code>Cypher25()</code>.</li>
+<li><strong>§4 "does not change any user-facing default" is superseded by §5.4.</strong> From
+  v1.17.0 a <em>new</em> CalVer deployment gets <code>CYPHER_25</code> (stamped at creation);
+  existing deployments keep what they run.</li>
+<li><strong>§5.4, "unset, pre-existing" row.</strong> The stamp reuses the value already in the
+  operator's ConfigMap when there is one, and falls back to <code>CYPHER_5</code> otherwise
+  (<code>StampServerCypherLanguage</code>, <code>internal/resources/cypher_language.go</code>). A sharding
+  cluster that predates the field therefore keeps the <code>CYPHER_25</code> it already ran,
+  and §5.9's "Cypher 5 on CalVer" holds only for a deployment stamped or set to
+  <code>CYPHER_5</code>. <code>db.query.default_language</code> set directly in <code>spec.config</code> (or
+  <code>propertySharding.config</code>) is treated as the user's explicit choice and is
+  emitted by that config path.</li>
+</ul>
 
 
 

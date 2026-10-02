@@ -5489,6 +5489,7 @@
 <li><strong>Architecture</strong>: Single StatefulSet with unified clustering infrastructure</li>
 <li><strong>Database Support</strong>: Compatible with Neo4jDatabase CRD for automated database creation</li>
 <li><strong>Plugin Support</strong>: Full compatibility with Neo4jPlugin CRD</li>
+<li><strong>Name Limit</strong>: <code>metadata.name</code> is at most 63 characters (validated)</li>
 </ul>
 <h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Unified Infrastructure</strong>: <code>Neo4jEnterpriseStandalone</code> uses the same clustering infrastructure as cluster deployments but with a single server:</p>
@@ -5737,7 +5738,7 @@ STDIO transport: operator injects credentials from the admin secret (or <code>sp
 </span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">    </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">token</span><span class="w">               </span><span class="c1"># optional; defaults to "token"</span>
 </span></code></pre></div>
 <p>For full setup instructions see <a href="../../user_guide/aura_fleet_management/">Aura Fleet Management Guide</a>.
-For the full type definition see <a href="../neo4jenterprisecluster/#aurafleetmanagementspec"><code>AuraFleetManagementSpec</code></a>.</p>
+For the full type definition — including the optional <code>provision</code> block, by which the operator registers the deployment and mints the token itself — see <a href="../neo4jenterprisecluster/#aurafleetmanagementspec"><code>AuraFleetManagementSpec</code></a>. The <code>status.auraFleetManagement</code> fields are the same as on the cluster.</p>
 <h4 id="upgradestrategy-upgradestrategyspec"><code>upgradeStrategy</code> (UpgradeStrategySpec)<a class="headerlink" href="#upgradestrategy-upgradestrategyspec" title="Anchor link to this section">&para;</a></h4>
 <p>Configures how the operator handles Neo4j version upgrades for standalone deployments. When an image tag change is detected, the operator runs a pre-upgrade health check (if enabled) before allowing the StatefulSet to update.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">upgradeStrategy</span><span class="p">:</span>
@@ -5918,8 +5919,7 @@ standard core/v1 shapes.</p>
 <ul>
 <li><code>Pending</code>: Deployment is being created</li>
 <li><code>Ready</code>: Deployment is running and ready for connections</li>
-<li><code>Failed</code>: Deployment has failed</li>
-<li><code>ValidationFailed</code>: Spec validation failed</li>
+<li><code>Failed</code>: Deployment has failed — including spec validation errors and a missing StorageClass (the reason is in <code>status.message</code>; there is no separate <code>ValidationFailed</code> phase)</li>
 </ul>
 <h4 id="effectivecypherlanguage-string"><code>effectiveCypherLanguage</code> (string)<a class="headerlink" href="#effectivecypherlanguage-string" title="Anchor link to this section">&para;</a></h4>
 <p>The server default Cypher version the operator resolved (see
@@ -5928,7 +5928,7 @@ changes meaning under a running deployment.</p>
 <h4 id="ready-boolean"><code>ready</code> (boolean)<a class="headerlink" href="#ready-boolean" title="Anchor link to this section">&para;</a></h4>
 <p>Indicates if the standalone deployment is ready for connections.</p>
 <h4 id="laststarttime-metav1time"><code>lastStartTime</code> (*metav1.Time)<a class="headerlink" href="#laststarttime-metav1time" title="Anchor link to this section">&para;</a></h4>
-<p>Timestamp of when the standalone deployment was last started.</p>
+<p><strong>Reserved — never populated today.</strong> Intended: timestamp of when the standalone deployment was last started.</p>
 <h4 id="conditions-condition"><code>conditions</code> ([]Condition)<a class="headerlink" href="#conditions-condition" title="Anchor link to this section">&para;</a></h4>
 <p>Detailed conditions about the deployment state.</p>
 <h4 id="endpoints-endpointstatus"><code>endpoints</code> (EndpointStatus)<a class="headerlink" href="#endpoints-endpointstatus" title="Anchor link to this section">&para;</a></h4>
@@ -5966,7 +5966,7 @@ changes meaning under a running deployment.</p>
 <h4 id="version-string"><code>version</code> (string)<a class="headerlink" href="#version-string" title="Anchor link to this section">&para;</a></h4>
 <p>Current Neo4j version running.</p>
 <h4 id="podstatus-standalonepodstatus"><code>podStatus</code> (StandalonePodStatus)<a class="headerlink" href="#podstatus-standalonepodstatus" title="Anchor link to this section">&para;</a></h4>
-<p>Information about the Neo4j pod.</p>
+<p><strong>Reserved — never populated today</strong> (the schema is shown for reference; use <code>kubectl get pod &lt;name&gt;-0</code> for pod state). Intended: information about the Neo4j pod.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nt">podStatus</span><span class="p">:</span>
 </span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="w">  </span><span class="nt">podName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">standalone-neo4j-0</span>
 </span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="w">  </span><span class="nt">podIP</span><span class="p">:</span><span class="w"> </span><span class="s">"10.244.0.100"</span>
@@ -5975,7 +5975,7 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-23-6"><a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="w">  </span><span class="nt">restartCount</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
 </span></code></pre></div>
 <h4 id="databasestatus-standalonedatabasestatus"><code>databaseStatus</code> (StandaloneDatabaseStatus)<a class="headerlink" href="#databasestatus-standalonedatabasestatus" title="Anchor link to this section">&para;</a></h4>
-<p>Information about the Neo4j database.</p>
+<p><strong>Reserved — never populated today</strong> (use <code>status.diagnostics.databases</code> instead). Intended: information about the Neo4j database.</p>
 <table>
 <thead>
 <tr>
@@ -6026,7 +6026,7 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-24-7"><a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a><span class="w">  </span><span class="nt">lastHealthCheck</span><span class="p">:</span><span class="w"> </span><span class="s">"2025-01-20T10:30:00Z"</span>
 </span></code></pre></div>
 <h4 id="diagnostics-standalonediagnosticsstatus"><code>diagnostics</code> (StandaloneDiagnosticsStatus)<a class="headerlink" href="#diagnostics-standalonediagnosticsstatus" title="Anchor link to this section">&para;</a></h4>
-<p>Live diagnostics collected from <code>SHOW DATABASES</code> when <code>spec.monitoring.enabled=true</code> and the standalone is in <code>Ready</code> phase. Updated on every reconcile cycle. Collection errors are stored in <code>diagnostics.collectionError</code> and never block reconciliation.</p>
+<p>Live diagnostics collected from <code>SHOW DATABASES</code>, <code>SHOW USERS</code> and <code>SHOW ROLES</code> when <code>spec.monitoring.enabled=true</code> and the standalone is in <code>Ready</code> phase. Updated on every reconcile cycle. Collection errors are stored in <code>diagnostics.collectionError</code> and never block reconciliation.</p>
 <table>
 <thead>
 <tr>
@@ -6039,7 +6039,27 @@ changes meaning under a running deployment.</p>
 <tr>
 <td><code>databases</code></td>
 <td><code>[]DatabaseDiagnosticInfo</code></td>
-<td>Database status from <code>SHOW DATABASES</code></td>
+<td>Database status from <code>SHOW DATABASES</code>: <code>name</code>, <code>status</code>, <code>requestedStatus</code>, <code>role</code>, <code>default</code>, <code>type</code> (<code>standard</code>, <code>composite</code>, <code>replica</code>, …), <code>access</code>, <code>writer</code>, <code>lastCommittedTxn</code>, <code>replicationLag</code> (always 0 on a standalone)</td>
+</tr>
+<tr>
+<td><code>users</code></td>
+<td><code>[]UserDiagnosticInfo</code></td>
+<td>Users from <code>SHOW USERS</code> (<code>user</code>, <code>roles</code>, <code>suspended</code>, <code>homeDatabase</code>); a bounded summary — see <code>userCount</code></td>
+</tr>
+<tr>
+<td><code>userCount</code></td>
+<td><code>int</code></td>
+<td>Total number of users observed, even when <code>users</code> is truncated</td>
+</tr>
+<tr>
+<td><code>roles</code></td>
+<td><code>[]RoleDiagnosticInfo</code></td>
+<td>Roles from <code>SHOW ROLES</code> (<code>role</code>, <code>immutable</code>); a bounded summary — see <code>roleCount</code></td>
+</tr>
+<tr>
+<td><code>roleCount</code></td>
+<td><code>int</code></td>
+<td>Total number of roles observed, even when <code>roles</code> is truncated</td>
 </tr>
 <tr>
 <td><code>lastCollected</code></td>
@@ -6134,8 +6154,8 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-26-40"><a id="__codelineno-26-40" name="__codelineno-26-40" href="#__codelineno-26-40"></a>
 </span><span id="__span-26-41"><a id="__codelineno-26-41" name="__codelineno-26-41" href="#__codelineno-26-41"></a><span class="w">  </span><span class="c1"># Production configuration</span>
 </span><span id="__span-26-42"><a id="__codelineno-26-42" name="__codelineno-26-42" href="#__codelineno-26-42"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-26-43"><a id="__codelineno-26-43" name="__codelineno-26-43" href="#__codelineno-26-43"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span>
-</span><span id="__span-26-44"><a id="__codelineno-26-44" name="__codelineno-26-44" href="#__codelineno-26-44"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"6G"</span>
+</span><span id="__span-26-43"><a id="__codelineno-26-43" name="__codelineno-26-43" href="#__codelineno-26-43"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span>
+</span><span id="__span-26-44"><a id="__codelineno-26-44" name="__codelineno-26-44" href="#__codelineno-26-44"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"4G"</span>
 </span><span id="__span-26-45"><a id="__codelineno-26-45" name="__codelineno-26-45" href="#__codelineno-26-45"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span>
 </span><span id="__span-26-46"><a id="__codelineno-26-46" name="__codelineno-26-46" href="#__codelineno-26-46"></a><span class="w">    </span><span class="nt">db.logs.query.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"INFO"</span><span class="w">   </span><span class="c1"># enum: OFF | INFO | VERBOSE (not a boolean)</span>
 </span><span id="__span-26-47"><a id="__codelineno-26-47" name="__codelineno-26-47" href="#__codelineno-26-47"></a><span class="w">    </span><span class="nt">db.logs.query.threshold</span><span class="p">:</span><span class="w"> </span><span class="s">"1s"</span>
@@ -6226,8 +6246,8 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-28-43"><a id="__codelineno-28-43" name="__codelineno-28-43" href="#__codelineno-28-43"></a><span class="w">    </span><span class="nt">obfuscateLiterals</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span><span id="__span-28-44"><a id="__codelineno-28-44" name="__codelineno-28-44" href="#__codelineno-28-44"></a>
 </span><span id="__span-28-45"><a id="__codelineno-28-45" name="__codelineno-28-45" href="#__codelineno-28-45"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-28-46"><a id="__codelineno-28-46" name="__codelineno-28-46" href="#__codelineno-28-46"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"3G"</span>
-</span><span id="__span-28-47"><a id="__codelineno-28-47" name="__codelineno-28-47" href="#__codelineno-28-47"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"6G"</span>
+</span><span id="__span-28-46"><a id="__codelineno-28-46" name="__codelineno-28-46" href="#__codelineno-28-46"></a><span class="w">    </span><span class="nt">server.memory.heap.initial_size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span>
+</span><span id="__span-28-47"><a id="__codelineno-28-47" name="__codelineno-28-47" href="#__codelineno-28-47"></a><span class="w">    </span><span class="nt">server.memory.heap.max_size</span><span class="p">:</span><span class="w"> </span><span class="s">"4G"</span>
 </span><span id="__span-28-48"><a id="__codelineno-28-48" name="__codelineno-28-48" href="#__codelineno-28-48"></a><span class="w">    </span><span class="nt">server.memory.pagecache.size</span><span class="p">:</span><span class="w"> </span><span class="s">"2G"</span>
 </span><span id="__span-28-49"><a id="__codelineno-28-49" name="__codelineno-28-49" href="#__codelineno-28-49"></a><span class="w">    </span><span class="nt">db.logs.query.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"INFO"</span><span class="w">   </span><span class="c1"># enum: OFF | INFO | VERBOSE (not a boolean)</span>
 </span><span id="__span-28-50"><a id="__codelineno-28-50" name="__codelineno-28-50" href="#__codelineno-28-50"></a><span class="w">    </span><span class="nt">db.logs.query.threshold</span><span class="p">:</span><span class="w"> </span><span class="s">"500ms"</span>
@@ -6264,7 +6284,7 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-28-81"><a id="__codelineno-28-81" name="__codelineno-28-81" href="#__codelineno-28-81"></a><span class="w">  </span><span class="nt">initialData</span><span class="p">:</span>
 </span><span id="__span-28-82"><a id="__codelineno-28-82" name="__codelineno-28-82" href="#__codelineno-28-82"></a><span class="w">    </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cypher</span>
 </span><span id="__span-28-83"><a id="__codelineno-28-83" name="__codelineno-28-83" href="#__codelineno-28-83"></a><span class="w">    </span><span class="nt">cypherStatements</span><span class="p">:</span>
-</span><span id="__span-28-84"><a id="__codelineno-28-84" name="__codelineno-28-84" href="#__codelineno-28-84"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">CONSTRAINT</span><span class="nv"> </span><span class="s">user_email</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">(u:User)</span><span class="nv"> </span><span class="s">ASSERT</span><span class="nv"> </span><span class="s">u.email</span><span class="nv"> </span><span class="s">IS</span><span class="nv"> </span><span class="s">UNIQUE"</span>
+</span><span id="__span-28-84"><a id="__codelineno-28-84" name="__codelineno-28-84" href="#__codelineno-28-84"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">CONSTRAINT</span><span class="nv"> </span><span class="s">user_email</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">FOR</span><span class="nv"> </span><span class="s">(u:User)</span><span class="nv"> </span><span class="s">REQUIRE</span><span class="nv"> </span><span class="s">u.email</span><span class="nv"> </span><span class="s">IS</span><span class="nv"> </span><span class="s">UNIQUE"</span>
 </span><span id="__span-28-85"><a id="__codelineno-28-85" name="__codelineno-28-85" href="#__codelineno-28-85"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">INDEX</span><span class="nv"> </span><span class="s">user_name</span><span class="nv"> </span><span class="s">IF</span><span class="nv"> </span><span class="s">NOT</span><span class="nv"> </span><span class="s">EXISTS</span><span class="nv"> </span><span class="s">FOR</span><span class="nv"> </span><span class="s">(u:User)</span><span class="nv"> </span><span class="s">ON</span><span class="nv"> </span><span class="s">(u.name)"</span>
 </span></code></pre></div>
 <h2 id="management-commands">Management Commands<a class="headerlink" href="#management-commands" title="Anchor link to this section">&para;</a></h2>
@@ -6308,7 +6328,7 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-31-11"><a id="__codelineno-31-11" name="__codelineno-31-11" href="#__codelineno-31-11"></a><span class="s">  initialData:</span>
 </span><span id="__span-31-12"><a id="__codelineno-31-12" name="__codelineno-31-12" href="#__codelineno-31-12"></a><span class="s">    source: cypher</span>
 </span><span id="__span-31-13"><a id="__codelineno-31-13" name="__codelineno-31-13" href="#__codelineno-31-13"></a><span class="s">    cypherStatements:</span>
-</span><span id="__span-31-14"><a id="__codelineno-31-14" name="__codelineno-31-14" href="#__codelineno-31-14"></a><span class="s">      - "CREATE CONSTRAINT user_email IF NOT EXISTS ON (u:User) ASSERT u.email IS UNIQUE"</span>
+</span><span id="__span-31-14"><a id="__codelineno-31-14" name="__codelineno-31-14" href="#__codelineno-31-14"></a><span class="s">      - "CREATE CONSTRAINT user_email IF NOT EXISTS FOR (u:User) REQUIRE u.email IS UNIQUE"</span>
 </span><span id="__span-31-15"><a id="__codelineno-31-15" name="__codelineno-31-15" href="#__codelineno-31-15"></a><span class="s">EOF</span>
 </span><span id="__span-31-16"><a id="__codelineno-31-16" name="__codelineno-31-16" href="#__codelineno-31-16"></a>
 </span><span id="__span-31-17"><a id="__codelineno-31-17" name="__codelineno-31-17" href="#__codelineno-31-17"></a><span class="c1"># Install APOC plugin</span>
@@ -6333,29 +6353,29 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-32-5"><a id="__codelineno-32-5" name="__codelineno-32-5" href="#__codelineno-32-5"></a><span class="s">metadata:</span>
 </span><span id="__span-32-6"><a id="__codelineno-32-6" name="__codelineno-32-6" href="#__codelineno-32-6"></a><span class="s">  name: dev-neo4j-backup</span>
 </span><span id="__span-32-7"><a id="__codelineno-32-7" name="__codelineno-32-7" href="#__codelineno-32-7"></a><span class="s">spec:</span>
-</span><span id="__span-32-8"><a id="__codelineno-32-8" name="__codelineno-32-8" href="#__codelineno-32-8"></a><span class="s">  target:</span>
-</span><span id="__span-32-9"><a id="__codelineno-32-9" name="__codelineno-32-9" href="#__codelineno-32-9"></a><span class="s">    kind: Neo4jEnterpriseStandalone  # Note: correct target kind</span>
-</span><span id="__span-32-10"><a id="__codelineno-32-10" name="__codelineno-32-10" href="#__codelineno-32-10"></a><span class="s">    name: dev-neo4j</span>
-</span><span id="__span-32-11"><a id="__codelineno-32-11" name="__codelineno-32-11" href="#__codelineno-32-11"></a><span class="s">  storage:</span>
-</span><span id="__span-32-12"><a id="__codelineno-32-12" name="__codelineno-32-12" href="#__codelineno-32-12"></a><span class="s">    type: s3</span>
-</span><span id="__span-32-13"><a id="__codelineno-32-13" name="__codelineno-32-13" href="#__codelineno-32-13"></a><span class="s">    bucket: my-backup-bucket</span>
-</span><span id="__span-32-14"><a id="__codelineno-32-14" name="__codelineno-32-14" href="#__codelineno-32-14"></a><span class="s">    path: /backups/dev-neo4j</span>
-</span><span id="__span-32-15"><a id="__codelineno-32-15" name="__codelineno-32-15" href="#__codelineno-32-15"></a><span class="s">EOF</span>
-</span><span id="__span-32-16"><a id="__codelineno-32-16" name="__codelineno-32-16" href="#__codelineno-32-16"></a>
-</span><span id="__span-32-17"><a id="__codelineno-32-17" name="__codelineno-32-17" href="#__codelineno-32-17"></a><span class="c1"># Restore from backup</span>
-</span><span id="__span-32-18"><a id="__codelineno-32-18" name="__codelineno-32-18" href="#__codelineno-32-18"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
-</span><span id="__span-32-19"><a id="__codelineno-32-19" name="__codelineno-32-19" href="#__codelineno-32-19"></a><span class="s">apiVersion: neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-32-20"><a id="__codelineno-32-20" name="__codelineno-32-20" href="#__codelineno-32-20"></a><span class="s">kind: Neo4jRestore</span>
-</span><span id="__span-32-21"><a id="__codelineno-32-21" name="__codelineno-32-21" href="#__codelineno-32-21"></a><span class="s">metadata:</span>
-</span><span id="__span-32-22"><a id="__codelineno-32-22" name="__codelineno-32-22" href="#__codelineno-32-22"></a><span class="s">  name: restore-dev-neo4j</span>
-</span><span id="__span-32-23"><a id="__codelineno-32-23" name="__codelineno-32-23" href="#__codelineno-32-23"></a><span class="s">spec:</span>
-</span><span id="__span-32-24"><a id="__codelineno-32-24" name="__codelineno-32-24" href="#__codelineno-32-24"></a><span class="s">  clusterRef: dev-neo4j            # Target standalone instance</span>
-</span><span id="__span-32-25"><a id="__codelineno-32-25" name="__codelineno-32-25" href="#__codelineno-32-25"></a><span class="s">  databaseName: neo4j</span>
-</span><span id="__span-32-26"><a id="__codelineno-32-26" name="__codelineno-32-26" href="#__codelineno-32-26"></a><span class="s">  source:</span>
-</span><span id="__span-32-27"><a id="__codelineno-32-27" name="__codelineno-32-27" href="#__codelineno-32-27"></a><span class="s">    type: backup</span>
-</span><span id="__span-32-28"><a id="__codelineno-32-28" name="__codelineno-32-28" href="#__codelineno-32-28"></a><span class="s">    backupRef: dev-neo4j-backup</span>
-</span><span id="__span-32-29"><a id="__codelineno-32-29" name="__codelineno-32-29" href="#__codelineno-32-29"></a><span class="s">  options:</span>
-</span><span id="__span-32-30"><a id="__codelineno-32-30" name="__codelineno-32-30" href="#__codelineno-32-30"></a><span class="s">    replaceExisting: true</span>
+</span><span id="__span-32-8"><a id="__codelineno-32-8" name="__codelineno-32-8" href="#__codelineno-32-8"></a><span class="s">  instanceRef: dev-neo4j           # Neo4jEnterpriseStandalone (or Cluster) in this namespace</span>
+</span><span id="__span-32-9"><a id="__codelineno-32-9" name="__codelineno-32-9" href="#__codelineno-32-9"></a><span class="s">  database: neo4j                  # or `allDatabases: true`</span>
+</span><span id="__span-32-10"><a id="__codelineno-32-10" name="__codelineno-32-10" href="#__codelineno-32-10"></a><span class="s">  storage:</span>
+</span><span id="__span-32-11"><a id="__codelineno-32-11" name="__codelineno-32-11" href="#__codelineno-32-11"></a><span class="s">    type: s3</span>
+</span><span id="__span-32-12"><a id="__codelineno-32-12" name="__codelineno-32-12" href="#__codelineno-32-12"></a><span class="s">    bucket: my-backup-bucket</span>
+</span><span id="__span-32-13"><a id="__codelineno-32-13" name="__codelineno-32-13" href="#__codelineno-32-13"></a><span class="s">    path: /backups/dev-neo4j</span>
+</span><span id="__span-32-14"><a id="__codelineno-32-14" name="__codelineno-32-14" href="#__codelineno-32-14"></a><span class="s">EOF</span>
+</span><span id="__span-32-15"><a id="__codelineno-32-15" name="__codelineno-32-15" href="#__codelineno-32-15"></a>
+</span><span id="__span-32-16"><a id="__codelineno-32-16" name="__codelineno-32-16" href="#__codelineno-32-16"></a><span class="c1"># Restore from backup</span>
+</span><span id="__span-32-17"><a id="__codelineno-32-17" name="__codelineno-32-17" href="#__codelineno-32-17"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
+</span><span id="__span-32-18"><a id="__codelineno-32-18" name="__codelineno-32-18" href="#__codelineno-32-18"></a><span class="s">apiVersion: neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-32-19"><a id="__codelineno-32-19" name="__codelineno-32-19" href="#__codelineno-32-19"></a><span class="s">kind: Neo4jRestore</span>
+</span><span id="__span-32-20"><a id="__codelineno-32-20" name="__codelineno-32-20" href="#__codelineno-32-20"></a><span class="s">metadata:</span>
+</span><span id="__span-32-21"><a id="__codelineno-32-21" name="__codelineno-32-21" href="#__codelineno-32-21"></a><span class="s">  name: restore-dev-neo4j</span>
+</span><span id="__span-32-22"><a id="__codelineno-32-22" name="__codelineno-32-22" href="#__codelineno-32-22"></a><span class="s">spec:</span>
+</span><span id="__span-32-23"><a id="__codelineno-32-23" name="__codelineno-32-23" href="#__codelineno-32-23"></a><span class="s">  instanceRef: dev-neo4j           # Target standalone instance</span>
+</span><span id="__span-32-24"><a id="__codelineno-32-24" name="__codelineno-32-24" href="#__codelineno-32-24"></a><span class="s">  database: neo4j</span>
+</span><span id="__span-32-25"><a id="__codelineno-32-25" name="__codelineno-32-25" href="#__codelineno-32-25"></a><span class="s">  source:</span>
+</span><span id="__span-32-26"><a id="__codelineno-32-26" name="__codelineno-32-26" href="#__codelineno-32-26"></a><span class="s">    type: backup</span>
+</span><span id="__span-32-27"><a id="__codelineno-32-27" name="__codelineno-32-27" href="#__codelineno-32-27"></a><span class="s">    backupRef: dev-neo4j-backup</span>
+</span><span id="__span-32-28"><a id="__codelineno-32-28" name="__codelineno-32-28" href="#__codelineno-32-28"></a><span class="s">  options:</span>
+</span><span id="__span-32-29"><a id="__codelineno-32-29" name="__codelineno-32-29" href="#__codelineno-32-29"></a><span class="s">    replaceExisting: true</span>
+</span><span id="__span-32-30"><a id="__codelineno-32-30" name="__codelineno-32-30" href="#__codelineno-32-30"></a><span class="s">  stopCluster: true                # standalone restores run offline (see the Neo4jRestore reference)</span>
 </span><span id="__span-32-31"><a id="__codelineno-32-31" name="__codelineno-32-31" href="#__codelineno-32-31"></a><span class="s">EOF</span>
 </span></code></pre></div>
 <h2 id="migration-guide">Migration Guide<a class="headerlink" href="#migration-guide" title="Anchor link to this section">&para;</a></h2>
@@ -6543,45 +6563,45 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-42-5"><a id="__codelineno-42-5" name="__codelineno-42-5" href="#__codelineno-42-5"></a><span class="s">metadata:</span>
 </span><span id="__span-42-6"><a id="__codelineno-42-6" name="__codelineno-42-6" href="#__codelineno-42-6"></a><span class="s">  name: cluster-migration-backup</span>
 </span><span id="__span-42-7"><a id="__codelineno-42-7" name="__codelineno-42-7" href="#__codelineno-42-7"></a><span class="s">spec:</span>
-</span><span id="__span-42-8"><a id="__codelineno-42-8" name="__codelineno-42-8" href="#__codelineno-42-8"></a><span class="s">  target:</span>
-</span><span id="__span-42-9"><a id="__codelineno-42-9" name="__codelineno-42-9" href="#__codelineno-42-9"></a><span class="s">    kind: Neo4jEnterpriseCluster</span>
-</span><span id="__span-42-10"><a id="__codelineno-42-10" name="__codelineno-42-10" href="#__codelineno-42-10"></a><span class="s">    name: old-cluster</span>
-</span><span id="__span-42-11"><a id="__codelineno-42-11" name="__codelineno-42-11" href="#__codelineno-42-11"></a><span class="s">  storage:</span>
-</span><span id="__span-42-12"><a id="__codelineno-42-12" name="__codelineno-42-12" href="#__codelineno-42-12"></a><span class="s">    type: s3</span>
-</span><span id="__span-42-13"><a id="__codelineno-42-13" name="__codelineno-42-13" href="#__codelineno-42-13"></a><span class="s">    bucket: migration-backups</span>
-</span><span id="__span-42-14"><a id="__codelineno-42-14" name="__codelineno-42-14" href="#__codelineno-42-14"></a><span class="s">    path: /cluster-to-standalone/</span>
-</span><span id="__span-42-15"><a id="__codelineno-42-15" name="__codelineno-42-15" href="#__codelineno-42-15"></a><span class="s">EOF</span>
-</span><span id="__span-42-16"><a id="__codelineno-42-16" name="__codelineno-42-16" href="#__codelineno-42-16"></a>
-</span><span id="__span-42-17"><a id="__codelineno-42-17" name="__codelineno-42-17" href="#__codelineno-42-17"></a><span class="c1"># 2. Wait for backup completion</span>
-</span><span id="__span-42-18"><a id="__codelineno-42-18" name="__codelineno-42-18" href="#__codelineno-42-18"></a>kubectl<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Ready<span class="w"> </span>neo4jbackup/cluster-migration-backup<span class="w"> </span>--timeout<span class="o">=</span>600s
-</span><span id="__span-42-19"><a id="__codelineno-42-19" name="__codelineno-42-19" href="#__codelineno-42-19"></a>
-</span><span id="__span-42-20"><a id="__codelineno-42-20" name="__codelineno-42-20" href="#__codelineno-42-20"></a><span class="c1"># 3. Create the standalone, wait for Ready, then restore via Neo4jRestore</span>
-</span><span id="__span-42-21"><a id="__codelineno-42-21" name="__codelineno-42-21" href="#__codelineno-42-21"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
-</span><span id="__span-42-22"><a id="__codelineno-42-22" name="__codelineno-42-22" href="#__codelineno-42-22"></a><span class="s">apiVersion: neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-42-23"><a id="__codelineno-42-23" name="__codelineno-42-23" href="#__codelineno-42-23"></a><span class="s">kind: Neo4jEnterpriseStandalone</span>
-</span><span id="__span-42-24"><a id="__codelineno-42-24" name="__codelineno-42-24" href="#__codelineno-42-24"></a><span class="s">metadata:</span>
-</span><span id="__span-42-25"><a id="__codelineno-42-25" name="__codelineno-42-25" href="#__codelineno-42-25"></a><span class="s">  name: migrated-standalone</span>
-</span><span id="__span-42-26"><a id="__codelineno-42-26" name="__codelineno-42-26" href="#__codelineno-42-26"></a><span class="s">spec:</span>
-</span><span id="__span-42-27"><a id="__codelineno-42-27" name="__codelineno-42-27" href="#__codelineno-42-27"></a><span class="s">  acceptLicenseAgreement: "eval"</span>
-</span><span id="__span-42-28"><a id="__codelineno-42-28" name="__codelineno-42-28" href="#__codelineno-42-28"></a><span class="s">  # ... standalone configuration ...</span>
-</span><span id="__span-42-29"><a id="__codelineno-42-29" name="__codelineno-42-29" href="#__codelineno-42-29"></a><span class="s">EOF</span>
-</span><span id="__span-42-30"><a id="__codelineno-42-30" name="__codelineno-42-30" href="#__codelineno-42-30"></a>
-</span><span id="__span-42-31"><a id="__codelineno-42-31" name="__codelineno-42-31" href="#__codelineno-42-31"></a>kubectl<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Ready<span class="w"> </span>neo4jenterprisestandalone/migrated-standalone<span class="w"> </span>--timeout<span class="o">=</span>600s
-</span><span id="__span-42-32"><a id="__codelineno-42-32" name="__codelineno-42-32" href="#__codelineno-42-32"></a>
-</span><span id="__span-42-33"><a id="__codelineno-42-33" name="__codelineno-42-33" href="#__codelineno-42-33"></a><span class="c1"># 4. Restore the backup into the new standalone</span>
-</span><span id="__span-42-34"><a id="__codelineno-42-34" name="__codelineno-42-34" href="#__codelineno-42-34"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
-</span><span id="__span-42-35"><a id="__codelineno-42-35" name="__codelineno-42-35" href="#__codelineno-42-35"></a><span class="s">apiVersion: neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-42-36"><a id="__codelineno-42-36" name="__codelineno-42-36" href="#__codelineno-42-36"></a><span class="s">kind: Neo4jRestore</span>
-</span><span id="__span-42-37"><a id="__codelineno-42-37" name="__codelineno-42-37" href="#__codelineno-42-37"></a><span class="s">metadata:</span>
-</span><span id="__span-42-38"><a id="__codelineno-42-38" name="__codelineno-42-38" href="#__codelineno-42-38"></a><span class="s">  name: migrated-standalone-restore</span>
-</span><span id="__span-42-39"><a id="__codelineno-42-39" name="__codelineno-42-39" href="#__codelineno-42-39"></a><span class="s">spec:</span>
-</span><span id="__span-42-40"><a id="__codelineno-42-40" name="__codelineno-42-40" href="#__codelineno-42-40"></a><span class="s">  acceptLicenseAgreement: "eval"</span>
-</span><span id="__span-42-41"><a id="__codelineno-42-41" name="__codelineno-42-41" href="#__codelineno-42-41"></a><span class="s">  target:</span>
-</span><span id="__span-42-42"><a id="__codelineno-42-42" name="__codelineno-42-42" href="#__codelineno-42-42"></a><span class="s">    kind: Neo4jEnterpriseStandalone</span>
-</span><span id="__span-42-43"><a id="__codelineno-42-43" name="__codelineno-42-43" href="#__codelineno-42-43"></a><span class="s">    name: migrated-standalone</span>
-</span><span id="__span-42-44"><a id="__codelineno-42-44" name="__codelineno-42-44" href="#__codelineno-42-44"></a><span class="s">  source:</span>
-</span><span id="__span-42-45"><a id="__codelineno-42-45" name="__codelineno-42-45" href="#__codelineno-42-45"></a><span class="s">    backupRef:</span>
-</span><span id="__span-42-46"><a id="__codelineno-42-46" name="__codelineno-42-46" href="#__codelineno-42-46"></a><span class="s">      name: cluster-migration-backup</span>
+</span><span id="__span-42-8"><a id="__codelineno-42-8" name="__codelineno-42-8" href="#__codelineno-42-8"></a><span class="s">  instanceRef: old-cluster         # the source Neo4jEnterpriseCluster</span>
+</span><span id="__span-42-9"><a id="__codelineno-42-9" name="__codelineno-42-9" href="#__codelineno-42-9"></a><span class="s">  database: neo4j</span>
+</span><span id="__span-42-10"><a id="__codelineno-42-10" name="__codelineno-42-10" href="#__codelineno-42-10"></a><span class="s">  storage:</span>
+</span><span id="__span-42-11"><a id="__codelineno-42-11" name="__codelineno-42-11" href="#__codelineno-42-11"></a><span class="s">    type: s3</span>
+</span><span id="__span-42-12"><a id="__codelineno-42-12" name="__codelineno-42-12" href="#__codelineno-42-12"></a><span class="s">    bucket: migration-backups</span>
+</span><span id="__span-42-13"><a id="__codelineno-42-13" name="__codelineno-42-13" href="#__codelineno-42-13"></a><span class="s">    path: /cluster-to-standalone/</span>
+</span><span id="__span-42-14"><a id="__codelineno-42-14" name="__codelineno-42-14" href="#__codelineno-42-14"></a><span class="s">EOF</span>
+</span><span id="__span-42-15"><a id="__codelineno-42-15" name="__codelineno-42-15" href="#__codelineno-42-15"></a>
+</span><span id="__span-42-16"><a id="__codelineno-42-16" name="__codelineno-42-16" href="#__codelineno-42-16"></a><span class="c1"># 2. Wait for backup completion</span>
+</span><span id="__span-42-17"><a id="__codelineno-42-17" name="__codelineno-42-17" href="#__codelineno-42-17"></a>kubectl<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Ready<span class="w"> </span>neo4jbackup/cluster-migration-backup<span class="w"> </span>--timeout<span class="o">=</span>600s
+</span><span id="__span-42-18"><a id="__codelineno-42-18" name="__codelineno-42-18" href="#__codelineno-42-18"></a>
+</span><span id="__span-42-19"><a id="__codelineno-42-19" name="__codelineno-42-19" href="#__codelineno-42-19"></a><span class="c1"># 3. Create the standalone, wait for Ready, then restore via Neo4jRestore</span>
+</span><span id="__span-42-20"><a id="__codelineno-42-20" name="__codelineno-42-20" href="#__codelineno-42-20"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
+</span><span id="__span-42-21"><a id="__codelineno-42-21" name="__codelineno-42-21" href="#__codelineno-42-21"></a><span class="s">apiVersion: neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-42-22"><a id="__codelineno-42-22" name="__codelineno-42-22" href="#__codelineno-42-22"></a><span class="s">kind: Neo4jEnterpriseStandalone</span>
+</span><span id="__span-42-23"><a id="__codelineno-42-23" name="__codelineno-42-23" href="#__codelineno-42-23"></a><span class="s">metadata:</span>
+</span><span id="__span-42-24"><a id="__codelineno-42-24" name="__codelineno-42-24" href="#__codelineno-42-24"></a><span class="s">  name: migrated-standalone</span>
+</span><span id="__span-42-25"><a id="__codelineno-42-25" name="__codelineno-42-25" href="#__codelineno-42-25"></a><span class="s">spec:</span>
+</span><span id="__span-42-26"><a id="__codelineno-42-26" name="__codelineno-42-26" href="#__codelineno-42-26"></a><span class="s">  acceptLicenseAgreement: "eval"</span>
+</span><span id="__span-42-27"><a id="__codelineno-42-27" name="__codelineno-42-27" href="#__codelineno-42-27"></a><span class="s">  # ... standalone configuration ...</span>
+</span><span id="__span-42-28"><a id="__codelineno-42-28" name="__codelineno-42-28" href="#__codelineno-42-28"></a><span class="s">EOF</span>
+</span><span id="__span-42-29"><a id="__codelineno-42-29" name="__codelineno-42-29" href="#__codelineno-42-29"></a>
+</span><span id="__span-42-30"><a id="__codelineno-42-30" name="__codelineno-42-30" href="#__codelineno-42-30"></a>kubectl<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Ready<span class="w"> </span>neo4jenterprisestandalone/migrated-standalone<span class="w"> </span>--timeout<span class="o">=</span>600s
+</span><span id="__span-42-31"><a id="__codelineno-42-31" name="__codelineno-42-31" href="#__codelineno-42-31"></a>
+</span><span id="__span-42-32"><a id="__codelineno-42-32" name="__codelineno-42-32" href="#__codelineno-42-32"></a><span class="c1"># 4. Restore the backup into the new standalone</span>
+</span><span id="__span-42-33"><a id="__codelineno-42-33" name="__codelineno-42-33" href="#__codelineno-42-33"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
+</span><span id="__span-42-34"><a id="__codelineno-42-34" name="__codelineno-42-34" href="#__codelineno-42-34"></a><span class="s">apiVersion: neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-42-35"><a id="__codelineno-42-35" name="__codelineno-42-35" href="#__codelineno-42-35"></a><span class="s">kind: Neo4jRestore</span>
+</span><span id="__span-42-36"><a id="__codelineno-42-36" name="__codelineno-42-36" href="#__codelineno-42-36"></a><span class="s">metadata:</span>
+</span><span id="__span-42-37"><a id="__codelineno-42-37" name="__codelineno-42-37" href="#__codelineno-42-37"></a><span class="s">  name: migrated-standalone-restore</span>
+</span><span id="__span-42-38"><a id="__codelineno-42-38" name="__codelineno-42-38" href="#__codelineno-42-38"></a><span class="s">spec:</span>
+</span><span id="__span-42-39"><a id="__codelineno-42-39" name="__codelineno-42-39" href="#__codelineno-42-39"></a><span class="s">  instanceRef: migrated-standalone   # Neo4jEnterpriseStandalone</span>
+</span><span id="__span-42-40"><a id="__codelineno-42-40" name="__codelineno-42-40" href="#__codelineno-42-40"></a><span class="s">  database: neo4j</span>
+</span><span id="__span-42-41"><a id="__codelineno-42-41" name="__codelineno-42-41" href="#__codelineno-42-41"></a><span class="s">  source:</span>
+</span><span id="__span-42-42"><a id="__codelineno-42-42" name="__codelineno-42-42" href="#__codelineno-42-42"></a><span class="s">    type: backup</span>
+</span><span id="__span-42-43"><a id="__codelineno-42-43" name="__codelineno-42-43" href="#__codelineno-42-43"></a><span class="s">    backupRef: cluster-migration-backup</span>
+</span><span id="__span-42-44"><a id="__codelineno-42-44" name="__codelineno-42-44" href="#__codelineno-42-44"></a><span class="s">  options:</span>
+</span><span id="__span-42-45"><a id="__codelineno-42-45" name="__codelineno-42-45" href="#__codelineno-42-45"></a><span class="s">    replaceExisting: true            # the new standalone already has a default `neo4j` database</span>
+</span><span id="__span-42-46"><a id="__codelineno-42-46" name="__codelineno-42-46" href="#__codelineno-42-46"></a><span class="s">  stopCluster: true</span>
 </span><span id="__span-42-47"><a id="__codelineno-42-47" name="__codelineno-42-47" href="#__codelineno-42-47"></a><span class="s">EOF</span>
 </span></code></pre></div>
 <h2 id="best-practices_1">Best Practices<a class="headerlink" href="#best-practices_1" title="Anchor link to this section">&para;</a></h2>

@@ -4463,6 +4463,7 @@ selects the key layout:</p>
 </tr>
 </tbody>
 </table>
+<p>(<code>custom</code> is also accepted by the schema, but currently writes the same keys as <code>neo4j-driver</code>.)</p>
 <p>Every format also carries <code>type=neo4j</code>/<code>provider=aura</code> and sets
 <code>status.binding.name</code>, so the instance is a compliant <strong>Service Binding</strong>
 Provisioned Service. Non-secret endpoint details can additionally be mirrored to
@@ -4547,7 +4548,8 @@ this is Aura console access, not an in-database user):</p>
 </span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="nt">providerConfigRef</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">aura</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="nt">projectId</span><span class="p">:</span><span class="w"> </span><span class="s">"&lt;project-id&gt;"</span>
 </span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob@example.com</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">project-metrics-integration-reader</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">namespace-metrics-integration-reader</span><span class="w">   </span><span class="c1"># invite vocabulary: namespace-*, not project-*</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">  </span><span class="nt">organizationRole</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">organization-member</span><span class="w">        </span><span class="c1"># required on every project-scoped invite</span>
 </span></code></pre></div>
 <p>Once Bob accepts, manage his role going forward with an <code>AuraProjectMember</code>
 (<code>email: bob@example.com</code>, <code>role: project-metrics-integration-reader</code>).</p>

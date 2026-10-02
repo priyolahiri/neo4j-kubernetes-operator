@@ -3960,7 +3960,8 @@ of the invariants:</p>
   loop until they pass.</li>
 </ul>
 <h2 id="guards-vs-gates-what-will-actually-stop-you">Guards vs gates (what will actually stop you)<a class="headerlink" href="#guards-vs-gates-what-will-actually-stop-you" title="Anchor link to this section">&para;</a></h2>
-<p>Be precise about enforcement — only two CI gates block merge:</p>
+<p>Be precise about enforcement — three CI jobs block merge; the guards marked
+ADVISORY do not:</p>
 <table>
 <thead>
 <tr>
@@ -3971,12 +3972,17 @@ of the invariants:</p>
 </thead>
 <tbody>
 <tr>
-<td><code>make check-drift</code> (CI job <em>Generated Artifacts In Sync</em>)</td>
+<td><code>make check-drift</code> (CI job <em>Generated Artifacts In Sync</em>, which also runs the hand-written-docs checks: <code>check-apiref-drift</code>, <code>check-crd-catalog</code>, <code>check-docs-release-pins</code>, … and gitleaks)</td>
 <td>BLOCKING CI gate</td>
 <td>Yes</td>
 </tr>
 <tr>
 <td><code>make test-unit</code> (CI job <em>Unit Tests</em>)</td>
+<td>BLOCKING CI gate</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>golangci-lint</code> (CI job <em>Go Lint</em>; <code>ci.yml</code> calls it a merge gate)</td>
 <td>BLOCKING CI gate</td>
 <td>Yes</td>
 </tr>

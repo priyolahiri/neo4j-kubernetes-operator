@@ -3766,6 +3766,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#common-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common flags
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#version-matching" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3811,8 +3822,8 @@
 <p><strong>This operator has no admission webhooks.</strong> That is a deliberate architectural invariant, not an omission — the upside is a much simpler install with no certificate plumbing and no webhook outage mode. The downside is that spec mistakes are only reported <em>after</em> you apply, through <code>status</code> and events:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>edit YAML → apply → wait for reconcile → read status → find the mistake → repeat
 </span></code></pre></div>
-<p>Across 26 resource kinds and 234 top-level spec fields, that loop is slow. <a href="validate/"><code>validate</code></a> closes it by running <strong>the operator's own validators</strong> against your files, locally.</p>
-<p>The second reason is volume. The troubleshooting guide documents 98 separate <code>kubectl</code> invocations, nearly all of them generic commands with placeholders you have to resolve from knowledge of the operator's naming scheme — <code>&lt;cluster&gt;-server-0</code>, <code>&lt;cluster&gt;-client</code>, which namespace the operator itself lives in, which container, which Bolt scheme. The CLI knows all of that.</p>
+<p>Across 27 resource kinds and 247 top-level spec fields, that loop is slow. <a href="validate/"><code>validate</code></a> closes it by running <strong>the operator's own validators</strong> against your files, locally.</p>
+<p>The second reason is volume. The troubleshooting guide documents roughly a hundred separate <code>kubectl</code> invocations, nearly all of them generic commands with placeholders you have to resolve from knowledge of the operator's naming scheme — <code>&lt;cluster&gt;-server-0</code>, <code>&lt;cluster&gt;-client</code>, which namespace the operator itself lives in, which container, which Bolt scheme. The CLI knows all of that.</p>
 <h2 id="the-commands">The commands<a class="headerlink" href="#the-commands" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
@@ -3858,7 +3869,7 @@
 </table>
 <p>Start with <a href="install/">Installing the CLI</a>.</p>
 <h2 id="what-it-will-not-do">What it will not do<a class="headerlink" href="#what-it-will-not-do" title="Anchor link to this section">&para;</a></h2>
-<p>Three boundaries, held deliberately:</p>
+<p>Four boundaries, held deliberately:</p>
 <ul>
 <li><strong>It never executes Cypher for a mutating operation on your behalf.</strong> It may author and read custom resources, and read Kubernetes state. Creating a database or promoting a replica belongs in a CR, where it is declarative, auditable and reversible. <code>cypher -c "..."</code> passes <em>your</em> query through — a different thing from the CLI deciding to change your database.</li>
 <li><strong>It never restates the operator's rules.</strong> Validation comes from the operator's own packages, and <code>explain</code> is keyed off the operator's own condition constants, so a rename breaks the build rather than leaving the CLI confidently wrong. A second source of truth would rot.</li>
@@ -3871,8 +3882,10 @@ way <code>kubectl</code> itself behaves:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>diagnose<span class="w"> </span>Neo4jEnterpriseCluster/prod<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w">   </span><span class="c1"># same</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>diagnose<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>Neo4jEnterpriseCluster/prod<span class="w">   </span><span class="c1"># thing</span>
 </span></code></pre></div>
+<h2 id="common-flags">Common flags<a class="headerlink" href="#common-flags" title="Anchor link to this section">&para;</a></h2>
+<p>Every command that talks to a cluster accepts <code>--context</code> and <code>--kubeconfig</code> (the same resolution <code>kubectl</code> uses) and <code>-n</code> / <code>--namespace</code> (default: the kubeconfig context's namespace). <code>validate</code> is offline unless you pass <code>--connect</code>, <code>--context</code> or <code>--kubeconfig</code>. <code>status</code> also takes <code>--all-namespaces</code>.</p>
 <h2 id="version-matching">Version matching<a class="headerlink" href="#version-matching" title="Anchor link to this section">&para;</a></h2>
-<p>The CLI carries the validation rules and status vocabulary of the release it was built from. <strong>Keep it on the same version as the operator you deploy.</strong> Its output always names the ruleset it used, and when connected to a cluster it warns if the two disagree.</p>
+<p>The CLI carries the validation rules and status vocabulary of the release it was built from. <strong>Keep it on the same version as the operator you deploy.</strong> <code>validate</code> always names the ruleset it used, <code>explain</code> names the release its explanations describe, and <code>validate --connect</code> also warns when the operator running in the cluster is a different version.</p>
 
 
 

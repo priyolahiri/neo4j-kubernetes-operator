@@ -4665,22 +4665,21 @@
 <h3 id="jvm-performance-tuning">JVM Performance Tuning<a class="headerlink" href="#jvm-performance-tuning" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="c1"># GC optimization for Neo4j (JDK 17/21 — these flags are merged with the</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="c1"># operator's built-in G1GC tuning, not replaced)</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nt">server.jvm.additional</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">      </span><span class="no">-XX:+UseG1GC</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">      </span><span class="no">-XX:MaxGCPauseMillis=200</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">      </span><span class="no">-XX:G1HeapRegionSize=32m</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">      </span><span class="no">-XX:+ParallelRefProcEnabled</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">      </span><span class="no">-XX:+UseStringDeduplication</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="c1"># GC optimization for Neo4j (JDK 17/21). One line, flags separated by</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="c1"># spaces — a multi-line value (YAML `|` or `&gt;`) is rejected because it</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="c1"># ends in a newline.</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="c1">#</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="c1"># On a cluster this REPLACES the operator's built-in JVM flags (G1GC with a</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="c1"># 200ms pause target, compressed oops, ExitOnOutOfMemoryError, …) rather</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="c1"># than adding to them, so repeat any you want to keep.</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="nt">server.jvm.additional</span><span class="p">:</span><span class="w"> </span><span class="s">"-XX:+UseG1GC</span><span class="nv"> </span><span class="s">-XX:MaxGCPauseMillis=200</span><span class="nv"> </span><span class="s">-XX:G1HeapRegionSize=32m</span><span class="nv"> </span><span class="s">-XX:+ParallelRefProcEnabled</span><span class="nv"> </span><span class="s">-XX:+UseStringDeduplication</span><span class="nv"> </span><span class="s">-XX:+ExitOnOutOfMemoryError"</span>
 </span></code></pre></div>
 <h2 id="network-and-discovery-performance">Network and Discovery Performance<a class="headerlink" href="#network-and-discovery-performance" title="Anchor link to this section">&para;</a></h2>
 <h3 id="cluster-communication-optimization">Cluster Communication Optimization<a class="headerlink" href="#cluster-communication-optimization" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="c1"># Cluster communication timeouts (Neo4j 5.26+)</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">dbms.cluster.raft.leader_failure_detection_window</span><span class="p">:</span><span class="w"> </span><span class="s">"7s"</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="nt">dbms.cluster.raft.leader_failure_detection_window</span><span class="p">:</span><span class="w"> </span><span class="s">"30s"</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">dbms.cluster.raft.leader_failure_detection_window</span><span class="p">:</span><span class="w"> </span><span class="s">"30s"</span>
 </span></code></pre></div>
 <blockquote>
 <p><strong>Note:</strong> Discovery settings (resolver type, endpoints, resolution timeout)

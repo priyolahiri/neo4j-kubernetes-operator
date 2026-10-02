@@ -4060,7 +4060,7 @@
 <tr>
 <td><code>organizationId</code></td>
 <td><code>string</code></td>
-<td>Aura organization. <strong>Immutable once set.</strong> Needed only by the v2beta1 code paths (<code>multiDatabase</code> creation and the multi-database status probe); plain v1 management does not use it. Falls back to the provider config's <code>defaultOrganizationId</code>.</td>
+<td>Aura organization. <strong>Immutable once set.</strong> Needed only by the v2beta1 code paths (<code>multiDatabase</code> or <code>graphAnalytics: serverless</code> creation, and the multi-database status probe); plain v1 management does not use it. Falls back to the provider config's <code>defaultOrganizationId</code>.</td>
 </tr>
 <tr>
 <td><code>cloudProvider</code></td>
@@ -4115,7 +4115,7 @@
 <tr>
 <td><code>graphAnalyticsPlugin</code></td>
 <td><code>*bool</code></td>
-<td><strong>Deprecated</strong> — use <code>graphAnalytics</code> (<code>true</code> is <code>plugin</code>, <code>false</code> is <code>unavailable</code>). Setting both is rejected. An existing CR can switch to the equivalent <code>graphAnalytics</code> value; any other change is rejected.</td>
+<td><strong>Deprecated</strong> — use <code>graphAnalytics</code> (<code>true</code> is <code>plugin</code>, <code>false</code> is <code>unavailable</code>). Setting both is rejected. An existing CR can switch to the equivalent <code>graphAnalytics</code> value; setting a different <code>graphAnalytics</code> value is rejected. The CRD rules do not themselves reject editing or removing the boolean, but it is only read at creation, so such an edit has no effect on an existing instance.</td>
 </tr>
 <tr>
 <td><code>secondariesCount</code></td>
@@ -4329,8 +4329,9 @@
 <li><code>type</code> — <strong>except</strong> the one in-place <code>professional-db</code> → <code>business-critical</code> upgrade</li>
 <li><code>projectId</code>, <code>organizationId</code>, <code>customerManagedKeyId</code>, <code>instanceId</code> — immutable once set</li>
 <li><code>source</code>, <code>multiDatabase</code></li>
+<li><code>graphAnalytics</code> — applied at creation; the only allowed edit is replacing the deprecated <code>graphAnalyticsPlugin</code> with its equivalent value</li>
 </ul>
-<p><code>type</code>/<code>region</code>/<code>memory</code>/<code>version</code> combinations are additionally validated against the live per-project <code>instance_configurations</code> inline in the reconciler (the one check CEL cannot express).</p>
+<p>The <code>type</code> / <code>region</code> / <code>cloudProvider</code> combination is additionally validated before create against the live per-project <code>instance_configurations</code> inline in the reconciler (the one check CEL cannot express). <code>memory</code> and <code>version</code> are not checked locally.</p>
 <h2 id="multi-database-instances">Multi-database instances<a class="headerlink" href="#multi-database-instances" title="Anchor link to this section">&para;</a></h2>
 <p>An Aura instance either can hold several databases or it cannot, and that is decided when the instance is created — Aura publishes no API to convert one. Set <code>spec.multiDatabase: true</code> to get one.</p>
 <p>This has consequences worth knowing before you rely on it:</p>
@@ -4338,7 +4339,7 @@
 <li><strong>It changes which API creates the instance.</strong> <code>multi_database</code> exists only in the Aura <strong>v2beta1</strong> API, so the operator issues the create there and then manages the instance through v1 as usual (observe, resize, pause/resume, upgrade, delete all work against a v2beta1-created instance). v2beta1 is <strong>beta</strong> — see the caveat in <a href="../../user_guide/aura_orchestration/">Aura orchestration</a>.</li>
 <li><strong>Only two tiers support it</strong>: <code>business-critical</code> and <code>enterprise-db</code> (Virtual Dedicated Cloud). <code>free-db</code> and <code>professional-db</code> are rejected by Aura outright (<code>multi-database-tier-not-supported</code>), so the CRD rejects them on write.</li>
 <li><strong>It needs an organization ID</strong>, because the v2beta1 paths are organization-scoped. Set <code>spec.organizationId</code> or <code>defaultOrganizationId</code> on the <a href="../auraproviderconfig/"><code>AuraProviderConfig</code></a>.</li>
-<li><strong>A smaller set of fields applies.</strong> The v2beta1 create takes name, type, cloudProvider, region, memory, <code>storage</code> and <code>graphAnalytics</code> (including <code>serverless</code>). <code>vectorOptimized</code> is <strong>rejected</strong> with <code>multiDatabase</code>, because Aura refuses the combination. <code>secondariesCount</code>, <code>cdcEnrichmentMode</code>, <code>customerManagedKeyId</code> and <code>source</code> have no v2beta1 equivalent and are rejected too. <code>version</code> is not sent either — Aura picks the version — although the CRD still requires it.</li>
+<li><strong>A smaller set of fields applies.</strong> The v2beta1 create takes name, type, cloudProvider, region, memory, <code>storage</code>, <code>graphAnalytics</code> (including <code>serverless</code>) and, for a serverless-only instance, <code>vectorOptimized</code>. <code>vectorOptimized: true</code> is <strong>rejected</strong> together with <code>multiDatabase</code>, because Aura refuses the combination. <code>secondariesCount</code>, <code>cdcEnrichmentMode</code>, <code>customerManagedKeyId</code> and <code>source</code> have no v2beta1 equivalent and are rejected too. <code>version</code> is not sent either — Aura picks the version — although the CRD still requires it.</li>
 <li><strong>A create the operator can already tell Aura will refuse is stopped before the API call</strong>, and stays stopped (the cause is in the spec, so retrying cannot help). The condition <code>Ready=False</code> carries one of two reasons: <code>MultiDatabaseUnsupported</code> for a <code>multiDatabase</code> instance, and <code>ServerlessGraphAnalyticsUnsupported</code> for a <code>graphAnalytics: serverless</code> one. The message names the cause — usually a missing organization ID, or a tier or field combination Aura rejects. Fix the spec and re-apply.</li>
 <li><strong>Instances created by earlier operator versions are not multi-database</strong>, and cannot be made so. An <code>AuraDatabase</code> against one is refused with <code>Ready=False</code>, reason <code>InstanceNotMultiDatabase</code>; the fix is a new <code>AuraInstance</code> (and a data migration), not a spec edit.</li>
 </ul>

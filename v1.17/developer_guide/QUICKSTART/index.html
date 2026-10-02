@@ -4069,12 +4069,13 @@ work but is unsupported.</p>
 </tr>
 </tbody>
 </table>
-<p>Exact CI-pinned versions live in <code>.tool-versions</code> (Go 1.27.0, Kind 0.27.0,
-kubectl 1.36.0, kustomize 5.4.3, helm 3.16.0, golangci-lint 1.64.8, ginkgo
-2.29.0). If you use <a href="https://mise.jdx.dev/">mise</a> or asdf, <code>mise install</code>
-pins all of them. Go toolchains (kustomize, controller-gen, envtest, ginkgo,
-etc.) are auto-downloaded into <code>bin/</code> by the Makefile — you don't install them
-by hand.</p>
+<p><code>.tool-versions</code> lists the tool versions for <a href="https://mise.jdx.dev/">mise</a> / asdf
+(<code>mise install</code> pins them): Go 1.27.0, Kind 0.27.0, kubectl 1.36.0, kustomize
+5.4.3, helm 3.16.0, golangci-lint 2.13.1. The Go-based tools (kustomize,
+controller-gen, envtest, ginkgo, golangci-lint, etc.) are auto-downloaded into
+<code>bin/</code> by the Makefile at the versions pinned <strong>there</strong> (e.g. <code>GINKGO_VERSION</code>,
+<code>GOLANGCI_LINT_VERSION</code>) — those are what CI uses, and you don't install them by
+hand. Where the two disagree, the Makefile wins.</p>
 <h2 id="1-clone">1. Clone<a class="headerlink" href="#1-clone" title="Anchor link to this section">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/priyolahiri/neo4j-kubernetes-operator.git
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>neo4j-kubernetes-operator
@@ -4191,8 +4192,8 @@ check. To run one integration test by name:</p>
 <h2 id="before-you-push">Before you push<a class="headerlink" href="#before-you-push" title="Anchor link to this section">&para;</a></h2>
 <ol>
 <li><code>make test-unit</code> passes (also runs fmt + vet).</li>
-<li><code>make lint</code> passes locally — <strong>golangci-lint is <em>not</em> run in CI</strong>, so this
-   is on you.</li>
+<li><code>make lint</code> passes locally — CI runs the same golangci-lint config in its
+   <code>Go Lint</code> job, so a failure there is a failed PR check.</li>
 <li>If you touched API types or RBAC markers, <code>make sync-all</code> (or <code>ship-prep</code>)
    and commit the regenerated files — CI's <code>check-drift</code> job blocks the PR
    otherwise.</li>

@@ -3779,7 +3779,7 @@ asset.</p>
 <div class="tabbed-block">
 <p>Binaries are attached to every <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/releases">release</a>. Pick your platform:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">VERSION</span><span class="o">=</span><span class="m">1</span>.17.0<span class="w">     </span><span class="c1"># the release you want</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nv">OS</span><span class="o">=</span>darwin<span class="w">          </span><span class="c1"># darwin | linux | windows</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nv">OS</span><span class="o">=</span>darwin<span class="w">          </span><span class="c1"># darwin | linux (Windows: see below)</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nv">ARCH</span><span class="o">=</span>arm64<span class="w">         </span><span class="c1"># arm64 | amd64</span>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>curl<span class="w"> </span>-sSLO<span class="w"> </span><span class="s2">"https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v</span><span class="si">${</span><span class="nv">VERSION</span><span class="si">}</span><span class="s2">/kubectl-neo4j_</span><span class="si">${</span><span class="nv">VERSION</span><span class="si">}</span><span class="s2">_</span><span class="si">${</span><span class="nv">OS</span><span class="si">}</span><span class="s2">_</span><span class="si">${</span><span class="nv">ARCH</span><span class="si">}</span><span class="s2">.tar.gz"</span>
@@ -3790,7 +3790,7 @@ asset.</p>
 </span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>chmod<span class="w"> </span>+x<span class="w"> </span>kubectl-neo4j
 </span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>sudo<span class="w"> </span>mv<span class="w"> </span>kubectl-neo4j<span class="w"> </span>/usr/local/bin/
 </span></code></pre></div>
-<p>Windows builds are published as <code>.zip</code> rather than <code>.tar.gz</code>.</p>
+<p>Windows is published for amd64 only, as <code>kubectl-neo4j_${VERSION}_windows_amd64.zip</code> rather than a <code>.tar.gz</code> (same checksums file).</p>
 </div>
 <div class="tabbed-block">
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/priyolahiri/neo4j-kubernetes-operator

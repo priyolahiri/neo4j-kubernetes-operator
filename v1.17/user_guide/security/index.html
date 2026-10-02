@@ -5268,23 +5268,24 @@
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secure-cluster</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">acceptLicenseAgreement</span><span class="p">:</span><span class="w"> </span><span class="s">"eval"</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="c1"># TLS configuration with cert-manager</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">tls</span><span class="p">:</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cert-manager</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="nt">issuerRef</span><span class="p">:</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-issuer</span><span class="w">    </span><span class="c1"># Your production ClusterIssuer</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ClusterIssuer</span>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
-</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="c1"># Certificate duration and renewal settings</span>
-</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="s">"8760h"</span><span class="w">          </span><span class="c1"># 1 year</span>
-</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">renewBefore</span><span class="p">:</span><span class="w"> </span><span class="s">"2160h"</span><span class="w">       </span><span class="c1"># 90 days before expiry</span>
-</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
-</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">    </span><span class="c1"># Certificate subject fields</span>
-</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">    </span><span class="nt">subject</span><span class="p">:</span>
-</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">      </span><span class="nt">organizations</span><span class="p">:</span>
-</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"Your</span><span class="nv"> </span><span class="s">Organization"</span>
-</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">      </span><span class="nt">organizationalUnits</span><span class="p">:</span>
-</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"Database</span><span class="nv"> </span><span class="s">Team"</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="c1"># image, topology and storage omitted for brevity (required in a real manifest)</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="c1"># TLS configuration with cert-manager</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">tls</span><span class="p">:</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cert-manager</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="nt">issuerRef</span><span class="p">:</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-issuer</span><span class="w">    </span><span class="c1"># Your production ClusterIssuer</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ClusterIssuer</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="c1"># Certificate duration and renewal settings</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="s">"8760h"</span><span class="w">          </span><span class="c1"># 1 year</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">    </span><span class="nt">renewBefore</span><span class="p">:</span><span class="w"> </span><span class="s">"2160h"</span><span class="w">       </span><span class="c1"># 90 days before expiry</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">    </span><span class="c1"># Certificate subject fields</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">    </span><span class="nt">subject</span><span class="p">:</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">      </span><span class="nt">organizations</span><span class="p">:</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"Your</span><span class="nv"> </span><span class="s">Organization"</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">      </span><span class="nt">organizationalUnits</span><span class="p">:</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"Database</span><span class="nv"> </span><span class="s">Team"</span>
 </span></code></pre></div>
 <h3 id="production-tls-setup">Production TLS Setup<a class="headerlink" href="#production-tls-setup" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Production ClusterIssuer (using Let's Encrypt or internal CA)</span>
@@ -5303,11 +5304,12 @@
 </span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-cluster</span>
 </span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">  </span><span class="nt">acceptLicenseAgreement</span><span class="p">:</span><span class="w"> </span><span class="s">"eval"</span>
-</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">  </span><span class="nt">tls</span><span class="p">:</span>
-</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cert-manager</span>
-</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="nt">issuerRef</span><span class="p">:</span>
-</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-issuer</span>
-</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ClusterIssuer</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">  </span><span class="c1"># image, topology and storage omitted for brevity (required in a real manifest)</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">  </span><span class="nt">tls</span><span class="p">:</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cert-manager</span>
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">    </span><span class="nt">issuerRef</span><span class="p">:</span>
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-issuer</span>
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ClusterIssuer</span>
 </span></code></pre></div>
 <blockquote>
 <p><strong>Note — SSL policy configuration is operator-managed.</strong>
@@ -5403,10 +5405,11 @@ does not offer security."</em></p>
 </span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secure-cluster</span>
 </span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="nt">acceptLicenseAgreement</span><span class="p">:</span><span class="w"> </span><span class="s">"eval"</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">auth</span><span class="p">:</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="c1"># When authenticationProviders is omitted, defaults to ["native"]</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="nt">adminSecret</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-admin-secret</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="nt">authCacheTTL</span><span class="p">:</span><span class="w"> </span><span class="s">"10m"</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="c1"># image, topology and storage omitted for brevity (required in a real manifest)</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="nt">auth</span><span class="p">:</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="c1"># When authenticationProviders is omitted, defaults to ["native"]</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="nt">adminSecret</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j-admin-secret</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="nt">authCacheTTL</span><span class="p">:</span><span class="w"> </span><span class="s">"10m"</span>
 </span></code></pre></div>
 <p>The admin secret must contain <code>username</code> and <code>password</code> keys:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
@@ -5774,8 +5777,11 @@ does not offer security."</em></p>
 <h3 id="jvm-truststore-for-internal-cas">JVM TrustStore for Internal CAs<a class="headerlink" href="#jvm-truststore-for-internal-cas" title="Anchor link to this section">&para;</a></h3>
 <p>When Neo4j needs to make outgoing TLS connections to systems whose certificates
 are signed by an internal CA — LDAPS servers, OIDC providers behind a corporate
-CA, Aura Fleet Management endpoints, plugin download mirrors, cross-cluster
-replication peers — you need to add those CAs to Neo4j's JVM truststore.</p>
+CA, Aura Fleet Management endpoints, plugin download mirrors — you need to add
+those CAs to Neo4j's JVM truststore. (Cross-cluster replication peers are
+different: the cluster SSL policy never reads this truststore, so a peer
+cluster's CA goes in <code>spec.tls.additionalClusterTrustCAs</code> instead — see
+<a href="#cross-cluster-replication-the-transaction-shipping-port">Cross-cluster replication: the transaction-shipping port</a>.)</p>
 <p>The operator supports this via two fields, in increasing order of flexibility:</p>
 <h4 id="spectrustedcasecrets-declarative-multi-ca-list-recommended"><code>spec.trustedCASecrets</code> — declarative multi-CA list (recommended)<a class="headerlink" href="#spectrustedcasecrets-declarative-multi-ca-list-recommended" title="Anchor link to this section">&para;</a></h4>
 <p>Reference one or more Secrets that contain a PEM-encoded CA. The default key
@@ -5790,7 +5796,6 @@ Certificate it issues.</p>
 </span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">oidc-corporate-ca</span><span class="w">       </span><span class="c1"># Secret with ca.crt (default key)</span>
 </span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ldap-internal-ca</span>
 </span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">      </span><span class="nt">key</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">ldap.pem</span><span class="w">                </span><span class="c1"># override the default key</span>
-</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">replica-cluster-ca</span><span class="w">      </span><span class="c1"># CA of another Neo4j cluster we replicate to</span>
 </span></code></pre></div>
 <p>For each entry, the operator:</p>
 <ol>
@@ -5935,7 +5940,7 @@ reconcile time. New configurations should use <code>trustedCASecrets</code>.</p>
 <tbody>
 <tr>
 <td><strong>Where it's defined</strong></td>
-<td><code>spec.auth.authorizationProviders[].groupToRoleMapping</code> on the cluster</td>
+<td><code>spec.auth.ldap.authorization.groupToRoleMapping</code> / <code>spec.auth.oidc.&lt;name&gt;.groupToRoleMapping</code> on the cluster</td>
 <td>Stand-alone <code>Neo4jAuthRule</code> resource</td>
 </tr>
 <tr>
@@ -6004,10 +6009,11 @@ obfuscation is one flag away.</p>
 </span><span id="__span-22-4"><a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
 </span><span id="__span-22-5"><a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-22-6"><a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="w">  </span><span class="nt">acceptLicenseAgreement</span><span class="p">:</span><span class="w"> </span><span class="s">"eval"</span>
-</span><span id="__span-22-7"><a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
-</span><span id="__span-22-8"><a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="w">    </span><span class="nt">servers</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="__span-22-9"><a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a><span class="w">  </span><span class="nt">audit</span><span class="p">:</span>
-</span><span id="__span-22-10"><a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># secure-by-default: query literals are redacted</span>
+</span><span id="__span-22-7"><a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="w">  </span><span class="c1"># image and storage omitted for brevity (both are required in a real manifest)</span>
+</span><span id="__span-22-8"><a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-22-9"><a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a><span class="w">    </span><span class="nt">servers</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-22-10"><a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a><span class="w">  </span><span class="nt">audit</span><span class="p">:</span>
+</span><span id="__span-22-11"><a id="__codelineno-22-11" name="__codelineno-22-11" href="#__codelineno-22-11"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># secure-by-default: query literals are redacted</span>
 </span></code></pre></div>
 <p>With <code>audit.enabled: true</code> and no other audit fields, the operator
 emits <code>db.logs.query.obfuscate_literals=true</code>. PII / passwords passed
@@ -6071,10 +6077,11 @@ gap #2 (backup port exposure) without hand-rolled YAML:</p>
 </span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
 </span><span id="__span-23-5"><a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-23-6"><a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="w">  </span><span class="nt">acceptLicenseAgreement</span><span class="p">:</span><span class="w"> </span><span class="s">"eval"</span>
-</span><span id="__span-23-7"><a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
-</span><span id="__span-23-8"><a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a><span class="w">    </span><span class="nt">servers</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="__span-23-9"><a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a><span class="w">  </span><span class="nt">networkPolicy</span><span class="p">:</span>
-</span><span id="__span-23-10"><a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># opt-in; disabled by default</span>
+</span><span id="__span-23-7"><a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a><span class="w">  </span><span class="c1"># image and storage omitted for brevity (both are required in a real manifest)</span>
+</span><span id="__span-23-8"><a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
+</span><span id="__span-23-9"><a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a><span class="w">    </span><span class="nt">servers</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-23-10"><a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a><span class="w">  </span><span class="nt">networkPolicy</span><span class="p">:</span>
+</span><span id="__span-23-11"><a id="__codelineno-23-11" name="__codelineno-23-11" href="#__codelineno-23-11"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># opt-in; disabled by default</span>
 </span></code></pre></div>
 <p>The emitted policy:</p>
 <table>
@@ -6503,7 +6510,7 @@ deployments that don't actually use the integration.</p>
 <ol>
 <li><strong>Verify</strong> by checking the operator's logs — the next reconcile should succeed against the new password:</li>
 </ol>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-31-1"><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager<span class="w"> </span>--tail<span class="o">=</span><span class="m">20</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>auth
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-31-1"><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator<span class="w"> </span>--tail<span class="o">=</span><span class="m">20</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>auth
 </span></code></pre></div>
 <p>If the operator logs <code>Neo.ClientError.Security.Unauthorized</code> after the rotation, the Secret was updated but <code>ALTER USER</code> didn't take — repeat step 1.</p>
 <p><strong>Rolling new pods first won't help</strong>. Bringing up a new pod with the new Secret value does NOT re-initialise the password — the data PVC carries the existing auth file forward. <code>NEO4J_AUTH</code> is only honoured on a <strong>fresh</strong> data volume.</p>
@@ -6513,17 +6520,16 @@ deployments that don't actually use the integration.</p>
 <p><strong>Rotation flow</strong>:</p>
 <ol>
 <li>Update the Secret with the new token.</li>
-<li>The operator's next reconcile detects the change via the SHA-256 fingerprint in <code>status.auraFleetManagement.tokenSecretHash</code> (analogous to <code>status.passwordSecretHash</code> on <code>Neo4jUser</code>).</li>
-<li>It calls <code>fleetManagement.registerToken($newToken)</code> against the cluster, replacing the old token.</li>
-<li>The fingerprint in <code>status</code> is updated; subsequent reconciles see no change and stay quiet.</li>
+<li>The operator does <strong>not</strong> watch the token: once <code>status.auraFleetManagement.registered</code> is <code>true</code> it skips registration, so a changed Secret is ignored. Patch the status to <code>registered: false</code> to force re-registration (command in <a href="../aura_fleet_management/#token-rotation">Aura Fleet Management → Token rotation</a>).</li>
+<li>On the next reconcile it calls <code>fleetManagement.registerToken($newToken)</code> against the cluster, replacing the old token and setting <code>registered</code> back to <code>true</code>.</li>
 </ol>
-<p>No <code>ALTER USER</code>-equivalent is needed — the registration is a single procedure call.</p>
+<p>If the plugin auto-renews the token (auto-rotation enabled in the Aura wizard), no action is needed. No <code>ALTER USER</code>-equivalent is needed — the registration is a single procedure call.</p>
 <h3 id="tls-certificate-rotation">TLS certificate rotation<a class="headerlink" href="#tls-certificate-rotation" title="Anchor link to this section">&para;</a></h3>
-<p><strong>What it is</strong>: the Secret named <code>{cluster}-tls-secret</code> (or the configured <code>spec.tls.certificateSecret</code>) that holds <code>tls.crt</code>, <code>tls.key</code>, and optionally <code>ca.crt</code>.</p>
-<p><strong>When using <code>spec.tls.mode: cert-manager</code></strong> (recommended): rotation is fully automatic. cert-manager issues a new Certificate when the existing one approaches expiry (<code>spec.duration</code> and <code>spec.renewBefore</code> on the <code>Certificate</code> resource). The new Secret content is picked up on the next pod restart — schedule a rolling restart yourself if your certificate renewal cadence is shorter than your pod lifetime:</p>
+<p><strong>What it is</strong>: the cert-manager-issued Secret named <code>{cluster}-tls-secret</code> that holds <code>tls.crt</code>, <code>tls.key</code>, and <code>ca.crt</code>.</p>
+<p><strong>With <code>spec.tls.mode: cert-manager</code></strong> (the only mode that issues certificates): rotation is fully automatic. cert-manager issues a new Certificate when the existing one approaches expiry (<code>spec.duration</code> and <code>spec.renewBefore</code> on the <code>Certificate</code> resource). The new Secret content is picked up on the next pod restart — schedule a rolling restart yourself if your certificate renewal cadence is shorter than your pod lifetime:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-32-1"><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>kubectl<span class="w"> </span>rollout<span class="w"> </span>restart<span class="w"> </span>statefulset<span class="w"> </span>&lt;cluster&gt;-server<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
 </span></code></pre></div>
-<p><strong>When using a manually-provisioned Secret</strong>: replace the Secret contents and trigger a rolling restart. The operator does not watch arbitrary TLS Secrets for change.</p>
+<p>The operator has no bring-your-own-certificate mode: <code>spec.tls.mode</code> is <code>cert-manager</code> or <code>disabled</code>, and <code>spec.tls.certificateSecret</code> is accepted by the schema but not used.</p>
 <h3 id="neo4jplugin-sourceauthsecret-verifieddownload-mode">Neo4jPlugin <code>source.authSecret</code> (VerifiedDownload mode)<a class="headerlink" href="#neo4jplugin-sourceauthsecret-verifieddownload-mode" title="Anchor link to this section">&para;</a></h3>
 <p><strong>What it is</strong>: the bearer-token or header Secret named by <code>spec.source.authSecret</code> on a <code>Neo4jPlugin</code> CR with <code>installMode: VerifiedDownload</code>. Mounted into the init container at <code>/etc/plugin-auth</code>.</p>
 <p><strong>Rotation flow</strong>: update the Secret. Init container reads the file at pod start, so the new value takes effect on the next pod restart (e.g. when you trigger a rolling restart by editing <code>spec.config</code> on the cluster CR). No coordination with Neo4j-side state needed — the token is consumed by curl, not by Neo4j.</p>
@@ -6548,10 +6554,10 @@ deployments that don't actually use the integration.</p>
 <td><code>spec.auraFleetManagement.tokenSecretRef</code></td>
 <td>No</td>
 <td>No</td>
-<td><strong>Yes</strong> (token hash in status)</td>
+<td>No — set <code>status.auraFleetManagement.registered: false</code> to re-register</td>
 </tr>
 <tr>
-<td><code>Neo4jUser.spec.passwordSecret</code></td>
+<td><code>Neo4jUser.spec.passwordSecretRef</code></td>
 <td>No</td>
 <td>No</td>
 <td><strong>Yes</strong> (<code>status.passwordSecretHash</code>)</td>
@@ -6571,7 +6577,7 @@ deployments that don't actually use the integration.</p>
 </tbody>
 </table>
 <h2 id="operator-labelled-secrets">Operator-labelled Secrets<a class="headerlink" href="#operator-labelled-secrets" title="Anchor link to this section">&para;</a></h2>
-<p>User-supplied Secrets (the admin Secret, Aura token Secret, plugin <code>authSecret</code>, manually-provisioned TLS Secrets) are <strong>not</strong> modified by the operator. The operator reads from them; it does not mutate their labels or annotations. If you want consistent inventory metadata across user-supplied Secrets, apply your own labels at creation time.</p>
+<p>User-supplied Secrets (the admin Secret, Aura token Secret, plugin <code>authSecret</code>, the CA Secrets named in <code>trustedCASecrets</code>) are <strong>not</strong> modified by the operator. The operator reads from them; it does not mutate their labels or annotations. If you want consistent inventory metadata across user-supplied Secrets, apply your own labels at creation time.</p>
 <p>The operator does propagate ownership metadata onto the Secrets it produces indirectly:</p>
 <table>
 <thead>
@@ -6643,8 +6649,11 @@ operator binds 2004 to <code>0.0.0.0</code> because that's required for in-clust
 scraping, but the endpoint is unauthenticated. Keep it behind:</p>
 <ul>
 <li>The cluster's ClusterIP Service (not exposed externally by default).</li>
-<li><code>spec.networkPolicy.enabled: true</code> — this opens 2004 to any pod in
-  the cluster's namespace but blocks external traffic.</li>
+<li>Not <code>spec.networkPolicy.enabled: true</code> on its own — the operator's policy
+  allows 2004 from <strong>any</strong> source (no <code>from</code> restriction), like the other
+  public ports, so it does not protect the metrics port. Restrict reachability
+  at the Service/Ingress layer, or add a CNI-level deny (see "External access
+  and the additive-policy trade-off" above).</li>
 <li>For tighter scoping (e.g. only allow Prometheus operator's scraper
   pod), write a custom NetworkPolicy alongside the operator's; the
   operator uses a unique <code>app.kubernetes.io/component: network-policy</code>

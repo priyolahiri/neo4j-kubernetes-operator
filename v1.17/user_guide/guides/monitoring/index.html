@@ -4684,7 +4684,7 @@
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
 </span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">kubernetes.io/service-account.name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prometheus</span>
 </span></code></pre></div></li>
-<li>Tell the operator's <code>ServiceMonitor</code> to use that token by setting <code>--set metrics.serviceMonitor.bearerTokenSecret.name=prometheus-metrics-token</code> at install time.</li>
+<li>Enable the operator's <code>ServiceMonitor</code> (off by default) and tell it to use that token by setting <code>--set metrics.serviceMonitor.enabled=true --set metrics.serviceMonitor.bearerTokenSecret.name=prometheus-metrics-token</code> at install time. With <code>metrics.secure=true</code> the chart refuses to render the ServiceMonitor without <code>bearerTokenSecret.name</code>.</li>
 </ol>
 <p>The <code>ServiceMonitor</code> template wires <code>scheme: https</code>, <code>tlsConfig.insecureSkipVerify: true</code> (controller-runtime serves a self-signed cert by default; swap for a cert-manager bundle in production), and the bearer token reference automatically when <code>metrics.secure=true</code>.</p>
 <p>Set <code>metrics.secure=false</code> in helm values to revert to plain HTTP without authn — closes the door on the November 2025 security review #5 remediation, but is sometimes required for legacy scrapers that can't carry bearer tokens.</p>
@@ -4839,8 +4839,8 @@ string, so a missing value is visible instead of silently absent.</p>
 <tr>
 <td><code>neo4j_operator_cluster_replicas_total</code></td>
 <td>Gauge</td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>role</code> (<code>primary</code>/<code>secondary</code>)</td>
-<td>Current replica counts by role</td>
+<td><code>cluster_name</code>, <code>namespace</code>, <code>role</code> (<code>desired</code>/<code>ready</code>)</td>
+<td>Server counts: <code>desired</code> = <code>spec.topology.servers</code>, <code>ready</code> = StatefulSet ready replicas (set when the cluster reaches <code>Ready</code>)</td>
 </tr>
 <tr>
 <td><code>neo4j_operator_cluster_phase</code></td>
@@ -4857,11 +4857,17 @@ string, so a missing value is visible instead of silently absent.</p>
 <tr>
 <td><code>neo4j_operator_server_health</code></td>
 <td>Gauge</td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>server_name</code>, <code>server_address</code></td>
-<td><code>1</code> = Enabled+Available; <code>0</code> = degraded</td>
+<td><code>cluster_name</code>, <code>namespace</code>, <code>server_name</code>, <code>server_address</code>, <code>k8s_cluster</code></td>
+<td><code>1</code> = Enabled+Available; <code>0</code> = degraded. <code>k8s_cluster</code> is empty unless the operator runs with <code>--kubernetes-cluster-name</code> (Helm <code>kubernetesClusterName</code>) — see <a href="../multi_cluster/">Multi-cluster</a></td>
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p><strong>Which metrics are populated.</strong> Every metric below is registered, so it is listed
+here, but a metric family that no controller records yet exports no series at all.
+Rows marked <em>registered, not currently populated</em> are in that state today; do not
+build dashboards or alerts on them.</p>
+</blockquote>
 <h3 id="reconcile-metrics">Reconcile metrics<a class="headerlink" href="#reconcile-metrics" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
@@ -4877,13 +4883,13 @@ string, so a missing value is visible instead of silently absent.</p>
 <td><code>neo4j_operator_reconcile_total</code></td>
 <td>Counter</td>
 <td><code>cluster_name</code>, <code>namespace</code>, <code>operation</code>, <code>result</code> (<code>success</code>/<code>failure</code>)</td>
-<td>Total reconciliation attempts</td>
+<td>Total reconciliation attempts. Recorded by the <code>Neo4jEnterpriseCluster</code> controller only (<code>operation="cluster"</code>)</td>
 </tr>
 <tr>
 <td><code>neo4j_operator_reconcile_duration_seconds</code></td>
 <td>Histogram</td>
 <td><code>cluster_name</code>, <code>namespace</code>, <code>operation</code></td>
-<td>Reconciliation loop duration</td>
+<td>Reconciliation loop duration (same scope as above)</td>
 </tr>
 </tbody>
 </table>
@@ -4908,11 +4914,12 @@ string, so a missing value is visible instead of silently absent.</p>
 <td><code>neo4j_operator_upgrade_duration_seconds</code></td>
 <td>Histogram</td>
 <td><code>cluster_name</code>, <code>namespace</code>, <code>phase</code></td>
-<td>Duration per upgrade phase</td>
+<td>Duration per upgrade phase — <em>registered, not currently populated</em></td>
 </tr>
 </tbody>
 </table>
 <h3 id="backup-metrics">Backup metrics<a class="headerlink" href="#backup-metrics" title="Anchor link to this section">&para;</a></h3>
+<p>Recorded for <strong>one-shot</strong> <code>Neo4jBackup</code> Jobs only (when the Job reaches a terminal state); scheduled (CronJob) runs are not counted. The <code>cluster_name</code> label carries the <code>Neo4jBackup</code> name, not the Neo4j cluster name.</p>
 <table>
 <thead>
 <tr>
@@ -4927,7 +4934,7 @@ string, so a missing value is visible instead of silently absent.</p>
 <td><code>neo4j_operator_backup_total</code></td>
 <td>Counter</td>
 <td><code>cluster_name</code>, <code>namespace</code>, <code>result</code> (<code>success</code>/<code>failure</code>)</td>
-<td>Total backup attempts</td>
+<td>Total one-shot backup attempts</td>
 </tr>
 <tr>
 <td><code>neo4j_operator_backup_duration_seconds</code></td>
@@ -4939,11 +4946,12 @@ string, so a missing value is visible instead of silently absent.</p>
 <td><code>neo4j_operator_backup_size_bytes</code></td>
 <td>Gauge</td>
 <td><code>cluster_name</code>, <code>namespace</code></td>
-<td>Size of the last successful backup in bytes</td>
+<td>Size of the last successful backup in bytes — <em>registered, not currently populated</em> (the size is never supplied)</td>
 </tr>
 </tbody>
 </table>
 <h3 id="cypher-execution-metrics">Cypher execution metrics<a class="headerlink" href="#cypher-execution-metrics" title="Anchor link to this section">&para;</a></h3>
+<p><em>Registered, not currently populated.</em></p>
 <table>
 <thead>
 <tr>
@@ -4969,6 +4977,7 @@ string, so a missing value is visible instead of silently absent.</p>
 </tbody>
 </table>
 <h3 id="security-operation-metrics">Security operation metrics<a class="headerlink" href="#security-operation-metrics" title="Anchor link to this section">&para;</a></h3>
+<p><em>Registered, not currently populated.</em></p>
 <table>
 <thead>
 <tr>
@@ -5019,6 +5028,7 @@ string, so a missing value is visible instead of silently absent.</p>
 </tbody>
 </table>
 <h3 id="disaster-recovery-metrics">Disaster recovery metrics<a class="headerlink" href="#disaster-recovery-metrics" title="Anchor link to this section">&para;</a></h3>
+<p><em>Registered, not currently populated.</em></p>
 <table>
 <thead>
 <tr>
@@ -5050,6 +5060,7 @@ string, so a missing value is visible instead of silently absent.</p>
 </tbody>
 </table>
 <h3 id="scaling-metrics">Scaling metrics<a class="headerlink" href="#scaling-metrics" title="Anchor link to this section">&para;</a></h3>
+<p><em>Registered, not currently populated.</em></p>
 <table>
 <thead>
 <tr>
@@ -5119,11 +5130,15 @@ string, so a missing value is visible instead of silently absent.</p>
 </tbody>
 </table>
 <h2 id="live-cluster-diagnostics">Live Cluster Diagnostics<a class="headerlink" href="#live-cluster-diagnostics" title="Anchor link to this section">&para;</a></h2>
-<p>When <code>spec.monitoring.enabled: true</code> and the cluster is in <code>Ready</code> phase, the
-operator automatically collects live diagnostics by running <code>SHOW SERVERS</code> and
-<code>SHOW DATABASES</code> against the cluster. Results are written to <code>status.diagnostics</code>
-and two new Kubernetes conditions without requiring <code>kubectl exec</code> into pods.</p>
+<p>When the cluster is in <code>Ready</code> phase, the operator automatically collects live
+diagnostics by running <code>SHOW SERVERS</code> and <code>SHOW DATABASES</code> against the cluster.
+Collection is on by default — it runs when <code>spec.monitoring</code> is omitted or
+<code>spec.monitoring.enabled: true</code>, and is skipped only when you set
+<code>spec.monitoring.enabled: false</code>. Results are written to <code>status.diagnostics</code>
+and two Kubernetes conditions without requiring <code>kubectl exec</code> into pods.</p>
 <h3 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h3>
+<p>None. Setting <code>spec.monitoring.enabled: true</code> is only needed for the Prometheus
+metrics endpoint and the other monitoring resources described above.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">monitoring</span><span class="p">:</span>
 </span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
@@ -5307,7 +5322,7 @@ on every reconcile cycle.</p>
 <tbody>
 <tr>
 <td><code>neo4j_operator_server_health</code></td>
-<td><code>cluster_name</code>, <code>namespace</code>, <code>server_name</code>, <code>server_address</code></td>
+<td><code>cluster_name</code>, <code>namespace</code>, <code>server_name</code>, <code>server_address</code>, <code>k8s_cluster</code></td>
 <td><code>1</code> = Enabled+Available; <code>0</code> = degraded</td>
 </tr>
 </tbody>
@@ -5373,8 +5388,10 @@ on every reconcile cycle.</p>
 </span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">  </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span><span class="s2">"SHOW DATABASES"</span>
 </span></code></pre></div>
 <h3 id="disabling-diagnostics">Disabling Diagnostics<a class="headerlink" href="#disabling-diagnostics" title="Anchor link to this section">&para;</a></h3>
-<p>Set <code>spec.monitoring.enabled: false</code> (or omit the <code>monitoring</code> section entirely).
-The <code>status.diagnostics</code> field will remain at its last-known value but will not be updated.</p>
+<p>Set <code>spec.monitoring.enabled: false</code> explicitly. Omitting the <code>monitoring</code> section
+does <strong>not</strong> disable diagnostics — it leaves them on (and also leaves the Prometheus
+endpoint off). The <code>status.diagnostics</code> field will remain at its last-known value but
+will not be updated.</p>
 
 
 

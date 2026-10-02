@@ -4187,9 +4187,11 @@ are supported by Neo4j at once for ~1.5 years. The operator mirrors that:</p>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                                                                  (2 anchors again)
 </span></code></pre></div>
 <h2 id="release-quality-the-gates-every-release-passes">Release quality: the gates every release passes<a class="headerlink" href="#release-quality-the-gates-every-release-passes" title="Anchor link to this section">&para;</a></h2>
-<p>"Validated" isn't a claim, it's a pipeline. A release of this operator cannot
-be published unless all of the following pass — they are wired as blocking
-gates, not conventions:</p>
+<p>"Validated" isn't a claim, it's a pipeline. The unit/drift, install-confidence
+and supply-chain steps below are wired into the release workflow itself — a
+release cannot be published unless they pass. The integration suites run
+separately (per PR, or on demand during release preparation); they are not
+release-workflow gates:</p>
 <table>
 <thead>
 <tr>
@@ -4202,7 +4204,7 @@ gates, not conventions:</p>
 <tr>
 <td>Unit suite + drift gate</td>
 <td>Code behavior pinned by ~thousands of unit tests; CRDs, RBAC, Helm chart, and OLM bundle are regenerated and diffed — published manifests always match the code</td>
-<td>Every PR, and again on the release tag</td>
+<td>Every PR, and again on the release tag (<strong>blocking</strong>)</td>
 </tr>
 <tr>
 <td>Core integration suite</td>
@@ -4212,12 +4214,12 @@ gates, not conventions:</p>
 <tr>
 <td>Extended integration suite</td>
 <td>The full matrix: scaling with drain, split-brain recovery, the complete backup/restore matrix (PVC, cloud, chains, hooks), sharding</td>
-<td>On demand (manual dispatch), and on the exact commit being tagged</td>
+<td>On demand (manual dispatch) — not triggered by the tag</td>
 </tr>
 <tr>
 <td>Install-confidence gate</td>
 <td>Five legs on a fresh cluster: Helm install in cluster <strong>and</strong> namespace-scoped RBAC modes (with a live smoke deployment), Helm upgrade <strong>from the previous published release</strong> including the mandatory CRD refresh, documented-order uninstall with live resources, and the kubectl server-side-apply path</td>
-<td>Inside the release pipeline — <code>build-and-push</code> is blocked until it passes</td>
+<td>Inside the release pipeline — <code>build-and-push</code> is blocked until it passes (<strong>blocking</strong>)</td>
 </tr>
 <tr>
 <td>Signed supply chain</td>

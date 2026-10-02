@@ -3444,10 +3444,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#required-checks-before-merge" class="md-nav__link">
+  <a href="#checks-on-a-pr" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Required checks before merge
+        Checks on a PR
       
     </span>
   </a>
@@ -3897,10 +3897,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#required-checks-before-merge" class="md-nav__link">
+  <a href="#checks-on-a-pr" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Required checks before merge
+        Checks on a PR
       
     </span>
   </a>
@@ -4024,8 +4024,11 @@ push) rather than pushing on top of an in-flight run. See
 <code>fix:</code>, <code>docs:</code>, <code>refactor:</code>, <code>test:</code>, <code>chore:</code>, <code>ci:</code>. Breaking changes get a
 <code>!</code> (<code>feat!:</code>) and a <code>BREAKING CHANGE:</code> footer. The commit-msg hook installed by
 <code>make install-hooks</code> enforces this.</p>
-<h3 id="required-checks-before-merge">Required checks before merge<a class="headerlink" href="#required-checks-before-merge" title="Anchor link to this section">&para;</a></h3>
-<p>These run automatically on every PR (see <a href="../ci_and_workflows/">CI/CD &amp; Workflows</a>):</p>
+<h3 id="checks-on-a-pr">Checks on a PR<a class="headerlink" href="#checks-on-a-pr" title="Anchor link to this section">&para;</a></h3>
+<p>The first three run automatically on every PR (see <a href="../ci_and_workflows/">CI/CD &amp; Workflows</a>);
+the integration lanes are deliberately <strong>not</strong> branch-protection requirements
+(see <a href="../ci_and_workflows/#branch-protection">Branch protection</a>), so reviewers
+look at them by hand for code changes.</p>
 <table>
 <thead>
 <tr>
@@ -4036,7 +4039,11 @@ push) rather than pushing on top of an in-flight run. See
 <tbody>
 <tr>
 <td><strong>Generated Artifacts In Sync</strong> (<code>check-drift</code>)</td>
-<td>CRDs, RBAC, deepcopy, Helm CRDs, and the OLM bundle match the source.</td>
+<td>CRDs, RBAC, deepcopy, Helm CRDs, and the OLM bundle match the source; plus the static docs/chart/CSV/secret-scan checks that have no generator.</td>
+</tr>
+<tr>
+<td><strong>Go Lint</strong></td>
+<td>The full <code>.golangci.yml</code> (<code>golangci-lint</code>), and <code>kubectl-neo4j</code> cross-compiles for the released platforms.</td>
 </tr>
 <tr>
 <td><strong>Unit Tests</strong></td>
@@ -4044,7 +4051,7 @@ push) rather than pushing on top of an in-flight run. See
 </tr>
 <tr>
 <td><strong>Integration Tests</strong></td>
-<td>The <code>core</code> subset on 5.26 + CalVer (parallel). Runs automatically when the PR touches runtime paths (<code>internal/**</code>, <code>api/**</code>, <code>cmd/**</code>, <code>test/integration/**</code>, <code>Makefile</code>, <code>go.{mod,sum}</code>).</td>
+<td>The <code>core</code> subset on 5.26 + CalVer (parallel). Runs automatically when the PR touches runtime paths (<code>internal/**</code>, <code>api/**</code>, <code>cmd/**</code>, <code>test/integration/**</code>, <code>config/**</code>, <code>Dockerfile</code>, <code>Makefile</code>, <code>go.{mod,sum}</code>). Not a required check.</td>
 </tr>
 <tr>
 <td><strong>Extended Integration Tests</strong></td>
@@ -4052,8 +4059,8 @@ push) rather than pushing on top of an in-flight run. See
 </tr>
 </tbody>
 </table>
-<p>Lint (<code>golangci-lint</code>, <code>staticcheck</code>) runs via the pre-commit hooks locally; run
-<code>make lint</code> before pushing.</p>
+<p>Run <code>make lint</code> before pushing (the pre-commit hooks from <code>make install-hooks</code>
+also run <code>golangci-lint</code> and <code>staticcheck</code> locally).</p>
 <p>See <a href="../ci_and_workflows/#test-tiers-core-vs-extended">CI/CD &amp; Workflows → Test tiers</a>
 for the <code>core</code> vs <code>extended</code> label convention and how to run each tier locally.</p>
 <h3 id="running-the-extended-integration-tests-on-demand">Running the Extended Integration Tests on demand<a class="headerlink" href="#running-the-extended-integration-tests-on-demand" title="Anchor link to this section">&para;</a></h3>

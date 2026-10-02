@@ -82,10 +82,22 @@ data:
     if phase == "Succeeded" or phase == "Completed" or phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Backup completed"
-    elseif phase == "Failed" then
+    elseif phase == "Scheduled" then
+      -- A scheduled (CronJob) backup stays in "Scheduled" for the rest of its
+      -- life; it never reaches Completed. That is its healthy resting state.
+      hs.status = "Healthy"
+      hs.message = obj.status.message or "Backup is scheduled"
+    elseif phase == "Suspended" then
+      -- spec.suspend=true is declared state, not a fault, and must not hold up
+      -- a sync wave.
+      hs.status = "Healthy"
+      hs.message = obj.status.message or "Backup is suspended"
+    elseif phase == "Failed" or phase == "Invalid" then
+      -- "Invalid" is terminal until the spec is edited (no requeue).
       hs.status = "Degraded"
       hs.message = obj.status.message or "Backup failed"
     else
+      -- "Pending", "Waiting" (target not ready/not there yet) and "Running".
       hs.status = "Progressing"
       hs.message = obj.status.message or ("Backup is " .. phase)
     end
@@ -122,7 +134,8 @@ data:
     if phase == "Ready" or phase == "Installed" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Plugin is installed and ready"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Invalid" then
+      -- "Invalid" is terminal until the spec is edited (no requeue).
       hs.status = "Degraded"
       hs.message = obj.status.message or "Plugin installation failed"
     else
