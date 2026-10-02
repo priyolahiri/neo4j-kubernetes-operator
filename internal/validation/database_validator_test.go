@@ -340,6 +340,112 @@ func TestDatabaseValidator_ValidateCypherLanguage(t *testing.T) {
 	}
 }
 
+// TestDatabaseValidator_CypherLanguageIsGatedOnTargetVersion pins the
+// agreement between the Neo4jDatabase and Neo4jCompositeDatabase validators
+// about spec.defaultCypherLanguage. The DEFAULT LANGUAGE CYPHER clause does not
+// parse on the 5.26 LTS, so "25" there used to pass validation and then fail at
+// CREATE DATABASE with a raw syntax error in status.message, while the
+// composite validator refused the identical value up front. On the LTS "25" is
+// now an error naming the field and the LTS; "5" is accepted (it is what every
+// LTS database runs anyway) with a warning that the clause is left out; on
+// CalVer both are fine.
+func TestDatabaseValidator_CypherLanguageIsGatedOnTargetVersion(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = neo4jv1beta1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	clusterWith := func(tag string) *neo4jv1beta1.Neo4jEnterpriseCluster {
+		return &neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "default"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				AcceptLicenseAgreement: "eval",
+				Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: tag},
+				Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			},
+		}
+	}
+	standaloneWith := func(tag string) *neo4jv1beta1.Neo4jEnterpriseStandalone {
+		return &neo4jv1beta1.Neo4jEnterpriseStandalone{
+			ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "default"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+				AcceptLicenseAgreement: "eval",
+				Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: tag},
+			},
+		}
+	}
+	dbWithLang := func(lang string) *neo4jv1beta1.Neo4jDatabase {
+		return &neo4jv1beta1.Neo4jDatabase{
+			ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "default"},
+			Spec: neo4jv1beta1.Neo4jDatabaseSpec{
+				ClusterRef:            "prod",
+				Name:                  "movies",
+				DefaultCypherLanguage: lang,
+			},
+		}
+	}
+	validate := func(host client.Object, lang string) *DatabaseValidationResult {
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(host).Build()
+		return NewDatabaseValidator(c).Validate(context.Background(), dbWithLang(lang))
+	}
+	joinErrs := func(r *DatabaseValidationResult) string { return r.Errors.ToAggregate().Error() }
+
+	for _, target := range []struct {
+		name string
+		host func(tag string) client.Object
+	}{
+		{"cluster", func(tag string) client.Object { return clusterWith(tag) }},
+		{"standalone", func(tag string) client.Object { return standaloneWith(tag) }},
+	} {
+		t.Run(target.name+" on the 5.26 LTS refuses 25", func(t *testing.T) {
+			res := validate(target.host("5.26-enterprise"), "25")
+			if assert.Len(t, res.Errors, 1, "errors: %v", res.Errors) {
+				msg := joinErrs(res)
+				assert.Contains(t, msg, "spec.defaultCypherLanguage")
+				assert.Contains(t, msg, "5.26 LTS")
+				assert.Contains(t, msg, "5.26-enterprise")
+			}
+		})
+
+		t.Run(target.name+" on the 5.26 LTS accepts 5 and says the clause is omitted", func(t *testing.T) {
+			res := validate(target.host("5.26-enterprise"), "5")
+			assert.Empty(t, res.Errors)
+			joined := strings.Join(res.Warnings, "\n")
+			assert.Contains(t, joined, "5.26 LTS")
+			assert.Contains(t, joined, "omitted")
+			assert.NotContains(t, joined, "Consider migrating to version '25'",
+				"the migrate-to-25 hint is wrong advice on a server that has no Cypher 25")
+		})
+
+		t.Run(target.name+" on CalVer accepts both", func(t *testing.T) {
+			for _, lang := range []string{"5", "25"} {
+				res := validate(target.host("2026.08.1-enterprise"), lang)
+				assert.Empty(t, res.Errors, "defaultCypherLanguage %q", lang)
+			}
+		})
+
+		t.Run(target.name+" with nothing set has nothing to gate", func(t *testing.T) {
+			res := validate(target.host("5.26-enterprise"), "")
+			assert.Empty(t, res.Errors)
+			assert.Empty(t, res.Warnings)
+		})
+	}
+
+	// A tag we cannot parse cannot be gated: stay lenient, as the composite
+	// validator is, rather than guess.
+	t.Run("an unparsable tag is not gated", func(t *testing.T) {
+		res := validate(clusterWith("latest"), "25")
+		assert.Empty(t, res.Errors)
+	})
+
+	// An unsupported value is still reported once, whatever the version.
+	t.Run("an unsupported value is still NotSupported on the LTS", func(t *testing.T) {
+		res := validate(clusterWith("5.26-enterprise"), "4")
+		if assert.Len(t, res.Errors, 1, "errors: %v", res.Errors) {
+			assert.Contains(t, joinErrs(res), "supported values")
+		}
+	})
+}
+
 func TestDatabaseValidator_ValidateSeedURI(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = neo4jv1beta1.AddToScheme(scheme)
@@ -784,7 +890,10 @@ func TestDatabaseValidator_ValidateStandalone(t *testing.T) {
 			},
 		},
 		{
-			name: "standalone database with invalid topology",
+			// Topology is documented as ignored for a standalone, and the
+			// controller does ignore it. Refusing primaries: 0 there rejected a
+			// field that does nothing, so it is a warning, not an error.
+			name: "standalone database with zero primaries is warned about, not rejected",
 			database: &neo4jv1beta1.Neo4jDatabase{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-db-invalid",
@@ -795,18 +904,58 @@ func TestDatabaseValidator_ValidateStandalone(t *testing.T) {
 					Name:       "testdb",
 					Wait:       true,
 					Topology: &neo4jv1beta1.DatabaseTopology{
-						Primaries:   0, // Invalid - need at least 1 primary
+						Primaries:   0,
 						Secondaries: 1,
 					},
 				},
 			},
-			expectErrors:   1,
+			expectErrors:   0,
 			expectWarnings: 2,
-			errorMessages:  []string{"at least 1 primary is required"},
 			warningMessages: []string{
-				"Database topology specification is not required for standalone deployments",
+				"Database topology specification is not required for standalone deployments and will be ignored",
 				"Database topology specifies 1 secondaries, but standalone deployments cannot provide read replicas",
 			},
+		},
+		{
+			name: "standalone database with an empty topology block is warned about, not rejected",
+			database: &neo4jv1beta1.Neo4jDatabase{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-db-empty-topology",
+					Namespace: "default",
+				},
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
+					ClusterRef: "test-standalone",
+					Name:       "testdb",
+					Wait:       true,
+					Topology:   &neo4jv1beta1.DatabaseTopology{},
+				},
+			},
+			expectErrors:   0,
+			expectWarnings: 1,
+			warningMessages: []string{
+				"will be ignored",
+			},
+		},
+		{
+			name: "standalone database with a negative topology count is still rejected",
+			database: &neo4jv1beta1.Neo4jDatabase{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-db-negative",
+					Namespace: "default",
+				},
+				Spec: neo4jv1beta1.Neo4jDatabaseSpec{
+					ClusterRef: "test-standalone",
+					Name:       "testdb",
+					Wait:       true,
+					Topology: &neo4jv1beta1.DatabaseTopology{
+						Primaries:   -1,
+						Secondaries: 0,
+					},
+				},
+			},
+			expectErrors:   1,
+			expectWarnings: 1,
+			errorMessages:  []string{"primaries cannot be negative"},
 		},
 		{
 			name: "standalone not found",

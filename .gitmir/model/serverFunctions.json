@@ -433,7 +433,7 @@
     "name": "Create Or Verify Database",
     "serverUnitId": "su-neo4jdatabase",
     "operation": "create",
-    "description": "ensureDatabase() checks DatabaseExists, then issues CREATE DATABASE (plain, with TOPOLOGY, or from seedURI/seedURIs via OPTIONS) and refreshes status.state/status.servers from SHOW DATABASES.",
+    "description": "ensureDatabase() checks DatabaseExists, then issues CREATE DATABASE (plain, with TOPOLOGY, or from seedURI/seedURIs via OPTIONS) and refreshes status.state/status.servers from SHOW DATABASES. resolveDatabaseCreateInputs() decides the host-dependent inputs once for every create path: spec.defaultCypherLanguage is sent as DEFAULT LANGUAGE CYPHER only when the target image is CalVer (neo4j.DefaultLanguageForImage; the 5.26 LTS has no such clause, so it is omitted), and spec.topology is ignored for a standalone host. All four create methods render through one statement builder.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],

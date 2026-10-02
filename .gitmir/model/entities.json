@@ -646,7 +646,7 @@
         "name": "defaultCypherLanguage",
         "type": "enum",
         "isNullable": true,
-        "note": "\"5\" or \"25\"; Neo4j 2025.x only."
+        "note": "\"5\" or \"25\"; CalVer only. Validated against the target image: \"25\" is rejected on the 5.26 LTS, and \"5\" is accepted but the DEFAULT LANGUAGE CYPHER clause is omitted there. Honoured on every create path."
       },
       {
         "id": "f-neo4jdatabase-seed-uri",

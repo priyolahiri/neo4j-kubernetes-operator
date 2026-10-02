@@ -17,6 +17,9 @@ limitations under the License.
 package validation
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -26,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/yaml"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -350,4 +354,75 @@ func TestCompositeValidator_RemoteURLSchemes(t *testing.T) {
 			assert.Contains(t, res.Errors.ToAggregate().Error(), "neo4j+ssc://")
 		}
 	}
+}
+
+// TestCompositeNameSchemaAgreesWithValidator pins the generated CRD's
+// spec.name constraints to the inline validator's name rules. The schema used
+// to admit dots (`^[a-zA-Z][a-zA-Z0-9.\-]*$`) while the validator rejected
+// them, so `kubectl apply` accepted a composite named `a.b` and it only failed
+// at reconcile. The schema is read from config/crd/bases (the same file the API
+// server serves), so the test also fails if the marker and the generated CRD
+// drift apart.
+//
+// The schema may be stricter than the validator (it also bounds length and the
+// first character) but must never be looser on a character the validator
+// refuses; "system" is the one name only the validator can express.
+func TestCompositeNameSchemaAgreesWithValidator(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "config", "crd", "bases", "neo4j.neo4j.com_neo4jcompositedatabases.yaml"))
+	require.NoError(t, err)
+
+	var crd struct {
+		Spec struct {
+			Versions []struct {
+				Schema struct {
+					OpenAPIV3Schema struct {
+						Properties struct {
+							Spec struct {
+								Properties struct {
+									Name struct {
+										Pattern   string `json:"pattern"`
+										MinLength int    `json:"minLength"`
+										MaxLength int    `json:"maxLength"`
+									} `json:"name"`
+								} `json:"properties"`
+							} `json:"spec"`
+						} `json:"properties"`
+					} `json:"openAPIV3Schema"`
+				} `json:"schema"`
+			} `json:"versions"`
+		} `json:"spec"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &crd))
+	require.NotEmpty(t, crd.Spec.Versions)
+	nameSchema := crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties.Spec.Properties.Name
+	require.NotEmpty(t, nameSchema.Pattern, "spec.name lost its pattern")
+	pattern := regexp.MustCompile(nameSchema.Pattern)
+
+	schemaAccepts := func(name string) bool {
+		return len(name) >= nameSchema.MinLength && len(name) <= nameSchema.MaxLength && pattern.MatchString(name)
+	}
+
+	v := NewCompositeDatabaseValidator(fake.NewClientBuilder().WithScheme(compositeScheme(t)).Build())
+	validatorAccepts := func(name string) bool {
+		cd := composite("placeholder", constituent("latest", "movies"))
+		cd.Spec.Name = name
+		return len(v.Validate(t.Context(), cd).Errors) == 0
+	}
+
+	for _, name := range []string{
+		"cineasts", "Cineasts", "movies-2026", "a-b-c", "abc", strings.Repeat("a", 63),
+	} {
+		assert.True(t, schemaAccepts(name), "schema should accept %q", name)
+		assert.True(t, validatorAccepts(name), "validator should accept %q", name)
+	}
+
+	// Names the validator refuses must not get past the schema (except the
+	// reserved word, which a regular expression cannot express).
+	for _, name := range []string{"a.b", "bad_name", "ev`il", "my.composite", "movies.", "1abc", "-abc", "ab", strings.Repeat("a", 64)} {
+		assert.False(t, schemaAccepts(name), "schema should reject %q so the API server refuses it at apply time", name)
+	}
+	assert.False(t, validatorAccepts("a.b"))
+	assert.False(t, validatorAccepts("bad_name"))
+	assert.False(t, validatorAccepts("ev`il"))
+	assert.False(t, validatorAccepts("system"))
 }

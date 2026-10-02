@@ -39,8 +39,8 @@ The `Neo4jDatabase` Custom Resource Definition (CRD) provides declarative databa
 | `name` | `string` | **Required**. Database name to create. Must start with a letter and contain only letters, digits, dots and dashes (max 65 characters). `system` is reserved; `neo4j` is allowed with a warning (it shadows the default database) |
 | `wait` | `boolean` | Wait for database creation to complete (default: `true`) |
 | `ifNotExists` | `boolean` | Create only if database doesn't exist - prevents reconciliation errors (default: `true`) |
-| `topology` | [`DatabaseTopology`](#databasetopology) | Database distribution topology (cluster only). Applied at `CREATE DATABASE` only — an existing database is observed, not altered |
-| `defaultCypherLanguage` | `string` (enum: `"5"`, `"25"`) | Default Cypher version for Neo4j 2025.x. **Currently only emitted when `topology` or `seedURI` is also set**; on a plain create (neither set) it is accepted but not acted on |
+| `topology` | [`DatabaseTopology`](#databasetopology) | Database distribution topology (cluster only; ignored, with a warning, for a standalone target). Applied at `CREATE DATABASE` only — an existing database is observed, not altered |
+| `defaultCypherLanguage` | `string` (enum: `"5"`, `"25"`) | Default Cypher language for the database, set at creation with `DEFAULT LANGUAGE CYPHER <n>`. **CalVer only** — the clause does not exist on the 5.26 LTS, so the value is checked against the target's image: on the LTS `"25"` is **rejected** by validation (`spec.defaultCypherLanguage`), and `"5"` is accepted but has **no effect** (every LTS database already runs Cypher 5, and the clause is omitted from `CREATE DATABASE`). On CalVer it is applied on every create path — plain, with `topology`, from a `seedURI`, or both. Unset, the database takes the server default (`spec.serverDefaultCypherLanguage` on the deployment) |
 | `options` | `map[string]string` | Additional `CREATE DATABASE` options. The validator accepts only these keys: `txLogEnrichment` (`OFF` or `DIFF`), `storeFormat` (`standard`, `high_limit` or `block`), `existingData` (`use` or `fail`), `existingDataSeedServer`, `existingDataSeedInstance`, `existingMetadata`, `seedCredentials`, and `seedURI` / `seedConfig` (the last two are deprecated as options — use the dedicated spec fields). Any other key is rejected, and values may not be empty |
 | `initialData` | [`InitialDataSpec`](#initialdataspec) | Cypher statements run once after creation (**mutually exclusive with `seedURI`**). Only `cypherStatements` is executed |
 | `seedURI` | `string` | Backup URI for database creation (**mutually exclusive with `initialData`**) |
@@ -60,7 +60,7 @@ The `Neo4jDatabase` Custom Resource Definition (CRD) provides declarative databa
 
 - `primaries + secondaries` must not exceed cluster's `spec.topology.servers`
 - Servers are selected based on role constraints (if configured)
-- For standalone deployments, topology is automatically managed
+- For standalone deployments, topology is ignored: validation emits a warning, the controller sends no `TOPOLOGY` clause, and `primaries: 0` is **not** an error there (on a cluster it is, because a database needs at least one primary)
 - Topology is applied when the database is created. Editing it on an existing database has no effect — the operator does not issue `ALTER DATABASE … SET TOPOLOGY`
 
 ### InitialDataSpec
@@ -232,7 +232,7 @@ spec:
     secondaries: 2  # Uses 2 servers for secondary role
   options:
     txLogEnrichment: "DIFF"  # Enhanced transaction logging
-  defaultCypherLanguage: "25"  # Neo4j 2025.x only
+  defaultCypherLanguage: "25"  # CalVer only — rejected on the 5.26 LTS
 ```
 
 ### Multi-Database Setup
@@ -311,7 +311,7 @@ spec:
   name: moderndb
   wait: true
   ifNotExists: true
-  defaultCypherLanguage: "25"  # Enable Cypher 25 features
+  defaultCypherLanguage: "25"  # Enable Cypher 25 features (CalVer only)
   topology:
     primaries: 2
     secondaries: 1
@@ -352,7 +352,7 @@ spec:
 
   wait: true
   ifNotExists: true
-  defaultCypherLanguage: "25"  # Neo4j 2025.x
+  defaultCypherLanguage: "25"  # CalVer only
   options:
     txLogEnrichment: "DIFF"    # Enhanced logging for production
 ```
@@ -567,12 +567,12 @@ To control the default database topology at cluster creation time without using 
 
 - Standard `CREATE DATABASE` syntax with `TOPOLOGY` clause
 - Seed URI support via CloudSeedProvider
-- No Cypher language version support
+- No `DEFAULT LANGUAGE CYPHER` clause: `defaultCypherLanguage: "25"` is rejected by validation, and `"5"` is accepted but omitted from the statement (every database runs Cypher 5)
 - Compatible with both cluster and standalone deployments
 
 **Neo4j 2025.x**:
 
-- Enhanced `CREATE DATABASE` with `DEFAULT LANGUAGE CYPHER` support
+- Enhanced `CREATE DATABASE` with `DEFAULT LANGUAGE CYPHER` support, applied on every create path
 - Point-in-time recovery for seed URIs (`restoreUntil`)
 - Advanced seed configuration options
 - Same compatibility with cluster and standalone deployments
@@ -583,13 +583,13 @@ To control the default database topology at cluster creation time without using 
 
 - Standard CREATE DATABASE syntax
 - Seed URI support with CloudSeedProvider
-- No Cypher language version support
+- No `DEFAULT LANGUAGE CYPHER` clause (`defaultCypherLanguage: "25"` is rejected; `"5"` has no effect)
 - No point-in-time recovery for seed URIs
 - Supports all topology and option features
 
 **Neo4j 2025.x**:
 
-- Supports `defaultCypherLanguage` field
+- Supports `defaultCypherLanguage` (`"5"` and `"25"`)
 - Enhanced seed URI support with point-in-time recovery (`restoreUntil`)
 - Enhanced topology management
 - Additional database options available

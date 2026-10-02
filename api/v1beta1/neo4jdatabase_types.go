@@ -62,14 +62,25 @@ type Neo4jDatabaseSpec struct {
 	// - Database B: 2 primaries, 0 secondaries (uses 2 servers)
 	//
 	// Servers self-organize into primary/secondary roles at the database level.
+	//
+	// Ignored when clusterRef is a Neo4jEnterpriseStandalone: a single server has
+	// nothing to distribute, so validation only warns.
 	Topology *DatabaseTopology `json:"topology,omitempty"`
 
-	// Default Cypher language version (Neo4j 2025.x only)
+	// Default Cypher language version for this database, set at creation with
+	// `DEFAULT LANGUAGE CYPHER <n>`.
 	// +kubebuilder:validation:Enum="5";"25"
 	//
-	// Specifies the default Cypher language version for this database.
-	// - "5": Cypher 5 (backward compatibility)
-	// - "25": Cypher 25 (recommended for new databases)
+	// - "5": Cypher 5
+	// - "25": Cypher 25
+	//
+	// Applies on every create path (plain, with topology, from a seedURI, and
+	// both). The clause exists only on CalVer, so the value is checked against
+	// the target deployment's image: on the 5.26 LTS "25" is rejected by
+	// validation, and "5" is accepted but has no effect, because every database
+	// there already runs Cypher 5 and the clause is omitted from CREATE
+	// DATABASE. Left empty, the database takes the server default
+	// (spec.serverDefaultCypherLanguage on the deployment).
 	DefaultCypherLanguage string `json:"defaultCypherLanguage,omitempty"`
 
 	// Seed URI for database creation from existing backup/dump
@@ -127,22 +138,35 @@ type DatabaseTopology struct {
 	Secondaries int32 `json:"secondaries,omitempty"`
 }
 
-// InitialDataSpec defines initial data import configuration
+// InitialDataSpec defines initial data import configuration.
+//
+// Only cypherStatements is acted on today: the controller runs each statement,
+// in order, against the new database once. The other fields are accepted by the
+// schema but never read, so setting one has no effect.
 type InitialDataSpec struct {
-	// Source type for initial data
+	// Source type for initial data.
+	//
+	// Reserved: accepted but not acted on today; only cypherStatements is executed.
 	// +kubebuilder:validation:Enum=cypher;dump;csv
 	Source string `json:"source,omitempty"`
 
-	// Cypher statements for initial data
+	// Cypher statements for initial data. They run in order, once, against the
+	// database after it is created (skipped when seedURI is set).
 	CypherStatements []string `json:"cypherStatements,omitempty"`
 
-	// Configuration map reference containing data
+	// Configuration map reference containing data.
+	//
+	// Reserved: accepted but not acted on today; only cypherStatements is executed.
 	ConfigMapRef string `json:"configMapRef,omitempty"`
 
-	// Secret reference containing sensitive data
+	// Secret reference containing sensitive data.
+	//
+	// Reserved: accepted but not acted on today; only cypherStatements is executed.
 	SecretRef string `json:"secretRef,omitempty"`
 
-	// Storage location for data files
+	// Storage location for data files.
+	//
+	// Reserved: accepted but not acted on today; only cypherStatements is executed.
 	Storage *StorageLocation `json:"storage,omitempty"`
 }
 

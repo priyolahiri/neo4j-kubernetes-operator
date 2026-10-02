@@ -200,15 +200,16 @@ func (v *DatabaseValidator) Validate(ctx context.Context, database *neo4jv1beta1
 		}
 	}
 
-	// Validate Cypher language version
-	v.validateCypherLanguage(database, result)
-
-	// Resolve the target image tag (cluster or standalone) so seed-config
-	// version gating (seedRestoreUntil is CalVer-only) can be enforced.
+	// Resolve the target image tag (cluster or standalone) so version-gated
+	// fields can be enforced: seedRestoreUntil and defaultCypherLanguage are
+	// both CalVer-only.
 	imageTag := cluster.Spec.Image.Tag
 	if standalone != nil {
 		imageTag = standalone.Spec.Image.Tag
 	}
+
+	// Validate Cypher language version
+	v.validateCypherLanguage(database, imageTag, result)
 
 	// Validate seed URI configuration
 	v.validateSeedURI(ctx, database, imageTag, result)
@@ -226,12 +227,15 @@ func (v *DatabaseValidator) validateDatabaseTopologyForStandalone(database *neo4
 	topologyPath := field.NewPath("spec", "topology")
 	topology := database.Spec.Topology
 
-	// For standalone deployments, topology is not needed and will be ignored
+	// A standalone is one server, so there is nothing to distribute: topology
+	// is ignored (the controller does not pass it to CREATE DATABASE for a
+	// standalone host) and the database runs on the single instance.
 	result.Warnings = append(result.Warnings,
 		"Database topology specification is not required for standalone deployments and will be ignored. "+
 			"Standalone instances handle all database operations on a single node.")
 
-	// However, if specified, validate for basic sanity
+	// Negative counts are still refused: they are nonsense on any target, and
+	// the CRD schema already rejects them, so this only guards a stored CR.
 	if topology.Primaries < 0 {
 		result.Errors = append(result.Errors, field.Invalid(
 			topologyPath.Child("primaries"),
@@ -246,13 +250,10 @@ func (v *DatabaseValidator) validateDatabaseTopologyForStandalone(database *neo4
 			"secondaries cannot be negative"))
 	}
 
-	// At least one primary is required for any database
-	if topology.Primaries == 0 && topology.Primaries >= 0 && topology.Secondaries >= 0 {
-		result.Errors = append(result.Errors, field.Invalid(
-			topologyPath.Child("primaries"),
-			topology.Primaries,
-			"at least 1 primary is required for database operation"))
-	}
+	// Unlike a cluster, zero primaries is NOT an error here. "At least one
+	// primary" stops a cluster database being placed on no server; a
+	// standalone hosts the database on its one instance whatever this says,
+	// so rejecting primaries: 0 refused a field that does nothing.
 
 	// Warn about secondaries on standalone
 	if topology.Secondaries > 0 {
@@ -363,25 +364,54 @@ func (v *DatabaseValidator) addTopologyWarnings(database *neo4jv1beta1.Neo4jData
 	}
 }
 
-func (v *DatabaseValidator) validateCypherLanguage(database *neo4jv1beta1.Neo4jDatabase, result *DatabaseValidationResult) {
-	if database.Spec.DefaultCypherLanguage != "" {
-		cypherPath := field.NewPath("spec", "defaultCypherLanguage")
-		version := database.Spec.DefaultCypherLanguage
+// validateCypherLanguage checks spec.defaultCypherLanguage against the target
+// server's version.
+//
+// The DEFAULT LANGUAGE CYPHER clause exists only on CalVer. On the 5.26 LTS it
+// does not parse, so "25" there is refused here (the same answer the
+// Neo4jCompositeDatabase validator gives) instead of surfacing as a raw
+// syntax error in status.message after the reconciler has already tried the
+// CREATE. "5" is accepted: it is what every LTS database runs, so the outcome
+// is what was asked for, and the controller simply leaves the clause out
+// (neo4j.DefaultLanguageForImage).
+//
+// imageTag is the referenced deployment's image tag. A tag that cannot be
+// parsed cannot be gated and is left alone, as the composite validator does.
+func (v *DatabaseValidator) validateCypherLanguage(database *neo4jv1beta1.Neo4jDatabase, imageTag string, result *DatabaseValidationResult) {
+	version := database.Spec.DefaultCypherLanguage
+	if version == "" {
+		return
+	}
+	cypherPath := field.NewPath("spec", "defaultCypherLanguage")
 
-		// Only specific versions are supported
-		if version != "5" && version != "25" {
-			result.Errors = append(result.Errors, field.NotSupported(
-				cypherPath,
-				version,
-				[]string{"5", "25"}))
-		}
+	// Only specific versions are supported
+	if version != "5" && version != "25" {
+		result.Errors = append(result.Errors, field.NotSupported(
+			cypherPath,
+			version,
+			[]string{"5", "25"}))
+		return
+	}
 
-		// Add informational warning about version usage
-		if version == "5" {
-			result.Warnings = append(result.Warnings,
-				"Cypher language version '5' is supported for backward compatibility. "+
-					"Consider migrating to version '25' for new features and improvements.")
+	if parsed, err := neo4j.ParseVersion(imageTag); err == nil && !parsed.SupportsCypherLanguageVersion() {
+		if version == "25" {
+			result.Errors = append(result.Errors, field.Invalid(
+				cypherPath, version,
+				fmt.Sprintf("not supported on Neo4j %s: Cypher 25 does not exist on the 5.26 LTS and the "+
+					"DEFAULT LANGUAGE CYPHER clause does not parse there. Remove the field, or run a CalVer image", imageTag)))
+			return
 		}
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("spec.defaultCypherLanguage '5' has no effect on Neo4j %s (the 5.26 LTS): every database there "+
+				"already runs Cypher 5 and the DEFAULT LANGUAGE CYPHER clause does not exist, so the clause is omitted from CREATE DATABASE.", imageTag))
+		return
+	}
+
+	// Add informational warning about version usage
+	if version == "5" {
+		result.Warnings = append(result.Warnings,
+			"Cypher language version '5' is supported for backward compatibility. "+
+				"Consider migrating to version '25' for new features and improvements.")
 	}
 }
 
