@@ -31,6 +31,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"time"
 
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,7 +47,53 @@ const (
 	shardTypeProperty = "property"
 	// shardStateOnline is the SHOW DATABASES currentStatus of a healthy copy.
 	shardStateOnline = "online"
+
+	// shardSettleWindow bounds how long after creation a sharded database is
+	// re-read quickly while a shard is still settling, and shardSettleRequeue
+	// is how soon. Bounded so a family someone deliberately stopped is not
+	// re-read every few seconds forever: past the window the ordinary periodic
+	// reconcile picks up any change.
+	shardSettleWindow  = 10 * time.Minute
+	shardSettleRequeue = 15 * time.Second
 )
+
+// shardFamilySettling reports whether the recorded shard status is a snapshot
+// of a family that is still starting, and so worth re-reading soon. The status
+// is written from the SHOW DATABASES pass right after CREATE returns, when
+// Neo4j can still report a shard as "starting"; nothing re-read it before the
+// five-minute periodic reconcile, so a Ready sharded database showed a starting
+// graph shard for minutes (found on the v1.18.0 journey).
+func shardFamilySettling(status *neo4jv1beta1.Neo4jShardedDatabaseStatus, now time.Time) bool {
+	if status.CreationTime == nil || now.Sub(status.CreationTime.Time) > shardSettleWindow {
+		return false
+	}
+	if status.GraphShard == nil || !status.GraphShard.Ready {
+		return true
+	}
+	for _, shard := range status.PropertyShards {
+		if !shard.Ready {
+			return true
+		}
+	}
+	return false
+}
+
+// mirrorShardObservation copies what applyShardStatus just wrote onto the
+// reconcile's own copy of the object, so the end of the reconcile can decide
+// from it (shardFamilySettling) how soon to look again. applyShardStatus works
+// on a freshly read copy, which the caller never sees.
+func mirrorShardObservation(shardedDB *neo4jv1beta1.Neo4jShardedDatabase, obs shardStatusObservation, recreated bool, now time.Time) {
+	shardedDB.Status.GraphShard = obs.GraphShard
+	shardedDB.Status.PropertyShards = obs.PropertyShards
+	shardedDB.Status.VirtualDatabase = obs.VirtualDatabase
+	if recreated {
+		shardedDB.Status.CreationTime = nil
+	}
+	if obs.Observed && shardedDB.Status.CreationTime == nil {
+		created := metav1.NewTime(now)
+		shardedDB.Status.CreationTime = &created
+	}
+}
 
 // shardStatusObservation is what one SHOW DATABASES pass says about one sharded
 // database's family: the parent (virtual) database, its graph shard and its
