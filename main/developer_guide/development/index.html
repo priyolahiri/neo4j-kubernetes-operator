@@ -5335,21 +5335,25 @@ which chains all of it.</p>
 </span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="c1"># the operator, runs all tests, then leaves the cluster for inspection</span>
 </span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>make<span class="w"> </span>test-integration
 </span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>
-</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="c1"># Step-by-step approach for debugging (reuse an existing cluster)</span>
-</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>make<span class="w"> </span>test-cluster<span class="w">              </span><span class="c1"># Create test cluster only (cert-manager + issuer)</span>
-</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="c1"># ... build and deploy operator manually, or use make operator-setup ...</span>
-</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>make<span class="w"> </span>test-integration-ci<span class="w">       </span><span class="c1"># Run essential tests against the existing cluster</span>
-</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>make<span class="w"> </span>test-integration-ci-full<span class="w">  </span><span class="c1"># Or run the complete suite (more resource-intensive)</span>
-</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>make<span class="w"> </span>test-cluster-delete<span class="w">       </span><span class="c1"># Clean up when done</span>
-</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>
-</span><span id="__span-17-12"><a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a><span class="c1"># Run a specific integration test</span>
-</span><span id="__span-17-13"><a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a>./bin/ginkgo<span class="w"> </span>run<span class="w"> </span>-focus<span class="w"> </span><span class="s2">"should create backup"</span><span class="w"> </span>./test/integration
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="c1"># The same, narrowed to a tier (core = the per-PR subset, extended = the heavy one)</span>
+</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>make<span class="w"> </span>test-integration<span class="w"> </span><span class="nv">LABEL</span><span class="o">=</span>core
+</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>make<span class="w"> </span>test-integration<span class="w"> </span><span class="nv">LABEL</span><span class="o">=</span>extended
+</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>
+</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="c1"># Step-by-step approach for debugging (reuse an existing cluster)</span>
+</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>make<span class="w"> </span>test-cluster<span class="w">              </span><span class="c1"># Create test cluster only (cert-manager + issuer)</span>
+</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>make<span class="w"> </span>operator-setup<span class="w">            </span><span class="c1"># Build and deploy the operator into it</span>
+</span><span id="__span-17-12"><a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>./bin/ginkgo<span class="w"> </span>run<span class="w"> </span>--label-filter<span class="o">=</span><span class="s1">'core'</span><span class="w"> </span>./test/integration/...<span class="w">   </span><span class="c1"># a tier, against the existing cluster</span>
+</span><span id="__span-17-13"><a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a>make<span class="w"> </span>test-one<span class="w"> </span><span class="nv">TEST</span><span class="o">=</span><span class="s2">"should create standalone"</span><span class="w">                   </span><span class="c1"># or one spec</span>
+</span><span id="__span-17-14"><a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a>make<span class="w"> </span>test-cluster-delete<span class="w">       </span><span class="c1"># Clean up when done</span>
+</span><span id="__span-17-15"><a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a>
+</span><span id="__span-17-16"><a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a><span class="c1"># Run a specific integration test</span>
+</span><span id="__span-17-17"><a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a>./bin/ginkgo<span class="w"> </span>run<span class="w"> </span>-focus<span class="w"> </span><span class="s2">"should create backup"</span><span class="w"> </span>./test/integration
 </span></code></pre></div>
 <blockquote>
 <p><strong>Note</strong>: <code>make test-integration</code> always recreates the cluster from scratch (it has
-<code>test-cluster</code> as a prerequisite, which deletes any existing cluster first). Use
-<code>make test-integration-ci</code> / <code>make test-integration-ci-full</code> when you want to run
-tests against an already-configured cluster without rebuilding the environment.</p>
+<code>test-cluster</code> as a prerequisite, which deletes any existing cluster first). To run
+tests against an already-configured cluster without rebuilding the environment, call
+<code>./bin/ginkgo run --label-filter=…</code> (a tier) or <code>make test-one</code> (one spec) directly.</p>
 </blockquote>
 <h3 id="ci-workflow-emulation-added-2025-08-22">CI Workflow Emulation (Added 2025-08-22)<a class="headerlink" href="#ci-workflow-emulation-added-2025-08-22" title="Anchor link to this section">&para;</a></h3>
 <p>When debugging CI failures or testing resource-constrained environments, use the CI workflow emulation target:</p>

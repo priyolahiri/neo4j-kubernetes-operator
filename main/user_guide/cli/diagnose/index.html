@@ -1472,6 +1472,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="What it looks at">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#containers-that-finished-and-were-not-restarted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Containers that finished and were not restarted
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3821,6 +3838,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="What it looks at">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#containers-that-finished-and-were-not-restarted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Containers that finished and were not restarted
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3915,7 +3949,11 @@
 </tr>
 <tr>
 <td>Container OOMKilled</td>
-<td><code>lastState.terminated</code> reason, <strong>or</strong> exit code 137</td>
+<td><code>lastState.terminated</code> (a container that restarted) or <code>state.terminated</code> (one that did not — see <a href="#containers-that-finished-and-were-not-restarted">below</a>): reason <code>OOMKilled</code>, <strong>or</strong> exit code 137</td>
+</tr>
+<tr>
+<td>Container exited non-zero</td>
+<td><code>state.terminated</code> with a non-zero exit code and any reason but OOMKilled (typically <code>Error</code>), with its message. Exit 0 (<code>Completed</code>) is not a finding</td>
 </tr>
 <tr>
 <td>Image will not pull</td>
@@ -3939,7 +3977,7 @@
 </tr>
 <tr>
 <td>Backup Job failed</td>
-<td>the Job's <code>Failed</code> condition being <code>True</code> (including a missed <code>activeDeadlineSeconds</code>, where no pod failed), plus its pods. The verdict is the Job's conditions, not its <code>status.failed</code> count: that counts failed <em>attempts</em> and never goes down, so a backup that retried and then completed is a success — it gets a <code>⚠</code> line noting the retries, and one still retrying gets <code>…</code>, neither of which changes the exit code</td>
+<td>the Job's <code>Failed</code> condition being <code>True</code> (including a missed <code>activeDeadlineSeconds</code>, where no pod failed), plus its pods, container by container. The verdict is the Job's conditions, not its <code>status.failed</code> count: that counts failed <em>attempts</em> and never goes down, so a backup that retried and then completed is a success — it gets a <code>⚠</code> line noting the retries, and one still retrying gets <code>…</code>, neither of which changes the exit code</td>
 </tr>
 <tr>
 <td>Nothing ever reconciled</td>
@@ -3953,6 +3991,28 @@
 </table>
 <p>That last-but-one row is worth calling out. A resource with <strong>no status at all</strong> has no other signal — nothing is broken, the CR simply sits there. That is what you see when the operator is not running, has no RBAC for the kind, or is namespace-scoped and not watching this namespace.</p>
 <p>The pod and PVC checks apply to <code>Neo4jEnterpriseCluster</code> and <code>Neo4jEnterpriseStandalone</code>; the Job checks apply to <code>Neo4jBackup</code>. Every other kind gets only the Warning-events and no-status checks.</p>
+<h3 id="containers-that-finished-and-were-not-restarted">Containers that finished and were not restarted<a class="headerlink" href="#containers-that-finished-and-were-not-restarted" title="Anchor link to this section">&para;</a></h3>
+<p>Backup Job pods run with <code>restartPolicy: Never</code>. When one of them is OOM-killed or exits non-zero, nothing restarts it, so its <code>lastState</code> stays empty and the failure lives only in the container's <em>current</em> <code>state.terminated</code>. <code>diagnose</code> reads that state too: it names the container, the reason and the exit code, and points at the log of the run that died. Nothing restarted, so that is plain <code>kubectl logs &lt;pod&gt; -c &lt;container&gt;</code> — <code>--previous</code> is only for a container that has been restarted.</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>$ kubectl neo4j diagnose Neo4jBackup/nightly -n neo4j
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>Neo4jBackup/nightly — Failed · 1 job(s): 0 succeeded, 1 failed
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  ✗ job nightly-1 — failed (4 pod failure(s))
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>      BackoffLimitExceeded: Job has reached the specified backoff limit
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>      → Read the Job's pod log for neo4j-admin's own error: kubectl logs
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>        job/nightly-1. A permission error names the ServiceAccount; a path
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>        error names the bucket.
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>  ✗ container backup in nightly-1-x7k2p — was OOMKilled (exit 137)
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>      → Raise spec.options.resources.limits.memory on the Neo4jBackup (unset,
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>        the limit is 2Gi). neo4j-admin needs headroom above the largest store
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>        file during compaction. The log of the run that was killed: kubectl
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>        logs nightly-1-x7k2p -c backup
+</span></code></pre></div>
+<p>An OOM-killed backup is pointed at the <code>Neo4jBackup</code>'s own <code>spec.options.resources</code>, not the cluster's <code>spec.resources</code>: the backup Job's memory is sized there.</p>
+<p>Two rules keep this from crying wolf:</p>
+<ul>
+<li>A container that exited <code>0</code> is not a finding.</li>
+<li>A container already reported through its previous run (a crash-loop) is not reported a second time for its current attempt.</li>
+</ul>
+<p>A Job keeps the pods of its failed attempts, so a backup that was OOM-killed once and then <strong>completed on retry</strong> still has the killed pod. For a Job that did not fail, the Job's own verdict wins: that pod's findings are shown as <code>⚠</code> (the Job succeeded) or <code>…</code> (it is still retrying) and do not change the exit code. They are <code>✗</code> only when the Job itself failed. A pod that cannot be scheduled is not a finished attempt and stays <code>✗</code>.</p>
 <h2 id="exit-codes">Exit codes<a class="headerlink" href="#exit-codes" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>
