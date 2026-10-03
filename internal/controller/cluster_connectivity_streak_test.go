@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -75,5 +76,33 @@ func TestFirstNonNilErr(t *testing.T) {
 	}
 	if got := firstNonNilErr(nil, nil); got != nil {
 		t.Fatalf("firstNonNilErr all-nil = %v, want nil", got)
+	}
+}
+
+// The ConnectivityDegraded Warning needs a streak that is long in TIME, not
+// just in reconciles. During a new cluster's formation reconciles come far
+// faster than the 30s requeue, so ten failures landed inside the 91s the
+// cluster took to form, and every healthy new cluster carried the warning
+// (v1.18.0 journey).
+func TestConnectivityFailureStreak_EventNeedsCountAndDuration(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+
+	formation := &connectivityFailureStreak{since: now.Add(-91 * time.Second), count: connectivityFailureEventThreshold}
+	if formation.dueForEvent(now) {
+		t.Fatal("ten failures in 91s of formation must not raise ConnectivityDegraded")
+	}
+
+	short := &connectivityFailureStreak{since: now.Add(-10 * time.Minute), count: connectivityFailureEventThreshold - 1}
+	if short.dueForEvent(now) {
+		t.Fatal("a long streak below the failure count must not raise it")
+	}
+
+	outage := &connectivityFailureStreak{since: now.Add(-6 * time.Minute), count: connectivityFailureEventThreshold}
+	if !outage.dueForEvent(now) {
+		t.Fatal("ten failures over six minutes is a persistent outage: raise it")
+	}
+	outage.count++
+	if outage.dueForEvent(now.Add(time.Minute)) {
+		t.Fatal("the warning fires once per streak, not on every later failure")
 	}
 }

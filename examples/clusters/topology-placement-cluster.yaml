@@ -13,7 +13,7 @@ spec:
   # Neo4j Docker image configuration
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"
+    tag: "5.26-enterprise"
     pullPolicy: IfNotPresent
 
   # Server topology with placement constraints

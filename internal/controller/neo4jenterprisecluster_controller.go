@@ -92,6 +92,27 @@ type Neo4jEnterpriseClusterReconciler struct {
 type connectivityFailureStreak struct {
 	since time.Time
 	count int
+	// announced records that this streak's ConnectivityDegraded event has
+	// fired, so it fires once per streak however long the streak runs.
+	announced bool
+}
+
+// dueForEvent reports, once per streak, that it has become persistent enough
+// for a ConnectivityDegraded Warning: at least connectivityFailureEventThreshold
+// consecutive failures AND connectivityFailureEventMinDuration since the first.
+//
+// Both, because the count alone does not measure time. During a new cluster's
+// formation pod events drive reconciles far faster than the 30s requeue, so ten
+// failures came inside the 91 seconds the cluster took to form, and every
+// healthy new cluster carried a ConnectivityDegraded warning that `kubectl
+// neo4j diagnose` reported long after (v1.18.0 journey).
+func (s *connectivityFailureStreak) dueForEvent(now time.Time) bool {
+	if s.announced || s.count < connectivityFailureEventThreshold ||
+		now.Sub(s.since) < connectivityFailureEventMinDuration {
+		return false
+	}
+	s.announced = true
+	return true
 }
 
 const (
@@ -2016,7 +2037,7 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 			"consecutiveFailures", streak.count,
 			"failingSince", streak.since.Format(time.RFC3339),
 			"memberPods", podIssues)
-		if streak.count == connectivityFailureEventThreshold && r.Recorder != nil {
+		if r.Recorder != nil && streak.dueForEvent(time.Now()) {
 			msg := fmt.Sprintf("Operator has failed to reach Neo4j at %s for %d consecutive reconciles (since %s); last error: %v",
 				neo4jclient.ConnectionURIForEnterprise(cluster), streak.count,
 				streak.since.Format(time.RFC3339), firstNonNilErr(testError, connectError))
@@ -3110,11 +3131,16 @@ func (r *Neo4jEnterpriseClusterReconciler) serverStatefulSetFullyRolled(ctx cont
 	return true, ""
 }
 
-// connectivityFailureEventThreshold is the consecutive-failure streak at
-// which a ConnectivityDegraded Warning event fires (once per streak). At the
-// controller's ~30s requeue cadence this is roughly five minutes — past any
-// normal rolling-restart blip, early enough to be actionable.
-const connectivityFailureEventThreshold = 10
+// connectivityFailureEventThreshold and connectivityFailureEventMinDuration
+// decide when a failure streak earns a ConnectivityDegraded Warning (once per
+// streak, see dueForEvent): ten consecutive failures spanning at least five
+// minutes — past formation and any normal rolling-restart blip, early enough to
+// be actionable. The count alone used to be assumed to take five minutes at the
+// ~30s requeue cadence; during formation it took under ninety seconds.
+const (
+	connectivityFailureEventThreshold   = 10
+	connectivityFailureEventMinDuration = 5 * time.Minute
+)
 
 // recordConnectivityFailure increments the cluster's consecutive
 // connectivity-failure streak and returns it (#263 forensics).

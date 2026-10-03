@@ -340,7 +340,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", Label("core"), func() {
                 Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
                     Image: neo4jv1beta1.ImageSpec{
                         Repo: "neo4j",
-                        Tag:  "5.26.0-enterprise",
+                        Tag:  "5.26-enterprise",
                     },
                     Topology: neo4jv1beta1.TopologyConfiguration{
                         Servers: 2,
@@ -433,7 +433,7 @@ Context("Plugin Installation on Standalone", func() {
             Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
                 Image: neo4jv1beta1.ImageSpec{
                     Repo: "neo4j",
-                    Tag:  "5.26.0-enterprise",
+                    Tag:  "5.26-enterprise",
                 },
                 // Standalone-specific configuration...
             },

@@ -34,7 +34,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"
+    tag: "5.26-enterprise"
   storage:
     # className omitted -> inherits the cluster's default StorageClass (portable).
     # To pin one, set a class that EXISTS on your cluster (AKS: managed-csi, EKS: gp3, GKE: standard-rwo, Kind: standard);

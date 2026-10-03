@@ -35,10 +35,11 @@ kubectl apply -f examples/clusters/minimal-cluster.yaml
     `kubectl create secret` command.
 
 !!! tip "Neo4j version"
-    Most examples pin `5.26.0-enterprise` (the LTS), but every one works on a
-    CalVer release too — just change the image `tag` (e.g. `2026.04-enterprise`);
-    the operator auto-detects CalVer. Property sharding examples require
-    Neo4j 2025.12+.
+    Most examples use `5.26-enterprise` (the LTS line, which tracks the latest
+    5.26 patch), but every one works on a CalVer release too — just change the
+    image `tag` (e.g. `2026.08.1-enterprise`); the operator auto-detects CalVer.
+    Property sharding examples require Neo4j 2025.12+ and use the CalVer release
+    CI validates (`2026.08.1-enterprise`).
 
 All GitHub links below point at the `main` branch.
 

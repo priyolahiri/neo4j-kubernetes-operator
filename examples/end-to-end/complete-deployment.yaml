@@ -49,7 +49,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: "5.26.0-enterprise"  # or "2025.01.0-enterprise" for CalVer
+    tag: "5.26-enterprise"  # or "2025.01.0-enterprise" for CalVer
 
   # High availability topology
   topology:

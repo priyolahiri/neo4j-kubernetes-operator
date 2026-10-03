@@ -196,7 +196,7 @@ Flags:
 		return exitInvalid
 	}
 
-	body, err := yaml.Marshal(replica)
+	body, err := manifestYAML(replica)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return exitUsage
@@ -207,6 +207,23 @@ Flags:
 		fmt.Fprintln(stderr, n)
 	}
 	return exitOK
+}
+
+// manifestYAML renders obj as a manifest to apply. Marshalling a typed object
+// emits `status: {}`, which nobody writes in a manifest and nobody should
+// commit; it is dropped. Keys come out sorted, which for a top-level manifest
+// is the conventional apiVersion, kind, metadata, spec.
+func manifestYAML(obj any) ([]byte, error) {
+	raw, err := yaml.Marshal(obj)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := yaml.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	delete(m, "status")
+	return yaml.Marshal(m)
 }
 
 // replicaFromBackup builds a backup-mode replica from an upstream Neo4jBackup's

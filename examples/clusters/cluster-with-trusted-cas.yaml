@@ -59,7 +59,7 @@ spec:
   acceptLicenseAgreement: "eval"
   image:
     repo: neo4j
-    tag: 2026.04.0-enterprise
+    tag: 2026.08.1-enterprise
   topology:
     servers: 3
   storage:

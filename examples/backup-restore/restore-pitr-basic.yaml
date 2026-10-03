@@ -111,7 +111,7 @@ spec:
       job:
         template:
           container:
-            image: neo4j:5.26.0-enterprise
+            image: neo4j:5.26-enterprise
             command: ["/bin/sh"]
             args:
               - "-c"
