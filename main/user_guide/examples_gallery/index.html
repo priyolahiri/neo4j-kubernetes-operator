@@ -4085,10 +4085,11 @@ Most examples expect an admin Secret to exist before you apply them:</p>
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Neo4j version</p>
-<p>Most examples pin <code>5.26.0-enterprise</code> (the LTS), but every one works on a
-CalVer release too — just change the image <code>tag</code> (e.g. <code>2026.04-enterprise</code>);
-the operator auto-detects CalVer. Property sharding examples require
-Neo4j 2025.12+.</p>
+<p>Most examples use <code>5.26-enterprise</code> (the LTS line, which tracks the latest
+5.26 patch), but every one works on a CalVer release too — just change the
+image <code>tag</code> (e.g. <code>2026.08.1-enterprise</code>); the operator auto-detects CalVer.
+Property sharding examples require Neo4j 2025.12+ and use the CalVer release
+CI validates (<code>2026.08.1-enterprise</code>).</p>
 </div>
 <p>All GitHub links below point at the <code>main</code> branch.</p>
 <h2 id="standalone">Standalone<a class="headerlink" href="#standalone" title="Anchor link to this section">&para;</a></h2>

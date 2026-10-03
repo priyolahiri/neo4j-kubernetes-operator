@@ -4322,7 +4322,7 @@ and alerting systems.</p>
 <tr>
 <td><code>ConnectivityDegraded</code></td>
 <td>Warning</td>
-<td>The operator has failed to reach the cluster's Bolt endpoint for a sustained streak of consecutive reconciles; emitted once when the streak threshold is reached, with the last error and any pod issues</td>
+<td>The operator has failed to reach the cluster's Bolt endpoint for a sustained streak: at least 10 consecutive reconciles spanning at least 5 minutes, so a cluster that is still forming does not raise it. Emitted once per streak, with the last error and any pod issues</td>
 </tr>
 <tr>
 <td><code>ReconcileFailed</code></td>

@@ -4270,9 +4270,9 @@
 </ul>
 <p>Building from source additionally needs Go 1.27+ — see the <a href="../installation/">Installation Guide</a> for that path.</p>
 <blockquote>
-<p><strong>Neo4j version:</strong> the examples below pin <code>5.26.0-enterprise</code>, but every one
-works on a CalVer release too — just change the image <code>tag</code> (e.g.
-<code>2026.04-enterprise</code>). The operator auto-detects CalVer (discovery mode,
+<p><strong>Neo4j version:</strong> the examples below use <code>5.26-enterprise</code>, the 5.26 LTS
+line (it tracks the latest 5.26 patch), but every one works on a CalVer
+release too — just change the image <code>tag</code> (e.g. <code>2026.08.1-enterprise</code>). The operator auto-detects CalVer (discovery mode,
 Cypher 25, etc.); nothing else in the manifest changes. For the CalVer-only
 default Cypher 25 language on a database, see
 <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/databases/database-2025x.yaml"><code>examples/databases/database-2025x.yaml</code></a>.</p>
