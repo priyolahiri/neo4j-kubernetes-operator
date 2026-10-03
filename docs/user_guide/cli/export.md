@@ -45,6 +45,8 @@ spec:
 
 `metadata.namespace` defaults to the upstream resource's namespace (`-n`); pass `--downstream-namespace` to write a different one into the manifest.
 
+The replica **database** on the downstream server takes the CR's name — `dr-copy` here, not the upstream's `neo4j` — because the manifest sets no `spec.name`, which defaults to `metadata.name`. Connect to `dr-copy` (`cypher-shell -d dr-copy`); `-d neo4j` finds the downstream's own default database, not the replica. To keep the upstream's name instead, add `spec.name: neo4j` before applying: it is permanent, since Neo4j has no `RENAME DATABASE`, and it carries over through promotion.
+
 with, on stderr:
 
 ```
