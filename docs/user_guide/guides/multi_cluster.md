@@ -52,7 +52,7 @@ spec:
       project: default
       source:
         repoURL: https://github.com/priyolahiri/neo4j-kubernetes-operator
-        targetRevision: v1.17.0    # pin a release; never track main
+        targetRevision: v1.18.0    # pin a release; never track main
         path: charts/neo4j-operator
         helm:
           values: |
@@ -153,6 +153,8 @@ Every `neo4j_operator_server_health` series then carries `k8s_cluster="eu-west-p
 ```
 neo4j_operator_server_health{cluster_name="prod",namespace="neo4j",server_name="srv-0",server_address="10.0.0.1:7687",k8s_cluster="eu-west-prod"} 1
 ```
+
+So do the cross-cluster replication metrics, `neo4j_operator_replica_lag_transactions` and `neo4j_operator_replica_promotions_total`. That is where the label earns its keep: a replica and its upstream run in *different* Kubernetes clusters, often with the same Neo4j cluster name and namespace, and `k8s_cluster` is what tells the DR side's lag apart from anything else in a federated Prometheus. See [Cross-cluster replication metrics](monitoring.md#cross-cluster-replication-metrics).
 
 !!! note "`k8s_cluster` is not `cluster_name`"
     `cluster_name` is the Neo4j cluster. `k8s_cluster` is the Kubernetes cluster it runs in. The flag is `--kubernetes-cluster-name` rather than `--cluster-name` to keep that distinction visible at the point of configuration.

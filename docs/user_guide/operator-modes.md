@@ -36,7 +36,7 @@ CLI flags and Helm values always override these defaults.
 --skip-cache-wait
 --controllers=cluster,standalone,database       # dev mode only; valid keys under "Controller Selection"
 --privilege-normalisation=learn|probe          # how Neo4jRole privileges are matched (default learn)
---kubernetes-cluster-name=<name>               # adds a k8s_cluster label to neo4j_operator_server_health
+--kubernetes-cluster-name=<name>               # adds a k8s_cluster label to server_health and the replica metrics
 --zap-log-level=debug|info|warn|error|dpanic|panic|fatal
 ```
 

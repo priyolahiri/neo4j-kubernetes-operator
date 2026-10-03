@@ -131,6 +131,106 @@ upgrade restarts nothing. See the
   change it after creation. Editing or removing the boolean itself is accepted
   but has no effect on an existing instance, which only reads it at creation.
 
+## Upgrading from v1.17.x
+
+Apply the new release's CRDs before upgrading the operator, as always (step 1
+[below](#upgrading-between-future-releases)). Nothing fails without them, but
+`status.upgradeStatus.phaseStartTime` is new: on the old CRDs the API server
+drops it, and `neo4j_operator_upgrade_duration_seconds` records nothing until
+the CRDs are applied.
+
+### Behaviour changes
+
+- **Scheduled backups report `Ready=True`** (reason `BackupScheduled`). A
+  `Neo4jBackup` with a `schedule` used to stay `Ready=Unknown` for its whole
+  life, so `kubectl wait --for=condition=Ready` never returned. A suspended one
+  now reports `Ready=False` with reason `Suspended` instead of
+  `ReconciliationFailed`.
+- **If you use the [ArgoCD health checks](../gitops/README.md), re-apply
+  `docs/gitops/argocd-health-checks.yaml`.** In the copy published with v1.17.0,
+  a scheduled or suspended `Neo4jBackup` stayed `Progressing` forever, which
+  holds up any sync wave behind it. Both now report `Healthy`.
+- **`Neo4jDatabase.spec.defaultCypherLanguage` is honoured on every create
+  path, and gated on the server version.** On CalVer, a database created with no
+  `topology` and no `seedURI` used to ignore the field and get the server
+  default; it now gets the language you set. Existing databases keep theirs,
+  because a database's language is fixed when it is created. On the 5.26 LTS,
+  `"25"` now fails validation with a message naming the field (it used to fail
+  at `CREATE DATABASE` with a syntax error), and `"5"` is accepted and the clause
+  left out, since every database there runs Cypher 5. `Neo4jCompositeDatabase` follows the same rule.
+- **A standalone ignores `Neo4jDatabase.spec.topology`**, as the docs always
+  said: the operator no longer sends a `TOPOLOGY` clause to a standalone, and
+  `primaries: 0` there is a warning instead of an error.
+- **Sizes are checked before they reach Kubernetes.** A cluster and a standalone
+  now accept the same `spec.storage.size`: any Kubernetes quantity greater than
+  zero, so `1.5Gi` works on a cluster and `0` is refused on both. A malformed
+  size (`fifty`, `10 Gi`, or `5K`, since a capital K is not a Kubernetes suffix)
+  used to pass validation and crash the operator; the CR now goes `Failed` with
+  a message naming the field. `Neo4jBackup.spec.storage.pvc.size` is checked
+  the same way. Every value that is newly refused either crashed the operator
+  or could hold no data.
+- **A dotted `Neo4jCompositeDatabase.spec.name` is refused when you apply.** It
+  always failed at reconcile; the schema now says so up front.
+- **Auth provider names follow the Neo4j manual.** `plugin-<name>`, for an auth
+  plugin or an add-on such as Kerberos, is now accepted in
+  `spec.auth.authenticationProviders` and `authorizationProviders`; it used to
+  be refused. `oidc` without a provider name, `kerberos`, `jwt`, `saml` and
+  `custom` are not values Neo4j documents: they still validate, and now raise a
+  `ValidationWarning` event that names what to use instead. See
+  [Multi-provider support](security.md#multi-provider-support).
+
+### New warnings
+
+A field the schema accepts but nothing in the operator acts on now raises a
+`ValidationWarning` event when you set it: `… is accepted but has no effect
+today: <what to do instead>`. The warnings never block a reconcile. They cover:
+
+- `Neo4jPlugin`: `spec.resources`, `spec.source.registry` (and its `tls`),
+  `spec.security.securityPolicy`;
+- clusters and standalones: `spec.tls.certificateSecret`; standalones only:
+  `spec.tls.strictPeerValidation: false`;
+- clusters: `spec.topology.placement.nodeSelector` and `.requiredDuringScheduling`;
+- `Neo4jDatabase`: `spec.initialData.source` (other than `cypher`),
+  `.configMapRef`, `.secretRef` and `.storage`;
+- `Neo4jBackup` and `Neo4jRestore` cloud storage: `identity.serviceAccount`, and
+  `identity.autoCreate.enabled: false`;
+- `AuraInstance`: `spec.connectionSecretFormat: custom`.
+
+### Metrics
+
+**Removed:** twelve families that were registered but that no code ever
+recorded. Each was a vector with no observations, so none ever exported a
+series and no dashboard or alert loses data; you can delete panels built on
+them. `neo4j_operator_` followed by: `backup_size_bytes`,
+`cypher_execution_duration_seconds`, `cypher_executions_total`,
+`disaster_recovery_status`, `failover_total`, `replication_lag_seconds`,
+`manual_scaler_enabled`, `primary_count`, `secondary_count`,
+`scale_events_total`, `scaling_validation_total`, `security_operations_total`.
+
+**New or now populated:**
+
+- `neo4j_operator_replica_lag_transactions` and
+  `neo4j_operator_replica_promotions_total` for cross-cluster replication (see
+  [Cross-cluster replication metrics](guides/monitoring.md#cross-cluster-replication-metrics)).
+  The lag series is removed when it can no longer be trusted (the replica is
+  gone or promoted, or its lag cannot be read) instead of holding its last value.
+- `neo4j_operator_upgrade_duration_seconds` is now recorded, once per ended
+  rolling-upgrade phase.
+
+### New, no action needed
+
+- `status.upgradeStatus.phaseStartTime` on clusters.
+- `Neo4jShardedDatabase` status now fills `creationTime`, `graphShard`,
+  `propertyShards` and `virtualDatabase`; `Neo4jPlugin` status fills
+  `installedVersion` and `installationTime`. They were in the schema but empty.
+- `ConnectivityDegraded` (a Warning on the cluster) now needs ten consecutive
+  connectivity failures **spanning at least five minutes**, not ten alone. A
+  new cluster no longer raises it while it forms; if you alert on this event,
+  expect it no earlier than five minutes into a real outage.
+- A failed Aura Fleet Management token registration raises an
+  `AuraFleetManagementFailed` Warning event, once per distinct failure message.
+  It almost never fired before.
+
 ## Upgrading between future releases
 
 When a newer version ships:
@@ -141,7 +241,7 @@ When a newer version ships:
 
    ```bash
    kubectl apply --server-side -f \
-     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.17.0/neo4j-kubernetes-operator.yaml
+     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.18.0/neo4j-kubernetes-operator.yaml
    ```
 
 2. **Upgrade the operator** via Helm:
