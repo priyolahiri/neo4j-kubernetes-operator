@@ -312,6 +312,32 @@ func TestClusterMetrics_RecordServerHealth(t *testing.T) {
 	}
 }
 
+// A series the cluster no longer reports must be withdrawn, not left at its
+// last value. Live on Kind: a server that restarted kept a server_address
+// "<nil>" series at 0 next to its real one at 1, and a server that was down
+// kept its real-address series at 1 — the first keeps a `== 0` alert firing
+// after recovery, the second hides an outage (#444).
+func TestClusterMetrics_RecordServerHealth_WithdrawsSeriesNoLongerReported(t *testing.T) {
+	serverHealth.Reset()
+	m := NewClusterMetrics("prod", "neo4j")
+	up := func(addr string) ServerHealth {
+		return ServerHealth{Name: "srv-1", Address: addr, Enabled: true, Available: true}
+	}
+
+	m.RecordServerHealth([]ServerHealth{up("10.0.0.1:7687"), {Name: "srv-2", Address: "10.0.0.2:7687", Enabled: true, Available: true}})
+	m.RecordServerHealth([]ServerHealth{up("10.0.0.1:7687"), {Name: "srv-2", Address: "", Enabled: true, Available: false}})
+	require.Equal(t, 2, testutil.CollectAndCount(serverHealth), "srv-2's old series must go when its address changes")
+	assert.Equal(t, 0.0, testutil.ToFloat64(serverHealth.WithLabelValues("prod", "neo4j", "srv-2", "", "")))
+
+	m.RecordServerHealth([]ServerHealth{up("10.0.0.1:7687")})
+	require.Equal(t, 1, testutil.CollectAndCount(serverHealth), "a server no longer listed must not keep a series")
+
+	// Another cluster's series are not this cluster's to withdraw.
+	NewClusterMetrics("other", "neo4j").RecordServerHealth([]ServerHealth{up("10.0.0.9:7687")})
+	m.RecordServerHealth([]ServerHealth{up("10.0.0.1:7687")})
+	assert.Equal(t, 2, testutil.CollectAndCount(serverHealth))
+}
+
 // The whole point of the k8s_cluster label: the same Neo4j cluster name in the
 // same namespace, running in two different Kubernetes clusters, must not
 // collapse into one series when both are scraped into one Prometheus.

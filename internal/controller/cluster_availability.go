@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -154,6 +155,69 @@ func (a shortfallAssessment) summary() string {
 	return s
 }
 
+// serverAddressBook remembers, per cluster (key ns/name), the last address
+// each server reported. SHOW SERVERS reports no address for a server that is
+// down — exactly when the address, the pod's name, is wanted: in the Degraded
+// condition, in status.diagnostics, and as the server_address label, where a
+// changed value would start a new series. status.diagnostics alone is not
+// enough to remember it: a collection that cannot reach Neo4j writes an empty
+// server list, and that is the first thing that happens when servers go down.
+var serverAddressBook = struct {
+	mu        sync.Mutex
+	byCluster map[string]map[string]string
+}{byCluster: map[string]map[string]string{}}
+
+func clusterKey(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	return cluster.Namespace + "/" + cluster.Name
+}
+
+// forgetServerAddresses drops a deleted cluster's address book.
+func forgetServerAddresses(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
+	serverAddressBook.mu.Lock()
+	defer serverAddressBook.mu.Unlock()
+	delete(serverAddressBook.byCluster, clusterKey(cluster))
+}
+
+// withKnownAddresses returns servers with each missing address filled in: from
+// this process's address book first, then from the cluster's last diagnostics
+// (which survive an operator restart). Every address a server does report is
+// recorded for next time. "<nil>" is what releases before #444 stored for a
+// missing address. The input slice is not modified; nil stays nil, because
+// nil means Neo4j could not be queried.
+func withKnownAddresses(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, servers []neo4jclient.ServerInfo) []neo4jclient.ServerInfo {
+	if servers == nil {
+		return nil
+	}
+	usable := func(a string) bool { return a != "" && a != "<nil>" }
+
+	serverAddressBook.mu.Lock()
+	defer serverAddressBook.mu.Unlock()
+	key := clusterKey(cluster)
+	book := serverAddressBook.byCluster[key]
+	if book == nil {
+		book = map[string]string{}
+		serverAddressBook.byCluster[key] = book
+	}
+	if d := cluster.Status.Diagnostics; d != nil {
+		for _, s := range d.Servers {
+			if _, ok := book[s.Name]; !ok && usable(s.Address) {
+				book[s.Name] = s.Address
+			}
+		}
+	}
+
+	out := make([]neo4jclient.ServerInfo, len(servers))
+	copy(out, servers)
+	for i := range out {
+		if usable(out[i].Address) {
+			book[out[i].Name] = out[i].Address
+		} else {
+			out[i].Address = book[out[i].Name]
+		}
+	}
+	return out
+}
+
 // describeServer names a server by the first label of its advertised host —
 // the pod name — falling back to the address, then the Neo4j server name,
 // with its health.
@@ -233,6 +297,21 @@ func (r *Neo4jEnterpriseClusterReconciler) serverRolloutInFlight(ctx context.Con
 		return true
 	}
 	return statefulSetRolloutInFlight(sts)
+}
+
+// firstAnnouncement reports whether a Warning for this verdict is due: this
+// operator has not announced it since the cluster was last whole, which
+// survives a reconcile that reads a stale cache. alreadyInPhase — the cluster
+// already shows the phase only this verdict sets — keeps an operator restart
+// from announcing it again. Degraded has such a phase; QuorumLost does not,
+// since Forming has other causes (a reconcile that cannot reach Neo4j at all
+// writes it first), so a restart may announce a lost majority once more.
+func (r *Neo4jEnterpriseClusterReconciler) firstAnnouncement(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, verdict availabilityVerdict, alreadyInPhase bool) bool {
+	prev, loaded := r.availabilityAnnounced.Swap(clusterKey(cluster), verdict)
+	if alreadyInPhase {
+		return false
+	}
+	return !loaded || prev != verdict
 }
 
 // serverUnavailableGrace is the configured grace period, or the default.

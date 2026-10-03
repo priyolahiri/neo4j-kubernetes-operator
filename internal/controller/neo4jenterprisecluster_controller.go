@@ -88,6 +88,12 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// outage is distinguishable from a transient blip in logs and events
 	// (#263 forensics). Cleared on the first successful connection.
 	connectivityFailures sync.Map
+	// availabilityAnnounced records, per cluster (key ns/name), which
+	// availability transition — Degraded or QuorumLost — has had its Warning
+	// event, so a reconcile that reads the cluster from a cache that has not
+	// seen the new phase yet does not announce it twice (#444). Cleared when
+	// every server is available again.
+	availabilityAnnounced sync.Map
 }
 
 // connectivityFailureStreak records when a cluster's Bolt connectivity first
@@ -726,6 +732,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		clusterFormedCondition(),
 		allServersAvailableCondition(cluster.Spec.Topology.Servers),
 	}
+	r.availabilityAnnounced.Delete(cluster.Namespace + "/" + cluster.Name)
 
 	// Update status to "Ready" only if cluster formation is verified
 	// Note: Split-brain detection is already performed in verifyNeo4jClusterFormation
@@ -777,6 +784,8 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	// rather than adding a second one — a stuck Aura API must not block deletion.
 	r.newFleetProvisioner().deprovisionAuraFleet(ctx, cluster)
 	r.fleetFailures.clear(client.ObjectKeyFromObject(cluster))
+	r.availabilityAnnounced.Delete(clusterKey(cluster))
+	forgetServerAddresses(cluster)
 
 	// Clean up PVCs if retention policy is Delete (default behavior)
 	retentionPolicy := cluster.Spec.Storage.RetentionPolicy
@@ -2198,7 +2207,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 	in := shortfallInput{
 		Formed:           formed,
 		SplitBrain:       formation.splitBrain,
-		Servers:          formation.servers,
+		Servers:          withKnownAddresses(cluster, formation.servers),
 		Expected:         int(cluster.Spec.Topology.Servers),
 		UnavailableSince: serversUnavailableSince(cluster),
 		Now:              time.Now(),
@@ -2222,7 +2231,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 	degradedMsg := a.summary() + ". " + detail
 	switch a.Verdict {
 	case verdictQuorumLost:
-		if cluster.Status.Phase != neo4jv1beta1.PhaseForming {
+		if r.firstAnnouncement(cluster, a.Verdict, false) {
 			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonClusterQuorumLost,
 				"Neo4j cluster has lost a majority of its servers (%s); resources that depend on it pause until a majority is back", shortfall)
 		}
@@ -2234,16 +2243,16 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 		// Still serving: the phase, the Ready condition and every dependent
 		// carry on. Only the Degraded condition and ServersHealthy say so.
 		_ = r.updateClusterStatusWithVersion(ctx, cluster, neo4jv1beta1.PhaseReady,
-			"Neo4j cluster is serving; "+shortfall, "",
+			"Neo4j cluster is serving. "+shortfall, "",
 			clusterFormedCondition(), serversUnavailableCondition(degradedMsg))
 
 	case verdictDegraded:
-		if cluster.Status.Phase != neo4jv1beta1.PhaseDegraded {
+		if r.firstAnnouncement(cluster, a.Verdict, cluster.Status.Phase == neo4jv1beta1.PhaseDegraded) {
 			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonClusterDegraded,
 				"Neo4j cluster has been short of servers for longer than %s: %s", in.Grace, shortfall)
 		}
 		_ = r.updateClusterStatusWithVersion(ctx, cluster, neo4jv1beta1.PhaseDegraded,
-			fmt.Sprintf("Neo4j cluster is serving but degraded for longer than %s; %s", in.Grace, shortfall), "",
+			fmt.Sprintf("Neo4j cluster is serving but degraded for longer than %s. %s", in.Grace, shortfall), "",
 			clusterFormedCondition(), serversUnavailableCondition(degradedMsg))
 
 	default:
@@ -2521,6 +2530,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 
 	// Collect server list
 	servers, serverErr := neo4jClient.GetServerList(ctx)
+	servers = withKnownAddresses(cluster, servers)
 	if serverErr != nil {
 		logger.Error(serverErr, "Failed to collect SHOW SERVERS")
 		diagnostics.CollectionError = fmt.Sprintf("SHOW SERVERS failed: %v", serverErr)

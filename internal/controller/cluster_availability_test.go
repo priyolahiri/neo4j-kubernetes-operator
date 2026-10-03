@@ -139,6 +139,38 @@ func TestDescribeServer(t *testing.T) {
 		describeServer(neo4jclient.ServerInfo{Name: "uuid", Health: "Degraded"}))
 }
 
+// Live on Kind, a server that was down was reported as "<nil> (Unavailable)":
+// SHOW SERVERS has no address for it. The last address it reported is the
+// pod's name.
+func TestWithKnownAddresses(t *testing.T) {
+	cluster := availCluster(neo4jv1beta1.PhaseReady)
+	forgetServerAddresses(cluster)
+	t.Cleanup(func() { forgetServerAddresses(cluster) })
+	cluster.Status.Diagnostics = &neo4jv1beta1.ClusterDiagnosticsStatus{Servers: []neo4jv1beta1.ServerDiagnosticInfo{
+		{Name: "id-1", Address: "c-server-1.c-headless.default.svc.cluster.local:7687"},
+		{Name: "id-2", Address: "<nil>"},
+	}}
+	in := []neo4jclient.ServerInfo{
+		{Name: "id-0", Address: "c-server-0.c-headless.default.svc.cluster.local:7687", State: "Enabled", Health: "Available"},
+		{Name: "id-1", Address: "", State: "Enabled", Health: "Unavailable"},
+		{Name: "id-2", Address: "", State: "Enabled", Health: "Unavailable"},
+	}
+	out := withKnownAddresses(cluster, in)
+	assert.Equal(t, "c-server-1.c-headless.default.svc.cluster.local:7687", out[1].Address, "from status.diagnostics")
+	assert.Equal(t, "", out[2].Address, `a stored "<nil>" is not an address`)
+	assert.Equal(t, "", in[1].Address, "the input is not modified")
+	assert.Equal(t, "c-server-1 (Unavailable)", describeServer(out[1]))
+	assert.Equal(t, "id-2 (Unavailable)", describeServer(out[2]))
+	assert.Nil(t, withKnownAddresses(cluster, nil), "nil means Neo4j could not be queried, and stays nil")
+
+	// Live on Kind: the first reconcile after two servers went could not reach
+	// Neo4j, and its diagnostics pass wrote an empty server list — so the
+	// next one found nothing to carry over. An address seen once is kept.
+	cluster.Status.Diagnostics = &neo4jv1beta1.ClusterDiagnosticsStatus{}
+	out = withKnownAddresses(cluster, []neo4jclient.ServerInfo{{Name: "id-0", State: "Enabled", Health: "Unavailable"}})
+	assert.Equal(t, "c-server-0 (Unavailable)", describeServer(out[0]))
+}
+
 func availCluster(phase string, conds ...metav1.Condition) *neo4jv1beta1.Neo4jEnterpriseCluster {
 	c := gateTestCluster("5.26.0-enterprise", phase)
 	c.Status.Conditions = conds
@@ -296,6 +328,42 @@ func TestReconcileServerShortfall_QuorumLostFromReadyRecordsFormation(t *testing
 	c := refetch(t, r)
 	assert.Equal(t, neo4jv1beta1.PhaseForming, c.Status.Phase)
 	assert.True(t, clusterHasFormed(c))
+}
+
+// The informer cache can hand the next reconcile a cluster that does not show
+// the phase just written yet. That must not announce the transition again —
+// observed live as ClusterDegraded with count 2.
+func TestReconcileServerShortfall_StaleCacheDoesNotAnnounceTwice(t *testing.T) {
+	ctx := context.Background()
+	r, rec := shortfallReconciler(t, availCluster(neo4jv1beta1.PhaseReady, cond(ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)))
+	oneDown := formationCheck{message: "Cluster forming: 2/3 servers available", servers: availServers(3, 2)}
+	r.reconcileServerShortfall(ctx, refetch(t, r), oneDown, oneDown.message)
+	backdateDegraded(t, r, 6*time.Minute)
+
+	stale := refetch(t, r) // phase still Ready
+	r.reconcileServerShortfall(ctx, stale.DeepCopy(), oneDown, oneDown.message)
+	r.reconcileServerShortfall(ctx, stale.DeepCopy(), oneDown, oneDown.message)
+	require.Len(t, drainEvents(rec), 1, "one ClusterDegraded per transition")
+
+	// Live on Kind: the first reconcile after two servers went could not reach
+	// Neo4j and wrote a plain Forming; the next found the lost majority with
+	// the phase already Forming. It must still be announced.
+	r.availabilityAnnounced.Delete("default/c")
+	forming := refetch(t, r)
+	forming.Status.Phase = neo4jv1beta1.PhaseForming
+	twoDown := formationCheck{message: "Cluster forming: 1/3 servers available", servers: availServers(3, 1)}
+	r.reconcileServerShortfall(ctx, forming, twoDown, twoDown.message)
+	events := drainEvents(rec)
+	require.Len(t, events, 1)
+	assert.True(t, strings.HasPrefix(events[0], "Warning ClusterQuorumLost "), events[0])
+
+	// Recovery clears the memory, so the next outage is announced again.
+	r.availabilityAnnounced.Delete("default/c")
+	r.reconcileServerShortfall(ctx, refetch(t, r), twoDown, twoDown.message)
+	r.reconcileServerShortfall(ctx, stale.DeepCopy(), twoDown, twoDown.message)
+	events = drainEvents(rec)
+	require.Len(t, events, 1)
+	assert.True(t, strings.HasPrefix(events[0], "Warning ClusterQuorumLost "), events[0])
 }
 
 func TestReconcileServerShortfall_FirstFormationStaysForming(t *testing.T) {

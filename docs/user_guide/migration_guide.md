@@ -268,6 +268,13 @@ take effect on the first reconcile.
   `Ready`; they are now collected whenever the cluster has formed.
 - **`ClusterFormationStarted` is raised on first formation only**, no longer
   on every pod restart of a formed cluster.
+- **`neo4j_operator_server_health` no longer leaves series behind.** A server
+  that was down was reported with `server_address="<nil>"` (also in
+  `status.diagnostics.servers[].address`), which started a new series and left
+  the old one exported at its last value — a `0` that kept a
+  `server_health == 0` alert firing after the server came back. A down server
+  now keeps the last address it reported, and series a cluster no longer
+  reports are withdrawn.
 
 ### New, no action needed
 

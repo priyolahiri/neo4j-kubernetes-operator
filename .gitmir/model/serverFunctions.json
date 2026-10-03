@@ -90,7 +90,7 @@
     "name": "Collect Cluster Diagnostics",
     "serverUnitId": "su-diagnostics",
     "operation": "business_action",
-    "description": "Runs SHOW SERVERS and SHOW DATABASES against a cluster that has formed — Ready, Degraded, or mid-rollout with ClusterFormed=True, so it keeps reporting while a server is down — and writes results plus ServersHealthy/DatabasesHealthy conditions into status.diagnostics; non-fatal — every error is surfaced only in status.diagnostics.collectionError, never returned to the caller.",
+    "description": "Runs SHOW SERVERS and SHOW DATABASES against a cluster that has formed — Ready, Degraded, or mid-rollout with ClusterFormed=True, so it keeps reporting while a server is down —, fills the address of a server that is down from the per-cluster address book (SHOW SERVERS reports none for it), and writes results plus ServersHealthy/DatabasesHealthy conditions into status.diagnostics; non-fatal — every error is surfaced only in status.diagnostics.collectionError, never returned to the caller.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1983,7 +1983,7 @@
     "name": "Reconcile Server Shortfall",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Sets the status of a cluster that is not fully formed. Feeds the formation result, the ClusterFormed memory, whether a template rollout is in flight and the Degraded condition's lastTransitionTime to the shortfall assessment, then writes Ready (Degraded condition True) within the grace period, Degraded past it, or Forming — for first formation, rollouts, scale-ups, split-brain or the loss of a majority (#444).",
+    "description": "Sets the status of a cluster that is not fully formed. Feeds the formation result, the ClusterFormed memory, whether a template rollout is in flight and the Degraded condition's lastTransitionTime to the shortfall assessment, then writes Ready (Degraded condition True) within the grace period, Degraded past it, or Forming — for first formation, rollouts, scale-ups, split-brain or the loss of a majority (#444). ClusterDegraded and ClusterQuorumLost are deduplicated in memory, since the informer cache can return the previous phase.",
     "readsFieldIds": [
       "status.phase"
     ],
