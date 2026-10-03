@@ -29,7 +29,9 @@ developmentMode: false
 logLevel: info  # debug, info, warn, error
 
 # Name of the Kubernetes cluster this operator instance runs in. When set, every
-# neo4j_operator_server_health series carries it as the `k8s_cluster` label, so
+# neo4j_operator_server_health, neo4j_operator_replica_lag_transactions and
+# neo4j_operator_replica_promotions_total series carries it as the `k8s_cluster`
+# label, so
 # metrics federated from several Kubernetes clusters into one Prometheus stay
 # distinguishable even when the Neo4j cluster name and namespace are identical
 # in each. Empty (the default) emits an empty label, which Prometheus treats as
