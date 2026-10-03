@@ -3968,6 +3968,10 @@
 <td>waiting reason <code>CreateContainerConfigError</code> — usually a missing Secret key</td>
 </tr>
 <tr>
+<td>Still starting (<code>…</code>)</td>
+<td>waiting reason <code>ContainerCreating</code> / <code>PodInitializing</code> — a pod that was just replaced, before its container runs; or a container that runs but whose readiness probe has not passed yet. Neither changes the exit code</td>
+</tr>
+<tr>
 <td>PVC never bound</td>
 <td><code>pvc.status.phase != Bound</code>, naming the StorageClass</td>
 </tr>
