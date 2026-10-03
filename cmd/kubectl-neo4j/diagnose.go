@@ -440,6 +440,20 @@ func diagnosePod(p *corev1.Pod) []symptom {
 					action: "Usually a Secret or ConfigMap referenced by env valueFrom does not " +
 						"exist yet, or lacks the key named. The message above says which.",
 				})
+			case "ContainerCreating", "PodInitializing":
+				// A pod that was just replaced — a rolling restart, or one
+				// deleted by hand — spends its first seconds here, before the
+				// container runs at all. Without this it was counted in "2/3
+				// pods ready" but named nowhere, so the one pod the user was
+				// asking about was the one the report left out.
+				symptoms = append(symptoms, symptom{
+					mark:    markWaiting,
+					subject: "container " + cs.Name + " in " + p.Name,
+					what:    "starting (" + w.Reason + ")",
+					action: "Usually resolves within seconds. If it stays here, the pod's events " +
+						"say why (a volume that will not mount, an init container that does not " +
+						"finish): kubectl describe pod " + p.Name,
+				})
 			}
 		}
 

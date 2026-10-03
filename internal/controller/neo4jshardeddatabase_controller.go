@@ -335,6 +335,9 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	r.Recorder.Event(&shardedDatabase, corev1.EventTypeNormal, EventReasonShardedDatabaseReady, "Sharded database is ready and operational")
 	logger.Info("Successfully reconciled Neo4jShardedDatabase")
 
+	if shardFamilySettling(&shardedDatabase.Status, time.Now()) {
+		return ctrl.Result{RequeueAfter: shardSettleRequeue}, nil
+	}
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil // Periodic reconciliation
 }
 
@@ -734,6 +737,7 @@ func (r *Neo4jShardedDatabaseReconciler) updateShardStatus(ctx context.Context, 
 	if err := r.applyShardStatus(ctx, shardedDB, obs, recreated); err != nil {
 		return fmt.Errorf("failed to record shard status: %w", err)
 	}
+	mirrorShardObservation(shardedDB, obs, recreated, time.Now())
 	return nil
 }
 

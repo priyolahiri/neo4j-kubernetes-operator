@@ -234,6 +234,35 @@ func TestDiagnose_NotReadyYetIsWaitingNotProblem(t *testing.T) {
 	assert.False(t, d.problems(), "a readiness probe still settling is not a problem")
 }
 
+// A pod that was just replaced spends its first seconds before the container
+// runs at all. diagnose counted it in "2/3 pods ready" but named it nowhere
+// (v1.18.0 journey, deleting a server pod mid-walk).
+func TestDiagnose_ContainerStillStartingIsNamedAsWaiting(t *testing.T) {
+	for _, reason := range []string{"PodInitializing", "ContainerCreating"} {
+		t.Run(reason, func(t *testing.T) {
+			pod := serverPod("prod", "prod-server-1")
+			pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+				Name:  "neo4j",
+				State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: reason}},
+			}}
+			c := testClient(t,
+				&neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"}},
+				pod,
+			)
+
+			results, err := diagnoseNamespace(context.Background(), c, "neo4j", "")
+			require.NoError(t, err)
+
+			d := results[0]
+			require.NotEmpty(t, d.symptoms, "the starting pod must be named")
+			assert.Equal(t, markWaiting, d.symptoms[0].mark)
+			assert.Contains(t, d.symptoms[0].what, reason)
+			assert.Contains(t, d.symptoms[0].subject, "prod-server-1")
+			assert.False(t, d.problems(), "a pod being replaced is not a problem")
+		})
+	}
+}
+
 // The failure mode with no other signal: a CR nothing ever reconciled. This is
 // what a user sees when the operator is not running, lacks RBAC for the kind,
 // or is namespace-scoped and not watching this namespace (#282).

@@ -34,6 +34,7 @@ For an archive to attach to an issue: kubectl neo4j support-bundle
 | Image will not pull | waiting reason `ImagePullBackOff` / `ErrImagePull` / `InvalidImageName` |
 | Crash-looping | waiting reason `CrashLoopBackOff`, with the restart count |
 | Config not resolvable | waiting reason `CreateContainerConfigError` — usually a missing Secret key |
+| Still starting (`…`) | waiting reason `ContainerCreating` / `PodInitializing` — a pod that was just replaced, before its container runs; or a container that runs but whose readiness probe has not passed yet. Neither changes the exit code |
 | PVC never bound | `pvc.status.phase != Bound`, naming the StorageClass |
 | No pods at all | a StatefulSet that wants replicas but has none |
 | Backup Job failed | the Job's `Failed` condition being `True` (including a missed `activeDeadlineSeconds`, where no pod failed), plus its pods, container by container. The verdict is the Job's conditions, not its `status.failed` count: that counts failed *attempts* and never goes down, so a backup that retried and then completed is a success — it gets a `⚠` line noting the retries, and one still retrying gets `…`, neither of which changes the exit code |

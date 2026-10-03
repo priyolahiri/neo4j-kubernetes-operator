@@ -243,3 +243,62 @@ func TestApplyShardStatus_CreationTime(t *testing.T) {
 		assert.Nil(t, got.Status.VirtualDatabase)
 	})
 }
+
+// The shard status is written from the SHOW DATABASES pass right after CREATE
+// returns, when Neo4j can still report a shard as "starting". Before the fix
+// nothing re-read it until the five-minute periodic reconcile, so a Ready
+// sharded database showed a starting graph shard for minutes (v1.18.0
+// journey). The reconcile now re-reads soon while the family settles, bounded
+// to a window after creation.
+func TestShardFamilySettling(t *testing.T) {
+	now := time.Date(2026, 10, 2, 13, 15, 0, 0, time.UTC)
+	created := func(ago time.Duration) *metav1.Time { c := metav1.NewTime(now.Add(-ago)); return &c }
+	ready := neo4jv1beta1.ShardStatus{Name: "testdata-g000", State: "online", Ready: true}
+	starting := neo4jv1beta1.ShardStatus{Name: "testdata-g000", State: "starting"}
+
+	cases := []struct {
+		name   string
+		status neo4jv1beta1.Neo4jShardedDatabaseStatus
+		want   bool
+	}{
+		{"nothing observed yet: no creation time to bound the window", neo4jv1beta1.Neo4jShardedDatabaseStatus{}, false},
+		{"graph shard still starting", neo4jv1beta1.Neo4jShardedDatabaseStatus{CreationTime: created(time.Minute), GraphShard: &starting}, true},
+		{"graph shard not observed yet", neo4jv1beta1.Neo4jShardedDatabaseStatus{CreationTime: created(time.Minute)}, true},
+		{"a property shard still starting", neo4jv1beta1.Neo4jShardedDatabaseStatus{CreationTime: created(time.Minute), GraphShard: &ready,
+			PropertyShards: []neo4jv1beta1.ShardStatus{{Name: "testdata-p000", State: "online", Ready: true}, {Name: "testdata-p001", State: "starting"}}}, true},
+		{"every shard settled", neo4jv1beta1.Neo4jShardedDatabaseStatus{CreationTime: created(time.Minute), GraphShard: &ready,
+			PropertyShards: []neo4jv1beta1.ShardStatus{{Name: "testdata-p000", State: "online", Ready: true}}}, false},
+		{"past the window: a deliberately stopped family is not re-read every few seconds",
+			neo4jv1beta1.Neo4jShardedDatabaseStatus{CreationTime: created(shardSettleWindow + time.Minute), GraphShard: &starting}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, shardFamilySettling(&tc.status, now))
+		})
+	}
+}
+
+// mirrorShardObservation is what lets the end of the reconcile see the shard
+// state applyShardStatus wrote (to a freshly read copy the caller never sees).
+func TestMirrorShardObservation_FeedsTheSettlingDecision(t *testing.T) {
+	now := time.Now()
+	sd := &neo4jv1beta1.Neo4jShardedDatabase{}
+
+	mirrorShardObservation(sd, shardStatusObservation{
+		GraphShard: &neo4jv1beta1.ShardStatus{Name: "testdata-g000", State: "starting"},
+		Observed:   true,
+	}, false, now)
+	require.NotNil(t, sd.Status.CreationTime, "an observed family gets a creation time")
+	assert.True(t, shardFamilySettling(&sd.Status, now), "a starting graph shard must be re-read soon")
+
+	mirrorShardObservation(sd, shardStatusObservation{
+		GraphShard: &neo4jv1beta1.ShardStatus{Name: "testdata-g000", State: "online", Ready: true},
+		Observed:   true,
+	}, false, now)
+	assert.False(t, shardFamilySettling(&sd.Status, now), "once online, back to the periodic reconcile")
+
+	before := sd.Status.CreationTime
+	mirrorShardObservation(sd, shardStatusObservation{GraphShard: sd.Status.GraphShard, Observed: true}, true, now.Add(time.Minute))
+	require.NotNil(t, sd.Status.CreationTime)
+	assert.NotEqual(t, before.Time, sd.Status.CreationTime.Time, "a recreated family restarts its creation time")
+}
