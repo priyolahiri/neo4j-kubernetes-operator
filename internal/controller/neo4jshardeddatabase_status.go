@@ -147,7 +147,7 @@ func observeShardFamily(logical string, databases []neo4j.DatabaseInfo) shardSta
 	propertyPattern := regexp.MustCompile(`^` + regexp.QuoteMeta(logical) + `-p(\d{3})$`)
 
 	var parent, graph []neo4j.DatabaseInfo
-	property := map[int][]neo4j.DatabaseInfo{}
+	property := map[int32][]neo4j.DatabaseInfo{}
 	for _, db := range databases {
 		switch db.Name {
 		case logical:
@@ -156,7 +156,11 @@ func observeShardFamily(logical string, databases []neo4j.DatabaseInfo) shardSta
 			graph = append(graph, db)
 		default:
 			if m := propertyPattern.FindStringSubmatch(db.Name); m != nil {
-				if idx, err := strconv.Atoi(m[1]); err == nil {
+				// Parsed straight to 32 bits: the index ends up in the int32
+				// PropertyShardIndex, and the pattern's three digits bound it
+				// far below that anyway.
+				if n, err := strconv.ParseInt(m[1], 10, 32); err == nil {
+					idx := int32(n)
 					property[idx] = append(property[idx], db)
 				}
 			}
@@ -172,14 +176,14 @@ func observeShardFamily(logical string, databases []neo4j.DatabaseInfo) shardSta
 		}
 	}
 
-	indexes := make([]int, 0, len(property))
+	indexes := make([]int32, 0, len(property))
 	for idx := range property {
 		indexes = append(indexes, idx)
 	}
-	sort.Ints(indexes)
+	sort.Slice(indexes, func(a, b int) bool { return indexes[a] < indexes[b] })
 	for _, idx := range indexes {
 		state, ready := summarizeShardCopies(property[idx])
-		i := int32(idx) // #nosec G115 -- bounded by the three-digit name pattern
+		i := idx
 		obs.PropertyShards = append(obs.PropertyShards, neo4jv1beta1.ShardStatus{
 			Name:               property[idx][0].Name,
 			Type:               shardTypeProperty,
