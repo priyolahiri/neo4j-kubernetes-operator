@@ -393,7 +393,7 @@ This means the operator could not reach the cluster via Bolt. Common causes:
 
 | Cause | Check |
 |---|---|
-| Cluster not yet `Ready` | Diagnostics only run when `status.phase=Ready`; check cluster phase |
+| Cluster has not formed yet | Diagnostics run once the cluster has formed (been `Ready` at least once), and keep running while it is degraded; check the cluster phase |
 | Auth secret missing or wrong | Check `spec.auth.adminSecret`; verify the secret exists |
 | Network policy blocking Bolt | Verify the operator pod can reach port 7687 of the cluster service |
 | Cluster overloaded | The Bolt client uses a 10s timeout; check Neo4j pod resource usage |

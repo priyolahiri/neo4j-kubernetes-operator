@@ -231,6 +231,52 @@ them. `neo4j_operator_` followed by: `backup_size_bytes`,
   `AuraFleetManagementFailed` Warning event, once per distinct failure message.
   It almost never fired before.
 
+## Upgrading from v1.18.x
+
+No CRD changes. Nothing to do before upgrading; the behaviour changes below
+take effect on the first reconcile.
+
+### Behaviour changes
+
+- **A cluster that loses a server stays `Ready`** (#444). It used to drop to
+  `Forming` on any one pod restart, which paused every `Neo4jUser`,
+  `Neo4jRole`, `Neo4jDatabase`, `Neo4jBackup` and the rest until the server
+  came back, and left a cluster whose server never came back `Forming` for
+  good. A cluster that has formed now stays `Ready` while a majority of its
+  servers is serving, with a new `Degraded` condition naming the missing
+  servers. If a server is still missing after the grace period (5 minutes;
+  `--server-unavailable-grace`, Helm `serverUnavailableGrace`), the phase
+  turns **`Degraded`**: `status.ready` is `false`, the `Ready` condition is
+  `False` with reason `ClusterDegraded`, and a `ClusterDegraded` Warning event
+  is raised. Losing a majority still reports `Forming`, now with a
+  `ClusterQuorumLost` Warning. See
+  [Server availability](../api_reference/neo4jenterprisecluster.md#server-availability).
+- **Dependents keep working against a `Degraded` cluster.** Users, roles,
+  bindings, auth rules, databases, sharded databases, aliases, composites,
+  replicas, promotions and backups reconcile as they do against a `Ready` one.
+  A rolling image upgrade or a `Neo4jPlugin` install waits until every server
+  is back, including during the grace period.
+- **Alerts and pipelines:** `kubectl wait --for=condition=Ready`, Flux health
+  checks and the [ArgoCD health checks](../gitops/README.md) report a
+  `Degraded` cluster as not ready — that is new, since it used to be
+  `Forming` (`Ready=Unknown`, ArgoCD `Progressing`). If you alert on
+  `neo4j_operator_cluster_phase{phase="Forming"}` to catch a lost server, alert
+  on `phase="Degraded"` too, or on the `Degraded` condition directly.
+- **Diagnostics keep running while a server is down.** `ServersHealthy`,
+  `DatabasesHealthy`, `status.diagnostics` and `neo4j_operator_server_health`
+  used to freeze at their last healthy values whenever the cluster was not
+  `Ready`; they are now collected whenever the cluster has formed.
+- **`ClusterFormationStarted` is raised on first formation only**, no longer
+  on every pod restart of a formed cluster.
+
+### New, no action needed
+
+- Conditions `Degraded` and `ClusterFormed` on `Neo4jEnterpriseCluster`.
+- The `Ready` condition of a `Degraded` cluster has reason `ClusterDegraded`
+  instead of `ReconciliationFailed`.
+- Operator flag `--server-unavailable-grace` (default `5m`) and Helm value
+  `serverUnavailableGrace`.
+
 ## Upgrading between future releases
 
 When a newer version ships:

@@ -33,6 +33,14 @@ nothing failed.
 `Invalid` (a spec the validator rejected) is terminal until the spec is edited,
 so it maps to Degraded rather than Progressing.
 
+A `Neo4jEnterpriseCluster` that loses a server stays `Ready` — Healthy — for a
+grace period (default 5 minutes), so a routine pod restart does not flip the
+Application. If the server is still missing after that, the phase turns
+`Degraded` and so does the Application; it returns to Healthy when the server
+does. A cluster that loses a majority of its servers reports `Forming`, which
+ArgoCD shows as Progressing. See
+[Server availability](../api_reference/neo4jenterprisecluster.md#server-availability).
+
 Health checks are configured for **all 27 CRDs** in the `neo4j.neo4j.com`
 group — the 15 self-managed CRDs (7 workload, 4 identity, 4 composite / alias /
 replication) and all 12 Aura CRDs. `make check-crd-catalog` fails the build if a
@@ -61,6 +69,11 @@ values, because the `Ready` condition can lag a failure by a reconcile.
 Flux automatically detects readiness via `status.conditions` when CRDs expose a
 standard `Ready` condition (type `Ready`, using `metav1.Condition`). No extra
 Flux configuration is needed once the operator surfaces that condition.
+
+A `Neo4jEnterpriseCluster` keeps `Ready=True` through a short server outage
+(the grace period above); a `Degraded` one reports `Ready=False` with reason
+`ClusterDegraded`, so a Kustomization health-checking it fails until the
+missing server is back.
 
 ## Prometheus ServiceMonitor
 

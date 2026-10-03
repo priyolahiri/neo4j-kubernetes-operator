@@ -584,13 +584,11 @@ func (r *Neo4jDatabaseReconciler) createNeo4jClientForStandalone(ctx context.Con
 	return neo4j.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
 }
 
+// isClusterReady includes a Degraded cluster (#444). Whether a database's
+// topology fits on the servers that are up is Neo4j's call, reported on the
+// Neo4jDatabase.
 func (r *Neo4jDatabaseReconciler) isClusterReady(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
-	for _, condition := range cluster.Status.Conditions {
-		if condition.Type == "Ready" && condition.Status == metav1.ConditionTrue {
-			return true
-		}
-	}
-	return false
+	return clusterAcceptsWork(cluster)
 }
 
 func (r *Neo4jDatabaseReconciler) isStandaloneReady(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) bool {

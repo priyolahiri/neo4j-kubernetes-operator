@@ -116,6 +116,10 @@ type watchNamespaceSelection struct {
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+
+	// serverUnavailableGrace is --server-unavailable-grace, handed to the
+	// cluster reconciler in both modes.
+	serverUnavailableGrace = controller.DefaultServerUnavailableGrace
 )
 
 // Build metadata, stamped by the Dockerfile:
@@ -188,6 +192,13 @@ func main() {
 		privilegeNormalisation = flag.String("privilege-normalisation", controller.PrivilegeNormalisationLearn,
 			"How Neo4jRole privileges are matched to Neo4j's stored form: learn (default; learn from the operator's own grants) or probe (short-lived probe roles, exact but visible in the security log)")
 
+		// How long a formed Neo4jEnterpriseCluster may run short of a server
+		// (still serving with a majority) before its phase turns Degraded.
+		// Raise it for servers that take longer than this to restart and
+		// rejoin — large page caches, slow storage. See #444.
+		serverUnavailableGraceFlag = flag.Duration("server-unavailable-grace", controller.DefaultServerUnavailableGrace,
+			"How long a formed Neo4jEnterpriseCluster may be short of a server before its phase turns Degraded (it stays Ready, with the Degraded condition True, until then)")
+
 		// Development mode specific flags
 		// Must stay in sync with the dev controller registry in
 		// setupDevelopmentControllers — a key that is registered but missing here
@@ -214,6 +225,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	if *serverUnavailableGraceFlag <= 0 {
+		fmt.Fprintf(os.Stderr, "--server-unavailable-grace must be a positive duration, got %s\n", *serverUnavailableGraceFlag)
+		os.Exit(1)
+	}
+	serverUnavailableGrace = *serverUnavailableGraceFlag
 
 	// Validate and normalize mode
 	operatorMode := OperatorMode(strings.ToLower(*mode))
@@ -382,14 +398,15 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 		{
 			name: "Neo4jEnterpriseCluster",
 			controller: &controller.Neo4jEnterpriseClusterReconciler{
-				Client:             mgr.GetClient(),
-				Scheme:             mgr.GetScheme(),
-				Recorder:           mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
-				RequeueAfter:       controller.GetTestRequeueAfter(),
-				TopologyScheduler:  controller.NewTopologyScheduler(mgr.GetClient()),
-				Validator:          validation.NewClusterValidator(mgr.GetClient()),
-				ConfigMapManager:   controller.NewConfigMapManager(mgr.GetClient()),
-				SplitBrainDetector: controller.NewSplitBrainDetector(mgr.GetClient()),
+				Client:                 mgr.GetClient(),
+				Scheme:                 mgr.GetScheme(),
+				Recorder:               mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
+				RequeueAfter:           controller.GetTestRequeueAfter(),
+				TopologyScheduler:      controller.NewTopologyScheduler(mgr.GetClient()),
+				Validator:              validation.NewClusterValidator(mgr.GetClient()),
+				ConfigMapManager:       controller.NewConfigMapManager(mgr.GetClient()),
+				SplitBrainDetector:     controller.NewSplitBrainDetector(mgr.GetClient()),
+				ServerUnavailableGrace: serverUnavailableGrace,
 			},
 		},
 		{
@@ -676,14 +693,15 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 	return map[string]func() (interface{ SetupWithManager(ctrl.Manager) error }, string){
 		"cluster": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
 			return &controller.Neo4jEnterpriseClusterReconciler{
-				Client:             mgr.GetClient(),
-				Scheme:             mgr.GetScheme(),
-				Recorder:           mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
-				RequeueAfter:       controller.GetTestRequeueAfter(),
-				TopologyScheduler:  controller.NewTopologyScheduler(mgr.GetClient()),
-				Validator:          validation.NewClusterValidator(mgr.GetClient()),
-				ConfigMapManager:   controller.NewConfigMapManager(mgr.GetClient()),
-				SplitBrainDetector: controller.NewSplitBrainDetector(mgr.GetClient()),
+				Client:                 mgr.GetClient(),
+				Scheme:                 mgr.GetScheme(),
+				Recorder:               mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
+				RequeueAfter:           controller.GetTestRequeueAfter(),
+				TopologyScheduler:      controller.NewTopologyScheduler(mgr.GetClient()),
+				Validator:              validation.NewClusterValidator(mgr.GetClient()),
+				ConfigMapManager:       controller.NewConfigMapManager(mgr.GetClient()),
+				SplitBrainDetector:     controller.NewSplitBrainDetector(mgr.GetClient()),
+				ServerUnavailableGrace: serverUnavailableGrace,
 			}, "Neo4jEnterpriseCluster"
 		},
 		"standalone": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {

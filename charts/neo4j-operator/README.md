@@ -98,6 +98,7 @@ The following table lists the configurable parameters of the Neo4j Operator char
 | `developmentMode` | Enable development mode | `false` |
 | `logLevel` | Log level: `debug`, `info`, `warn`, `error` | `info` |
 | `privilegeNormalisation` | How `Neo4jRole` privileges are matched to Neo4j's stored form: `learn` (learns from the operator's own grants; never revokes rows it cannot attribute; needs this chart's CRDs) or `probe` (short-lived `operator_privilege_probe_*` roles, exact, visible in the security log). See [user role management](../../docs/user_guide/user_role_management.md). | `learn` |
+| `serverUnavailableGrace` | How long a formed `Neo4jEnterpriseCluster` may run short of a server before its phase turns `Degraded`. Until then it stays `Ready` and reports the missing server through its `Degraded` and `ServersHealthy` conditions. A Go duration (`10m`, `90s`); raise it if your servers take longer to restart and rejoin. Passes `--server-unavailable-grace`. | `""` (operator default `5m`) |
 
 ### RBAC Configuration
 

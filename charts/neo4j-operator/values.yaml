@@ -55,6 +55,14 @@ kubernetesClusterName: ""
 # See docs/user_guide/user_role_management.md.
 privilegeNormalisation: learn
 
+# How long a formed Neo4jEnterpriseCluster may run short of a server before its
+# phase turns Degraded. Until then it stays Ready — dependents carry on — and
+# reports the missing server through its Degraded and ServersHealthy
+# conditions, so a routine pod restart never flaps it. A Go duration ("10m",
+# "90s"); empty uses the operator default, 5m. Raise it if your servers take
+# longer than that to restart and rejoin (large page caches, slow storage).
+serverUnavailableGrace: ""
+
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
